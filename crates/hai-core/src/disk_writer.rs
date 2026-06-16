@@ -598,7 +598,7 @@ mod linux {
 
         write_handle
             .await
-            .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
+            .map_err(|e| Error::Io(std::io::Error::other(e)))??;
 
         if verify {
             progress_callback.on_progress(FlashProgress {
@@ -649,7 +649,7 @@ mod linux {
 
             verify_handle
                 .await
-                .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
+                .map_err(|e| Error::Io(std::io::Error::other(e)))??;
         }
 
         progress_callback.on_progress(FlashProgress {
