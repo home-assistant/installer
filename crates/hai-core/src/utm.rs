@@ -4,7 +4,9 @@
 //! using UTM on macOS via AppleScript automation.
 
 use crate::error::{Error, Result};
-use crate::types::{FlashProgress, FlashStage, UtmStatus, UtmVmConfig, UtmVmResult};
+#[cfg(target_os = "macos")]
+use crate::types::{FlashProgress, FlashStage};
+use crate::types::{UtmStatus, UtmVmConfig, UtmVmResult};
 use crate::ProgressCallback;
 
 /// Check if UTM is installed and get its status
