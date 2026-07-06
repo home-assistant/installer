@@ -12,8 +12,8 @@ It helps users install Home Assistant OS on various hardware platforms.
 - GitHub Actions for CI/CD
 
 ## Key Directories
-- `src-tauri/src/commands/` - Tauri command handlers
-- `src-tauri/src/platforms/` - Platform-specific implementations (disk access)
+- `crates/hai-desktop/src/` - Tauri app (command handlers in `commands.rs`)
+- `crates/hai-core/src/` - Core installer logic and platform-specific implementations (disk access)
 - `src/components/` - Reusable Lit components
 - `src/views/` - Page-level view components
 - `test/e2e/` - Playwright tests
