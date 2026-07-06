@@ -38,7 +38,7 @@ npm run test:unit
 HA_INSTALLER_MOCK=true npm run test:e2e
 
 # Rust tests
-cd src-tauri && cargo test
+cargo test --workspace
 ```
 
 ## Development Guidelines

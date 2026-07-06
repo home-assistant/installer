@@ -994,7 +994,7 @@ home-assistant-installer/
 - [x] Create root `Cargo.toml` with workspace configuration
 - [x] Create `crates/` directory structure
 - [x] Move `src-tauri/` to `crates/hai-desktop/`
-- [x] Create `src-tauri` symlink to `crates/hai-desktop` for Tauri CLI compatibility
+- [x] ~~Create `src-tauri` symlink to `crates/hai-desktop` for Tauri CLI compatibility~~ (removed: cargo fails to resolve the symlinked path into the workspace on Windows; the Tauri CLI discovers `crates/hai-desktop/tauri.conf.json` on its own)
 - [x] Update `tauri.conf.json` paths (frontendDist, beforeBuildCommand cwd)
 - [x] Frontend remains at project root (simpler than moving to nested folder)
 

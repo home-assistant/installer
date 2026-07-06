@@ -2,7 +2,8 @@
 * @home-assistant/installer-team
 
 # Rust backend
-/src-tauri/ @home-assistant/installer-backend
+/crates/ @home-assistant/installer-backend
+/Cargo.toml @home-assistant/installer-backend
 
 # Frontend components
 /src/ @home-assistant/installer-frontend

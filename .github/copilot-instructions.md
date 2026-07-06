@@ -2,7 +2,7 @@
 
 ## Project Overview
 This is a Tauri desktop application for installing Home Assistant OS.
-- Backend: Rust (src-tauri/)
+- Backend: Rust (crates/)
 - Frontend: Lit web components + Web Awesome UI library (src/)
 - Testing: Playwright for E2E, Web Test Runner for unit tests
 
@@ -21,7 +21,7 @@ This is a Tauri desktop application for installing Home Assistant OS.
 - Prefer Web Awesome components (`<wa-*>`) over custom implementations
 
 ## Architecture Guidelines
-- Tauri commands go in `src-tauri/src/commands/`
+- Tauri commands go in `crates/hai-desktop/src/commands.rs`
 - Each command module handles one domain (devices, flash, proxmox, utm)
 - Frontend state management uses simple stores in `src/state/`
 - Components are in `src/components/`, views in `src/views/`
@@ -35,4 +35,4 @@ This is a Tauri desktop application for installing Home Assistant OS.
 ## Common Tasks
 - Add new device: Update manifest schema and device selector component
 - Add new installation path: Create new view folder, add to wizard routing
-- Fix flashing issue: Check platform-specific code in `src-tauri/src/platforms/`
+- Fix flashing issue: Check platform-specific code in `crates/hai-core/src/`
