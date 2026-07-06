@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/hai-core", "crates/hai-desktop"]
+members = ["crates/hai-core", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
