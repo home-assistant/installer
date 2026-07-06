@@ -69,8 +69,6 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          workspaces: .
 
       - name: Install Tauri dependencies (Linux)
         run: |
@@ -133,8 +131,6 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          workspaces: .
 
       - name: Install Tauri dependencies (Linux)
         run: |
@@ -142,13 +138,12 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Run tests with coverage
-        working-directory: crates/hai-desktop
-        run: cargo llvm-cov --lcov --output-path lcov.info
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
-          files: crates/hai-desktop/lcov.info
+          files: lcov.info
           flags: backend
           fail_ci_if_error: false
 
@@ -177,8 +172,6 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          workspaces: .
 
       - name: Install Tauri dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
