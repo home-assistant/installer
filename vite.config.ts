@@ -23,8 +23,8 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching the Rust crates
-      ignored: ["**/crates/**"],
+      // 3. tell Vite to ignore watching the Rust crates and build output
+      ignored: ["**/crates/**", "**/target/**"],
     },
   },
 }));
