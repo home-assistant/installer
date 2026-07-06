@@ -2348,7 +2348,10 @@ mod tests {
             assert!(!device.id.is_empty(), "Device ID should not be empty");
             assert!(!device.name.is_empty(), "Device name should not be empty");
             assert!(!device.haos.board.is_empty(), "Board should not be empty");
-            assert!(!device.haos.download_url.is_empty(), "Download URL should not be empty");
+            assert!(
+                !device.haos.download_url.is_empty(),
+                "Download URL should not be empty"
+            );
         }
     }
 
@@ -2452,7 +2455,10 @@ mod tests {
 
         // Test with invalid characters
         let result = check_ha_ready("not-an-ip!@#$".to_string()).await;
-        assert!(!result, "Should return false for invalid IP with special chars");
+        assert!(
+            !result,
+            "Should return false for invalid IP with special chars"
+        );
     }
 
     #[tokio::test]
@@ -2499,10 +2505,7 @@ mod tests {
         let ip2 = "192.0.2.2".to_string();
 
         // Run multiple HTTP checks concurrently
-        let (r1, r2) = tokio::join!(
-            check_ha_updated(ip1),
-            check_ha_updated(ip2)
-        );
+        let (r1, r2) = tokio::join!(check_ha_updated(ip1), check_ha_updated(ip2));
 
         // Both should fail
         assert!(!r1);
@@ -2518,10 +2521,7 @@ mod tests {
         let ip_clone = ip.clone();
 
         // Test TCP and HTTP checks concurrently
-        let (ready, updated) = tokio::join!(
-            check_ha_ready(ip),
-            check_ha_updated(ip_clone)
-        );
+        let (ready, updated) = tokio::join!(check_ha_ready(ip), check_ha_updated(ip_clone));
 
         assert!(!ready);
         assert!(!updated);
@@ -2569,7 +2569,10 @@ mod tests {
 
         std::env::remove_var("HA_INSTALLER_MOCK");
         let result_real = check_ha_ready("192.0.2.1".to_string()).await;
-        assert!(!result_real, "Should return false for unreachable IP in real mode");
+        assert!(
+            !result_real,
+            "Should return false for unreachable IP in real mode"
+        );
     }
 
     #[tokio::test]
@@ -2581,7 +2584,10 @@ mod tests {
 
         std::env::remove_var("HA_INSTALLER_MOCK");
         let result_real = check_ha_updated("192.0.2.1".to_string()).await;
-        assert!(!result_real, "Should return false for unreachable IP in real mode");
+        assert!(
+            !result_real,
+            "Should return false for unreachable IP in real mode"
+        );
     }
 
     #[tokio::test]
@@ -2626,7 +2632,10 @@ mod tests {
 
         let long_version = "9".repeat(1000);
         let result = get_haos_release(Some(long_version)).await;
-        assert!(result.is_err(), "Should fail for extremely long version strings");
+        assert!(
+            result.is_err(),
+            "Should fail for extremely long version strings"
+        );
     }
 
     #[tokio::test]
@@ -2648,5 +2657,4 @@ mod tests {
         // Should handle leading whitespace
         let _ = result;
     }
-
 }

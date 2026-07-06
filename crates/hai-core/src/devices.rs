@@ -321,7 +321,7 @@ mod linux {
                 "NAME,SIZE,TYPE,RM,RO,TRAN,MODEL,VENDOR,HOTPLUG",
             ])
             .output()
-            .map_err(|e| Error::Io(e))?;
+            .map_err(Error::Io)?;
 
         if !output.status.success() {
             return Err(Error::DeviceNotFound(format!(
