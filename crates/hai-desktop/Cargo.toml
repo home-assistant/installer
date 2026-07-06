@@ -1,36 +1,3 @@
-[workspace]
-resolver = "2"
-
-[workspace.package]
-version = "0.1.0"
-authors = ["Open Home Foundation"]
-license = "Apache-2.0"
-edition = "2021"
-
-[workspace.dependencies]
-# Internal crates
-hai-core = { path = "../hai-core" }
-
-# Async runtime
-tokio = { version = "1", features = ["time", "fs", "io-util", "rt", "macros"] }
-
-# Serialization
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
-# HTTP client
-reqwest = { version = "0.12", features = ["stream", "json", "multipart"] }
-
-# Testing
-tempfile = "3"
-serial_test = "3"
-mockito = "1"
-
-# Tauri
-tauri = { version = "2", features = [] }
-tauri-build = { version = "2", features = [] }
-tauri-plugin-opener = "2"
-
 [package]
 name = "hai-desktop"
 version.workspace = true

@@ -78,14 +78,10 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Check formatting
-        run: |
-          cargo fmt --all --check
-          cargo fmt --check --manifest-path src-tauri/Cargo.toml
+        run: cargo fmt --all --check
 
       - name: Run Clippy
-        run: |
-          cargo clippy --workspace -- -D warnings
-          cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+        run: cargo clippy --workspace -- -D warnings
 
   test-frontend:
     name: Test Frontend

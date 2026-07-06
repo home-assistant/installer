@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/hai-core"]
+members = ["crates/hai-core", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -49,3 +49,8 @@ mockito = "1"
 # macOS specific
 plist = "1"
 security-framework = "2"
+
+# Tauri
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+tauri-plugin-opener = "2"
