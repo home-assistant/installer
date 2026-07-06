@@ -36,6 +36,8 @@ fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
 
 /// Validate that a device path is safe to write to (not a system drive)
 fn validate_device_path(device_id: &str) -> Result<()> {
+    let device_id = device_id.trim_end_matches('/');
+
     #[cfg(target_os = "macos")]
     {
         // On macOS, disk0 is always the system drive
@@ -1620,10 +1622,7 @@ mod tests {
 
             let result = write_image(&image_path, device_id, false, &callback).await;
             assert!(result.is_err());
-            assert!(matches!(
-                result.unwrap_err(),
-                Error::UnsupportedPlatform(_)
-            ));
+            assert!(matches!(result.unwrap_err(), Error::UnsupportedPlatform(_)));
         }
     }
 
@@ -1746,7 +1745,11 @@ mod tests {
         // Test other drives are OK
         for i in 1..10 {
             let drive = format!("\\\\.\\PhysicalDrive{}", i);
-            assert!(validate_device_path(&drive).is_ok(), "Drive {} should be OK", i);
+            assert!(
+                validate_device_path(&drive).is_ok(),
+                "Drive {} should be OK",
+                i
+            );
         }
     }
 
