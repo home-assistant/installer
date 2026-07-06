@@ -1622,10 +1622,7 @@ mod tests {
 
             let result = write_image(&image_path, device_id, false, &callback).await;
             assert!(result.is_err());
-            assert!(matches!(
-                result.unwrap_err(),
-                Error::UnsupportedPlatform(_)
-            ));
+            assert!(matches!(result.unwrap_err(), Error::UnsupportedPlatform(_)));
         }
     }
 
@@ -1748,7 +1745,11 @@ mod tests {
         // Test other drives are OK
         for i in 1..10 {
             let drive = format!("\\\\.\\PhysicalDrive{}", i);
-            assert!(validate_device_path(&drive).is_ok(), "Drive {} should be OK", i);
+            assert!(
+                validate_device_path(&drive).is_ok(),
+                "Drive {} should be OK",
+                i
+            );
         }
     }
 
