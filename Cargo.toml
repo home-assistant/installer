@@ -1,5 +1,8 @@
 [workspace]
 resolver = "2"
+# `src-tauri` is a symlink to `crates/hai-desktop`. It is listed here (instead of
+# `crates/hai-desktop`) because Windows does not resolve the symlink, so Cargo sees
+# the package at `src-tauri`; on Linux/macOS the path canonicalizes to the same crate.
 members = ["crates/hai-core", "src-tauri"]
 
 [workspace.package]
