@@ -32,7 +32,7 @@
     {
       "label": "lint",
       "type": "shell",
-      "command": "npm run lint && cargo clippy --manifest-path=./src-tauri/Cargo.toml",
+      "command": "npm run lint && cargo clippy --workspace",
       "problemMatcher": ["$eslint-stylish", "$rustc"]
     }
   ]

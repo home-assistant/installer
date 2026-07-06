@@ -41,7 +41,7 @@
       "cargo": {
         "args": [
           "build",
-          "--manifest-path=./src-tauri/Cargo.toml",
+          "--manifest-path=./crates/hai-desktop/Cargo.toml",
           "--no-default-features"
         ],
         "problemMatcher": "$rustc"
@@ -59,7 +59,7 @@
       "cargo": {
         "args": [
           "build",
-          "--manifest-path=./src-tauri/Cargo.toml",
+          "--manifest-path=./crates/hai-desktop/Cargo.toml",
           "--no-default-features"
         ],
         "problemMatcher": "$rustc"
