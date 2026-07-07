@@ -36,7 +36,7 @@ hex = "0.4"
 xz2 = "0.1"
 
 # File system
-directories = "5"
+directories = "6"
 
 # URL encoding
 urlencoding = "2"
@@ -48,7 +48,7 @@ mockito = "1"
 
 # macOS specific
 plist = "1"
-security-framework = "2"
+security-framework = "3"
 
 # Tauri
 tauri = { version = "2", features = [] }
