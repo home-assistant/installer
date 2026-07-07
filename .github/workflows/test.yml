@@ -202,11 +202,6 @@ jobs:
               path.join(process.env.GITHUB_WORKSPACE, 'node_modules', '@actions', 'artifact', 'lib', 'artifact.js')
             ).href)
 
-            const bundleDir = {
-              Linux: 'target/release/bundle',
-              macOS: 'target/universal-apple-darwin/release/bundle',
-              Windows: 'target/release/bundle',
-            }[process.env.RUNNER_OS]
             const formats = {
               Linux: ['deb/*.deb', 'rpm/*.rpm', 'appimage/*.AppImage'],
               macOS: ['dmg/*.dmg'],
@@ -214,7 +209,7 @@ jobs:
             }[process.env.RUNNER_OS]
 
             for (const format of formats) {
-              const files = await (await glob.create(`${bundleDir}/${format}`)).glob()
+              const files = await (await glob.create(`target/release/bundle/${format}`)).glob()
               if (files.length !== 1) {
                 core.setFailed(`Expected exactly one installer for ${format}, found ${files.length}: ${files.join(', ')}`)
                 return
