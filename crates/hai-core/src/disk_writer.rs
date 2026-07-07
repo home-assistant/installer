@@ -561,6 +561,8 @@ mod linux {
 
         let image_size = std::fs::metadata(image_path)?.len();
 
+        let device = open_device_rw(&connection, &block_path).await?;
+
         progress_callback.on_progress(FlashProgress {
             stage: FlashStage::Writing,
             progress: 0,
@@ -572,7 +574,6 @@ mod linux {
         // Create channel for progress updates from the blocking task.
         let (progress_tx, progress_rx) = mpsc::channel::<ProgressUpdate>();
 
-        let device = open_device_rw(&connection, &block_path).await?;
         let image_path_clone = image_path.clone();
 
         let write_handle = tokio::task::spawn_blocking(move || {
@@ -669,7 +670,9 @@ mod linux {
             {
                 return Error::DeviceBusy(context.to_string());
             }
-            return Error::PermissionDenied(format!("udisks2 error while {context}: {err}"));
+            return Error::Io(std::io::Error::other(format!(
+                "udisks2 error while {context}: {err}"
+            )));
         }
 
         // Not a method error → couldn't reach the bus/service at all.
