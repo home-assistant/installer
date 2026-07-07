@@ -964,6 +964,8 @@ mod linux {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use zbus::message::Message;
+        use zbus::names::OwnedErrorName;
 
         #[test]
         fn test_partition_block_names_sd() {
@@ -978,6 +980,130 @@ mod linux {
             let names = partition_block_names("/dev/mmcblk0");
             assert_eq!(names[0], "mmcblk0");
             assert_eq!(names[1], "mmcblk0p1");
+        }
+
+        fn method_error(name: &str, message: Option<&str>) -> zbus::Error {
+            let msg = Message::method_call("/", "Test")
+                .unwrap()
+                .build(&())
+                .unwrap();
+            zbus::Error::MethodError(
+                OwnedErrorName::try_from(name).unwrap(),
+                message.map(String::from),
+                msg,
+            )
+        }
+
+        #[test]
+        fn test_map_udisks_error_service_unknown() {
+            let err = method_error("org.freedesktop.DBus.Error.ServiceUnknown", None);
+            let mapped = map_udisks_error(err, "resolving the device");
+            assert!(matches!(mapped, Error::DiskServiceUnavailable(_)));
+        }
+
+        #[test]
+        fn test_map_udisks_error_authorization_dismissed() {
+            // Must match before the generic NotAuthorized branch, since the
+            // name contains "NotAuthorized" as a prefix.
+            let err = method_error(
+                "org.freedesktop.UDisks2.Error.NotAuthorizedDismissed",
+                Some("Not authorized to perform operation"),
+            );
+            let mapped = map_udisks_error(err, "opening the device");
+            assert!(
+                matches!(mapped, Error::PermissionDenied(msg) if msg == "Authorization was canceled")
+            );
+        }
+
+        #[test]
+        fn test_map_udisks_error_not_authorized_uses_message() {
+            let err = method_error(
+                "org.freedesktop.UDisks2.Error.NotAuthorizedCanObtain",
+                Some("Not authorized to open the device"),
+            );
+            let mapped = map_udisks_error(err, "opening the device");
+            assert!(
+                matches!(mapped, Error::PermissionDenied(msg) if msg == "Not authorized to open the device")
+            );
+        }
+
+        #[test]
+        fn test_map_udisks_error_busy_from_failed_message() {
+            let err = method_error(
+                "org.freedesktop.UDisks2.Error.Failed",
+                Some("Error opening device /dev/sdb: Device or resource busy"),
+            );
+            let mapped = map_udisks_error(err, "opening the device");
+            assert!(matches!(mapped, Error::DeviceBusy(_)));
+        }
+
+        #[test]
+        fn test_map_udisks_error_bus_unreachable() {
+            let err = zbus::Error::Failure("could not connect".to_string());
+            let mapped = map_udisks_error(err, "connecting to the system bus");
+            assert!(matches!(mapped, Error::DiskServiceUnavailable(_)));
+        }
+
+        #[test]
+        fn test_write_to_device_copies_image() {
+            let data: Vec<u8> = (0..123_456u32).map(|i| (i % 251) as u8).collect();
+            let image = tempfile::NamedTempFile::new().unwrap();
+            std::fs::write(image.path(), &data).unwrap();
+
+            let mut dest = tempfile::tempfile().unwrap();
+            let (tx, rx) = mpsc::channel();
+            write_to_device(
+                &image.path().to_path_buf(),
+                &mut dest,
+                data.len() as u64,
+                &tx,
+            )
+            .unwrap();
+
+            dest.seek(SeekFrom::Start(0)).unwrap();
+            let mut written = Vec::new();
+            dest.read_to_end(&mut written).unwrap();
+            assert_eq!(written, data);
+
+            let last = rx.try_iter().last().unwrap();
+            assert_eq!(last.stage, FlashStage::Writing);
+            assert_eq!(last.bytes_processed, data.len() as u64);
+        }
+
+        #[test]
+        fn test_verify_write_detects_mismatch() {
+            let image = tempfile::NamedTempFile::new().unwrap();
+            std::fs::write(image.path(), b"expected data").unwrap();
+
+            let mut dest = tempfile::tempfile().unwrap();
+            dest.write_all(b"corrupted data").unwrap();
+            dest.seek(SeekFrom::Start(0)).unwrap();
+
+            let (tx, _rx) = mpsc::channel();
+            let result = verify_write(&image.path().to_path_buf(), &mut dest, 13, &tx);
+            assert!(matches!(result, Err(Error::VerificationFailed(_))));
+        }
+
+        #[test]
+        fn test_write_and_verify_roundtrip() {
+            let data: Vec<u8> = (0..65_536u32).map(|i| (i % 199) as u8).collect();
+            let image = tempfile::NamedTempFile::new().unwrap();
+            std::fs::write(image.path(), &data).unwrap();
+
+            let device = tempfile::tempfile().unwrap();
+            let (tx, rx) = mpsc::channel();
+            write_and_verify(
+                &image.path().to_path_buf(),
+                device,
+                data.len() as u64,
+                true,
+                tx,
+            )
+            .unwrap();
+
+            let stages: Vec<FlashStage> = rx.try_iter().map(|u| u.stage).collect();
+            assert!(stages.contains(&FlashStage::Writing));
+            assert!(stages.contains(&FlashStage::Verifying));
         }
     }
 }
