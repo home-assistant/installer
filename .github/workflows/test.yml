@@ -187,3 +187,40 @@ jobs:
         run: npm run tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
+
+      # Uploads every installer as its own artifact, named after the file
+      # itself, unarchived so users download the installer directly instead
+      # of a zip. Fails if any expected bundle format is missing.
+      - name: Upload installers
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const path = require('path')
+            const {pathToFileURL} = require('url')
+            // @actions/artifact is ESM-only; import it from the project's locked node_modules
+            const {default: artifact} = await import(pathToFileURL(
+              path.join(process.env.GITHUB_WORKSPACE, 'node_modules', '@actions', 'artifact', 'lib', 'artifact.js')
+            ).href)
+
+            const bundleDir = {
+              Linux: 'target/release/bundle',
+              macOS: 'target/universal-apple-darwin/release/bundle',
+              Windows: 'target/release/bundle',
+            }[process.env.RUNNER_OS]
+            const formats = {
+              Linux: ['deb/*.deb', 'rpm/*.rpm', 'appimage/*.AppImage'],
+              macOS: ['dmg/*.dmg'],
+              Windows: ['msi/*.msi', 'nsis/*.exe'],
+            }[process.env.RUNNER_OS]
+
+            for (const format of formats) {
+              const files = await (await glob.create(`${bundleDir}/${format}`)).glob()
+              if (files.length !== 1) {
+                core.setFailed(`Expected exactly one installer for ${format}, found ${files.length}: ${files.join(', ')}`)
+                return
+              }
+              core.info(`Uploading ${path.basename(files[0])}`)
+              await artifact.uploadArtifact(
+                path.basename(files[0]), files, path.dirname(files[0]), {skipArchive: true}
+              )
+            }

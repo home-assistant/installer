@@ -24,6 +24,7 @@
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
+    "@actions/artifact": "^6.2.1",
     "@open-wc/testing": "^4.0.0",
     "@playwright/test": "^1.57.0",
     "@tauri-apps/cli": "^2",
