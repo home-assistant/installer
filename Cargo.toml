@@ -23,7 +23,7 @@ serde_json = "1"
 thiserror = "2"
 
 # HTTP client
-reqwest = { version = "0.13", features = ["stream", "json", "multipart"] }
+reqwest = { version = "0.13", features = ["stream", "json", "multipart", "form"] }
 
 # Async utilities
 futures-util = "0.3"
