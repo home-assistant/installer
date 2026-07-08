@@ -8,7 +8,7 @@ and instructions for contributing.
 ### Prerequisites
 
 - Rust (via rustup)
-- Node.js 22+
+- Node.js 24+
 - Platform-specific Tauri dependencies
 
 ### Setup
