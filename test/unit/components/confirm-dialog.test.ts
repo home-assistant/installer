@@ -157,18 +157,17 @@ describe("confirm-dialog", () => {
     let cancelFired = false;
     el.addEventListener("dialog-cancel", () => (cancelFired = true));
 
+    // Confirm fires dialog-confirm and closes the dialog. The close then emits
+    // wa-after-hide (AT_TARGET on the wa-dialog, as in production) — the guard
+    // must consume the action and NOT turn it into a dismiss dialog-cancel.
     const confirmButton = el.shadowRoot!.querySelector(
       "wa-button[variant='danger']"
     ) as HTMLElement;
     confirmButton.click();
     await el.updateComplete;
-
-    // The programmatic close emits wa-after-hide; it must not turn into a
-    // second (dismiss) dialog-cancel.
     el.shadowRoot!.querySelector("wa-dialog")!.dispatchEvent(
       new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
     );
-    await el.updateComplete;
 
     expect(cancelFired).to.be.false;
     expect(el.open).to.be.false;

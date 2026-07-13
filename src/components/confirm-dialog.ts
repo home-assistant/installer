@@ -112,7 +112,12 @@ export class ConfirmDialog extends LitElement {
   // Fires after the dialog has fully closed (Escape / backdrop / header close
   // button). Syncing here rather than on wa-hide avoids feeding open=false back
   // into wa-dialog mid-animation, which would trigger a second close request.
-  private _onAfterHide() {
+  private _onAfterHide(event: Event) {
+    // wa-after-hide bubbles and is composed, so ignore events re-dispatched
+    // from any nested Web Awesome overlay in the dialog body.
+    if (event.eventPhase !== Event.AT_TARGET) {
+      return;
+    }
     if (this._closingViaAction) {
       this._closingViaAction = false;
       return;

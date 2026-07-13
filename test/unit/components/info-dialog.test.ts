@@ -178,21 +178,43 @@ describe("info-dialog", () => {
     let secondaryFired = false;
     el.addEventListener("dialog-secondary", () => (secondaryFired = true));
 
+    // Primary fires dialog-primary and closes the dialog. The close then emits
+    // wa-after-hide (AT_TARGET on the wa-dialog, as in production) — the guard
+    // must consume the action and NOT turn it into a dismiss dialog-secondary.
     const primaryButton = el.shadowRoot!.querySelector(
       "wa-button[variant='brand']"
     ) as HTMLElement;
     primaryButton.click();
     await el.updateComplete;
-
-    // The programmatic close emits wa-after-hide; it must not turn into a
-    // second (dismiss) dialog-secondary.
     el.shadowRoot!.querySelector("wa-dialog")!.dispatchEvent(
       new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
     );
-    await el.updateComplete;
 
     expect(secondaryFired).to.be.false;
     expect(el.open).to.be.false;
+  });
+
+  it("ignores wa-after-hide bubbling from nested slotted content", async () => {
+    const el = await fixture<InfoDialog>(
+      html`<info-dialog open></info-dialog>`
+    );
+
+    let secondaryFired = false;
+    el.addEventListener("dialog-secondary", () => (secondaryFired = true));
+
+    // A nested Web Awesome overlay in the body would re-dispatch wa-after-hide,
+    // which bubbles/composes up to our handler. It must be ignored (not
+    // AT_TARGET), leaving the info dialog open.
+    const waDialog = el.shadowRoot!.querySelector("wa-dialog")!;
+    const nested = document.createElement("div");
+    waDialog.appendChild(nested);
+    await el.updateComplete;
+    nested.dispatchEvent(
+      new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+    );
+
+    expect(secondaryFired).to.be.false;
+    expect(el.open).to.be.true;
   });
 
   it("renders slotted content", async () => {
