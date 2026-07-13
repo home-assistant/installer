@@ -72,6 +72,10 @@ jobs:
           APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
         run: |
           DMG=$(find target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name "*.dmg" | head -1)
+          if [[ -z "$DMG" ]]; then
+            echo "::error::No DMG found in target/universal-apple-darwin/release/bundle/dmg"
+            exit 1
+          fi
           echo "Notarizing $DMG"
           xcrun notarytool submit "$DMG" \
             --key "$APPLE_API_KEY_PATH" \
