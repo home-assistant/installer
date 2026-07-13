@@ -9,6 +9,7 @@
   --ha-error-color: #db4437;
   --ha-secondary-text-color: #727272;
   --ha-background-color: #ffffff;
+  --ha-card-background: #ffffff;
   --ha-text-color: #212121;
 
   /* Map Web Awesome color tokens onto our theme colors. wa-button reads these
@@ -30,6 +31,14 @@
 
   /* Plain/neutral buttons (Back, Cancel) */
   --wa-color-neutral-on-quiet: var(--ha-secondary-text-color);
+
+  /* wa-dialog surface/text/backdrop. Web Awesome's own dark tokens are gated
+   * on a .wa-dark class we don't set, so map these to our theme vars (which
+   * flip via prefers-color-scheme below) to keep dialogs correct in dark mode. */
+  --wa-color-surface-raised: var(--ha-card-background);
+  --wa-color-text-normal: var(--ha-text-color);
+  --wa-color-overlay-modal: rgba(0, 0, 0, 0.5);
+  --wa-panel-border-radius: 16px;
 
   /* Typography */
   font-family:
@@ -74,6 +83,7 @@ a:hover {
 @media (prefers-color-scheme: dark) {
   :root {
     --ha-background-color: #1c1c1c;
+    --ha-card-background: #1e1e1e;
     --ha-text-color: #e1e1e1;
     --ha-secondary-text-color: #9e9e9e;
   }

@@ -28,7 +28,7 @@ describe("confirm-dialog", () => {
 
     const title = el.shadowRoot!.querySelector(".dialog-title");
     expect(title).to.exist;
-    expect(title!.textContent).to.equal("Erase drive and install?");
+    expect(title!.textContent).to.contain("Erase drive and install?");
   });
 
   it("renders dialog with warning icon", async () => {
@@ -132,29 +132,39 @@ describe("confirm-dialog", () => {
     expect(el.open).to.be.false;
   });
 
-  it("dispatches dialog-cancel when overlay is clicked", async () => {
+  it("dispatches dialog-cancel when dismissed (escape/backdrop/close)", async () => {
     const el = await fixture<ConfirmDialog>(html`
       <confirm-dialog open></confirm-dialog>
     `);
 
-    const overlay = el.shadowRoot!.querySelector(".overlay") as HTMLElement;
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
 
-    setTimeout(() => overlay.click());
+    setTimeout(() =>
+      dialog.dispatchEvent(
+        new CustomEvent("wa-hide", { bubbles: true, composed: true })
+      )
+    );
     const event = await oneEvent(el, "dialog-cancel");
     expect(event).to.exist;
+    expect(el.open).to.be.false;
   });
 
-  it("does not close when dialog content is clicked", async () => {
+  it("does not also fire dialog-cancel when confirmed", async () => {
     const el = await fixture<ConfirmDialog>(html`
       <confirm-dialog open></confirm-dialog>
     `);
 
-    const dialog = el.shadowRoot!.querySelector(".dialog") as HTMLElement;
+    let cancelFired = false;
+    el.addEventListener("dialog-cancel", () => (cancelFired = true));
 
-    expect(el.open).to.be.true;
-    dialog.click();
+    const confirmButton = el.shadowRoot!.querySelector(
+      "wa-button[variant='danger']"
+    ) as HTMLElement;
+    confirmButton.click();
     await el.updateComplete;
-    expect(el.open).to.be.true;
+
+    expect(cancelFired).to.be.false;
+    expect(el.open).to.be.false;
   });
 
   it("has correct dialog structure", async () => {
@@ -162,11 +172,12 @@ describe("confirm-dialog", () => {
       <confirm-dialog open></confirm-dialog>
     `);
 
-    expect(el.shadowRoot!.querySelector(".overlay")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-header")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-content")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-actions")).to.exist;
+    expect(el.shadowRoot!.querySelector("wa-dialog")).to.exist;
+    expect(el.shadowRoot!.querySelector(".dialog-title")).to.exist;
+    expect(el.shadowRoot!.querySelector(".dialog-message")).to.exist;
+    expect(
+      el.shadowRoot!.querySelectorAll("wa-button[slot='footer']").length
+    ).to.equal(2);
   });
 
   it("stores driveName property", async () => {

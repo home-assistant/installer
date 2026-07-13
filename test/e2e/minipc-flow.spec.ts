@@ -115,9 +115,10 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
     const infoDialog = page.locator("info-dialog");
     await expect(infoDialog).toBeVisible();
 
-    // Click secondary button (Go Back)
+    // Click secondary button (Go Back). Target by appearance so it doesn't
+    // also match wa-dialog's built-in (neutral, plain) close button.
     const secondaryButton = infoDialog.locator(
-      'wa-button[variant="neutral"], button:has-text("Go back")'
+      'wa-button[appearance="outlined"]'
     );
     await secondaryButton.click();
 
@@ -245,7 +246,9 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
     await x86Option.click();
 
     // Click Next button to advance to drive selection
-    const nextButton = page.locator("wizard-shell").locator(".footer-right wa-button");
+    const nextButton = page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button");
     await nextButton.click();
 
     // Should navigate to drive selection

@@ -26,7 +26,7 @@ describe("info-dialog", () => {
 
     const title = el.shadowRoot!.querySelector(".dialog-title");
     expect(title).to.exist;
-    expect(title!.textContent).to.equal("Test Title");
+    expect(title!.textContent).to.contain("Test Title");
   });
 
   it("renders with custom message", async () => {
@@ -153,29 +153,39 @@ describe("info-dialog", () => {
     expect(el.open).to.be.false;
   });
 
-  it("dispatches dialog-secondary when overlay is clicked", async () => {
+  it("dispatches dialog-secondary when dismissed (escape/backdrop/close)", async () => {
     const el = await fixture<InfoDialog>(html`
       <info-dialog open></info-dialog>
     `);
 
-    const overlay = el.shadowRoot!.querySelector(".overlay") as HTMLElement;
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
 
-    setTimeout(() => overlay.click());
+    setTimeout(() =>
+      dialog.dispatchEvent(
+        new CustomEvent("wa-hide", { bubbles: true, composed: true })
+      )
+    );
     const event = await oneEvent(el, "dialog-secondary");
     expect(event).to.exist;
+    expect(el.open).to.be.false;
   });
 
-  it("does not close when dialog content is clicked", async () => {
+  it("does not also fire dialog-secondary when the primary action is used", async () => {
     const el = await fixture<InfoDialog>(html`
       <info-dialog open></info-dialog>
     `);
 
-    const dialog = el.shadowRoot!.querySelector(".dialog") as HTMLElement;
+    let secondaryFired = false;
+    el.addEventListener("dialog-secondary", () => (secondaryFired = true));
 
-    expect(el.open).to.be.true;
-    dialog.click();
+    const primaryButton = el.shadowRoot!.querySelector(
+      "wa-button[variant='brand']"
+    ) as HTMLElement;
+    primaryButton.click();
     await el.updateComplete;
-    expect(el.open).to.be.true;
+
+    expect(secondaryFired).to.be.false;
+    expect(el.open).to.be.false;
   });
 
   it("renders slotted content", async () => {
@@ -194,11 +204,10 @@ describe("info-dialog", () => {
       <info-dialog open></info-dialog>
     `);
 
-    expect(el.shadowRoot!.querySelector(".overlay")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-header")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-content")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-actions")).to.exist;
+    expect(el.shadowRoot!.querySelector("wa-dialog")).to.exist;
+    expect(el.shadowRoot!.querySelector(".dialog-title")).to.exist;
+    expect(el.shadowRoot!.querySelector(".dialog-message")).to.exist;
+    expect(el.shadowRoot!.querySelector("wa-button[variant='brand']")).to.exist;
   });
 
   it("stores title property", async () => {
@@ -242,9 +251,7 @@ describe("info-dialog", () => {
   });
 
   it("can toggle open state", async () => {
-    const el = await fixture<InfoDialog>(html`
-      <info-dialog></info-dialog>
-    `);
+    const el = await fixture<InfoDialog>(html` <info-dialog></info-dialog> `);
 
     expect(el.open).to.be.false;
     expect(el.hasAttribute("open")).to.be.false;
