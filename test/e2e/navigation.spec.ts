@@ -10,7 +10,7 @@ test.describe("Navigation Flow", () => {
     const logo = page.locator("welcome-view").locator(".logo");
     await expect(logo.first()).toBeVisible();
 
-    const letsGoButton = page.locator("welcome-view").locator(".lets-go-button");
+    const letsGoButton = page.locator("welcome-view").locator("wa-button");
     await expect(letsGoButton).toBeVisible();
     await expect(letsGoButton).toContainText("Let's go");
   });
@@ -18,7 +18,7 @@ test.describe("Navigation Flow", () => {
   test("navigates to path selection when clicking Let's go", async ({
     page,
   }) => {
-    const letsGoButton = page.locator("welcome-view").locator(".lets-go-button");
+    const letsGoButton = page.locator("welcome-view").locator("wa-button");
     await letsGoButton.click();
 
     // Should now be on path selection view
@@ -31,7 +31,7 @@ test.describe("Navigation Flow", () => {
 
   test("shows all installation options on path selection", async ({ page }) => {
     // Navigate to path selection
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
 
     const pathSelectionView = page.locator("path-selection-view");
     await expect(pathSelectionView).toBeVisible();
@@ -58,18 +58,18 @@ test.describe("Navigation Flow", () => {
 
   test("navigates back to welcome from path selection", async ({ page }) => {
     // Navigate to path selection
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
 
     const pathSelectionView = page.locator("path-selection-view");
     await expect(pathSelectionView).toBeVisible();
 
     // Click back button
-    await pathSelectionView.locator(".back-button").click();
+    await pathSelectionView.locator("wa-button").click();
 
     // Should be back on welcome view
     const welcomeView = page.locator("welcome-view");
     await expect(welcomeView).toBeVisible();
-    await expect(welcomeView.locator(".lets-go-button")).toBeVisible();
+    await expect(welcomeView.locator("wa-button")).toBeVisible();
   });
 
   test("welcome view shows OHF logo", async ({ page }) => {
@@ -97,7 +97,7 @@ test.describe("Navigation Flow", () => {
 test.describe("Path Selection Options", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
@@ -132,7 +132,7 @@ test.describe("Path Selection Options", () => {
 test.describe("Wizard Flow", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
@@ -150,7 +150,7 @@ test.describe("Wizard Flow", () => {
     await expect(wizardShell.locator("step-indicator")).toBeVisible();
 
     // Should see cancel button
-    await expect(wizardShell.locator(".cancel-button")).toBeVisible();
+    await expect(wizardShell.locator(".footer-left wa-button")).toBeVisible();
   });
 
   test("wizard shows correct flow title", async ({ page }) => {
@@ -171,7 +171,7 @@ test.describe("Wizard Flow", () => {
     await expect(wizardShell).toBeVisible();
 
     // Click cancel
-    await wizardShell.locator(".cancel-button").click();
+    await wizardShell.locator(".footer-left wa-button").click();
 
     // Should be back on welcome screen
     await expect(page.locator("welcome-view")).toBeVisible();
@@ -194,7 +194,7 @@ test.describe("Wizard Flow", () => {
     await deviceCard.click();
 
     // Click next
-    await wizardShell.locator(".footer-button.primary").click();
+    await wizardShell.locator(".footer-right wa-button").click();
 
     // Should show "drive" step
     await expect(wizardShell).toContainText("drive");
@@ -213,12 +213,12 @@ test.describe("Wizard Flow", () => {
     await deviceCard.click();
 
     // Go to second step
-    await wizardShell.locator(".footer-button.primary").click();
+    await wizardShell.locator(".footer-right wa-button").click();
     await expect(wizardShell).toContainText("drive");
 
     // Back button should now be enabled
-    const backButton = wizardShell.locator(".back-button");
-    await expect(backButton).toBeEnabled();
+    const backButton = wizardShell.locator(".header wa-button");
+    await expect(backButton).toHaveJSProperty("disabled", false);
 
     // Click back
     await backButton.click();
@@ -233,9 +233,9 @@ test.describe("Wizard Flow", () => {
       .click();
 
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".back-button");
+    const backButton = wizardShell.locator(".header wa-button");
 
-    await expect(backButton).toBeDisabled();
+    await expect(backButton).toHaveJSProperty("disabled", true);
   });
 });
 
@@ -243,7 +243,7 @@ test.describe("SBC Device Selection", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to SBC flow
     await page.goto("/?mock=true");
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
       .locator('option-card[title="Raspberry Pi & other boards"]')
@@ -265,8 +265,8 @@ test.describe("SBC Device Selection", () => {
   test("next button is disabled when no device selected", async ({ page }) => {
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
-    await expect(nextButton).toBeDisabled();
+      .locator(".footer-right wa-button");
+    await expect(nextButton).toHaveJSProperty("disabled", true);
   });
 
   test("can select a device", async ({ page }) => {
@@ -280,8 +280,8 @@ test.describe("SBC Device Selection", () => {
     // Next button should now be enabled
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
-    await expect(nextButton).toBeEnabled();
+      .locator(".footer-right wa-button");
+    await expect(nextButton).toHaveJSProperty("disabled", false);
   });
 
   test("shows multiple devices in grid", async ({ page }) => {
@@ -300,7 +300,7 @@ test.describe("SBC Drive Selection", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to drive selection step
     await page.goto("/?mock=true");
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
       .locator('option-card[title="Raspberry Pi & other boards"]')
@@ -311,7 +311,7 @@ test.describe("SBC Drive Selection", () => {
     const deviceCard = page.locator("device-card").first();
     await expect(deviceCard).toBeVisible({ timeout: 5000 });
     await deviceCard.click();
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
     // Should now be on drive selection
     await expect(page.locator("drive-selection-view")).toBeVisible();
@@ -336,7 +336,7 @@ test.describe("SBC Drive Selection", () => {
   });
 
   test("shows refresh button", async ({ page }) => {
-    const refreshButton = page.locator("drive-selection-view .refresh-button");
+    const refreshButton = page.locator("drive-selection-view wa-button");
     await expect(refreshButton).toBeVisible();
     await expect(refreshButton).toContainText("Refresh");
   });
@@ -344,8 +344,8 @@ test.describe("SBC Drive Selection", () => {
   test("next button is disabled when no drive selected", async ({ page }) => {
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
-    await expect(nextButton).toBeDisabled();
+      .locator(".footer-right wa-button");
+    await expect(nextButton).toHaveJSProperty("disabled", true);
   });
 
   test("shows available drives", async ({ page }) => {
@@ -369,8 +369,8 @@ test.describe("SBC Drive Selection", () => {
     // Next button should now be enabled
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
-    await expect(nextButton).toBeEnabled();
+      .locator(".footer-right wa-button");
+    await expect(nextButton).toHaveJSProperty("disabled", false);
   });
 
   test("shows drive size in card", async ({ page }) => {
@@ -384,10 +384,10 @@ test.describe("SBC Drive Selection", () => {
 
   test("can navigate back to device selection", async ({ page }) => {
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".back-button");
+    const backButton = wizardShell.locator(".header wa-button");
 
     // Back button should be enabled on drive step
-    await expect(backButton).toBeEnabled();
+    await expect(backButton).toHaveJSProperty("disabled", false);
 
     // Click back
     await backButton.click();
@@ -401,7 +401,7 @@ test.describe("SBC Confirmation", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to confirmation step
     await page.goto("/?mock=true");
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
       .locator('option-card[title="Raspberry Pi & other boards"]')
@@ -412,14 +412,14 @@ test.describe("SBC Confirmation", () => {
     const deviceCard = page.locator("device-card").first();
     await expect(deviceCard).toBeVisible({ timeout: 5000 });
     await deviceCard.click();
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
     // Select a drive and proceed
     await expect(page.locator("drive-selection-view")).toBeVisible();
     const driveCard = page.locator("drive-card").first();
     await expect(driveCard).toBeVisible({ timeout: 5000 });
     await driveCard.click();
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
     // Should now be on confirmation
     await expect(page.locator("confirmation-view")).toBeVisible();
@@ -458,7 +458,7 @@ test.describe("SBC Confirmation", () => {
   test("shows Install button instead of Next", async ({ page }) => {
     const installButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
     await expect(installButton).toBeVisible();
     await expect(installButton).toContainText("Install");
   });
@@ -466,7 +466,7 @@ test.describe("SBC Confirmation", () => {
   test("clicking Install shows confirmation dialog", async ({ page }) => {
     const installButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
     await installButton.click();
 
     // Should show confirmation dialog
@@ -478,13 +478,13 @@ test.describe("SBC Confirmation", () => {
 
   test("confirmation dialog can be cancelled", async ({ page }) => {
     // Click Install to open dialog
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
     const dialog = page.locator("confirm-dialog[open]");
     await expect(dialog).toBeVisible();
 
     // Click Cancel
-    await dialog.locator(".dialog-button.secondary").click();
+    await dialog.locator("wa-button[appearance='outlined']").click();
 
     // Dialog should close
     await expect(page.locator("confirm-dialog[open]")).not.toBeVisible();
@@ -495,13 +495,13 @@ test.describe("SBC Confirmation", () => {
 
   test("confirmation dialog can be confirmed", async ({ page }) => {
     // Click Install to open dialog
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
     const dialog = page.locator("confirm-dialog[open]");
     await expect(dialog).toBeVisible();
 
     // Click Erase and Install
-    await dialog.locator(".dialog-button.danger").click();
+    await dialog.locator("wa-button[variant='danger']").click();
 
     // Dialog should close and should advance to flash step
     await expect(page.locator("confirm-dialog[open]")).not.toBeVisible();
@@ -511,10 +511,10 @@ test.describe("SBC Confirmation", () => {
 
   test("can navigate back to drive selection", async ({ page }) => {
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".back-button");
+    const backButton = wizardShell.locator(".header wa-button");
 
     // Back button should be enabled
-    await expect(backButton).toBeEnabled();
+    await expect(backButton).toHaveJSProperty("disabled", false);
 
     // Click back
     await backButton.click();
@@ -528,7 +528,7 @@ test.describe("SBC Flashing", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to flash step
     await page.goto("/?mock=true");
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
       .locator('option-card[title="Raspberry Pi & other boards"]')
@@ -539,25 +539,25 @@ test.describe("SBC Flashing", () => {
     const deviceCard = page.locator("device-card").first();
     await expect(deviceCard).toBeVisible({ timeout: 5000 });
     await deviceCard.click();
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
     // Select a drive and proceed
     await expect(page.locator("drive-selection-view")).toBeVisible();
     const driveCard = page.locator("drive-card").first();
     await expect(driveCard).toBeVisible({ timeout: 5000 });
     await driveCard.click();
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
     // Should now be on confirmation
     await expect(page.locator("confirmation-view")).toBeVisible();
 
     // Click Install to show dialog
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
     const dialog = page.locator("confirm-dialog[open]");
     await expect(dialog).toBeVisible();
 
     // Confirm to start flashing
-    await dialog.locator(".dialog-button.danger").click();
+    await dialog.locator("wa-button[variant='danger']").click();
     await expect(page.locator("progress-view")).toBeVisible();
   });
 
@@ -595,7 +595,7 @@ test.describe("SBC Flashing", () => {
 
   test("back button is hidden during flashing", async ({ page }) => {
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".back-button");
+    const backButton = wizardShell.locator(".header wa-button");
     // Back button should be hidden (visibility: hidden)
     await expect(backButton).toHaveCSS("visibility", "hidden");
   });
@@ -632,7 +632,7 @@ test.describe("SBC Success", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to success step
     await page.goto("/?mock=true");
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
       .locator('option-card[title="Raspberry Pi & other boards"]')
@@ -643,21 +643,21 @@ test.describe("SBC Success", () => {
     const deviceCard = page.locator("device-card").first();
     await expect(deviceCard).toBeVisible({ timeout: 5000 });
     await deviceCard.click();
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
     // Select a drive and proceed
     await expect(page.locator("drive-selection-view")).toBeVisible();
     const driveCard = page.locator("drive-card").first();
     await expect(driveCard).toBeVisible({ timeout: 5000 });
     await driveCard.click();
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
     // Confirm installation
     await expect(page.locator("confirmation-view")).toBeVisible();
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
     const dialog = page.locator("confirm-dialog[open]");
     await expect(dialog).toBeVisible();
-    await dialog.locator(".dialog-button.danger").click();
+    await dialog.locator("wa-button[variant='danger']").click();
 
     // Wait for flashing to complete (mock takes ~16 seconds total)
     await expect(page.locator("progress-view")).toBeVisible();
@@ -722,20 +722,20 @@ test.describe("SBC Success", () => {
     const footer = wizardShell.locator(".footer");
     await expect(footer).toBeVisible();
 
-    const doneButton = wizardShell.locator(".footer-button.primary");
+    const doneButton = wizardShell.locator(".footer-right wa-button");
     await expect(doneButton).toBeVisible();
     await expect(doneButton).toContainText("Done");
   });
 
   test("back button is hidden on success step", async ({ page }) => {
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".back-button");
+    const backButton = wizardShell.locator(".header wa-button");
     await expect(backButton).toHaveCSS("visibility", "hidden");
   });
 
   test("clicking Done returns to welcome screen", async ({ page }) => {
     const wizardShell = page.locator("wizard-shell");
-    const doneButton = wizardShell.locator(".footer-button.primary");
+    const doneButton = wizardShell.locator(".footer-right wa-button");
     await doneButton.click();
 
     // Should be back on welcome screen

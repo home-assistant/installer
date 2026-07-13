@@ -145,7 +145,7 @@ export class WelcomeView extends LitElement {
       <wa-button
         variant="brand"
         appearance="accent"
-        size="large"
+        size="l"
         @click=${this._onLetsGo}
       >
         Let's go

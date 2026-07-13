@@ -241,7 +241,10 @@ export class DriveSelectionView extends LitElement {
   }
 
   private _renderContent() {
-    if (this._loading) {
+    // Full-page spinner only on the initial scan (nothing to show yet).
+    // A refresh with drives already listed keeps the list visible and shows
+    // the loading state on the refresh button instead.
+    if (this._loading && this._drives.length === 0) {
       return html`
         <div class="loading">
           <div class="loading-spinner"></div>
@@ -302,6 +305,7 @@ export class DriveSelectionView extends LitElement {
           variant="brand"
           appearance="outlined"
           @click=${this._loadDrives}
+          ?loading=${this._loading}
         >
           <span slot="start">↻</span>
           Refresh

@@ -4,7 +4,7 @@ test.describe("UTM Installation Flow", () => {
   test.beforeEach(async ({ page }) => {
     // Use mock mode to simulate UTM environment
     await page.goto("/?mock=true");
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
 
     // Select Virtual Machine option (only visible on macOS)
@@ -103,7 +103,7 @@ test.describe("UTM Installation Flow", () => {
     await page.waitForTimeout(1000);
 
     // If not installed, should show download button
-    const downloadButton = checkView.locator(".download-button");
+    const downloadButton = checkView.locator("wa-button[appearance='accent']");
     const downloadButtonCount = await downloadButton.count();
 
     if (downloadButtonCount > 0) {
@@ -117,7 +117,7 @@ test.describe("UTM Installation Flow", () => {
     // Wait for status check
     await page.waitForTimeout(1000);
 
-    const refreshButton = checkView.locator(".refresh-button");
+    const refreshButton = checkView.locator("wa-button[appearance='outlined']");
     const refreshButtonCount = await refreshButton.count();
 
     // Refresh button appears in both installed and not-installed states
@@ -134,7 +134,7 @@ test.describe("UTM Installation Flow", () => {
 
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
 
     // In mock mode, UTM should be detected as installed
     // Button state depends on whether UTM is installed
@@ -153,7 +153,7 @@ test.describe("UTM Installation Flow", () => {
 
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
 
     // If button is enabled, we can proceed
     const isEnabled = await nextButton.isEnabled();
@@ -163,7 +163,7 @@ test.describe("UTM Installation Flow", () => {
     } else {
       // If disabled, UTM is not installed in mock mode
       // This is expected behavior
-      await expect(nextButton).toBeDisabled();
+      await expect(nextButton).toHaveJSProperty("disabled", true);
     }
   });
 
@@ -245,8 +245,8 @@ test.describe("UTM Installation Flow", () => {
 
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
-    await expect(nextButton).toBeEnabled();
+      .locator(".footer-right wa-button");
+    await expect(nextButton).toHaveJSProperty("disabled", false);
   });
 
   test("step 2: can navigate to step 3", async ({ page }) => {
@@ -254,7 +254,7 @@ test.describe("UTM Installation Flow", () => {
 
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
     await nextButton.click();
 
     // Should advance to confirmation
@@ -264,8 +264,8 @@ test.describe("UTM Installation Flow", () => {
   test("step 2: can navigate back to step 1", async ({ page }) => {
     await navigateToUtmStep2(page);
 
-    const backButton = page.locator("wizard-shell").locator(".back-button");
-    await expect(backButton).toBeEnabled();
+    const backButton = page.locator("wizard-shell").locator(".header wa-button");
+    await expect(backButton).toHaveJSProperty("disabled", false);
     await backButton.click();
 
     // Should go back to UTM check view
@@ -294,7 +294,7 @@ test.describe("UTM Installation Flow", () => {
 
     const installButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
     await expect(installButton).toBeVisible();
     await expect(installButton).toContainText("Install");
   });
@@ -307,7 +307,7 @@ test.describe("UTM Installation Flow", () => {
     // Click Install button - VM flow has no confirmation dialog
     const installButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
     await installButton.click();
 
     // Should proceed directly to progress view (no dialog for VM flow)
@@ -317,8 +317,8 @@ test.describe("UTM Installation Flow", () => {
   test("step 3: can navigate back to step 2", async ({ page }) => {
     await navigateToUtmStep3(page);
 
-    const backButton = page.locator("wizard-shell").locator(".back-button");
-    await expect(backButton).toBeEnabled();
+    const backButton = page.locator("wizard-shell").locator(".header wa-button");
+    await expect(backButton).toHaveJSProperty("disabled", false);
     await backButton.click();
 
     // Should go back to configure view
@@ -369,7 +369,7 @@ test.describe("UTM Installation Flow", () => {
     await navigateToUtmStep4(page);
 
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".back-button");
+    const backButton = wizardShell.locator(".header wa-button");
     await expect(backButton).toHaveCSS("visibility", "hidden");
   });
 
@@ -421,7 +421,7 @@ test.describe("UTM Installation Flow", () => {
     await navigateToUtmStep5(page);
 
     const wizardShell = page.locator("wizard-shell");
-    const doneButton = wizardShell.locator(".footer-button.primary");
+    const doneButton = wizardShell.locator(".footer-right wa-button");
     await expect(doneButton).toBeVisible();
     await expect(doneButton).toContainText("Done");
   });
@@ -430,7 +430,7 @@ test.describe("UTM Installation Flow", () => {
     await navigateToUtmStep5(page);
 
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".back-button");
+    const backButton = wizardShell.locator(".header wa-button");
     await expect(backButton).toHaveCSS("visibility", "hidden");
   });
 
@@ -438,7 +438,7 @@ test.describe("UTM Installation Flow", () => {
     await navigateToUtmStep5(page);
 
     const wizardShell = page.locator("wizard-shell");
-    const doneButton = wizardShell.locator(".footer-button.primary");
+    const doneButton = wizardShell.locator(".footer-right wa-button");
     await doneButton.click();
 
     // Should be back on welcome screen
@@ -451,11 +451,11 @@ test.describe("UTM Installation Flow", () => {
     const wizardShell = page.locator("wizard-shell");
 
     // Test cancel on step 1
-    await wizardShell.locator(".cancel-button").click();
+    await wizardShell.locator(".footer-left wa-button").click();
     await expect(page.locator("welcome-view")).toBeVisible();
 
     // Restart flow
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     const vmOption = page.locator('option-card[title="Virtual machine"]');
     const vmOptionCount = await vmOption.count();
     if (vmOptionCount === 0) {
@@ -465,7 +465,7 @@ test.describe("UTM Installation Flow", () => {
 
     // Test cancel on step 2
     await navigateToUtmStep2(page);
-    await wizardShell.locator(".cancel-button").click();
+    await wizardShell.locator(".footer-left wa-button").click();
     await expect(page.locator("welcome-view")).toBeVisible();
   });
 
@@ -477,7 +477,7 @@ test.describe("UTM Installation Flow", () => {
     // Verify we can proceed (UTM installed in mock mode)
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
 
     const isEnabled = await nextButton.isEnabled();
     if (!isEnabled) {
@@ -488,11 +488,11 @@ test.describe("UTM Installation Flow", () => {
 
     // Step 2: Configure
     await expect(page.locator("utm-configure-view")).toBeVisible();
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
     // Step 3: Confirm - click Install (no confirmation dialog for VM flow)
     await expect(page.locator("utm-confirm-view")).toBeVisible();
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
     // Step 4: Progress (proceeds directly, no dialog)
     await expect(page.locator("utm-progress-view")).toBeVisible();
@@ -503,7 +503,7 @@ test.describe("UTM Installation Flow", () => {
     });
 
     // Return to welcome
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
     await expect(page.locator("welcome-view")).toBeVisible();
   });
 });
@@ -515,7 +515,7 @@ async function navigateToUtmStep2(page: any) {
 
   const nextButton = page
     .locator("wizard-shell")
-    .locator(".footer-button.primary");
+    .locator(".footer-right wa-button");
 
   // Check if we can proceed (UTM must be installed)
   const isEnabled = await nextButton.isEnabled();
@@ -529,14 +529,14 @@ async function navigateToUtmStep2(page: any) {
 
 async function navigateToUtmStep3(page: any) {
   await navigateToUtmStep2(page);
-  await page.locator("wizard-shell").locator(".footer-button.primary").click();
+  await page.locator("wizard-shell").locator(".footer-right wa-button").click();
   await expect(page.locator("utm-confirm-view")).toBeVisible();
 }
 
 async function navigateToUtmStep4(page: any) {
   await navigateToUtmStep3(page);
   // No confirmation dialog for VM flow - proceeds directly to install
-  await page.locator("wizard-shell").locator(".footer-button.primary").click();
+  await page.locator("wizard-shell").locator(".footer-right wa-button").click();
   await expect(page.locator("utm-progress-view")).toBeVisible();
 }
 
