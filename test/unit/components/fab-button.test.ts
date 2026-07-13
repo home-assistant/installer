@@ -24,22 +24,25 @@ describe("fab-button", () => {
     expect(icon!.path).to.equal(TEST_PATH);
   });
 
-  it("sets aria-label from label", async () => {
+  it("gives the button an accessible name from label", async () => {
     const el = await fixture<FabButton>(
       html`<fab-button .path=${TEST_PATH} label="Open Toolbox"></fab-button>`
     );
 
-    const button = el.shadowRoot!.querySelector("wa-button")!;
-    expect(button.getAttribute("aria-label")).to.equal("Open Toolbox");
+    // The label lives as visually-hidden text inside the button so it becomes
+    // the control's accessible name (a host aria-label isn't forwarded).
+    const label = el.shadowRoot!.querySelector("wa-button .visually-hidden");
+    expect(label).to.exist;
+    expect(label!.textContent!.trim()).to.equal("Open Toolbox");
   });
 
-  it("omits aria-label when label is empty", async () => {
+  it("renders no label text when label is empty", async () => {
     const el = await fixture<FabButton>(
       html`<fab-button .path=${TEST_PATH}></fab-button>`
     );
 
-    const button = el.shadowRoot!.querySelector("wa-button")!;
-    expect(button.hasAttribute("aria-label")).to.be.false;
+    expect(el.shadowRoot!.querySelector("wa-button .visually-hidden")).to.not
+      .exist;
   });
 
   it("renders a tooltip with the label", async () => {
