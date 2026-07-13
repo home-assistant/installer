@@ -1,6 +1,7 @@
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { openExternalLink } from "../utils/external-url.js";
+import "@home-assistant/webawesome/dist/components/button/button.js";
 
 @customElement("welcome-view")
 export class WelcomeView extends LitElement {
@@ -75,33 +76,6 @@ export class WelcomeView extends LitElement {
       margin-bottom: 0;
     }
 
-    .lets-go-button {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 1.25rem 3rem;
-      font-size: 1.375rem;
-      font-weight: 500;
-      color: white;
-      background-color: var(--ha-primary-color, #03a9f4);
-      border: none;
-      border-radius: 12px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-    }
-
-    .lets-go-button:hover {
-      background-color: var(--ha-primary-color-dark, #0288d1);
-    }
-
-    .lets-go-button:active {
-      transform: scale(0.98);
-    }
-
-    .arrow {
-      font-size: 1.5rem;
-    }
-
     .learn-more {
       margin-top: 1rem;
       font-size: 0.875rem;
@@ -168,9 +142,15 @@ export class WelcomeView extends LitElement {
         </p>
       </div>
 
-      <button class="lets-go-button" @click=${this._onLetsGo}>
-        Let's go <span class="arrow">→</span>
-      </button>
+      <wa-button
+        variant="brand"
+        appearance="accent"
+        size="large"
+        @click=${this._onLetsGo}
+      >
+        Let's go
+        <span slot="end">→</span>
+      </wa-button>
 
       <a
         class="learn-more"

@@ -2,6 +2,7 @@ import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { listBlockDevices, type BlockDevice } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
+import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/drive-card.js";
 
 @customElement("drive-selection-view")
@@ -79,33 +80,6 @@ export class DriveSelectionView extends LitElement {
       margin: 0;
     }
 
-    .refresh-button {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 0.75rem;
-      font-size: 0.875rem;
-      color: var(--ha-primary-color, #03a9f4);
-      background: none;
-      border: 1px solid var(--ha-primary-color, #03a9f4);
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-    }
-
-    .refresh-button:hover {
-      background-color: rgba(3, 169, 244, 0.1);
-    }
-
-    .refresh-button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .refresh-icon {
-      font-size: 1rem;
-    }
-
     .drives-list {
       display: flex;
       flex-direction: column;
@@ -155,21 +129,6 @@ export class DriveSelectionView extends LitElement {
     .error-message {
       color: var(--ha-error-color, #db4437);
       margin-bottom: 1rem;
-    }
-
-    .retry-button {
-      padding: 0.5rem 1rem;
-      font-size: 0.875rem;
-      color: var(--ha-primary-color, #03a9f4);
-      background: none;
-      border: 1px solid var(--ha-primary-color, #03a9f4);
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-    }
-
-    .retry-button:hover {
-      background-color: rgba(3, 169, 244, 0.1);
     }
 
     .empty-state {
@@ -296,9 +255,13 @@ export class DriveSelectionView extends LitElement {
         <div class="error">
           <span class="error-icon">⚠️</span>
           <p class="error-message">${this._error}</p>
-          <button class="retry-button" @click=${this._loadDrives}>
+          <wa-button
+            variant="brand"
+            appearance="outlined"
+            @click=${this._loadDrives}
+          >
             Try again
-          </button>
+          </wa-button>
         </div>
       `;
     }
@@ -319,14 +282,16 @@ export class DriveSelectionView extends LitElement {
           </span>
           <p class="empty-title">No drives found</p>
           <p class="empty-text">${emptyText}</p>
-          <button
-            class="refresh-button"
+          <wa-button
+            variant="brand"
+            appearance="outlined"
             @click=${this._loadDrives}
+            ?loading=${this._loading}
             style="margin-top: 1rem;"
           >
-            <span class="refresh-icon">↻</span>
+            <span slot="start">↻</span>
             Refresh
-          </button>
+          </wa-button>
         </div>
       `;
     }
@@ -334,14 +299,15 @@ export class DriveSelectionView extends LitElement {
     return html`
       <div class="drives-header">
         <p class="drives-title">Available drives</p>
-        <button
-          class="refresh-button"
+        <wa-button
+          variant="brand"
+          appearance="outlined"
           @click=${this._loadDrives}
-          ?disabled=${this._loading}
+          ?loading=${this._loading}
         >
-          <span class="refresh-icon">↻</span>
+          <span slot="start">↻</span>
           Refresh
-        </button>
+        </wa-button>
       </div>
 
       <div class="drives-list">
