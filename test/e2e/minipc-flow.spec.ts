@@ -127,6 +127,26 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
     await expect(setupView).toBeVisible();
   });
 
+  test("USB boot dialog can be dismissed with Escape", async ({ page }) => {
+    await page.locator('option-card[title="Generic (mini) PC"]').click();
+
+    const setupView = page.locator("minipc-setup-method-view");
+    const usbBootOption = setupView
+      .locator(".option-card")
+      .filter({ hasText: "I need to boot from USB" });
+    await usbBootOption.click();
+
+    const infoDialog = page.locator("info-dialog");
+    await expect(infoDialog).toBeVisible();
+
+    // Press Escape — exercises the real wa-dialog dismissal path
+    await page.keyboard.press("Escape");
+
+    // Dialog should close, setup method view should still be visible
+    await expect(infoDialog).not.toBeVisible();
+    await expect(setupView).toBeVisible();
+  });
+
   test("clicking connect drive navigates to architecture selection", async ({
     page,
   }) => {

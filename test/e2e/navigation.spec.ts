@@ -177,7 +177,9 @@ test.describe("Wizard Flow", () => {
     await expect(page.locator("welcome-view")).toBeVisible();
   });
 
-  test("wizard next button advances steps after selection", async ({ page }) => {
+  test("wizard next button advances steps after selection", async ({
+    page,
+  }) => {
     await page
       .locator('option-card[title="Raspberry Pi & other boards"]')
       .click();
@@ -311,7 +313,10 @@ test.describe("SBC Drive Selection", () => {
     const deviceCard = page.locator("device-card").first();
     await expect(deviceCard).toBeVisible({ timeout: 5000 });
     await deviceCard.click();
-    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
 
     // Should now be on drive selection
     await expect(page.locator("drive-selection-view")).toBeVisible();
@@ -412,14 +417,20 @@ test.describe("SBC Confirmation", () => {
     const deviceCard = page.locator("device-card").first();
     await expect(deviceCard).toBeVisible({ timeout: 5000 });
     await deviceCard.click();
-    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
 
     // Select a drive and proceed
     await expect(page.locator("drive-selection-view")).toBeVisible();
     const driveCard = page.locator("drive-card").first();
     await expect(driveCard).toBeVisible({ timeout: 5000 });
     await driveCard.click();
-    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
 
     // Should now be on confirmation
     await expect(page.locator("confirmation-view")).toBeVisible();
@@ -451,7 +462,9 @@ test.describe("SBC Confirmation", () => {
   test("shows HAOS version", async ({ page }) => {
     const confirmationView = page.locator("confirmation-view");
     // Should show Home Assistant Operating System version
-    await expect(confirmationView).toContainText("Home Assistant Operating System");
+    await expect(confirmationView).toContainText(
+      "Home Assistant Operating System"
+    );
     await expect(confirmationView).toContainText("Version");
   });
 
@@ -478,7 +491,10 @@ test.describe("SBC Confirmation", () => {
 
   test("confirmation dialog can be cancelled", async ({ page }) => {
     // Click Install to open dialog
-    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
 
     const dialog = page.locator("confirm-dialog[open]");
     await expect(dialog).toBeVisible();
@@ -493,9 +509,30 @@ test.describe("SBC Confirmation", () => {
     await expect(page.locator("confirmation-view")).toBeVisible();
   });
 
+  test("confirmation dialog can be dismissed with Escape", async ({ page }) => {
+    // Click Install to open dialog
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
+
+    const dialog = page.locator("confirm-dialog[open]");
+    await expect(dialog).toBeVisible();
+
+    // Press Escape — exercises the real wa-dialog dismissal path
+    await page.keyboard.press("Escape");
+
+    // Dialog should close and stay on the confirmation view (dismiss = cancel)
+    await expect(page.locator("confirm-dialog[open]")).not.toBeVisible();
+    await expect(page.locator("confirmation-view")).toBeVisible();
+  });
+
   test("confirmation dialog can be confirmed", async ({ page }) => {
     // Click Install to open dialog
-    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
 
     const dialog = page.locator("confirm-dialog[open]");
     await expect(dialog).toBeVisible();
@@ -539,20 +576,29 @@ test.describe("SBC Flashing", () => {
     const deviceCard = page.locator("device-card").first();
     await expect(deviceCard).toBeVisible({ timeout: 5000 });
     await deviceCard.click();
-    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
 
     // Select a drive and proceed
     await expect(page.locator("drive-selection-view")).toBeVisible();
     const driveCard = page.locator("drive-card").first();
     await expect(driveCard).toBeVisible({ timeout: 5000 });
     await driveCard.click();
-    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
 
     // Should now be on confirmation
     await expect(page.locator("confirmation-view")).toBeVisible();
 
     // Click Install to show dialog
-    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
     const dialog = page.locator("confirm-dialog[open]");
     await expect(dialog).toBeVisible();
 
@@ -643,18 +689,27 @@ test.describe("SBC Success", () => {
     const deviceCard = page.locator("device-card").first();
     await expect(deviceCard).toBeVisible({ timeout: 5000 });
     await deviceCard.click();
-    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
 
     // Select a drive and proceed
     await expect(page.locator("drive-selection-view")).toBeVisible();
     const driveCard = page.locator("drive-card").first();
     await expect(driveCard).toBeVisible({ timeout: 5000 });
     await driveCard.click();
-    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
 
     // Confirm installation
     await expect(page.locator("confirmation-view")).toBeVisible();
-    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
     const dialog = page.locator("confirm-dialog[open]");
     await expect(dialog).toBeVisible();
     await dialog.locator("wa-button[variant='danger']").click();
@@ -675,7 +730,9 @@ test.describe("SBC Success", () => {
   });
 
   test("shows success heading", async ({ page }) => {
-    await expect(page.locator("success-view h2")).toContainText("You're all set");
+    await expect(page.locator("success-view h2")).toContainText(
+      "You're all set"
+    );
   });
 
   test("shows installation complete message with device name", async ({
