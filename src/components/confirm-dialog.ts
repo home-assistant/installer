@@ -67,9 +67,17 @@ export class ConfirmDialog extends LitElement {
   @property({ type: String })
   driveName = "";
 
+  // Set when an action button closes the dialog, so the subsequent
+  // wa-after-hide doesn't also emit a dismiss (dialog-cancel) event.
+  private _closingViaAction = false;
+
   render() {
     return html`
-      <wa-dialog .open=${this.open} light-dismiss @wa-hide=${this._onWaHide}>
+      <wa-dialog
+        .open=${this.open}
+        light-dismiss
+        @wa-after-hide=${this._onAfterHide}
+      >
         <span slot="label" class="dialog-title">
           <span class="warning-icon">⚠️</span> Erase drive and install?
         </span>
@@ -101,10 +109,12 @@ export class ConfirmDialog extends LitElement {
     `;
   }
 
-  // Escape / backdrop / header close button. Guard against the wa-hide that
-  // fires when an action button already closed the dialog (open is false by then).
-  private _onWaHide() {
-    if (!this.open) {
+  // Fires after the dialog has fully closed (Escape / backdrop / header close
+  // button). Syncing here rather than on wa-hide avoids feeding open=false back
+  // into wa-dialog mid-animation, which would trigger a second close request.
+  private _onAfterHide() {
+    if (this._closingViaAction) {
+      this._closingViaAction = false;
       return;
     }
     this.open = false;
@@ -112,11 +122,13 @@ export class ConfirmDialog extends LitElement {
   }
 
   private _onCancel() {
+    this._closingViaAction = true;
     this.open = false;
     this._dispatch("dialog-cancel");
   }
 
   private _onConfirm() {
+    this._closingViaAction = true;
     this.open = false;
     this._dispatch("dialog-confirm");
   }

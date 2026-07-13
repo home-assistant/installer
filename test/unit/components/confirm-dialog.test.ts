@@ -141,7 +141,7 @@ describe("confirm-dialog", () => {
 
     setTimeout(() =>
       dialog.dispatchEvent(
-        new CustomEvent("wa-hide", { bubbles: true, composed: true })
+        new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
       )
     );
     const event = await oneEvent(el, "dialog-cancel");
@@ -161,6 +161,13 @@ describe("confirm-dialog", () => {
       "wa-button[variant='danger']"
     ) as HTMLElement;
     confirmButton.click();
+    await el.updateComplete;
+
+    // The programmatic close emits wa-after-hide; it must not turn into a
+    // second (dismiss) dialog-cancel.
+    el.shadowRoot!.querySelector("wa-dialog")!.dispatchEvent(
+      new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+    );
     await el.updateComplete;
 
     expect(cancelFired).to.be.false;

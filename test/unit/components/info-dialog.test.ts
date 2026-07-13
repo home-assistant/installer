@@ -162,7 +162,7 @@ describe("info-dialog", () => {
 
     setTimeout(() =>
       dialog.dispatchEvent(
-        new CustomEvent("wa-hide", { bubbles: true, composed: true })
+        new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
       )
     );
     const event = await oneEvent(el, "dialog-secondary");
@@ -182,6 +182,13 @@ describe("info-dialog", () => {
       "wa-button[variant='brand']"
     ) as HTMLElement;
     primaryButton.click();
+    await el.updateComplete;
+
+    // The programmatic close emits wa-after-hide; it must not turn into a
+    // second (dismiss) dialog-secondary.
+    el.shadowRoot!.querySelector("wa-dialog")!.dispatchEvent(
+      new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+    );
     await el.updateComplete;
 
     expect(secondaryFired).to.be.false;
