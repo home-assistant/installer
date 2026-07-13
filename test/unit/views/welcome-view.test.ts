@@ -31,7 +31,7 @@ describe("welcome-view", () => {
   it("renders the Let's go button", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
-    const button = el.shadowRoot!.querySelector(".lets-go-button");
+    const button = el.shadowRoot!.querySelector("wa-button");
     expect(button).to.exist;
     expect(button!.textContent).to.include("Let's go");
   });
@@ -40,7 +40,7 @@ describe("welcome-view", () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
     const button = el.shadowRoot!.querySelector(
-      ".lets-go-button"
+      "wa-button"
     ) as HTMLButtonElement;
 
     setTimeout(() => button.click());

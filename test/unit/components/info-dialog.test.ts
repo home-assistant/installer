@@ -55,7 +55,7 @@ describe("info-dialog", () => {
     `);
 
     const primaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.primary"
+      "wa-button[variant='brand']"
     );
     expect(primaryButton).to.exist;
     expect(primaryButton!.textContent!.trim()).to.equal("OK");
@@ -67,7 +67,7 @@ describe("info-dialog", () => {
     `);
 
     const primaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.primary"
+      "wa-button[variant='brand']"
     );
     expect(primaryButton!.textContent!.trim()).to.equal("Got it");
   });
@@ -78,7 +78,7 @@ describe("info-dialog", () => {
     `);
 
     const secondaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     );
     expect(secondaryButton).to.be.null;
   });
@@ -89,7 +89,7 @@ describe("info-dialog", () => {
     `);
 
     const secondaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     );
     expect(secondaryButton).to.exist;
     expect(secondaryButton!.textContent!.trim()).to.equal("Cancel");
@@ -101,7 +101,7 @@ describe("info-dialog", () => {
     `);
 
     const primaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.primary"
+      "wa-button[variant='brand']"
     ) as HTMLButtonElement;
 
     setTimeout(() => primaryButton.click());
@@ -115,7 +115,7 @@ describe("info-dialog", () => {
     `);
 
     const secondaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     ) as HTMLButtonElement;
 
     setTimeout(() => secondaryButton.click());
@@ -129,7 +129,7 @@ describe("info-dialog", () => {
     `);
 
     const primaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.primary"
+      "wa-button[variant='brand']"
     ) as HTMLButtonElement;
 
     expect(el.open).to.be.true;
@@ -144,7 +144,7 @@ describe("info-dialog", () => {
     `);
 
     const secondaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     ) as HTMLButtonElement;
 
     expect(el.open).to.be.true;
@@ -262,7 +262,7 @@ describe("info-dialog", () => {
     `);
 
     const primaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.primary"
+      "wa-button[variant='brand']"
     ) as HTMLButtonElement;
 
     setTimeout(() => primaryButton.click());

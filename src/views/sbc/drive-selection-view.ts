@@ -286,7 +286,6 @@ export class DriveSelectionView extends LitElement {
             variant="brand"
             appearance="outlined"
             @click=${this._loadDrives}
-            ?loading=${this._loading}
             style="margin-top: 1rem;"
           >
             <span slot="start">↻</span>
@@ -303,7 +302,6 @@ export class DriveSelectionView extends LitElement {
           variant="brand"
           appearance="outlined"
           @click=${this._loadDrives}
-          ?loading=${this._loading}
         >
           <span slot="start">↻</span>
           Refresh

@@ -1,7 +1,8 @@
-import { LitElement, html, css, nothing } from "lit";
-import { customElement, property } from "lit/decorators.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/tooltip/tooltip.js";
+import { LitElement, css, html, nothing } from "lit";
+import { customElement, property } from "lit/decorators.js";
+import { ifDefined } from "lit/directives/if-defined.js";
 import "./ha-svg-icon.js";
 
 /**
@@ -52,7 +53,7 @@ export class FabButton extends LitElement {
   @property() path?: string;
 
   /** Accessible name, also shown as the tooltip. */
-  @property() label = "";
+  @property() label?: string;
 
   render() {
     return html`
@@ -60,7 +61,7 @@ export class FabButton extends LitElement {
         id="button"
         variant="brand"
         appearance="accent"
-        aria-label=${this.label}
+        aria-label=${ifDefined(this.label)}
       >
         <ha-svg-icon .path=${this.path}></ha-svg-icon>
       </wa-button>
