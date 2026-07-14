@@ -320,7 +320,11 @@ pub async fn list_storage(session: &ProxmoxSession, node: &str) -> Result<Vec<Pr
                 ProxmoxStorage {
                     name: "local".to_string(),
                     storage_type: "dir".to_string(),
-                    content: vec!["images".to_string(), "rootdir".to_string(), "import".to_string()],
+                    content: vec![
+                        "images".to_string(),
+                        "rootdir".to_string(),
+                        "import".to_string(),
+                    ],
                     available: 100_000_000_000,
                     total: 500_000_000_000,
                     active: true,
