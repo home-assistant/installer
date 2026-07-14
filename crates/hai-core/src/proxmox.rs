@@ -8,7 +8,7 @@
 //! The correct procedure for installing HAOS on Proxmox via API:
 //! 1. Download the qcow2.xz image locally
 //! 2. Extract to qcow2
-//! 3. Upload qcow2 to Proxmox "local" storage (content=import)
+//! 3. Upload qcow2 to Proxmox storage (content=import). storage is checked for import flag and set dynamically
 //! 4. Wait for upload task to complete
 //! 5. Create VM with UEFI/OVMF, EFI disk, and import-from to import the disk
 //! 6. Wait for VM creation task to complete
@@ -1008,7 +1008,6 @@ pub async fn create_vm<P: ProgressCallback>(
 
     //Get the proxmox storage name for install before downloading the image and wasting bandwidth
     let storage_name = get_storage_name(session, &config.node).await?;
-    println!("Storage name: {}", storage_name); //testing
 
     // Step 2: Download the compressed image locally
     progress_callback.on_progress(FlashProgress {
@@ -1041,7 +1040,7 @@ pub async fn create_vm<P: ProgressCallback>(
 
     crate::download::extract_xz(&compressed_path, &extracted_path, progress_callback).await?;
 
-    // Step 4: Upload the extracted image to Proxmox "local" storage
+    // Step 4: Upload the extracted image to Proxmox storage, fetched dynamically with import flag
     let image_filename = upload_image_to_proxmox(
         session,
         &config.node,
