@@ -398,6 +398,18 @@ pub async fn list_storage(session: &ProxmoxSession, node: &str) -> Result<Vec<Pr
     Ok(storage)
 }
 
+/// Get the name of available storage on a node
+pub async fn get_storage_name(session: &ProxmoxSession, node: &str) -> Result<String> {
+    let storage_list = list_storage(&session, node).await?;
+    for storage in storage_list {
+        if storage.content.contains(&"import".to_string()) {
+            return Ok(storage.name);
+        }
+    }
+    //if nothing contains import, then error out and dont return a value.
+    Err(Error::ProxmoxApi("No storage with 'import' content type found. Enable 'import' on a directory storage in PVE.".to_string()))
+}
+
 /// Get the next available VM ID on the Proxmox server.
 pub async fn get_next_vm_id(session: &ProxmoxSession) -> Result<u32> {
     #[cfg(feature = "mock")]
@@ -533,6 +545,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     node: &str,
     local_path: &std::path::PathBuf,
     progress_callback: &P,
+    storage_name: &str,
 ) -> Result<String> {
     use futures_util::stream;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -585,9 +598,10 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
 
     // Upload to Proxmox using multipart form
     let url = format!(
-        "{}/api2/json/nodes/{}/storage/local/upload",
+        "{}/api2/json/nodes/{}/storage/{}/upload",
         session.server_url.trim_end_matches('/'),
-        node
+        node,
+        storage_name
     );
 
     // Create client with longer timeout for large uploads
@@ -692,6 +706,7 @@ async fn create_vm_with_disk(
     session: &ProxmoxSession,
     config: &ProxmoxVmConfig,
     image_filename: &str,
+    storage_name: &str,
 ) -> Result<()> {
     let url = format!(
         "{}/api2/json/nodes/{}/qemu",
@@ -702,10 +717,10 @@ async fn create_vm_with_disk(
     let client = create_client(300)?; // 5 minutes for VM creation with disk import
 
     // Build the disk import specification
-    // Format: storage:0,import-from=local:import/filename.qcow2
+    // Format: storage:0,import-from="storage name":import/filename.qcow2
     let scsi0_spec = format!(
-        "{}:0,import-from=local:import/{}",
-        config.storage, image_filename
+        "{}:0,import-from={}:import/{}",
+        config.storage, &storage_name, image_filename
     );
 
     // EFI disk specification for UEFI boot
@@ -991,6 +1006,10 @@ pub async fn create_vm<P: ProgressCallback>(
         haos_version, haos_version
     );
 
+    //Get the proxmox storage name for install before downloading the image and wasting bandwidth
+    let storage_name = get_storage_name(session, &config.node).await?;
+    println!("Storage name: {}", storage_name); //testing
+
     // Step 2: Download the compressed image locally
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
@@ -1023,8 +1042,14 @@ pub async fn create_vm<P: ProgressCallback>(
     crate::download::extract_xz(&compressed_path, &extracted_path, progress_callback).await?;
 
     // Step 4: Upload the extracted image to Proxmox "local" storage
-    let image_filename =
-        upload_image_to_proxmox(session, &config.node, &extracted_path, progress_callback).await?;
+    let image_filename = upload_image_to_proxmox(
+        session,
+        &config.node,
+        &extracted_path,
+        progress_callback,
+        &storage_name,
+    )
+    .await?;
 
     // Step 5: Create the VM with disk import
     progress_callback.on_progress(FlashProgress {
@@ -1035,7 +1060,7 @@ pub async fn create_vm<P: ProgressCallback>(
         message: "Creating virtual machine...".to_string(),
     });
 
-    create_vm_with_disk(session, config, &image_filename).await?;
+    create_vm_with_disk(session, config, &image_filename, &storage_name).await?;
 
     // Step 6: Start the VM if requested
     if config.auto_start {
@@ -2203,7 +2228,7 @@ mod tests {
                 auto_start: false,
             };
 
-            let result = create_vm_with_disk(&session, &config, "test-image.qcow2").await;
+            let result = create_vm_with_disk(&session, &config, "test-image.qcow2", "local").await;
             assert!(result.is_ok());
 
             vm_create_mock.assert_async().await;
@@ -2240,7 +2265,7 @@ mod tests {
                 auto_start: false,
             };
 
-            let result = create_vm_with_disk(&session, &config, "test-image.qcow2").await;
+            let result = create_vm_with_disk(&session, &config, "test-image.qcow2", "local").await;
             assert!(result.is_err());
 
             vm_create_mock.assert_async().await;
@@ -3075,7 +3100,8 @@ mod tests {
             };
 
             let callback = TestProgressCallback::new();
-            let result = upload_image_to_proxmox(&session, "pve", &temp_file, &callback).await;
+            let result =
+                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local").await;
 
             assert!(result.is_ok(), "Upload should succeed: {:?}", result.err());
             let filename = result.unwrap();
@@ -3115,7 +3141,8 @@ mod tests {
             };
 
             let callback = TestProgressCallback::new();
-            let result = upload_image_to_proxmox(&session, "pve", &temp_file, &callback).await;
+            let result =
+                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local").await;
 
             assert!(result.is_err());
             if let Err(Error::ProxmoxApi(msg)) = result {
@@ -3154,7 +3181,8 @@ mod tests {
             };
 
             let callback = TestProgressCallback::new();
-            let result = upload_image_to_proxmox(&session, "pve", &temp_file, &callback).await;
+            let result =
+                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local").await;
 
             assert!(result.is_err());
             if let Err(Error::ProxmoxApi(msg)) = result {
@@ -3193,7 +3221,8 @@ mod tests {
             };
 
             let callback = TestProgressCallback::new();
-            let result = upload_image_to_proxmox(&session, "pve", &temp_file, &callback).await;
+            let result =
+                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local").await;
 
             assert!(result.is_err());
             if let Err(Error::ProxmoxApi(msg)) = result {
@@ -3221,7 +3250,8 @@ mod tests {
 
             let callback = TestProgressCallback::new();
             let result =
-                upload_image_to_proxmox(&session, "pve", &nonexistent_file, &callback).await;
+                upload_image_to_proxmox(&session, "pve", &nonexistent_file, &callback, "local")
+                    .await;
 
             assert!(result.is_err());
             if let Err(Error::ProxmoxApi(msg)) = result {
