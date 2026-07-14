@@ -402,12 +402,14 @@ pub async fn list_storage(session: &ProxmoxSession, node: &str) -> Result<Vec<Pr
 pub async fn get_storage_name(session: &ProxmoxSession, node: &str) -> Result<String> {
     let storage_list = list_storage(session, node).await?;
     for storage in storage_list {
-        if storage.content.contains(&"import".to_string()) {
+        if storage.active && storage.content.iter().any(|content| content == "import") {
             return Ok(storage.name);
         }
     }
-    //if nothing contains import, then error out and dont return a value.
-    Err(Error::ProxmoxApi("No storage with 'import' content type found. Enable 'import' on a directory storage in PVE.".to_string()))
+    Err(Error::ProxmoxApi(
+        "No active storage with 'import' content type found. Enable 'import' on an active directory storage in PVE."
+            .to_string(),
+    ))
 }
 
 /// Get the next available VM ID on the Proxmox server.
