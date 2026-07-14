@@ -400,7 +400,7 @@ pub async fn list_storage(session: &ProxmoxSession, node: &str) -> Result<Vec<Pr
 
 /// Get the name of available storage on a node
 pub async fn get_storage_name(session: &ProxmoxSession, node: &str) -> Result<String> {
-    let storage_list = list_storage(&session, node).await?;
+    let storage_list = list_storage(session, node).await?;
     for storage in storage_list {
         if storage.content.contains(&"import".to_string()) {
             return Ok(storage.name);
@@ -720,7 +720,7 @@ async fn create_vm_with_disk(
     // Format: storage:0,import-from="storage name":import/filename.qcow2
     let scsi0_spec = format!(
         "{}:0,import-from={}:import/{}",
-        config.storage, &storage_name, image_filename
+        config.storage, storage_name, image_filename
     );
 
     // EFI disk specification for UEFI boot
