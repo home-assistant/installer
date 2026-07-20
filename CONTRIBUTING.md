@@ -100,3 +100,10 @@ When contributing UI changes, remember:
 
 By contributing, you agree that your contributions will be licensed under the
 Apache 2.0 License.
+
+## AI policy
+
+This project follows the [Open Home Foundation AI Policy](AI_POLICY.md). In
+short: AI tools are welcome as an aid, but you must fully understand and be
+able to explain every change you submit. Contributions made by autonomous
+agents are not accepted.
