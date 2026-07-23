@@ -2,6 +2,7 @@ import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { getManifest, type Device } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
+import "@home-assistant/webawesome/dist/components/button/button.js";
 
 @customElement("minipc-architecture-selection-view")
 export class MiniPCArchitectureSelectionView extends LitElement {
@@ -182,21 +183,6 @@ export class MiniPCArchitectureSelectionView extends LitElement {
       color: var(--ha-error-color, #db4437);
       margin-bottom: 1rem;
     }
-
-    .retry-button {
-      padding: 0.5rem 1rem;
-      font-size: 0.875rem;
-      color: var(--ha-primary-color, #03a9f4);
-      background: none;
-      border: 1px solid var(--ha-primary-color, #03a9f4);
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-    }
-
-    .retry-button:hover {
-      background-color: rgba(3, 169, 244, 0.1);
-    }
   `;
 
   @state()
@@ -263,9 +249,13 @@ export class MiniPCArchitectureSelectionView extends LitElement {
             </svg>
           </span>
           <p class="error-message">${this._error}</p>
-          <button class="retry-button" @click=${this._loadDevices}>
+          <wa-button
+            variant="brand"
+            appearance="outlined"
+            @click=${this._loadDevices}
+          >
             Try again
-          </button>
+          </wa-button>
         </div>
       `;
     }

@@ -26,7 +26,7 @@ describe("info-dialog", () => {
 
     const title = el.shadowRoot!.querySelector(".dialog-title");
     expect(title).to.exist;
-    expect(title!.textContent).to.equal("Test Title");
+    expect(title!.textContent).to.contain("Test Title");
   });
 
   it("renders with custom message", async () => {
@@ -55,7 +55,7 @@ describe("info-dialog", () => {
     `);
 
     const primaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.primary"
+      "wa-button[variant='brand']"
     );
     expect(primaryButton).to.exist;
     expect(primaryButton!.textContent!.trim()).to.equal("OK");
@@ -67,7 +67,7 @@ describe("info-dialog", () => {
     `);
 
     const primaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.primary"
+      "wa-button[variant='brand']"
     );
     expect(primaryButton!.textContent!.trim()).to.equal("Got it");
   });
@@ -78,7 +78,7 @@ describe("info-dialog", () => {
     `);
 
     const secondaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     );
     expect(secondaryButton).to.be.null;
   });
@@ -89,7 +89,7 @@ describe("info-dialog", () => {
     `);
 
     const secondaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     );
     expect(secondaryButton).to.exist;
     expect(secondaryButton!.textContent!.trim()).to.equal("Cancel");
@@ -101,7 +101,7 @@ describe("info-dialog", () => {
     `);
 
     const primaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.primary"
+      "wa-button[variant='brand']"
     ) as HTMLButtonElement;
 
     setTimeout(() => primaryButton.click());
@@ -115,7 +115,7 @@ describe("info-dialog", () => {
     `);
 
     const secondaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     ) as HTMLButtonElement;
 
     setTimeout(() => secondaryButton.click());
@@ -129,7 +129,7 @@ describe("info-dialog", () => {
     `);
 
     const primaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.primary"
+      "wa-button[variant='brand']"
     ) as HTMLButtonElement;
 
     expect(el.open).to.be.true;
@@ -144,7 +144,7 @@ describe("info-dialog", () => {
     `);
 
     const secondaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     ) as HTMLButtonElement;
 
     expect(el.open).to.be.true;
@@ -153,28 +153,67 @@ describe("info-dialog", () => {
     expect(el.open).to.be.false;
   });
 
-  it("dispatches dialog-secondary when overlay is clicked", async () => {
+  it("dispatches dialog-secondary when dismissed (escape/backdrop/close)", async () => {
     const el = await fixture<InfoDialog>(html`
       <info-dialog open></info-dialog>
     `);
 
-    const overlay = el.shadowRoot!.querySelector(".overlay") as HTMLElement;
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
 
-    setTimeout(() => overlay.click());
+    setTimeout(() =>
+      dialog.dispatchEvent(
+        new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+      )
+    );
     const event = await oneEvent(el, "dialog-secondary");
     expect(event).to.exist;
+    expect(el.open).to.be.false;
   });
 
-  it("does not close when dialog content is clicked", async () => {
+  it("does not also fire dialog-secondary when the primary action is used", async () => {
     const el = await fixture<InfoDialog>(html`
       <info-dialog open></info-dialog>
     `);
 
-    const dialog = el.shadowRoot!.querySelector(".dialog") as HTMLElement;
+    let secondaryFired = false;
+    el.addEventListener("dialog-secondary", () => (secondaryFired = true));
 
-    expect(el.open).to.be.true;
-    dialog.click();
+    // Primary fires dialog-primary and closes the dialog. The close then emits
+    // wa-after-hide (AT_TARGET on the wa-dialog, as in production) — the guard
+    // must consume the action and NOT turn it into a dismiss dialog-secondary.
+    const primaryButton = el.shadowRoot!.querySelector(
+      "wa-button[variant='brand']"
+    ) as HTMLElement;
+    primaryButton.click();
     await el.updateComplete;
+    el.shadowRoot!.querySelector("wa-dialog")!.dispatchEvent(
+      new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+    );
+
+    expect(secondaryFired).to.be.false;
+    expect(el.open).to.be.false;
+  });
+
+  it("ignores wa-after-hide bubbling from nested slotted content", async () => {
+    const el = await fixture<InfoDialog>(
+      html`<info-dialog open></info-dialog>`
+    );
+
+    let secondaryFired = false;
+    el.addEventListener("dialog-secondary", () => (secondaryFired = true));
+
+    // A nested Web Awesome overlay in the body would re-dispatch wa-after-hide,
+    // which bubbles/composes up to our handler. It must be ignored (not
+    // AT_TARGET), leaving the info dialog open.
+    const waDialog = el.shadowRoot!.querySelector("wa-dialog")!;
+    const nested = document.createElement("div");
+    waDialog.appendChild(nested);
+    await el.updateComplete;
+    nested.dispatchEvent(
+      new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+    );
+
+    expect(secondaryFired).to.be.false;
     expect(el.open).to.be.true;
   });
 
@@ -194,11 +233,10 @@ describe("info-dialog", () => {
       <info-dialog open></info-dialog>
     `);
 
-    expect(el.shadowRoot!.querySelector(".overlay")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-header")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-content")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-actions")).to.exist;
+    expect(el.shadowRoot!.querySelector("wa-dialog")).to.exist;
+    expect(el.shadowRoot!.querySelector(".dialog-title")).to.exist;
+    expect(el.shadowRoot!.querySelector(".dialog-message")).to.exist;
+    expect(el.shadowRoot!.querySelector("wa-button[variant='brand']")).to.exist;
   });
 
   it("stores title property", async () => {
@@ -242,9 +280,7 @@ describe("info-dialog", () => {
   });
 
   it("can toggle open state", async () => {
-    const el = await fixture<InfoDialog>(html`
-      <info-dialog></info-dialog>
-    `);
+    const el = await fixture<InfoDialog>(html` <info-dialog></info-dialog> `);
 
     expect(el.open).to.be.false;
     expect(el.hasAttribute("open")).to.be.false;
@@ -262,7 +298,7 @@ describe("info-dialog", () => {
     `);
 
     const primaryButton = el.shadowRoot!.querySelector(
-      ".dialog-button.primary"
+      "wa-button[variant='brand']"
     ) as HTMLButtonElement;
 
     setTimeout(() => primaryButton.click());

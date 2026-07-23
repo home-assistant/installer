@@ -1,85 +1,47 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
+import "@home-assistant/webawesome/dist/components/button/button.js";
 
+/**
+ * Informational dialog built on wa-dialog (focus trap, Escape, backdrop
+ * dismiss, and role="dialog"/aria-modal come for free).
+ *
+ * Public API is unchanged: toggle `open`, set `title` / `message` /
+ * `primaryLabel` / `secondaryLabel`, and listen for `dialog-primary` /
+ * `dialog-secondary`. Escape, backdrop click, and the header close button all
+ * map to `dialog-secondary` (dismiss).
+ */
 @customElement("info-dialog")
 export class InfoDialog extends LitElement {
   static styles = css`
     :host {
       display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 1000;
     }
 
+    /* When open, occupy the viewport so the host is a real (if transparent)
+       box. wa-dialog renders a native modal in the top layer above this, which
+       handles all interaction; this just gives the host a layout box. */
     :host([open]) {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .overlay {
+      display: block;
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: rgba(0, 0, 0, 0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: -1;
-      animation: fadeIn 0.15s ease-out;
+      inset: 0;
     }
 
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-      }
-      to {
-        opacity: 1;
-      }
+    wa-dialog {
+      --width: 30rem;
     }
 
-    .dialog {
-      background-color: var(--ha-card-background, #ffffff);
-      border-radius: 16px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-      max-width: 480px;
-      width: 90%;
-      animation: slideUp 0.2s ease-out;
-    }
-
-    @keyframes slideUp {
-      from {
-        transform: translateY(20px);
-        opacity: 0;
-      }
-      to {
-        transform: translateY(0);
-        opacity: 1;
-      }
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .dialog {
-        background-color: var(--ha-card-background, #1e1e1e);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-      }
-    }
-
-    .dialog-header {
-      display: flex;
+    .dialog-title {
+      display: inline-flex;
       align-items: center;
       gap: 0.75rem;
-      padding: 1.5rem 1.5rem 1rem 1.5rem;
+      color: var(--ha-text-color, #212121);
     }
 
     .info-icon {
-      width: 28px;
-      height: 28px;
+      width: 1.5rem;
+      height: 1.5rem;
       flex-shrink: 0;
     }
 
@@ -89,81 +51,11 @@ export class InfoDialog extends LitElement {
       fill: var(--ha-primary-color, #03a9f4);
     }
 
-    .dialog-title {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: var(--ha-text-color, #212121);
-      margin: 0;
-    }
-
-    .dialog-content {
-      padding: 0 1.5rem 1.5rem 1.5rem;
-    }
-
     .dialog-message {
       font-size: 0.9375rem;
       color: var(--ha-text-color, #212121);
       line-height: 1.6;
       margin: 0;
-    }
-
-    .dialog-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 0.75rem;
-      padding: 1rem 1.5rem;
-      border-top: 1px solid var(--ha-border-color, #e0e0e0);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .dialog-actions {
-        border-top-color: var(--ha-border-color, #333333);
-      }
-    }
-
-    .dialog-button {
-      padding: 0.625rem 1.25rem;
-      font-size: 0.9375rem;
-      font-weight: 500;
-      border-radius: 8px;
-      cursor: pointer;
-      transition:
-        background-color 0.2s ease,
-        transform 0.1s ease;
-    }
-
-    .dialog-button:active {
-      transform: scale(0.98);
-    }
-
-    .dialog-button.secondary {
-      color: var(--ha-secondary-text-color, #727272);
-      background: none;
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-    }
-
-    .dialog-button.secondary:hover {
-      background-color: rgba(0, 0, 0, 0.05);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .dialog-button.secondary {
-        border-color: var(--ha-border-color, #444444);
-      }
-
-      .dialog-button.secondary:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-      }
-    }
-
-    .dialog-button.primary {
-      color: white;
-      background-color: var(--ha-primary-color, #03a9f4);
-      border: none;
-    }
-
-    .dialog-button.primary:hover {
-      background-color: var(--ha-primary-color-dark, #0288d1);
     }
   `;
 
@@ -182,71 +74,86 @@ export class InfoDialog extends LitElement {
   @property({ type: String })
   secondaryLabel = "";
 
+  // Set when an action button closes the dialog, so the subsequent
+  // wa-after-hide doesn't also emit a dismiss (dialog-secondary) event.
+  private _closingViaAction = false;
+
   render() {
     return html`
-      <div class="overlay" @click=${this._onOverlayClick}>
-        <div class="dialog" @click=${this._onDialogClick}>
-          <div class="dialog-header">
-            <span class="info-icon">
-              <svg viewBox="0 0 24 24">
-                <path
-                  d="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"
-                />
-              </svg>
-            </span>
-            <h2 class="dialog-title">${this.title}</h2>
-          </div>
-          <div class="dialog-content">
-            <p class="dialog-message">${this.message}</p>
-            <slot></slot>
-          </div>
-          <div class="dialog-actions">
-            ${this.secondaryLabel
-              ? html`
-                  <button
-                    class="dialog-button secondary"
-                    @click=${this._onSecondary}
-                  >
-                    ${this.secondaryLabel}
-                  </button>
-                `
-              : ""}
-            <button class="dialog-button primary" @click=${this._onPrimary}>
-              ${this.primaryLabel}
-            </button>
-          </div>
-        </div>
-      </div>
+      <wa-dialog
+        .open=${this.open}
+        light-dismiss
+        @wa-after-hide=${this._onAfterHide}
+      >
+        <span slot="label" class="dialog-title">
+          <span class="info-icon">
+            <svg viewBox="0 0 24 24">
+              <path
+                d="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"
+              />
+            </svg>
+          </span>
+          ${this.title}
+        </span>
+
+        <p class="dialog-message">${this.message}</p>
+        <slot></slot>
+
+        ${this.secondaryLabel
+          ? html`
+              <wa-button
+                slot="footer"
+                appearance="outlined"
+                @click=${this._onSecondary}
+              >
+                ${this.secondaryLabel}
+              </wa-button>
+            `
+          : ""}
+        <wa-button
+          slot="footer"
+          variant="brand"
+          appearance="accent"
+          @click=${this._onPrimary}
+        >
+          ${this.primaryLabel}
+        </wa-button>
+      </wa-dialog>
     `;
   }
 
-  private _onOverlayClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) {
-      this._onSecondary();
+  // Fires after the dialog has fully closed (Escape / backdrop / header close
+  // button). Syncing here rather than on wa-hide avoids feeding open=false back
+  // into wa-dialog mid-animation, which would trigger a second close request.
+  private _onAfterHide(event: Event) {
+    // wa-after-hide bubbles and is composed, so ignore events re-dispatched
+    // from any nested Web Awesome overlay slotted into the dialog body.
+    if (event.eventPhase !== Event.AT_TARGET) {
+      return;
     }
-  }
-
-  private _onDialogClick(e: MouseEvent) {
-    e.stopPropagation();
+    if (this._closingViaAction) {
+      this._closingViaAction = false;
+      return;
+    }
+    this.open = false;
+    this._dispatch("dialog-secondary");
   }
 
   private _onSecondary() {
+    this._closingViaAction = true;
     this.open = false;
-    this.dispatchEvent(
-      new CustomEvent("dialog-secondary", {
-        bubbles: true,
-        composed: true,
-      })
-    );
+    this._dispatch("dialog-secondary");
   }
 
   private _onPrimary() {
+    this._closingViaAction = true;
     this.open = false;
+    this._dispatch("dialog-primary");
+  }
+
+  private _dispatch(type: string) {
     this.dispatchEvent(
-      new CustomEvent("dialog-primary", {
-        bubbles: true,
-        composed: true,
-      })
+      new CustomEvent(type, { bubbles: true, composed: true })
     );
   }
 }
