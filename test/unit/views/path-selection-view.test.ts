@@ -8,7 +8,7 @@ describe("path-selection-view", () => {
       html`<path-selection-view></path-selection-view>`
     );
 
-    const backButton = el.shadowRoot!.querySelector(".back-button");
+    const backButton = el.shadowRoot!.querySelector("wa-button");
     expect(backButton).to.exist;
     expect(backButton!.textContent).to.include("Back");
   });
@@ -55,7 +55,7 @@ describe("path-selection-view", () => {
     );
 
     const backButton = el.shadowRoot!.querySelector(
-      ".back-button"
+      "wa-button"
     ) as HTMLButtonElement;
 
     setTimeout(() => backButton.click());

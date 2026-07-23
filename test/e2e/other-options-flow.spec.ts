@@ -4,7 +4,7 @@ test.describe("Other Options View", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     // Navigate to path selection
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
@@ -43,7 +43,7 @@ test.describe("Other Options View", () => {
     await expect(otherOptionsView).toBeVisible();
 
     // Click back button
-    const backButton = otherOptionsView.locator(".back-button");
+    const backButton = otherOptionsView.locator("wa-button");
     await expect(backButton).toBeVisible();
     await backButton.click();
 
@@ -150,7 +150,7 @@ test.describe("Other Options - Navigation", () => {
     await page.goto("/");
 
     // Step 1: Welcome to path selection
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
 
     // Step 2: Path selection to other options
@@ -158,11 +158,11 @@ test.describe("Other Options - Navigation", () => {
     await expect(page.locator("other-options-view")).toBeVisible();
 
     // Step 3: Other options back to path selection
-    await page.locator("other-options-view").locator(".back-button").click();
+    await page.locator("other-options-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
 
     // Step 4: Path selection back to welcome
-    await page.locator("path-selection-view").locator(".back-button").click();
+    await page.locator("path-selection-view").locator("wa-button").click();
     await expect(page.locator("welcome-view")).toBeVisible();
   });
 });

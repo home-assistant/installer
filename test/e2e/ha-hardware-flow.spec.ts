@@ -8,7 +8,7 @@ test.describe("Home Assistant Hardware Flow", () => {
     // Use mock mode to avoid real API calls
     await page.goto("/?mock=true");
     // Navigate to path selection
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
@@ -57,7 +57,7 @@ test.describe("Home Assistant Hardware Flow", () => {
     await expect(wizardShell).toBeVisible();
 
     // Click cancel button
-    const cancelButton = wizardShell.locator(".cancel-button");
+    const cancelButton = wizardShell.locator(".footer-left wa-button");
     await expect(cancelButton).toBeVisible();
     await cancelButton.click();
 
@@ -72,16 +72,16 @@ test.describe("Home Assistant Hardware Flow", () => {
     await expect(wizardShell).toBeVisible();
 
     // Back button should be visible but disabled on first step
-    const backButton = wizardShell.locator(".back-button");
+    const backButton = wizardShell.locator(".header wa-button");
     await expect(backButton).toBeVisible();
-    await expect(backButton).toBeDisabled();
+    await expect(backButton).toHaveJSProperty("disabled", true);
   });
 });
 
 test.describe("Home Assistant Hardware - Path Selection", () => {
   test("HA Hardware option is visible on path selection", async ({ page }) => {
     await page.goto("/");
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
 
     const pathSelection = page.locator("path-selection-view");
     await expect(pathSelection).toBeVisible();
@@ -94,7 +94,7 @@ test.describe("Home Assistant Hardware - Path Selection", () => {
 
   test("HA Hardware option has correct description", async ({ page }) => {
     await page.goto("/");
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
 
     const haHardwareOption = page.locator(
       'option-card[title="Home Assistant hardware"]'
