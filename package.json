@@ -17,7 +17,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@awesome.me/webawesome": "^3.0.0",
+    "@home-assistant/webawesome": "3.7.0-ha.0",
     "@tauri-apps/api": "~2.11",
     "@tauri-apps/plugin-opener": "^2",
     "lit": "^3.3.1",
