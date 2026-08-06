@@ -5,6 +5,7 @@ import {
   type WizardState,
   type WizardStep,
 } from "../state/wizard-state.js";
+import "@home-assistant/webawesome/dist/components/button/button.js";
 import "./step-indicator.js";
 
 @customElement("wizard-shell")
@@ -28,40 +29,6 @@ export class WizardShell extends LitElement {
       .header {
         border-bottom-color: var(--ha-border-color, #333333);
       }
-    }
-
-    .back-button {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 1rem;
-      font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
-      background: none;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-      min-width: 80px;
-    }
-
-    .back-button:hover:not(:disabled) {
-      background-color: rgba(0, 0, 0, 0.05);
-    }
-
-    .back-button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .back-button:hover:not(:disabled) {
-        background-color: rgba(255, 255, 255, 0.1);
-      }
-    }
-
-    .back-arrow {
-      font-size: 1.25rem;
     }
 
     .header-center {
@@ -98,81 +65,10 @@ export class WizardShell extends LitElement {
       gap: 1rem;
     }
 
-    .cancel-button {
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
-      background: none;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-    }
-
-    .cancel-button:hover {
-      background-color: rgba(0, 0, 0, 0.05);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .cancel-button:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-      }
-    }
-
     @media (prefers-color-scheme: dark) {
       .footer {
         border-top-color: var(--ha-border-color, #333333);
       }
-    }
-
-    .footer-button {
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      font-weight: 500;
-      border-radius: 8px;
-      cursor: pointer;
-      transition:
-        background-color 0.2s ease,
-        transform 0.1s ease;
-    }
-
-    .footer-button:active {
-      transform: scale(0.98);
-    }
-
-    .footer-button.secondary {
-      color: var(--ha-secondary-text-color, #727272);
-      background: none;
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-    }
-
-    .footer-button.secondary:hover {
-      background-color: rgba(0, 0, 0, 0.05);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .footer-button.secondary {
-        border-color: var(--ha-border-color, #444444);
-      }
-
-      .footer-button.secondary:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-      }
-    }
-
-    .footer-button.primary {
-      color: white;
-      background-color: var(--ha-primary-color, #03a9f4);
-      border: none;
-    }
-
-    .footer-button.primary:hover {
-      background-color: var(--ha-primary-color-dark, #0288d1);
-    }
-
-    .footer-button.primary:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
     }
   `;
 
@@ -227,14 +123,15 @@ export class WizardShell extends LitElement {
   render() {
     return html`
       <div class="header">
-        <button
-          class="back-button"
+        <wa-button
+          appearance="plain"
           @click=${this._onBack}
           ?disabled=${this.isFirstStep || this.hideBack}
           style=${this.hideBack ? "visibility: hidden" : ""}
         >
-          <span class="back-arrow">←</span> Back
-        </button>
+          <span slot="start">←</span>
+          Back
+        </wa-button>
 
         <div class="header-center">
           <step-indicator
@@ -254,20 +151,21 @@ export class WizardShell extends LitElement {
         ? html`
             <div class="footer">
               <div class="footer-left">
-                <button class="cancel-button" @click=${this._onCancel}>
+                <wa-button appearance="plain" @click=${this._onCancel}>
                   Cancel
-                </button>
+                </wa-button>
               </div>
               <div class="footer-right">
                 ${!this.hideNext
                   ? html`
-                      <button
-                        class="footer-button primary"
+                      <wa-button
+                        variant="brand"
+                        appearance="accent"
                         @click=${this._onNext}
                         ?disabled=${this.nextDisabled}
                       >
                         ${this.nextLabel}
-                      </button>
+                      </wa-button>
                     `
                   : ""}
               </div>

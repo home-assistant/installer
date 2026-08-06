@@ -1,96 +1,45 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
+import "@home-assistant/webawesome/dist/components/button/button.js";
 
+/**
+ * Destructive confirmation dialog built on wa-dialog (focus trap, Escape,
+ * backdrop dismiss, and role="dialog"/aria-modal come for free).
+ *
+ * Public API is unchanged: toggle `open`, set `driveName`, and listen for
+ * `dialog-confirm` / `dialog-cancel`. Escape, backdrop click, and the header
+ * close button all map to `dialog-cancel`.
+ */
 @customElement("confirm-dialog")
 export class ConfirmDialog extends LitElement {
   static styles = css`
     :host {
       display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 1000;
     }
 
+    /* When open, occupy the viewport so the host is a real (if transparent)
+       box. wa-dialog renders a native modal in the top layer above this, which
+       handles all interaction; this just gives the host a layout box. */
     :host([open]) {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .overlay {
+      display: block;
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: rgba(0, 0, 0, 0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: -1;
-      animation: fadeIn 0.15s ease-out;
+      inset: 0;
     }
 
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-      }
-      to {
-        opacity: 1;
-      }
-    }
-
-    .dialog {
-      background-color: var(--ha-card-background, #ffffff);
-      border-radius: 16px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-      max-width: 540px;
-      width: 90%;
-      animation: slideUp 0.2s ease-out;
-    }
-
-    @keyframes slideUp {
-      from {
-        transform: translateY(20px);
-        opacity: 0;
-      }
-      to {
-        transform: translateY(0);
-        opacity: 1;
-      }
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .dialog {
-        background-color: var(--ha-card-background, #1e1e1e);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-      }
-    }
-
-    .dialog-header {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 1.5rem 1.5rem 1rem 1.5rem;
-    }
-
-    .warning-icon {
-      font-size: 1.75rem;
-      flex-shrink: 0;
+    wa-dialog {
+      --width: 32rem;
     }
 
     .dialog-title {
-      font-size: 1.25rem;
-      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
       color: var(--ha-error-color, #db4437);
-      margin: 0;
     }
 
-    .dialog-content {
-      padding: 0 1.5rem 1.5rem 1.5rem;
+    .warning-icon {
+      font-size: 1.5rem;
     }
 
     .dialog-message {
@@ -110,65 +59,6 @@ export class ConfirmDialog extends LitElement {
       line-height: 1.5;
       margin: 0;
     }
-
-    .dialog-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 0.75rem;
-      padding: 1rem 1.5rem;
-      border-top: 1px solid var(--ha-border-color, #e0e0e0);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .dialog-actions {
-        border-top-color: var(--ha-border-color, #333333);
-      }
-    }
-
-    .dialog-button {
-      padding: 0.625rem 1.25rem;
-      font-size: 0.9375rem;
-      font-weight: 500;
-      border-radius: 8px;
-      cursor: pointer;
-      transition:
-        background-color 0.2s ease,
-        transform 0.1s ease;
-    }
-
-    .dialog-button:active {
-      transform: scale(0.98);
-    }
-
-    .dialog-button.secondary {
-      color: var(--ha-secondary-text-color, #727272);
-      background: none;
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-    }
-
-    .dialog-button.secondary:hover {
-      background-color: rgba(0, 0, 0, 0.05);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .dialog-button.secondary {
-        border-color: var(--ha-border-color, #444444);
-      }
-
-      .dialog-button.secondary:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-      }
-    }
-
-    .dialog-button.danger {
-      color: white;
-      background-color: var(--ha-error-color, #db4437);
-      border: none;
-    }
-
-    .dialog-button.danger:hover {
-      background-color: #c53929;
-    }
   `;
 
   @property({ type: Boolean, reflect: true })
@@ -177,67 +67,80 @@ export class ConfirmDialog extends LitElement {
   @property({ type: String })
   driveName = "";
 
+  // Set when an action button closes the dialog, so the subsequent
+  // wa-after-hide doesn't also emit a dismiss (dialog-cancel) event.
+  private _closingViaAction = false;
+
   render() {
     return html`
-      <div class="overlay" @click=${this._onOverlayClick}>
-        <div class="dialog" @click=${this._onDialogClick}>
-          <div class="dialog-header">
-            <span class="warning-icon">⚠️</span>
-            <h2 class="dialog-title">Erase drive and install?</h2>
-          </div>
-          <div class="dialog-content">
-            <p class="dialog-message">
-              All data on <span class="drive-name">${this.driveName}</span> will
-              be permanently erased. This action cannot be undone.
-            </p>
-            ${this._isMacOS()
-              ? html`<p class="password-note">
-                  You will be prompted for your password to allow writing to the
-                  drive. This is required because writing to external drives
-                  needs administrator privileges.
-                </p>`
-              : ""}
-          </div>
-          <div class="dialog-actions">
-            <button class="dialog-button secondary" @click=${this._onCancel}>
-              Cancel
-            </button>
-            <button class="dialog-button danger" @click=${this._onConfirm}>
-              Erase and install
-            </button>
-          </div>
-        </div>
-      </div>
+      <wa-dialog
+        .open=${this.open}
+        light-dismiss
+        @wa-after-hide=${this._onAfterHide}
+      >
+        <span slot="label" class="dialog-title">
+          <span class="warning-icon">⚠️</span> Erase drive and install?
+        </span>
+
+        <p class="dialog-message">
+          All data on <span class="drive-name">${this.driveName}</span> will be
+          permanently erased. This action cannot be undone.
+        </p>
+        ${this._isMacOS()
+          ? html`<p class="password-note">
+              You will be prompted for your password to allow writing to the
+              drive. This is required because writing to external drives needs
+              administrator privileges.
+            </p>`
+          : ""}
+
+        <wa-button slot="footer" appearance="outlined" @click=${this._onCancel}>
+          Cancel
+        </wa-button>
+        <wa-button
+          slot="footer"
+          variant="danger"
+          appearance="accent"
+          @click=${this._onConfirm}
+        >
+          Erase and install
+        </wa-button>
+      </wa-dialog>
     `;
   }
 
-  private _onOverlayClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) {
-      this._onCancel();
+  // Fires after the dialog has fully closed (Escape / backdrop / header close
+  // button). Syncing here rather than on wa-hide avoids feeding open=false back
+  // into wa-dialog mid-animation, which would trigger a second close request.
+  private _onAfterHide(event: Event) {
+    // wa-after-hide bubbles and is composed, so ignore events re-dispatched
+    // from any nested Web Awesome overlay in the dialog body.
+    if (event.eventPhase !== Event.AT_TARGET) {
+      return;
     }
-  }
-
-  private _onDialogClick(e: MouseEvent) {
-    e.stopPropagation();
+    if (this._closingViaAction) {
+      this._closingViaAction = false;
+      return;
+    }
+    this.open = false;
+    this._dispatch("dialog-cancel");
   }
 
   private _onCancel() {
+    this._closingViaAction = true;
     this.open = false;
-    this.dispatchEvent(
-      new CustomEvent("dialog-cancel", {
-        bubbles: true,
-        composed: true,
-      })
-    );
+    this._dispatch("dialog-cancel");
   }
 
   private _onConfirm() {
+    this._closingViaAction = true;
     this.open = false;
+    this._dispatch("dialog-confirm");
+  }
+
+  private _dispatch(type: string) {
     this.dispatchEvent(
-      new CustomEvent("dialog-confirm", {
-        bubbles: true,
-        composed: true,
-      })
+      new CustomEvent(type, { bubbles: true, composed: true })
     );
   }
 

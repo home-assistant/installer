@@ -1,6 +1,7 @@
 import { LitElement, html, css } from "lit";
 import { customElement } from "lit/decorators.js";
 
+import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../components/option-card.js";
 
 export type InstallationPath =
@@ -24,34 +25,6 @@ export class PathSelectionView extends LitElement {
       display: flex;
       align-items: center;
       margin-bottom: 2rem;
-    }
-
-    .back-button {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 1rem;
-      font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
-      background: none;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-    }
-
-    .back-button:hover {
-      background-color: rgba(0, 0, 0, 0.05);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .back-button:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-      }
-    }
-
-    .back-arrow {
-      font-size: 1.25rem;
     }
 
     .content {
@@ -101,9 +74,10 @@ export class PathSelectionView extends LitElement {
   render() {
     return html`
       <div class="header">
-        <button class="back-button" @click=${this._onBack}>
-          <span class="back-arrow">←</span> Back
-        </button>
+        <wa-button appearance="plain" @click=${this._onBack}>
+          <span slot="start">←</span>
+          Back
+        </wa-button>
       </div>
 
       <div class="content">

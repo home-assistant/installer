@@ -28,7 +28,7 @@ describe("confirm-dialog", () => {
 
     const title = el.shadowRoot!.querySelector(".dialog-title");
     expect(title).to.exist;
-    expect(title!.textContent).to.equal("Erase drive and install?");
+    expect(title!.textContent).to.contain("Erase drive and install?");
   });
 
   it("renders dialog with warning icon", async () => {
@@ -56,7 +56,7 @@ describe("confirm-dialog", () => {
     `);
 
     const cancelButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     );
     expect(cancelButton).to.exist;
     expect(cancelButton!.textContent!.trim()).to.equal("Cancel");
@@ -68,7 +68,7 @@ describe("confirm-dialog", () => {
     `);
 
     const confirmButton = el.shadowRoot!.querySelector(
-      ".dialog-button.danger"
+      "wa-button[variant='danger']"
     );
     expect(confirmButton).to.exist;
     expect(confirmButton!.textContent!.trim()).to.equal("Erase and install");
@@ -80,7 +80,7 @@ describe("confirm-dialog", () => {
     `);
 
     const cancelButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     ) as HTMLButtonElement;
 
     setTimeout(() => cancelButton.click());
@@ -94,7 +94,7 @@ describe("confirm-dialog", () => {
     `);
 
     const confirmButton = el.shadowRoot!.querySelector(
-      ".dialog-button.danger"
+      "wa-button[variant='danger']"
     ) as HTMLButtonElement;
 
     setTimeout(() => confirmButton.click());
@@ -108,7 +108,7 @@ describe("confirm-dialog", () => {
     `);
 
     const cancelButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     ) as HTMLButtonElement;
 
     expect(el.open).to.be.true;
@@ -123,7 +123,7 @@ describe("confirm-dialog", () => {
     `);
 
     const confirmButton = el.shadowRoot!.querySelector(
-      ".dialog-button.danger"
+      "wa-button[variant='danger']"
     ) as HTMLButtonElement;
 
     expect(el.open).to.be.true;
@@ -132,29 +132,45 @@ describe("confirm-dialog", () => {
     expect(el.open).to.be.false;
   });
 
-  it("dispatches dialog-cancel when overlay is clicked", async () => {
+  it("dispatches dialog-cancel when dismissed (escape/backdrop/close)", async () => {
     const el = await fixture<ConfirmDialog>(html`
       <confirm-dialog open></confirm-dialog>
     `);
 
-    const overlay = el.shadowRoot!.querySelector(".overlay") as HTMLElement;
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
 
-    setTimeout(() => overlay.click());
+    setTimeout(() =>
+      dialog.dispatchEvent(
+        new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+      )
+    );
     const event = await oneEvent(el, "dialog-cancel");
     expect(event).to.exist;
+    expect(el.open).to.be.false;
   });
 
-  it("does not close when dialog content is clicked", async () => {
+  it("does not also fire dialog-cancel when confirmed", async () => {
     const el = await fixture<ConfirmDialog>(html`
       <confirm-dialog open></confirm-dialog>
     `);
 
-    const dialog = el.shadowRoot!.querySelector(".dialog") as HTMLElement;
+    let cancelFired = false;
+    el.addEventListener("dialog-cancel", () => (cancelFired = true));
 
-    expect(el.open).to.be.true;
-    dialog.click();
+    // Confirm fires dialog-confirm and closes the dialog. The close then emits
+    // wa-after-hide (AT_TARGET on the wa-dialog, as in production) — the guard
+    // must consume the action and NOT turn it into a dismiss dialog-cancel.
+    const confirmButton = el.shadowRoot!.querySelector(
+      "wa-button[variant='danger']"
+    ) as HTMLElement;
+    confirmButton.click();
     await el.updateComplete;
-    expect(el.open).to.be.true;
+    el.shadowRoot!.querySelector("wa-dialog")!.dispatchEvent(
+      new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+    );
+
+    expect(cancelFired).to.be.false;
+    expect(el.open).to.be.false;
   });
 
   it("has correct dialog structure", async () => {
@@ -162,11 +178,12 @@ describe("confirm-dialog", () => {
       <confirm-dialog open></confirm-dialog>
     `);
 
-    expect(el.shadowRoot!.querySelector(".overlay")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-header")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-content")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-actions")).to.exist;
+    expect(el.shadowRoot!.querySelector("wa-dialog")).to.exist;
+    expect(el.shadowRoot!.querySelector(".dialog-title")).to.exist;
+    expect(el.shadowRoot!.querySelector(".dialog-message")).to.exist;
+    expect(
+      el.shadowRoot!.querySelectorAll("wa-button[slot='footer']").length
+    ).to.equal(2);
   });
 
   it("stores driveName property", async () => {
@@ -206,7 +223,7 @@ describe("confirm-dialog", () => {
     `);
 
     const confirmButton = el.shadowRoot!.querySelector(
-      ".dialog-button.danger"
+      "wa-button[variant='danger']"
     ) as HTMLButtonElement;
 
     setTimeout(() => confirmButton.click());
