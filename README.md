@@ -19,7 +19,7 @@ Download the latest release for your platform from the [Releases](https://github
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (via rustup)
-- [Node.js](https://nodejs.org/) 22+
+- [Node.js](https://nodejs.org/) 24+
 - Platform-specific [Tauri dependencies](https://tauri.app/start/prerequisites/)
 
 ### Setup

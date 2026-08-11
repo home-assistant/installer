@@ -14,38 +14,42 @@
   "prConcurrentLimit": 5,
   "packageRules": [
     {
+      "matchCategories": ["rust"],
+      "enabled": true
+    },
+    {
       "description": "Group Tauri packages",
-      "matchPackagePatterns": ["^@tauri-apps/", "^tauri"],
       "groupName": "tauri",
-      "groupSlug": "tauri"
+      "groupSlug": "tauri",
+      "matchPackageNames": ["/^@tauri-apps//", "/^tauri/"]
     },
     {
       "description": "Group Lit packages",
-      "matchPackagePatterns": ["^lit", "^@lit/"],
       "groupName": "lit",
-      "groupSlug": "lit"
+      "groupSlug": "lit",
+      "matchPackageNames": ["/^lit/", "/^@lit//"]
     },
     {
       "description": "Group Web Awesome packages",
-      "matchPackagePatterns": ["webawesome", "@awesome.me"],
       "groupName": "web-awesome",
-      "groupSlug": "web-awesome"
+      "groupSlug": "web-awesome",
+      "matchPackageNames": ["/webawesome/", "/@awesome.me/"]
     },
     {
       "description": "Group Playwright packages",
-      "matchPackagePatterns": ["^@playwright/", "^playwright"],
       "groupName": "playwright",
-      "groupSlug": "playwright"
+      "groupSlug": "playwright",
+      "matchPackageNames": ["/^@playwright//", "/^playwright/"]
     },
     {
       "description": "Group testing packages",
-      "matchPackagePatterns": [
-        "^@web/test-runner",
-        "^@open-wc/testing",
-        "^sinon"
-      ],
       "groupName": "testing",
-      "groupSlug": "testing"
+      "groupSlug": "testing",
+      "matchPackageNames": [
+        "/^@web/test-runner/",
+        "/^@open-wc/testing/",
+        "/^sinon/"
+      ]
     },
     {
       "description": "Group Rust crates",
@@ -76,8 +80,5 @@
   "vulnerabilityAlerts": {
     "enabled": true,
     "labels": ["security"]
-  },
-  "rust": {
-    "enabled": true
   }
 }
