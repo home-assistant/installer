@@ -44,7 +44,7 @@ export class FabButton extends LitElement {
       box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
     }
 
-    wa-button:active {
+    :host(:active) wa-button:active {
       transform: scale(0.98);
     }
   `;
