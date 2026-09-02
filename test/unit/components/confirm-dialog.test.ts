@@ -157,20 +157,70 @@ describe("confirm-dialog", () => {
     let cancelFired = false;
     el.addEventListener("dialog-cancel", () => (cancelFired = true));
 
-    // Confirm fires dialog-confirm and closes the dialog. The close then emits
-    // wa-after-hide (AT_TARGET on the wa-dialog, as in production) — the guard
-    // must consume the action and NOT turn it into a dismiss dialog-cancel.
     const confirmButton = el.shadowRoot!.querySelector(
       "wa-button[variant='danger']"
     ) as HTMLElement;
     confirmButton.click();
+    await el.updateComplete;
+
+    // Confirm already closed the dialog, so no hide completion is a dismissal,
+    // however many arrive. Real Escape/backdrop dismissal is covered in E2E.
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
+    const afterHide = () =>
+      dialog.dispatchEvent(
+        new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+      );
+    afterHide();
+    afterHide();
+
+    expect(cancelFired).to.be.false;
+    expect(el.open).to.be.false;
+  });
+
+  it("fires dialog-cancel exactly once when cancelled", async () => {
+    const el = await fixture<ConfirmDialog>(html`
+      <confirm-dialog open></confirm-dialog>
+    `);
+
+    let cancelCount = 0;
+    el.addEventListener("dialog-cancel", () => (cancelCount += 1));
+
+    const cancelButton = el.shadowRoot!.querySelector(
+      "wa-button[appearance='outlined']"
+    ) as HTMLElement;
+    cancelButton.click();
+    await el.updateComplete;
+
+    // Cancel and dismissal share an event, so the hide completion that follows
+    // the button must not report a second one.
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
+    const afterHide = () =>
+      dialog.dispatchEvent(
+        new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+      );
+    afterHide();
+    afterHide();
+
+    expect(cancelCount).to.equal(1);
+  });
+
+  it("stays silent when a consumer closes it programmatically", async () => {
+    const el = await fixture<ConfirmDialog>(html`
+      <confirm-dialog open></confirm-dialog>
+    `);
+
+    let cancelFired = false;
+    el.addEventListener("dialog-cancel", () => (cancelFired = true));
+
+    // Closing through the public `open` property is not a user dismissal,
+    // so it must not report one even though it still completes a hide.
+    el.open = false;
     await el.updateComplete;
     el.shadowRoot!.querySelector("wa-dialog")!.dispatchEvent(
       new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
     );
 
     expect(cancelFired).to.be.false;
-    expect(el.open).to.be.false;
   });
 
   it("has correct dialog structure", async () => {

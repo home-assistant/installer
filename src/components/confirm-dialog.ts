@@ -67,10 +67,6 @@ export class ConfirmDialog extends LitElement {
   @property({ type: String })
   driveName = "";
 
-  // Set when an action button closes the dialog, so the subsequent
-  // wa-after-hide doesn't also emit a dismiss (dialog-cancel) event.
-  private _closingViaAction = false;
-
   render() {
     return html`
       <wa-dialog
@@ -118,8 +114,9 @@ export class ConfirmDialog extends LitElement {
     if (event.eventPhase !== Event.AT_TARGET) {
       return;
     }
-    if (this._closingViaAction) {
-      this._closingViaAction = false;
+    // open=false already means an action button or the consumer closed us,
+    // so this hide is not a user dismissal.
+    if (!this.open) {
       return;
     }
     this.open = false;
@@ -127,13 +124,11 @@ export class ConfirmDialog extends LitElement {
   }
 
   private _onCancel() {
-    this._closingViaAction = true;
     this.open = false;
     this._dispatch("dialog-cancel");
   }
 
   private _onConfirm() {
-    this._closingViaAction = true;
     this.open = false;
     this._dispatch("dialog-confirm");
   }

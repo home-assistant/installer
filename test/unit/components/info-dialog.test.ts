@@ -178,20 +178,70 @@ describe("info-dialog", () => {
     let secondaryFired = false;
     el.addEventListener("dialog-secondary", () => (secondaryFired = true));
 
-    // Primary fires dialog-primary and closes the dialog. The close then emits
-    // wa-after-hide (AT_TARGET on the wa-dialog, as in production) — the guard
-    // must consume the action and NOT turn it into a dismiss dialog-secondary.
     const primaryButton = el.shadowRoot!.querySelector(
       "wa-button[variant='brand']"
     ) as HTMLElement;
     primaryButton.click();
+    await el.updateComplete;
+
+    // Primary already closed the dialog, so no hide completion is a dismissal,
+    // however many arrive. Real Escape/backdrop dismissal is covered in E2E.
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
+    const afterHide = () =>
+      dialog.dispatchEvent(
+        new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+      );
+    afterHide();
+    afterHide();
+
+    expect(secondaryFired).to.be.false;
+    expect(el.open).to.be.false;
+  });
+
+  it("fires dialog-secondary exactly once when the secondary action is used", async () => {
+    const el = await fixture<InfoDialog>(html`
+      <info-dialog open secondaryLabel="Go back"></info-dialog>
+    `);
+
+    let secondaryCount = 0;
+    el.addEventListener("dialog-secondary", () => (secondaryCount += 1));
+
+    const secondaryButton = el.shadowRoot!.querySelector(
+      "wa-button[appearance='outlined']"
+    ) as HTMLElement;
+    secondaryButton.click();
+    await el.updateComplete;
+
+    // Secondary and dismissal share an event, so the hide completion that
+    // follows the button must not report a second one.
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
+    const afterHide = () =>
+      dialog.dispatchEvent(
+        new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+      );
+    afterHide();
+    afterHide();
+
+    expect(secondaryCount).to.equal(1);
+  });
+
+  it("stays silent when a consumer closes it programmatically", async () => {
+    const el = await fixture<InfoDialog>(html`
+      <info-dialog open></info-dialog>
+    `);
+
+    let secondaryFired = false;
+    el.addEventListener("dialog-secondary", () => (secondaryFired = true));
+
+    // Closing through the public `open` property is not a user dismissal,
+    // so it must not report one even though it still completes a hide.
+    el.open = false;
     await el.updateComplete;
     el.shadowRoot!.querySelector("wa-dialog")!.dispatchEvent(
       new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
     );
 
     expect(secondaryFired).to.be.false;
-    expect(el.open).to.be.false;
   });
 
   it("ignores wa-after-hide bubbling from nested slotted content", async () => {
