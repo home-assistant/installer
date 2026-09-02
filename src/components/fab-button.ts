@@ -2,6 +2,7 @@ import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/tooltip/tooltip.js";
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { ifDefined } from "lit/directives/if-defined.js";
 import "./ha-svg-icon.js";
 
 /**
@@ -43,23 +44,8 @@ export class FabButton extends LitElement {
       box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
     }
 
-    wa-button:active {
+    :host(:active) wa-button:active {
       transform: scale(0.98);
-    }
-
-    /* Visually hidden but exposed to assistive tech, so the icon-only button
-       has an accessible name (a host aria-label isn't forwarded to the
-       shadow-root <button>). */
-    .visually-hidden {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0 0 0 0);
-      white-space: nowrap;
-      border: 0;
     }
   `;
 
@@ -71,11 +57,15 @@ export class FabButton extends LitElement {
 
   render() {
     return html`
-      <wa-button id="button" variant="brand" appearance="accent">
+      <!-- wa-button mirrors its own aria-label onto the <button> it renders,
+           so this is the accessible name of an icon-only button. -->
+      <wa-button
+        id="button"
+        variant="brand"
+        appearance="accent"
+        aria-label=${ifDefined(this.label)}
+      >
         <ha-svg-icon .path=${this.path}></ha-svg-icon>
-        ${this.label
-          ? html`<span class="visually-hidden">${this.label}</span>`
-          : nothing}
       </wa-button>
       ${this.label
         ? html`<wa-tooltip for="button" placement="left"

@@ -1,4 +1,4 @@
-import { expect, fixture, html } from "@open-wc/testing";
+import { elementUpdated, expect, fixture, html } from "@open-wc/testing";
 import "../../../src/components/fab-button.js";
 import type { FabButton } from "../../../src/components/fab-button.js";
 import type { HaSvgIcon } from "../../../src/components/ha-svg-icon.js";
@@ -29,20 +29,29 @@ describe("fab-button", () => {
       html`<fab-button .path=${TEST_PATH} label="Open Toolbox"></fab-button>`
     );
 
-    // The label lives as visually-hidden text inside the button so it becomes
-    // the control's accessible name (a host aria-label isn't forwarded).
-    const label = el.shadowRoot!.querySelector("wa-button .visually-hidden");
-    expect(label).to.exist;
-    expect(label!.textContent!.trim()).to.equal("Open Toolbox");
+    // The icon is aria-hidden, so the label has to come from aria-label. Assert
+    // on the <button> inside wa-button too: that's the control assistive tech
+    // sees, and it only gets a name because wa-button mirrors its own
+    // aria-label onto it.
+    const waButton = el.shadowRoot!.querySelector("wa-button")!;
+    await elementUpdated(waButton);
+    expect(waButton.getAttribute("aria-label")).to.equal("Open Toolbox");
+    expect(
+      waButton.shadowRoot!.querySelector("button")!.getAttribute("aria-label")
+    ).to.equal("Open Toolbox");
   });
 
-  it("renders no label text when label is empty", async () => {
+  it("sets no accessible name when label is empty", async () => {
     const el = await fixture<FabButton>(
       html`<fab-button .path=${TEST_PATH}></fab-button>`
     );
 
-    expect(el.shadowRoot!.querySelector("wa-button .visually-hidden")).to.not
-      .exist;
+    const waButton = el.shadowRoot!.querySelector("wa-button")!;
+    await elementUpdated(waButton);
+    expect(waButton.hasAttribute("aria-label")).to.be.false;
+    expect(
+      waButton.shadowRoot!.querySelector("button")!.hasAttribute("aria-label")
+    ).to.be.false;
   });
 
   it("renders a tooltip with the label", async () => {
