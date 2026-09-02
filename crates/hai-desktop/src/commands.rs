@@ -204,6 +204,8 @@ pub async fn flash_image(
         hai_core::Error::VerificationFailed(msg) => format!("Verification failed: {}", msg),
         // Already carries its own "Disk service unavailable:" prefix.
         err @ hai_core::Error::DiskServiceUnavailable(_) => err.to_string(),
+        // A disconnect doesn't require a prefix
+        err @ hai_core::Error::DriveDisconnected => err.to_string(),
         other => format!("Write failed: {}", other),
     })?;
 

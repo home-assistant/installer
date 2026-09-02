@@ -281,4 +281,41 @@ describe("confirm-dialog", () => {
     expect(event.bubbles).to.be.true;
     expect(event.composed).to.be.true;
   });
+
+  describe("password note", () => {
+    const originalPlatform = navigator.platform;
+
+    const setPlatform = (value: string) => {
+      Object.defineProperty(window.navigator, "platform", {
+        value,
+        configurable: true,
+      });
+    };
+
+    afterEach(() => setPlatform(originalPlatform));
+
+    const cases: Array<{ label: string; platform: string; shown: boolean }> = [
+      { label: "macOS", platform: "MacIntel", shown: true },
+      { label: "Linux", platform: "Linux x86_64", shown: true },
+      // Windows has no in-flow prompt: the app must already run elevated.
+      { label: "Windows", platform: "Win32", shown: false },
+    ];
+
+    for (const { label, platform, shown } of cases) {
+      it(`${shown ? "shows" : "hides"} the note on ${label}`, async () => {
+        setPlatform(platform);
+        const el = await fixture<ConfirmDialog>(html`
+          <confirm-dialog open></confirm-dialog>
+        `);
+
+        const note = el.shadowRoot!.querySelector(".password-note");
+        if (shown) {
+          expect(note).to.exist;
+          expect(note!.textContent).to.contain("prompted for your password");
+        } else {
+          expect(note).to.not.exist;
+        }
+      });
+    }
+  });
 });

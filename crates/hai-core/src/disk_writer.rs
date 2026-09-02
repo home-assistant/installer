@@ -53,13 +53,17 @@ fn validate_device_path(device_id: &str) -> Result<()> {
 
     #[cfg(target_os = "linux")]
     {
-        // Require the kernel-reported removable/hotplug signal (the same one
-        // device enumeration filters on) instead of a name deny-list: /dev/sda
-        // or /dev/nvme0n1 are legitimate USB targets on machines that boot
-        // from another disk. A mounted system drive is additionally caught by
-        // the exclusive (O_EXCL) open at write time.
-        let name = device_id.strip_prefix("/dev/").unwrap_or(device_id);
-        if name.is_empty() || !is_removable_or_hotplug(std::path::Path::new("/sys/block"), name) {
+        // Require the removable/hotplug signal device enumeration filters on
+        // instead of a name deny-list: /dev/sda or /dev/nvme0n1 are legitimate
+        // USB targets on machines that boot from another disk. A mounted
+        // system drive is additionally caught by the exclusive (O_EXCL) open
+        // at write time.
+        let device_path = if device_id.starts_with("/dev/") {
+            device_id.to_string()
+        } else {
+            format!("/dev/{}", device_id)
+        };
+        if device_id.is_empty() || !is_removable_or_hotplug(&device_path) {
             return Err(Error::PermissionDenied(format!(
                 "{} is not a removable drive and cannot be overwritten",
                 device_id
@@ -80,18 +84,40 @@ fn validate_device_path(device_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Whether the kernel reports the drive as removable, or it sits on a
-/// hot-pluggable bus (usb/mmc), which lsblk also treats as hotplug —
-/// USB-attached disks often report `removable` as 0.
+/// Whether lsblk reports the drive as removable or hot-plugged — the same
+/// signal (and tool) device enumeration filters on, so the two layers cannot
+/// drift, and lsblk's bus-chain hotplug derivation (usb, mmc, thunderbolt, …)
+/// is not reimplemented here.
 #[cfg(target_os = "linux")]
-fn is_removable_or_hotplug(sys_block: &std::path::Path, name: &str) -> bool {
-    let dev = sys_block.join(name);
-    let removable = std::fs::read_to_string(dev.join("removable")).is_ok_and(|s| s.trim() == "1");
-    let hotplug = std::fs::canonicalize(&dev).is_ok_and(|p| {
-        let p = p.to_string_lossy();
-        p.contains("/usb") || p.contains("/mmc")
-    });
-    removable || hotplug
+fn is_removable_or_hotplug(device_path: &str) -> bool {
+    let output = match std::process::Command::new("lsblk")
+        .args(["--nodeps", "--json", "--output", "RM,HOTPLUG", device_path])
+        .output()
+    {
+        Ok(output) if output.status.success() => output.stdout,
+        // Unknown device (or no lsblk at all): not a valid target.
+        _ => return false,
+    };
+    parse_lsblk_removable(&output)
+}
+
+#[cfg(target_os = "linux")]
+fn parse_lsblk_removable(json: &[u8]) -> bool {
+    #[derive(serde::Deserialize)]
+    struct LsblkOutput {
+        blockdevices: Vec<LsblkFlags>,
+    }
+    #[derive(serde::Deserialize)]
+    struct LsblkFlags {
+        #[serde(default)]
+        rm: Option<bool>,
+        #[serde(default)]
+        hotplug: Option<bool>,
+    }
+    serde_json::from_slice::<LsblkOutput>(json)
+        .ok()
+        .and_then(|out| out.blockdevices.into_iter().next())
+        .is_some_and(|dev| dev.rm == Some(true) || dev.hotplug == Some(true))
 }
 
 /// Write an image file to a block device with progress updates
@@ -1495,45 +1521,37 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "linux")]
-    fn test_is_removable_or_hotplug_removable_flag() {
-        let sys = tempfile::tempdir().unwrap();
-        std::fs::create_dir(sys.path().join("sdb")).unwrap();
-        std::fs::write(sys.path().join("sdb/removable"), "1\n").unwrap();
-        assert!(is_removable_or_hotplug(sys.path(), "sdb"));
+    fn test_parse_lsblk_removable_flags() {
+        let removable = br#"{"blockdevices": [{"rm": true, "hotplug": false}]}"#;
+        assert!(parse_lsblk_removable(removable));
+
+        // USB/MMC disks often report rm=false but hotplug=true.
+        let hotplug = br#"{"blockdevices": [{"rm": false, "hotplug": true}]}"#;
+        assert!(parse_lsblk_removable(hotplug));
+
+        let internal = br#"{"blockdevices": [{"rm": false, "hotplug": false}]}"#;
+        assert!(!parse_lsblk_removable(internal));
     }
 
     #[test]
     #[cfg(target_os = "linux")]
-    fn test_is_removable_or_hotplug_blocks_internal_disk() {
-        let sys = tempfile::tempdir().unwrap();
-        std::fs::create_dir(sys.path().join("sda")).unwrap();
-        std::fs::write(sys.path().join("sda/removable"), "0\n").unwrap();
-        assert!(!is_removable_or_hotplug(sys.path(), "sda"));
-    }
-
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn test_is_removable_or_hotplug_usb_bus_counts_as_hotplug() {
-        let sys = tempfile::tempdir().unwrap();
-        let real = sys.path().join("devices/pci0000:00/usb1/host0/block/sda");
-        std::fs::create_dir_all(&real).unwrap();
-        std::fs::write(real.join("removable"), "0\n").unwrap();
-        std::os::unix::fs::symlink(&real, sys.path().join("sda")).unwrap();
-        assert!(is_removable_or_hotplug(sys.path(), "sda"));
+    fn test_parse_lsblk_removable_degenerate_output() {
+        assert!(!parse_lsblk_removable(br#"{"blockdevices": []}"#));
+        assert!(!parse_lsblk_removable(br#"{"blockdevices": [{}]}"#));
+        assert!(!parse_lsblk_removable(b"not json"));
     }
 
     #[test]
     #[cfg(target_os = "linux")]
     fn test_is_removable_or_hotplug_blocks_unknown_device() {
-        let sys = tempfile::tempdir().unwrap();
-        assert!(!is_removable_or_hotplug(sys.path(), "sdz"));
+        assert!(!is_removable_or_hotplug("/dev/hai-test-nonexistent"));
     }
 
     #[test]
     #[cfg(target_os = "linux")]
-    fn test_validate_device_path_blocks_device_absent_from_sysfs() {
+    fn test_validate_device_path_blocks_unknown_device() {
         // The /dev/ prefix and trailing slashes are normalized away, so all
-        // spellings hit the same sysfs lookup and get the same verdict.
+        // spellings hit the same lsblk lookup and get the same verdict.
         for id in [
             "/dev/hai-test-nonexistent",
             "hai-test-nonexistent",
@@ -1814,12 +1832,12 @@ mod tests {
             std::fs::write(temp_file.path(), b"test data").unwrap();
             let image_path = temp_file.path().to_path_buf();
 
-            // Non-resolvable device: fails before any privileged udisks2 call.
+            // Unknown to lsblk, so validation rejects it before any
+            // privileged udisks2 call.
             let device_id = "/dev/hai-test-nonexistent";
 
             let result = write_image(&image_path, device_id, false, &callback).await;
-            // Could be either permission denied or other error
-            assert!(result.is_ok() || result.is_err());
+            assert!(matches!(result.unwrap_err(), Error::PermissionDenied(_)));
         }
     }
 
