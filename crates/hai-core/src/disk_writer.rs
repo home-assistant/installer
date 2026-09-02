@@ -53,20 +53,17 @@ fn validate_device_path(device_id: &str) -> Result<()> {
 
     #[cfg(target_os = "linux")]
     {
-        // On Linux, refuse to write to common system drive patterns
-        let dangerous_patterns = [
-            "/dev/sda",     // First SATA drive (often system)
-            "/dev/nvme0n1", // First NVMe drive (often system)
-            "/dev/vda",     // First virtio drive (VMs)
-        ];
-
-        for pattern in dangerous_patterns {
-            if device_id == pattern {
-                return Err(Error::PermissionDenied(format!(
-                    "{} appears to be a system drive and cannot be overwritten",
-                    device_id
-                )));
-            }
+        // Require the kernel-reported removable/hotplug signal (the same one
+        // device enumeration filters on) instead of a name deny-list: /dev/sda
+        // or /dev/nvme0n1 are legitimate USB targets on machines that boot
+        // from another disk. A mounted system drive is additionally caught by
+        // the exclusive (O_EXCL) open at write time.
+        let name = device_id.strip_prefix("/dev/").unwrap_or(device_id);
+        if name.is_empty() || !is_removable_or_hotplug(std::path::Path::new("/sys/block"), name) {
+            return Err(Error::PermissionDenied(format!(
+                "{} is not a removable drive and cannot be overwritten",
+                device_id
+            )));
         }
     }
 
@@ -81,6 +78,20 @@ fn validate_device_path(device_id: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Whether the kernel reports the drive as removable, or it sits on a
+/// hot-pluggable bus (usb/mmc), which lsblk also treats as hotplug —
+/// USB-attached disks often report `removable` as 0.
+#[cfg(target_os = "linux")]
+fn is_removable_or_hotplug(sys_block: &std::path::Path, name: &str) -> bool {
+    let dev = sys_block.join(name);
+    let removable = std::fs::read_to_string(dev.join("removable")).is_ok_and(|s| s.trim() == "1");
+    let hotplug = std::fs::canonicalize(&dev).is_ok_and(|p| {
+        let p = p.to_string_lossy();
+        p.contains("/usb") || p.contains("/mmc")
+    });
+    removable || hotplug
 }
 
 /// Write an image file to a block device with progress updates
@@ -1484,50 +1495,45 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "linux")]
-    fn test_validate_device_path_blocks_sda_linux() {
-        let result = validate_device_path("/dev/sda");
-        assert!(result.is_err());
+    fn test_is_removable_or_hotplug_removable_flag() {
+        let sys = tempfile::tempdir().unwrap();
+        std::fs::create_dir(sys.path().join("sdb")).unwrap();
+        std::fs::write(sys.path().join("sdb/removable"), "1\n").unwrap();
+        assert!(is_removable_or_hotplug(sys.path(), "sdb"));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_is_removable_or_hotplug_blocks_internal_disk() {
+        let sys = tempfile::tempdir().unwrap();
+        std::fs::create_dir(sys.path().join("sda")).unwrap();
+        std::fs::write(sys.path().join("sda/removable"), "0\n").unwrap();
+        assert!(!is_removable_or_hotplug(sys.path(), "sda"));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_is_removable_or_hotplug_usb_bus_counts_as_hotplug() {
+        let sys = tempfile::tempdir().unwrap();
+        let real = sys.path().join("devices/pci0000:00/usb1/host0/block/sda");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("removable"), "0\n").unwrap();
+        std::os::unix::fs::symlink(&real, sys.path().join("sda")).unwrap();
+        assert!(is_removable_or_hotplug(sys.path(), "sda"));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_is_removable_or_hotplug_blocks_unknown_device() {
+        let sys = tempfile::tempdir().unwrap();
+        assert!(!is_removable_or_hotplug(sys.path(), "sdz"));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_validate_device_path_blocks_device_absent_from_sysfs() {
+        let result = validate_device_path("/dev/hai-test-nonexistent");
         assert!(matches!(result.unwrap_err(), Error::PermissionDenied(_)));
-    }
-
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn test_validate_device_path_blocks_nvme0n1_linux() {
-        let result = validate_device_path("/dev/nvme0n1");
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::PermissionDenied(_)));
-    }
-
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn test_validate_device_path_blocks_vda_linux() {
-        let result = validate_device_path("/dev/vda");
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::PermissionDenied(_)));
-    }
-
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn test_validate_device_path_allows_sdb_linux() {
-        assert!(validate_device_path("/dev/sdb").is_ok());
-    }
-
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn test_validate_device_path_allows_sdc_linux() {
-        assert!(validate_device_path("/dev/sdc").is_ok());
-    }
-
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn test_validate_device_path_allows_mmcblk0_linux() {
-        assert!(validate_device_path("/dev/mmcblk0").is_ok());
-    }
-
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn test_validate_device_path_allows_nvme1n1_linux() {
-        assert!(validate_device_path("/dev/nvme1n1").is_ok());
     }
 
     #[test]
@@ -1567,9 +1573,10 @@ mod tests {
 
     #[test]
     fn test_validate_device_path_empty_string() {
-        // Empty string should be allowed (validation doesn't check for empty)
-        // This tests the current behavior
         let result = validate_device_path("");
+        #[cfg(target_os = "linux")]
+        assert!(result.is_err());
+        #[cfg(not(target_os = "linux"))]
         assert!(result.is_ok());
     }
 
@@ -1707,8 +1714,10 @@ mod tests {
         #[cfg(target_os = "macos")]
         let result = write_image(&image_path, "/dev/disk0", false, &callback).await;
 
+        // Not in /sys/block, so validation treats it as non-removable —
+        // host-independent, unlike asserting on the machine's real /dev/sda.
         #[cfg(target_os = "linux")]
-        let result = write_image(&image_path, "/dev/sda", false, &callback).await;
+        let result = write_image(&image_path, "/dev/hai-test-nonexistent", false, &callback).await;
 
         #[cfg(target_os = "windows")]
         let result = write_image(&image_path, "\\\\.\\PhysicalDrive0", false, &callback).await;
@@ -1772,25 +1781,6 @@ mod tests {
     mod linux_tests {
         use super::*;
 
-        #[test]
-        fn test_validate_all_dangerous_patterns() {
-            assert!(validate_device_path("/dev/sda").is_err());
-            assert!(validate_device_path("/dev/nvme0n1").is_err());
-            assert!(validate_device_path("/dev/vda").is_err());
-        }
-
-        #[test]
-        fn test_validate_safe_devices() {
-            assert!(validate_device_path("/dev/sdb").is_ok());
-            assert!(validate_device_path("/dev/sdc").is_ok());
-            assert!(validate_device_path("/dev/sdd").is_ok());
-            assert!(validate_device_path("/dev/nvme1n1").is_ok());
-            assert!(validate_device_path("/dev/nvme2n1").is_ok());
-            assert!(validate_device_path("/dev/vdb").is_ok());
-            assert!(validate_device_path("/dev/mmcblk0").is_ok());
-            assert!(validate_device_path("/dev/mmcblk1").is_ok());
-        }
-
         #[tokio::test]
         #[serial]
         async fn test_write_image_nonexistent_file() {
@@ -1818,15 +1808,6 @@ mod tests {
             let result = write_image(&image_path, device_id, false, &callback).await;
             // Could be either permission denied or other error
             assert!(result.is_ok() || result.is_err());
-        }
-
-        #[test]
-        fn test_validate_mmcblk_and_nvme_partitions() {
-            // These should all pass - they're not in the dangerous list
-            assert!(validate_device_path("/dev/mmcblk0p1").is_ok());
-            assert!(validate_device_path("/dev/nvme0n1p1").is_ok());
-            // But nvme0n1 itself should be blocked
-            assert!(validate_device_path("/dev/nvme0n1").is_err());
         }
     }
 
@@ -1985,21 +1966,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "linux")]
-    fn test_validate_linux_all_dangerous_devices() {
-        // Test all dangerous patterns
-        assert!(validate_device_path("/dev/sda").is_err());
-        assert!(validate_device_path("/dev/nvme0n1").is_err());
-        assert!(validate_device_path("/dev/vda").is_err());
-
-        // Ensure partitions of these devices are OK
-        assert!(validate_device_path("/dev/sda1").is_ok());
-        assert!(validate_device_path("/dev/sda2").is_ok());
-        assert!(validate_device_path("/dev/nvme0n1p1").is_ok());
-        assert!(validate_device_path("/dev/vda1").is_ok());
-    }
-
-    #[test]
     #[cfg(target_os = "windows")]
     fn test_validate_windows_all_physical_drives() {
         // Test PhysicalDrive0
@@ -2070,12 +2036,11 @@ mod tests {
 
     // Test the full validation path for various device IDs
     #[test]
+    #[cfg(not(target_os = "linux"))]
     fn test_validate_multiple_safe_devices() {
         let safe_devices = vec![
             #[cfg(target_os = "macos")]
             "/dev/disk5",
-            #[cfg(target_os = "linux")]
-            "/dev/sde",
             #[cfg(target_os = "windows")]
             "\\\\.\\PhysicalDrive5",
         ];
