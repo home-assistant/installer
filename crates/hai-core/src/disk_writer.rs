@@ -745,11 +745,12 @@ mod linux {
             .build()
             .await
             .map_err(|e| map_udisks_error(e, "addressing the device"))?;
-        // O_SYNC so each write reaches the card before returning, instead of
-        // buffering into RAM and stalling on one big flush at the end — keeps
-        // the progress bar tracking real flash speed.
+        
+        // O_EXCL: to make sure we have exlcusive access to the disk and error if not
+        // O_SYNC: so each write reaches the card before returning ot keep the 
+        // progress bar in sync
         let mut options = HashMap::new();
-        options.insert("flags", Value::from(libc::O_SYNC));
+        options.insert("flags", Value::from(libc::O_EXCL | libc::O_SYNC));
         let fd = block
             .open_device("rw", options)
             .await
