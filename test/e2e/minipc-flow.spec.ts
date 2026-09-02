@@ -7,7 +7,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
     // Use mock mode to avoid real API calls
     await page.goto("/?mock=true");
     // Navigate to path selection
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
@@ -115,11 +115,32 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
     const infoDialog = page.locator("info-dialog");
     await expect(infoDialog).toBeVisible();
 
-    // Click secondary button (Go Back)
+    // Click secondary button (Go Back). Target by appearance so it doesn't
+    // also match wa-dialog's built-in (neutral, plain) close button.
     const secondaryButton = infoDialog.locator(
-      'wa-button[variant="neutral"], button:has-text("Go back")'
+      'wa-button[appearance="outlined"]'
     );
     await secondaryButton.click();
+
+    // Dialog should close, setup method view should still be visible
+    await expect(infoDialog).not.toBeVisible();
+    await expect(setupView).toBeVisible();
+  });
+
+  test("USB boot dialog can be dismissed with Escape", async ({ page }) => {
+    await page.locator('option-card[title="Generic (mini) PC"]').click();
+
+    const setupView = page.locator("minipc-setup-method-view");
+    const usbBootOption = setupView
+      .locator(".option-card")
+      .filter({ hasText: "I need to boot from USB" });
+    await usbBootOption.click();
+
+    const infoDialog = page.locator("info-dialog");
+    await expect(infoDialog).toBeVisible();
+
+    // Press Escape — exercises the real wa-dialog dismissal path
+    await page.keyboard.press("Escape");
 
     // Dialog should close, setup method view should still be visible
     await expect(infoDialog).not.toBeVisible();
@@ -147,7 +168,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
 test.describe("Mini PC Flow - Architecture Selection", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/?mock=true");
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await page.locator('option-card[title="Generic (mini) PC"]').click();
 
     // Select "connect drive" to get to architecture selection
@@ -245,7 +266,9 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
     await x86Option.click();
 
     // Click Next button to advance to drive selection
-    const nextButton = page.locator("wizard-shell").locator(".footer-button.primary");
+    const nextButton = page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button");
     await nextButton.click();
 
     // Should navigate to drive selection
@@ -260,7 +283,7 @@ test.describe("Mini PC Flow - Navigation", () => {
     await page.goto("/?mock=true");
 
     // Step 1: Welcome
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
 
     // Step 2: Path selection - Mini PC
     await page.locator('option-card[title="Generic (mini) PC"]').click();
@@ -287,7 +310,7 @@ test.describe("Mini PC Flow - Navigation", () => {
     // Click Next to proceed to drive selection
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
     await nextButton.click();
 
     // Step 5: Drive selection
@@ -304,7 +327,7 @@ test.describe("Mini PC Flow - Navigation", () => {
     await page.goto("/?mock=true");
 
     // Navigate to path selection
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await page.locator('option-card[title="Generic (mini) PC"]').click();
 
     // Setup method - Connect drive
@@ -328,7 +351,7 @@ test.describe("Mini PC Flow - Navigation", () => {
     // Click Next to proceed to drive selection
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
     await nextButton.click();
 
     // Should navigate to drive selection

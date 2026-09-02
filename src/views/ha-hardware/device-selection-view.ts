@@ -2,6 +2,7 @@ import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { getManifest, type Device } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
+import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/device-card.js";
 
 @customElement("ha-hardware-device-selection-view")
@@ -80,21 +81,6 @@ export class HaHardwareDeviceSelectionView extends LitElement {
       margin-bottom: 1rem;
     }
 
-    .retry-button {
-      padding: 0.5rem 1rem;
-      font-size: 0.875rem;
-      color: var(--ha-primary-color, #03a9f4);
-      background: none;
-      border: 1px solid var(--ha-primary-color, #03a9f4);
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-    }
-
-    .retry-button:hover {
-      background-color: rgba(3, 169, 244, 0.1);
-    }
-
     .info-box {
       max-width: 600px;
       padding: 1rem;
@@ -169,9 +155,13 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         <div class="error">
           <span class="error-icon">⚠️</span>
           <p class="error-message">${this._error}</p>
-          <button class="retry-button" @click=${this._loadDevices}>
+          <wa-button
+            variant="brand"
+            appearance="outlined"
+            @click=${this._loadDevices}
+          >
             Try again
-          </button>
+          </wa-button>
         </div>
       `;
     }

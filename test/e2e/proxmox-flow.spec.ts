@@ -4,7 +4,7 @@ test.describe("Proxmox Installation Flow", () => {
   test.beforeEach(async ({ page }) => {
     // Use mock mode to avoid actual Proxmox connections
     await page.goto("/?mock=true");
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     // Select Proxmox Server option
     await page.locator('option-card[title="Proxmox server"]').click();
@@ -58,7 +58,7 @@ test.describe("Proxmox Installation Flow", () => {
     const connectView = page.locator("proxmox-connect-view");
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
 
     // Clear the username field (which has default value)
     await connectView.locator("#username").clear();
@@ -82,7 +82,7 @@ test.describe("Proxmox Installation Flow", () => {
 
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
 
     // Click next - should trigger validation
     await nextButton.click();
@@ -104,8 +104,8 @@ test.describe("Proxmox Installation Flow", () => {
     // Click next to trigger connection attempt
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
-    await expect(nextButton).toBeEnabled();
+      .locator(".footer-right wa-button");
+    await expect(nextButton).toHaveJSProperty("disabled", false);
     await nextButton.click();
 
     // In mock mode, connection might succeed or fail depending on implementation
@@ -133,8 +133,8 @@ test.describe("Proxmox Installation Flow", () => {
 
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
-    await expect(nextButton).toBeEnabled();
+      .locator(".footer-right wa-button");
+    await expect(nextButton).toHaveJSProperty("disabled", false);
     await nextButton.click();
 
     // Should advance to configure view
@@ -204,8 +204,8 @@ test.describe("Proxmox Installation Flow", () => {
     // Next should be enabled
     const nextButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
-    await expect(nextButton).toBeEnabled();
+      .locator(".footer-right wa-button");
+    await expect(nextButton).toHaveJSProperty("disabled", false);
     await nextButton.click();
 
     // Should advance to confirmation
@@ -215,8 +215,8 @@ test.describe("Proxmox Installation Flow", () => {
   test("step 2: can navigate back to step 1", async ({ page }) => {
     await navigateToProxmoxStep2(page);
 
-    const backButton = page.locator("wizard-shell").locator(".back-button");
-    await expect(backButton).toBeEnabled();
+    const backButton = page.locator("wizard-shell").locator(".header wa-button");
+    await expect(backButton).toHaveJSProperty("disabled", false);
     await backButton.click();
 
     // Should go back to connection view
@@ -247,7 +247,7 @@ test.describe("Proxmox Installation Flow", () => {
 
     const installButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
     await expect(installButton).toBeVisible();
     await expect(installButton).toContainText("Install");
   });
@@ -260,7 +260,7 @@ test.describe("Proxmox Installation Flow", () => {
     // Click Install button - Proxmox flow has no confirmation dialog
     const installButton = page
       .locator("wizard-shell")
-      .locator(".footer-button.primary");
+      .locator(".footer-right wa-button");
     await installButton.click();
 
     // Should proceed directly to progress view (no dialog for Proxmox flow)
@@ -270,8 +270,8 @@ test.describe("Proxmox Installation Flow", () => {
   test("step 3: can navigate back to step 2", async ({ page }) => {
     await navigateToProxmoxStep3(page);
 
-    const backButton = page.locator("wizard-shell").locator(".back-button");
-    await expect(backButton).toBeEnabled();
+    const backButton = page.locator("wizard-shell").locator(".header wa-button");
+    await expect(backButton).toHaveJSProperty("disabled", false);
     await backButton.click();
 
     // Should go back to configure view
@@ -322,7 +322,7 @@ test.describe("Proxmox Installation Flow", () => {
     await navigateToProxmoxStep4(page);
 
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".back-button");
+    const backButton = wizardShell.locator(".header wa-button");
     await expect(backButton).toHaveCSS("visibility", "hidden");
   });
 
@@ -365,7 +365,7 @@ test.describe("Proxmox Installation Flow", () => {
     await navigateToProxmoxStep5(page);
 
     const wizardShell = page.locator("wizard-shell");
-    const doneButton = wizardShell.locator(".footer-button.primary");
+    const doneButton = wizardShell.locator(".footer-right wa-button");
     await expect(doneButton).toBeVisible();
     await expect(doneButton).toContainText("Done");
   });
@@ -374,7 +374,7 @@ test.describe("Proxmox Installation Flow", () => {
     await navigateToProxmoxStep5(page);
 
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".back-button");
+    const backButton = wizardShell.locator(".header wa-button");
     await expect(backButton).toHaveCSS("visibility", "hidden");
   });
 
@@ -382,7 +382,7 @@ test.describe("Proxmox Installation Flow", () => {
     await navigateToProxmoxStep5(page);
 
     const wizardShell = page.locator("wizard-shell");
-    const doneButton = wizardShell.locator(".footer-button.primary");
+    const doneButton = wizardShell.locator(".footer-right wa-button");
     await doneButton.click();
 
     // Should be back on welcome screen
@@ -394,14 +394,14 @@ test.describe("Proxmox Installation Flow", () => {
   }) => {
     // Test cancel on step 1
     const wizardShell = page.locator("wizard-shell");
-    await wizardShell.locator(".cancel-button").click();
+    await wizardShell.locator(".footer-left wa-button").click();
     await expect(page.locator("welcome-view")).toBeVisible();
 
     // Restart and test cancel on step 2
-    await page.locator("welcome-view").locator(".lets-go-button").click();
+    await page.locator("welcome-view").locator("wa-button").click();
     await page.locator('option-card[title="Proxmox server"]').click();
     await navigateToProxmoxStep2(page);
-    await wizardShell.locator(".cancel-button").click();
+    await wizardShell.locator(".footer-left wa-button").click();
     await expect(page.locator("welcome-view")).toBeVisible();
   });
 
@@ -414,15 +414,19 @@ test.describe("Proxmox Installation Flow", () => {
     await connectView.locator("#username").fill("root@pam");
     await connectView.locator("#password").fill("test");
 
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
-    // Step 2: Configure
+    // Step 2: Configure (wait for Next to enable once node/storage defaults load)
     await expect(page.locator("proxmox-configure-view")).toBeVisible();
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    const configNext = page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button");
+    await expect(configNext).toHaveJSProperty("disabled", false);
+    await configNext.click();
 
     // Step 3: Confirm - click Install (no confirmation dialog for Proxmox)
     await expect(page.locator("proxmox-confirm-view")).toBeVisible();
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
 
     // Step 4: Progress (proceeds directly, no dialog)
     await expect(page.locator("proxmox-progress-view")).toBeVisible();
@@ -433,7 +437,7 @@ test.describe("Proxmox Installation Flow", () => {
     });
 
     // Return to welcome
-    await page.locator("wizard-shell").locator(".footer-button.primary").click();
+    await page.locator("wizard-shell").locator(".footer-right wa-button").click();
     await expect(page.locator("welcome-view")).toBeVisible();
   });
 });
@@ -444,20 +448,27 @@ async function navigateToProxmoxStep2(page: any) {
   await connectView.locator("#server-url").fill("https://192.168.1.100:8006");
   await connectView.locator("#username").fill("root@pam");
   await connectView.locator("#password").fill("test");
-  await page.locator("wizard-shell").locator(".footer-button.primary").click();
+  await page.locator("wizard-shell").locator(".footer-right wa-button").click();
   await expect(page.locator("proxmox-configure-view")).toBeVisible();
 }
 
 async function navigateToProxmoxStep3(page: any) {
   await navigateToProxmoxStep2(page);
-  await page.locator("wizard-shell").locator(".footer-button.primary").click();
+  // Node/storage defaults load async, so Next stays disabled briefly. Playwright
+  // can't detect a wa-button's disabled state, so wait for it explicitly before
+  // clicking (otherwise the click lands on a still-disabled button and is a no-op).
+  const nextButton = page
+    .locator("wizard-shell")
+    .locator(".footer-right wa-button");
+  await expect(nextButton).toHaveJSProperty("disabled", false);
+  await nextButton.click();
   await expect(page.locator("proxmox-confirm-view")).toBeVisible();
 }
 
 async function navigateToProxmoxStep4(page: any) {
   await navigateToProxmoxStep3(page);
   // No confirmation dialog for Proxmox flow - proceeds directly to install
-  await page.locator("wizard-shell").locator(".footer-button.primary").click();
+  await page.locator("wizard-shell").locator(".footer-right wa-button").click();
   await expect(page.locator("proxmox-progress-view")).toBeVisible();
 }
 
