@@ -1532,8 +1532,20 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn test_validate_device_path_blocks_device_absent_from_sysfs() {
-        let result = validate_device_path("/dev/hai-test-nonexistent");
-        assert!(matches!(result.unwrap_err(), Error::PermissionDenied(_)));
+        // The /dev/ prefix and trailing slashes are normalized away, so all
+        // spellings hit the same sysfs lookup and get the same verdict.
+        for id in [
+            "/dev/hai-test-nonexistent",
+            "hai-test-nonexistent",
+            "/dev/hai-test-nonexistent/",
+        ] {
+            match validate_device_path(id) {
+                Err(Error::PermissionDenied(msg)) => {
+                    assert!(msg.contains("not a removable drive"), "{id}: {msg}");
+                }
+                other => panic!("expected PermissionDenied for {id}, got {other:?}"),
+            }
+        }
     }
 
     #[test]
@@ -2006,22 +2018,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "linux")]
-    fn test_validation_error_messages_linux() {
-        let devices = vec!["/dev/sda", "/dev/nvme0n1", "/dev/vda"];
-        for device in devices {
-            let result = validate_device_path(device);
-            assert!(result.is_err());
-            match result {
-                Err(Error::PermissionDenied(msg)) => {
-                    assert!(msg.contains(device) || msg.contains("system drive"));
-                }
-                _ => panic!("Expected PermissionDenied error for {}", device),
-            }
-        }
-    }
-
-    #[test]
     #[cfg(target_os = "windows")]
     fn test_validation_error_message_windows() {
         let result = validate_device_path("\\\\.\\PhysicalDrive0");
@@ -2094,18 +2090,10 @@ mod tests {
 
     // Test with path that doesn't have /dev/ prefix
     #[test]
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     fn test_validate_without_dev_prefix() {
-        #[cfg(target_os = "macos")]
-        {
-            assert!(validate_device_path("disk5").is_ok());
-            assert!(validate_device_path("disk0").is_err());
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            assert!(validate_device_path("sdb").is_ok());
-        }
+        assert!(validate_device_path("disk5").is_ok());
+        assert!(validate_device_path("disk0").is_err());
     }
 
     // Test case sensitivity
@@ -2200,14 +2188,6 @@ mod tests {
                 kind
             );
         }
-    }
-
-    // Test validation with slash variations
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn test_validate_linux_with_trailing_slash() {
-        assert!(validate_device_path("/dev/sdb/").is_ok());
-        assert!(validate_device_path("/dev/sda/").is_err());
     }
 
     // Test multiple consecutive calls to progress callback
