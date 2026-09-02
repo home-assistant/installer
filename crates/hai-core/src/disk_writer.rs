@@ -90,6 +90,8 @@ pub async fn write_image<P: ProgressCallback>(
     verify: bool,
     progress_callback: &P,
 ) -> Result<()> {
+    std::fs::metadata(image_path)?;
+
     // Safety check: refuse to write to system drives
     validate_device_path(device_id)?;
 
@@ -557,7 +559,7 @@ mod linux {
             .map_err(|e| map_udisks_error(e, "connecting to the system bus"))?;
         let block_path = resolve_block_path(&connection, device_id).await?;
 
-        unmount_device(&connection, device_id).await;
+        unmount_device(&connection, &block_path).await?;
 
         let image_size = std::fs::metadata(image_path)?.len();
 
@@ -717,6 +719,16 @@ mod linux {
         fn unmount(&self, options: HashMap<&str, Value<'_>>) -> zbus::Result<()>;
     }
 
+    #[zbus::proxy(
+        interface = "org.freedesktop.UDisks2.PartitionTable",
+        default_service = "org.freedesktop.UDisks2",
+        gen_blocking = false
+    )]
+    trait UDisks2PartitionTable {
+        #[zbus(property)]
+        fn partitions(&self) -> zbus::Result<Vec<OwnedObjectPath>>;
+    }
+
     async fn resolve_block_path(conn: &Connection, device_id: &str) -> Result<OwnedObjectPath> {
         let manager = UDisks2ManagerProxy::new(conn)
             .await
@@ -745,9 +757,9 @@ mod linux {
             .build()
             .await
             .map_err(|e| map_udisks_error(e, "addressing the device"))?;
-        
-        // O_EXCL: to make sure we have exlcusive access to the disk and error if not
-        // O_SYNC: so each write reaches the card before returning ot keep the 
+
+        // O_EXCL: to make sure we have exclusive access to the disk and error if not
+        // O_SYNC: so each write reaches the card before returning to keep the
         // progress bar in sync
         let mut options = HashMap::new();
         options.insert("flags", Value::from(libc::O_EXCL | libc::O_SYNC));
@@ -806,34 +818,21 @@ mod linux {
         }
     }
 
-    /// Block-object names to unmount before writing: the device plus its first
-    /// 16 partitions (`sdb`+`sdb1…`, or `mmcblk0`+`mmcblk0p1…`).
-    fn partition_block_names(device_id: &str) -> Vec<String> {
-        let base = device_id
-            .strip_prefix("/dev/")
-            .unwrap_or(device_id)
-            .to_string();
-        // Names ending in a digit (mmcblk0, nvme0n1, loop0) take a 'p' before the
-        // partition index; sd*/vd* append it directly.
-        let needs_p = base.chars().last().is_some_and(|c| c.is_ascii_digit());
-        let mut names = Vec::with_capacity(17);
-        names.push(base.clone());
-        for i in 1..=16 {
-            names.push(if needs_p {
-                format!("{base}p{i}")
-            } else {
-                format!("{base}{i}")
-            });
+    /// Unmount everything on the device before writing.
+    async fn unmount_device(conn: &Connection, block_path: &OwnedObjectPath) -> Result<()> {
+        let mut targets = vec![block_path.clone()];
+        // Unpartitioned media has no PartitionTable interface; the property
+        // read fails and only the whole-disk filesystem is unmounted.
+        if let Ok(builder) = UDisks2PartitionTableProxy::builder(conn).path(block_path.clone()) {
+            if let Ok(table) = builder.cache_properties(CacheProperties::No).build().await {
+                if let Ok(partitions) = table.partitions().await {
+                    targets.extend(partitions);
+                }
+            }
         }
-        names
-    }
 
-    /// Best-effort: unmount failures (not mounted, no fs, unknown object) are
-    /// ignored — we only need the device free before writing.
-    async fn unmount_device(conn: &Connection, device_id: &str) {
-        for name in partition_block_names(device_id) {
-            let object_path = format!("/org/freedesktop/UDisks2/block_devices/{name}");
-            let builder = match UDisks2FilesystemProxy::builder(conn).path(object_path) {
+        for path in targets {
+            let builder = match UDisks2FilesystemProxy::builder(conn).path(path) {
                 Ok(builder) => builder,
                 Err(_) => continue,
             };
@@ -843,8 +842,16 @@ mod linux {
             };
             let mut options = HashMap::new();
             options.insert("force", Value::from(true));
-            let _ = proxy.unmount(options).await;
+            if let Err(e) = proxy.unmount(options).await {
+                if let err @ (Error::PermissionDenied(_) | Error::DiskServiceUnavailable(_)) =
+                    map_udisks_error(e, "unmounting a volume")
+                {
+                    return Err(err);
+                }
+            }
         }
+
+        Ok(())
     }
 
     fn write_to_device(
@@ -970,21 +977,6 @@ mod linux {
         use super::*;
         use zbus::message::Message;
         use zbus::names::OwnedErrorName;
-
-        #[test]
-        fn test_partition_block_names_sd() {
-            let names = partition_block_names("/dev/sdb");
-            assert_eq!(names[0], "sdb");
-            assert_eq!(names[1], "sdb1");
-            assert_eq!(names[16], "sdb16");
-        }
-
-        #[test]
-        fn test_partition_block_names_mmcblk_inserts_p() {
-            let names = partition_block_names("/dev/mmcblk0");
-            assert_eq!(names[0], "mmcblk0");
-            assert_eq!(names[1], "mmcblk0p1");
-        }
 
         fn method_error(name: &str, message: Option<&str>) -> zbus::Error {
             let msg = Message::method_call("/", "Test")
@@ -1804,14 +1796,12 @@ mod tests {
         async fn test_write_image_nonexistent_file() {
             let callback = TestProgressCallback::new();
             let image_path = PathBuf::from("/tmp/nonexistent_image_file.img");
-            // Non-resolvable device: write_image now fails at device resolution
-            // before the image is ever opened, so this checks the error path
-            // generically (no real device touched, no polkit prompt) rather than
-            // the missing-file case specifically.
             let device_id = "/dev/hai-test-nonexistent";
 
+            // The image check runs before device validation and any D-Bus
+            // call, so a missing image surfaces as Io even with a bad device.
             let result = write_image(&image_path, device_id, false, &callback).await;
-            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), Error::Io(_)));
         }
 
         #[tokio::test]
