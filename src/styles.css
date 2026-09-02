@@ -33,8 +33,7 @@
   --wa-color-neutral-on-quiet: var(--ha-secondary-text-color);
 
   /* wa-dialog surface/text/backdrop. Web Awesome's own dark tokens are gated
-   * on a .wa-dark class we don't set, so map these to our theme vars (which
-   * flip via prefers-color-scheme below) to keep dialogs correct in dark mode. */
+   * to WA's neutral palette, so map them to our theme vars instead. */
   --wa-color-surface-raised: var(--ha-card-background);
   --wa-color-text-normal: var(--ha-text-color);
   --wa-color-overlay-modal: rgba(0, 0, 0, 0.5);
