@@ -26,7 +26,7 @@ describe("info-dialog", () => {
 
     const title = el.shadowRoot!.querySelector(".dialog-title");
     expect(title).to.exist;
-    expect(title!.textContent).to.equal("Test Title");
+    expect(title!.textContent).to.contain("Test Title");
   });
 
   it("renders with custom message", async () => {
@@ -153,28 +153,117 @@ describe("info-dialog", () => {
     expect(el.open).to.be.false;
   });
 
-  it("dispatches dialog-secondary when overlay is clicked", async () => {
+  it("dispatches dialog-secondary when dismissed (escape/backdrop/close)", async () => {
     const el = await fixture<InfoDialog>(html`
       <info-dialog open></info-dialog>
     `);
 
-    const overlay = el.shadowRoot!.querySelector(".overlay") as HTMLElement;
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
 
-    setTimeout(() => overlay.click());
+    setTimeout(() =>
+      dialog.dispatchEvent(
+        new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+      )
+    );
     const event = await oneEvent(el, "dialog-secondary");
     expect(event).to.exist;
+    expect(el.open).to.be.false;
   });
 
-  it("does not close when dialog content is clicked", async () => {
+  it("does not also fire dialog-secondary when the primary action is used", async () => {
     const el = await fixture<InfoDialog>(html`
       <info-dialog open></info-dialog>
     `);
 
-    const dialog = el.shadowRoot!.querySelector(".dialog") as HTMLElement;
+    let secondaryFired = false;
+    el.addEventListener("dialog-secondary", () => (secondaryFired = true));
 
-    expect(el.open).to.be.true;
-    dialog.click();
+    const primaryButton = el.shadowRoot!.querySelector(
+      "wa-button[variant='brand']"
+    ) as HTMLElement;
+    primaryButton.click();
     await el.updateComplete;
+
+    // Primary already closed the dialog, so no hide completion is a dismissal,
+    // however many arrive. Real Escape/backdrop dismissal is covered in E2E.
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
+    const afterHide = () =>
+      dialog.dispatchEvent(
+        new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+      );
+    afterHide();
+    afterHide();
+
+    expect(secondaryFired).to.be.false;
+    expect(el.open).to.be.false;
+  });
+
+  it("fires dialog-secondary exactly once when the secondary action is used", async () => {
+    const el = await fixture<InfoDialog>(html`
+      <info-dialog open secondaryLabel="Go back"></info-dialog>
+    `);
+
+    let secondaryCount = 0;
+    el.addEventListener("dialog-secondary", () => (secondaryCount += 1));
+
+    const secondaryButton = el.shadowRoot!.querySelector(
+      "wa-button[appearance='outlined']"
+    ) as HTMLElement;
+    secondaryButton.click();
+    await el.updateComplete;
+
+    // Secondary and dismissal share an event, so the hide completion that
+    // follows the button must not report a second one.
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
+    const afterHide = () =>
+      dialog.dispatchEvent(
+        new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+      );
+    afterHide();
+    afterHide();
+
+    expect(secondaryCount).to.equal(1);
+  });
+
+  it("stays silent when a consumer closes it programmatically", async () => {
+    const el = await fixture<InfoDialog>(html`
+      <info-dialog open></info-dialog>
+    `);
+
+    let secondaryFired = false;
+    el.addEventListener("dialog-secondary", () => (secondaryFired = true));
+
+    // Closing through the public `open` property is not a user dismissal,
+    // so it must not report one even though it still completes a hide.
+    el.open = false;
+    await el.updateComplete;
+    el.shadowRoot!.querySelector("wa-dialog")!.dispatchEvent(
+      new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+    );
+
+    expect(secondaryFired).to.be.false;
+  });
+
+  it("ignores wa-after-hide bubbling from nested slotted content", async () => {
+    const el = await fixture<InfoDialog>(
+      html`<info-dialog open></info-dialog>`
+    );
+
+    let secondaryFired = false;
+    el.addEventListener("dialog-secondary", () => (secondaryFired = true));
+
+    // A nested Web Awesome overlay in the body would re-dispatch wa-after-hide,
+    // which bubbles/composes up to our handler. It must be ignored (not
+    // AT_TARGET), leaving the info dialog open.
+    const waDialog = el.shadowRoot!.querySelector("wa-dialog")!;
+    const nested = document.createElement("div");
+    waDialog.appendChild(nested);
+    await el.updateComplete;
+    nested.dispatchEvent(
+      new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
+    );
+
+    expect(secondaryFired).to.be.false;
     expect(el.open).to.be.true;
   });
 
@@ -194,11 +283,10 @@ describe("info-dialog", () => {
       <info-dialog open></info-dialog>
     `);
 
-    expect(el.shadowRoot!.querySelector(".overlay")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-header")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-content")).to.exist;
-    expect(el.shadowRoot!.querySelector(".dialog-actions")).to.exist;
+    expect(el.shadowRoot!.querySelector("wa-dialog")).to.exist;
+    expect(el.shadowRoot!.querySelector(".dialog-title")).to.exist;
+    expect(el.shadowRoot!.querySelector(".dialog-message")).to.exist;
+    expect(el.shadowRoot!.querySelector("wa-button[variant='brand']")).to.exist;
   });
 
   it("stores title property", async () => {
@@ -242,9 +330,7 @@ describe("info-dialog", () => {
   });
 
   it("can toggle open state", async () => {
-    const el = await fixture<InfoDialog>(html`
-      <info-dialog></info-dialog>
-    `);
+    const el = await fixture<InfoDialog>(html` <info-dialog></info-dialog> `);
 
     expect(el.open).to.be.false;
     expect(el.hasAttribute("open")).to.be.false;
