@@ -1,5 +1,6 @@
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import "./fab-button.js";
 
 // Import views
 import "../views/welcome-view.js";
@@ -41,6 +42,10 @@ export type ViewName =
   | "other-options"
   | "wizard";
 
+// mdi:toolbox-outline
+const mdiToolboxOutline =
+  "M18 16H16V15H8V16H6V15H2V20H22V15H18V16M20 8H17V6C17 4.9 16.1 4 15 4H9C7.9 4 7 4.9 7 6V8H4C2.9 8 2 8.9 2 10V14H6V12H8V14H16V12H18V14H22V10C22 8.9 21.1 8 20 8M15 8H9V6H15V8Z";
+
 @customElement("app-shell")
 export class AppShell extends LitElement {
   static styles = css`
@@ -55,67 +60,6 @@ export class AppShell extends LitElement {
 
     :host > * {
       flex: 1;
-    }
-
-    .toolbox-button {
-      position: fixed;
-      bottom: 1.5rem;
-      right: 1.5rem;
-      width: 56px;
-      height: 56px;
-      border-radius: 50%;
-      background-color: var(--ha-primary-color, #03a9f4);
-      border: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      transition:
-        transform 0.2s ease,
-        box-shadow 0.2s ease,
-        background-color 0.2s ease;
-      z-index: 100;
-    }
-
-    .toolbox-button:hover {
-      transform: scale(1.05);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
-      background-color: var(--ha-primary-color-dark, #0288d1);
-    }
-
-    .toolbox-button:active {
-      transform: scale(0.98);
-    }
-
-    .toolbox-button svg {
-      width: 28px;
-      height: 28px;
-      fill: white;
-    }
-
-    .toolbox-button-tooltip {
-      position: absolute;
-      right: 68px;
-      background-color: var(--ha-card-background, #333333);
-      color: white;
-      padding: 0.5rem 0.75rem;
-      border-radius: 6px;
-      font-size: 0.8125rem;
-      white-space: nowrap;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.2s ease;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .toolbox-button-tooltip {
-        background-color: var(--ha-card-background, #424242);
-      }
-    }
-
-    .toolbox-button:hover .toolbox-button-tooltip {
-      opacity: 1;
     }
   `;
 
@@ -546,16 +490,12 @@ export class AppShell extends LitElement {
   }
 
   private _renderToolboxButton() {
-    // mdi:toolbox-outline
     return html`
-      <button class="toolbox-button" @click=${this._onToolboxOpen}>
-        <span class="toolbox-button-tooltip">Open Home Toolbox</span>
-        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path
-            d="M18 16H16V15H8V16H6V15H2V20H22V15H18V16M20 8H17V6C17 4.9 16.1 4 15 4H9C7.9 4 7 4.9 7 6V8H4C2.9 8 2 8.9 2 10V14H6V12H8V14H16V12H18V14H22V10C22 8.9 21.1 8 20 8M15 8H9V6H15V8Z"
-          />
-        </svg>
-      </button>
+      <fab-button
+        .path=${mdiToolboxOutline}
+        label="Open Home Toolbox"
+        @click=${this._onToolboxOpen}
+      ></fab-button>
     `;
   }
 

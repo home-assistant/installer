@@ -1,5 +1,6 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import "@home-assistant/webawesome/dist/components/button/button.js";
 
 @customElement("info-dialog")
 export class InfoDialog extends LitElement {
@@ -120,51 +121,6 @@ export class InfoDialog extends LitElement {
         border-top-color: var(--ha-border-color, #333333);
       }
     }
-
-    .dialog-button {
-      padding: 0.625rem 1.25rem;
-      font-size: 0.9375rem;
-      font-weight: 500;
-      border-radius: 8px;
-      cursor: pointer;
-      transition:
-        background-color 0.2s ease,
-        transform 0.1s ease;
-    }
-
-    .dialog-button:active {
-      transform: scale(0.98);
-    }
-
-    .dialog-button.secondary {
-      color: var(--ha-secondary-text-color, #727272);
-      background: none;
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-    }
-
-    .dialog-button.secondary:hover {
-      background-color: rgba(0, 0, 0, 0.05);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .dialog-button.secondary {
-        border-color: var(--ha-border-color, #444444);
-      }
-
-      .dialog-button.secondary:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-      }
-    }
-
-    .dialog-button.primary {
-      color: white;
-      background-color: var(--ha-primary-color, #03a9f4);
-      border: none;
-    }
-
-    .dialog-button.primary:hover {
-      background-color: var(--ha-primary-color-dark, #0288d1);
-    }
   `;
 
   @property({ type: Boolean, reflect: true })
@@ -203,17 +159,18 @@ export class InfoDialog extends LitElement {
           <div class="dialog-actions">
             ${this.secondaryLabel
               ? html`
-                  <button
-                    class="dialog-button secondary"
-                    @click=${this._onSecondary}
-                  >
+                  <wa-button appearance="outlined" @click=${this._onSecondary}>
                     ${this.secondaryLabel}
-                  </button>
+                  </wa-button>
                 `
               : ""}
-            <button class="dialog-button primary" @click=${this._onPrimary}>
+            <wa-button
+              variant="brand"
+              appearance="accent"
+              @click=${this._onPrimary}
+            >
               ${this.primaryLabel}
-            </button>
+            </wa-button>
           </div>
         </div>
       </div>

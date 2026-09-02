@@ -6,9 +6,30 @@
   /* Home Assistant brand colors */
   --ha-primary-color: #03a9f4;
   --ha-primary-color-dark: #0288d1;
+  --ha-error-color: #db4437;
   --ha-secondary-text-color: #727272;
   --ha-background-color: #ffffff;
   --ha-text-color: #212121;
+
+  /* Map Web Awesome color tokens onto our theme colors. wa-button reads these
+   * through its variant -> generic token chain (e.g. variant="brand" resolves
+   * --wa-color-fill-loud from --wa-color-brand-fill-loud). Defined here,
+   * outside @layer wa-theme, so they win over the bundled default theme. */
+  --wa-color-brand-fill-loud: var(--ha-primary-color);
+  --wa-color-brand-fill-quiet: color-mix(
+    in srgb,
+    var(--ha-primary-color) 12%,
+    transparent
+  );
+  --wa-color-brand-border-loud: var(--ha-primary-color);
+  --wa-color-brand-on-quiet: var(--ha-primary-color);
+  --wa-color-brand-on-loud: #ffffff;
+
+  --wa-color-danger-fill-loud: var(--ha-error-color);
+  --wa-color-danger-on-loud: #ffffff;
+
+  /* Plain/neutral buttons (Back, Cancel) */
+  --wa-color-neutral-on-quiet: var(--ha-secondary-text-color);
 
   /* Typography */
   font-family:

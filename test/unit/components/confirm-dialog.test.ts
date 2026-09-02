@@ -56,7 +56,7 @@ describe("confirm-dialog", () => {
     `);
 
     const cancelButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     );
     expect(cancelButton).to.exist;
     expect(cancelButton!.textContent!.trim()).to.equal("Cancel");
@@ -68,7 +68,7 @@ describe("confirm-dialog", () => {
     `);
 
     const confirmButton = el.shadowRoot!.querySelector(
-      ".dialog-button.danger"
+      "wa-button[variant='danger']"
     );
     expect(confirmButton).to.exist;
     expect(confirmButton!.textContent!.trim()).to.equal("Erase and install");
@@ -80,7 +80,7 @@ describe("confirm-dialog", () => {
     `);
 
     const cancelButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     ) as HTMLButtonElement;
 
     setTimeout(() => cancelButton.click());
@@ -94,7 +94,7 @@ describe("confirm-dialog", () => {
     `);
 
     const confirmButton = el.shadowRoot!.querySelector(
-      ".dialog-button.danger"
+      "wa-button[variant='danger']"
     ) as HTMLButtonElement;
 
     setTimeout(() => confirmButton.click());
@@ -108,7 +108,7 @@ describe("confirm-dialog", () => {
     `);
 
     const cancelButton = el.shadowRoot!.querySelector(
-      ".dialog-button.secondary"
+      "wa-button[appearance='outlined']"
     ) as HTMLButtonElement;
 
     expect(el.open).to.be.true;
@@ -123,7 +123,7 @@ describe("confirm-dialog", () => {
     `);
 
     const confirmButton = el.shadowRoot!.querySelector(
-      ".dialog-button.danger"
+      "wa-button[variant='danger']"
     ) as HTMLButtonElement;
 
     expect(el.open).to.be.true;
@@ -206,7 +206,7 @@ describe("confirm-dialog", () => {
     `);
 
     const confirmButton = el.shadowRoot!.querySelector(
-      ".dialog-button.danger"
+      "wa-button[variant='danger']"
     ) as HTMLButtonElement;
 
     setTimeout(() => confirmButton.click());
