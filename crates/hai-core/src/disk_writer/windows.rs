@@ -6,14 +6,6 @@ use std::io::{Read, Write};
 use std::process::Command;
 use std::sync::mpsc;
 
-/// Progress update sent from blocking task
-struct ProgressUpdate {
-    stage: FlashStage,
-    bytes_processed: u64,
-    total_bytes: u64,
-    message: String,
-}
-
 pub async fn write_image<P: ProgressCallback>(
     image_path: &PathBuf,
     device_id: &str,
@@ -28,141 +20,71 @@ pub async fn write_image<P: ProgressCallback>(
 
     let image_size = std::fs::metadata(image_path)?.len();
 
-    progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Writing,
-        progress: 0,
-        bytes_processed: 0,
-        total_bytes: image_size,
-        message: "Writing image to device...".to_string(),
-    });
+    progress_callback.on_progress(FlashProgress::new(
+        FlashStage::Writing,
+        0,
+        image_size,
+        "Writing image to device...",
+    ));
 
-    // Create channel for progress updates from blocking task
-    let (progress_tx, progress_rx) = mpsc::channel::<ProgressUpdate>();
+    // Send progress updates from the blocking task through a channel.
+    let (progress_tx, progress_rx) = mpsc::channel::<FlashProgress>();
 
     let image_path_clone = image_path.clone();
     let device_id_clone = device_id.to_string();
 
     let write_handle = tokio::task::spawn_blocking(move || {
-        write_to_device(&image_path_clone, &device_id_clone, image_size, progress_tx)
+        write_and_verify(
+            &image_path_clone,
+            &device_id_clone,
+            image_size,
+            verify,
+            progress_tx,
+        )
     });
 
-    // Forward progress updates while waiting for write to complete
-    loop {
-        match progress_rx.recv_timeout(std::time::Duration::from_millis(100)) {
-            Ok(update) => {
-                let progress = if update.total_bytes > 0 {
-                    ((update.bytes_processed as f64 / update.total_bytes as f64) * 100.0) as u8
-                } else {
-                    0
-                };
-                progress_callback.on_progress(FlashProgress {
-                    stage: update.stage,
-                    progress,
-                    bytes_processed: update.bytes_processed,
-                    total_bytes: update.total_bytes,
-                    message: update.message,
-                });
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if write_handle.is_finished() {
-                    break;
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                break;
-            }
-        }
-    }
+    run_with_progress(write_handle, progress_rx, progress_callback).await?;
 
-    write_handle
-        .await
-        .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
+    progress_callback.on_progress(FlashProgress::new(
+        FlashStage::Finalizing,
+        0,
+        0,
+        "Finalizing...",
+    ));
 
-    if verify {
-        progress_callback.on_progress(FlashProgress {
-            stage: FlashStage::Verifying,
-            progress: 0,
-            bytes_processed: 0,
-            total_bytes: image_size,
-            message: "Verifying written data...".to_string(),
-        });
-
-        let (verify_tx, verify_rx) = mpsc::channel::<ProgressUpdate>();
-
-        let image_path_clone = image_path.clone();
-        let device_id_clone = device_id.to_string();
-
-        let verify_handle = tokio::task::spawn_blocking(move || {
-            verify_write(&image_path_clone, &device_id_clone, image_size, verify_tx)
-        });
-
-        // Forward verify progress updates
-        loop {
-            match verify_rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                Ok(update) => {
-                    let progress = if update.total_bytes > 0 {
-                        ((update.bytes_processed as f64 / update.total_bytes as f64) * 100.0) as u8
-                    } else {
-                        0
-                    };
-                    progress_callback.on_progress(FlashProgress {
-                        stage: update.stage,
-                        progress,
-                        bytes_processed: update.bytes_processed,
-                        total_bytes: update.total_bytes,
-                        message: update.message,
-                    });
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    if verify_handle.is_finished() {
-                        break;
-                    }
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    break;
-                }
-            }
-        }
-
-        verify_handle
-            .await
-            .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
-    }
-
-    progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Finalizing,
-        progress: 0,
-        bytes_processed: 0,
-        total_bytes: 0,
-        message: "Finalizing...".to_string(),
-    });
-
-    progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Complete,
-        progress: 100,
-        bytes_processed: image_size,
-        total_bytes: image_size,
-        message: "Complete".to_string(),
-    });
+    progress_callback.on_progress(FlashProgress::new(
+        FlashStage::Complete,
+        image_size,
+        image_size,
+        "Complete",
+    ));
 
     Ok(())
 }
 
-fn clean_disk(disk_number: &str) -> Result<()> {
-    let ps_script = format!(
-        "Clear-Disk -Number {} -RemoveData -RemoveOEM -Confirm:$false",
-        disk_number
-    );
+fn write_and_verify(
+    image_path: &PathBuf,
+    device_path: &str,
+    total_size: u64,
+    verify: bool,
+    progress_tx: mpsc::Sender<FlashProgress>,
+) -> Result<()> {
+    write_to_device(image_path, device_path, total_size, &progress_tx)?;
 
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-Command", &ps_script])
-        .output()?;
+    if verify {
+        let _ = progress_tx.send(FlashProgress::new(
+            FlashStage::Verifying,
+            0,
+            total_size,
+            "Verifying written data...",
+        ));
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if !stderr.contains("not found") && !stderr.contains("no media") {
-            return Err(Error::DeviceBusy(stderr.to_string()));
-        }
+        // Tag verify-phase failures as VerificationFailed so the caller can
+        // label them "Verification failed" rather than "Write failed".
+        verify_write(image_path, device_path, total_size, &progress_tx).map_err(|e| match e {
+            Error::VerificationFailed(_) | Error::DriveDisconnected => e,
+            other => Error::VerificationFailed(other.to_string()),
+        })?;
     }
 
     Ok(())
@@ -172,7 +94,7 @@ fn write_to_device(
     image_path: &PathBuf,
     device_path: &str,
     total_size: u64,
-    progress_tx: mpsc::Sender<ProgressUpdate>,
+    progress_tx: &mpsc::Sender<FlashProgress>,
 ) -> Result<()> {
     let mut source = File::open(image_path)?;
 
@@ -214,12 +136,12 @@ fn write_to_device(
         // Update progress periodically
         if bytes_written - last_progress_bytes >= PROGRESS_UPDATE_INTERVAL {
             last_progress_bytes = bytes_written;
-            let _ = progress_tx.send(ProgressUpdate {
-                stage: FlashStage::Writing,
-                bytes_processed: bytes_written,
-                total_bytes: total_size,
-                message: "Writing image to device...".to_string(),
-            });
+            let _ = progress_tx.send(FlashProgress::new(
+                FlashStage::Writing,
+                bytes_written,
+                total_size,
+                "Writing image to device...",
+            ));
         }
     }
 
@@ -232,12 +154,12 @@ fn write_to_device(
     })?;
 
     // Send final progress
-    let _ = progress_tx.send(ProgressUpdate {
-        stage: FlashStage::Writing,
-        bytes_processed: bytes_written,
-        total_bytes: total_size,
-        message: "Write complete".to_string(),
-    });
+    let _ = progress_tx.send(FlashProgress::new(
+        FlashStage::Writing,
+        bytes_written,
+        total_size,
+        "Write complete",
+    ));
 
     Ok(())
 }
@@ -246,7 +168,7 @@ fn verify_write(
     image_path: &PathBuf,
     device_path: &str,
     total_size: u64,
-    progress_tx: mpsc::Sender<ProgressUpdate>,
+    progress_tx: &mpsc::Sender<FlashProgress>,
 ) -> Result<()> {
     let mut source = File::open(image_path)?;
     let mut dest = File::open(device_path).map_err(|e| {
@@ -288,22 +210,42 @@ fn verify_write(
         // Update progress periodically
         if bytes_verified - last_progress_bytes >= PROGRESS_UPDATE_INTERVAL {
             last_progress_bytes = bytes_verified;
-            let _ = progress_tx.send(ProgressUpdate {
-                stage: FlashStage::Verifying,
-                bytes_processed: bytes_verified,
-                total_bytes: total_size,
-                message: "Verifying written data...".to_string(),
-            });
+            let _ = progress_tx.send(FlashProgress::new(
+                FlashStage::Verifying,
+                bytes_verified,
+                total_size,
+                "Verifying written data...",
+            ));
         }
     }
 
     // Send final progress
-    let _ = progress_tx.send(ProgressUpdate {
-        stage: FlashStage::Verifying,
-        bytes_processed: bytes_verified,
-        total_bytes: total_size,
-        message: "Verification complete".to_string(),
-    });
+    let _ = progress_tx.send(FlashProgress::new(
+        FlashStage::Verifying,
+        bytes_verified,
+        total_size,
+        "Verification complete",
+    ));
+
+    Ok(())
+}
+
+fn clean_disk(disk_number: &str) -> Result<()> {
+    let ps_script = format!(
+        "Clear-Disk -Number {} -RemoveData -RemoveOEM -Confirm:$false",
+        disk_number
+    );
+
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &ps_script])
+        .output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.contains("not found") && !stderr.contains("no media") {
+            return Err(Error::DeviceBusy(stderr.to_string()));
+        }
+    }
 
     Ok(())
 }
@@ -311,12 +253,19 @@ fn verify_write(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
-    #[test]
-    fn test_clean_disk_nonexistent() {
-        // Test cleaning a disk that doesn't exist
-        let result = clean_disk("999");
-        // Should either succeed or fail, but not panic
-        assert!(result.is_ok() || result.is_err());
+    #[tokio::test]
+    #[serial]
+    async fn test_write_image_invalid_device() {
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(temp_file.path(), b"test data").unwrap();
+        let image_path = temp_file.path().to_path_buf();
+
+        // Fails at clean_disk: the device does not exist.
+        let device_id = "\\\\.\\PhysicalDrive999";
+
+        let result = write_image(&image_path, device_id, false, &crate::NoOpProgress).await;
+        assert!(result.is_err());
     }
 }

@@ -47,6 +47,35 @@ fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
     })
 }
 
+/// Drive a blocking task while forwarding its progress updates to the
+/// callback, then drain updates buffered after the task finished (e.g. the
+/// final "Write complete" / "Verification complete") so they aren't lost.
+async fn run_with_progress<P: ProgressCallback>(
+    handle: tokio::task::JoinHandle<Result<()>>,
+    progress_rx: std::sync::mpsc::Receiver<FlashProgress>,
+    progress_callback: &P,
+) -> Result<()> {
+    loop {
+        match progress_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(update) => progress_callback.on_progress(update),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if handle.is_finished() {
+                    break;
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
+    while let Ok(update) = progress_rx.try_recv() {
+        progress_callback.on_progress(update);
+    }
+
+    handle
+        .await
+        .map_err(|e| Error::Io(std::io::Error::other(e)))?
+}
+
 /// Write an image file to a block device with progress updates
 pub async fn write_image<P: ProgressCallback>(
     image_path: &PathBuf,
