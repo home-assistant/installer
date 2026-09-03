@@ -71,6 +71,16 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
             continue;
         }
 
+        // Skip non-removable disks (internal SATA/NVMe drives), matching
+        // the macOS and Linux implementations
+        let removable = matches!(
+            disk.bus_type.as_deref(),
+            Some("USB") | Some("SD") | Some("MMC")
+        );
+        if !removable {
+            continue;
+        }
+
         // Determine device type based on bus type
         let device_type = determine_device_type(&disk);
 
@@ -86,10 +96,7 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
             name: friendly_name,
             size,
             device_type,
-            removable: matches!(
-                disk.bus_type.as_deref(),
-                Some("USB") | Some("SD") | Some("MMC")
-            ),
+            removable,
             model,
             vendor,
         });
