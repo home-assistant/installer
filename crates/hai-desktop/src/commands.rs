@@ -94,6 +94,32 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
 // Flash Commands
 // =============================================================================
 
+/// Find the flash target among the currently attached devices.
+///
+/// `write_image` writes to whatever target it is given, so this lookup is the
+/// safety gate: the device must be one that enumeration reported, and it must
+/// be removable — enumeration can include internal drives on some platforms.
+fn find_flash_target<'a>(
+    devices: &'a [BlockDevice],
+    device_id: &str,
+) -> Result<&'a BlockDevice, String> {
+    let device = devices.iter().find(|d| d.id == device_id).ok_or_else(|| {
+        format!(
+            "Device {} not found. It may have been disconnected.",
+            device_id
+        )
+    })?;
+
+    if !device.removable {
+        return Err(format!(
+            "{} is not a removable drive and cannot be overwritten",
+            device_id
+        ));
+    }
+
+    Ok(device)
+}
+
 /// Flash an image to a device
 #[tauri::command]
 pub async fn flash_image(
@@ -173,15 +199,7 @@ pub async fn flash_image(
         .await
         .map_err(|e| format!("Failed to list devices: {}", e))?;
 
-    let device = device_list
-        .iter()
-        .find(|d| d.id == request.device_id)
-        .ok_or_else(|| {
-            format!(
-                "Device {} not found. It may have been disconnected.",
-                request.device_id
-            )
-        })?;
+    let device = find_flash_target(&device_list, &request.device_id)?;
 
     if image_size > device.size {
         return Err(format!(
@@ -2664,5 +2682,45 @@ mod tests {
         let result = check_ha_updated(" 192.168.1.1".to_string()).await;
         // Should handle leading whitespace
         let _ = result;
+    }
+
+    fn flash_target(id: &str, removable: bool) -> BlockDevice {
+        BlockDevice {
+            id: id.to_string(),
+            name: "Test Device".to_string(),
+            size: 32_000_000_000,
+            device_type: hai_core::DeviceType::UsbDrive,
+            removable,
+            model: None,
+            vendor: None,
+        }
+    }
+
+    #[test]
+    fn test_find_flash_target_accepts_removable_device() {
+        let devices = [flash_target("/dev/sdb", true)];
+        let device = find_flash_target(&devices, "/dev/sdb").unwrap();
+        assert_eq!(device.id, "/dev/sdb");
+    }
+
+    #[test]
+    fn test_find_flash_target_rejects_unknown_device() {
+        let devices = [flash_target("/dev/sdb", true)];
+        let err = find_flash_target(&devices, "/dev/sdz").unwrap_err();
+        assert!(err.contains("not found"), "{err}");
+    }
+
+    #[test]
+    fn test_find_flash_target_rejects_non_removable_device() {
+        let devices = [flash_target("\\\\.\\PhysicalDrive1", false)];
+        let err = find_flash_target(&devices, "\\\\.\\PhysicalDrive1").unwrap_err();
+        assert!(err.contains("not a removable drive"), "{err}");
+    }
+
+    #[test]
+    fn test_find_flash_target_rejects_empty_device_id() {
+        let devices = [flash_target("/dev/sdb", true)];
+        let err = find_flash_target(&devices, "").unwrap_err();
+        assert!(err.contains("not found"), "{err}");
     }
 }

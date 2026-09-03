@@ -15,21 +15,6 @@ struct ProgressUpdate {
     message: String,
 }
 
-/// Validate that a device path is safe to write to (not a system drive)
-pub fn validate_device_path(device_id: &str) -> Result<()> {
-    // On macOS, disk0 is always the system drive
-    let disk_id = device_id.strip_prefix("/dev/").unwrap_or(device_id);
-    let disk_id = disk_id.strip_prefix("r").unwrap_or(disk_id); // Handle raw device
-
-    if disk_id == "disk0" {
-        return Err(Error::PermissionDenied(
-            "disk0 is the system drive and cannot be overwritten".to_string(),
-        ));
-    }
-
-    Ok(())
-}
-
 pub async fn write_image<P: ProgressCallback>(
     image_path: &PathBuf,
     device_id: &str,
@@ -394,79 +379,6 @@ fn eject_disk(disk_id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_validate_device_path_blocks_disk0() {
-        assert!(validate_device_path("/dev/disk0").is_err());
-        assert!(validate_device_path("/dev/rdisk0").is_err());
-        assert!(validate_device_path("disk0").is_err());
-    }
-
-    #[test]
-    fn test_validate_device_path_allows_other_disks() {
-        assert!(validate_device_path("/dev/disk2").is_ok());
-        assert!(validate_device_path("/dev/disk10").is_ok());
-    }
-
-    #[test]
-    fn test_validate_device_path_disk1() {
-        // disk1 is usually okay (not system drive)
-        assert!(validate_device_path("/dev/disk1").is_ok());
-        assert!(validate_device_path("/dev/rdisk1").is_ok());
-    }
-
-    #[test]
-    fn test_validate_device_path_high_disk_numbers() {
-        assert!(validate_device_path("/dev/disk99").is_ok());
-        assert!(validate_device_path("/dev/rdisk99").is_ok());
-    }
-
-    #[test]
-    fn test_validate_device_rdisk0_variants() {
-        assert!(validate_device_path("rdisk0").is_err());
-        assert!(validate_device_path("/dev/rdisk0").is_err());
-    }
-
-    #[test]
-    fn test_validate_device_without_dev_prefix() {
-        assert!(validate_device_path("disk2").is_ok());
-        assert!(validate_device_path("rdisk2").is_ok());
-        assert!(validate_device_path("disk5").is_ok());
-        assert!(validate_device_path("disk0").is_err());
-    }
-
-    #[test]
-    fn test_validate_all_disk0_variations() {
-        // Test all possible ways someone might reference disk0
-        assert!(validate_device_path("/dev/disk0").is_err());
-        assert!(validate_device_path("/dev/rdisk0").is_err());
-        assert!(validate_device_path("disk0").is_err());
-        assert!(validate_device_path("rdisk0").is_err());
-
-        // disk0s1 passes validation as it's a partition, not the whole disk:
-        // only the exact "disk0" match is rejected.
-        assert!(validate_device_path("/dev/disk0s1").is_ok());
-    }
-
-    #[test]
-    fn test_validation_error_message_disk0() {
-        let result = validate_device_path("/dev/disk0");
-        assert!(result.is_err());
-        match result {
-            Err(Error::PermissionDenied(msg)) => {
-                assert!(msg.contains("disk0"));
-                assert!(msg.contains("system drive"));
-            }
-            _ => panic!("Expected PermissionDenied error"),
-        }
-    }
-
-    #[test]
-    fn test_validate_case_sensitivity() {
-        // macOS device paths are case-sensitive
-        assert!(validate_device_path("/dev/Disk0").is_ok()); // Capital D should pass
-        assert!(validate_device_path("/dev/disk0").is_err()); // Lowercase should fail
-    }
 
     #[test]
     fn test_unmount_disk_nonexistent() {

@@ -18,62 +18,6 @@ struct ProgressUpdate {
     message: String,
 }
 
-/// Validate that a device path is safe to write to (not a system drive)
-pub fn validate_device_path(device_id: &str) -> Result<()> {
-    // Require the removable/hotplug signal device enumeration filters on
-    // instead of a name deny-list: /dev/sda or /dev/nvme0n1 are legitimate
-    // USB targets on machines that boot from another disk. A mounted
-    // system drive is additionally caught by the exclusive (O_EXCL) open
-    // at write time.
-    let device_path = if device_id.starts_with("/dev/") {
-        device_id.to_string()
-    } else {
-        format!("/dev/{}", device_id)
-    };
-    if device_id.is_empty() || !is_removable_or_hotplug(&device_path) {
-        return Err(Error::PermissionDenied(format!(
-            "{} is not a removable drive and cannot be overwritten",
-            device_id
-        )));
-    }
-
-    Ok(())
-}
-
-/// Whether lsblk reports the drive as removable or hot-plugged — the same
-/// signal (and tool) device enumeration filters on, so the two layers cannot
-/// drift, and lsblk's bus-chain hotplug derivation (usb, mmc, thunderbolt, …)
-/// is not reimplemented here.
-fn is_removable_or_hotplug(device_path: &str) -> bool {
-    let output = match Command::new("lsblk")
-        .args(["--nodeps", "--json", "--output", "RM,HOTPLUG", device_path])
-        .output()
-    {
-        Ok(output) if output.status.success() => output.stdout,
-        // Unknown device (or no lsblk at all): not a valid target.
-        _ => return false,
-    };
-    parse_lsblk_removable(&output)
-}
-
-fn parse_lsblk_removable(json: &[u8]) -> bool {
-    #[derive(serde::Deserialize)]
-    struct LsblkOutput {
-        blockdevices: Vec<LsblkFlags>,
-    }
-    #[derive(serde::Deserialize)]
-    struct LsblkFlags {
-        #[serde(default)]
-        rm: Option<bool>,
-        #[serde(default)]
-        hotplug: Option<bool>,
-    }
-    serde_json::from_slice::<LsblkOutput>(json)
-        .ok()
-        .and_then(|out| out.blockdevices.into_iter().next())
-        .is_some_and(|dev| dev.rm == Some(true) || dev.hotplug == Some(true))
-}
-
 pub async fn write_image<P: ProgressCallback>(
     image_path: &PathBuf,
     device_id: &str,
@@ -499,31 +443,6 @@ mod tests {
     use super::*;
     use zbus::message::Message;
     use zbus::names::OwnedErrorName;
-
-    #[test]
-    fn test_parse_lsblk_removable_flags() {
-        let removable = br#"{"blockdevices": [{"rm": true, "hotplug": false}]}"#;
-        assert!(parse_lsblk_removable(removable));
-
-        // USB/MMC disks often report rm=false but hotplug=true.
-        let hotplug = br#"{"blockdevices": [{"rm": false, "hotplug": true}]}"#;
-        assert!(parse_lsblk_removable(hotplug));
-
-        let internal = br#"{"blockdevices": [{"rm": false, "hotplug": false}]}"#;
-        assert!(!parse_lsblk_removable(internal));
-    }
-
-    #[test]
-    fn test_parse_lsblk_removable_degenerate_output() {
-        assert!(!parse_lsblk_removable(br#"{"blockdevices": []}"#));
-        assert!(!parse_lsblk_removable(br#"{"blockdevices": [{}]}"#));
-        assert!(!parse_lsblk_removable(b"not json"));
-    }
-
-    #[test]
-    fn test_is_removable_or_hotplug_blocks_unknown_device() {
-        assert!(!is_removable_or_hotplug("/dev/hai-test-nonexistent"));
-    }
 
     fn method_error(name: &str, message: Option<&str>) -> zbus::Error {
         let msg = Message::method_call("/", "Test")

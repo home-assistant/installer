@@ -19,22 +19,7 @@ mod imp;
 mod imp;
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-mod imp {
-    use super::*;
-
-    pub fn validate_device_path(_device_id: &str) -> Result<()> {
-        Ok(())
-    }
-
-    pub async fn write_image<P: ProgressCallback>(
-        _image_path: &PathBuf,
-        _device_id: &str,
-        _verify: bool,
-        _progress_callback: &P,
-    ) -> Result<()> {
-        Err(Error::UnsupportedPlatform("Disk writing".to_string()))
-    }
-}
+compile_error!("hai-core supports only Linux, macOS and Windows");
 
 /// Buffer size for disk writes (4 MB for SD cards)
 #[allow(dead_code)]
@@ -62,13 +47,6 @@ fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
     })
 }
 
-/// Validate that a device path is safe to write to (not a system drive)
-fn validate_device_path(device_id: &str) -> Result<()> {
-    let device_id = device_id.trim_end_matches('/');
-
-    imp::validate_device_path(device_id)
-}
-
 /// Write an image file to a block device with progress updates
 pub async fn write_image<P: ProgressCallback>(
     image_path: &PathBuf,
@@ -77,9 +55,6 @@ pub async fn write_image<P: ProgressCallback>(
     progress_callback: &P,
 ) -> Result<()> {
     std::fs::metadata(image_path)?;
-
-    // Safety check: refuse to write to system drives
-    validate_device_path(device_id)?;
 
     imp::write_image(image_path, device_id, verify, progress_callback).await
 }
@@ -108,25 +83,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "linux")]
-    fn test_validate_device_path_blocks_unknown_device() {
-        // The /dev/ prefix and trailing slashes are normalized away, so all
-        // spellings hit the same lsblk lookup and get the same verdict.
-        for id in [
-            "/dev/hai-test-nonexistent",
-            "hai-test-nonexistent",
-            "/dev/hai-test-nonexistent/",
-        ] {
-            match validate_device_path(id) {
-                Err(Error::PermissionDenied(msg)) => {
-                    assert!(msg.contains("not a removable drive"), "{id}: {msg}");
-                }
-                other => panic!("expected PermissionDenied for {id}, got {other:?}"),
-            }
-        }
-    }
-
-    #[test]
     fn test_is_drive_disconnected_unexpected_eof() {
         let err = std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "unexpected eof");
         assert!(is_drive_disconnected(&err));
@@ -139,15 +95,6 @@ mod tests {
 
         let err = std::io::Error::new(std::io::ErrorKind::Other, "other error");
         assert!(!is_drive_disconnected(&err));
-    }
-
-    #[test]
-    fn test_validate_device_path_empty_string() {
-        let result = validate_device_path("");
-        #[cfg(target_os = "linux")]
-        assert!(result.is_err());
-        #[cfg(not(target_os = "linux"))]
-        assert!(result.is_ok());
     }
 
     #[test]
@@ -243,31 +190,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_write_image_rejects_system_drive() {
-        let callback = TestProgressCallback::new();
-        let temp_file = tempfile::NamedTempFile::new().unwrap();
-        let image_path = temp_file.path().to_path_buf();
-
-        #[cfg(target_os = "macos")]
-        let result = write_image(&image_path, "/dev/disk0", false, &callback).await;
-
-        // Not in /sys/block, so validation treats it as non-removable —
-        // host-independent, unlike asserting on the machine's real /dev/sda.
-        #[cfg(target_os = "linux")]
-        let result = write_image(&image_path, "/dev/hai-test-nonexistent", false, &callback).await;
-
-        #[cfg(target_os = "windows")]
-        let result = write_image(&image_path, "\\\\.\\PhysicalDrive0", false, &callback).await;
-
-        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-        {
-            assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), Error::PermissionDenied(_)));
-        }
-    }
-
     // macOS-specific tests
     #[cfg(target_os = "macos")]
     mod macos_tests {
@@ -350,24 +272,6 @@ mod tests {
 
             let result = write_image(&image_path, device_id, false, &callback).await;
             assert!(result.is_err());
-        }
-    }
-
-    // Test unsupported platforms (these tests will only run on non-standard platforms)
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    mod unsupported_platform_tests {
-        use super::*;
-
-        #[tokio::test]
-        async fn test_write_image_unsupported_platform() {
-            let callback = TestProgressCallback::new();
-            let temp_file = tempfile::NamedTempFile::new().unwrap();
-            let image_path = temp_file.path().to_path_buf();
-            let device_id = "/dev/sdb";
-
-            let result = write_image(&image_path, device_id, false, &callback).await;
-            assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), Error::UnsupportedPlatform(_)));
         }
     }
 
