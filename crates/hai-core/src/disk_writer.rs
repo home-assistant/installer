@@ -19,18 +19,7 @@ mod imp;
 mod imp;
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-mod imp {
-    use super::*;
-
-    pub async fn write_image<P: ProgressCallback>(
-        _image_path: &PathBuf,
-        _device_id: &str,
-        _verify: bool,
-        _progress_callback: &P,
-    ) -> Result<()> {
-        Err(Error::UnsupportedPlatform("Disk writing".to_string()))
-    }
-}
+compile_error!("hai-core supports only Linux, macOS and Windows");
 
 /// Buffer size for disk writes (4 MB for SD cards)
 #[allow(dead_code)]
@@ -283,24 +272,6 @@ mod tests {
 
             let result = write_image(&image_path, device_id, false, &callback).await;
             assert!(result.is_err());
-        }
-    }
-
-    // Test unsupported platforms (these tests will only run on non-standard platforms)
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    mod unsupported_platform_tests {
-        use super::*;
-
-        #[tokio::test]
-        async fn test_write_image_unsupported_platform() {
-            let callback = TestProgressCallback::new();
-            let temp_file = tempfile::NamedTempFile::new().unwrap();
-            let image_path = temp_file.path().to_path_buf();
-            let device_id = "/dev/sdb";
-
-            let result = write_image(&image_path, device_id, false, &callback).await;
-            assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), Error::UnsupportedPlatform(_)));
         }
     }
 
