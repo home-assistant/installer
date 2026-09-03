@@ -1,6 +1,6 @@
 //! Windows disk writing via direct `\\.\PhysicalDrive` access (requires Administrator).
 
-use super::*;
+use super::super::*;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::process::Command;

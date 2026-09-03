@@ -1,6 +1,6 @@
 //! macOS disk writing via privileged `dd` (Authorization Services) and `diskutil`.
 
-use super::*;
+use super::super::*;
 use security_framework::authorization::{Authorization, AuthorizationItemSetBuilder, Flags};
 use std::io::Read;
 use std::path::Path;

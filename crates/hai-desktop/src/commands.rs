@@ -4,9 +4,9 @@
 //! It handles the bridge between Tauri's Channel<T> and hai-core's ProgressCallback trait.
 
 use hai_core::{
-    devices, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, FlashProgress,
-    FlashStage, HaosRelease, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
-    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
+    disk, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, FlashProgress, FlashStage,
+    HaosRelease, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage,
+    ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
 };
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -86,7 +86,7 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
     if is_mock_enabled() {
         Ok(mock::get_mock_block_devices())
     } else {
-        devices::list_devices().await.map_err(|e| e.to_string())
+        disk::list_devices().await.map_err(|e| e.to_string())
     }
 }
 
@@ -195,7 +195,7 @@ pub async fn flash_image(
         .map_err(|e| format!("Failed to get image size: {}", e))?
         .len();
 
-    let device_list = devices::list_devices()
+    let device_list = disk::list_devices()
         .await
         .map_err(|e| format!("Failed to list devices: {}", e))?;
 
@@ -210,7 +210,7 @@ pub async fn flash_image(
     }
 
     // Write to device
-    hai_core::disk_writer::write_image(
+    disk::write_image(
         &extracted_path,
         &request.device_id,
         request.verify,

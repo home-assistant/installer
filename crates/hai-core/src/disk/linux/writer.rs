@@ -1,6 +1,6 @@
 //! Linux disk writing via udisks2 over D-Bus (polkit handles authorization).
 
-use super::*;
+use super::super::*;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
