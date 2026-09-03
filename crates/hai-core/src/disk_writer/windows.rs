@@ -325,6 +325,49 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_validate_device_path_blocks_physicaldrive0() {
+        let result = validate_device_path("\\\\.\\PhysicalDrive0");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), Error::PermissionDenied(_)));
+    }
+
+    #[test]
+    fn test_validate_physical_drives() {
+        assert!(validate_device_path("\\\\.\\PhysicalDrive0").is_err());
+        assert!(validate_device_path("\\\\.\\PhysicalDrive1").is_ok());
+        assert!(validate_device_path("\\\\.\\PhysicalDrive2").is_ok());
+        assert!(validate_device_path("\\\\.\\PhysicalDrive10").is_ok());
+    }
+
+    #[test]
+    fn test_validate_all_physical_drives() {
+        // Test PhysicalDrive0
+        assert!(validate_device_path("\\\\.\\PhysicalDrive0").is_err());
+
+        // Test other drives are OK
+        for i in 1..10 {
+            let drive = format!("\\\\.\\PhysicalDrive{}", i);
+            assert!(
+                validate_device_path(&drive).is_ok(),
+                "Drive {} should be OK",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_validation_error_message() {
+        let result = validate_device_path("\\\\.\\PhysicalDrive0");
+        assert!(result.is_err());
+        match result {
+            Err(Error::PermissionDenied(msg)) => {
+                assert!(msg.contains("PhysicalDrive0") || msg.contains("system drive"));
+            }
+            _ => panic!("Expected PermissionDenied error"),
+        }
+    }
+
+    #[test]
     fn test_clean_disk_nonexistent() {
         // Test cleaning a disk that doesn't exist
         let result = clean_disk("999");

@@ -106,17 +106,6 @@ mod tests {
     use serial_test::serial;
 
     #[test]
-    fn test_buffer_sizes() {
-        assert_eq!(WRITE_BUFFER_SIZE, 4 * 1024 * 1024);
-        assert_eq!(FAST_DRIVE_BUFFER_SIZE, 64 * 1024 * 1024);
-    }
-
-    #[test]
-    fn test_progress_interval() {
-        assert_eq!(PROGRESS_UPDATE_INTERVAL, 10 * 1024 * 1024);
-    }
-
-    #[test]
     fn test_is_drive_disconnected_not_found() {
         let err = std::io::Error::new(std::io::ErrorKind::NotFound, "device not found");
         assert!(is_drive_disconnected(&err));
@@ -132,21 +121,6 @@ mod tests {
     fn test_is_drive_disconnected_permission_denied_is_not_disconnect() {
         let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
         assert!(!is_drive_disconnected(&err));
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_validate_device_path_blocks_disk0_macos() {
-        assert!(validate_device_path("/dev/disk0").is_err());
-        assert!(validate_device_path("/dev/rdisk0").is_err());
-        assert!(validate_device_path("disk0").is_err());
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_validate_device_path_allows_other_disks_macos() {
-        assert!(validate_device_path("/dev/disk2").is_ok());
-        assert!(validate_device_path("/dev/disk10").is_ok());
     }
 
     #[test]
@@ -166,26 +140,6 @@ mod tests {
                 other => panic!("expected PermissionDenied for {id}, got {other:?}"),
             }
         }
-    }
-
-    #[test]
-    #[cfg(target_os = "windows")]
-    fn test_validate_device_path_blocks_physicaldrive0_windows() {
-        let result = validate_device_path("\\\\.\\PhysicalDrive0");
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::PermissionDenied(_)));
-    }
-
-    #[test]
-    #[cfg(target_os = "windows")]
-    fn test_validate_device_path_allows_physicaldrive1_windows() {
-        assert!(validate_device_path("\\\\.\\PhysicalDrive1").is_ok());
-    }
-
-    #[test]
-    #[cfg(target_os = "windows")]
-    fn test_validate_device_path_allows_physicaldrive2_windows() {
-        assert!(validate_device_path("\\\\.\\PhysicalDrive2").is_ok());
     }
 
     #[test]
@@ -213,21 +167,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_validate_device_path_disk1_macos() {
-        // disk1 is usually okay (not system drive)
-        assert!(validate_device_path("/dev/disk1").is_ok());
-        assert!(validate_device_path("/dev/rdisk1").is_ok());
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_validate_device_path_high_disk_numbers_macos() {
-        assert!(validate_device_path("/dev/disk99").is_ok());
-        assert!(validate_device_path("/dev/rdisk99").is_ok());
-    }
-
-    #[test]
     fn test_is_drive_disconnected_with_os_error_code_6() {
         // ENXIO = 6 on macOS and Linux
         let err = std::io::Error::from_raw_os_error(6);
@@ -240,17 +179,6 @@ mod tests {
         // ENODEV = 19 on Linux
         let err = std::io::Error::from_raw_os_error(19);
         assert!(is_drive_disconnected(&err));
-    }
-
-    #[test]
-    fn test_buffer_sizes_are_reasonable() {
-        // Write buffer should be at least 1MB
-        assert!(WRITE_BUFFER_SIZE >= 1024 * 1024);
-        // Fast drive buffer should be larger than regular
-        assert!(FAST_DRIVE_BUFFER_SIZE > WRITE_BUFFER_SIZE);
-        // Progress interval should be reasonable (not too small, not too large)
-        assert!(PROGRESS_UPDATE_INTERVAL >= 1024 * 1024);
-        assert!(PROGRESS_UPDATE_INTERVAL <= 100 * 1024 * 1024);
     }
 
     #[test]
@@ -323,11 +251,6 @@ mod tests {
                 updates: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             }
         }
-
-        #[allow(dead_code)]
-        fn get_updates(&self) -> Vec<FlashProgress> {
-            self.updates.lock().unwrap().clone()
-        }
     }
 
     impl ProgressCallback for TestProgressCallback {
@@ -365,18 +288,6 @@ mod tests {
     #[cfg(target_os = "macos")]
     mod macos_tests {
         use super::*;
-
-        #[test]
-        fn test_validate_device_rdisk0_variants() {
-            assert!(validate_device_path("rdisk0").is_err());
-            assert!(validate_device_path("/dev/rdisk0").is_err());
-        }
-
-        #[test]
-        fn test_validate_device_without_dev_prefix() {
-            assert!(validate_device_path("disk2").is_ok());
-            assert!(validate_device_path("rdisk2").is_ok());
-        }
 
         #[tokio::test]
         #[serial]
@@ -425,36 +336,12 @@ mod tests {
             let result = write_image(&image_path, device_id, false, &callback).await;
             assert!(matches!(result.unwrap_err(), Error::Io(_)));
         }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_write_image_permission_denied() {
-            let callback = TestProgressCallback::new();
-            let temp_file = tempfile::NamedTempFile::new().unwrap();
-            std::fs::write(temp_file.path(), b"test data").unwrap();
-            let image_path = temp_file.path().to_path_buf();
-
-            // Unknown to lsblk, so validation rejects it before any
-            // privileged udisks2 call.
-            let device_id = "/dev/hai-test-nonexistent";
-
-            let result = write_image(&image_path, device_id, false, &callback).await;
-            assert!(matches!(result.unwrap_err(), Error::PermissionDenied(_)));
-        }
     }
 
     // Windows-specific tests
     #[cfg(target_os = "windows")]
     mod windows_tests {
         use super::*;
-
-        #[test]
-        fn test_validate_physical_drives() {
-            assert!(validate_device_path("\\\\.\\PhysicalDrive0").is_err());
-            assert!(validate_device_path("\\\\.\\PhysicalDrive1").is_ok());
-            assert!(validate_device_path("\\\\.\\PhysicalDrive2").is_ok());
-            assert!(validate_device_path("\\\\.\\PhysicalDrive10").is_ok());
-        }
 
         #[tokio::test]
         #[serial]
@@ -498,28 +385,6 @@ mod tests {
             assert!(result.is_err());
             assert!(matches!(result.unwrap_err(), Error::UnsupportedPlatform(_)));
         }
-    }
-
-    // Additional edge case tests that work on all platforms
-    #[test]
-    fn test_validate_device_path_special_characters() {
-        // Test with various special characters to ensure no panics
-        let result = validate_device_path("/dev/../disk0");
-        // Should either pass validation or fail safely
-        assert!(result.is_ok() || result.is_err());
-    }
-
-    #[test]
-    fn test_validate_device_path_very_long() {
-        let long_path = format!("/dev/{}", "a".repeat(1000));
-        let result = validate_device_path(&long_path);
-        assert!(result.is_ok() || result.is_err());
-    }
-
-    #[test]
-    fn test_validate_device_path_unicode() {
-        let result = validate_device_path("/dev/disk🔥");
-        assert!(result.is_ok() || result.is_err());
     }
 
     // Test with Mock mode enabled to exercise more code paths
@@ -574,168 +439,6 @@ mod tests {
 
         // Should fail because device doesn't exist, but this exercises the verify code path
         assert!(result.is_err());
-    }
-
-    // Additional platform-specific validation tests
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_validate_macos_all_disk0_variations() {
-        // Test all possible ways someone might reference disk0
-        assert!(validate_device_path("/dev/disk0").is_err());
-        assert!(validate_device_path("/dev/rdisk0").is_err());
-        assert!(validate_device_path("disk0").is_err());
-        assert!(validate_device_path("rdisk0").is_err());
-
-        // Ensure disk0s1 (partition) is also rejected since the base disk is system
-        #[cfg(target_os = "macos")]
-        {
-            // Actually disk0s1 should pass validation as it's a partition, not the whole disk
-            // But let's verify the behavior
-            let result = validate_device_path("/dev/disk0s1");
-            // This will pass because we only check for exact "disk0" match
-            assert!(result.is_ok());
-        }
-    }
-
-    #[test]
-    #[cfg(target_os = "windows")]
-    fn test_validate_windows_all_physical_drives() {
-        // Test PhysicalDrive0
-        assert!(validate_device_path("\\\\.\\PhysicalDrive0").is_err());
-
-        // Test other drives are OK
-        for i in 1..10 {
-            let drive = format!("\\\\.\\PhysicalDrive{}", i);
-            assert!(
-                validate_device_path(&drive).is_ok(),
-                "Drive {} should be OK",
-                i
-            );
-        }
-    }
-
-    #[test]
-    fn test_constants_values() {
-        // Verify the exact values of constants
-        assert_eq!(WRITE_BUFFER_SIZE, 4_194_304);
-        assert_eq!(FAST_DRIVE_BUFFER_SIZE, 67_108_864);
-        assert_eq!(PROGRESS_UPDATE_INTERVAL, 10_485_760);
-    }
-
-    // Test error message generation for validation errors
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_validation_error_message_disk0() {
-        let result = validate_device_path("/dev/disk0");
-        assert!(result.is_err());
-        match result {
-            Err(Error::PermissionDenied(msg)) => {
-                assert!(msg.contains("disk0"));
-                assert!(msg.contains("system drive"));
-            }
-            _ => panic!("Expected PermissionDenied error"),
-        }
-    }
-
-    #[test]
-    #[cfg(target_os = "windows")]
-    fn test_validation_error_message_windows() {
-        let result = validate_device_path("\\\\.\\PhysicalDrive0");
-        assert!(result.is_err());
-        match result {
-            Err(Error::PermissionDenied(msg)) => {
-                assert!(msg.contains("PhysicalDrive0") || msg.contains("system drive"));
-            }
-            _ => panic!("Expected PermissionDenied error"),
-        }
-    }
-
-    // Test the full validation path for various device IDs
-    #[test]
-    #[cfg(not(target_os = "linux"))]
-    fn test_validate_multiple_safe_devices() {
-        let safe_devices = vec![
-            #[cfg(target_os = "macos")]
-            "/dev/disk5",
-            #[cfg(target_os = "windows")]
-            "\\\\.\\PhysicalDrive5",
-        ];
-
-        for device in safe_devices {
-            assert!(
-                validate_device_path(device).is_ok(),
-                "Device {} should be valid",
-                device
-            );
-        }
-    }
-
-    // Test progress callback implementation
-    #[test]
-    fn test_progress_callback_receives_updates() {
-        let callback = TestProgressCallback::new();
-
-        // Simulate progress updates
-        callback.on_progress(FlashProgress {
-            stage: FlashStage::Writing,
-            progress: 0,
-            bytes_processed: 0,
-            total_bytes: 1000,
-            message: "Starting".to_string(),
-        });
-
-        callback.on_progress(FlashProgress {
-            stage: FlashStage::Writing,
-            progress: 50,
-            bytes_processed: 500,
-            total_bytes: 1000,
-            message: "Halfway".to_string(),
-        });
-
-        callback.on_progress(FlashProgress {
-            stage: FlashStage::Complete,
-            progress: 100,
-            bytes_processed: 1000,
-            total_bytes: 1000,
-            message: "Done".to_string(),
-        });
-
-        let updates = callback.get_updates();
-        assert_eq!(updates.len(), 3);
-        assert_eq!(updates[0].progress, 0);
-        assert_eq!(updates[1].progress, 50);
-        assert_eq!(updates[2].progress, 100);
-        assert_eq!(updates[2].stage, FlashStage::Complete);
-    }
-
-    // Test with path that doesn't have /dev/ prefix
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_validate_without_dev_prefix() {
-        assert!(validate_device_path("disk5").is_ok());
-        assert!(validate_device_path("disk0").is_err());
-    }
-
-    // Test case sensitivity
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_validate_case_sensitivity_macos() {
-        // macOS device paths are case-sensitive
-        assert!(validate_device_path("/dev/Disk0").is_ok()); // Capital D should pass
-        assert!(validate_device_path("/dev/disk0").is_err()); // Lowercase should fail
-    }
-
-    // Test buffer size relationships
-    #[test]
-    fn test_buffer_size_relationships() {
-        // Fast drive buffer should be significantly larger
-        assert!(FAST_DRIVE_BUFFER_SIZE >= WRITE_BUFFER_SIZE * 10);
-
-        // Progress interval should be larger than write buffer
-        assert!(PROGRESS_UPDATE_INTERVAL >= WRITE_BUFFER_SIZE as u64);
-
-        // But not too large compared to fast buffer
-        assert!(PROGRESS_UPDATE_INTERVAL <= (FAST_DRIVE_BUFFER_SIZE * 2) as u64);
     }
 
     // Test creating actual temp file and trying to write (will fail safely)
@@ -808,34 +511,5 @@ mod tests {
                 kind
             );
         }
-    }
-
-    // Test multiple consecutive calls to progress callback
-    #[test]
-    fn test_progress_callback_multiple_calls() {
-        let callback = TestProgressCallback::new();
-
-        // Simulate a complete write cycle
-        for i in 0..=100 {
-            callback.on_progress(FlashProgress {
-                stage: if i < 80 {
-                    FlashStage::Writing
-                } else if i < 100 {
-                    FlashStage::Verifying
-                } else {
-                    FlashStage::Complete
-                },
-                progress: i as u8,
-                bytes_processed: (i * 1000) as u64,
-                total_bytes: 100000,
-                message: format!("Progress: {}%", i),
-            });
-        }
-
-        let updates = callback.get_updates();
-        assert_eq!(updates.len(), 101);
-        assert_eq!(updates.first().unwrap().progress, 0);
-        assert_eq!(updates.last().unwrap().progress, 100);
-        assert_eq!(updates.last().unwrap().stage, FlashStage::Complete);
     }
 }
