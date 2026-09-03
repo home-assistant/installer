@@ -9,11 +9,32 @@ use crate::ProgressCallback;
 use std::path::PathBuf;
 
 #[cfg(target_os = "linux")]
-mod linux;
+#[path = "disk_writer/linux.rs"]
+mod imp;
 #[cfg(target_os = "macos")]
-mod macos;
+#[path = "disk_writer/macos.rs"]
+mod imp;
 #[cfg(target_os = "windows")]
-mod windows;
+#[path = "disk_writer/windows.rs"]
+mod imp;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+mod imp {
+    use super::*;
+
+    pub fn validate_device_path(_device_id: &str) -> Result<()> {
+        Ok(())
+    }
+
+    pub async fn write_image<P: ProgressCallback>(
+        _image_path: &PathBuf,
+        _device_id: &str,
+        _verify: bool,
+        _progress_callback: &P,
+    ) -> Result<()> {
+        Err(Error::UnsupportedPlatform("Disk writing".to_string()))
+    }
+}
 
 /// Buffer size for disk writes (4 MB for SD cards)
 #[allow(dead_code)]
@@ -45,26 +66,7 @@ fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
 fn validate_device_path(device_id: &str) -> Result<()> {
     let device_id = device_id.trim_end_matches('/');
 
-    #[cfg(target_os = "macos")]
-    {
-        macos::validate_device_path(device_id)
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        linux::validate_device_path(device_id)
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        windows::validate_device_path(device_id)
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    {
-        let _ = device_id;
-        Ok(())
-    }
+    imp::validate_device_path(device_id)
 }
 
 /// Write an image file to a block device with progress updates
@@ -79,25 +81,7 @@ pub async fn write_image<P: ProgressCallback>(
     // Safety check: refuse to write to system drives
     validate_device_path(device_id)?;
 
-    #[cfg(target_os = "macos")]
-    {
-        macos::write_image(image_path, device_id, verify, progress_callback).await
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        linux::write_image(image_path, device_id, verify, progress_callback).await
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        windows::write_image(image_path, device_id, verify, progress_callback).await
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    {
-        Err(Error::UnsupportedPlatform("Disk writing".to_string()))
-    }
+    imp::write_image(image_path, device_id, verify, progress_callback).await
 }
 
 #[cfg(test)]

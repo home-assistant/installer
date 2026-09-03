@@ -8,11 +8,25 @@ use crate::error::Result;
 use crate::types::{BlockDevice, DeviceType};
 
 #[cfg(target_os = "linux")]
-mod linux;
+#[path = "devices/linux.rs"]
+mod imp;
 #[cfg(target_os = "macos")]
-mod macos;
+#[path = "devices/macos.rs"]
+mod imp;
 #[cfg(target_os = "windows")]
-mod windows;
+#[path = "devices/windows.rs"]
+mod imp;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+mod imp {
+    use super::*;
+
+    pub async fn list_devices() -> Result<Vec<BlockDevice>> {
+        Err(crate::error::Error::UnsupportedPlatform(
+            "Block device enumeration".to_string(),
+        ))
+    }
+}
 
 /// List all available block devices on the system
 ///
@@ -26,27 +40,7 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
         }
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        macos::list_devices().await
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        linux::list_devices().await
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        windows::list_devices().await
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    {
-        Err(crate::error::Error::UnsupportedPlatform(
-            "Block device enumeration".to_string(),
-        ))
-    }
+    imp::list_devices().await
 }
 
 #[cfg(test)]
