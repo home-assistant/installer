@@ -14,6 +14,18 @@ struct ProgressUpdate {
     message: String,
 }
 
+/// Validate that a device path is safe to write to (not a system drive)
+pub fn validate_device_path(device_id: &str) -> Result<()> {
+    // On Windows, PhysicalDrive0 is usually the system drive
+    if device_id == "\\\\.\\PhysicalDrive0" {
+        return Err(Error::PermissionDenied(
+            "PhysicalDrive0 is the system drive and cannot be overwritten".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 pub async fn write_image<P: ProgressCallback>(
     image_path: &PathBuf,
     device_id: &str,

@@ -47,84 +47,24 @@ fn validate_device_path(device_id: &str) -> Result<()> {
 
     #[cfg(target_os = "macos")]
     {
-        // On macOS, disk0 is always the system drive
-        let disk_id = device_id.strip_prefix("/dev/").unwrap_or(device_id);
-        let disk_id = disk_id.strip_prefix("r").unwrap_or(disk_id); // Handle raw device
-
-        if disk_id == "disk0" {
-            return Err(Error::PermissionDenied(
-                "disk0 is the system drive and cannot be overwritten".to_string(),
-            ));
-        }
+        macos::validate_device_path(device_id)
     }
 
     #[cfg(target_os = "linux")]
     {
-        // Require the removable/hotplug signal device enumeration filters on
-        // instead of a name deny-list: /dev/sda or /dev/nvme0n1 are legitimate
-        // USB targets on machines that boot from another disk. A mounted
-        // system drive is additionally caught by the exclusive (O_EXCL) open
-        // at write time.
-        let device_path = if device_id.starts_with("/dev/") {
-            device_id.to_string()
-        } else {
-            format!("/dev/{}", device_id)
-        };
-        if device_id.is_empty() || !is_removable_or_hotplug(&device_path) {
-            return Err(Error::PermissionDenied(format!(
-                "{} is not a removable drive and cannot be overwritten",
-                device_id
-            )));
-        }
+        linux::validate_device_path(device_id)
     }
 
     #[cfg(target_os = "windows")]
     {
-        // On Windows, PhysicalDrive0 is usually the system drive
-        if device_id == "\\\\.\\PhysicalDrive0" {
-            return Err(Error::PermissionDenied(
-                "PhysicalDrive0 is the system drive and cannot be overwritten".to_string(),
-            ));
-        }
+        windows::validate_device_path(device_id)
     }
 
-    Ok(())
-}
-
-/// Whether lsblk reports the drive as removable or hot-plugged — the same
-/// signal (and tool) device enumeration filters on, so the two layers cannot
-/// drift, and lsblk's bus-chain hotplug derivation (usb, mmc, thunderbolt, …)
-/// is not reimplemented here.
-#[cfg(target_os = "linux")]
-fn is_removable_or_hotplug(device_path: &str) -> bool {
-    let output = match std::process::Command::new("lsblk")
-        .args(["--nodeps", "--json", "--output", "RM,HOTPLUG", device_path])
-        .output()
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
-        Ok(output) if output.status.success() => output.stdout,
-        // Unknown device (or no lsblk at all): not a valid target.
-        _ => return false,
-    };
-    parse_lsblk_removable(&output)
-}
-
-#[cfg(target_os = "linux")]
-fn parse_lsblk_removable(json: &[u8]) -> bool {
-    #[derive(serde::Deserialize)]
-    struct LsblkOutput {
-        blockdevices: Vec<LsblkFlags>,
+        let _ = device_id;
+        Ok(())
     }
-    #[derive(serde::Deserialize)]
-    struct LsblkFlags {
-        #[serde(default)]
-        rm: Option<bool>,
-        #[serde(default)]
-        hotplug: Option<bool>,
-    }
-    serde_json::from_slice::<LsblkOutput>(json)
-        .ok()
-        .and_then(|out| out.blockdevices.into_iter().next())
-        .is_some_and(|dev| dev.rm == Some(true) || dev.hotplug == Some(true))
 }
 
 /// Write an image file to a block device with progress updates
@@ -207,34 +147,6 @@ mod tests {
     fn test_validate_device_path_allows_other_disks_macos() {
         assert!(validate_device_path("/dev/disk2").is_ok());
         assert!(validate_device_path("/dev/disk10").is_ok());
-    }
-
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn test_parse_lsblk_removable_flags() {
-        let removable = br#"{"blockdevices": [{"rm": true, "hotplug": false}]}"#;
-        assert!(parse_lsblk_removable(removable));
-
-        // USB/MMC disks often report rm=false but hotplug=true.
-        let hotplug = br#"{"blockdevices": [{"rm": false, "hotplug": true}]}"#;
-        assert!(parse_lsblk_removable(hotplug));
-
-        let internal = br#"{"blockdevices": [{"rm": false, "hotplug": false}]}"#;
-        assert!(!parse_lsblk_removable(internal));
-    }
-
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn test_parse_lsblk_removable_degenerate_output() {
-        assert!(!parse_lsblk_removable(br#"{"blockdevices": []}"#));
-        assert!(!parse_lsblk_removable(br#"{"blockdevices": [{}]}"#));
-        assert!(!parse_lsblk_removable(b"not json"));
-    }
-
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn test_is_removable_or_hotplug_blocks_unknown_device() {
-        assert!(!is_removable_or_hotplug("/dev/hai-test-nonexistent"));
     }
 
     #[test]
