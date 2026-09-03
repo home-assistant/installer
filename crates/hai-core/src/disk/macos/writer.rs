@@ -219,8 +219,16 @@ fn verify_write(
         match pipe.read(&mut buffer) {
             Ok(0) => break,
             Ok(n) => {
-                device_hasher.update(&buffer[..n]);
-                bytes_read_total += n as u64;
+                // dd reads whole 64 MiB blocks, so the last block may
+                // extend past the image; only hash up to total_size
+                let remaining = total_size - bytes_read_total;
+                let to_hash = (n as u64).min(remaining) as usize;
+                device_hasher.update(&buffer[..to_hash]);
+                bytes_read_total += to_hash as u64;
+
+                if bytes_read_total >= total_size {
+                    break;
+                }
 
                 // Send progress update every PROGRESS_UPDATE_INTERVAL bytes
                 if bytes_read_total - last_progress_update >= PROGRESS_UPDATE_INTERVAL {
