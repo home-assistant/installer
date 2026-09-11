@@ -53,11 +53,8 @@ fn validate_device_path(device_id: &str) -> Result<()> {
 
     #[cfg(target_os = "linux")]
     {
-        // Require the removable/hotplug signal device enumeration filters on
-        // instead of a name deny-list: /dev/sda or /dev/nvme0n1 are legitimate
-        // USB targets on machines that boot from another disk. A mounted
-        // system drive is additionally caught by the exclusive (O_EXCL) open
-        // at write time.
+        // Require the removable/hotplug signal device enumeration filters to avoid writing to system drives
+        // A mounted system drive is additionally caught by the exclusive (O_EXCL) open at write time.
         let device_path = if device_id.starts_with("/dev/") {
             device_id.to_string()
         } else {
