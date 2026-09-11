@@ -82,9 +82,9 @@ export class ConfirmDialog extends LitElement {
           All data on <span class="drive-name">${this.driveName}</span> will be
           permanently erased. This action cannot be undone.
         </p>
-        ${this._isMacOS()
+        ${this._promptsForPassword()
           ? html`<p class="password-note">
-              You will be prompted for your password to allow writing to the
+              You may be prompted for your password to allow writing to the
               drive. This is required because writing to external drives needs
               administrator privileges.
             </p>`
@@ -139,8 +139,12 @@ export class ConfirmDialog extends LitElement {
     );
   }
 
-  private _isMacOS(): boolean {
-    return navigator.platform.toLowerCase().includes("mac");
+  // macOS asks for admin credentials via Authorization Services; Linux raises
+  // a polkit prompt through udisks2. Windows requires launching elevated, so
+  // there is no in-flow prompt to announce.
+  private _promptsForPassword(): boolean {
+    const platform = navigator.platform.toLowerCase();
+    return platform.includes("mac") || platform.includes("linux");
   }
 }
 
