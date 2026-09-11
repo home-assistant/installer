@@ -7,8 +7,7 @@
 //! The library is designed to be frontend-agnostic, supporting both the
 //! Tauri desktop application and potential TUI implementations.
 
-pub mod devices;
-pub mod disk_writer;
+pub mod disk;
 pub mod download;
 pub mod error;
 pub mod types;
