@@ -2,11 +2,17 @@ import { LitElement, html, css, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { proxmoxCreateVm, formatBytes } from "../../api/commands.js";
-import type {
-  FlashProgress,
-  ProxmoxSession,
-  ProxmoxVmConfig,
-} from "../../api/types.js";
+import type { FlashProgress, ProxmoxVmConfig } from "../../api/types.js";
+import {
+  DEFAULT_CPU_CORES,
+  DEFAULT_DISK_SIZE_GB,
+  DEFAULT_MEMORY_MB,
+  DEFAULT_PROXMOX_NODE,
+  DEFAULT_PROXMOX_STORAGE,
+  DEFAULT_PROXMOX_VM_ID,
+  DEFAULT_PROXMOX_VM_NAME,
+} from "../../state/vm-defaults.js";
+import { isCancelled, throwIfCancelled } from "../../utils/polling.js";
 import "../../components/progress-bar.js";
 
 type InstallStage =
@@ -340,6 +346,7 @@ export class ProxmoxProgressView extends LitElement {
   private _stageStartTime: number | null = null;
   private _stageStartBytes: number = 0;
   private _unsubscribe?: () => void;
+  private _abortController?: AbortController;
 
   /** Whether the install operation has failed */
   get hasError(): boolean {
@@ -368,32 +375,45 @@ export class ProxmoxProgressView extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this._unsubscribe?.();
+    // Stop reporting on the install. The backend call runs to completion
+    // either way, but a detached component must not write wizard state or
+    // dispatch events once the user has cancelled or navigated away.
+    this._cancelInstall();
+  }
+
+  private _cancelInstall() {
+    this._abortController?.abort();
+    this._abortController = undefined;
+    this._isInstalling = false;
   }
 
   private async _startInstall() {
     if (this._isInstalling) return;
 
-    this._isInstalling = true;
-    this._error = null;
-
     const selections = this._wizardState.selections;
-    const session = selections.proxmoxSession as ProxmoxSession | undefined;
+    const session = selections.proxmoxSession;
 
     if (!session) {
       this._error = "No Proxmox session available";
       this._stage = "error";
-      this._isInstalling = false;
       return;
     }
 
+    const controller = new AbortController();
+    this._abortController = controller;
+    const { signal } = controller;
+
+    this._isInstalling = true;
+    this._error = null;
+
     const config: ProxmoxVmConfig = {
-      node: (selections.proxmoxNode as string) || "pve",
-      storage: (selections.proxmoxStorage as string) || "local",
-      vm_id: (selections.proxmoxVmId as number) || 100,
-      name: (selections.vmName as string) || "home-assistant",
-      cpu_cores: (selections.cpuCores as number) || 4,
-      memory_mb: (selections.memoryMb as number) || 4096,
-      disk_size_gb: (selections.diskSizeGb as number) || 32,
+      node: selections.proxmoxNode || DEFAULT_PROXMOX_NODE,
+      storage: selections.proxmoxStorage || DEFAULT_PROXMOX_STORAGE,
+      vm_id: selections.proxmoxVmId ?? DEFAULT_PROXMOX_VM_ID,
+      name: selections.vmName || DEFAULT_PROXMOX_VM_NAME,
+      cpu_cores: selections.cpuCores ?? DEFAULT_CPU_CORES,
+      memory_mb: selections.memoryMb ?? DEFAULT_MEMORY_MB,
+      disk_size_gb: selections.diskSizeGb ?? DEFAULT_DISK_SIZE_GB,
       auto_start: true,
     };
 
@@ -406,6 +426,10 @@ export class ProxmoxProgressView extends LitElement {
         session,
         config,
         (progress: FlashProgress) => {
+          // Progress keeps arriving from the backend after a cancel; a
+          // detached view must stop reporting on it
+          if (signal.aborted) return;
+
           // Use raw per-stage progress
           const newStage = progress.stage as InstallStage;
           if (newStage !== this._stage) {
@@ -419,6 +443,8 @@ export class ProxmoxProgressView extends LitElement {
           this._totalBytes = progress.total_bytes;
         }
       );
+
+      throwIfCancelled(signal);
 
       // Store result in wizard state
       wizardState.setSelection("proxmoxVmResult", result);
@@ -439,6 +465,11 @@ export class ProxmoxProgressView extends LitElement {
         })
       );
     } catch (error) {
+      if (isCancelled(error) || signal.aborted) {
+        // The view was detached mid-install - leave the wizard alone
+        return;
+      }
+
       this._stage = "error";
       this._error =
         typeof error === "string"
@@ -453,7 +484,11 @@ export class ProxmoxProgressView extends LitElement {
         })
       );
     } finally {
-      this._isInstalling = false;
+      // A newer attempt may own the component by now (cancel, then retry)
+      if (this._abortController === controller) {
+        this._isInstalling = false;
+        this._abortController = undefined;
+      }
     }
   }
 

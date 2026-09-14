@@ -1,3 +1,4 @@
+import type { ProxmoxSession } from "../api/types.js";
 import type { InstallationPath } from "../views/path-selection-view.js";
 
 export type WizardFlow = InstallationPath;
@@ -7,9 +8,37 @@ export interface WizardStep {
   title: string;
 }
 
+/**
+ * Values collected while stepping through a flow.
+ *
+ * The index signature keeps this open for the keys that are not declared yet;
+ * the declared keys are the ones the VM flows read back (a configure step that
+ * re-reads what the user picked, an install step that resumes where it left
+ * off) and so need to agree on name and type across views.
+ */
 export interface WizardSelections {
   device?: string;
   drive?: string;
+
+  /** VM configuration, shared by the UTM and Proxmox "Configure VM" steps. */
+  vmName?: string;
+  cpuCores?: number;
+  memoryMb?: number;
+  diskSizeGb?: number;
+
+  /** Address Home Assistant was reached on, if it was found. */
+  ipAddress?: string;
+
+  /** UTM install progress, so a retry resumes instead of starting over. */
+  utmImagePath?: string;
+  vmId?: string;
+
+  /** Proxmox target picked in the "Configure VM" step. */
+  proxmoxSession?: ProxmoxSession;
+  proxmoxNode?: string;
+  proxmoxStorage?: string;
+  proxmoxVmId?: number;
+
   [key: string]: unknown;
 }
 

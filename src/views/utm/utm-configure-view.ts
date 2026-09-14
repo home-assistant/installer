@@ -3,6 +3,12 @@ import { customElement, state } from "lit/decorators.js";
 import { wizardState } from "../../state/wizard-state.js";
 import { getSystemInfo } from "../../api/commands.js";
 import type { SystemInfo } from "../../api/types.js";
+import {
+  DEFAULT_CPU_CORES,
+  DEFAULT_DISK_SIZE_GB,
+  DEFAULT_MEMORY_MB,
+  DEFAULT_UTM_VM_NAME,
+} from "../../state/vm-defaults.js";
 
 @customElement("utm-configure-view")
 export class UtmConfigureView extends LitElement {
@@ -202,29 +208,50 @@ export class UtmConfigureView extends LitElement {
   `;
 
   @state()
-  private _vmName = "Home Assistant";
+  private _vmName = DEFAULT_UTM_VM_NAME;
 
   @state()
-  private _cpuCores = 4;
+  private _cpuCores = DEFAULT_CPU_CORES;
 
   @state()
-  private _memoryMb = 4096;
+  private _memoryMb = DEFAULT_MEMORY_MB;
 
   @state()
-  private _diskSizeGb = 32;
+  private _diskSizeGb = DEFAULT_DISK_SIZE_GB;
 
   @state()
   private _systemInfo: SystemInfo | null = null;
 
   connectedCallback() {
     super.connectedCallback();
+    this._restoreSelections();
     this._loadSystemInfo();
+  }
+
+  /**
+   * Seed the form from what is already in the wizard state, so stepping back
+   * to an earlier step and forward again keeps the user's settings. The
+   * defaults above only apply on the first visit.
+   */
+  private _restoreSelections() {
+    const selections = wizardState.getState().selections;
+    this._vmName = selections.vmName ?? DEFAULT_UTM_VM_NAME;
+    this._cpuCores = selections.cpuCores ?? DEFAULT_CPU_CORES;
+    this._memoryMb = selections.memoryMb ?? DEFAULT_MEMORY_MB;
+    this._diskSizeGb = selections.diskSizeGb ?? DEFAULT_DISK_SIZE_GB;
   }
 
   private async _loadSystemInfo() {
     try {
-      this._systemInfo = await getSystemInfo();
-      // Defaults are 4 cores and 4GB, but cap to system max if needed
+      const systemInfo = await getSystemInfo();
+
+      // The user may have left this step while the lookup was in flight;
+      // saving now would write over what the next step reads
+      if (!this.isConnected) return;
+
+      this._systemInfo = systemInfo;
+
+      // Cap the selected values to what this system can offer
       const coreOptions = this._getCoreOptions();
       if (!coreOptions.includes(this._cpuCores)) {
         this._cpuCores = coreOptions[coreOptions.length - 1] || 2;
@@ -238,7 +265,7 @@ export class UtmConfigureView extends LitElement {
       this._saveSelections();
     } catch (error) {
       console.error("Failed to get system info:", error);
-      // Use defaults
+      // Keep the restored values (or defaults)
       this._saveSelections();
     }
   }
@@ -252,7 +279,7 @@ export class UtmConfigureView extends LitElement {
 
   private _onNameChange(e: Event) {
     const input = e.target as HTMLInputElement;
-    this._vmName = input.value || "Home Assistant";
+    this._vmName = input.value || DEFAULT_UTM_VM_NAME;
     this._saveSelections();
   }
 
@@ -266,7 +293,7 @@ export class UtmConfigureView extends LitElement {
     const input = e.target as HTMLInputElement;
     const index = parseInt(input.value, 10);
     const memoryOptions = this._getMemoryOptions();
-    this._memoryMb = memoryOptions[index] || 4096;
+    this._memoryMb = memoryOptions[index] || DEFAULT_MEMORY_MB;
     this._saveSelections();
   }
 
@@ -274,7 +301,7 @@ export class UtmConfigureView extends LitElement {
     const input = e.target as HTMLInputElement;
     const index = parseInt(input.value, 10);
     const diskOptions = this._getDiskSizeOptions();
-    this._diskSizeGb = diskOptions[index] || 32;
+    this._diskSizeGb = diskOptions[index] || DEFAULT_DISK_SIZE_GB;
     this._saveSelections();
   }
 
