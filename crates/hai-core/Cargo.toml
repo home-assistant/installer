@@ -29,6 +29,8 @@ urlencoding = { workspace = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 plist = { workspace = true }
 security-framework = { workspace = true }
+# Safe wrappers for the SCM_RIGHTS handshake with authopen and F_FULLFSYNC.
+rustix = { workspace = true }
 
 # Linux specific
 [target.'cfg(target_os = "linux")'.dependencies]

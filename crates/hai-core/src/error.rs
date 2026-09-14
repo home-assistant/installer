@@ -55,6 +55,18 @@ pub enum Error {
 
     #[error("Verification failed: {0}")]
     VerificationFailed(String),
+
+    /// The drive ran out of space part-way through the write.
+    ///
+    /// Distinct from a generic I/O failure because it has an obvious cause and
+    /// an obvious fix, and because the size check done before flashing cannot
+    /// always catch it: it compares against the size the device reports, which
+    /// is not always the number of bytes it will actually accept.
+    #[error(
+        "Image is larger than the selected drive: only {written} of {image_size} bytes fit \
+         before the drive reported that it was full"
+    )]
+    ImageTooLarge { written: u64, image_size: u64 },
 }
 
 /// Result type alias for hai-core operations
@@ -199,6 +211,18 @@ mod tests {
         let msg = error.to_string();
         assert_eq!(msg, "Extraction failed: Archive corrupted");
         assert!(msg.contains("Archive corrupted"));
+    }
+
+    #[test]
+    fn test_display_image_too_large() {
+        let error = Error::ImageTooLarge {
+            written: 3_000_000_000,
+            image_size: 4_000_000_000,
+        };
+        let msg = error.to_string();
+        assert!(msg.contains("larger than the selected drive"));
+        assert!(msg.contains("3000000000"));
+        assert!(msg.contains("4000000000"));
     }
 
     #[test]

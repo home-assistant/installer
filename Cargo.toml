@@ -49,6 +49,7 @@ mockito = "1"
 # macOS specific
 plist = "1"
 security-framework = "3"
+rustix = { version = "1", features = ["fs", "net"] }
 
 # Linux specific
 zbus = { version = "5", default-features = false, features = ["tokio"] }

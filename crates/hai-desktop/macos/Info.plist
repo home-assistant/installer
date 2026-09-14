@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into the generated Info.plist by the Tauri bundler
+  (bundle.macOS.infoPlist in tauri.conf.json).
+-->
+<plist version="1.0">
+<dict>
+	<!--
+	  Shown in the system dialog the first time the application touches a
+	  removable volume.
+
+	  Elevating through authopen does not bypass TCC: access to removable media
+	  is attributed to the responsible process, which is this application, so
+	  without this string macOS denies the open with EPERM no matter how the
+	  administrator prompt was answered.
+	-->
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>Home Assistant Installer needs access to removable volumes so it can write the Home Assistant image to the SD card or USB drive you select.</string>
+</dict>
+</plist>
