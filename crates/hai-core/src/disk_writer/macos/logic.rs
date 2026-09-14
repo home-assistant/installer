@@ -1,40 +1,23 @@
-//! Platform-independent helpers for the macOS `authopen` write path.
-//!
-//! The privileged write path itself can only be exercised on a Mac with a real
-//! drive attached, but most of what can go wrong in it is pure logic: rounding
-//! buffers to the device block size, padding the last block, building the
-//! argument vector for `authopen(1)` and turning an `errno` into a message a
-//! user can act on. That logic lives here, outside the
-//! `cfg(target_os = "macos")` implementation, so it is compiled and unit-tested
-//! on every CI runner rather than only on macOS ones.
+//! Pure helpers for the macOS `authopen` write path, kept free of platform
+//! code so they are compiled and unit-tested on every CI runner.
 
 use crate::error::Error;
 
-/// `O_RDWR` from the macOS `<sys/fcntl.h>`. `authopen -o` takes the numeric
-/// `open(2)` flags, and we always want one descriptor usable for both the
-/// write and the read-back verify.
+/// `O_RDWR` from `<sys/fcntl.h>`; `authopen -o` takes numeric `open(2)` flags.
 pub const O_RDWR: i32 = 0x0002;
 
-/// Block size assumed when `diskutil` does not report one.
-///
-/// 4096 rather than 512 because guessing too high is safe and guessing too low
-/// is not: a length that is a multiple of 4096 is also a multiple of 512, so a
-/// 4 KiB assumption works on a 512-byte device, while a 512-byte assumption
-/// makes the final write fail with `EINVAL` on a 4 KiB device. The cost of
-/// over-estimating is at most a few hundred extra zero bytes of padding.
+/// Block size assumed when `diskutil` does not report one. Over-estimating is
+/// harmless (a multiple of 4096 is also a multiple of 512); under-estimating
+/// makes the final write fail with `EINVAL` on a 4 KiB device.
 pub const DEFAULT_BLOCK_SIZE: u64 = 4096;
 
-/// Largest block size we are willing to believe from `diskutil`. Guards the
-/// buffer-sizing arithmetic against a nonsense value.
+/// Largest block size accepted from `diskutil`.
 pub const MAX_BLOCK_SIZE: u64 = 1024 * 1024;
 
-// errno values as defined on macOS. They happen to match Linux, which is why
-// the mapping below can be tested on a Linux runner, but the names here are
-// the macOS ones because that is the only platform that produces them.
+// macOS errno values. They match Linux, which lets the mapping be tested there.
 pub const EPERM: i32 = 1;
 pub const EACCES: i32 = 13;
 pub const EBUSY: i32 = 16;
-pub const ENOSPC: i32 = 28;
 
 /// Round `value` up to the next multiple of `block_size`.
 pub fn align_up(value: u64, block_size: u64) -> u64 {
@@ -44,12 +27,7 @@ pub fn align_up(value: u64, block_size: u64) -> u64 {
     value.div_ceil(block_size) * block_size
 }
 
-/// Accept a block size reported by `diskutil`, or fall back to a sane default.
-///
-/// Writes to `/dev/rdiskN` are rejected unless both the length and the file
-/// offset are multiples of the block size, so a bogus value here would turn
-/// every write into `EINVAL`. Anything that is not a power of two in the
-/// plausible range is treated as missing.
+/// Accept a plausible power-of-two block size from `diskutil`, or fall back.
 pub fn sanitize_block_size(reported: u64) -> u64 {
     if reported == 0 || reported > MAX_BLOCK_SIZE || !reported.is_power_of_two() {
         DEFAULT_BLOCK_SIZE
@@ -58,46 +36,26 @@ pub fn sanitize_block_size(reported: u64) -> u64 {
     }
 }
 
-/// Size the streaming buffer so it is both close to `desired` and a whole
-/// number of device blocks.
-///
-/// `dd` used to hide this: it padded short reads itself. Now that we write to
-/// the descriptor directly, every buffer we hand to `write(2)` has to be block
-/// aligned, so the buffer length has to be a multiple of the block size to
-/// begin with.
+/// Round `desired` up to a whole number of blocks: every write to the raw
+/// device must be block aligned in both length and offset.
 pub fn aligned_buffer_size(desired: usize, block_size: u64) -> usize {
     let block_size = sanitize_block_size(block_size);
     let desired = desired.max(block_size as usize);
-    let aligned = align_up(desired as u64, block_size);
-    aligned as usize
+    align_up(desired as u64, block_size) as usize
 }
 
 /// Zero-fill `buffer[filled..]` up to the next block boundary and return the
-/// number of bytes that should be written.
-///
-/// The image is almost never an exact multiple of the block size, so the final
-/// chunk has to be rounded up and the tail zeroed. The padding is written to
-/// the device but is deliberately *not* fed into the checksum: verification
-/// compares the first `total_size` bytes only.
-///
-/// `buffer` is always a whole number of blocks (see [`aligned_buffer_size`]),
-/// so the padded length never exceeds its length.
+/// length to write. The padding reaches the device but never the checksum.
 pub fn pad_final_block(buffer: &mut [u8], filled: usize, block_size: u64) -> usize {
-    let padded = align_up(filled as u64, block_size) as usize;
-    let padded = padded.min(buffer.len());
+    let padded = (align_up(filled as u64, block_size) as usize).min(buffer.len());
     buffer[filled..padded].fill(0);
     padded
 }
 
-/// Build the argument vector for `authopen`.
-///
-/// * `-stdoutpipe` makes `authopen` hand the open descriptor back over its
-///   stdout socket as an `SCM_RIGHTS` control message instead of copying the
-///   file's contents to stdout.
-/// * `-extauth` makes it read an `AuthorizationExternalForm` from stdin and
-///   reuse that authorization, so the system dialog is attributed to this
-///   application rather than to `authopen` itself.
-/// * `-o <flags>` are the numeric `open(2)` flags.
+/// Arguments for `authopen`: `-stdoutpipe` returns the descriptor over stdout
+/// as `SCM_RIGHTS` instead of copying the file, `-extauth` reuses an
+/// `AuthorizationExternalForm` read from stdin, `-o` takes numeric `open(2)`
+/// flags.
 pub fn authopen_args(device_path: &str, open_flags: i32, use_extauth: bool) -> Vec<String> {
     let mut args = vec!["-stdoutpipe".to_string()];
     if use_extauth {
@@ -109,13 +67,8 @@ pub fn authopen_args(device_path: &str, open_flags: i32, use_extauth: bool) -> V
     args
 }
 
-/// Message shown when macOS refuses access to the device despite the user
-/// having authenticated as an administrator.
-///
-/// `authopen` elevates, but it does not bypass TCC: access to removable media
-/// is attributed to the responsible process, which is this application. So a
-/// successful authorization followed by `EACCES`/`EPERM` means the removable
-/// volumes privacy setting, not the admin password.
+/// TCC checks the responsible process, so `EACCES`/`EPERM` after a successful
+/// administrator authorization means the removable-volumes privacy setting.
 pub fn removable_volumes_message(device_id: &str) -> String {
     format!(
         "macOS blocked access to {device_id}. Administrator access was granted, so this is the \
@@ -125,8 +78,6 @@ pub fn removable_volumes_message(device_id: &str) -> String {
     )
 }
 
-/// Message shown when the device could not be opened or written because
-/// something else is holding it.
 pub fn device_busy_message(device_id: &str) -> String {
     format!(
         "{device_id} is still in use. Its volumes are unmounted before writing starts, so \
@@ -136,39 +87,21 @@ pub fn device_busy_message(device_id: &str) -> String {
     )
 }
 
-/// Map an I/O error from the privileged device descriptor onto an [`Error`].
-///
-/// `bytes_done` and `total_size` are only used to make the out-of-space message
-/// concrete; they are ignored for every other errno.
-pub fn map_device_io_error(
-    err: std::io::Error,
-    device_id: &str,
-    bytes_done: u64,
-    total_size: u64,
-) -> Error {
-    // Checked first so an unplugged drive keeps reporting as a disconnect
-    // rather than as whichever errno the kernel happened to return.
+/// Map an I/O error from the device descriptor onto an [`Error`].
+pub fn map_device_io_error(err: std::io::Error, device_id: &str) -> Error {
     if super::is_drive_disconnected(&err) {
         return Error::DriveDisconnected;
     }
 
     match err.raw_os_error() {
-        Some(ENOSPC) => Error::ImageTooLarge {
-            written: bytes_done,
-            image_size: total_size,
-        },
         Some(EBUSY) => Error::DeviceBusy(device_busy_message(device_id)),
         Some(EACCES) | Some(EPERM) => Error::PermissionDenied(removable_volumes_message(device_id)),
         _ => Error::Io(err),
     }
 }
 
-/// Turn a failed `authopen` run into an [`Error`].
-///
-/// Called when the handshake produced no descriptor. `authopen` reports file
-/// errors as `authopen: <path>: <strerror(errno)>`, which is the only detail
-/// available about why the open failed, so the well-known `strerror` strings
-/// are matched before falling back to the exit status.
+/// Turn a failed `authopen` run into an [`Error`]. Its stderr is
+/// `authopen: <path>: <strerror>`, the only detail available about the open.
 pub fn classify_authopen_failure(exit_code: Option<i32>, stderr: &str, device_id: &str) -> Error {
     let haystack = stderr.to_ascii_lowercase();
 
@@ -208,23 +141,31 @@ pub fn classify_authopen_failure(exit_code: Option<i32>, stderr: &str, device_id
     }
 }
 
-/// Whether a failed `F_FULLFSYNC` can be ignored.
-///
-/// `/dev/rdiskN` is a character device that bypasses the buffer cache, so on
-/// some devices there is simply nothing to flush and the kernel says so rather
-/// than succeeding. Those answers mean "already durable", not "write lost".
-pub fn full_sync_failure_is_benign(errno: i32) -> bool {
-    // ENOTTY, EINVAL, ENOTSUP/EOPNOTSUPP as defined on macOS.
+/// Whether a failed `DKIOCSYNCHRONIZECACHE` can be ignored: `ENOTTY` (not a
+/// disk device; only the regular-file stand-in in tests), `EINVAL`, `ENOTSUP`
+/// and `EOPNOTSUPP` (no cache to flush).
+pub fn cache_flush_failure_is_benign(errno: i32) -> bool {
     matches!(errno, 25 | 22 | 45 | 102)
 }
 
-/// Read from `source` until `buffer` is full or the source is exhausted, and
-/// return how many bytes were read.
-///
-/// Partial reads have to be stitched back together here rather than written
-/// straight through: every write to the raw device must be a whole number of
-/// blocks, so a short read in the middle of the image would otherwise produce
-/// a misaligned write that the device rejects with `EINVAL`.
+/// Whether a write of `chunk_len` bytes at `chunk_start` extends past a device
+/// of `device_size` bytes. The raw device reports a full drive as a short
+/// write followed by `EIO`, never `ENOSPC`, and `EIO` alone is
+/// indistinguishable from a failing card.
+pub fn write_ran_past_device_end(
+    chunk_start: u64,
+    chunk_len: u64,
+    device_size: Option<u64>,
+) -> bool {
+    device_size.is_some_and(|size| match chunk_start.checked_add(chunk_len) {
+        Some(end) => end > size,
+        None => true,
+    })
+}
+
+/// Read until `buffer` is full or `source` is exhausted. Short reads must be
+/// stitched together because every write to the raw device has to be a whole
+/// number of blocks.
 pub fn fill_buffer<R: std::io::Read>(source: &mut R, buffer: &mut [u8]) -> std::io::Result<usize> {
     let mut filled = 0;
     while filled < buffer.len() {
@@ -239,10 +180,6 @@ pub fn fill_buffer<R: std::io::Read>(source: &mut R, buffer: &mut [u8]) -> std::
 }
 
 /// Map an `OSStatus` from Authorization Services onto an [`Error`].
-///
-/// Distinguishing "the user pressed Cancel" from "authorization failed" is the
-/// whole reason this is a separate function: cancelling is a normal outcome and
-/// should not be reported as a write failure.
 pub fn map_authorization_status(code: i32, context: &str) -> Error {
     // From <Security/AuthorizationTags.h>.
     const ERR_AUTHORIZATION_DENIED: i32 = -60005;
@@ -285,7 +222,6 @@ mod tests {
 
     #[test]
     fn align_up_with_zero_block_size_is_the_identity() {
-        // Cannot happen after sanitize_block_size, but the helper must not divide by zero.
         assert_eq!(align_up(1234, 0), 1234);
     }
 
@@ -346,8 +282,10 @@ mod tests {
             buffer[1000..1024].iter().all(|b| *b == 0),
             "tail not zeroed"
         );
-        // Untouched beyond the padded length.
-        assert!(buffer[1024..].iter().all(|b| *b == 0xAA));
+        assert!(
+            buffer[1024..].iter().all(|b| *b == 0xAA),
+            "touched beyond the padded length"
+        );
     }
 
     #[test]
@@ -367,8 +305,6 @@ mod tests {
 
     #[test]
     fn pad_final_block_never_runs_past_the_buffer() {
-        // A buffer that is not a whole number of blocks cannot be produced by
-        // aligned_buffer_size, but clamping keeps this memory-safe regardless.
         let mut buffer = vec![0u8; 600];
         assert_eq!(pad_final_block(&mut buffer, 600, 512), 600);
     }
@@ -403,51 +339,12 @@ mod tests {
 
     #[test]
     fn o_rdwr_matches_the_macos_header_value() {
-        // authopen takes the numeric flags, so a wrong constant silently opens
-        // the device read-only and every write fails with EBADF.
         assert_eq!(O_RDWR, 2);
     }
 
     #[test]
-    fn enospc_becomes_image_too_large() {
-        let err = map_device_io_error(
-            std::io::Error::from_raw_os_error(ENOSPC),
-            "/dev/rdisk4",
-            3_000_000_000,
-            4_000_000_000,
-        );
-
-        match err {
-            Error::ImageTooLarge {
-                written,
-                image_size,
-            } => {
-                assert_eq!(written, 3_000_000_000);
-                assert_eq!(image_size, 4_000_000_000);
-            }
-            other => panic!("expected ImageTooLarge, got {other:?}"),
-        }
-        assert!(err_text(ENOSPC).contains("larger than the selected drive"));
-    }
-
-    fn err_text(errno: i32) -> String {
-        map_device_io_error(
-            std::io::Error::from_raw_os_error(errno),
-            "/dev/rdisk4",
-            0,
-            1,
-        )
-        .to_string()
-    }
-
-    #[test]
     fn ebusy_becomes_device_busy_naming_the_device() {
-        let err = map_device_io_error(
-            std::io::Error::from_raw_os_error(EBUSY),
-            "/dev/rdisk4",
-            0,
-            1,
-        );
+        let err = map_device_io_error(std::io::Error::from_raw_os_error(EBUSY), "/dev/rdisk4");
 
         match err {
             Error::DeviceBusy(msg) => {
@@ -461,12 +358,7 @@ mod tests {
     #[test]
     fn eacces_and_eperm_point_at_the_privacy_setting() {
         for errno in [EACCES, EPERM] {
-            let err = map_device_io_error(
-                std::io::Error::from_raw_os_error(errno),
-                "/dev/rdisk4",
-                0,
-                1,
-            );
+            let err = map_device_io_error(std::io::Error::from_raw_os_error(errno), "/dev/rdisk4");
             match err {
                 Error::PermissionDenied(msg) => {
                     assert!(msg.contains("Removable Volumes"), "{errno}: {msg}");
@@ -480,14 +372,12 @@ mod tests {
     #[test]
     fn a_disconnect_still_wins_over_the_errno_mapping() {
         // ENXIO would otherwise fall through to Error::Io.
-        let err = map_device_io_error(std::io::Error::from_raw_os_error(6), "/dev/rdisk4", 0, 1);
+        let err = map_device_io_error(std::io::Error::from_raw_os_error(6), "/dev/rdisk4");
         assert!(matches!(err, Error::DriveDisconnected));
 
         let err = map_device_io_error(
             std::io::Error::new(std::io::ErrorKind::BrokenPipe, "gone"),
             "/dev/rdisk4",
-            0,
-            1,
         );
         assert!(matches!(err, Error::DriveDisconnected));
     }
@@ -497,8 +387,6 @@ mod tests {
         let err = map_device_io_error(
             std::io::Error::from_raw_os_error(5), // EIO
             "/dev/rdisk4",
-            0,
-            1,
         );
         match err {
             Error::Io(inner) => assert_eq!(inner.raw_os_error(), Some(5)),
@@ -576,21 +464,43 @@ mod tests {
     }
 
     #[test]
-    fn a_raw_device_with_nothing_to_flush_is_not_an_error() {
+    fn a_device_with_nothing_to_flush_is_not_an_error() {
         for errno in [25, 22, 45, 102] {
-            assert!(full_sync_failure_is_benign(errno), "{errno}");
+            assert!(cache_flush_failure_is_benign(errno), "{errno}");
         }
     }
 
     #[test]
     fn a_real_flush_failure_is_not_swallowed() {
-        for errno in [EACCES, EBUSY, ENOSPC, 5 /* EIO */] {
-            assert!(!full_sync_failure_is_benign(errno), "{errno}");
+        for errno in [EACCES, EBUSY, 5 /* EIO */] {
+            assert!(!cache_flush_failure_is_benign(errno), "{errno}");
         }
     }
 
-    /// A reader that hands back at most `chunk` bytes per call, the way a pipe
-    /// or a slow file read behaves.
+    #[test]
+    fn a_chunk_that_fits_is_not_past_the_end() {
+        assert!(!write_ran_past_device_end(0, 4096, Some(8192)));
+        // Ending exactly on the last byte of the device still fits.
+        assert!(!write_ran_past_device_end(4096, 4096, Some(8192)));
+    }
+
+    #[test]
+    fn a_chunk_that_straddles_or_starts_at_the_end_is_past_it() {
+        assert!(write_ran_past_device_end(4096, 8192, Some(8192)));
+        assert!(write_ran_past_device_end(8192, 4096, Some(8192)));
+    }
+
+    #[test]
+    fn an_unknown_device_size_infers_nothing() {
+        assert!(!write_ran_past_device_end(u64::MAX, u64::MAX, None));
+    }
+
+    #[test]
+    fn a_chunk_near_u64_max_does_not_overflow() {
+        assert!(write_ran_past_device_end(u64::MAX, 1, Some(u64::MAX)));
+    }
+
+    /// A reader that hands back at most `chunk` bytes per call.
     struct Dribble<'a> {
         data: &'a [u8],
         chunk: usize,
@@ -685,8 +595,6 @@ mod tests {
 
     #[test]
     fn the_default_block_size_is_safe_on_512_byte_devices() {
-        // A multiple of the 4 KiB fallback is always a multiple of 512, which
-        // is what makes over-estimating safe and under-estimating not.
         assert_eq!(DEFAULT_BLOCK_SIZE % 512, 0);
     }
 

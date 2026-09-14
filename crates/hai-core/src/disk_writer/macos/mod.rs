@@ -1,31 +1,20 @@
-//! macOS disk writing via a privileged descriptor from `/usr/libexec/authopen`.
+//! macOS disk writing through a privileged descriptor from `authopen(1)`.
 //!
-//! The device is opened once, read-write, through `authopen(1)`, and the single
-//! descriptor it hands back is used for both the write and the read-back
-//! verify. That replaces the previous approach of running `/bin/dd` as root
-//! through `AuthorizationExecuteWithPrivileges`, which has been deprecated
-//! since macOS 10.7, could not report the child's exit status (so a full card
-//! surfaced as a broken pipe rather than as `ENOSPC`), and needed two separate
-//! privileged invocations — long enough apart on a slow card for the
-//! authorization credential to expire between them.
+//! The device is opened once, read-write, and the same descriptor serves the
+//! write and the read-back verify. As described in the `authopen` manual page,
+//! one end of a `SOCK_STREAM` socketpair becomes its stdout and `-stdoutpipe`
+//! makes it send the open descriptor back as an `SCM_RIGHTS` control message;
+//! `-extauth` makes it reuse the authorization this application already holds,
+//! so the single dialog names this application rather than `authopen`.
 //!
-//! The handshake with `authopen` is the one described in its manual page:
-//! a `SOCK_STREAM` socketpair is created, one end becomes the child's stdout,
-//! and `-stdoutpipe` makes the child pass the open descriptor back over it as
-//! an `SCM_RIGHTS` control message. `-extauth` makes it read the
-//! `AuthorizationExternalForm` of the authorization this application already
-//! holds from its stdin, so the user sees one dialog naming this application
-//! rather than a second one naming `authopen`.
-//!
-//! Note that elevating does not bypass TCC. Access to removable media is
-//! checked against the responsible process, which is this application, so a
-//! granted authorization followed by `EPERM`/`EACCES` means the removable
-//! volumes privacy setting rather than the administrator password.
+//! `authopen` is a setuid helper, so the App Sandbox must stay off. Elevating
+//! does not bypass TCC either: removable-media access is checked against the
+//! responsible process, which is this application.
 
 use super::macos_logic::{
-    align_up, aligned_buffer_size, authopen_args, classify_authopen_failure, fill_buffer,
-    full_sync_failure_is_benign, map_authorization_status, map_device_io_error, pad_final_block,
-    sanitize_block_size, DEFAULT_BLOCK_SIZE, O_RDWR,
+    align_up, aligned_buffer_size, authopen_args, cache_flush_failure_is_benign,
+    classify_authopen_failure, fill_buffer, map_authorization_status, map_device_io_error,
+    pad_final_block, sanitize_block_size, write_ran_past_device_end, DEFAULT_BLOCK_SIZE, O_RDWR,
 };
 use super::*;
 use rustix::net::{recvmsg, RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, ReturnFlags};
@@ -40,9 +29,10 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 
-/// The setuid helper that opens a file on our behalf after checking the caller
-/// against an authorization right.
 const AUTHOPEN_PATH: &str = "/usr/libexec/authopen";
+
+/// `_IO('d', 22)` from `<sys/disk.h>`.
+const DKIOCSYNCHRONIZECACHE: rustix::ioctl::Opcode = rustix::ioctl::opcode::none(b'd', 22);
 
 /// Progress update sent from blocking task
 struct ProgressUpdate {
@@ -52,35 +42,37 @@ struct ProgressUpdate {
     message: String,
 }
 
-/// The one field of `diskutil info -plist` this module needs.
 #[derive(Debug, Deserialize)]
-struct DiskUtilBlockSize {
+struct DiskUtilGeometry {
     #[serde(rename = "DeviceBlockSize", default)]
     device_block_size: u64,
+    #[serde(rename = "TotalSize", default)]
+    total_size: u64,
 }
 
 /// How the image lines up with the device it is being written to.
 #[derive(Debug, Clone, Copy)]
 struct Layout {
-    /// Bytes of image to write. The device is written past this, up to the next
-    /// block boundary, but only these bytes are ever hashed.
+    /// Bytes of image to write and hash; the device is padded past this to a
+    /// block boundary.
     total_size: u64,
-    /// The device's block size. Every read from and write to the raw device
-    /// has to be a whole number of these, at an offset that is one too.
+    /// Every raw-device read and write must be a whole number of these, at an
+    /// offset that is one too.
     block_size: u64,
-    /// Length of the streaming buffer, itself a whole number of blocks.
+    /// Device capacity, if `diskutil` reported it.
+    device_size: Option<u64>,
+    /// Streaming buffer length, a whole number of blocks.
     buffer_len: usize,
 }
 
 /// Outcome of the `SCM_RIGHTS` exchange with `authopen`.
 #[derive(Debug)]
 enum Handshake {
-    /// `authopen` passed the open device descriptor.
     Descriptor(OwnedFd),
-    /// `authopen` closed the socket, or wrote bytes to it without attaching a
-    /// descriptor. Either way it failed, and its exit status says why.
+    /// `authopen` closed the socket or sent bytes without a descriptor; its
+    /// exit status says why.
     NoDescriptor,
-    /// The exchange failed on this side, before `authopen` had its say.
+    /// The exchange failed on this side.
     Failed(std::io::Error),
 }
 
@@ -202,21 +194,17 @@ fn write_and_verify_blocking(
     verify: bool,
     progress_tx: mpsc::Sender<ProgressUpdate>,
 ) -> Result<()> {
-    // Writes to the raw device are rejected unless both their length and the
-    // file offset are whole numbers of blocks. `dd` used to arrange that for
-    // us; now it is this module's job.
-    let block_size = device_block_size(disk_id);
+    let (block_size, device_size) = device_geometry(disk_id);
     let layout = Layout {
         total_size,
         block_size,
+        device_size,
         buffer_len: aligned_buffer_size(FAST_DRIVE_BUFFER_SIZE, block_size),
     };
 
-    // One authorization and one privileged open for the whole operation. The
-    // credential cannot expire part-way through a long flash any more, because
-    // nothing privileged happens after this point — the descriptor is already
-    // ours.
-    let auth = request_authorization()?;
+    // One authorization and one privileged open; nothing privileged happens
+    // after this point.
+    let auth = request_authorization(device_path)?;
     let mut device = open_device_with_authopen(&auth, device_path)?;
 
     let source_checksum = write_to_device(
@@ -228,7 +216,7 @@ fn write_and_verify_blocking(
         &progress_tx,
     )?;
 
-    full_sync(&device, device_path)?;
+    flush_device_cache(&device, device_path)?;
 
     if verify {
         let checksum =
@@ -236,42 +224,45 @@ fn write_and_verify_blocking(
         verify_device(&mut device, &checksum, device_path, layout, &progress_tx)?;
     }
 
-    // Close the descriptor before asking diskutil to eject, so the device is
-    // not still open when it tries.
+    // The device must be closed before diskutil can eject it.
     drop(device);
 
     eject_disk(disk_id)
 }
 
-/// Ask `diskutil` how large this device's blocks are, falling back to a value
-/// that is safe on every device if it will not say.
-fn device_block_size(disk_id: &str) -> u64 {
+/// Block size and capacity from `diskutil`, with a safe fallback block size
+/// and an unknown capacity when it will not say.
+fn device_geometry(disk_id: &str) -> (u64, Option<u64>) {
     let Ok(output) = Command::new("diskutil")
         .args(["info", "-plist", disk_id])
         .output()
     else {
-        return DEFAULT_BLOCK_SIZE;
+        return (DEFAULT_BLOCK_SIZE, None);
     };
 
     if !output.status.success() {
-        return DEFAULT_BLOCK_SIZE;
+        return (DEFAULT_BLOCK_SIZE, None);
     }
 
-    match plist::from_bytes::<DiskUtilBlockSize>(&output.stdout) {
-        Ok(info) => sanitize_block_size(info.device_block_size),
-        Err(_) => DEFAULT_BLOCK_SIZE,
+    match plist::from_bytes::<DiskUtilGeometry>(&output.stdout) {
+        Ok(info) => (
+            sanitize_block_size(info.device_block_size),
+            (info.total_size > 0).then_some(info.total_size),
+        ),
+        Err(_) => (DEFAULT_BLOCK_SIZE, None),
     }
 }
 
-fn request_authorization() -> Result<Authorization> {
+fn request_authorization(device_path: &str) -> Result<Authorization> {
+    // The right authopen itself checks, so the credential obtained here is
+    // the one it needs and it prompts no further.
     let rights = AuthorizationItemSetBuilder::new()
-        .add_right("system.privilege.admin")
+        .add_right(format!("sys.openfile.readwrite.{device_path}"))
         .map_err(|e| Error::PermissionDenied(format!("Failed to create rights: {}", e)))?
         .build();
 
-    // PREAUTHORIZE means the dialog is shown here rather than inside authopen,
-    // which is what lets a cancellation be reported as a cancellation instead
-    // of as an opaque authopen failure.
+    // PREAUTHORIZE shows the dialog here, so a cancellation is reported as one
+    // rather than as an opaque authopen failure.
     Authorization::new(
         Some(rights),
         None,
@@ -280,17 +271,12 @@ fn request_authorization() -> Result<Authorization> {
     .map_err(|e| map_authorization_status(e.code(), "Requesting administrator access"))
 }
 
-/// Open `device_path` read-write through `authopen` and take ownership of the
-/// descriptor it passes back over its stdout socket.
+/// Open `device_path` read-write through `authopen` and take the descriptor it
+/// passes back.
 fn open_device_with_authopen(auth: &Authorization, device_path: &str) -> Result<File> {
-    // Reusing the authorization this application already holds is what makes
-    // the dialog say "Home Assistant Installer" instead of "authopen", and
-    // keeps the whole flash down to a single prompt.
     let external_form = auth
         .make_external_form()
         .map_err(|e| map_authorization_status(e.code(), "Externalizing the authorization"))?;
-    // The external form is a fixed-size blob of c_char; authopen wants the raw
-    // bytes on stdin.
     let external_bytes: Vec<u8> = external_form.bytes.iter().map(|byte| *byte as u8).collect();
 
     let (handshake, output) = spawn_and_receive_descriptor(
@@ -302,11 +288,9 @@ fn open_device_with_authopen(auth: &Authorization, device_path: &str) -> Result<
 
     match handshake {
         Handshake::Descriptor(fd) if output.status.success() => Ok(File::from(fd)),
-        // authopen's own account of what went wrong beats whatever we saw on
-        // our end of the socket, whenever it managed to give one. A descriptor
-        // alongside a failed exit is not something authopen is documented to
-        // produce either, so that is closed rather than written through.
         Handshake::Failed(err) if output.status.success() => Err(Error::Io(err)),
+        // authopen's own account of the failure beats what was seen on the
+        // socket; a descriptor next to a failed exit is not trusted either.
         _ => Err(classify_authopen_failure(
             output.status.code(),
             &stderr,
@@ -315,19 +299,14 @@ fn open_device_with_authopen(auth: &Authorization, device_path: &str) -> Result<
     }
 }
 
-/// Run `program` the way `authopen` expects to be run: one end of a UNIX
-/// socketpair as its stdout, `stdin_payload` on its stdin, and a descriptor
-/// collected from whatever it sends back.
-///
-/// Split out from [`open_device_with_authopen`] so the socket plumbing can be
-/// driven by a test with an ordinary command standing in for `authopen`.
+/// Run `program` as `authopen` expects: a UNIX socket as its stdout,
+/// `stdin_payload` on its stdin, and a descriptor collected from what it sends
+/// back. The program is a parameter so tests can stand in for `authopen`.
 fn spawn_and_receive_descriptor(
     program: &str,
     args: &[String],
     stdin_payload: &[u8],
 ) -> Result<(Handshake, std::process::Output)> {
-    // The descriptor comes back as an SCM_RIGHTS control message, which only
-    // works over a UNIX domain socket.
     let (parent_end, child_end) = UnixStream::pair().map_err(Error::Io)?;
 
     let mut command = Command::new(program);
@@ -338,16 +317,14 @@ fn spawn_and_receive_descriptor(
         .stderr(Stdio::piped());
 
     let spawned = command.spawn();
-    // Drop this process's own copy of the socket end the child inherited.
-    // Without it the recvmsg() below would block forever instead of seeing EOF
-    // when the child exits without passing anything back.
+    // Closes this process's copy of the child's socket end; otherwise recvmsg
+    // never sees EOF when the child exits without sending a descriptor.
     drop(command);
 
     let mut child =
         spawned.map_err(|e| Error::PermissionDenied(format!("Could not run {program}: {e}")))?;
 
-    // -extauth consumes the external form from stdin before it opens anything,
-    // so this has to happen before waiting for a descriptor.
+    // -extauth reads the external form before opening anything.
     let sent = match child.stdin.take() {
         Some(mut stdin) => stdin.write_all(stdin_payload).and_then(|()| stdin.flush()),
         None => Err(std::io::Error::other("child was spawned without a stdin")),
@@ -363,38 +340,22 @@ fn spawn_and_receive_descriptor(
     Ok((handshake, output))
 }
 
-/// Pull the device descriptor out of the `SCM_RIGHTS` control message
-/// `authopen` sends, if it sent one.
+/// Pull the descriptor out of the `SCM_RIGHTS` control message, if one came.
 fn receive_descriptor(socket: &UnixStream) -> std::io::Result<Handshake> {
-    // authopen sends a byte of payload alongside the control message; the
-    // payload itself carries nothing we need.
     let mut payload = [0u8; 16];
     let mut iov = [IoSliceMut::new(&mut payload)];
 
-    // Room for exactly the one descriptor authopen sends. Anything that does
-    // not fit shows up as CTRUNC below rather than being silently dropped.
+    // Room for the one descriptor authopen sends; more sets CTRUNC.
     let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
     let mut control = RecvAncillaryBuffer::new(&mut space);
 
     let message = recvmsg(socket, &mut iov, &mut control, RecvFlags::empty())?;
 
-    // A truncated control message means the kernel discarded descriptors that
-    // would not fit rather than queueing them, so what arrived cannot be
-    // trusted to be the whole set. Refuse instead of using part of it.
     if message.flags.contains(ReturnFlags::CTRUNC) {
-        // Leak the buffer rather than letting it drop.
-        //
-        // A truncated message still reports the `cmsg_len` that was *sent*
-        // rather than the part that arrived, and rustix 1.1.2 subtracts that
-        // from the remaining length as it drains (`AncillaryDrain::advance`).
-        // That underflows: a panic in debug, and in release it would walk off
-        // the end of the buffer and hand back `OwnedFd`s built out of
-        // uninitialised bytes. `RecvAncillaryBuffer::drop` drains, so returning
-        // normally would run straight into it.
-        //
-        // Forgetting the buffer leaks whichever descriptors did arrive. That is
-        // the lesser evil: the buffer has room for one, authopen only ever
-        // sends one, and the flash fails on this error regardless.
+        // A truncated message still carries the `cmsg_len` that was sent, and
+        // rustix 1.1.2 subtracts it while draining (`AncillaryDrain::advance`),
+        // which underflows. Dropping the buffer drains it, so it is forgotten
+        // instead; that leaks at most the one descriptor that fit.
         std::mem::forget(control);
         return Err(std::io::Error::other(
             "authopen's control message did not fit in the receive buffer",
@@ -406,8 +367,7 @@ fn receive_descriptor(socket: &UnixStream) -> std::io::Result<Handshake> {
             continue;
         };
 
-        // authopen only ever passes one. Any extra is an OwnedFd too, so it is
-        // closed when the iterator drops rather than left open.
+        // Any extra descriptors are closed when the iterator drops.
         if let Some(device) = descriptors.into_iter().next() {
             return Ok(Handshake::Descriptor(device));
         }
@@ -429,6 +389,7 @@ fn write_to_device(
     let Layout {
         total_size,
         block_size,
+        device_size,
         buffer_len,
     } = layout;
 
@@ -451,17 +412,24 @@ fn write_to_device(
             break;
         }
 
-        // Only the image's own bytes are hashed. The zero padding below is
-        // written to the device but must never reach the digest, or the verify
-        // pass could not match it.
+        // Hash the image bytes only; the padding below never reaches the digest.
         if let Some(hasher) = hasher.as_mut() {
             hasher.update(&buffer[..filled]);
         }
 
         let to_write = pad_final_block(&mut buffer, filled, block_size);
-        device
-            .write_all(&buffer[..to_write])
-            .map_err(|e| map_device_io_error(e, device_path, bytes_written, total_size))?;
+        device.write_all(&buffer[..to_write]).map_err(|e| {
+            if !is_drive_disconnected(&e)
+                && write_ran_past_device_end(bytes_written, to_write as u64, device_size)
+            {
+                Error::ImageTooLarge {
+                    written: device_size.map_or(bytes_written, |size| size.min(total_size)),
+                    image_size: total_size,
+                }
+            } else {
+                map_device_io_error(e, device_path)
+            }
+        })?;
 
         bytes_written += filled as u64;
 
@@ -487,17 +455,21 @@ fn write_to_device(
     Ok(hasher.map(|hasher| hex::encode(hasher.finalize())))
 }
 
-/// Make the drive commit what it has buffered.
-///
-/// `fsync(2)` only pushes data out of the kernel; `F_FULLFSYNC` is the only way
-/// on macOS to make the drive itself flush its write cache, which is what
-/// matters for a device the user is about to unplug.
-fn full_sync(device: &File, device_path: &str) -> Result<()> {
-    match rustix::fs::fcntl_fullfsync(device) {
+/// Ask the drive to commit its write cache. `/dev/rdiskN` bypasses the buffer
+/// cache and refuses `F_FULLFSYNC` with `ENOTTY`; `DKIOCSYNCHRONIZECACHE` is
+/// the raw-device equivalent.
+fn flush_device_cache(device: &File, device_path: &str) -> Result<()> {
+    match synchronize_cache(device) {
         Ok(()) => Ok(()),
-        Err(errno) if full_sync_failure_is_benign(errno.raw_os_error()) => Ok(()),
-        Err(errno) => Err(map_device_io_error(errno.into(), device_path, 0, 0)),
+        Err(errno) if cache_flush_failure_is_benign(errno.raw_os_error()) => Ok(()),
+        Err(errno) => Err(map_device_io_error(errno.into(), device_path)),
     }
+}
+
+fn synchronize_cache(device: &File) -> rustix::io::Result<()> {
+    // SAFETY: the ioctl takes no argument, so the kernel never dereferences
+    // the null pointer `NoArg` passes.
+    unsafe { rustix::ioctl::ioctl(device, rustix::ioctl::NoArg::<DKIOCSYNCHRONIZECACHE>::new()) }
 }
 
 fn verify_device(
@@ -513,6 +485,7 @@ fn verify_device(
         total_size,
         block_size,
         buffer_len,
+        ..
     } = layout;
 
     let _ = progress_tx.send(ProgressUpdate {
@@ -522,11 +495,9 @@ fn verify_device(
         message: "Starting verification...".to_string(),
     });
 
-    // Back to the start of the descriptor we already hold: no second
-    // authorization, no second privileged process, no second password prompt.
     device
         .seek(SeekFrom::Start(0))
-        .map_err(|e| map_device_io_error(e, device_path, 0, total_size))?;
+        .map_err(|e| map_device_io_error(e, device_path))?;
 
     let mut buffer = vec![0u8; buffer_len];
     let mut hasher = Sha256::new();
@@ -535,13 +506,11 @@ fn verify_device(
 
     while bytes_hashed < total_size {
         let wanted = (total_size - bytes_hashed).min(buffer_len as u64);
-        // Reads from the raw device have to be block aligned as well, so read
-        // whole blocks and hash only the part of them that belongs to the
-        // image. This is what keeps the padding out of the digest.
+        // Read whole blocks, hash only the image's share of them.
         let to_read = align_up(wanted, block_size).min(buffer_len as u64) as usize;
 
         let filled = fill_buffer(device, &mut buffer[..to_read])
-            .map_err(|e| map_device_io_error(e, device_path, bytes_hashed, total_size))?;
+            .map_err(|e| map_device_io_error(e, device_path))?;
 
         if (filled as u64) < wanted {
             return Err(Error::VerificationFailed(format!(
@@ -728,34 +697,28 @@ mod tests {
     }
 
     #[test]
-    fn test_device_block_size_of_the_boot_disk_is_plausible() {
-        // disk0 always exists on a Mac and is never written to by this module;
-        // this only checks that the diskutil plist is parsed into a usable
-        // block size rather than silently falling back.
-        let block_size = device_block_size("disk0");
+    fn test_device_geometry_of_the_boot_disk_is_plausible() {
+        // disk0 always exists and is only read here.
+        let (block_size, device_size) = device_geometry("disk0");
         assert!(block_size.is_power_of_two(), "{block_size}");
         assert!((512..=65536).contains(&block_size), "{block_size}");
+        let device_size = device_size.expect("diskutil reports TotalSize for the boot disk");
+        assert!(device_size > 1024 * 1024 * 1024, "{device_size}");
     }
 
     #[test]
-    fn test_device_block_size_falls_back_for_an_unknown_disk() {
-        assert_eq!(device_block_size("disk999"), DEFAULT_BLOCK_SIZE);
+    fn test_device_geometry_falls_back_for_an_unknown_disk() {
+        assert_eq!(device_geometry("disk999"), (DEFAULT_BLOCK_SIZE, None));
     }
 
-    /// Sends `descriptors` over `socket` the way `authopen -stdoutpipe` sends
-    /// its one, so the receiving half can be exercised without `authopen`.
-    ///
-    /// This is the mirror image of `receive_descriptor`, so it also pins down
-    /// the message layout that function expects: if the two ever disagree, the
-    /// round-trip test below stops passing.
+    /// Sends `descriptors` over `socket` the way `authopen -stdoutpipe` does.
     fn send_descriptors(
         socket: &UnixStream,
         descriptors: &[BorrowedFd<'_>],
     ) -> std::io::Result<()> {
         use rustix::net::{sendmsg, SendAncillaryBuffer, SendAncillaryMessage, SendFlags};
 
-        // Sized for whatever the caller is sending, so that the truncation test
-        // can deliberately send more than the receiver has room for.
+        // Large enough for the truncation test to overfill the receiver.
         let mut space = vec![MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(16))];
         let mut control = SendAncillaryBuffer::new(&mut space);
         assert!(
@@ -773,9 +736,6 @@ mod tests {
         Ok(())
     }
 
-    /// Exercises the receiving half of the `authopen` handshake without
-    /// `authopen`: a descriptor for a temp file is pushed through a socketpair
-    /// exactly the way `-stdoutpipe` pushes the device descriptor.
     #[test]
     fn test_receive_descriptor_picks_the_fd_out_of_scm_rights() {
         use std::io::{Read, Seek, SeekFrom, Write};
@@ -793,8 +753,7 @@ mod tests {
             panic!("expected a descriptor");
         };
 
-        // The received descriptor is a genuine, independent handle on the file:
-        // it outlives the original and reads back the same bytes.
+        // An independent handle: it outlives the original.
         drop(temp);
         let mut received = File::from(fd);
         let mut contents = String::new();
@@ -802,16 +761,8 @@ mod tests {
         assert_eq!(contents, "payload from the other side");
     }
 
-    /// The receive buffer holds one descriptor, so a sender that attaches more
-    /// has to be refused outright rather than half-read.
-    ///
-    /// Emphatically not hypothetical. A truncated control message still reports
-    /// the length that was *sent* rather than the part that *arrived*, and both
-    /// implementations of this function have got that wrong: a hand-rolled one
-    /// aborted the process with an I/O safety violation, and `rustix` 1.1.2
-    /// underflows in `AncillaryDrain::advance` — which is why the CTRUNC check
-    /// is before the drain, and why the buffer is forgotten rather than
-    /// dropped. Removing either of those makes this test fail.
+    /// The receive buffer holds one descriptor. A sender attaching more must be
+    /// refused, and the buffer must not be dropped (see `receive_descriptor`).
     #[test]
     fn test_receive_descriptor_refuses_a_truncated_control_message() {
         let temp = tempfile::tempfile().unwrap();
@@ -842,10 +793,7 @@ mod tests {
         ));
     }
 
-    /// A regular file stands in for the descriptor `authopen` would hand back.
-    /// It accepts the same writes, so the padding, the digest and the read-back
-    /// can all be exercised without a raw device — only the alignment
-    /// *requirement* is missing, and that is what `Layout` encodes.
+    /// A regular file stands in for the device: same writes, no alignment rule.
     fn round_trip(
         image_bytes: usize,
         block_size: u64,
@@ -860,6 +808,7 @@ mod tests {
         let layout = Layout {
             total_size: data.len() as u64,
             block_size,
+            device_size: None,
             buffer_len,
         };
         let mut device = tempfile::tempfile().unwrap();
@@ -886,8 +835,7 @@ mod tests {
             "checksum was taken over the padded write"
         );
 
-        // The device holds the image rounded up to a whole block, and the
-        // rounding is zeroes rather than leftover image bytes.
+        // Padded to a whole block with zeroes.
         let written = device.metadata().unwrap().len();
         assert_eq!(written, align_up(layout.total_size, block_size));
         device.seek(SeekFrom::Start(layout.total_size)).unwrap();
@@ -904,9 +852,7 @@ mod tests {
 
     #[test]
     fn test_write_then_verify_round_trip_on_a_partial_final_block() {
-        // 10_000 is deliberately not a multiple of 4096, so the last block is
-        // padded and the verify has to read further than total_size while
-        // hashing only up to it.
+        // Not a multiple of 4096: the last block is padded.
         let (mut device, checksum, layout) = round_trip(10_000, 4096, 64 * 1024);
         let (progress_tx, _progress_rx) = mpsc::channel();
 
@@ -922,8 +868,7 @@ mod tests {
 
     #[test]
     fn test_write_then_verify_round_trip_across_several_buffers() {
-        // Buffer deliberately smaller than the image so the chunking loop runs
-        // more than once and the final chunk is a short one.
+        // Buffer smaller than the image: several chunks, short final one.
         let (mut device, checksum, layout) = round_trip(20_000, 512, 4096);
         let (progress_tx, _progress_rx) = mpsc::channel();
 
@@ -980,7 +925,6 @@ mod tests {
         let (mut device, checksum, layout) = round_trip(10_000, 4096, 64 * 1024);
         let (progress_tx, _progress_rx) = mpsc::channel();
 
-        // A device that accepted the write but cannot give it all back.
         device.set_len(4096).unwrap();
 
         match verify_device(
@@ -1012,6 +956,7 @@ mod tests {
             Layout {
                 total_size: 1000,
                 block_size: 512,
+                device_size: None,
                 buffer_len: 4096,
             },
             false,
@@ -1024,18 +969,22 @@ mod tests {
     }
 
     #[test]
-    fn test_full_sync_succeeds_on_a_plain_file() {
+    fn test_flush_device_cache_tolerates_the_plain_file_stand_in() {
         let device = tempfile::tempfile().unwrap();
-        full_sync(&device, "/dev/rdisk-test").expect("F_FULLFSYNC must work on a regular file");
+
+        let errno = synchronize_cache(&device).expect_err("a regular file has no device cache");
+        assert_eq!(errno.raw_os_error(), 25, "expected ENOTTY, got {errno}");
+
+        flush_device_cache(&device, "/dev/rdisk-test").expect("ENOTTY must be tolerated");
     }
 
-    /// Drives the real spawn path with a stand-in for `authopen` that exits
-    /// without sending anything.
-    ///
-    /// This is the regression test for the `drop(command)` in
-    /// `spawn_and_receive_descriptor`: if this process kept its own copy of the
-    /// socket end the child inherited, the socket would never reach EOF and the
-    /// recvmsg would block forever instead of returning here.
+    #[test]
+    fn test_dkiocsynchronizecache_opcode_matches_the_header() {
+        assert_eq!(DKIOCSYNCHRONIZECACHE, 0x2000_6416);
+    }
+
+    /// Without the `drop(command)` in `spawn_and_receive_descriptor` this
+    /// hangs: the socket never reaches EOF.
     #[test]
     fn test_spawn_and_receive_descriptor_returns_when_the_child_sends_nothing() {
         let (handshake, output) =
@@ -1053,8 +1002,6 @@ mod tests {
         assert!(matches!(handshake, Handshake::NoDescriptor));
     }
 
-    /// `cat` echoes stdin to the socket, which is what a failing `authopen`
-    /// looks like from here: bytes arrive, but no control message does.
     #[test]
     fn test_spawn_and_receive_descriptor_treats_plain_output_as_no_descriptor() {
         let (handshake, output) =
@@ -1078,13 +1025,150 @@ mod tests {
     #[test]
     fn test_receive_descriptor_reports_a_closed_socket_as_no_descriptor() {
         let (parent_end, child_end) = UnixStream::pair().unwrap();
-
-        // authopen exiting without sending anything at all.
         drop(child_end);
 
         assert!(matches!(
             receive_descriptor(&parent_end).unwrap(),
             Handshake::NoDescriptor
         ));
+    }
+
+    /// A raw disk device owned by the current user, from
+    /// `hdiutil attach -nomount ram://`, detached on drop. It enforces the same
+    /// alignment, end-of-media and ioctl rules as an SD card, without root.
+    struct RamDisk {
+        device: String,
+    }
+
+    impl RamDisk {
+        const SIZE: u64 = 8 * 1024 * 1024;
+
+        fn attach() -> Option<Self> {
+            let sectors = (Self::SIZE / 512).to_string();
+            let output = Command::new("hdiutil")
+                .args(["attach", "-nomount", &format!("ram://{sectors}")])
+                .output()
+                .ok()?;
+            if !output.status.success() {
+                eprintln!(
+                    "skipping RAM disk test: hdiutil attach failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                return None;
+            }
+            let device = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            device.starts_with("/dev/disk").then_some(Self { device })
+        }
+
+        fn disk_id(&self) -> &str {
+            self.device.strip_prefix("/dev/").unwrap()
+        }
+
+        fn raw_path(&self) -> String {
+            format!("/dev/r{}", self.disk_id())
+        }
+
+        fn open(&self) -> File {
+            File::options()
+                .read(true)
+                .write(true)
+                .open(self.raw_path())
+                .expect("a RAM disk is owned by the user who attached it")
+        }
+
+        fn layout(&self, total_size: u64, buffer_len: usize) -> Layout {
+            let (block_size, device_size) = device_geometry(self.disk_id());
+            assert_eq!(
+                device_size,
+                Some(Self::SIZE),
+                "diskutil disagrees about the RAM disk size"
+            );
+            Layout {
+                total_size,
+                block_size,
+                device_size,
+                buffer_len: aligned_buffer_size(buffer_len, block_size),
+            }
+        }
+    }
+
+    impl Drop for RamDisk {
+        fn drop(&mut self) {
+            let _ = Command::new("hdiutil")
+                .args(["detach", &self.device])
+                .output();
+        }
+    }
+
+    fn image_of(bytes: usize) -> tempfile::NamedTempFile {
+        let data: Vec<u8> = (0..=255u8).cycle().take(bytes).collect();
+        let image = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(image.path(), &data).unwrap();
+        image
+    }
+
+    #[test]
+    fn test_write_flush_and_verify_on_a_real_raw_device() {
+        let Some(ram) = RamDisk::attach() else { return };
+        // Not block aligned and larger than the buffer: several chunks, padded
+        // last one.
+        let image_bytes = 3 * 1024 * 1024 + 1000;
+        let image = image_of(image_bytes);
+        let layout = ram.layout(image_bytes as u64, 1024 * 1024);
+        let (progress_tx, _progress_rx) = mpsc::channel();
+        let raw_path = ram.raw_path();
+
+        let mut device = ram.open();
+        let checksum = write_to_device(
+            &mut device,
+            image.path(),
+            &raw_path,
+            layout,
+            true,
+            &progress_tx,
+        )
+        .expect("block-aligned writes must be accepted by the raw device")
+        .expect("a checksum is returned when verification is requested");
+
+        // Accepted by a disk device, not merely tolerated.
+        synchronize_cache(&device).expect("a disk device must accept DKIOCSYNCHRONIZECACHE");
+        flush_device_cache(&device, &raw_path).unwrap();
+
+        verify_device(&mut device, &checksum, &raw_path, layout, &progress_tx)
+            .expect("the raw device must read back what was written");
+        drop(device);
+    }
+
+    #[test]
+    fn test_an_image_larger_than_the_raw_device_is_reported_as_too_large() {
+        let Some(ram) = RamDisk::attach() else { return };
+        let image_bytes = RamDisk::SIZE + 1024 * 1024;
+        let image = image_of(image_bytes as usize);
+        // The third 3 MiB chunk straddles the 8 MiB end.
+        let layout = ram.layout(image_bytes, 3 * 1024 * 1024);
+        let (progress_tx, _progress_rx) = mpsc::channel();
+        let raw_path = ram.raw_path();
+
+        let mut device = ram.open();
+        let result = write_to_device(
+            &mut device,
+            image.path(),
+            &raw_path,
+            layout,
+            false,
+            &progress_tx,
+        );
+        drop(device);
+
+        match result {
+            Err(Error::ImageTooLarge {
+                written,
+                image_size,
+            }) => {
+                assert_eq!(written, RamDisk::SIZE);
+                assert_eq!(image_size, image_bytes);
+            }
+            other => panic!("expected ImageTooLarge, got {other:?}"),
+        }
     }
 }

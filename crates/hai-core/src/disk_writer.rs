@@ -18,15 +18,9 @@ mod imp;
 #[path = "disk_writer/windows.rs"]
 mod imp;
 
-// The plain-logic half of the macOS write path: block alignment, argument
-// building and errno mapping. It is declared here rather than from
-// `macos/mod.rs` so that `cfg(test)` can pull it in on other platforms without
-// dragging in the privileged implementation alongside it.
-//
-// Backend tests only ever run on ubuntu-latest (see .github/workflows/test.yml),
-// so gating on macOS alone would mean this logic is never tested at all, while
-// gating on nothing would ship macOS code inside the Linux and Windows binaries.
-// `cfg(test)` is what avoids both: nothing here reaches a real non-macOS build.
+// Pure logic behind the macOS write path, compiled under `test` on every
+// platform so the Linux-only backend test job covers it without shipping it
+// in non-macOS builds.
 #[cfg(any(target_os = "macos", test))]
 #[path = "disk_writer/macos/logic.rs"]
 mod macos_logic;

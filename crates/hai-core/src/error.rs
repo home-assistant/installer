@@ -57,11 +57,6 @@ pub enum Error {
     VerificationFailed(String),
 
     /// The drive ran out of space part-way through the write.
-    ///
-    /// Distinct from a generic I/O failure because it has an obvious cause and
-    /// an obvious fix, and because the size check done before flashing cannot
-    /// always catch it: it compares against the size the device reports, which
-    /// is not always the number of bytes it will actually accept.
     #[error(
         "Image is larger than the selected drive: only {written} of {image_size} bytes fit \
          before the drive reported that it was full"

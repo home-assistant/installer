@@ -1,51 +1,37 @@
 # Manual test plan — macOS flash path (authopen)
 
-The privileged part of the macOS write path cannot be covered by automated
-tests: it needs a real removable device, a real authorization dialog and a real
-TCC decision. This checklist covers what the unit tests cannot.
+The privileged part of the macOS write path needs a real removable device, a
+real authorization dialog and a real TCC decision, so it is not covered by the
+automated tests. `cargo test -p hai-core` on a Mac does cover the raw-device
+rules (block alignment, end of media, cache flush) against a RAM disk.
 
-Work through it on a Mac with a `tauri build` bundle — **not** `tauri dev`. The
-elevation path depends on the Hardened Runtime, the entitlements and the
-`Info.plist` usage string, and none of those apply to a `cargo run` binary.
+Use a `tauri build` bundle, not `tauri dev`: TCC keys off the bundle and its
+`Info.plist`, which a `cargo run` binary does not have.
 
 ## Building the bundle
 
-The repository has no signing identity yet (that belongs to the CI work in
-issues #1 and #2), so sign ad hoc for local testing:
+There is no signing identity yet (issues #1 and #2), so sign ad hoc:
 
 ```bash
 npm install
 APPLE_SIGNING_IDENTITY="-" npm run tauri build
 ```
 
-Confirm the build actually picked up the new configuration before testing
-anything else:
+Confirm the usage string reached the bundle before testing anything else:
 
 ```bash
 APP="target/release/bundle/macos/Home Assistant Installer.app"
-
-# Hardened Runtime is on (look for the "runtime" flag)
-codesign -d -vvv "$APP" 2>&1 | grep -i flags
-
-# The entitlements were applied, and the App Sandbox is off
-codesign -d --entitlements :- "$APP"
-
-# The usage string reached the bundle
 plutil -extract NSRemovableVolumesUsageDescription raw "$APP/Contents/Info.plist"
 ```
 
-If any of those three is missing, stop: the rest of the plan will not be
-testing what it claims to test.
-
 ## Preparation
 
-- A USB stick or SD card you are willing to erase, **at least as large** as the
-  image, plus a second one that is deliberately **smaller** than the image.
-- Note the device id with `diskutil list` — the tests below refer to it as
-  `diskN`.
-- Note its block size, since that is what the new alignment code keys off:
+- A USB stick or SD card you are willing to erase, at least as large as the
+  image, plus a second one that is smaller than the image.
+- Note the device id with `diskutil list`; the cases below call it `diskN`.
+- Note its block size:
   `diskutil info -plist diskN | plutil -extract DeviceBlockSize raw -`.
-  Worth doing on both a 512-byte and a 4096-byte device if you have one of each.
+  Worth covering both a 512-byte and a 4096-byte device if available.
 
 ---
 
@@ -56,42 +42,32 @@ testing what it claims to test.
 
 Expected:
 
-- [ ] **Exactly one** authentication dialog, at the start. This is the main
-      thing this change is for — the old path could prompt a second time before
-      verifying.
-- [ ] The dialog names **Home Assistant Installer**, not `authopen`. If it says
-      `authopen`, `-extauth` is not working and the external form is not being
-      accepted.
+- [ ] Exactly one authentication dialog, at the start.
+- [ ] The dialog names **Home Assistant Installer**, not `authopen`.
 - [ ] No further prompt when the progress bar moves from writing to verifying.
-- [ ] Verification passes. (On the old code it could not: the verify read
-      rounded the length up to a whole 64 MiB block and hashed the padding, so
-      the digests only matched when the image happened to be an exact multiple.)
+- [ ] Verification passes.
 - [ ] The drive ejects at the end.
-- [ ] Re-insert the drive and confirm the image actually boots, or at least that
+- [ ] Re-insert the drive and confirm the image boots, or at least that
       `diskutil list diskN` shows the image's partitions.
 
-Worth repeating once with verification **off**, to confirm the write still
-completes and ejects when the verify phase is skipped.
+Repeat once with verification off.
 
 ## 2. Image larger than the target device
 
-The point of this case is the error message, which used to be a generic broken
-pipe from `dd`.
+`flash_image` in `crates/hai-desktop/src/commands.rs` refuses early when the
+image is larger than the size the device reports, so the UI normally never
+reaches the end-of-device detection in the write loop. To reach it, comment out
+that pre-check for the run, or call `hai_core::disk_writer::write_image`
+directly from a scratch binary.
 
-Note that `flash_image` in `crates/hai-desktop/src/commands.rs` compares the
-image size against the size the device reports and refuses early, so going
-through the UI normally tests **that** check rather than the `ENOSPC` mapping.
-To reach the new code path, either comment out that pre-check for the run, or
-call `hai_core::disk_writer::write_image` directly from a scratch binary.
-
-1. Select the deliberately-too-small device.
+1. Select the smaller device.
 2. Start the flash.
 
 Expected:
 
-- [ ] The error says the **image is larger than the selected drive**, and
-      reports how many of how many bytes fit.
-- [ ] It is not "Write failed:", not a broken pipe, and not a bare I/O error.
+- [ ] The error says the image is larger than the selected drive and reports
+      how many of how many bytes fit.
+- [ ] It is not prefixed with "Write failed:" and is not a bare I/O error.
 
 ## 3. Device pulled out mid-write
 
@@ -101,11 +77,11 @@ Expected:
 Expected:
 
 - [ ] The error is **Drive disconnected**, not a generic I/O failure.
-- [ ] The application stays usable — no hang, no spinner that never resolves.
+- [ ] The application stays usable: no hang, no spinner that never resolves.
 - [ ] Re-inserting the drive and flashing again works.
 
-Worth also pulling the device during the **verify** phase, which is a separate
-call site for the same mapping.
+Also pull the device during the verify phase, which is a separate call site for
+the same mapping.
 
 ## 4. Cancelling the authentication dialog
 
@@ -115,18 +91,16 @@ call site for the same mapping.
 Expected:
 
 - [ ] The message is a cancellation, not "Permission denied" and not an
-      `authopen` failure. (`errAuthorizationCanceled` is −60006; the old code
-      had −60005 and −60006 swapped, so a cancel reported as a denial.)
+      `authopen` failure.
 - [ ] Nothing was written: the device's existing content is intact.
 - [ ] Retrying immediately afterwards prompts again and succeeds.
 
-Also worth trying: enter a **wrong password** three times until the dialog gives
-up. That is `errAuthorizationDenied` (−60005) and should read as
+Also enter a wrong password until the dialog gives up. That should read as
 "Administrator access was denied", distinct from the cancel above.
 
 ## 5. First run from a clean TCC state
 
-This is the case where elevating is *not* enough, and the one most likely to be
+This is the case where elevating is not enough, and the one most likely to be
 reported as "it asked for my password and then failed anyway".
 
 ```bash
@@ -140,16 +114,16 @@ Expected:
 - [ ] macOS asks for access to a removable volume, showing the text from
       `crates/hai-desktop/macos/Info.plist`. Read it as a user would and check
       it actually explains why.
-- [ ] **Allow** → the flash proceeds normally, one admin prompt as in case 1.
-- [ ] Reset again, and this time **Don't Allow** → the error points at
+- [ ] **Allow**: the flash proceeds normally, one admin prompt as in case 1.
+- [ ] Reset again, and this time **Don't Allow**: the error points at
       *System Settings > Privacy & Security > Files and Folders > Removable
-      Volumes*, and does **not** claim the password was wrong or that the
-      device is busy.
+      Volumes*, and does not claim the password was wrong or that the device
+      is busy.
 - [ ] Granting access there and retrying succeeds without a rebuild.
 
-Note that TCC keys off the signing identity, so an ad-hoc signed build is a
-fresh subject every time it is rebuilt. Re-run the reset after any rebuild, and
-expect to re-approve.
+TCC keys off the signing identity, so an ad-hoc signed build is a fresh subject
+every time it is rebuilt. Re-run the reset after any rebuild, and expect to
+re-approve.
 
 ## 6. Device still mounted
 
@@ -159,7 +133,7 @@ expect to re-approve.
 Expected:
 
 - [ ] Either the unmount that runs before the write succeeds anyway (the usual
-      case), or the error names the device and says it is still in use — it
+      case), or the error names the device and says it is still in use. It
       should not surface as a permission problem.
 
 ---
