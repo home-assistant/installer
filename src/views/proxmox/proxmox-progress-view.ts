@@ -4,27 +4,17 @@ import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { proxmoxCreateVm, formatBytes } from "../../api/commands.js";
 import type {
   FlashProgress,
+  FlashStage,
   ProxmoxSession,
   ProxmoxVmConfig,
 } from "../../api/types.js";
 import "../../components/progress-bar.js";
 
-type InstallStage =
-  | "downloading"
-  | "extracting"
-  | "writing"
-  | "verifying"
-  | "finalizing"
-  | "ready"
-  | "updating"
-  | "complete"
-  | "error";
-
 // Stages that have measurable progress (0-100%)
-const MEASURABLE_STAGES: InstallStage[] = ["downloading"];
+const MEASURABLE_STAGES: FlashStage[] = ["downloading"];
 
 // Stages that use indeterminate progress (waiting for something, or unknown total size)
-const INDETERMINATE_STAGES: InstallStage[] = [
+const INDETERMINATE_STAGES: FlashStage[] = [
   "extracting",
   "writing",
   "verifying",
@@ -320,7 +310,7 @@ export class ProxmoxProgressView extends LitElement {
   private _wizardState: WizardState = wizardState.getState();
 
   @state()
-  private _stage: InstallStage = "downloading";
+  private _stage: FlashStage = "downloading";
 
   @state()
   private _progress = 0;
@@ -407,7 +397,7 @@ export class ProxmoxProgressView extends LitElement {
         config,
         (progress: FlashProgress) => {
           // Use raw per-stage progress
-          const newStage = progress.stage as InstallStage;
+          const newStage = progress.stage;
           if (newStage !== this._stage) {
             this._stage = newStage;
             this._stageStartTime = Date.now();
@@ -617,12 +607,12 @@ export class ProxmoxProgressView extends LitElement {
   }
 
   /** Check if the current stage uses indeterminate progress */
-  private _isIndeterminate(stage: InstallStage): boolean {
+  private _isIndeterminate(stage: FlashStage): boolean {
     return INDETERMINATE_STAGES.includes(stage);
   }
 
   /** Check if the current stage has measurable progress */
-  private _hasMeasurableProgress(stage: InstallStage): boolean {
+  private _hasMeasurableProgress(stage: FlashStage): boolean {
     return MEASURABLE_STAGES.includes(stage);
   }
 

@@ -44,6 +44,10 @@ export type FlashStage =
   | "writing"
   | "verifying"
   | "finalizing"
+  /** Waiting for Home Assistant to be ready */
+  | "ready"
+  /** Updating Home Assistant to latest version */
+  | "updating"
   | "complete"
   | "error";
 

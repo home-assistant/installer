@@ -32,6 +32,9 @@ pub enum DeviceType {
     UsbDrive,
     Ssd,
     Hdd,
+    /// Renamed explicitly: `rename_all = "snake_case"` would emit `nv_me`,
+    /// but the frontend's `DeviceType` union spells this `nvme`.
+    #[serde(rename = "nvme")]
     NvMe,
     Unknown,
 }
@@ -344,7 +347,7 @@ mod tests {
 
         let device_type = DeviceType::NvMe;
         let json = serde_json::to_string(&device_type).unwrap();
-        assert_eq!(json, "\"nv_me\"");
+        assert_eq!(json, "\"nvme\"");
     }
 
     #[test]
@@ -379,6 +382,14 @@ mod tests {
         let stage = FlashStage::Writing;
         let json = serde_json::to_string(&stage).unwrap();
         assert_eq!(json, "\"writing\"");
+
+        let stage = FlashStage::Ready;
+        let json = serde_json::to_string(&stage).unwrap();
+        assert_eq!(json, "\"ready\"");
+
+        let stage = FlashStage::Updating;
+        let json = serde_json::to_string(&stage).unwrap();
+        assert_eq!(json, "\"updating\"");
     }
 
     #[test]
