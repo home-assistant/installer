@@ -13,7 +13,6 @@ import type {
   ProxmoxVmConfig,
   ProxmoxVmResult,
   SystemInfo,
-  UpdateInfo,
   UtmStatus,
   UtmVmConfig,
 } from "./types.js";
@@ -25,40 +24,11 @@ function isBrowserOnly(): boolean {
   return typeof window !== "undefined" && !("__TAURI__" in window);
 }
 
-/**
- * Check if URL mock mode is enabled
- */
-function isUrlMockMode(): boolean {
-  const urlParams = new URLSearchParams(window.location.search);
-  return urlParams.get("mock") === "true";
-}
-
-/**
- * Check if the app is running in mock mode.
- * Mock mode is enabled via the HA_INSTALLER_MOCK environment variable
- * or the ?mock=true URL parameter.
- */
-export async function isMockMode(): Promise<boolean> {
-  // Check URL parameter first (for development)
-  if (isUrlMockMode()) {
-    return true;
-  }
-
-  // In browser-only mode (no Tauri), always use mock
-  if (isBrowserOnly()) {
-    return true;
-  }
-
-  // Check backend mock mode
-  return invoke<boolean>("is_mock_mode");
-}
-
 // Import mock data for browser-only mode
 import {
   MOCK_BLOCK_DEVICES,
   MOCK_HAOS_RELEASE,
   MOCK_MANIFEST,
-  MOCK_UPDATE_INFO,
 } from "./mock-data.js";
 
 /**
@@ -204,16 +174,6 @@ async function simulateFlashProgress(
     success: true,
     duration_secs: 45,
   };
-}
-
-/**
- * Check for application updates.
- */
-export async function checkForUpdates(): Promise<UpdateInfo> {
-  if (isBrowserOnly()) {
-    return MOCK_UPDATE_INFO;
-  }
-  return invoke<UpdateInfo>("check_for_updates");
 }
 
 /**
@@ -419,17 +379,6 @@ export async function resizeUtmVmDisk(
     return;
   }
   return invoke<void>("resize_utm_vm_disk", { vmId, sizeGb });
-}
-
-/**
- * List all UTM VMs.
- * @returns Array of VM names
- */
-export async function listUtmVms(): Promise<string[]> {
-  if (isBrowserOnly()) {
-    return ["Home Assistant"];
-  }
-  return invoke<string[]>("list_utm_vms");
 }
 
 /**

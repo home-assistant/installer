@@ -6,7 +6,7 @@
 use hai_core::{
     devices, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, FlashProgress,
     FlashStage, HaosRelease, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
-    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
+    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult,
 };
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -64,16 +64,6 @@ pub struct SystemInfo {
 pub struct VmStatusInfo {
     pub status: String,
     pub ip_address: Option<String>,
-}
-
-// =============================================================================
-// Mock Mode Commands
-// =============================================================================
-
-/// Check if mock mode is enabled
-#[tauri::command]
-pub fn is_mock_mode() -> bool {
-    is_mock_enabled()
 }
 
 // =============================================================================
@@ -289,12 +279,6 @@ pub async fn get_haos_release(version: Option<String>) -> Result<HaosRelease, St
     download::get_haos_release(ver)
         .await
         .map_err(|e| e.to_string())
-}
-
-/// Check for application updates
-#[tauri::command]
-pub async fn check_for_updates() -> Result<UpdateInfo, String> {
-    Ok(mock::get_mock_update_info())
 }
 
 /// Get the device manifest
@@ -573,23 +557,6 @@ pub fn resize_utm_vm_disk(_vm_id: String, _size_gb: u32) -> Result<(), String> {
     Err("UTM is only available on macOS".to_string())
 }
 
-/// List UTM VMs
-#[tauri::command]
-#[cfg(target_os = "macos")]
-pub fn list_utm_vms() -> Result<Vec<String>, String> {
-    if is_mock_enabled() {
-        return Ok(vec!["Home Assistant".to_string()]);
-    }
-    // TODO: Implement via utmctl or AppleScript
-    Ok(vec![])
-}
-
-#[tauri::command]
-#[cfg(not(target_os = "macos"))]
-pub fn list_utm_vms() -> Result<Vec<String>, String> {
-    Err("UTM is only available on macOS".to_string())
-}
-
 /// Get the status of a UTM VM
 #[tauri::command]
 #[cfg(target_os = "macos")]
@@ -840,39 +807,6 @@ mod tests {
     use super::*;
     use serial_test::serial;
 
-    // ===== Mock Mode Tests =====
-
-    #[test]
-    #[serial]
-    fn test_is_mock_mode_returns_correct_value() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        assert!(is_mock_mode());
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_mock_mode_returns_false_when_disabled() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-        assert!(!is_mock_mode());
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_mock_mode_returns_true_for_true_string() {
-        std::env::set_var("HA_INSTALLER_MOCK", "true");
-        assert!(is_mock_mode());
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_mock_mode_returns_false_for_invalid_value() {
-        std::env::set_var("HA_INSTALLER_MOCK", "0");
-        assert!(!is_mock_mode());
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
     // ===== Block Device Tests =====
 
     #[tokio::test]
@@ -951,23 +885,6 @@ mod tests {
             assert_eq!(image.sha256.len(), 64); // SHA256 is 64 hex characters
         }
         std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    // ===== Update Info Tests =====
-
-    #[tokio::test]
-    async fn test_check_for_updates_returns_ok() {
-        let result = check_for_updates().await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_check_for_updates_has_valid_structure() {
-        let result = check_for_updates().await;
-        assert!(result.is_ok());
-        let update_info = result.unwrap();
-        assert!(!update_info.current_version.is_empty());
-        assert!(!update_info.latest_version.is_empty());
     }
 
     // ===== Manifest Tests =====
@@ -1410,27 +1327,6 @@ mod tests {
     #[test]
     #[serial]
     #[cfg(target_os = "macos")]
-    fn test_list_utm_vms_mock_mode() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let result = list_utm_vms();
-        assert!(result.is_ok());
-        let vms = result.unwrap();
-        assert_eq!(vms.len(), 1);
-        assert_eq!(vms[0], "Home Assistant");
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn test_list_utm_vms_non_macos() {
-        let result = list_utm_vms();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("macOS"));
-    }
-
-    #[test]
-    #[serial]
-    #[cfg(target_os = "macos")]
     fn test_get_utm_vm_status_mock_mode() {
         std::env::set_var("HA_INSTALLER_MOCK", "1");
         let result = get_utm_vm_status("test-vm-id".to_string());
@@ -1711,18 +1607,6 @@ mod tests {
         let result = resize_utm_vm_disk("test-vm".to_string(), 64);
         // Should return Ok even though not implemented
         assert!(result.is_ok());
-    }
-
-    #[test]
-    #[serial]
-    #[cfg(target_os = "macos")]
-    fn test_list_utm_vms_non_mock_returns_empty() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-        let result = list_utm_vms();
-        assert!(result.is_ok());
-        let vms = result.unwrap();
-        // Returns empty list when not implemented
-        assert_eq!(vms.len(), 0);
     }
 
     #[test]

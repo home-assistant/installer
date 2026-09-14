@@ -2,6 +2,7 @@ import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
+import { isLinux, isMacOS } from "../utils/platform.js";
 
 /**
  * Destructive confirmation dialog built on wa-dialog (focus trap, Escape,
@@ -143,8 +144,7 @@ export class ConfirmDialog extends LitElement {
   // a polkit prompt through udisks2. Windows requires launching elevated, so
   // there is no in-flow prompt to announce.
   private _promptsForPassword(): boolean {
-    const platform = navigator.platform.toLowerCase();
-    return platform.includes("mac") || platform.includes("linux");
+    return isMacOS() || isLinux();
   }
 }
 

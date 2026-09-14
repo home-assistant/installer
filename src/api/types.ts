@@ -47,22 +47,6 @@ export type FlashStage =
   | "complete"
   | "error";
 
-/** Update information */
-export interface UpdateInfo {
-  /** Whether an update is available */
-  update_available: boolean;
-  /** Current version */
-  current_version: string;
-  /** Latest available version */
-  latest_version: string;
-  /** Download URL for the latest version */
-  download_url?: string;
-  /** Release notes URL */
-  release_notes_url?: string;
-  /** Whether this is a beta release */
-  is_beta: boolean;
-}
-
 /** Device manifest for supported devices */
 export interface DeviceManifest {
   /** Version of the manifest format */

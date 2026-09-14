@@ -20,8 +20,7 @@
     "@home-assistant/webawesome": "3.7.0-ha.1",
     "@tauri-apps/api": "~2.11",
     "@tauri-apps/plugin-opener": "^2",
-    "lit": "^3.3.1",
-    "qrcode": "^1.5.4"
+    "lit": "^3.3.1"
   },
   "devDependencies": {
     "@actions/artifact": "^6.2.1",

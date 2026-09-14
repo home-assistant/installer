@@ -76,6 +76,7 @@ pub fn is_mock_enabled() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn test_noop_progress_callback() {
@@ -93,9 +94,34 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_mock_mode_default_disabled() {
         // Remove the env var if it exists
         std::env::remove_var("HA_INSTALLER_MOCK");
         assert!(!is_mock_enabled());
+    }
+
+    #[test]
+    #[serial]
+    fn test_mock_mode_enabled_for_one() {
+        std::env::set_var("HA_INSTALLER_MOCK", "1");
+        assert!(is_mock_enabled());
+        std::env::remove_var("HA_INSTALLER_MOCK");
+    }
+
+    #[test]
+    #[serial]
+    fn test_mock_mode_enabled_for_true_string() {
+        std::env::set_var("HA_INSTALLER_MOCK", "true");
+        assert!(is_mock_enabled());
+        std::env::remove_var("HA_INSTALLER_MOCK");
+    }
+
+    #[test]
+    #[serial]
+    fn test_mock_mode_disabled_for_other_values() {
+        std::env::set_var("HA_INSTALLER_MOCK", "0");
+        assert!(!is_mock_enabled());
+        std::env::remove_var("HA_INSTALLER_MOCK");
     }
 }
