@@ -222,6 +222,33 @@ pub struct ProxmoxSession {
     pub csrf_token: String,
 }
 
+/// How a Proxmox server's TLS certificate relates to the locally pinned one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxmoxCertificateStatus {
+    /// The server presented the certificate that is pinned for it.
+    Trusted,
+    /// Nothing is pinned for this server yet, so this is a first connection.
+    Unknown,
+    /// A different certificate is pinned for this server. Either it was
+    /// legitimately replaced, or the connection is being intercepted.
+    Mismatch,
+}
+
+/// The TLS certificate a Proxmox server presented, and whether it is trusted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProxmoxCertificate {
+    /// Server the certificate belongs to, as `host:port`.
+    pub server: String,
+    /// SHA-256 fingerprint of the presented certificate, as uppercase hex
+    /// byte pairs joined by `:` -- the format Proxmox itself displays.
+    pub fingerprint: String,
+    /// How the presented certificate compares to the pinned one.
+    pub status: ProxmoxCertificateStatus,
+    /// The previously pinned fingerprint. Only set when `status` is `mismatch`.
+    pub pinned_fingerprint: Option<String>,
+}
+
 /// Proxmox node information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxmoxNode {

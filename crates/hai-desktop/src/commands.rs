@@ -5,8 +5,8 @@
 
 use hai_core::{
     devices, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, FlashProgress,
-    FlashStage, HaosRelease, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
-    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
+    FlashStage, HaosRelease, ProgressCallback, ProxmoxCertificate, ProxmoxCredentials, ProxmoxNode,
+    ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
 };
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -659,6 +659,31 @@ pub async fn check_ha_updated(ip_address: String) -> bool {
 // =============================================================================
 // Proxmox Commands
 // =============================================================================
+
+/// Read the TLS certificate a Proxmox server presents and report whether it is
+/// already trusted.
+///
+/// The frontend calls this before collecting or sending anything: an unknown or
+/// changed certificate has to be confirmed by the user first. Reading the
+/// certificate does not send credentials -- see `hai_core::proxmox::tls`.
+#[tauri::command]
+pub async fn proxmox_certificate_status(server_url: String) -> Result<ProxmoxCertificate, String> {
+    hai_core::proxmox::certificate_status(&server_url)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Pin a Proxmox server's certificate fingerprint after the user confirmed it.
+///
+/// Only ever call this with a fingerprint the user has actually been shown and
+/// has accepted.
+#[tauri::command]
+pub async fn proxmox_trust_certificate(
+    server_url: String,
+    fingerprint: String,
+) -> Result<(), String> {
+    hai_core::proxmox::trust_certificate(&server_url, &fingerprint).map_err(|e| e.to_string())
+}
 
 /// Connect to a Proxmox VE server
 #[tauri::command]

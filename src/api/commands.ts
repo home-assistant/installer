@@ -6,6 +6,7 @@ import type {
   FlashRequest,
   FlashResult,
   HaosRelease,
+  ProxmoxCertificate,
   ProxmoxCredentials,
   ProxmoxNode,
   ProxmoxSession,
@@ -485,6 +486,56 @@ export async function checkHaUpdated(ipAddress: string): Promise<boolean> {
 
 /** Store for the current Proxmox session (browser-only mock) */
 let mockProxmoxSession: ProxmoxSession | null = null;
+
+/**
+ * Read the TLS certificate a Proxmox server presents and report whether it is
+ * already trusted.
+ *
+ * A default Proxmox install serves a self-signed certificate, so this is how
+ * the user gets to confirm the certificate before any password is sent. Call it
+ * before `proxmoxConnect`: reading the certificate sends no credentials.
+ *
+ * @param serverUrl Proxmox server URL
+ * @returns The presented fingerprint and how it compares to the pinned one
+ */
+export async function proxmoxCertificateStatus(
+  serverUrl: string
+): Promise<ProxmoxCertificate> {
+  if (isBrowserOnly()) {
+    // There is no server and no certificate in browser-only mode.
+    return {
+      server: new URL(serverUrl).host,
+      fingerprint:
+        "4D:4F:43:4B:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00",
+      status: "trusted",
+      pinned_fingerprint: null,
+    };
+  }
+  return invoke<ProxmoxCertificate>("proxmox_certificate_status", {
+    serverUrl,
+  });
+}
+
+/**
+ * Pin a Proxmox server's certificate fingerprint.
+ *
+ * Only call this with a fingerprint the user has been shown and has accepted.
+ *
+ * @param serverUrl Proxmox server URL
+ * @param fingerprint The SHA-256 fingerprint the user confirmed
+ */
+export async function proxmoxTrustCertificate(
+  serverUrl: string,
+  fingerprint: string
+): Promise<void> {
+  if (isBrowserOnly()) {
+    return;
+  }
+  return invoke<void>("proxmox_trust_certificate", {
+    serverUrl,
+    fingerprint,
+  });
+}
 
 /**
  * Connect to a Proxmox VE server and authenticate.

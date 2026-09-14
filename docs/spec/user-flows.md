@@ -241,6 +241,47 @@ Then continues to drive selection and flashing.
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### Step 1a: Confirm the server certificate
+
+Proxmox serves its API under a certificate it signs itself, so no certificate
+authority can vouch for it. The user is asked to confirm it before the password
+is sent, and the fingerprint is then remembered for later connections
+(trust-on-first-use, as SSH does it).
+
+This appears only on the first connection to a server, or if that server later
+presents a different certificate.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│   🔐  Is this the right server?                             │
+│                                                             │
+│   192.168.1.100:8006 identifies itself with the             │
+│   certificate below. Proxmox creates this certificate       │
+│   itself, so nothing else can confirm it belongs to your    │
+│   server — please check it matches before your password     │
+│   is sent.                                                  │
+│                                                             │
+│   SHA-256 FINGERPRINT                                       │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │ A1:B2:C3:D4:E5:F6:07:18:29:3A:4B:5C:6D:7E:8F:90:…  │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│   Proxmox shows the same fingerprint in:                    │
+│    • Datacenter → your node → Certificates,                 │
+│      under pveproxy-ssl.pem                                 │
+│    • the output of `pvenode cert info` on the node          │
+│                                                             │
+│                       [ Cancel ] [ Trust and connect ]      │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+If a server that was already trusted presents a different certificate, the same
+dialog leads with the change instead, shows both the new and the previously
+trusted fingerprint, and marks accepting the new one as destructive. Cancelling
+or dismissing never trusts anything.
+
 ### Step 2: Configure VM
 
 ```

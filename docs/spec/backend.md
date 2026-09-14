@@ -292,6 +292,14 @@ async fn download_image(device_type: String, window: Window) -> Result<PathBuf, 
 async fn flash_image(image_path: PathBuf, target_device: String, window: Window) -> Result<(), String>
 
 // Proxmox
+// The certificate is confirmed before proxmox_connect is called, so the
+// password never travels over a connection the user has not vouched for.
+#[tauri::command]
+async fn proxmox_certificate_status(server_url: String) -> Result<ProxmoxCertificate, String>
+
+#[tauri::command]
+async fn proxmox_trust_certificate(server_url: String, fingerprint: String) -> Result<(), String>
+
 #[tauri::command]
 async fn proxmox_connect(url: String, username: String, password: String) -> Result<ProxmoxSession, String>
 

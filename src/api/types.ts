@@ -207,6 +207,27 @@ export interface ProxmoxSession {
   csrf_token: string;
 }
 
+/** How a Proxmox server's TLS certificate relates to the locally pinned one */
+export type ProxmoxCertificateStatus =
+  /** The server presented the certificate that is pinned for it */
+  | "trusted"
+  /** Nothing is pinned for this server yet, so this is a first connection */
+  | "unknown"
+  /** A different certificate is pinned: either replaced, or intercepted */
+  | "mismatch";
+
+/** The TLS certificate a Proxmox server presented, and whether it is trusted */
+export interface ProxmoxCertificate {
+  /** Server the certificate belongs to, as host:port */
+  server: string;
+  /** SHA-256 fingerprint, uppercase hex byte pairs joined by ":" */
+  fingerprint: string;
+  /** How the presented certificate compares to the pinned one */
+  status: ProxmoxCertificateStatus;
+  /** The previously pinned fingerprint. Only set when status is "mismatch" */
+  pinned_fingerprint?: string | null;
+}
+
 /** Proxmox node information */
 export interface ProxmoxNode {
   /** Node name */

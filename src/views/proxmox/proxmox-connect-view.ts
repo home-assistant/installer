@@ -1,7 +1,13 @@
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { proxmoxConnect } from "../../api/commands.js";
+import {
+  proxmoxCertificateStatus,
+  proxmoxConnect,
+  proxmoxTrustCertificate,
+} from "../../api/commands.js";
+import type { ProxmoxCertificate } from "../../api/types.js";
 import { wizardState } from "../../state/wizard-state.js";
+import "../../components/certificate-trust-dialog.js";
 
 @customElement("proxmox-connect-view")
 export class ProxmoxConnectView extends LitElement {
@@ -155,6 +161,16 @@ export class ProxmoxConnectView extends LitElement {
   @state()
   private _error: string | null = null;
 
+  /**
+   * The certificate awaiting the user's decision, or null when no prompt is
+   * showing. Held in state so the dialog can render from it.
+   */
+  @state()
+  private _pendingCertificate: ProxmoxCertificate | null = null;
+
+  /** Resolves the promise `_askAboutCertificate()` is waiting on. */
+  private _certificateDecision: ((trusted: boolean) => void) | null = null;
+
   /** Connect to Proxmox server. Returns true if successful. */
   async connect(): Promise<boolean> {
     if (!this._serverUrl || !this._username || !this._password) {
@@ -180,6 +196,13 @@ export class ProxmoxConnectView extends LitElement {
     this._error = null;
 
     try {
+      // Confirm the server's certificate first. Proxmox signs its own, so the
+      // user is the only one who can say it is the right server -- and the
+      // password below would otherwise be readable by anyone intercepting it.
+      if (!(await this._ensureCertificateTrusted(url))) {
+        return false;
+      }
+
       const session = await proxmoxConnect({
         server_url: url,
         username: this._username,
@@ -208,6 +231,71 @@ export class ProxmoxConnectView extends LitElement {
     } finally {
       this._connecting = false;
     }
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    // Leaving the step while the prompt is up counts as declining, so a
+    // pending connect() never hangs waiting for an answer.
+    this._settleCertificate(false);
+  }
+
+  /**
+   * Make sure the server's certificate is trusted, asking the user if needed.
+   *
+   * Returns false when the user declined, in which case no credentials are
+   * sent. Throws if the certificate could not be read at all, so the caller's
+   * error handling reports it like any other connection failure.
+   */
+  private async _ensureCertificateTrusted(url: string): Promise<boolean> {
+    const certificate = await proxmoxCertificateStatus(url);
+
+    if (certificate.status === "trusted") {
+      return true;
+    }
+
+    if (!(await this._askAboutCertificate(certificate))) {
+      this._error =
+        certificate.status === "mismatch"
+          ? "Cancelled because the server's certificate has changed."
+          : "Cancelled because the server's certificate was not confirmed.";
+      return false;
+    }
+
+    // Pin what the user confirmed, so later connections accept only this
+    // certificate and a swapped one fails instead of being trusted silently.
+    await proxmoxTrustCertificate(url, certificate.fingerprint);
+    return true;
+  }
+
+  /** Show the trust dialog and resolve with the user's decision. */
+  private _askAboutCertificate(
+    certificate: ProxmoxCertificate
+  ): Promise<boolean> {
+    // A prompt already waiting would be orphaned by the one below, leaving its
+    // connect() hanging, so decline it rather than dropping it.
+    this._settleCertificate(false);
+
+    return new Promise((resolve) => {
+      this._certificateDecision = resolve;
+      this._pendingCertificate = certificate;
+    });
+  }
+
+  /** Close the trust dialog and hand `trusted` back to the waiting caller. */
+  private _settleCertificate(trusted: boolean) {
+    const decide = this._certificateDecision;
+    this._certificateDecision = null;
+    this._pendingCertificate = null;
+    decide?.(trusted);
+  }
+
+  private _onCertificateConfirm() {
+    this._settleCertificate(true);
+  }
+
+  private _onCertificateCancel() {
+    this._settleCertificate(false);
   }
 
   /** Check if form is valid (all required fields filled) */
@@ -312,6 +400,26 @@ export class ProxmoxConnectView extends LitElement {
           />
         </div>
       </div>
+
+      ${this._renderCertificateDialog()}
+    `;
+  }
+
+  private _renderCertificateDialog() {
+    const certificate = this._pendingCertificate;
+    if (!certificate) {
+      return "";
+    }
+
+    return html`
+      <certificate-trust-dialog
+        open
+        .server=${certificate.server}
+        .fingerprint=${certificate.fingerprint}
+        .previousFingerprint=${certificate.pinned_fingerprint ?? ""}
+        @dialog-confirm=${this._onCertificateConfirm}
+        @dialog-cancel=${this._onCertificateCancel}
+      ></certificate-trust-dialog>
     `;
   }
 

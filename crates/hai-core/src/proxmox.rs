@@ -18,12 +18,16 @@
 //! - https://forum.proxmox.com/threads/api-equivalent-of-qm-importdisk.157457/
 //! - https://forum.proxmox.com/threads/guide-install-home-assistant-os-in-a-vm.143251/
 
+pub mod tls;
+
 use crate::error::{Error, Result};
 use crate::types::{
     FlashProgress, FlashStage, ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage,
     ProxmoxVmConfig, ProxmoxVmResult,
 };
 use crate::ProgressCallback;
+
+pub use tls::{certificate_status, trust_certificate};
 
 /// Minimum required Proxmox VE version for disk image import via API.
 /// Version 8.4.1 added support for uploading qcow2/raw/img/vmdk files with content=import.
@@ -32,11 +36,36 @@ const MIN_PROXMOX_VERSION: (u32, u32, u32) = (8, 4, 1);
 /// How often to send progress updates (every N bytes)
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
 
-/// Create a configured HTTP client for Proxmox API calls.
-/// Accepts self-signed certificates (common for Proxmox installations).
-fn create_client(timeout_secs: u64) -> Result<reqwest::Client> {
+/// Create an HTTP client for calls to the Proxmox API at `server_url`.
+///
+/// The client accepts only the certificate the user confirmed for that server
+/// (see [`tls`]), so it fails outright if the server has not been trusted yet.
+/// That is deliberate: a Proxmox request carries either the API password or the
+/// session ticket, and neither may go out over a connection nobody vouched for.
+fn create_client(server_url: &str, timeout_secs: u64) -> Result<reqwest::Client> {
+    // The test suite points these calls at a plain-HTTP mockito server, where
+    // there is no certificate to pin. Production builds refuse plain HTTP.
+    #[cfg(test)]
+    if server_url.starts_with("http://") {
+        return create_plain_client(timeout_secs);
+    }
+
+    #[cfg(not(test))]
+    if !server_url.starts_with("https://") {
+        return Err(Error::ProxmoxApi(
+            "Proxmox connections must use https://".to_string(),
+        ));
+    }
+
+    tls::pinned_client(server_url, timeout_secs)
+}
+
+/// Create a plain HTTP client, for the unencrypted probes of a freshly
+/// installed Home Assistant on port 8123.
+///
+/// Nothing sensitive is sent over these, and there is no certificate involved.
+fn create_plain_client(timeout_secs: u64) -> Result<reqwest::Client> {
     reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
         .timeout(std::time::Duration::from_secs(timeout_secs))
         .build()
         .map_err(|e| Error::ProxmoxApi(format!("Failed to create HTTP client: {}", e)))
@@ -87,7 +116,7 @@ pub async fn authenticate(credentials: &ProxmoxCredentials) -> Result<ProxmoxSes
     }
 
     let base_url = credentials.server_url.trim_end_matches('/');
-    let client = create_client(30)?;
+    let client = create_client(base_url, 30)?;
 
     // Step 1: Authenticate
     let auth_url = format!("{}/api2/json/access/ticket", base_url);
@@ -235,7 +264,7 @@ pub async fn list_nodes(session: &ProxmoxSession) -> Result<Vec<ProxmoxNode>> {
         }
     }
 
-    let client = create_client(30)?;
+    let client = create_client(&session.server_url, 30)?;
 
     let url = format!(
         "{}/api2/json/nodes",
@@ -337,7 +366,7 @@ pub async fn list_storage(session: &ProxmoxSession, node: &str) -> Result<Vec<Pr
         }
     }
 
-    let client = create_client(30)?;
+    let client = create_client(&session.server_url, 30)?;
 
     let url = format!(
         "{}/api2/json/nodes/{}/storage",
@@ -412,7 +441,7 @@ pub async fn get_next_vm_id(session: &ProxmoxSession) -> Result<u32> {
         session.server_url.trim_end_matches('/')
     );
 
-    let client = create_client(30)?;
+    let client = create_client(&session.server_url, 30)?;
 
     let response = client
         .get(&url)
@@ -467,7 +496,7 @@ async fn wait_for_task(
         urlencoding::encode(upid)
     );
 
-    let client = create_client(30)?;
+    let client = create_client(&session.server_url, 30)?;
     let start = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs(timeout_secs);
 
@@ -591,7 +620,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     );
 
     // Create client with longer timeout for large uploads
-    let client = create_client(1800)?; // 30 minutes
+    let client = create_client(&session.server_url, 1800)?; // 30 minutes
 
     // Create a chunked stream that reports upload progress
     let chunk_size = 256 * 1024; // 256KB chunks
@@ -699,7 +728,7 @@ async fn create_vm_with_disk(
         config.node
     );
 
-    let client = create_client(300)?; // 5 minutes for VM creation with disk import
+    let client = create_client(&session.server_url, 300)?; // 5 minutes for VM creation with disk import
 
     // Build the disk import specification
     // Format: storage:0,import-from=local:import/filename.qcow2
@@ -767,7 +796,7 @@ async fn start_vm(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<()
         vm_id
     );
 
-    let client = create_client(60)?;
+    let client = create_client(&session.server_url, 60)?;
 
     let response = client
         .post(&url)
@@ -808,7 +837,7 @@ async fn wait_for_ha_webserver(ip: &str) -> bool {
 
 /// Internal helper that accepts a full base URL (for testing).
 async fn wait_for_ha_webserver_at_url(base_url: &str) -> bool {
-    let client = match create_client(10) {
+    let client = match create_plain_client(10) {
         Ok(c) => c,
         Err(_) => return false,
     };
@@ -842,7 +871,7 @@ async fn wait_for_ha_updated(ip: &str) -> bool {
 /// Internal helper that accepts a full base URL (for testing).
 async fn wait_for_ha_updated_at_url(base_url: &str) -> bool {
     let url = format!("{}/manifest.json", base_url);
-    let client = match create_client(10) {
+    let client = match create_plain_client(10) {
         Ok(c) => c,
         Err(_) => return false,
     };
@@ -876,7 +905,7 @@ async fn wait_for_vm_ip(session: &ProxmoxSession, node: &str, vm_id: u32) -> Opt
         vm_id
     );
 
-    let client = create_client(10).ok()?;
+    let client = create_client(&session.server_url, 10).ok()?;
 
     // Try for up to 5 minutes (150 attempts * 2 seconds)
     for _ in 0..150 {
@@ -1230,22 +1259,120 @@ mod tests {
     // The HTTPS requirement is enforced in production builds only.
 
     // create_client() tests
+    //
+    // create_client() is the single place every Proxmox request gets its TLS
+    // trust from, so these cover both that a trusted server produces a client
+    // and that an untrusted one produces none at all.
+
+    /// Point the trust store at a throwaway file with `server` already pinned,
+    /// and run `body` with that store in effect.
+    ///
+    /// The environment variable is process-wide, hence `#[serial]` on the
+    /// callers, and it is cleared even if `body` panics.
+    fn with_pinned_server<T>(server: Option<&str>, body: impl FnOnce() -> T) -> T {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("certs.json");
+
+        if let Some(server) = server {
+            tls::TrustStore::at(&path)
+                .set(server, &tls::CertificateFingerprint::from_der(b"test cert"))
+                .unwrap();
+        }
+
+        std::env::set_var("HA_INSTALLER_PROXMOX_TRUST_STORE", &path);
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
+        std::env::remove_var("HA_INSTALLER_PROXMOX_TRUST_STORE");
+
+        match outcome {
+            Ok(value) => value,
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
+    }
+
     #[test]
+    #[serial]
     fn test_create_client_valid_timeout() {
-        let result = create_client(30);
-        assert!(result.is_ok());
+        with_pinned_server(Some("pve.local:8006"), || {
+            assert!(create_client("https://pve.local:8006", 30).is_ok());
+        });
     }
 
     #[test]
+    #[serial]
     fn test_create_client_zero_timeout() {
-        let result = create_client(0);
-        assert!(result.is_ok());
+        with_pinned_server(Some("pve.local:8006"), || {
+            assert!(create_client("https://pve.local:8006", 0).is_ok());
+        });
     }
 
     #[test]
+    #[serial]
     fn test_create_client_large_timeout() {
-        let result = create_client(1800);
-        assert!(result.is_ok());
+        with_pinned_server(Some("pve.local:8006"), || {
+            assert!(create_client("https://pve.local:8006", 1800).is_ok());
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_client_refuses_untrusted_server() {
+        // Without this, every Proxmox request would fall back to accepting any
+        // certificate, which is what let an interceptor read the password.
+        with_pinned_server(None, || {
+            let error = create_client("https://pve.local:8006", 30)
+                .expect_err("an unconfirmed certificate must not produce a client");
+            assert!(
+                error.to_string().contains("has not been confirmed"),
+                "unexpected error: {}",
+                error
+            );
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_client_pin_is_specific_to_host_and_port() {
+        with_pinned_server(Some("pve.local:8006"), || {
+            assert!(create_client("https://pve.local:8006", 30).is_ok());
+            // Same certificate, different endpoint: not covered by the pin.
+            assert!(create_client("https://pve.local:8007", 30).is_err());
+            assert!(create_client("https://other.local:8006", 30).is_err());
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_client_pin_lookup_ignores_trailing_slash() {
+        // authenticate() passes a trimmed URL while the other calls pass
+        // session.server_url verbatim; both must resolve to the same pin.
+        with_pinned_server(Some("pve.local:8006"), || {
+            assert!(create_client("https://pve.local:8006/", 30).is_ok());
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_client_rejects_invalid_url() {
+        with_pinned_server(Some("pve.local:8006"), || {
+            assert!(create_client("https://", 30).is_err());
+        });
+    }
+
+    #[test]
+    fn test_create_client_allows_plain_http_in_test_builds() {
+        // The mockito-backed tests below serve plain HTTP, which has no
+        // certificate to pin. Production builds reject http:// instead; see the
+        // cfg split in create_client().
+        assert!(create_client("http://127.0.0.1:1", 30).is_ok());
+    }
+
+    // create_plain_client() tests
+
+    #[test]
+    fn test_create_plain_client_builds() {
+        // Used only for the unencrypted Home Assistant probes on port 8123.
+        assert!(create_plain_client(10).is_ok());
+        assert!(create_plain_client(0).is_ok());
     }
 
     #[tokio::test]
