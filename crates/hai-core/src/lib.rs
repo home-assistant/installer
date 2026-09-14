@@ -11,6 +11,7 @@ pub mod devices;
 pub mod disk_writer;
 pub mod download;
 pub mod error;
+pub mod manifest;
 pub mod types;
 
 #[cfg(feature = "mock")]
@@ -66,6 +67,10 @@ impl ProgressCallback for NoOpProgress {
 ///
 /// Mock mode is enabled when the `HA_INSTALLER_MOCK` environment variable
 /// is set to "1" or "true". This is useful for testing and development.
+///
+/// Only compiled with the `mock` feature, which is off by default: release
+/// builds have no mock mode to switch on, whatever the environment says.
+#[cfg(feature = "mock")]
 pub fn is_mock_enabled() -> bool {
     match std::env::var("HA_INSTALLER_MOCK") {
         Ok(val) => val == "1" || val.to_lowercase() == "true",
@@ -76,6 +81,7 @@ pub fn is_mock_enabled() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "mock")]
     use serial_test::serial;
 
     #[test]
@@ -95,6 +101,7 @@ mod tests {
 
     #[test]
     #[serial]
+    #[cfg(feature = "mock")]
     fn test_mock_mode_default_disabled() {
         // Remove the env var if it exists
         std::env::remove_var("HA_INSTALLER_MOCK");
@@ -103,6 +110,7 @@ mod tests {
 
     #[test]
     #[serial]
+    #[cfg(feature = "mock")]
     fn test_mock_mode_enabled_for_one() {
         std::env::set_var("HA_INSTALLER_MOCK", "1");
         assert!(is_mock_enabled());
@@ -111,6 +119,7 @@ mod tests {
 
     #[test]
     #[serial]
+    #[cfg(feature = "mock")]
     fn test_mock_mode_enabled_for_true_string() {
         std::env::set_var("HA_INSTALLER_MOCK", "true");
         assert!(is_mock_enabled());
@@ -119,6 +128,7 @@ mod tests {
 
     #[test]
     #[serial]
+    #[cfg(feature = "mock")]
     fn test_mock_mode_disabled_for_other_values() {
         std::env::set_var("HA_INSTALLER_MOCK", "0");
         assert!(!is_mock_enabled());

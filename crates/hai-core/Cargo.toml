@@ -7,9 +7,11 @@ edition.workspace = true
 description = "Core library for Home Assistant Installer"
 
 [features]
-default = ["proxmox", "utm", "mock"]
+default = ["proxmox", "utm"]
 proxmox = []
 utm = []
+# Mock mode: fake devices, fake flashes, fake VM provisioning. Deliberately
+# NOT a default feature, so it cannot be switched on in a release build.
 mock = []
 
 [dependencies]

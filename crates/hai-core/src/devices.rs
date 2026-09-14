@@ -46,6 +46,8 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Every #[serial] test below is behind the `mock` feature.
+    #[cfg(feature = "mock")]
     use serial_test::serial;
 
     #[test]

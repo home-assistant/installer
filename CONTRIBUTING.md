@@ -37,8 +37,8 @@ npm run test:unit
 # E2E tests (with mock mode)
 HA_INSTALLER_MOCK=true npm run test:e2e
 
-# Rust tests
-cargo test --workspace
+# Rust tests (the mock feature is off by default; the suite needs it)
+cargo test --workspace --all-features
 ```
 
 ## Development Guidelines

@@ -156,7 +156,7 @@ The shared library containing all business logic.
 | `proxmox` | Proxmox VE API client |
 | `utm` | UTM automation via AppleScript (macOS) |
 | `network` | Connectivity and HA readiness checks |
-| `mock` | Mock data for testing |
+| `mock` | Mock data for testing; behind the off-by-default `mock` feature |
 
 ### Progress Callback Trait
 

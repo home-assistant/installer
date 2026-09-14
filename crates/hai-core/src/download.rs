@@ -41,18 +41,10 @@ pub fn get_cache_dir() -> Result<PathBuf> {
 
 /// Fetch the device manifest
 ///
-/// In mock mode, returns mock data. Otherwise fetches from the network.
+/// Currently always returns the catalogue built into the binary.
+/// TODO: Implement actual network fetch, falling back to the built-in one.
 pub async fn get_device_manifest() -> Result<DeviceManifest> {
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            return Ok(crate::mock::get_mock_manifest());
-        }
-    }
-
-    // For now, return the mock manifest as a fallback
-    // TODO: Implement actual network fetch
-    Ok(crate::mock::get_mock_manifest())
+    Ok(crate::manifest::builtin_manifest())
 }
 
 /// Check if cache should be skipped via environment variable

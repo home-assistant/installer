@@ -16,9 +16,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { workspace = true }
 
+[features]
+# Mock mode, for development and tests only. Off by default so that shipped
+# builds contain no mock code paths at all. Enable with:
+#   npm run tauri dev -- --features mock
+mock = ["hai-core/mock"]
+
 [dependencies]
 # Internal crates
-hai-core = { workspace = true, features = ["proxmox", "utm", "mock"] }
+hai-core = { workspace = true, features = ["proxmox", "utm"] }
 
 # Tauri
 tauri = { workspace = true }

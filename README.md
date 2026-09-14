@@ -48,10 +48,12 @@ npm run test:e2e      # Run E2E tests
 
 ### Mock Mode
 
-For testing without real hardware:
+For testing without real hardware. Mock mode is behind a Cargo feature that
+is off by default, so it has to be compiled in explicitly — release builds
+have no mock code paths at all, whatever `HA_INSTALLER_MOCK` is set to:
 
 ```bash
-HA_INSTALLER_MOCK=true npm run tauri dev
+HA_INSTALLER_MOCK=true npm run tauri dev -- --features mock
 ```
 
 ## Tech Stack

@@ -79,8 +79,13 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
 
+      # Lint both feature sets: the default one is what ships, --all-features
+      # is what developers and the test suite build with.
       - name: Run Clippy
         run: cargo clippy --workspace -- -D warnings
+
+      - name: Run Clippy (all features)
+        run: cargo clippy --workspace --all-features -- -D warnings
 
   test-frontend:
     name: Test Frontend
@@ -190,8 +195,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
+      # The `mock` feature is off by default so it cannot reach a release
+      # build; the test suite depends on it.
       - name: Run tests with coverage
-        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
