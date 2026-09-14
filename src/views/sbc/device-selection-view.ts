@@ -159,7 +159,11 @@ export class DeviceSelectionView extends LitElement {
         Choose the single board computer you want to install Home Assistant on
       </p>
 
-      <div class="devices-grid">
+      <div
+        class="devices-grid"
+        role="radiogroup"
+        aria-label="Single board computer"
+      >
         ${this._devices.map(
           (device) => html`
             <device-card

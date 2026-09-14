@@ -1,12 +1,20 @@
-import { LitElement, html, css } from "lit";
+import { html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { SelectableCard } from "./selectable-card.js";
 import type { DeviceType } from "../api/types.js";
 
 @customElement("drive-card")
-export class DriveCard extends LitElement {
+export class DriveCard extends SelectableCard {
   static styles = css`
     :host {
       display: block;
+      outline: none;
+    }
+
+    :host(:focus-visible) .card {
+      border-color: var(--ha-primary-color, #03a9f4);
+      outline: 2px solid var(--ha-primary-color, #03a9f4);
+      outline-offset: 2px;
     }
 
     .card {
@@ -148,12 +156,6 @@ export class DriveCard extends LitElement {
 
   @property({ type: String })
   vendor = "";
-
-  @property({ type: Boolean })
-  selected = false;
-
-  @property({ type: Boolean })
-  disabled = false;
 
   @property({ type: String })
   disabledReason = "";

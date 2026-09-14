@@ -6,6 +6,13 @@ export class OptionCard extends LitElement {
   static styles = css`
     :host {
       display: block;
+      outline: none;
+    }
+
+    :host(:focus-visible) .card {
+      border-color: var(--ha-primary-color, #03a9f4);
+      outline: 2px solid var(--ha-primary-color, #03a9f4);
+      outline-offset: 2px;
     }
 
     .card {
@@ -95,6 +102,27 @@ export class OptionCard extends LitElement {
 
   @property({ type: String })
   image = "";
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.setAttribute("role", "button");
+    this.setAttribute("tabindex", "0");
+    this.addEventListener("keydown", this._onKeyDown);
+  }
+
+  disconnectedCallback() {
+    this.removeEventListener("keydown", this._onKeyDown);
+    super.disconnectedCallback();
+  }
+
+  // The views attach `@click` to the host, so activating by keyboard just
+  // re-dispatches a click rather than adding a second event to wire up.
+  private _onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      this.click();
+    }
+  };
 
   render() {
     return html`

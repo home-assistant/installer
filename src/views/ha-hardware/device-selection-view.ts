@@ -172,7 +172,11 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         Choose your official Home Assistant hardware by Nabu Casa
       </p>
 
-      <div class="devices-grid">
+      <div
+        class="devices-grid"
+        role="radiogroup"
+        aria-label="Home Assistant hardware"
+      >
         ${this._devices.map(
           (device) => html`
             <device-card

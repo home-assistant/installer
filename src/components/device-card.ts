@@ -1,11 +1,19 @@
-import { LitElement, html, css } from "lit";
+import { html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { SelectableCard } from "./selectable-card.js";
 
 @customElement("device-card")
-export class DeviceCard extends LitElement {
+export class DeviceCard extends SelectableCard {
   static styles = css`
     :host {
       display: block;
+      outline: none;
+    }
+
+    :host(:focus-visible) .card {
+      border-color: var(--ha-primary-color, #03a9f4);
+      outline: 2px solid var(--ha-primary-color, #03a9f4);
+      outline-offset: 2px;
     }
 
     .card {
@@ -120,9 +128,6 @@ export class DeviceCard extends LitElement {
 
   @property({ type: String })
   image = "";
-
-  @property({ type: Boolean })
-  selected = false;
 
   render() {
     return html`
