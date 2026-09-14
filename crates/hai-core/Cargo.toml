@@ -33,7 +33,14 @@ security-framework = { workspace = true }
 # Linux specific
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { workspace = true }
+
+# Unix specific (free-space checks use statvfs)
+[target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+
+# Windows specific (free-space checks use GetDiskFreeSpaceExW)
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

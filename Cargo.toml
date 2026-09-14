@@ -52,7 +52,12 @@ security-framework = "3"
 
 # Linux specific
 zbus = { version = "5", default-features = false, features = ["tokio"] }
+
+# Unix specific
 libc = "0.2"
+
+# Windows specific
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 # Tauri
 tauri = { version = "2", features = [] }

@@ -20,6 +20,23 @@ pub enum Error {
     #[error("Checksum mismatch: expected {expected}, got {actual}")]
     ChecksumMismatch { expected: String, actual: String },
 
+    #[error(
+        "Image is too large for the selected device. Image size: {:.1} GB, Device size: {:.1} GB.",
+        *image_bytes as f64 / 1_000_000_000.0,
+        *device_bytes as f64 / 1_000_000_000.0
+    )]
+    ImageTooLarge { image_bytes: u64, device_bytes: u64 },
+
+    #[error(
+        "Not enough free disk space to unpack the image. Required: {:.1} GB, available: {:.1} GB.",
+        *required_bytes as f64 / 1_000_000_000.0,
+        *available_bytes as f64 / 1_000_000_000.0
+    )]
+    InsufficientDiskSpace {
+        required_bytes: u64,
+        available_bytes: u64,
+    },
+
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
 
@@ -110,6 +127,30 @@ mod tests {
         assert_eq!(msg, "Checksum mismatch: expected abc123, got def456");
         assert!(msg.contains("abc123"));
         assert!(msg.contains("def456"));
+    }
+
+    #[test]
+    fn test_display_image_too_large() {
+        let error = Error::ImageTooLarge {
+            image_bytes: 8_000_000_000,
+            device_bytes: 4_000_000_000,
+        };
+        assert_eq!(
+            error.to_string(),
+            "Image is too large for the selected device. Image size: 8.0 GB, Device size: 4.0 GB."
+        );
+    }
+
+    #[test]
+    fn test_display_insufficient_disk_space() {
+        let error = Error::InsufficientDiskSpace {
+            required_bytes: 9_500_000_000,
+            available_bytes: 1_300_000_000,
+        };
+        assert_eq!(
+            error.to_string(),
+            "Not enough free disk space to unpack the image. Required: 9.5 GB, available: 1.3 GB."
+        );
     }
 
     #[test]

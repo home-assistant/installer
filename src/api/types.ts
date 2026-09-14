@@ -129,15 +129,25 @@ export interface HaosRelease {
   images: HaosImage[];
 }
 
+/**
+ * Disk image format of a HAOS release asset.
+ *
+ * A board can be published in both formats; only `raw` may be written to a
+ * block device, and only `qcow2` can be handed to a hypervisor.
+ */
+export type ImageFormat = "raw" | "qcow2";
+
 /** A single HAOS image file */
 export interface HaosImage {
   /** Board name (e.g., "rpi5-64", "green", "generic-x86-64") */
   board: string;
+  /** Image format - a board can be published as both raw and qcow2 */
+  format: ImageFormat;
   /** Download URL */
   download_url: string;
   /** File size in bytes */
   size: number;
-  /** SHA256 checksum (hex string) */
+  /** SHA256 checksum (hex string), empty when the release carries no digest */
   sha256: string;
 }
 

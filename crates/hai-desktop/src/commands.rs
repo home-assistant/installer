@@ -5,8 +5,8 @@
 
 use hai_core::{
     devices, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, FlashProgress,
-    FlashStage, HaosRelease, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
-    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
+    FlashStage, HaosRelease, ImageFormat, ProgressCallback, ProxmoxCredentials, ProxmoxNode,
+    ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
 };
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -126,12 +126,11 @@ pub async fn flash_image(
         .await
         .map_err(|e| format!("Failed to fetch release info: {}", e))?;
 
-    // Find the image for the requested board
-    let image = release
-        .images
-        .iter()
-        .find(|i| i.board == request.board)
-        .ok_or_else(|| format!("No image found for board: {}", request.board))?;
+    // Find the image for the requested board. Only the raw `.img.xz` build
+    // may be written to a disk - some boards also ship a qcow2, which boots
+    // nowhere if it is copied onto an SD card byte for byte.
+    let image = download::find_image_for_board(&release, &request.board, ImageFormat::Raw)
+        .ok_or_else(|| format!("No disk image found for board: {}", request.board))?;
 
     callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
@@ -141,33 +140,17 @@ pub async fn flash_image(
         message: "Starting download...".to_string(),
     });
 
-    // Get cache directory and download
-    let cache_dir = download::get_cache_dir().map_err(|e| format!("Cache error: {}", e))?;
-    let image_filename = format!("haos_{}.img.xz", request.board);
-    let compressed_path = cache_dir.join(&image_filename);
-
-    download::download_image(
-        &image.download_url,
-        &compressed_path,
-        Some(&image.sha256),
-        &callback,
-    )
-    .await
-    .map_err(|e| format!("Download failed: {}", e))?;
+    // Download into the cache, reusing a previous complete download
+    let compressed_path = download::fetch_image(image, &callback)
+        .await
+        .map_err(|e| format!("Download failed: {}", e))?;
 
     // Extract the image
-    let extracted_filename = image_filename.replace(".xz", "");
-    let extracted_path = cache_dir.join(&extracted_filename);
+    let extracted_path = compressed_path.with_extension("");
 
-    download::extract_xz(&compressed_path, &extracted_path, &callback)
+    let extracted = download::extract_xz(&compressed_path, &extracted_path, &callback)
         .await
         .map_err(|e| format!("Extraction failed: {}", e))?;
-
-    // Check image size vs device size
-    let image_size = tokio::fs::metadata(&extracted_path)
-        .await
-        .map_err(|e| format!("Failed to get image size: {}", e))?
-        .len();
 
     let device_list = devices::list_devices()
         .await
@@ -183,12 +166,12 @@ pub async fn flash_image(
             )
         })?;
 
-    if image_size > device.size {
-        return Err(format!(
-            "Image is too large for the selected device. Image size: {:.1} GB, Device size: {:.1} GB.",
-            image_size as f64 / 1_000_000_000.0,
-            device.size as f64 / 1_000_000_000.0
-        ));
+    if extracted.size > device.size {
+        return Err(hai_core::Error::ImageTooLarge {
+            image_bytes: extracted.size,
+            device_bytes: device.size,
+        }
+        .to_string());
     }
 
     // Write to device
@@ -387,10 +370,13 @@ pub async fn download_utm_image(
 
     // Get architecture (also verifies UTM is available)
     let _status = utm::check_utm_status().await.map_err(|e| e.to_string())?;
-    let arch = if cfg!(target_arch = "aarch64") {
+    // A virtual machine needs the qcow2 build. Apple Silicon has one under
+    // `generic-aarch64`; for x86-64 the hypervisor image is the `ova` board -
+    // there is no `haos_generic-x86-64-*.qcow2.xz`.
+    let board = if cfg!(target_arch = "aarch64") {
         "generic-aarch64"
     } else {
-        "generic-x86-64"
+        hai_core::proxmox::OVA_BOARD
     };
 
     callback.on_progress(FlashProgress {
@@ -405,23 +391,15 @@ pub async fn download_utm_image(
         .await
         .map_err(|e| format!("Failed to fetch release: {}", e))?;
 
-    let image = release
-        .images
-        .iter()
-        .find(|i| i.board == arch)
-        .ok_or_else(|| format!("No image found for: {}", arch))?;
+    let image = download::find_image_for_board(&release, board, ImageFormat::Qcow2)
+        .ok_or_else(|| format!("No virtual machine image found for: {}", board))?;
 
-    // Get qcow2 URL
-    let qcow2_url = image.download_url.replace(".img.xz", ".qcow2.xz");
-
-    let cache_dir = download::get_cache_dir().map_err(|e| e.to_string())?;
-    let compressed_path = cache_dir.join(format!("haos_{}.qcow2.xz", arch));
-
-    download::download_image(&qcow2_url, &compressed_path, None, &callback)
+    // Download into the cache, reusing a previous complete download
+    let compressed_path = download::fetch_image(image, &callback)
         .await
         .map_err(|e| format!("Download failed: {}", e))?;
 
-    let extracted_path = cache_dir.join(format!("haos_{}.qcow2", arch));
+    let extracted_path = compressed_path.with_extension("");
     download::extract_xz(&compressed_path, &extracted_path, &callback)
         .await
         .map_err(|e| format!("Extraction failed: {}", e))?;

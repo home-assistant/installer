@@ -148,17 +148,82 @@ pub struct HaosRelease {
     pub images: Vec<HaosImage>,
 }
 
+/// Disk image format of a HAOS release asset
+///
+/// HAOS publishes some boards in more than one format - `generic-aarch64`,
+/// for one, ships as both `haos_generic-aarch64-*.img.xz` and
+/// `haos_generic-aarch64-*.qcow2.xz`. The two are not interchangeable: only
+/// [`ImageFormat::Raw`] may be written to a block device, and only
+/// [`ImageFormat::Qcow2`] can be handed to a hypervisor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFormat {
+    /// Raw disk image (`.img.xz`) - written byte-for-byte to a block device
+    Raw,
+    /// QEMU copy-on-write image (`.qcow2.xz`) - used by the UTM/Proxmox flows
+    Qcow2,
+}
+
+impl ImageFormat {
+    /// Filename suffix of the compressed archive for this format
+    pub fn archive_suffix(self) -> &'static str {
+        match self {
+            Self::Raw => ".img.xz",
+            Self::Qcow2 => ".qcow2.xz",
+        }
+    }
+
+    /// Filename suffix of the decompressed image for this format
+    pub fn image_suffix(self) -> &'static str {
+        match self {
+            Self::Raw => ".img",
+            Self::Qcow2 => ".qcow2",
+        }
+    }
+
+    /// Determine the format from a release asset filename
+    ///
+    /// Returns `None` for assets that are not HAOS disk images (checksum
+    /// files, tarballs, ...).
+    pub fn from_asset_name(name: &str) -> Option<Self> {
+        // Checked before `.img.xz` would ever match: the two suffixes are
+        // disjoint, but keeping the order explicit documents the intent.
+        if name.ends_with(Self::Qcow2.archive_suffix()) {
+            Some(Self::Qcow2)
+        } else if name.ends_with(Self::Raw.archive_suffix()) {
+            Some(Self::Raw)
+        } else {
+            None
+        }
+    }
+}
+
 /// A single HAOS image file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HaosImage {
     /// Board name (e.g., "rpi5-64", "green", "generic-x86-64")
     pub board: String,
+    /// Image format - a board can be published as both raw and qcow2
+    pub format: ImageFormat,
     /// Download URL
     pub download_url: String,
     /// File size in bytes
     pub size: u64,
-    /// SHA256 checksum (hex string)
+    /// SHA256 checksum (hex string), empty when the release carries no digest
     pub sha256: String,
+}
+
+impl HaosImage {
+    /// SHA256 of the compressed download, or `None` when the release carries
+    /// no digest for this asset.
+    ///
+    /// Older HAOS releases predate GitHub's asset digests. Passing the empty
+    /// string on as an "expected" checksum would fail every such download with
+    /// a spurious [`crate::Error::ChecksumMismatch`].
+    pub fn checksum(&self) -> Option<&str> {
+        let sha256 = self.sha256.trim();
+        (!sha256.is_empty()).then_some(sha256)
+    }
 }
 
 /// GitHub release asset from API
@@ -547,12 +612,14 @@ mod tests {
             version: "16.3".to_string(),
             images: vec![
                 HaosImage {
+                    format: ImageFormat::Raw,
                     board: "rpi5-64".to_string(),
                     download_url: "https://example.com/haos-rpi5-16.3.img.xz".to_string(),
                     size: 500000000,
                     sha256: "abc123def456".to_string(),
                 },
                 HaosImage {
+                    format: ImageFormat::Raw,
                     board: "generic-x86-64".to_string(),
                     download_url: "https://example.com/haos-generic-x86-16.3.img.xz".to_string(),
                     size: 600000000,
@@ -813,6 +880,7 @@ mod tests {
     #[test]
     fn test_haos_image_empty_sha256() {
         let image = HaosImage {
+            format: ImageFormat::Raw,
             board: "rpi5-64".to_string(),
             download_url: "https://example.com/image.xz".to_string(),
             size: 500_000_000,
@@ -821,8 +889,24 @@ mod tests {
         let json = serde_json::to_string(&image).unwrap();
         let parsed: HaosImage = serde_json::from_str(&json).unwrap();
         assert!(parsed.sha256.is_empty());
+        // An absent digest must not be offered as something to verify against
+        assert_eq!(parsed.checksum(), None);
         assert_eq!(parsed.board, "rpi5-64");
         assert_eq!(parsed.size, 500_000_000);
+    }
+
+    #[test]
+    fn test_image_format_serializes_for_the_frontend() {
+        // The TypeScript `ImageFormat` union is "raw" | "qcow2"
+        assert_eq!(serde_json::to_string(&ImageFormat::Raw).unwrap(), "\"raw\"");
+        assert_eq!(
+            serde_json::to_string(&ImageFormat::Qcow2).unwrap(),
+            "\"qcow2\""
+        );
+        assert_eq!(
+            serde_json::from_str::<ImageFormat>("\"qcow2\"").unwrap(),
+            ImageFormat::Qcow2
+        );
     }
 
     // Device edge cases

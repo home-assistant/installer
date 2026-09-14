@@ -20,14 +20,20 @@
 
 use crate::error::{Error, Result};
 use crate::types::{
-    FlashProgress, FlashStage, ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage,
-    ProxmoxVmConfig, ProxmoxVmResult,
+    FlashProgress, FlashStage, HaosImage, ImageFormat, ProxmoxCredentials, ProxmoxNode,
+    ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult,
 };
 use crate::ProgressCallback;
 
 /// Minimum required Proxmox VE version for disk image import via API.
 /// Version 8.4.1 added support for uploading qcow2/raw/img/vmdk files with content=import.
 const MIN_PROXMOX_VERSION: (u32, u32, u32) = (8, 4, 1);
+
+/// HAOS board name for the x86-64 virtual machine image
+///
+/// There is no `haos_generic-x86-64-*.qcow2.xz`; the x86-64 image for
+/// hypervisors is published under the `ova` board.
+pub const OVA_BOARD: &str = "ova";
 
 /// How often to send progress updates (every N bytes)
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
@@ -982,13 +988,27 @@ pub async fn create_vm<P: ProgressCallback>(
     // Get the OVA version for Proxmox (generic x86-64 virtualization)
     let haos_version = stable_version
         .hassos
-        .get("ova")
+        .get(OVA_BOARD)
         .ok_or_else(|| Error::ProxmoxApi("No HAOS version found for OVA".to_string()))?;
 
-    // Build the download URL for the qcow2.xz image
-    let download_url = format!(
-        "https://github.com/home-assistant/operating-system/releases/download/{}/haos_ova-{}.qcow2.xz",
-        haos_version, haos_version
+    // Look the asset up in the release so the download can be checksum
+    // verified. The release API is not essential to installing, so a lookup
+    // failure falls back to the well-known URL rather than aborting.
+    let ova_image = crate::download::get_haos_release(haos_version)
+        .await
+        .ok()
+        .and_then(|release| {
+            crate::download::find_image_for_board(&release, OVA_BOARD, ImageFormat::Qcow2).cloned()
+        });
+
+    let download_url = ova_image.as_ref().map_or_else(
+        || {
+            format!(
+                "https://github.com/home-assistant/operating-system/releases/download/{}/haos_{}-{}.qcow2.xz",
+                haos_version, OVA_BOARD, haos_version
+            )
+        },
+        |image| image.download_url.clone(),
     );
 
     // Step 2: Download the compressed image locally
@@ -1001,12 +1021,16 @@ pub async fn create_vm<P: ProgressCallback>(
     });
 
     let cache_dir = crate::download::get_cache_dir()?;
-    let compressed_filename = format!("haos_ova-{}.qcow2.xz", haos_version);
+    let compressed_filename = format!("haos_{}-{}.qcow2.xz", OVA_BOARD, haos_version);
     let compressed_path = cache_dir.join(&compressed_filename);
 
-    // Download the image (no checksum verification for now)
-    crate::download::download_image(&download_url, &compressed_path, None, progress_callback)
-        .await?;
+    crate::download::download_image(
+        &download_url,
+        &compressed_path,
+        ova_image.as_ref().and_then(HaosImage::checksum),
+        progress_callback,
+    )
+    .await?;
 
     // Step 3: Extract the compressed image
     progress_callback.on_progress(FlashProgress {
@@ -1017,7 +1041,7 @@ pub async fn create_vm<P: ProgressCallback>(
         message: "Extracting image...".to_string(),
     });
 
-    let extracted_filename = format!("haos_ova-{}.qcow2", haos_version);
+    let extracted_filename = format!("haos_{}-{}.qcow2", OVA_BOARD, haos_version);
     let extracted_path = cache_dir.join(&extracted_filename);
 
     crate::download::extract_xz(&compressed_path, &extracted_path, progress_callback).await?;

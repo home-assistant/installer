@@ -241,6 +241,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
   images: [
     {
       board: "rpi5-64",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_rpi5-64-16.3.img.xz",
       size: 331_899_792,
@@ -249,6 +250,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "rpi4-64",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_rpi4-64-16.3.img.xz",
       size: 322_239_272,
@@ -257,6 +259,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "rpi3-64",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_rpi3-64-16.3.img.xz",
       size: 311_438_560,
@@ -265,6 +268,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "odroid-n2",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_odroid-n2-16.3.img.xz",
       size: 298_412_092,
@@ -273,6 +277,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "green",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_green-16.3.img.xz",
       size: 336_860_104,
@@ -281,6 +286,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "yellow",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_yellow-16.3.img.xz",
       size: 322_261_788,
@@ -289,6 +295,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "generic-x86-64",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_generic-x86-64-16.3.img.xz",
       size: 396_451_208,
@@ -297,11 +304,34 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "generic-aarch64",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_generic-aarch64-16.3.img.xz",
       size: 341_537_340,
       sha256:
         "4769532f71886f8b41c4520b3c0c8f974f5bbf583782a2dc7b16a8e2743315ed",
+    },
+    // generic-aarch64 ships as both raw and qcow2 - only the raw build may be
+    // written to a disk.
+    {
+      board: "generic-aarch64",
+      format: "qcow2",
+      download_url:
+        "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_generic-aarch64-16.3.qcow2.xz",
+      size: 339_480_672,
+      sha256:
+        "8c39d2929eeb76febe58d1b9b019b89414c22595bef65ce3b6a57c88368f4a1d",
+    },
+    // x86-64 virtual machines use the "ova" board; there is no
+    // haos_generic-x86-64-*.qcow2.xz asset.
+    {
+      board: "ova",
+      format: "qcow2",
+      download_url:
+        "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_ova-16.3.qcow2.xz",
+      size: 357_688_740,
+      sha256:
+        "f3f56cae72cdc1732c35b1b2a7547a11397eaaac8c4de2ff63bb10f45721c8ce",
     },
   ],
 };

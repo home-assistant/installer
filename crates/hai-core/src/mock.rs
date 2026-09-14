@@ -8,7 +8,7 @@
 
 use crate::types::{
     BlockDevice, Device, DeviceCategory, DeviceManifest, DeviceType, HaosConfig, HaosImage,
-    HaosRelease, StableVersionInfo, UpdateInfo,
+    HaosRelease, ImageFormat, StableVersionInfo, UpdateInfo,
 };
 use std::collections::HashMap;
 
@@ -267,7 +267,8 @@ pub fn get_mock_stable_version() -> StableVersionInfo {
     hassos.insert("green".to_string(), version.clone());
     hassos.insert("yellow".to_string(), version.clone());
     hassos.insert("generic-x86-64".to_string(), version.clone());
-    hassos.insert("generic-aarch64".to_string(), version);
+    hassos.insert("generic-aarch64".to_string(), version.clone());
+    hassos.insert("ova".to_string(), version);
 
     StableVersionInfo { hassos }
 }
@@ -278,52 +279,78 @@ pub fn get_mock_haos_release() -> HaosRelease {
         version: "16.3".to_string(),
         images: vec![
             HaosImage {
+                format: ImageFormat::Raw,
                 board: "rpi5-64".to_string(),
                 download_url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_rpi5-64-16.3.img.xz".to_string(),
                 size: 331_899_792,
                 sha256: "5ade653232aa1c4504e52b56347b389fb0b24d9edc69134a860edb84f41ea9e9".to_string(),
             },
             HaosImage {
+                format: ImageFormat::Raw,
                 board: "rpi4-64".to_string(),
                 download_url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_rpi4-64-16.3.img.xz".to_string(),
                 size: 322_239_272,
                 sha256: "3ebed523708dc1dad5b5399707ee74d0a54b9604b7d4cae5d591d75c85b35013".to_string(),
             },
             HaosImage {
+                format: ImageFormat::Raw,
                 board: "rpi3-64".to_string(),
                 download_url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_rpi3-64-16.3.img.xz".to_string(),
                 size: 311_438_560,
                 sha256: "f21d5da83a94a5045d4d36822da77d2bee3539ab5150a7074c562d922f81e0de".to_string(),
             },
             HaosImage {
+                format: ImageFormat::Raw,
                 board: "odroid-n2".to_string(),
                 download_url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_odroid-n2-16.3.img.xz".to_string(),
                 size: 298_412_092,
                 sha256: "f97b188d9fd2c239269c886e53031ad8bc38828296f1eaede2e89fd4b89207b7".to_string(),
             },
             HaosImage {
+                format: ImageFormat::Raw,
                 board: "green".to_string(),
                 download_url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_green-16.3.img.xz".to_string(),
                 size: 336_860_104,
                 sha256: "fd41fb3432fb5d64d916b04f6ab18c39824b128fd996d55ea207e393fc65c943".to_string(),
             },
             HaosImage {
+                format: ImageFormat::Raw,
                 board: "yellow".to_string(),
                 download_url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_yellow-16.3.img.xz".to_string(),
                 size: 322_261_788,
                 sha256: "145f252403a00a50391ed4074242e5b770c59477b66f2a2ea33927f68bef0e98".to_string(),
             },
             HaosImage {
+                format: ImageFormat::Raw,
                 board: "generic-x86-64".to_string(),
                 download_url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_generic-x86-64-16.3.img.xz".to_string(),
                 size: 396_451_208,
                 sha256: "afe591a859a068eb25dcef15be9e7b2236f9c06f515cac3706681db900cb02df".to_string(),
             },
             HaosImage {
+                format: ImageFormat::Raw,
                 board: "generic-aarch64".to_string(),
                 download_url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_generic-aarch64-16.3.img.xz".to_string(),
                 size: 341_537_340,
                 sha256: "4769532f71886f8b41c4520b3c0c8f974f5bbf583782a2dc7b16a8e2743315ed".to_string(),
+            },
+            // generic-aarch64 ships as both raw and qcow2 - the case that made
+            // format-less lookups able to hand a qcow2 to the raw writer.
+            HaosImage {
+                format: ImageFormat::Qcow2,
+                board: "generic-aarch64".to_string(),
+                download_url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_generic-aarch64-16.3.qcow2.xz".to_string(),
+                size: 339_480_672,
+                sha256: "8c39d2929eeb76febe58d1b9b019b89414c22595bef65ce3b6a57c88368f4a1d".to_string(),
+            },
+            // x86-64 virtual machines use the "ova" board; there is no
+            // haos_generic-x86-64-*.qcow2.xz asset.
+            HaosImage {
+                format: ImageFormat::Qcow2,
+                board: "ova".to_string(),
+                download_url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_ova-16.3.qcow2.xz".to_string(),
+                size: 357_688_740,
+                sha256: "f3f56cae72cdc1732c35b1b2a7547a11397eaaac8c4de2ff63bb10f45721c8ce".to_string(),
             },
         ],
     }
