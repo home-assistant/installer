@@ -3,6 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import { getManifest, type Device } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
+import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../components/device-card.js";
 
 @customElement("device-selection-view")
@@ -31,11 +32,15 @@ export class DeviceSelectionView extends LitElement {
     }
 
     .devices-grid {
+      width: 100%;
+      max-width: 700px;
+    }
+
+    /* The group's default layout is a flex column; the tiles want a grid. */
+    .devices-grid::part(form-control-input) {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
       gap: 1rem;
-      width: 100%;
-      max-width: 700px;
     }
 
     .loading {
@@ -159,20 +164,32 @@ export class DeviceSelectionView extends LitElement {
         Choose the single board computer you want to install Home Assistant on
       </p>
 
-      <div class="devices-grid">
+      <wa-radio-group
+        class="devices-grid"
+        radio-tag="device-card"
+        aria-label="Single board computer"
+        .value=${this._selectedDeviceId ?? ""}
+        @change=${this._onDeviceChange}
+      >
         ${this._devices.map(
           (device) => html`
             <device-card
-              .deviceId=${device.id}
+              .value=${device.id}
               .name=${device.name}
               .image=${device.image_url || ""}
-              .selected=${this._selectedDeviceId === device.id}
-              @click=${() => this._onSelectDevice(device)}
             ></device-card>
           `
         )}
-      </div>
+      </wa-radio-group>
     `;
+  }
+
+  private _onDeviceChange(e: Event) {
+    const id = (e.target as { value?: string | number | null }).value;
+    const device = this._devices.find((d) => d.id === id);
+    if (device) {
+      this._onSelectDevice(device);
+    }
   }
 
   private _onSelectDevice(device: Device) {

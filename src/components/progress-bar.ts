@@ -1,6 +1,14 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import "@home-assistant/webawesome/dist/components/progress-bar/progress-bar.js";
 
+/**
+ * Thin wrapper over `<wa-progress-bar>`.
+ *
+ * Kept as its own element so the three progress views (and the e2e selectors
+ * that target them) stay unchanged, while the bar itself gets Web Awesome's
+ * `role="progressbar"` and aria-value handling instead of two bare divs.
+ */
 @customElement("progress-bar")
 export class ProgressBar extends LitElement {
   static styles = css`
@@ -9,43 +17,20 @@ export class ProgressBar extends LitElement {
       width: 100%;
     }
 
-    .progress-container {
-      width: 100%;
-      height: 8px;
-      background-color: var(--ha-border-color, #e0e0e0);
-      border-radius: 4px;
-      overflow: hidden;
+    wa-progress-bar {
+      --track-height: 8px;
+      --indicator-color: var(--ha-primary-color, #03a9f4);
+      --track-color: var(--ha-border-color, #e0e0e0);
     }
 
     @media (prefers-color-scheme: dark) {
-      .progress-container {
-        background-color: var(--ha-border-color, #333333);
+      wa-progress-bar {
+        --track-color: var(--ha-border-color, #333333);
       }
     }
 
-    .progress-fill {
-      height: 100%;
-      background-color: var(--ha-primary-color, #03a9f4);
-      border-radius: 4px;
-      transition: width 0.3s ease-out;
-    }
-
-    .progress-fill.error {
-      background-color: var(--ha-error-color, #db4437);
-    }
-
-    .progress-fill.indeterminate {
-      width: 30% !important;
-      animation: indeterminate 1.5s ease-in-out infinite;
-    }
-
-    @keyframes indeterminate {
-      0% {
-        transform: translateX(-100%);
-      }
-      100% {
-        transform: translateX(400%);
-      }
+    wa-progress-bar.error {
+      --indicator-color: var(--ha-error-color, #db4437);
     }
   `;
 
@@ -58,20 +43,19 @@ export class ProgressBar extends LitElement {
   @property({ type: Boolean })
   error = false;
 
+  @property({ type: String })
+  label = "";
+
   render() {
-    const width = this.indeterminate
-      ? 30
-      : Math.min(100, Math.max(0, this.progress));
+    const value = Math.min(100, Math.max(0, this.progress));
 
     return html`
-      <div class="progress-container">
-        <div
-          class="progress-fill ${this.error ? "error" : ""} ${this.indeterminate
-            ? "indeterminate"
-            : ""}"
-          style="width: ${width}%"
-        ></div>
-      </div>
+      <wa-progress-bar
+        class=${this.error ? "error" : ""}
+        ?indeterminate=${this.indeterminate}
+        value=${value}
+        label=${this.label || "Progress"}
+      ></wa-progress-bar>
     `;
   }
 }

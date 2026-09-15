@@ -1,119 +1,123 @@
-import { LitElement, html, css } from "lit";
+import { html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import WaRadio from "@home-assistant/webawesome/dist/components/radio/radio.js";
 
+/**
+ * A device tile that behaves as a radio inside a `<wa-radio-group>`.
+ *
+ * Extending `WaRadio` rather than re-implementing it means the group's
+ * `radioTag` wiring — roving tabindex, arrow-key navigation, `role="radio"`,
+ * `aria-checked`/`aria-disabled` — all applies as-is; only the presentation
+ * is ours. Selection state lives in `checked`, driven by the group.
+ */
 @customElement("device-card")
-export class DeviceCard extends LitElement {
-  static styles = css`
-    :host {
-      display: block;
-    }
+export class DeviceCard extends WaRadio {
+  static css = [
+    css`
+      :host {
+        display: block;
+        outline: none;
+        cursor: pointer;
+      }
 
-    .card {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 1.25rem;
-      height: 180px;
-      box-sizing: border-box;
-      background-color: var(--ha-card-background, #ffffff);
-      border: 2px solid var(--ha-border-color, #e0e0e0);
-      border-radius: 12px;
-      cursor: pointer;
-      transition:
-        border-color 0.2s ease,
-        box-shadow 0.2s ease,
-        transform 0.1s ease;
-    }
+      :host(:state(disabled)) {
+        cursor: not-allowed;
+      }
 
-    .card:hover {
-      border-color: var(--ha-primary-color, #03a9f4);
-      box-shadow: 0 4px 12px rgba(3, 169, 244, 0.15);
-    }
-
-    .card:active {
-      transform: scale(0.98);
-    }
-
-    .card.selected {
-      border-color: var(--ha-primary-color, #03a9f4);
-      box-shadow: 0 0 0 3px rgba(3, 169, 244, 0.2);
-    }
-
-    @media (prefers-color-scheme: dark) {
       .card {
-        background-color: var(--ha-card-background, #1e1e1e);
-        border-color: var(--ha-border-color, #333333);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 1.25rem;
+        height: 180px;
+        box-sizing: border-box;
+        background-color: var(--wa-color-surface-default);
+        border: 2px solid var(--wa-color-surface-border);
+        border-radius: var(--wa-panel-border-radius);
+        transition:
+          border-color 0.2s ease,
+          box-shadow 0.2s ease,
+          transform 0.1s ease;
       }
 
       .card:hover {
-        box-shadow: 0 4px 12px rgba(3, 169, 244, 0.25);
+        border-color: var(--ha-primary-color, #03a9f4);
+        box-shadow: var(--wa-shadow-s);
       }
 
-      .card.selected {
-        box-shadow: 0 0 0 3px rgba(3, 169, 244, 0.3);
+      .card:active {
+        transform: scale(0.98);
       }
-    }
 
-    .image-container {
-      width: 100px;
-      height: 100px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 0.75rem;
-      flex-shrink: 0;
-    }
+      :host(:state(checked)) .card {
+        border-color: var(--ha-primary-color, #03a9f4);
+        box-shadow: 0 0 0 3px rgba(3, 169, 244, 0.2);
+      }
 
-    .image-container img {
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-    }
+      :host(:focus-visible) .card {
+        border-color: var(--ha-primary-color, #03a9f4);
+        outline: 2px solid var(--ha-primary-color, #03a9f4);
+        outline-offset: 2px;
+      }
 
-    .image-placeholder {
-      width: 80px;
-      height: 80px;
-      background-color: var(--ha-primary-color, #03a9f4);
-      border-radius: 12px;
-      opacity: 0.2;
-    }
+      .image-container {
+        width: 100px;
+        height: 100px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 0.75rem;
+        flex-shrink: 0;
+      }
 
-    .name {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: var(--ha-text-color, #212121);
-      text-align: center;
-      margin: 0;
-      line-height: 1.3;
-      min-height: 2.6em;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
+      .image-container img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+      }
 
-    .selected-indicator {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      width: 24px;
-      height: 24px;
-      background-color: var(--ha-primary-color, #03a9f4);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 14px;
-    }
+      .image-placeholder {
+        width: 80px;
+        height: 80px;
+        background-color: var(--ha-primary-color, #03a9f4);
+        border-radius: 12px;
+        opacity: 0.2;
+      }
 
-    .card-wrapper {
-      position: relative;
-    }
-  `;
+      .name {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--wa-color-text-normal);
+        text-align: center;
+        margin: 0;
+        line-height: 1.3;
+        min-height: 2.6em;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
 
-  @property({ type: String })
-  deviceId = "";
+      .selected-indicator {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 24px;
+        height: 24px;
+        background-color: var(--ha-primary-color, #03a9f4);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--wa-color-brand-on-loud, white);
+        font-size: 14px;
+      }
+
+      .card-wrapper {
+        position: relative;
+      }
+    `,
+  ];
 
   @property({ type: String })
   name = "";
@@ -121,24 +125,23 @@ export class DeviceCard extends LitElement {
   @property({ type: String })
   image = "";
 
-  @property({ type: Boolean })
-  selected = false;
-
   render() {
     return html`
       <div class="card-wrapper">
-        <div class="card ${this.selected ? "selected" : ""}">
+        <div class="card">
           <div class="image-container">${this._renderImage()}</div>
           <p class="name">${this.name}</p>
         </div>
-        ${this.selected ? html`<span class="selected-indicator">✓</span>` : ""}
+        ${this.checked
+          ? html`<span class="selected-indicator" aria-hidden="true">✓</span>`
+          : ""}
       </div>
     `;
   }
 
   private _renderImage() {
     if (this.image) {
-      return html`<img src=${this.image} alt=${this.name} />`;
+      return html`<img src=${this.image} alt="" />`;
     }
     return html`<div class="image-placeholder"></div>`;
   }
