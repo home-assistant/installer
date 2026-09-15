@@ -1,152 +1,141 @@
 import { html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import { SelectableCard } from "./selectable-card.js";
+import WaRadio from "@home-assistant/webawesome/dist/components/radio/radio.js";
 import type { DeviceType } from "../api/types.js";
 
+/**
+ * A drive row that behaves as a radio inside a `<wa-radio-group>`.
+ *
+ * Extending `WaRadio` keeps the group's keyboard handling, roving tabindex
+ * and ARIA; only the presentation is ours. See {@link DeviceCard}.
+ */
 @customElement("drive-card")
-export class DriveCard extends SelectableCard {
-  static styles = css`
-    :host {
-      display: block;
-      outline: none;
-    }
+export class DriveCard extends WaRadio {
+  static css = [
+    css`
+      :host {
+        display: block;
+        outline: none;
+        cursor: pointer;
+      }
 
-    :host(:focus-visible) .card {
-      border-color: var(--ha-primary-color, #03a9f4);
-      outline: 2px solid var(--ha-primary-color, #03a9f4);
-      outline-offset: 2px;
-    }
+      :host(:state(disabled)) {
+        cursor: not-allowed;
+      }
 
-    .card {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      padding: 1rem 1.25rem;
-      background-color: var(--ha-card-background, #ffffff);
-      border: 2px solid var(--ha-border-color, #e0e0e0);
-      border-radius: 12px;
-      cursor: pointer;
-      transition:
-        border-color 0.2s ease,
-        box-shadow 0.2s ease,
-        transform 0.1s ease;
-    }
+      :host(:focus-visible) .card {
+        border-color: var(--ha-primary-color, #03a9f4);
+        outline: 2px solid var(--ha-primary-color, #03a9f4);
+        outline-offset: 2px;
+      }
 
-    .card:hover {
-      border-color: var(--ha-primary-color, #03a9f4);
-      box-shadow: 0 4px 12px rgba(3, 169, 244, 0.15);
-    }
-
-    .card:active {
-      transform: scale(0.99);
-    }
-
-    .card.selected {
-      border-color: var(--ha-primary-color, #03a9f4);
-      box-shadow: 0 0 0 3px rgba(3, 169, 244, 0.2);
-    }
-
-    .card.disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      pointer-events: none;
-    }
-
-    .card.disabled:hover {
-      border-color: var(--ha-border-color, #e0e0e0);
-      box-shadow: none;
-    }
-
-    @media (prefers-color-scheme: dark) {
       .card {
-        background-color: var(--ha-card-background, #1e1e1e);
-        border-color: var(--ha-border-color, #333333);
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+        background-color: var(--wa-color-surface-default);
+        border: 2px solid var(--wa-color-surface-border);
+        border-radius: var(--wa-panel-border-radius);
+        transition:
+          border-color 0.2s ease,
+          box-shadow 0.2s ease,
+          transform 0.1s ease;
       }
 
       .card:hover {
-        box-shadow: 0 4px 12px rgba(3, 169, 244, 0.25);
+        border-color: var(--ha-primary-color, #03a9f4);
+        box-shadow: var(--wa-shadow-s);
       }
 
-      .card.selected {
-        box-shadow: 0 0 0 3px rgba(3, 169, 244, 0.3);
+      .card:active {
+        transform: scale(0.99);
       }
-    }
 
-    .icon-container {
-      width: 48px;
-      height: 48px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
+      :host(:state(checked)) .card {
+        border-color: var(--ha-primary-color, #03a9f4);
+        box-shadow: 0 0 0 3px rgba(3, 169, 244, 0.2);
+      }
 
-    .icon-container svg {
-      width: 40px;
-      height: 40px;
-      fill: var(--ha-secondary-text-color, #727272);
-    }
+      :host(:state(disabled)) .card {
+        opacity: 0.5;
+        pointer-events: none;
+      }
 
-    .card.selected .icon-container svg {
-      fill: var(--ha-primary-color, #03a9f4);
-    }
+      .icon-container {
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
 
-    .info {
-      flex: 1;
-      min-width: 0;
-    }
+      .icon-container svg {
+        width: 40px;
+        height: 40px;
+        fill: var(--wa-color-text-quiet);
+      }
 
-    .name {
-      font-size: 1rem;
-      font-weight: 500;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 0.25rem 0;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+      :host(:state(checked)) .icon-container svg {
+        fill: var(--ha-primary-color, #03a9f4);
+      }
 
-    .details {
-      font-size: 0.8125rem;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0;
-    }
+      .info {
+        flex: 1;
+        min-width: 0;
+      }
 
-    .description {
-      font-size: 0.75rem;
-      color: var(--ha-secondary-text-color, #9e9e9e);
-      margin: 0.25rem 0 0 0;
-    }
+      .name {
+        font-size: 1rem;
+        font-weight: 500;
+        color: var(--wa-color-text-normal);
+        margin: 0 0 0.25rem 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
 
-    .size {
-      font-size: 1rem;
-      font-weight: 500;
-      color: var(--ha-text-color, #212121);
-      flex-shrink: 0;
-    }
+      .details {
+        font-size: 0.8125rem;
+        color: var(--wa-color-text-quiet);
+        margin: 0;
+      }
 
-    .selected-indicator {
-      width: 24px;
-      height: 24px;
-      background-color: var(--ha-primary-color, #03a9f4);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 14px;
-      flex-shrink: 0;
-    }
-  `;
+      .description {
+        font-size: 0.75rem;
+        color: var(--wa-color-text-quiet);
+        margin: 0.25rem 0 0 0;
+      }
 
-  @property({ type: String })
-  driveId = "";
+      .size {
+        font-size: 1rem;
+        font-weight: 500;
+        color: var(--wa-color-text-normal);
+        flex-shrink: 0;
+      }
+
+      .selected-indicator {
+        width: 24px;
+        height: 24px;
+        background-color: var(--ha-primary-color, #03a9f4);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--wa-color-brand-on-loud, white);
+        font-size: 14px;
+        flex-shrink: 0;
+      }
+    `,
+  ];
 
   @property({ type: String })
   name = "";
 
+  /** Drive capacity in bytes. Not `size` — that is WaRadio's t-shirt size. */
   @property({ type: Number })
-  size = 0;
+  capacity = 0;
 
   @property({ type: String })
   deviceType: DeviceType = "unknown";
@@ -161,16 +150,8 @@ export class DriveCard extends SelectableCard {
   disabledReason = "";
 
   render() {
-    const classes = [
-      "card",
-      this.selected ? "selected" : "",
-      this.disabled ? "disabled" : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-
     return html`
-      <div class=${classes}>
+      <div class="card">
         <div class="icon-container">${this._renderIcon()}</div>
         <div class="info">
           <p class="name">${this.name}</p>
@@ -183,8 +164,10 @@ export class DriveCard extends SelectableCard {
             ? html`<p class="description">${this._getDescription()}</p>`
             : ""}
         </div>
-        <span class="size">${this._formatSize(this.size)}</span>
-        ${this.selected ? html`<span class="selected-indicator">✓</span>` : ""}
+        <span class="size">${this._formatSize(this.capacity)}</span>
+        ${this.checked
+          ? html`<span class="selected-indicator" aria-hidden="true">✓</span>`
+          : ""}
       </div>
     `;
   }

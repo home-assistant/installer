@@ -3,6 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import { listBlockDevices, type BlockDevice } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
+import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../components/drive-card.js";
 
 @customElement("drive-selection-view")
@@ -81,11 +82,12 @@ export class DriveSelectionView extends LitElement {
     }
 
     .drives-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
       width: 100%;
       max-width: 500px;
+    }
+
+    .drives-list::part(form-control-input) {
+      gap: 0.75rem;
     }
 
     .loading {
@@ -312,7 +314,13 @@ export class DriveSelectionView extends LitElement {
         </wa-button>
       </div>
 
-      <div class="drives-list" role="radiogroup" aria-label="Target drive">
+      <wa-radio-group
+        class="drives-list"
+        radio-tag="drive-card"
+        aria-label="Target drive"
+        .value=${this._selectedDriveId ?? ""}
+        @change=${this._onDriveChange}
+      >
         ${[...this._drives]
           .sort((a, b) => {
             const minSize = this._getMinimumDriveSize();
@@ -330,23 +338,29 @@ export class DriveSelectionView extends LitElement {
 
             return html`
               <drive-card
-                .driveId=${drive.id}
+                .value=${drive.id}
                 .name=${drive.name}
-                .size=${drive.size}
+                .capacity=${drive.size}
                 .deviceType=${drive.device_type}
                 .model=${drive.model || ""}
                 .vendor=${drive.vendor || ""}
-                .selected=${this._selectedDriveId === drive.id}
                 .disabled=${tooSmall}
                 .disabledReason=${tooSmall
                   ? `⚠ Minimum ${minSizeGB} GB required`
                   : ""}
-                @click=${() => !tooSmall && this._onSelectDrive(drive)}
               ></drive-card>
             `;
           })}
-      </div>
+      </wa-radio-group>
     `;
+  }
+
+  private _onDriveChange(e: Event) {
+    const id = (e.target as { value?: string | number | null }).value;
+    const drive = this._drives.find((d) => d.id === id);
+    if (drive) {
+      this._onSelectDrive(drive);
+    }
   }
 
   private _onSelectDrive(drive: BlockDevice) {

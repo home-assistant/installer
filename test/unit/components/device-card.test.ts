@@ -1,4 +1,5 @@
 import { expect, fixture, fixtureSync, html } from "@open-wc/testing";
+import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../../src/components/device-card.js";
 import type { DeviceCard } from "../../../src/components/device-card.js";
 
@@ -35,28 +36,17 @@ describe("device-card", () => {
     expect(placeholder).to.exist;
   });
 
-  it("shows selected state when selected", async () => {
-    const el = await fixture<DeviceCard>(html`
-      <device-card name="Test Device" selected></device-card>
-    `);
-
-    const card = el.shadowRoot!.querySelector(".card");
-    expect(card!.classList.contains("selected")).to.be.true;
-
-    const indicator = el.shadowRoot!.querySelector(".selected-indicator");
-    expect(indicator).to.exist;
-  });
-
-  it("does not show selected indicator when not selected", async () => {
+  it("shows the selected indicator when checked", async () => {
     const el = await fixture<DeviceCard>(html`
       <device-card name="Test Device"></device-card>
     `);
 
-    const card = el.shadowRoot!.querySelector(".card");
-    expect(card!.classList.contains("selected")).to.be.false;
+    expect(el.shadowRoot!.querySelector(".selected-indicator")).to.be.null;
 
-    const indicator = el.shadowRoot!.querySelector(".selected-indicator");
-    expect(indicator).to.be.null;
+    el.checked = true;
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector(".selected-indicator")).to.exist;
   });
 
   it("has the correct structure", async () => {
@@ -70,32 +60,53 @@ describe("device-card", () => {
     expect(el.shadowRoot!.querySelector(".name")).to.exist;
   });
 
-  it("stores deviceId property", async () => {
+  it("stores value property", async () => {
     const el = await fixture<DeviceCard>(html`
-      <device-card deviceId="rpi5" name="Raspberry Pi 5"></device-card>
+      <device-card value="rpi5" name="Raspberry Pi 5"></device-card>
     `);
 
-    expect(el.deviceId).to.equal("rpi5");
+    expect(el.value).to.equal("rpi5");
   });
 
-  describe("radio group behaviour", () => {
-    // fixtureSync + updateComplete rather than fixture(): a plain-<div> root
-    // makes fixture() fall back to a requestAnimationFrame wait, which never
-    // fires while the test page is backgrounded.
-    const group = async (selected = -1) => {
+  it("exposes radio semantics", async () => {
+    const el = await fixture<DeviceCard>(html`
+      <device-card value="rpi5" name="Raspberry Pi 5"></device-card>
+    `);
+
+    expect(el.getAttribute("role")).to.equal("radio");
+    expect(el.getAttribute("aria-checked")).to.equal("false");
+
+    el.checked = true;
+    await el.updateComplete;
+
+    expect(el.getAttribute("aria-checked")).to.equal("true");
+  });
+
+  // The keyboard behaviour itself belongs to <wa-radio-group>; what matters
+  // here is that the card satisfies the contract the group drives it through.
+  describe("inside a wa-radio-group", () => {
+    // fixtureSync + updateComplete rather than fixture(): a non-Lit root makes
+    // fixture() fall back to a requestAnimationFrame wait, which never fires
+    // while the test page is backgrounded.
+    const group = async (value = "") => {
       const root = fixtureSync<HTMLElement>(html`
-        <div role="radiogroup">
+        <wa-radio-group
+          radio-tag="device-card"
+          aria-label="Device"
+          .value=${value}
+        >
           ${[0, 1, 2].map(
             (i) => html`
               <device-card
-                .deviceId=${`d${i}`}
+                .value=${`d${i}`}
                 .name=${`Device ${i}`}
-                .selected=${i === selected}
               ></device-card>
             `
           )}
-        </div>
+        </wa-radio-group>
       `);
+      await (root as HTMLElement & { updateComplete: Promise<unknown> })
+        .updateComplete;
       await Promise.all(
         Array.from(
           root.querySelectorAll<DeviceCard>("device-card"),
@@ -108,100 +119,49 @@ describe("device-card", () => {
     const cards = (root: HTMLElement) =>
       Array.from(root.querySelectorAll<DeviceCard>("device-card"));
 
-    it("exposes radio semantics with aria-checked", async () => {
-      const root = await group(1);
-      const [first, second] = cards(root);
-
-      expect(first!.getAttribute("role")).to.equal("radio");
-      expect(first!.getAttribute("aria-checked")).to.equal("false");
-      expect(second!.getAttribute("aria-checked")).to.equal("true");
-    });
-
-    it("makes the first card the tab stop when nothing is selected", async () => {
+    it("gives the group a single roving tab stop", async () => {
       const root = await group();
       const [first, second, third] = cards(root);
 
-      expect(first!.getAttribute("tabindex")).to.equal("0");
-      expect(second!.getAttribute("tabindex")).to.equal("-1");
-      expect(third!.getAttribute("tabindex")).to.equal("-1");
+      expect(first!.tabIndex).to.equal(0);
+      expect(second!.tabIndex).to.equal(-1);
+      expect(third!.tabIndex).to.equal(-1);
     });
 
-    it("moves the tab stop to the selected card", async () => {
-      const root = await group(2);
-      const [first, second, third] = cards(root);
+    it("checks the card matching the group's value", async () => {
+      const root = await group("d2");
+      const [first, , third] = cards(root);
 
-      expect(first!.getAttribute("tabindex")).to.equal("-1");
-      expect(second!.getAttribute("tabindex")).to.equal("-1");
-      expect(third!.getAttribute("tabindex")).to.equal("0");
+      expect(third!.checked).to.be.true;
+      expect(third!.getAttribute("aria-checked")).to.equal("true");
+      expect(first!.checked).to.be.false;
+      expect(third!.tabIndex).to.equal(0);
+      expect(first!.tabIndex).to.equal(-1);
     });
 
-    it("re-syncs siblings when the selection moves", async () => {
-      const root = await group(0);
-      const [first, second] = cards(root);
+    it("moves the selection with the arrow keys", async () => {
+      const root = await group("d0");
 
-      first!.selected = false;
-      second!.selected = true;
-      await first!.updateComplete;
-      await second!.updateComplete;
+      root.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })
+      );
+      await (root as HTMLElement & { updateComplete: Promise<unknown> })
+        .updateComplete;
 
-      expect(first!.getAttribute("tabindex")).to.equal("-1");
-      expect(second!.getAttribute("tabindex")).to.equal("0");
+      expect((root as HTMLElement & { value: string }).value).to.equal("d1");
+      expect(cards(root)[1]!.checked).to.be.true;
     });
 
-    it("activates the next card on ArrowRight and wraps at the end", async () => {
+    it("selects a card on click", async () => {
       const root = await group();
-      const list = cards(root);
-      const clicked: string[] = [];
-      list.forEach((c) =>
-        c.addEventListener("click", () => clicked.push(c.deviceId))
-      );
+      const [, second] = cards(root);
 
-      list[0]!.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "ArrowRight" })
-      );
-      list[2]!.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "ArrowRight" })
-      );
+      second!.click();
+      await (root as HTMLElement & { updateComplete: Promise<unknown> })
+        .updateComplete;
 
-      expect(clicked).to.deep.equal(["d1", "d0"]);
-    });
-
-    it("activates the previous card on ArrowUp", async () => {
-      const root = await group();
-      const list = cards(root);
-      const clicked: string[] = [];
-      list.forEach((c) =>
-        c.addEventListener("click", () => clicked.push(c.deviceId))
-      );
-
-      list[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
-
-      expect(clicked).to.deep.equal(["d0"]);
-    });
-
-    it("jumps to the ends with Home and End", async () => {
-      const root = await group();
-      const list = cards(root);
-      const clicked: string[] = [];
-      list.forEach((c) =>
-        c.addEventListener("click", () => clicked.push(c.deviceId))
-      );
-
-      list[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "End" }));
-      list[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Home" }));
-
-      expect(clicked).to.deep.equal(["d2", "d0"]);
-    });
-
-    it("activates on Enter", async () => {
-      const root = await group();
-      const list = cards(root);
-      let clicks = 0;
-      list[1]!.addEventListener("click", () => clicks++);
-
-      list[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-
-      expect(clicks).to.equal(1);
+      expect((root as HTMLElement & { value: string }).value).to.equal("d1");
+      expect(second!.checked).to.be.true;
     });
   });
 });

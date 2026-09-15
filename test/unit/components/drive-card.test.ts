@@ -1,4 +1,5 @@
 import { expect, fixture, fixtureSync, html } from "@open-wc/testing";
+import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../../src/components/drive-card.js";
 import type { DriveCard } from "../../../src/components/drive-card.js";
 
@@ -15,7 +16,7 @@ describe("drive-card", () => {
 
   it("renders with formatted size", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" size="32000000000"></drive-card>
+      <drive-card name="Test" capacity="32000000000"></drive-card>
     `);
 
     const size = el.shadowRoot!.querySelector(".size");
@@ -25,7 +26,7 @@ describe("drive-card", () => {
 
   it("formats large sizes in TB", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" size="2000000000000"></drive-card>
+      <drive-card name="Test" capacity="2000000000000"></drive-card>
     `);
 
     const size = el.shadowRoot!.querySelector(".size");
@@ -34,44 +35,33 @@ describe("drive-card", () => {
 
   it("displays 0 GB for zero size", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" size="0"></drive-card>
+      <drive-card name="Test" capacity="0"></drive-card>
     `);
 
     const size = el.shadowRoot!.querySelector(".size");
     expect(size!.textContent).to.equal("0 GB");
   });
 
-  it("shows selected state when selected", async () => {
-    const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" selected></drive-card>
-    `);
-
-    const card = el.shadowRoot!.querySelector(".card");
-    expect(card!.classList.contains("selected")).to.be.true;
-
-    const indicator = el.shadowRoot!.querySelector(".selected-indicator");
-    expect(indicator).to.exist;
-  });
-
-  it("does not show selected indicator when not selected", async () => {
+  it("shows the selected indicator when checked", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test"></drive-card>
     `);
 
-    const card = el.shadowRoot!.querySelector(".card");
-    expect(card!.classList.contains("selected")).to.be.false;
+    expect(el.shadowRoot!.querySelector(".selected-indicator")).to.be.null;
 
-    const indicator = el.shadowRoot!.querySelector(".selected-indicator");
-    expect(indicator).to.be.null;
+    el.checked = true;
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector(".selected-indicator")).to.exist;
   });
 
-  it("shows disabled state when disabled", async () => {
+  it("reports disabled to assistive technology", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test" disabled></drive-card>
     `);
 
-    const card = el.shadowRoot!.querySelector(".card");
-    expect(card!.classList.contains("disabled")).to.be.true;
+    expect(el.getAttribute("aria-disabled")).to.equal("true");
+    expect(el.tabIndex).to.equal(-1);
   });
 
   it("displays disabled reason when provided", async () => {
@@ -230,12 +220,12 @@ describe("drive-card", () => {
     expect(el.shadowRoot!.querySelector(".size")).to.exist;
   });
 
-  it("stores driveId property", async () => {
+  it("stores value property", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card driveId="/dev/sda" name="Test"></drive-card>
+      <drive-card value="/dev/sda" name="Test"></drive-card>
     `);
 
-    expect(el.driveId).to.equal("/dev/sda");
+    expect(el.value).to.equal("/dev/sda");
   });
 
   it("stores name property", async () => {
@@ -246,12 +236,12 @@ describe("drive-card", () => {
     expect(el.name).to.equal("My Drive");
   });
 
-  it("stores size property", async () => {
+  it("stores capacity property", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" size="64000000000"></drive-card>
+      <drive-card name="Test" capacity="64000000000"></drive-card>
     `);
 
-    expect(el.size).to.equal(64000000000);
+    expect(el.capacity).to.equal(64000000000);
   });
 
   it("stores deviceType property", async () => {
@@ -278,14 +268,6 @@ describe("drive-card", () => {
     expect(el.vendor).to.equal("Samsung");
   });
 
-  it("stores selected property", async () => {
-    const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" selected></drive-card>
-    `);
-
-    expect(el.selected).to.be.true;
-  });
-
   it("stores disabled property", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test" disabled></drive-card>
@@ -302,32 +284,34 @@ describe("drive-card", () => {
     expect(el.disabledReason).to.equal("Too small");
   });
 
-  it("applies both selected and disabled classes when both true", async () => {
+  it("exposes radio semantics", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" selected disabled></drive-card>
+      <drive-card value="/dev/sda" name="Test"></drive-card>
     `);
 
-    const card = el.shadowRoot!.querySelector(".card");
-    expect(card!.classList.contains("selected")).to.be.true;
-    expect(card!.classList.contains("disabled")).to.be.true;
+    expect(el.getAttribute("role")).to.equal("radio");
+    expect(el.getAttribute("aria-checked")).to.equal("false");
   });
 
-  describe("radio group behaviour", () => {
-    // See device-card: fixture() on a plain-<div> root waits on rAF and hangs.
+  // Keyboard handling belongs to <wa-radio-group>; these check the contract.
+  describe("inside a wa-radio-group", () => {
+    // See device-card: fixture() on a non-Lit root waits on rAF and hangs.
     const group = async () => {
       const root = fixtureSync<HTMLElement>(html`
-        <div role="radiogroup">
-          <drive-card .driveId=${"a"} .name=${"A"} .size=${64e9}></drive-card>
+        <wa-radio-group radio-tag="drive-card" aria-label="Target drive">
+          <drive-card .value=${"a"} .name=${"A"} .capacity=${64e9}></drive-card>
           <drive-card
-            .driveId=${"small"}
+            .value=${"small"}
             .name=${"Too small"}
-            .size=${1e9}
+            .capacity=${1e9}
             .disabled=${true}
-            .disabledReason=${"⚠ Minimum 8 GB required"}
+            .disabledReason=${"\u26a0 Minimum 8 GB required"}
           ></drive-card>
-          <drive-card .driveId=${"c"} .name=${"C"} .size=${32e9}></drive-card>
-        </div>
+          <drive-card .value=${"c"} .name=${"C"} .capacity=${32e9}></drive-card>
+        </wa-radio-group>
       `);
+      await (root as HTMLElement & { updateComplete: Promise<unknown> })
+        .updateComplete;
       await Promise.all(
         Array.from(
           root.querySelectorAll<DriveCard>("drive-card"),
@@ -340,48 +324,42 @@ describe("drive-card", () => {
     const cards = (root: HTMLElement) =>
       Array.from(root.querySelectorAll<DriveCard>("drive-card"));
 
-    it("marks a disabled drive as such and takes it out of the tab order", async () => {
+    it("keeps a disabled drive out of the tab order", async () => {
       const root = await group();
       const [, small] = cards(root);
 
       expect(small!.getAttribute("aria-disabled")).to.equal("true");
-      expect(small!.getAttribute("tabindex")).to.equal("-1");
-    });
-
-    it("does not activate a disabled drive from the keyboard", async () => {
-      const root = await group();
-      const [, small] = cards(root);
-      let clicks = 0;
-      small!.addEventListener("click", () => clicks++);
-
-      small!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-      small!.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
-
-      expect(clicks).to.equal(0);
+      expect(small!.tabIndex).to.equal(-1);
     });
 
     it("skips disabled drives when arrowing through the list", async () => {
       const root = await group();
       const list = cards(root);
-      const clicked: string[] = [];
-      list.forEach((c) =>
-        c.addEventListener("click", () => clicked.push(c.driveId))
-      );
 
-      // A -> C, skipping the too-small drive in between.
-      list[0]!.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "ArrowDown" })
-      );
+      list[0]!.click();
+      await (root as HTMLElement & { updateComplete: Promise<unknown> })
+        .updateComplete;
 
-      expect(clicked).to.deep.equal(["c"]);
+      root.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })
+      );
+      await (root as HTMLElement & { updateComplete: Promise<unknown> })
+        .updateComplete;
+
+      // a -> c, skipping the too-small drive in between.
+      expect((root as HTMLElement & { value: string }).value).to.equal("c");
+      expect(list[1]!.checked).to.be.false;
     });
 
-    it("makes the first selectable drive the tab stop", async () => {
+    it("does not select a disabled drive on click", async () => {
       const root = await group();
-      const [first, , third] = cards(root);
+      const [, small] = cards(root);
 
-      expect(first!.getAttribute("tabindex")).to.equal("0");
-      expect(third!.getAttribute("tabindex")).to.equal("-1");
+      small!.click();
+      await (root as HTMLElement & { updateComplete: Promise<unknown> })
+        .updateComplete;
+
+      expect(small!.checked).to.be.false;
     });
   });
 });
