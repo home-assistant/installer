@@ -197,6 +197,57 @@ test.describe("UTM Installation Flow", () => {
     await expect(nameInput).toHaveValue("My Home Assistant VM");
   });
 
+  test("step 2: keeps the configuration when stepping back to it", async ({
+    page,
+  }) => {
+    await navigateToUtmStep2(page);
+
+    const configView = page.locator("utm-configure-view");
+    const nameInput = configView.locator(".name-input");
+    const coresValue = configView.locator(".setting-value").first();
+
+    const defaultCores = await coresValue.textContent();
+
+    // Pick something other than the defaults
+    await nameInput.clear();
+    await nameInput.fill("My Home Assistant VM");
+
+    const coresSlider = configView.locator('input[type="range"]').first();
+    await coresSlider.focus();
+    await coresSlider.press("ArrowRight");
+
+    const chosenCores = await coresValue.textContent();
+    expect(chosenCores).not.toBe(defaultCores);
+
+    // Forward to the confirmation step...
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
+    await expect(page.locator("utm-confirm-view")).toBeVisible();
+    await expect(page.locator("utm-confirm-view")).toContainText(
+      "My Home Assistant VM"
+    );
+
+    // ...then back to double-check: the settings must still be the user's,
+    // not silently reset to the defaults
+    await page.locator("wizard-shell").locator(".header wa-button").click();
+    await expect(configView).toBeVisible();
+    await expect(configView.locator(".name-input")).toHaveValue(
+      "My Home Assistant VM"
+    );
+    await expect(coresValue).toHaveText(chosenCores!);
+
+    // And forward again, so what gets installed is what was picked
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .click();
+    await expect(page.locator("utm-confirm-view")).toContainText(
+      "My Home Assistant VM"
+    );
+  });
+
   test("step 2: shows CPU cores slider", async ({ page }) => {
     await navigateToUtmStep2(page);
 
