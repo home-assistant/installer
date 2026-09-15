@@ -2,6 +2,12 @@ import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { listBlockDevices, type BlockDevice } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
+import {
+  clearDriveSelection,
+  findDrive,
+  readDriveSelection,
+  storeDriveSelection,
+} from "../../utils/drive-selection.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/drive-card.js";
 
@@ -59,6 +65,38 @@ export class DriveSelectionView extends LitElement {
       .warning {
         background-color: rgba(255, 152, 0, 0.15);
         border-color: rgba(255, 152, 0, 0.4);
+      }
+    }
+
+    .notice {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 1rem;
+      background-color: rgba(219, 68, 55, 0.1);
+      border: 1px solid rgba(219, 68, 55, 0.3);
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      max-width: 500px;
+      width: 100%;
+    }
+
+    .notice-icon {
+      font-size: 1.25rem;
+      flex-shrink: 0;
+    }
+
+    .notice-text {
+      font-size: 0.875rem;
+      color: var(--ha-text-color, #212121);
+      margin: 0;
+      line-height: 1.5;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .notice {
+        background-color: rgba(219, 68, 55, 0.15);
+        border-color: rgba(219, 68, 55, 0.4);
       }
     }
 
@@ -178,15 +216,18 @@ export class DriveSelectionView extends LitElement {
   @state()
   private _selectedDriveId: string | null = null;
 
+  /** Set when a previously selected drive was dropped by a re-scan. */
+  @state()
+  private _selectionLost = false;
+
   connectedCallback() {
     super.connectedCallback();
-    this._loadDrives();
 
-    // Check if there's already a selection in wizard state
-    const state = wizardState.getState();
-    if (state.selections.drive) {
-      this._selectedDriveId = state.selections.drive as string;
-    }
+    // Restore an earlier selection; _loadDrives() then confirms it is still
+    // the same device and drops it if it is not.
+    this._selectedDriveId = wizardState.getState().selections.drive ?? null;
+
+    this._loadDrives();
   }
 
   private async _loadDrives() {
@@ -197,12 +238,41 @@ export class DriveSelectionView extends LitElement {
       const drives = await listBlockDevices();
       // Filter to only show removable drives
       this._drives = drives.filter((drive) => drive.removable);
+      this._reconcileSelection();
     } catch (err) {
       this._error =
         err instanceof Error ? err.message : "Failed to load drives";
+      // The scan failed, so the selection cannot be confirmed. Drop it rather
+      // than let a stale path through to the write.
+      this._drives = [];
+      this._reconcileSelection();
     } finally {
       this._loading = false;
     }
+  }
+
+  /**
+   * Drop the stored selection unless the exact same device is still in the
+   * freshly enumerated list. Device ids are reused: unplugging the selected
+   * stick and plugging in another one can hand the new device the same path,
+   * and without this the wizard would carry that path to the erase.
+   */
+  private _reconcileSelection() {
+    const selection = readDriveSelection(wizardState.getState().selections);
+    if (!selection) {
+      this._selectedDriveId = null;
+      return;
+    }
+
+    if (findDrive(this._drives, selection)) {
+      this._selectedDriveId = selection.id;
+      this._selectionLost = false;
+      return;
+    }
+
+    clearDriveSelection();
+    this._selectedDriveId = null;
+    this._selectionLost = true;
   }
 
   private _isMiniPCFlow(): boolean {
@@ -236,6 +306,18 @@ export class DriveSelectionView extends LitElement {
         </p>
       </div>
 
+      ${this._selectionLost
+        ? html`
+            <div class="notice">
+              <span class="notice-icon">🔌</span>
+              <p class="notice-text">
+                The drive you selected is no longer available, so the selection
+                was cleared. Devices can reappear under the same name as a
+                different drive, so please pick your drive again.
+              </p>
+            </div>
+          `
+        : ""}
       ${this._renderContent()}
     `;
   }
@@ -351,9 +433,8 @@ export class DriveSelectionView extends LitElement {
 
   private _onSelectDrive(drive: BlockDevice) {
     this._selectedDriveId = drive.id;
-    wizardState.setSelection("drive", drive.id);
-    wizardState.setSelection("driveName", drive.name);
-    wizardState.setSelection("driveSize", drive.size);
+    this._selectionLost = false;
+    storeDriveSelection(drive);
 
     this.dispatchEvent(
       new CustomEvent("drive-selected", {

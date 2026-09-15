@@ -137,6 +137,11 @@ export class ConfirmationView extends LitElement {
       margin: 0.25rem 0 0 0;
     }
 
+    .drive-path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
     .divider {
       height: 1px;
       background-color: var(--ha-border-color, #e0e0e0);
@@ -185,8 +190,14 @@ export class ConfirmationView extends LitElement {
     const selections = this._wizardState.selections;
     const deviceName = (selections.deviceName as string) || "Unknown device";
     const deviceImage = selections.deviceImage as string | undefined;
-    const driveName = (selections.driveName as string) || "Unknown drive";
-    const driveSize = (selections.driveSize as number) || 0;
+    const driveName = selections.driveName || "Unknown drive";
+    const driveSize = selections.driveSize || 0;
+    // The path is what actually gets written to, so show it alongside the
+    // friendly name: two identical cards are otherwise indistinguishable.
+    const drivePath = selections.drive || "";
+    const driveModel = [selections.driveVendor, selections.driveModel]
+      .filter(Boolean)
+      .join(" ");
     const deviceConfig = selections.deviceConfig as HaosConfig | undefined;
 
     return html`
@@ -226,7 +237,14 @@ export class ConfirmationView extends LitElement {
           <div class="summary-info">
             <p class="summary-label">Target drive</p>
             <p class="summary-value">${driveName}</p>
-            <p class="summary-detail">${this._formatSize(driveSize)}</p>
+            <p class="summary-detail">
+              ${this._formatSize(driveSize)}${driveModel
+                ? ` · ${driveModel}`
+                : ""}
+            </p>
+            ${drivePath
+              ? html`<p class="summary-detail drive-path">${drivePath}</p>`
+              : ""}
           </div>
         </div>
 
