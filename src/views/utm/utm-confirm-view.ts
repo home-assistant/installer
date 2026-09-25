@@ -1,6 +1,12 @@
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
+import {
+  DEFAULT_CPU_CORES,
+  DEFAULT_DISK_SIZE_GB,
+  DEFAULT_MEMORY_MB,
+  DEFAULT_UTM_VM_NAME,
+} from "../../state/vm-defaults.js";
 import { getHaosRelease } from "../../api/commands.js";
 
 @customElement("utm-confirm-view")
@@ -155,10 +161,10 @@ export class UtmConfirmView extends LitElement {
 
   render() {
     const selections = this._wizardState.selections;
-    const vmName = (selections.vmName as string) || "Home Assistant";
-    const cpuCores = (selections.cpuCores as number) || 4;
-    const memoryMb = (selections.memoryMb as number) || 4096;
-    const diskSizeGb = (selections.diskSizeGb as number) || 32;
+    const vmName = selections.vmName || DEFAULT_UTM_VM_NAME;
+    const cpuCores = selections.cpuCores || DEFAULT_CPU_CORES;
+    const memoryMb = selections.memoryMb || DEFAULT_MEMORY_MB;
+    const diskSizeGb = selections.diskSizeGb || DEFAULT_DISK_SIZE_GB;
 
     return html`
       <h2>Ready to install</h2>

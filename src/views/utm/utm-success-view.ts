@@ -1,6 +1,7 @@
 import { LitElement, html, css, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
+import { DEFAULT_UTM_VM_NAME } from "../../state/vm-defaults.js";
 import { openExternalLink } from "../../utils/external-url.js";
 
 @customElement("utm-success-view")
@@ -210,11 +211,9 @@ export class UtmSuccessView extends LitElement {
   }
 
   render() {
-    const vmName =
-      (this._wizardState.selections.vmName as string) || "Home Assistant";
-    const ipAddress = this._wizardState.selections.ipAddress as
-      | string
-      | undefined;
+    const selections = this._wizardState.selections;
+    const vmName = selections.vmName || DEFAULT_UTM_VM_NAME;
+    const ipAddress = selections.ipAddress;
     const haUrl = ipAddress
       ? `http://${ipAddress}:8123`
       : "http://homeassistant.local:8123";
