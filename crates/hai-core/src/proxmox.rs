@@ -8,11 +8,12 @@
 //! The correct procedure for installing HAOS on Proxmox via API:
 //! 1. Download the qcow2.xz image locally
 //! 2. Extract to qcow2
-//! 3. Upload qcow2 to Proxmox "local" storage (content=import)
-//! 4. Wait for upload task to complete
-//! 5. Create VM with UEFI/OVMF, EFI disk, and import-from to import the disk
-//! 6. Wait for VM creation task to complete
-//! 7. Start VM and wait for IP via QEMU guest agent
+//! 3. Select an active storage that supports the "import" content type
+//! 4. Upload the qcow2 to that storage
+//! 5. Wait for upload task to complete
+//! 6. Create VM with UEFI/OVMF, EFI disk, and import-from to import the disk
+//! 7. Wait for VM creation task to complete
+//! 8. Start VM and wait for IP via QEMU guest agent
 //!
 //! References:
 //! - https://forum.proxmox.com/threads/api-equivalent-of-qm-importdisk.157457/
@@ -320,7 +321,11 @@ pub async fn list_storage(session: &ProxmoxSession, node: &str) -> Result<Vec<Pr
                 ProxmoxStorage {
                     name: "local".to_string(),
                     storage_type: "dir".to_string(),
-                    content: vec!["images".to_string(), "rootdir".to_string()],
+                    content: vec![
+                        "images".to_string(),
+                        "rootdir".to_string(),
+                        "import".to_string(),
+                    ],
                     available: 100_000_000_000,
                     total: 500_000_000_000,
                     active: true,
@@ -396,6 +401,27 @@ pub async fn list_storage(session: &ProxmoxSession, node: &str) -> Result<Vec<Pr
         .collect();
 
     Ok(storage)
+}
+
+/// Find the first active storage on a node that accepts `import` content.
+///
+/// Returns an actionable error when no such storage exists, since `import`
+/// is not enabled on a default Proxmox install.
+pub async fn get_storage_name(session: &ProxmoxSession, node: &str) -> Result<String> {
+    let storage_list = list_storage(session, node).await?;
+    for storage in storage_list {
+        // ESXi advertises `import` but is a source-only backend with no path, so uploads to it fail.
+        if storage.active
+            && storage.storage_type != "esxi"
+            && storage.content.iter().any(|content| content == "import")
+        {
+            return Ok(storage.name);
+        }
+    }
+    Err(Error::ProxmoxApi(
+        "No active storage with 'import' content type found. Enable 'import' on an active directory storage in PVE."
+            .to_string(),
+    ))
 }
 
 /// Get the next available VM ID on the Proxmox server.
@@ -527,12 +553,13 @@ async fn wait_for_task(
 
 /// Upload a disk image to Proxmox storage with progress reporting.
 ///
-/// Uploads to "local" storage with content type "import".
+/// Uploads to `storage_name` with content type "import".
 async fn upload_image_to_proxmox<P: ProgressCallback>(
     session: &ProxmoxSession,
     node: &str,
     local_path: &std::path::PathBuf,
     progress_callback: &P,
+    storage_name: &str,
 ) -> Result<String> {
     use futures_util::stream;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -585,9 +612,10 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
 
     // Upload to Proxmox using multipart form
     let url = format!(
-        "{}/api2/json/nodes/{}/storage/local/upload",
+        "{}/api2/json/nodes/{}/storage/{}/upload",
         session.server_url.trim_end_matches('/'),
-        node
+        node,
+        storage_name
     );
 
     // Create client with longer timeout for large uploads
@@ -692,6 +720,7 @@ async fn create_vm_with_disk(
     session: &ProxmoxSession,
     config: &ProxmoxVmConfig,
     image_filename: &str,
+    storage_name: &str,
 ) -> Result<()> {
     let url = format!(
         "{}/api2/json/nodes/{}/qemu",
@@ -702,10 +731,10 @@ async fn create_vm_with_disk(
     let client = create_client(300)?; // 5 minutes for VM creation with disk import
 
     // Build the disk import specification
-    // Format: storage:0,import-from=local:import/filename.qcow2
+    // Format: storage:0,import-from="storage name":import/filename.qcow2
     let scsi0_spec = format!(
-        "{}:0,import-from=local:import/{}",
-        config.storage, image_filename
+        "{}:0,import-from={}:import/{}",
+        config.storage, storage_name, image_filename
     );
 
     // EFI disk specification for UEFI boot
@@ -991,6 +1020,9 @@ pub async fn create_vm<P: ProgressCallback>(
         haos_version, haos_version
     );
 
+    //Get the proxmox storage name for install before downloading the image and wasting bandwidth
+    let storage_name = get_storage_name(session, &config.node).await?;
+
     // Step 2: Download the compressed image locally
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
@@ -1022,9 +1054,15 @@ pub async fn create_vm<P: ProgressCallback>(
 
     crate::download::extract_xz(&compressed_path, &extracted_path, progress_callback).await?;
 
-    // Step 4: Upload the extracted image to Proxmox "local" storage
-    let image_filename =
-        upload_image_to_proxmox(session, &config.node, &extracted_path, progress_callback).await?;
+    // Step 4: Upload the extracted image to Proxmox storage, fetched dynamically with import flag
+    let image_filename = upload_image_to_proxmox(
+        session,
+        &config.node,
+        &extracted_path,
+        progress_callback,
+        &storage_name,
+    )
+    .await?;
 
     // Step 5: Create the VM with disk import
     progress_callback.on_progress(FlashProgress {
@@ -1035,7 +1073,7 @@ pub async fn create_vm<P: ProgressCallback>(
         message: "Creating virtual machine...".to_string(),
     });
 
-    create_vm_with_disk(session, config, &image_filename).await?;
+    create_vm_with_disk(session, config, &image_filename, &storage_name).await?;
 
     // Step 6: Start the VM if requested
     if config.auto_start {
@@ -1150,6 +1188,22 @@ mod tests {
         };
         let storage = list_storage(&session, "pve").await.unwrap();
         assert!(!storage.is_empty());
+        std::env::remove_var("HA_INSTALLER_MOCK");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_get_storage_name_mock() {
+        std::env::set_var("HA_INSTALLER_MOCK", "1");
+        let session = ProxmoxSession {
+            server_url: "https://proxmox.local:8006".to_string(),
+            ticket: "mock-ticket".to_string(),
+            csrf_token: "mock-csrf".to_string(),
+        };
+        // The mock fixture must expose an import-capable storage, otherwise the
+        // whole Proxmox flow is unreachable without a live server.
+        let storage_name = get_storage_name(&session, "pve").await.unwrap();
+        assert_eq!(storage_name, "local");
         std::env::remove_var("HA_INSTALLER_MOCK");
     }
 
@@ -1701,6 +1755,165 @@ mod tests {
 
         #[tokio::test]
         #[serial]
+        async fn test_get_storage_name_selects_first_active_import_storage() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            let storage_mock = server
+                .mock("GET", "/api2/json/nodes/pve/storage")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(
+                    r#"{
+                        "data": [
+                            {
+                                "storage": "local",
+                                "type": "dir",
+                                "content": "images,rootdir,iso",
+                                "avail": 100000000000,
+                                "total": 500000000000,
+                                "active": 1
+                            },
+                            {
+                                "storage": "offline-import",
+                                "type": "dir",
+                                "content": "import,iso",
+                                "avail": 100000000000,
+                                "total": 500000000000,
+                                "active": 0
+                            },
+                            {
+                                "storage": "esxi-import",
+                                "type": "esxi",
+                                "content": "import",
+                                "avail": 0,
+                                "total": 0,
+                                "active": 1
+                            },
+                            {
+                                "storage": "local-import",
+                                "type": "dir",
+                                "content": "iso,import",
+                                "avail": 300000000000,
+                                "total": 900000000000,
+                                "active": 1
+                            },
+                            {
+                                "storage": "other-import",
+                                "type": "dir",
+                                "content": "import",
+                                "avail": 400000000000,
+                                "total": 900000000000,
+                                "active": 1
+                            }
+                        ]
+                    }"#,
+                )
+                .create_async()
+                .await;
+
+            let session = ProxmoxSession {
+                server_url: server.url(),
+                ticket: "test-ticket".to_string(),
+                csrf_token: "test-csrf".to_string(),
+            };
+
+            let result = get_storage_name(&session, "pve").await;
+
+            // "local" lacks import, "offline-import" is inactive and "esxi-import"
+            // cannot receive uploads, so the first eligible storage wins.
+            assert_eq!(result.unwrap(), "local-import");
+
+            storage_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_get_storage_name_no_active_import_storage() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            let storage_mock = server
+                .mock("GET", "/api2/json/nodes/pve/storage")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(
+                    r#"{
+                        "data": [
+                            {
+                                "storage": "local",
+                                "type": "dir",
+                                "content": "images,rootdir,iso",
+                                "avail": 100000000000,
+                                "total": 500000000000,
+                                "active": 1
+                            },
+                            {
+                                "storage": "offline-import",
+                                "type": "dir",
+                                "content": "import",
+                                "avail": 100000000000,
+                                "total": 500000000000,
+                                "active": 0
+                            },
+                            {
+                                "storage": "esxi-import",
+                                "type": "esxi",
+                                "content": "import",
+                                "avail": 0,
+                                "total": 0,
+                                "active": 1
+                            }
+                        ]
+                    }"#,
+                )
+                .create_async()
+                .await;
+
+            let session = ProxmoxSession {
+                server_url: server.url(),
+                ticket: "test-ticket".to_string(),
+                csrf_token: "test-csrf".to_string(),
+            };
+
+            let result = get_storage_name(&session, "pve").await;
+
+            if let Err(Error::ProxmoxApi(msg)) = result {
+                assert!(msg.contains("import"), "unexpected message: {}", msg);
+            } else {
+                panic!("Expected ProxmoxApi error when no active import storage exists");
+            }
+
+            storage_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_get_storage_name_propagates_list_storage_error() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            let storage_mock = server
+                .mock("GET", "/api2/json/nodes/pve/storage")
+                .with_status(500)
+                .with_body("Internal Server Error")
+                .create_async()
+                .await;
+
+            let session = ProxmoxSession {
+                server_url: server.url(),
+                ticket: "test-ticket".to_string(),
+                csrf_token: "test-csrf".to_string(),
+            };
+
+            let result = get_storage_name(&session, "pve").await;
+            assert!(result.is_err());
+
+            storage_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
         async fn test_get_next_vm_id_success() {
             std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
@@ -2156,6 +2369,11 @@ mod tests {
                     "CSRFPreventionToken",
                     Matcher::Regex("test-csrf".to_string()),
                 )
+                // The import source must use the selected storage, not a hardcoded "local".
+                .match_body(Matcher::UrlEncoded(
+                    "scsi0".to_string(),
+                    "local-lvm:0,import-from=local-import:import/test-image.qcow2".to_string(),
+                ))
                 .with_status(200)
                 .with_header("content-type", "application/json")
                 .with_body(
@@ -2203,7 +2421,8 @@ mod tests {
                 auto_start: false,
             };
 
-            let result = create_vm_with_disk(&session, &config, "test-image.qcow2").await;
+            let result =
+                create_vm_with_disk(&session, &config, "test-image.qcow2", "local-import").await;
             assert!(result.is_ok());
 
             vm_create_mock.assert_async().await;
@@ -2240,7 +2459,7 @@ mod tests {
                 auto_start: false,
             };
 
-            let result = create_vm_with_disk(&session, &config, "test-image.qcow2").await;
+            let result = create_vm_with_disk(&session, &config, "test-image.qcow2", "local").await;
             assert!(result.is_err());
 
             vm_create_mock.assert_async().await;
@@ -3047,9 +3266,9 @@ mod tests {
             let temp_file = temp_dir.path().join("test-image.qcow2");
             std::fs::write(&temp_file, b"test image content").unwrap();
 
-            // Mock the upload endpoint
+            // Mocking a non-default storage proves the upload URL uses the supplied name.
             let upload_mock = server
-                .mock("POST", "/api2/json/nodes/pve/storage/local/upload")
+                .mock("POST", "/api2/json/nodes/pve/storage/local-import/upload")
                 .with_status(200)
                 .with_header("content-type", "application/json")
                 .with_body(r#"{"data": "UPID:pve:00000001:00000002:00000003:imgup:root@pam:"}"#)
@@ -3075,7 +3294,9 @@ mod tests {
             };
 
             let callback = TestProgressCallback::new();
-            let result = upload_image_to_proxmox(&session, "pve", &temp_file, &callback).await;
+            let result =
+                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local-import")
+                    .await;
 
             assert!(result.is_ok(), "Upload should succeed: {:?}", result.err());
             let filename = result.unwrap();
@@ -3115,7 +3336,8 @@ mod tests {
             };
 
             let callback = TestProgressCallback::new();
-            let result = upload_image_to_proxmox(&session, "pve", &temp_file, &callback).await;
+            let result =
+                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local").await;
 
             assert!(result.is_err());
             if let Err(Error::ProxmoxApi(msg)) = result {
@@ -3154,7 +3376,8 @@ mod tests {
             };
 
             let callback = TestProgressCallback::new();
-            let result = upload_image_to_proxmox(&session, "pve", &temp_file, &callback).await;
+            let result =
+                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local").await;
 
             assert!(result.is_err());
             if let Err(Error::ProxmoxApi(msg)) = result {
@@ -3193,7 +3416,8 @@ mod tests {
             };
 
             let callback = TestProgressCallback::new();
-            let result = upload_image_to_proxmox(&session, "pve", &temp_file, &callback).await;
+            let result =
+                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local").await;
 
             assert!(result.is_err());
             if let Err(Error::ProxmoxApi(msg)) = result {
@@ -3221,7 +3445,8 @@ mod tests {
 
             let callback = TestProgressCallback::new();
             let result =
-                upload_image_to_proxmox(&session, "pve", &nonexistent_file, &callback).await;
+                upload_image_to_proxmox(&session, "pve", &nonexistent_file, &callback, "local")
+                    .await;
 
             assert!(result.is_err());
             if let Err(Error::ProxmoxApi(msg)) = result {
