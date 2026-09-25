@@ -2,14 +2,20 @@ import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
+import { formatBytes } from "../api/index.js";
 
 /**
  * Destructive confirmation dialog built on wa-dialog (focus trap, Escape,
  * backdrop dismiss, and role="dialog"/aria-modal come for free).
  *
- * Public API is unchanged: toggle `open`, set `driveName`, and listen for
- * `dialog-confirm` / `dialog-cancel`. Escape, backdrop click, and the header
- * close button all map to `dialog-cancel`.
+ * Toggle `open`, describe the target with `driveName` / `drivePath` /
+ * `driveModel` / `driveSize`, and listen for `dialog-confirm` /
+ * `dialog-cancel`. Escape, backdrop click, and the header close button all
+ * map to `dialog-cancel`.
+ *
+ * The device path is shown because it is the one value actually sent to the
+ * backend, and it is the only thing that tells two otherwise identical cards
+ * apart at the point of no return.
  */
 @customElement("confirm-dialog")
 export class ConfirmDialog extends LitElement {
@@ -53,6 +59,41 @@ export class ConfirmDialog extends LitElement {
       font-weight: 600;
     }
 
+    .drive-details {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.375rem 1rem;
+      padding: 0.75rem 1rem;
+      margin: 0 0 1rem 0;
+      background-color: var(--ha-background-color, #f5f5f5);
+      border: 1px solid var(--ha-border-color, #e0e0e0);
+      border-radius: 8px;
+      font-size: 0.875rem;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .drive-details {
+        background-color: var(--ha-card-background, #1e1e1e);
+        border-color: var(--ha-border-color, #333333);
+      }
+    }
+
+    .detail-label {
+      color: var(--ha-secondary-text-color, #727272);
+      margin: 0;
+    }
+
+    .detail-value {
+      color: var(--ha-text-color, #212121);
+      margin: 0;
+      font-weight: 500;
+      overflow-wrap: anywhere;
+    }
+
+    .detail-value.path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
     .password-note {
       font-size: 0.875rem;
       color: var(--ha-secondary-text-color, #727272);
@@ -66,6 +107,16 @@ export class ConfirmDialog extends LitElement {
 
   @property({ type: String })
   driveName = "";
+
+  /** Device id/path handed to the backend, e.g. "/dev/sda" or "disk2". */
+  @property({ type: String })
+  drivePath = "";
+
+  @property({ type: String })
+  driveModel = "";
+
+  @property({ type: Number })
+  driveSize = 0;
 
   render() {
     return html`
@@ -82,6 +133,8 @@ export class ConfirmDialog extends LitElement {
           All data on <span class="drive-name">${this.driveName}</span> will be
           permanently erased. This action cannot be undone.
         </p>
+
+        ${this._renderDriveDetails()}
         ${this._promptsForPassword()
           ? html`<p class="password-note">
               You may be prompted for your password to allow writing to the
@@ -102,6 +155,35 @@ export class ConfirmDialog extends LitElement {
           Erase and install
         </wa-button>
       </wa-dialog>
+    `;
+  }
+
+  private _renderDriveDetails() {
+    if (!this.drivePath && !this.driveModel && !this.driveSize) {
+      return "";
+    }
+
+    return html`
+      <dl class="drive-details">
+        ${this.drivePath
+          ? html`
+              <dt class="detail-label">Device</dt>
+              <dd class="detail-value path">${this.drivePath}</dd>
+            `
+          : ""}
+        ${this.driveModel
+          ? html`
+              <dt class="detail-label">Model</dt>
+              <dd class="detail-value">${this.driveModel}</dd>
+            `
+          : ""}
+        ${this.driveSize
+          ? html`
+              <dt class="detail-label">Size</dt>
+              <dd class="detail-value">${formatBytes(this.driveSize)}</dd>
+            `
+          : ""}
+      </dl>
     `;
   }
 
