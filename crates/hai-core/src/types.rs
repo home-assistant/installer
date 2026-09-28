@@ -51,6 +51,24 @@ pub struct FlashProgress {
     pub message: String,
 }
 
+impl FlashProgress {
+    /// Build a progress event, deriving the percentage from the byte counts.
+    pub fn new(stage: FlashStage, bytes_processed: u64, total_bytes: u64, message: &str) -> Self {
+        let progress = if total_bytes > 0 {
+            ((u128::from(bytes_processed.min(total_bytes)) * 100) / u128::from(total_bytes)) as u8
+        } else {
+            0
+        };
+        Self {
+            stage,
+            progress,
+            bytes_processed,
+            total_bytes,
+            message: message.to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum FlashStage {
@@ -148,11 +166,28 @@ pub struct HaosRelease {
     pub images: Vec<HaosImage>,
 }
 
+/// Disk format of a HAOS image
+///
+/// A release can ship several formats for the same board (e.g. generic-aarch64
+/// has both `.img.xz` and `.qcow2.xz`), so lookups must pick the format explicitly.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFormat {
+    /// Raw disk image (`.img.xz`), written byte-for-byte to a drive
+    #[default]
+    Raw,
+    /// QEMU disk image (`.qcow2.xz`), used for virtual machines
+    Qcow2,
+}
+
 /// A single HAOS image file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HaosImage {
     /// Board name (e.g., "rpi5-64", "green", "generic-x86-64")
     pub board: String,
+    /// Disk format of the image
+    #[serde(default)]
+    pub format: ImageFormat,
     /// Download URL
     pub download_url: String,
     /// File size in bytes
@@ -548,12 +583,14 @@ mod tests {
             images: vec![
                 HaosImage {
                     board: "rpi5-64".to_string(),
+                    format: ImageFormat::Raw,
                     download_url: "https://example.com/haos-rpi5-16.3.img.xz".to_string(),
                     size: 500000000,
                     sha256: "abc123def456".to_string(),
                 },
                 HaosImage {
                     board: "generic-x86-64".to_string(),
+                    format: ImageFormat::Raw,
                     download_url: "https://example.com/haos-generic-x86-16.3.img.xz".to_string(),
                     size: 600000000,
                     sha256: "def789abc012".to_string(),
@@ -814,6 +851,7 @@ mod tests {
     fn test_haos_image_empty_sha256() {
         let image = HaosImage {
             board: "rpi5-64".to_string(),
+            format: ImageFormat::Raw,
             download_url: "https://example.com/image.xz".to_string(),
             size: 500_000_000,
             sha256: "".to_string(),
@@ -823,6 +861,20 @@ mod tests {
         assert!(parsed.sha256.is_empty());
         assert_eq!(parsed.board, "rpi5-64");
         assert_eq!(parsed.size, 500_000_000);
+    }
+
+    #[test]
+    fn test_haos_image_format_serialization() {
+        assert_eq!(serde_json::to_string(&ImageFormat::Raw).unwrap(), "\"raw\"");
+        assert_eq!(
+            serde_json::to_string(&ImageFormat::Qcow2).unwrap(),
+            "\"qcow2\""
+        );
+
+        // A missing format defaults to raw
+        let json = r#"{"board":"green","download_url":"u","size":1,"sha256":""}"#;
+        let parsed: HaosImage = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.format, ImageFormat::Raw);
     }
 
     // Device edge cases

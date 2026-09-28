@@ -1,6 +1,6 @@
 //! Windows block device enumeration via PowerShell `Get-Disk`.
 
-use super::*;
+use super::super::*;
 use crate::error::Error;
 use serde::Deserialize;
 use std::process::Command;

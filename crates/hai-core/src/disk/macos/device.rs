@@ -1,6 +1,6 @@
 //! macOS block device enumeration via `diskutil`.
 
-use super::*;
+use super::super::*;
 use crate::error::Error;
 use serde::Deserialize;
 use std::process::Command;

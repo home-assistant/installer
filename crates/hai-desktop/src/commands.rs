@@ -4,8 +4,8 @@
 //! It handles the bridge between Tauri's Channel<T> and hai-core's ProgressCallback trait.
 
 use hai_core::{
-    devices, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, FlashProgress,
-    FlashStage, HaosRelease, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
+    disk, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, FlashProgress, FlashStage,
+    HaosRelease, ImageFormat, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
     ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
 };
 use std::time::Duration;
@@ -86,13 +86,39 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
     if is_mock_enabled() {
         Ok(mock::get_mock_block_devices())
     } else {
-        devices::list_devices().await.map_err(|e| e.to_string())
+        disk::list_devices().await.map_err(|e| e.to_string())
     }
 }
 
 // =============================================================================
 // Flash Commands
 // =============================================================================
+
+/// Find the flash target among the currently attached devices.
+///
+/// `write_image` writes to whatever target it is given, so this lookup is the
+/// safety gate: the device must be one that enumeration reported, and it must
+/// be removable — enumeration can include internal drives on some platforms.
+fn find_flash_target<'a>(
+    devices: &'a [BlockDevice],
+    device_id: &str,
+) -> Result<&'a BlockDevice, String> {
+    let device = devices.iter().find(|d| d.id == device_id).ok_or_else(|| {
+        format!(
+            "Device {} not found. It may have been disconnected.",
+            device_id
+        )
+    })?;
+
+    if !device.removable {
+        return Err(format!(
+            "{} is not a removable drive and cannot be overwritten",
+            device_id
+        ));
+    }
+
+    Ok(device)
+}
 
 /// Flash an image to a device
 #[tauri::command]
@@ -126,11 +152,9 @@ pub async fn flash_image(
         .await
         .map_err(|e| format!("Failed to fetch release info: {}", e))?;
 
-    // Find the image for the requested board
-    let image = release
-        .images
-        .iter()
-        .find(|i| i.board == request.board)
+    // Find the raw disk image for the requested board. Some boards also ship a
+    // qcow2 under the same board name, which must never be written to a drive.
+    let image = download::find_image_for_board(&release, &request.board, ImageFormat::Raw)
         .ok_or_else(|| format!("No image found for board: {}", request.board))?;
 
     callback.on_progress(FlashProgress {
@@ -169,19 +193,11 @@ pub async fn flash_image(
         .map_err(|e| format!("Failed to get image size: {}", e))?
         .len();
 
-    let device_list = devices::list_devices()
+    let device_list = disk::list_devices()
         .await
         .map_err(|e| format!("Failed to list devices: {}", e))?;
 
-    let device = device_list
-        .iter()
-        .find(|d| d.id == request.device_id)
-        .ok_or_else(|| {
-            format!(
-                "Device {} not found. It may have been disconnected.",
-                request.device_id
-            )
-        })?;
+    let device = find_flash_target(&device_list, &request.device_id)?;
 
     if image_size > device.size {
         return Err(format!(
@@ -192,7 +208,7 @@ pub async fn flash_image(
     }
 
     // Write to device
-    hai_core::disk_writer::write_image(
+    disk::write_image(
         &extracted_path,
         &request.device_id,
         request.verify,
@@ -409,21 +425,20 @@ pub async fn download_utm_image(
         .await
         .map_err(|e| format!("Failed to fetch release: {}", e))?;
 
-    let image = release
-        .images
-        .iter()
-        .find(|i| i.board == arch)
-        .ok_or_else(|| format!("No image found for: {}", arch))?;
-
-    // Get qcow2 URL
-    let qcow2_url = image.download_url.replace(".img.xz", ".qcow2.xz");
+    let image = download::find_image_for_board(&release, arch, ImageFormat::Qcow2)
+        .ok_or_else(|| format!("No qcow2 image found for: {}", arch))?;
 
     let cache_dir = download::get_cache_dir().map_err(|e| e.to_string())?;
     let compressed_path = cache_dir.join(format!("haos_{}.qcow2.xz", arch));
 
-    download::download_image(&qcow2_url, &compressed_path, None, &callback)
-        .await
-        .map_err(|e| format!("Download failed: {}", e))?;
+    download::download_image(
+        &image.download_url,
+        &compressed_path,
+        Some(&image.sha256),
+        &callback,
+    )
+    .await
+    .map_err(|e| format!("Download failed: {}", e))?;
 
     let extracted_path = cache_dir.join(format!("haos_{}.qcow2", arch));
     download::extract_xz(&compressed_path, &extracted_path, &callback)
@@ -2668,5 +2683,45 @@ mod tests {
         let result = check_ha_updated(" 192.168.1.1".to_string()).await;
         // Should handle leading whitespace
         let _ = result;
+    }
+
+    fn flash_target(id: &str, removable: bool) -> BlockDevice {
+        BlockDevice {
+            id: id.to_string(),
+            name: "Test Device".to_string(),
+            size: 32_000_000_000,
+            device_type: hai_core::DeviceType::UsbDrive,
+            removable,
+            model: None,
+            vendor: None,
+        }
+    }
+
+    #[test]
+    fn test_find_flash_target_accepts_removable_device() {
+        let devices = [flash_target("/dev/sdb", true)];
+        let device = find_flash_target(&devices, "/dev/sdb").unwrap();
+        assert_eq!(device.id, "/dev/sdb");
+    }
+
+    #[test]
+    fn test_find_flash_target_rejects_unknown_device() {
+        let devices = [flash_target("/dev/sdb", true)];
+        let err = find_flash_target(&devices, "/dev/sdz").unwrap_err();
+        assert!(err.contains("not found"), "{err}");
+    }
+
+    #[test]
+    fn test_find_flash_target_rejects_non_removable_device() {
+        let devices = [flash_target("\\\\.\\PhysicalDrive1", false)];
+        let err = find_flash_target(&devices, "\\\\.\\PhysicalDrive1").unwrap_err();
+        assert!(err.contains("not a removable drive"), "{err}");
+    }
+
+    #[test]
+    fn test_find_flash_target_rejects_empty_device_id() {
+        let devices = [flash_target("/dev/sdb", true)];
+        let err = find_flash_target(&devices, "").unwrap_err();
+        assert!(err.contains("not found"), "{err}");
     }
 }

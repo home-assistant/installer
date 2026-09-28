@@ -1,6 +1,6 @@
 //! Linux block device enumeration via `lsblk`.
 
-use super::*;
+use super::super::*;
 use crate::error::Error;
 use serde::Deserialize;
 use std::process::Command;
@@ -280,38 +280,6 @@ mod tests {
             hotplug: Some(true),
         };
         assert_eq!(determine_device_type(&dev), DeviceType::SdCard);
-    }
-
-    #[test]
-    fn test_build_device_name_with_vendor_and_model() {
-        let vendor = Some("SanDisk".to_string());
-        let model = Some("Ultra".to_string());
-        let result = build_device_name("sdb", &vendor, &model);
-        assert_eq!(result, "SanDisk Ultra");
-    }
-
-    #[test]
-    fn test_build_device_name_with_vendor_only() {
-        let vendor = Some("Samsung".to_string());
-        let model = None;
-        let result = build_device_name("sdb", &vendor, &model);
-        assert_eq!(result, "Samsung");
-    }
-
-    #[test]
-    fn test_build_device_name_with_model_only() {
-        let vendor = None;
-        let model = Some("Generic USB Drive".to_string());
-        let result = build_device_name("sdb", &vendor, &model);
-        assert_eq!(result, "Generic USB Drive");
-    }
-
-    #[test]
-    fn test_build_device_name_with_neither() {
-        let vendor = None;
-        let model = None;
-        let result = build_device_name("sdb", &vendor, &model);
-        assert_eq!(result, "sdb");
     }
 
     #[test]

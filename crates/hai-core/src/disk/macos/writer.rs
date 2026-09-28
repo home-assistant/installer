@@ -11,12 +11,12 @@
 //! does not bypass TCC either: removable-media access is checked against the
 //! responsible process, which is this application.
 
-use super::macos_logic::{
+use super::super::macos_logic::{
     align_up, aligned_buffer_size, authopen_args, cache_flush_failure_is_benign,
     classify_authopen_failure, fill_buffer, map_authorization_status, map_device_io_error,
     pad_final_block, sanitize_block_size, write_ran_past_device_end, DEFAULT_BLOCK_SIZE, O_RDWR,
 };
-use super::*;
+use super::super::*;
 use rustix::net::{recvmsg, RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, ReturnFlags};
 use security_framework::authorization::{Authorization, AuthorizationItemSetBuilder, Flags};
 use serde::Deserialize;
@@ -33,14 +33,6 @@ const AUTHOPEN_PATH: &str = "/usr/libexec/authopen";
 
 /// `_IO('d', 22)` from `<sys/disk.h>`.
 const DKIOCSYNCHRONIZECACHE: rustix::ioctl::Opcode = rustix::ioctl::opcode::none(b'd', 22);
-
-/// Progress update sent from blocking task
-struct ProgressUpdate {
-    stage: FlashStage,
-    bytes_processed: u64,
-    total_bytes: u64,
-    message: String,
-}
 
 #[derive(Debug, Deserialize)]
 struct DiskUtilGeometry {
@@ -76,21 +68,6 @@ enum Handshake {
     Failed(std::io::Error),
 }
 
-/// Validate that a device path is safe to write to (not a system drive)
-pub fn validate_device_path(device_id: &str) -> Result<()> {
-    // On macOS, disk0 is always the system drive
-    let disk_id = device_id.strip_prefix("/dev/").unwrap_or(device_id);
-    let disk_id = disk_id.strip_prefix("r").unwrap_or(disk_id); // Handle raw device
-
-    if disk_id == "disk0" {
-        return Err(Error::PermissionDenied(
-            "disk0 is the system drive and cannot be overwritten".to_string(),
-        ));
-    }
-
-    Ok(())
-}
-
 pub async fn write_image<P: ProgressCallback>(
     image_path: &PathBuf,
     device_id: &str,
@@ -110,16 +87,15 @@ pub async fn write_image<P: ProgressCallback>(
     let image_size = std::fs::metadata(image_path)?.len();
 
     // Send initial progress
-    progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Writing,
-        progress: 0,
-        bytes_processed: 0,
-        total_bytes: image_size,
-        message: "Requesting administrator access...".to_string(),
-    });
+    progress_callback.on_progress(FlashProgress::new(
+        FlashStage::Writing,
+        0,
+        image_size,
+        "Requesting administrator access...",
+    ));
 
-    // Create channel for progress updates from blocking task
-    let (progress_tx, progress_rx) = mpsc::channel::<ProgressUpdate>();
+    // Send progress updates from the blocking task through a channel.
+    let (progress_tx, progress_rx) = mpsc::channel::<FlashProgress>();
 
     // Perform write and optional verify in a blocking task
     let image_path_clone = image_path.clone();
@@ -127,7 +103,7 @@ pub async fn write_image<P: ProgressCallback>(
     let disk_id_clone = disk_id.to_string();
 
     let write_handle = tokio::task::spawn_blocking(move || {
-        write_and_verify_blocking(
+        write_and_verify(
             &image_path_clone,
             &raw_device_clone,
             &disk_id_clone,
@@ -137,62 +113,25 @@ pub async fn write_image<P: ProgressCallback>(
         )
     });
 
-    // Forward progress updates while waiting for write to complete
-    loop {
-        // Check for progress updates (non-blocking with timeout)
-        match progress_rx.recv_timeout(std::time::Duration::from_millis(100)) {
-            Ok(update) => {
-                let progress = if update.total_bytes > 0 {
-                    ((update.bytes_processed as f64 / update.total_bytes as f64) * 100.0) as u8
-                } else {
-                    0
-                };
-                progress_callback.on_progress(FlashProgress {
-                    stage: update.stage,
-                    progress,
-                    bytes_processed: update.bytes_processed,
-                    total_bytes: update.total_bytes,
-                    message: update.message,
-                });
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                // Check if the blocking task is done
-                if write_handle.is_finished() {
-                    break;
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                // Sender dropped, task is done
-                break;
-            }
-        }
-    }
+    run_with_progress(write_handle, progress_rx, progress_callback).await?;
 
-    // Wait for the result
-    let result = write_handle
-        .await
-        .map_err(|e| Error::Io(std::io::Error::other(e)))?;
-
-    result?;
-
-    progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Complete,
-        progress: 100,
-        bytes_processed: image_size,
-        total_bytes: image_size,
-        message: "Complete".to_string(),
-    });
+    progress_callback.on_progress(FlashProgress::new(
+        FlashStage::Complete,
+        image_size,
+        image_size,
+        "Complete",
+    ));
 
     Ok(())
 }
 
-fn write_and_verify_blocking(
+fn write_and_verify(
     image_path: &Path,
     device_path: &str,
     disk_id: &str,
     total_size: u64,
     verify: bool,
-    progress_tx: mpsc::Sender<ProgressUpdate>,
+    progress_tx: mpsc::Sender<FlashProgress>,
 ) -> Result<()> {
     let (block_size, device_size) = device_geometry(disk_id);
     let layout = Layout {
@@ -382,7 +321,7 @@ fn write_to_device(
     device_path: &str,
     layout: Layout,
     compute_checksum: bool,
-    progress_tx: &mpsc::Sender<ProgressUpdate>,
+    progress_tx: &mpsc::Sender<FlashProgress>,
 ) -> Result<Option<String>> {
     use sha2::{Digest, Sha256};
 
@@ -399,12 +338,12 @@ fn write_to_device(
     let mut bytes_written: u64 = 0;
     let mut last_progress_update: u64 = 0;
 
-    let _ = progress_tx.send(ProgressUpdate {
-        stage: FlashStage::Writing,
-        bytes_processed: 0,
-        total_bytes: total_size,
-        message: "Starting write...".to_string(),
-    });
+    let _ = progress_tx.send(FlashProgress::new(
+        FlashStage::Writing,
+        0,
+        total_size,
+        "Starting write...",
+    ));
 
     loop {
         let filled = fill_buffer(&mut source, &mut buffer).map_err(Error::Io)?;
@@ -435,22 +374,22 @@ fn write_to_device(
 
         // Send progress update every PROGRESS_UPDATE_INTERVAL bytes
         if bytes_written - last_progress_update >= PROGRESS_UPDATE_INTERVAL {
-            let _ = progress_tx.send(ProgressUpdate {
-                stage: FlashStage::Writing,
-                bytes_processed: bytes_written,
-                total_bytes: total_size,
-                message: "Writing image to drive...".to_string(),
-            });
+            let _ = progress_tx.send(FlashProgress::new(
+                FlashStage::Writing,
+                bytes_written,
+                total_size,
+                "Writing image to drive...",
+            ));
             last_progress_update = bytes_written;
         }
     }
 
-    let _ = progress_tx.send(ProgressUpdate {
-        stage: FlashStage::Writing,
-        bytes_processed: bytes_written,
-        total_bytes: total_size,
-        message: "Syncing data to drive...".to_string(),
-    });
+    let _ = progress_tx.send(FlashProgress::new(
+        FlashStage::Writing,
+        bytes_written,
+        total_size,
+        "Syncing data to drive...",
+    ));
 
     Ok(hasher.map(|hasher| hex::encode(hasher.finalize())))
 }
@@ -477,7 +416,7 @@ fn verify_device(
     source_checksum: &str,
     device_path: &str,
     layout: Layout,
-    progress_tx: &mpsc::Sender<ProgressUpdate>,
+    progress_tx: &mpsc::Sender<FlashProgress>,
 ) -> Result<()> {
     use sha2::{Digest, Sha256};
 
@@ -488,12 +427,12 @@ fn verify_device(
         ..
     } = layout;
 
-    let _ = progress_tx.send(ProgressUpdate {
-        stage: FlashStage::Verifying,
-        bytes_processed: 0,
-        total_bytes: total_size,
-        message: "Starting verification...".to_string(),
-    });
+    let _ = progress_tx.send(FlashProgress::new(
+        FlashStage::Verifying,
+        0,
+        total_size,
+        "Starting verification...",
+    ));
 
     device
         .seek(SeekFrom::Start(0))
@@ -526,12 +465,12 @@ fn verify_device(
 
         // Send progress update every PROGRESS_UPDATE_INTERVAL bytes
         if bytes_hashed - last_progress_update >= PROGRESS_UPDATE_INTERVAL {
-            let _ = progress_tx.send(ProgressUpdate {
-                stage: FlashStage::Verifying,
-                bytes_processed: bytes_hashed,
-                total_bytes: total_size,
-                message: "Verifying written data...".to_string(),
-            });
+            let _ = progress_tx.send(FlashProgress::new(
+                FlashStage::Verifying,
+                bytes_hashed,
+                total_size,
+                "Verifying written data...",
+            ));
             last_progress_update = bytes_hashed;
         }
     }
@@ -544,12 +483,12 @@ fn verify_device(
         ));
     }
 
-    let _ = progress_tx.send(ProgressUpdate {
-        stage: FlashStage::Verifying,
-        bytes_processed: total_size,
-        total_bytes: total_size,
-        message: "Verification complete".to_string(),
-    });
+    let _ = progress_tx.send(FlashProgress::new(
+        FlashStage::Verifying,
+        total_size,
+        total_size,
+        "Verification complete",
+    ));
 
     Ok(())
 }
@@ -602,79 +541,21 @@ fn eject_disk(disk_id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::os::fd::{AsFd, BorrowedFd};
 
-    #[test]
-    fn test_validate_device_path_blocks_disk0() {
-        assert!(validate_device_path("/dev/disk0").is_err());
-        assert!(validate_device_path("/dev/rdisk0").is_err());
-        assert!(validate_device_path("disk0").is_err());
-    }
+    #[tokio::test]
+    #[serial]
+    async fn test_write_image_with_invalid_device() {
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(temp_file.path(), b"test data").unwrap();
+        let image_path = temp_file.path().to_path_buf();
 
-    #[test]
-    fn test_validate_device_path_allows_other_disks() {
-        assert!(validate_device_path("/dev/disk2").is_ok());
-        assert!(validate_device_path("/dev/disk10").is_ok());
-    }
+        // Fails at unmount_disk: the device does not exist.
+        let device_id = "/dev/nonexistent_disk999";
 
-    #[test]
-    fn test_validate_device_path_disk1() {
-        // disk1 is usually okay (not system drive)
-        assert!(validate_device_path("/dev/disk1").is_ok());
-        assert!(validate_device_path("/dev/rdisk1").is_ok());
-    }
-
-    #[test]
-    fn test_validate_device_path_high_disk_numbers() {
-        assert!(validate_device_path("/dev/disk99").is_ok());
-        assert!(validate_device_path("/dev/rdisk99").is_ok());
-    }
-
-    #[test]
-    fn test_validate_device_rdisk0_variants() {
-        assert!(validate_device_path("rdisk0").is_err());
-        assert!(validate_device_path("/dev/rdisk0").is_err());
-    }
-
-    #[test]
-    fn test_validate_device_without_dev_prefix() {
-        assert!(validate_device_path("disk2").is_ok());
-        assert!(validate_device_path("rdisk2").is_ok());
-        assert!(validate_device_path("disk5").is_ok());
-        assert!(validate_device_path("disk0").is_err());
-    }
-
-    #[test]
-    fn test_validate_all_disk0_variations() {
-        // Test all possible ways someone might reference disk0
-        assert!(validate_device_path("/dev/disk0").is_err());
-        assert!(validate_device_path("/dev/rdisk0").is_err());
-        assert!(validate_device_path("disk0").is_err());
-        assert!(validate_device_path("rdisk0").is_err());
-
-        // disk0s1 passes validation as it's a partition, not the whole disk:
-        // only the exact "disk0" match is rejected.
-        assert!(validate_device_path("/dev/disk0s1").is_ok());
-    }
-
-    #[test]
-    fn test_validation_error_message_disk0() {
-        let result = validate_device_path("/dev/disk0");
+        let result = write_image(&image_path, device_id, false, &crate::NoOpProgress).await;
         assert!(result.is_err());
-        match result {
-            Err(Error::PermissionDenied(msg)) => {
-                assert!(msg.contains("disk0"));
-                assert!(msg.contains("system drive"));
-            }
-            _ => panic!("Expected PermissionDenied error"),
-        }
-    }
-
-    #[test]
-    fn test_validate_case_sensitivity() {
-        // macOS device paths are case-sensitive
-        assert!(validate_device_path("/dev/Disk0").is_ok()); // Capital D should pass
-        assert!(validate_device_path("/dev/disk0").is_err()); // Lowercase should fail
     }
 
     #[test]
