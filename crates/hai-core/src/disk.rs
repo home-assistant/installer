@@ -39,8 +39,12 @@ const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
 /// Portable SSD" don't count.
 fn mentions_sd_card(s: &str) -> bool {
     let s = s.to_lowercase();
-    s.split(|c: char| !c.is_ascii_alphanumeric())
-        .any(|token| matches!(token, "sd" | "sdhc" | "sdxc" | "microsd"))
+    s.split(|c: char| !c.is_ascii_alphanumeric()).any(|token| {
+        matches!(
+            token,
+            "sd" | "sdhc" | "sdxc" | "microsd" | "microsdhc" | "microsdxc"
+        )
+    })
 }
 
 /// Check if an I/O error indicates the drive was disconnected
@@ -119,6 +123,8 @@ mod tests {
             "SDXC",
             "SDHC Card",
             "microSD",
+            "microSDHC",
+            "SanDisk Extreme microSDXC",
             "Generic-SD/MMC",
             "APPLE SD Card Reader Media",
         ] {
