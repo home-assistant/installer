@@ -133,6 +133,8 @@ export interface HaosRelease {
 export interface HaosImage {
   /** Board name (e.g., "rpi5-64", "green", "generic-x86-64") */
   board: string;
+  /** Disk format: raw `.img.xz` or `.qcow2.xz` */
+  format: "raw" | "qcow2";
   /** Download URL */
   download_url: string;
   /** File size in bytes */

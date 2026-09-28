@@ -5,7 +5,7 @@
 
 use crate::error::{Error, Result};
 use crate::types::{
-    DeviceManifest, FlashProgress, FlashStage, GitHubRelease, HaosImage, HaosRelease,
+    DeviceManifest, FlashProgress, FlashStage, GitHubRelease, HaosImage, HaosRelease, ImageFormat,
     StableVersionInfo,
 };
 use crate::ProgressCallback;
@@ -233,10 +233,10 @@ fn parse_github_release(release: GitHubRelease) -> Result<HaosRelease> {
 
     for asset in release.assets {
         // Process .img.xz and .qcow2.xz files
-        let suffix = if asset.name.ends_with(".img.xz") {
-            ".img.xz"
+        let (suffix, format) = if asset.name.ends_with(".img.xz") {
+            (".img.xz", ImageFormat::Raw)
         } else if asset.name.ends_with(".qcow2.xz") {
-            ".qcow2.xz"
+            (".qcow2.xz", ImageFormat::Qcow2)
         } else {
             continue;
         };
@@ -255,6 +255,7 @@ fn parse_github_release(release: GitHubRelease) -> Result<HaosRelease> {
 
         images.push(HaosImage {
             board,
+            format,
             download_url: asset.browser_download_url,
             size: asset.size,
             sha256,
@@ -294,9 +295,16 @@ pub fn parse_board_from_filename(filename: &str, version: &str) -> Result<String
     parse_board_from_filename_with_suffix(filename, version, ".img.xz")
 }
 
-/// Find image for a specific board in a release
-pub fn find_image_for_board<'a>(release: &'a HaosRelease, board: &str) -> Option<&'a HaosImage> {
-    release.images.iter().find(|img| img.board == board)
+/// Find the image for a specific board and format in a release
+pub fn find_image_for_board<'a>(
+    release: &'a HaosRelease,
+    board: &str,
+    format: ImageFormat,
+) -> Option<&'a HaosImage> {
+    release
+        .images
+        .iter()
+        .find(|img| img.board == board && img.format == format)
 }
 
 /// Download an image file with progress updates
@@ -336,6 +344,9 @@ pub async fn download_image<P: ProgressCallback>(
     }
 
     let total_size = response.content_length().unwrap_or(0);
+
+    // Releases published before GitHub added asset digests have an empty checksum
+    let expected_sha256 = expected_sha256.filter(|s| !s.is_empty());
 
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
@@ -607,12 +618,14 @@ mod tests {
             images: vec![
                 HaosImage {
                     board: "rpi5-64".to_string(),
+                    format: ImageFormat::Raw,
                     download_url: "https://example.com/rpi5.img.xz".to_string(),
                     size: 100,
                     sha256: "abc".to_string(),
                 },
                 HaosImage {
                     board: "green".to_string(),
+                    format: ImageFormat::Raw,
                     download_url: "https://example.com/green.img.xz".to_string(),
                     size: 200,
                     sha256: "def".to_string(),
@@ -620,7 +633,7 @@ mod tests {
             ],
         };
 
-        let found = find_image_for_board(&release, "green");
+        let found = find_image_for_board(&release, "green", ImageFormat::Raw);
         assert!(found.is_some());
         assert_eq!(found.unwrap().board, "green");
         assert_eq!(found.unwrap().size, 200);
@@ -632,14 +645,48 @@ mod tests {
             version: "14.2".to_string(),
             images: vec![HaosImage {
                 board: "rpi5-64".to_string(),
+                format: ImageFormat::Raw,
                 download_url: "https://example.com/rpi5.img.xz".to_string(),
                 size: 100,
                 sha256: "abc".to_string(),
             }],
         };
 
-        let found = find_image_for_board(&release, "nonexistent");
+        let found = find_image_for_board(&release, "nonexistent", ImageFormat::Raw);
         assert!(found.is_none());
+    }
+
+    #[test]
+    fn test_find_image_for_board_picks_requested_format() {
+        // generic-aarch64 ships both a raw image and a qcow2 under the same board name.
+        // Put the qcow2 first so a board-only lookup would pick the wrong one.
+        let release = HaosRelease {
+            version: "14.2".to_string(),
+            images: vec![
+                HaosImage {
+                    board: "generic-aarch64".to_string(),
+                    format: ImageFormat::Qcow2,
+                    download_url: "https://example.com/aarch64.qcow2.xz".to_string(),
+                    size: 300,
+                    sha256: "qcow".to_string(),
+                },
+                HaosImage {
+                    board: "generic-aarch64".to_string(),
+                    format: ImageFormat::Raw,
+                    download_url: "https://example.com/aarch64.img.xz".to_string(),
+                    size: 200,
+                    sha256: "raw".to_string(),
+                },
+            ],
+        };
+
+        let raw = find_image_for_board(&release, "generic-aarch64", ImageFormat::Raw).unwrap();
+        assert_eq!(raw.download_url, "https://example.com/aarch64.img.xz");
+
+        let qcow2 = find_image_for_board(&release, "generic-aarch64", ImageFormat::Qcow2).unwrap();
+        assert_eq!(qcow2.download_url, "https://example.com/aarch64.qcow2.xz");
+
+        assert!(find_image_for_board(&release, "rpi5-64", ImageFormat::Qcow2).is_none());
     }
 
     #[test]
@@ -675,6 +722,7 @@ mod tests {
 
         // Check rpi5-64 image
         let rpi_image = parsed.images.iter().find(|i| i.board == "rpi5-64").unwrap();
+        assert_eq!(rpi_image.format, ImageFormat::Raw);
         assert_eq!(rpi_image.size, 500_000_000);
         assert_eq!(rpi_image.sha256, "abc123");
 
@@ -684,6 +732,7 @@ mod tests {
             .iter()
             .find(|i| i.board == "generic-x86-64")
             .unwrap();
+        assert_eq!(x86_image.format, ImageFormat::Qcow2);
         assert_eq!(x86_image.size, 600_000_000);
         assert_eq!(x86_image.sha256, "def456");
     }
@@ -694,6 +743,7 @@ mod tests {
         std::env::set_var("HA_INSTALLER_NO_CACHE", "1");
         let image = HaosImage {
             board: "test".to_string(),
+            format: ImageFormat::Raw,
             download_url: "https://example.com/test.img.xz".to_string(),
             size: 100,
             sha256: "abc".to_string(),
@@ -709,6 +759,7 @@ mod tests {
         std::env::remove_var("HA_INSTALLER_NO_CACHE");
         let image = HaosImage {
             board: "test".to_string(),
+            format: ImageFormat::Raw,
             download_url: "https://example.com/nonexistent-file-12345.img.xz".to_string(),
             size: 100,
             sha256: "abc".to_string(),
@@ -737,6 +788,7 @@ mod tests {
     async fn test_get_cached_image_path() {
         let image = HaosImage {
             board: "test".to_string(),
+            format: ImageFormat::Raw,
             download_url: "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz".to_string(),
             size: 100,
             sha256: "abc".to_string(),
@@ -805,6 +857,7 @@ mod tests {
         // Edge case: URL without "/" should use fallback filename
         let image = HaosImage {
             board: "test".to_string(),
+            format: ImageFormat::Raw,
             download_url: "no-slashes-here".to_string(),
             size: 100,
             sha256: "abc".to_string(),
@@ -829,6 +882,7 @@ mod tests {
         // Image expects 100 bytes
         let image = HaosImage {
             board: "test".to_string(),
+            format: ImageFormat::Raw,
             download_url: format!(
                 "https://example.com/{}",
                 test_file.file_name().unwrap().to_string_lossy()
@@ -1268,6 +1322,7 @@ mod tests {
         // Image expects exactly 100 bytes
         let image = HaosImage {
             board: "test".to_string(),
+            format: ImageFormat::Raw,
             download_url: format!(
                 "https://example.com/{}",
                 test_file.file_name().unwrap().to_string_lossy()

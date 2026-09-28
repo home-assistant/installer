@@ -5,8 +5,8 @@
 
 use hai_core::{
     disk, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, FlashProgress, FlashStage,
-    HaosRelease, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage,
-    ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
+    HaosRelease, ImageFormat, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
+    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
 };
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -152,11 +152,9 @@ pub async fn flash_image(
         .await
         .map_err(|e| format!("Failed to fetch release info: {}", e))?;
 
-    // Find the image for the requested board
-    let image = release
-        .images
-        .iter()
-        .find(|i| i.board == request.board)
+    // Find the raw disk image for the requested board. Some boards also ship a
+    // qcow2 under the same board name, which must never be written to a drive.
+    let image = download::find_image_for_board(&release, &request.board, ImageFormat::Raw)
         .ok_or_else(|| format!("No image found for board: {}", request.board))?;
 
     callback.on_progress(FlashProgress {
@@ -423,21 +421,20 @@ pub async fn download_utm_image(
         .await
         .map_err(|e| format!("Failed to fetch release: {}", e))?;
 
-    let image = release
-        .images
-        .iter()
-        .find(|i| i.board == arch)
-        .ok_or_else(|| format!("No image found for: {}", arch))?;
-
-    // Get qcow2 URL
-    let qcow2_url = image.download_url.replace(".img.xz", ".qcow2.xz");
+    let image = download::find_image_for_board(&release, arch, ImageFormat::Qcow2)
+        .ok_or_else(|| format!("No qcow2 image found for: {}", arch))?;
 
     let cache_dir = download::get_cache_dir().map_err(|e| e.to_string())?;
     let compressed_path = cache_dir.join(format!("haos_{}.qcow2.xz", arch));
 
-    download::download_image(&qcow2_url, &compressed_path, None, &callback)
-        .await
-        .map_err(|e| format!("Download failed: {}", e))?;
+    download::download_image(
+        &image.download_url,
+        &compressed_path,
+        Some(&image.sha256),
+        &callback,
+    )
+    .await
+    .map_err(|e| format!("Download failed: {}", e))?;
 
     let extracted_path = cache_dir.join(format!("haos_{}.qcow2", arch));
     download::extract_xz(&compressed_path, &extracted_path, &callback)

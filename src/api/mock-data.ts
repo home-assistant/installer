@@ -241,6 +241,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
   images: [
     {
       board: "rpi5-64",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_rpi5-64-16.3.img.xz",
       size: 331_899_792,
@@ -249,6 +250,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "rpi4-64",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_rpi4-64-16.3.img.xz",
       size: 322_239_272,
@@ -257,6 +259,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "rpi3-64",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_rpi3-64-16.3.img.xz",
       size: 311_438_560,
@@ -265,6 +268,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "odroid-n2",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_odroid-n2-16.3.img.xz",
       size: 298_412_092,
@@ -273,6 +277,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "green",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_green-16.3.img.xz",
       size: 336_860_104,
@@ -281,6 +286,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "yellow",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_yellow-16.3.img.xz",
       size: 322_261_788,
@@ -289,6 +295,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "generic-x86-64",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_generic-x86-64-16.3.img.xz",
       size: 396_451_208,
@@ -297,6 +304,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
     },
     {
       board: "generic-aarch64",
+      format: "raw",
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_generic-aarch64-16.3.img.xz",
       size: 341_537_340,
