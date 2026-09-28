@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@home-assistant/webawesome": "3.7.0-ha.1",
-    "@tauri-apps/api": "~2.11",
+    "@tauri-apps/api": "~2.12.0",
     "@tauri-apps/plugin-opener": "^2",
     "lit": "^3.3.1",
     "qrcode": "^1.5.4"
@@ -28,7 +28,7 @@
     "@eslint/js": "^10.0.0",
     "@open-wc/testing": "^5.0.0",
     "@playwright/test": "^1.57.0",
-    "@tauri-apps/cli": "~2.11",
+    "@tauri-apps/cli": "~2.12.0",
     "@typescript-eslint/eslint-plugin": "^8.63.0",
     "@typescript-eslint/parser": "^8.63.0",
     "@web/dev-server-esbuild": "^2.0.0",
