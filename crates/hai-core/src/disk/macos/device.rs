@@ -145,15 +145,6 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
     Ok(devices)
 }
 
-/// Whether a media type/name refers to an SD card. Matches "SD" as its own
-/// word (plus SDHC/SDXC/microSD variants) so names like "Samsung Portable
-/// SSD" don't count.
-fn mentions_sd_card(s: &str) -> bool {
-    let s = s.to_lowercase();
-    s.split(|c: char| !c.is_ascii_alphanumeric())
-        .any(|token| matches!(token, "sd" | "sdhc" | "sdxc" | "microsd"))
-}
-
 pub(super) fn determine_device_type(info: &DiskUtilInfo) -> DeviceType {
     let bus = info.bus_protocol.as_deref().unwrap_or("");
     let media = info.media_type.as_deref().unwrap_or("");

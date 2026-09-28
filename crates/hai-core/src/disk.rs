@@ -34,6 +34,15 @@ const FAST_DRIVE_BUFFER_SIZE: usize = 64 * 1024 * 1024;
 #[allow(dead_code)]
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
 
+/// Whether a media type/model string refers to an SD card. Matches "SD" as
+/// its own word (plus SDHC/SDXC/microSD variants) so names like "Samsung
+/// Portable SSD" don't count.
+fn mentions_sd_card(s: &str) -> bool {
+    let s = s.to_lowercase();
+    s.split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|token| matches!(token, "sd" | "sdhc" | "sdxc" | "microsd"))
+}
+
 /// Check if an I/O error indicates the drive was disconnected
 fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
     matches!(
@@ -100,6 +109,36 @@ pub async fn write_image<P: ProgressCallback>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_mentions_sd_card_whole_word_variants() {
+        for s in [
+            "SD",
+            "sd card",
+            "SD Card Reader",
+            "SDXC",
+            "SDHC Card",
+            "microSD",
+            "Generic-SD/MMC",
+            "APPLE SD Card Reader Media",
+        ] {
+            assert!(mentions_sd_card(s), "{s:?} should be an SD card");
+        }
+    }
+
+    #[test]
+    fn test_mentions_sd_card_rejects_substrings() {
+        for s in [
+            "",
+            "SSD",
+            "Samsung Portable SSD T7",
+            "USB Drive",
+            "sdb",
+            "sda1",
+        ] {
+            assert!(!mentions_sd_card(s), "{s:?} should not be an SD card");
+        }
+    }
 
     #[test]
     fn test_is_drive_disconnected_all_matching_kinds() {
