@@ -12,9 +12,7 @@ pub async fn write_image<P: ProgressCallback>(
     verify: bool,
     progress_callback: &P,
 ) -> Result<()> {
-    let disk_number = device_id
-        .strip_prefix("\\\\.\\PhysicalDrive")
-        .ok_or_else(|| Error::DeviceNotFound(device_id.to_string()))?;
+    let disk_number = parse_disk_number(device_id)?;
 
     clean_disk(disk_number)?;
 
@@ -230,7 +228,19 @@ fn verify_write(
     Ok(())
 }
 
-fn clean_disk(disk_number: &str) -> Result<()> {
+/// Extract the disk number from a `\\.\PhysicalDriveN` device id.
+///
+/// The number is interpolated into a PowerShell command, so it must be
+/// parsed as an integer rather than passed through as a string.
+fn parse_disk_number(device_id: &str) -> Result<u32> {
+    device_id
+        .strip_prefix("\\\\.\\PhysicalDrive")
+        .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        .and_then(|n| n.parse().ok())
+        .ok_or_else(|| Error::DeviceNotFound(device_id.to_string()))
+}
+
+fn clean_disk(disk_number: u32) -> Result<()> {
     let ps_script = format!(
         "Clear-Disk -Number {} -RemoveData -RemoveOEM -Confirm:$false",
         disk_number
@@ -254,6 +264,45 @@ fn clean_disk(disk_number: &str) -> Result<()> {
 mod tests {
     use super::*;
     use serial_test::serial;
+
+    #[test]
+    fn test_parse_disk_number_valid() {
+        assert_eq!(parse_disk_number("\\\\.\\PhysicalDrive0").unwrap(), 0);
+        assert_eq!(parse_disk_number("\\\\.\\PhysicalDrive12").unwrap(), 12);
+    }
+
+    #[test]
+    fn test_parse_disk_number_rejects_non_numeric() {
+        for device_id in [
+            "\\\\.\\PhysicalDrive",
+            "\\\\.\\PhysicalDrive1; Remove-Item C:\\ -Recurse",
+            "\\\\.\\PhysicalDrive1 ",
+            "\\\\.\\PhysicalDrive+1",
+            "\\\\.\\PhysicalDrive-1",
+            "\\\\.\\PhysicalDrive99999999999",
+            "PhysicalDrive1",
+            "C:",
+        ] {
+            assert!(
+                matches!(parse_disk_number(device_id), Err(Error::DeviceNotFound(_))),
+                "{device_id:?} should be rejected"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_rejects_non_numeric_disk_number() {
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(temp_file.path(), b"test data").unwrap();
+        let image_path = temp_file.path().to_path_buf();
+
+        // Must fail before any PowerShell command runs.
+        let device_id = "\\\\.\\PhysicalDrive1; echo injected";
+
+        let result = write_image(&image_path, device_id, false, &crate::NoOpProgress).await;
+        assert!(matches!(result, Err(Error::DeviceNotFound(_))));
+    }
 
     #[tokio::test]
     #[serial]
