@@ -1036,9 +1036,8 @@ pub async fn create_vm<P: ProgressCallback>(
     let compressed_filename = format!("haos_ova-{}.qcow2.xz", haos_version);
     let compressed_path = cache_dir.join(&compressed_filename);
 
-    // Download the image (no checksum verification for now)
-    crate::download::download_image(&download_url, &compressed_path, None, progress_callback)
-        .await?;
+    // Download the image
+    crate::download::download_image(&download_url, &compressed_path, progress_callback).await?;
 
     // Step 3: Extract the compressed image
     progress_callback.on_progress(FlashProgress {

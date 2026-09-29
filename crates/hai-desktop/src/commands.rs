@@ -170,14 +170,9 @@ pub async fn flash_image(
     let image_filename = format!("haos_{}.img.xz", request.board);
     let compressed_path = cache_dir.join(&image_filename);
 
-    download::download_image(
-        &image.download_url,
-        &compressed_path,
-        Some(&image.sha256),
-        &callback,
-    )
-    .await
-    .map_err(|e| format!("Download failed: {}", e))?;
+    download::download_image(&image.download_url, &compressed_path, &callback)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Extract the image
     let extracted_filename = image_filename.replace(".xz", "");
@@ -185,7 +180,7 @@ pub async fn flash_image(
 
     download::extract_xz(&compressed_path, &extracted_path, &callback)
         .await
-        .map_err(|e| format!("Extraction failed: {}", e))?;
+        .map_err(|e| e.to_string())?;
 
     // Check image size vs device size
     let image_size = tokio::fs::metadata(&extracted_path)
@@ -427,19 +422,14 @@ pub async fn download_utm_image(
     let cache_dir = download::get_cache_dir().map_err(|e| e.to_string())?;
     let compressed_path = cache_dir.join(format!("haos_{}.qcow2.xz", arch));
 
-    download::download_image(
-        &image.download_url,
-        &compressed_path,
-        Some(&image.sha256),
-        &callback,
-    )
-    .await
-    .map_err(|e| format!("Download failed: {}", e))?;
+    download::download_image(&image.download_url, &compressed_path, &callback)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let extracted_path = cache_dir.join(format!("haos_{}.qcow2", arch));
     download::extract_xz(&compressed_path, &extracted_path, &callback)
         .await
-        .map_err(|e| format!("Extraction failed: {}", e))?;
+        .map_err(|e| e.to_string())?;
 
     callback.on_progress(FlashProgress {
         stage: FlashStage::Complete,
@@ -1093,20 +1083,6 @@ mod tests {
         let board = "unknown-board";
         let error_msg = format!("No image found for board: {}", board);
         assert_eq!(error_msg, "No image found for board: unknown-board");
-    }
-
-    #[test]
-    fn test_error_message_format_for_download_failure() {
-        let inner_error = "Network timeout";
-        let error_msg = format!("Download failed: {}", inner_error);
-        assert_eq!(error_msg, "Download failed: Network timeout");
-    }
-
-    #[test]
-    fn test_error_message_format_for_extraction_failure() {
-        let inner_error = "Invalid XZ archive";
-        let error_msg = format!("Extraction failed: {}", inner_error);
-        assert_eq!(error_msg, "Extraction failed: Invalid XZ archive");
     }
 
     #[test]
