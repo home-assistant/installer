@@ -16,6 +16,10 @@ pub async fn write_image<P: ProgressCallback>(
         .strip_prefix("\\\\.\\PhysicalDrive")
         .ok_or_else(|| Error::DeviceNotFound(device_id.to_string()))?;
 
+    // Clear-Disk is destructive, so make sure the device can be opened for
+    // writing (e.g. we are running as Administrator) before wiping it.
+    open_device_for_write(device_id)?;
+
     clean_disk(disk_number)?;
 
     let image_size = std::fs::metadata(image_path)?.len();
@@ -90,15 +94,8 @@ fn write_and_verify(
     Ok(())
 }
 
-fn write_to_device(
-    image_path: &PathBuf,
-    device_path: &str,
-    total_size: u64,
-    progress_tx: &mpsc::Sender<FlashProgress>,
-) -> Result<()> {
-    let mut source = File::open(image_path)?;
-
-    let mut dest = std::fs::OpenOptions::new()
+fn open_device_for_write(device_path: &str) -> Result<File> {
+    std::fs::OpenOptions::new()
         .write(true)
         .open(device_path)
         .map_err(|e| {
@@ -111,7 +108,18 @@ fn write_to_device(
             } else {
                 Error::Io(e)
             }
-        })?;
+        })
+}
+
+fn write_to_device(
+    image_path: &PathBuf,
+    device_path: &str,
+    total_size: u64,
+    progress_tx: &mpsc::Sender<FlashProgress>,
+) -> Result<()> {
+    let mut source = File::open(image_path)?;
+
+    let mut dest = open_device_for_write(device_path)?;
 
     let mut buffer = vec![0u8; WRITE_BUFFER_SIZE];
     let mut bytes_written: u64 = 0;
@@ -262,7 +270,7 @@ mod tests {
         std::fs::write(temp_file.path(), b"test data").unwrap();
         let image_path = temp_file.path().to_path_buf();
 
-        // Fails at clean_disk: the device does not exist.
+        // Fails at the writability check: the device does not exist.
         let device_id = "\\\\.\\PhysicalDrive999";
 
         let result = write_image(&image_path, device_id, false, &crate::NoOpProgress).await;
