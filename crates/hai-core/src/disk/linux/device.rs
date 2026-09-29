@@ -66,17 +66,8 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
             continue;
         }
 
-        // Skip non-removable, non-hotplug devices (likely system drives)
         let is_removable = dev.rm == Some(true) || dev.hotplug == Some(true);
-        if !is_removable {
-            continue;
-        }
-
-        // Skip very small devices (< 1GB)
         let size = dev.size.unwrap_or(0);
-        if size < 1_000_000_000 {
-            continue;
-        }
 
         // Determine device type
         let device_type = determine_device_type(&dev);

@@ -80,7 +80,7 @@ pub fn is_mock_mode() -> bool {
 // Device Commands
 // =============================================================================
 
-/// List available block devices (SD cards, USB drives, etc.)
+/// List all block devices
 #[tauri::command]
 pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
     if is_mock_enabled() {
@@ -98,7 +98,7 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
 ///
 /// `write_image` writes to whatever target it is given, so this lookup is the
 /// safety gate: the device must be one that enumeration reported, and it must
-/// be removable — enumeration can include internal drives on some platforms.
+/// be removable
 fn find_flash_target<'a>(
     devices: &'a [BlockDevice],
     device_id: &str,

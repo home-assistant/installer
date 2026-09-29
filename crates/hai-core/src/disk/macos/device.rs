@@ -98,21 +98,10 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
             Err(_) => continue,
         };
 
-        // Filter: only include removable/ejectable external media
-        // Skip internal drives
-        if disk_info.internal && !disk_info.removable_media {
-            continue;
-        }
-
-        // Must be ejectable or removable
-        if !disk_info.ejectable && !disk_info.removable && !disk_info.removable_media {
-            continue;
-        }
-
-        // Skip very small devices (< 1GB) - likely not real storage
-        if disk_info.size < 1_000_000_000 {
-            continue;
-        }
+        // `Internal` is deliberately not consulted: a built-in SD slot is
+        // internal yet holds removable media, and external USB SSDs report
+        // fixed media but are ejectable.
+        let removable = disk_info.removable || disk_info.removable_media || disk_info.ejectable;
 
         // Determine device type based on bus protocol and other properties
         let device_type = determine_device_type(&disk_info);
@@ -136,7 +125,7 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
             name,
             size: disk_info.size,
             device_type,
-            removable: disk_info.removable || disk_info.removable_media || disk_info.ejectable,
+            removable,
             model,
             vendor,
         });

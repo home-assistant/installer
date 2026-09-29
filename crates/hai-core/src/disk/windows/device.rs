@@ -60,16 +60,18 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
     let mut devices = Vec::new();
 
     for disk in disks {
-        // Skip system and boot drives
-        if disk.is_system == Some(true) || disk.is_boot == Some(true) {
-            continue;
-        }
-
-        // Skip very small drives (< 1GB)
         let size = disk.size.unwrap_or(0);
-        if size < 1_000_000_000 {
-            continue;
-        }
+
+        // Internal drives are reported too; callers decide what to offer
+        // based on the `removable` flag. Get-Disk has no removable bit, so
+        // infer it from the bus, and never treat the running system's own
+        // disk as removable even if it lives on USB.
+        let on_removable_bus = matches!(
+            disk.bus_type.as_deref(),
+            Some("USB") | Some("SD") | Some("MMC")
+        );
+        let is_system = disk.is_system == Some(true) || disk.is_boot == Some(true);
+        let removable = on_removable_bus && !is_system;
 
         // Determine device type based on bus type
         let device_type = determine_device_type(&disk);
@@ -86,10 +88,7 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
             name: friendly_name,
             size,
             device_type,
-            removable: matches!(
-                disk.bus_type.as_deref(),
-                Some("USB") | Some("SD") | Some("MMC")
-            ),
+            removable,
             model,
             vendor,
         });

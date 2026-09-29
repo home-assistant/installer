@@ -5,6 +5,9 @@ import { wizardState } from "../../state/wizard-state.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/drive-card.js";
 
+/** Drives smaller than this (1 GB) are not offered as flash targets. */
+const MIN_DRIVE_SIZE_BYTES = 1_000_000_000;
+
 @customElement("drive-selection-view")
 export class DriveSelectionView extends LitElement {
   static styles = css`
@@ -195,8 +198,11 @@ export class DriveSelectionView extends LitElement {
 
     try {
       const drives = await listBlockDevices();
-      // Filter to only show removable drives
-      this._drives = drives.filter((drive) => drive.removable);
+      // Enumeration reports every disk; the SBC flow only offers removable
+      // ones, and hides tiny ones.
+      this._drives = drives.filter(
+        (drive) => drive.removable && drive.size >= MIN_DRIVE_SIZE_BYTES
+      );
     } catch (err) {
       this._error =
         err instanceof Error ? err.message : "Failed to load drives";

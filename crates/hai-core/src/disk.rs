@@ -77,10 +77,7 @@ async fn run_with_progress<P: ProgressCallback>(
         .map_err(|e| Error::Io(std::io::Error::other(e)))?
 }
 
-/// List all available block devices on the system
-///
-/// Returns removable devices suitable for flashing (SD cards, USB drives, etc.)
-/// Filters out internal and system drives for safety.
+/// List all block devices on the system
 pub async fn list_devices() -> Result<Vec<BlockDevice>> {
     imp::list_devices().await
 }
