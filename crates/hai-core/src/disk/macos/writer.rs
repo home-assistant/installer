@@ -160,7 +160,12 @@ fn write_and_verify(
     if verify {
         let checksum =
             source_checksum.expect("Checksum should have been computed when verify=true");
-        verify_device(&mut device, &checksum, device_path, layout, &progress_tx)?;
+        verify_device(&mut device, &checksum, device_path, layout, &progress_tx).map_err(|e| {
+            match e {
+                Error::VerificationFailed(_) | Error::DriveDisconnected => e,
+                other => Error::VerificationFailed(other.to_string()),
+            }
+        })?;
     }
 
     // The device must be closed before diskutil can eject it.
@@ -308,6 +313,11 @@ fn receive_descriptor(socket: &UnixStream) -> std::io::Result<Handshake> {
 
         // Any extra descriptors are closed when the iterator drops.
         if let Some(device) = descriptors.into_iter().next() {
+            // Descriptors received over SCM_RIGHTS are inheritable on macOS —
+            // there is no MSG_CMSG_CLOEXEC to set close-on-exec atomically. Set
+            // it now so a process spawned during the flash cannot inherit this
+            // privileged raw-disk handle; fail the handshake if it cannot be set.
+            rustix::io::fcntl_setfd(&device, rustix::io::FdFlags::CLOEXEC)?;
             return Ok(Handshake::Descriptor(device));
         }
     }
@@ -633,6 +643,11 @@ mod tests {
         let Handshake::Descriptor(fd) = handshake else {
             panic!("expected a descriptor");
         };
+
+        // The privileged descriptor must not leak into spawned children.
+        assert!(rustix::io::fcntl_getfd(&fd)
+            .unwrap()
+            .contains(rustix::io::FdFlags::CLOEXEC));
 
         // An independent handle: it outlives the original.
         drop(temp);
