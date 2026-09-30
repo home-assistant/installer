@@ -105,7 +105,7 @@ fn determine_device_type(disk: &PowerShellDisk) -> DeviceType {
     match bus {
         "USB" => DeviceType::UsbDrive,
         "SD" | "MMC" => DeviceType::SdCard,
-        "NVMe" => DeviceType::NvMe,
+        "NVMe" => DeviceType::Nvme,
         "SATA" | "ATA" => {
             if media == "SSD" {
                 DeviceType::Ssd

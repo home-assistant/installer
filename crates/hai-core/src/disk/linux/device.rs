@@ -124,7 +124,7 @@ pub(super) fn determine_device_type(dev: &LsblkDevice) -> DeviceType {
     // Check transport type
     match transport {
         "usb" => DeviceType::UsbDrive,
-        "nvme" => DeviceType::NvMe,
+        "nvme" => DeviceType::Nvme,
         "sata" | "ata" => {
             if model.contains("ssd") {
                 DeviceType::Ssd
@@ -199,7 +199,7 @@ mod tests {
             vendor: Some("Samsung".to_string()),
             hotplug: Some(false),
         };
-        assert_eq!(determine_device_type(&dev), DeviceType::NvMe);
+        assert_eq!(determine_device_type(&dev), DeviceType::Nvme);
     }
 
     #[test]

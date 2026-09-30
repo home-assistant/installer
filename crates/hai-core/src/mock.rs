@@ -55,7 +55,7 @@ pub fn get_mock_block_devices() -> Vec<BlockDevice> {
             id: "mock-nvme-500gb".to_string(),
             name: "NVMe Drive 500GB".to_string(),
             size: 500 * 1024 * 1024 * 1024, // 500 GB
-            device_type: DeviceType::NvMe,
+            device_type: DeviceType::Nvme,
             removable: false,
             model: Some("970 EVO Plus".to_string()),
             vendor: Some("Samsung".to_string()),
@@ -533,7 +533,7 @@ mod tests {
             .iter()
             .any(|d| d.device_type == DeviceType::UsbDrive);
         let has_ssd = devices.iter().any(|d| d.device_type == DeviceType::Ssd);
-        let has_nvme = devices.iter().any(|d| d.device_type == DeviceType::NvMe);
+        let has_nvme = devices.iter().any(|d| d.device_type == DeviceType::Nvme);
 
         assert!(has_sd_card, "Should have at least one SD card");
         assert!(has_usb, "Should have at least one USB drive");

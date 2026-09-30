@@ -165,7 +165,7 @@ pub(super) fn determine_device_type(info: &DiskUtilInfo) -> DeviceType {
         "USB" => DeviceType::UsbDrive,
         "PCI-Express" | "PCI" => {
             if info.solid_state {
-                DeviceType::NvMe
+                DeviceType::Nvme
             } else {
                 DeviceType::Ssd
             }
@@ -326,7 +326,7 @@ mod tests {
             bus_protocol: Some("PCI-Express".to_string()),
             media_type: None,
         };
-        assert_eq!(determine_device_type(&info), DeviceType::NvMe);
+        assert_eq!(determine_device_type(&info), DeviceType::Nvme);
     }
 
     #[test]
