@@ -10,9 +10,11 @@
 pub mod disk;
 pub mod download;
 pub mod error;
+pub mod manifest;
 pub mod types;
 
-#[cfg(feature = "mock")]
+// Mock mode fakes successful flashes, so it is never compiled into release builds.
+#[cfg(debug_assertions)]
 pub mod mock;
 
 #[cfg(feature = "proxmox")]
@@ -65,7 +67,13 @@ impl ProgressCallback for NoOpProgress {
 ///
 /// Mock mode is enabled when the `HA_INSTALLER_MOCK` environment variable
 /// is set to "1" or "true". This is useful for testing and development.
+///
+/// Always `false` in release builds, where the mock module is not compiled.
 pub fn is_mock_enabled() -> bool {
+    if !cfg!(debug_assertions) {
+        return false;
+    }
+
     match std::env::var("HA_INSTALLER_MOCK") {
         Ok(val) => val == "1" || val.to_lowercase() == "true",
         Err(_) => false,

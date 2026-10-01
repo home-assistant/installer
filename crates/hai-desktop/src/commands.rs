@@ -3,8 +3,10 @@
 //! This module provides Tauri IPC commands that wrap the hai-core library.
 //! It handles the bridge between Tauri's Channel<T> and hai-core's ProgressCallback trait.
 
+#[cfg(debug_assertions)]
+use hai_core::mock;
 use hai_core::{
-    disk, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, FlashProgress, FlashStage,
+    disk, download, is_mock_enabled, BlockDevice, DeviceManifest, FlashProgress, FlashStage,
     HaosRelease, ImageFormat, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
     ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
 };
@@ -83,11 +85,12 @@ pub fn is_mock_mode() -> bool {
 /// List available block devices (SD cards, USB drives, etc.)
 #[tauri::command]
 pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
-        Ok(mock::get_mock_block_devices())
-    } else {
-        disk::list_devices().await.map_err(|e| e.to_string())
+        return Ok(mock::get_mock_block_devices());
     }
+
+    disk::list_devices().await.map_err(|e| e.to_string())
 }
 
 // =============================================================================
@@ -126,6 +129,7 @@ pub async fn flash_image(
     request: FlashRequest,
     progress_channel: Channel<FlashProgress>,
 ) -> Result<FlashResult, String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         simulate_flash_progress(&progress_channel).await;
         return Ok(FlashResult {
@@ -250,6 +254,7 @@ pub async fn flash_image(
 }
 
 /// Simulate flash progress for mock mode
+#[cfg(debug_assertions)]
 async fn simulate_flash_progress(channel: &Channel<FlashProgress>) {
     let total_bytes: u64 = 2 * 1024 * 1024 * 1024;
     let stages: [(FlashStage, &str, u32); 4] = [
@@ -301,6 +306,7 @@ async fn simulate_flash_progress(channel: &Channel<FlashProgress>) {
 /// Get the latest HAOS release information
 #[tauri::command]
 pub async fn get_haos_release(version: Option<String>) -> Result<HaosRelease, String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         return Ok(mock::get_mock_haos_release());
     }
@@ -314,7 +320,19 @@ pub async fn get_haos_release(version: Option<String>) -> Result<HaosRelease, St
 /// Check for application updates
 #[tauri::command]
 pub async fn check_for_updates() -> Result<UpdateInfo, String> {
-    Ok(mock::get_mock_update_info())
+    // TODO: Implement an actual update check
+    Ok(UpdateInfo {
+        update_available: false,
+        current_version: "0.1.0".to_string(),
+        latest_version: "0.1.0".to_string(),
+        download_url: Some(
+            "https://github.com/home-assistant/home-assistant-installer/releases".to_string(),
+        ),
+        release_notes_url: Some(
+            "https://github.com/home-assistant/home-assistant-installer/releases".to_string(),
+        ),
+        is_beta: false,
+    })
 }
 
 /// Get the device manifest
@@ -332,6 +350,7 @@ pub async fn get_manifest() -> Result<DeviceManifest, String> {
 /// Get system information (CPU cores and memory) for VM configuration limits
 #[tauri::command]
 pub fn get_system_info() -> SystemInfo {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         return SystemInfo {
             cpu_cores: 10,
@@ -386,6 +405,7 @@ pub async fn download_utm_image(
 ) -> Result<String, String> {
     use hai_core::utm;
 
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         simulate_utm_download_progress(&progress_channel).await;
         let mock_path = "/tmp/mock-haos.qcow2";
@@ -457,6 +477,7 @@ pub async fn download_utm_image(
 }
 
 #[cfg(target_os = "macos")]
+#[cfg(debug_assertions)]
 async fn simulate_utm_download_progress(channel: &Channel<FlashProgress>) {
     let stages: [(FlashStage, &str, u32); 2] = [
         (FlashStage::Downloading, "Downloading HAOS image...", 70),
@@ -541,6 +562,7 @@ pub fn get_mac_architecture() -> String {
 #[tauri::command]
 #[cfg(target_os = "macos")]
 pub async fn create_utm_vm(config: hai_core::UtmVmConfig) -> Result<String, String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         return Ok("mock-vm-id-12345".to_string());
     }
@@ -562,6 +584,7 @@ pub fn create_utm_vm(_config: serde_json::Value) -> Result<String, String> {
 #[tauri::command]
 #[cfg(target_os = "macos")]
 pub fn start_utm_vm(_vm_id: String) -> Result<(), String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         return Ok(());
     }
@@ -579,6 +602,7 @@ pub fn start_utm_vm(_vm_id: String) -> Result<(), String> {
 #[tauri::command]
 #[cfg(target_os = "macos")]
 pub fn resize_utm_vm_disk(_vm_id: String, _size_gb: u32) -> Result<(), String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         return Ok(());
     }
@@ -596,6 +620,7 @@ pub fn resize_utm_vm_disk(_vm_id: String, _size_gb: u32) -> Result<(), String> {
 #[tauri::command]
 #[cfg(target_os = "macos")]
 pub fn list_utm_vms() -> Result<Vec<String>, String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         return Ok(vec!["Home Assistant".to_string()]);
     }
@@ -613,6 +638,7 @@ pub fn list_utm_vms() -> Result<Vec<String>, String> {
 #[tauri::command]
 #[cfg(target_os = "macos")]
 pub fn get_utm_vm_status(_vm_id: String) -> Result<VmStatusInfo, String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         return Ok(VmStatusInfo {
             status: "started".to_string(),
@@ -639,6 +665,7 @@ pub fn get_utm_vm_status(_vm_id: String) -> Result<VmStatusInfo, String> {
 /// Check if Home Assistant webserver is ready
 #[tauri::command]
 pub async fn check_ha_ready(ip_address: String) -> bool {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         return true;
     }
@@ -656,6 +683,7 @@ pub async fn check_ha_ready(ip_address: String) -> bool {
 /// Check if Home Assistant has finished updating
 #[tauri::command]
 pub async fn check_ha_updated(ip_address: String) -> bool {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         return true;
     }
@@ -682,6 +710,7 @@ pub async fn check_ha_updated(ip_address: String) -> bool {
 /// Connect to a Proxmox VE server
 #[tauri::command]
 pub async fn proxmox_connect(credentials: ProxmoxCredentials) -> Result<ProxmoxSession, String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         tokio::time::sleep(Duration::from_millis(1500)).await;
         return Ok(ProxmoxSession {
@@ -711,6 +740,7 @@ pub async fn proxmox_connect(credentials: ProxmoxCredentials) -> Result<ProxmoxS
 /// List available nodes on Proxmox
 #[tauri::command]
 pub async fn proxmox_list_nodes(session: ProxmoxSession) -> Result<Vec<ProxmoxNode>, String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         tokio::time::sleep(Duration::from_millis(500)).await;
         return Ok(vec![
@@ -742,6 +772,7 @@ pub async fn proxmox_list_storage(
     session: ProxmoxSession,
     node: String,
 ) -> Result<Vec<ProxmoxStorage>, String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         tokio::time::sleep(Duration::from_millis(500)).await;
         return Ok(vec![
@@ -779,6 +810,7 @@ pub async fn proxmox_list_storage(
 /// Get the next available VM ID on Proxmox
 #[tauri::command]
 pub async fn proxmox_get_next_vm_id(session: ProxmoxSession) -> Result<u32, String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         tokio::time::sleep(Duration::from_millis(200)).await;
         return Ok(100);
@@ -796,6 +828,7 @@ pub async fn proxmox_create_vm(
     config: ProxmoxVmConfig,
     progress_channel: Channel<FlashProgress>,
 ) -> Result<ProxmoxVmResult, String> {
+    #[cfg(debug_assertions)]
     if is_mock_enabled() {
         simulate_proxmox_install_progress(&progress_channel).await;
         return Ok(ProxmoxVmResult {
@@ -811,6 +844,7 @@ pub async fn proxmox_create_vm(
         .map_err(|e| e.to_string())
 }
 
+#[cfg(debug_assertions)]
 async fn simulate_proxmox_install_progress(channel: &Channel<FlashProgress>) {
     let stages: [(FlashStage, &str, u32); 5] = [
         (FlashStage::Downloading, "Downloading HAOS image...", 40),

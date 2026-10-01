@@ -40,19 +40,10 @@ pub fn get_cache_dir() -> Result<PathBuf> {
 }
 
 /// Fetch the device manifest
-///
-/// In mock mode, returns mock data. Otherwise fetches from the network.
 pub async fn get_device_manifest() -> Result<DeviceManifest> {
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            return Ok(crate::mock::get_mock_manifest());
-        }
-    }
-
-    // For now, return the mock manifest as a fallback
+    // For now, return the manifest bundled with the installer
     // TODO: Implement actual network fetch
-    Ok(crate::mock::get_mock_manifest())
+    Ok(crate::manifest::bundled_manifest())
 }
 
 /// Check if cache should be skipped via environment variable
@@ -147,7 +138,7 @@ async fn get_stable_version_from_url(url: &str) -> Result<StableVersionInfo> {
 
 /// Fetch the stable version info from Home Assistant
 pub async fn get_stable_version() -> Result<StableVersionInfo> {
-    #[cfg(feature = "mock")]
+    #[cfg(debug_assertions)]
     {
         if crate::is_mock_enabled() {
             return Ok(crate::mock::get_mock_stable_version());
@@ -200,7 +191,7 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
 
 /// Fetch a specific HAOS release by version
 pub async fn fetch_release(version: &str) -> Result<HaosRelease> {
-    #[cfg(feature = "mock")]
+    #[cfg(debug_assertions)]
     {
         if crate::is_mock_enabled() {
             return Ok(crate::mock::get_mock_haos_release());
@@ -212,7 +203,7 @@ pub async fn fetch_release(version: &str) -> Result<HaosRelease> {
 
 /// Fetch HAOS release info for a specific version (or "latest")
 pub async fn get_haos_release(version: &str) -> Result<HaosRelease> {
-    #[cfg(feature = "mock")]
+    #[cfg(debug_assertions)]
     {
         if crate::is_mock_enabled() {
             return Ok(crate::mock::get_mock_haos_release());
@@ -314,7 +305,7 @@ pub async fn download_image<P: ProgressCallback>(
     expected_sha256: Option<&str>,
     progress_callback: &P,
 ) -> Result<()> {
-    #[cfg(feature = "mock")]
+    #[cfg(debug_assertions)]
     {
         if crate::is_mock_enabled() {
             // Simulate download progress
@@ -428,7 +419,7 @@ pub async fn extract_xz<P: ProgressCallback>(
 ) -> Result<()> {
     use std::sync::mpsc;
 
-    #[cfg(feature = "mock")]
+    #[cfg(debug_assertions)]
     {
         if crate::is_mock_enabled() {
             // Simulate extraction progress

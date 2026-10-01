@@ -52,7 +52,7 @@ mod macos {
     const UTM_APP_PATH: &str = "/Applications/UTM.app";
 
     pub async fn check_utm_status() -> Result<UtmStatus> {
-        #[cfg(feature = "mock")]
+        #[cfg(debug_assertions)]
         {
             if crate::is_mock_enabled() {
                 return Ok(UtmStatus {
@@ -154,7 +154,7 @@ end tell"#,
         config: &UtmVmConfig,
         progress_callback: &P,
     ) -> Result<UtmVmResult> {
-        #[cfg(feature = "mock")]
+        #[cfg(debug_assertions)]
         {
             if crate::is_mock_enabled() {
                 // Simulate VM creation progress

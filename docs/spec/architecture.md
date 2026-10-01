@@ -152,11 +152,12 @@ The shared library containing all business logic.
 | `error` | Unified error handling with `thiserror` |
 | `devices` | Platform-specific block device enumeration |
 | `download` | Image download, verification, extraction, caching |
+| `manifest` | Device manifest bundled with the installer |
 | `flash` | Disk writing with progress and verification |
 | `proxmox` | Proxmox VE API client |
 | `utm` | UTM automation via AppleScript (macOS) |
 | `network` | Connectivity and HA readiness checks |
-| `mock` | Mock data for testing |
+| `mock` | Mock data for testing (debug builds only) |
 
 ### Progress Callback Trait
 

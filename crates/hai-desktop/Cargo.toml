@@ -18,7 +18,7 @@ tauri-build = { workspace = true }
 
 [dependencies]
 # Internal crates
-hai-core = { workspace = true, features = ["proxmox", "utm", "mock"] }
+hai-core = { workspace = true, features = ["proxmox", "utm"] }
 
 # Tauri
 tauri = { workspace = true }

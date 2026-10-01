@@ -48,7 +48,7 @@ npm run test:e2e      # Run E2E tests
 
 ### Mock Mode
 
-For testing without real hardware:
+For testing without real hardware (debug builds only; mock mode is not compiled into release builds):
 
 ```bash
 HA_INSTALLER_MOCK=true npm run tauri dev

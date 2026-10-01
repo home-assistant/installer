@@ -68,7 +68,7 @@ fn version_meets_minimum(version: (u32, u32, u32), minimum: (u32, u32, u32)) -> 
 /// This function also verifies the Proxmox version is at least 8.4.1,
 /// which is required for disk image import via the API.
 pub async fn authenticate(credentials: &ProxmoxCredentials) -> Result<ProxmoxSession> {
-    #[cfg(feature = "mock")]
+    #[cfg(debug_assertions)]
     {
         if crate::is_mock_enabled() {
             return Ok(ProxmoxSession {
@@ -214,7 +214,7 @@ pub async fn authenticate(credentials: &ProxmoxCredentials) -> Result<ProxmoxSes
 
 /// List available nodes on the Proxmox cluster
 pub async fn list_nodes(session: &ProxmoxSession) -> Result<Vec<ProxmoxNode>> {
-    #[cfg(feature = "mock")]
+    #[cfg(debug_assertions)]
     {
         if crate::is_mock_enabled() {
             return Ok(vec![
@@ -313,7 +313,7 @@ pub async fn list_nodes(session: &ProxmoxSession) -> Result<Vec<ProxmoxNode>> {
 
 /// List available storage on a node
 pub async fn list_storage(session: &ProxmoxSession, node: &str) -> Result<Vec<ProxmoxStorage>> {
-    #[cfg(feature = "mock")]
+    #[cfg(debug_assertions)]
     {
         if crate::is_mock_enabled() {
             let _ = node;
@@ -426,7 +426,7 @@ pub async fn get_storage_name(session: &ProxmoxSession, node: &str) -> Result<St
 
 /// Get the next available VM ID on the Proxmox server.
 pub async fn get_next_vm_id(session: &ProxmoxSession) -> Result<u32> {
-    #[cfg(feature = "mock")]
+    #[cfg(debug_assertions)]
     {
         if crate::is_mock_enabled() {
             return Ok(100);
@@ -960,7 +960,7 @@ pub async fn create_vm<P: ProgressCallback>(
     config: &ProxmoxVmConfig,
     progress_callback: &P,
 ) -> Result<ProxmoxVmResult> {
-    #[cfg(feature = "mock")]
+    #[cfg(debug_assertions)]
     {
         if crate::is_mock_enabled() {
             // Simulate VM creation progress
