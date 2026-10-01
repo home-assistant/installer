@@ -38,4 +38,3 @@ reqwest = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }
 tempfile = { workspace = true }
 serial_test = { workspace = true }
-mockito = { workspace = true }
