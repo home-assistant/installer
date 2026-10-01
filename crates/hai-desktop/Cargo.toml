@@ -31,9 +31,6 @@ serde_json = { workspace = true }
 # Async runtime
 tokio = { workspace = true }
 
-# HTTP client (for HA status checks)
-reqwest = { workspace = true }
-
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
 tempfile = { workspace = true }
