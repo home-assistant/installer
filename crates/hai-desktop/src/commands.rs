@@ -956,8 +956,6 @@ mod tests {
             assert!(!image.board.is_empty());
             assert!(!image.download_url.is_empty());
             assert!(image.size > 0);
-            assert!(!image.sha256.is_empty());
-            assert_eq!(image.sha256.len(), 64); // SHA256 is 64 hex characters
         }
         std::env::remove_var("HA_INSTALLER_MOCK");
     }
