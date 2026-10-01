@@ -362,6 +362,28 @@ pub struct UtmStatus {
     pub path: Option<String>,
 }
 
+// ============================================================================
+// Host / VM status types
+// ============================================================================
+
+/// Host system information (CPU cores and memory)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemInfo {
+    /// Number of logical CPU cores.
+    pub cpu_cores: usize,
+    /// Total memory in megabytes.
+    pub memory_mb: u64,
+}
+
+/// Status of a provisioned VM
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VmStatusInfo {
+    /// VM run status (e.g. "started", "unknown").
+    pub status: String,
+    /// The VM's IP address, if known.
+    pub ip_address: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
