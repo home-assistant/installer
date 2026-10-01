@@ -24,7 +24,7 @@ use crate::types::{
     FlashProgress, FlashStage, ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage,
     ProxmoxVmConfig, ProxmoxVmResult,
 };
-use crate::ProgressCallback;
+use crate::{Backend, ProgressCallback, ProxmoxBackend};
 
 /// Minimum required Proxmox VE version for disk image import via API.
 /// Version 8.4.1 added support for uploading qcow2/raw/img/vmdk files with content=import.
@@ -1141,6 +1141,37 @@ pub async fn create_vm<P: ProgressCallback>(
         node: config.node.clone(),
         ip_address,
     })
+}
+
+impl ProxmoxBackend for Backend {
+    async fn authenticate(&self, credentials: &ProxmoxCredentials) -> Result<ProxmoxSession> {
+        authenticate(credentials).await
+    }
+
+    async fn list_nodes(&self, session: &ProxmoxSession) -> Result<Vec<ProxmoxNode>> {
+        list_nodes(session).await
+    }
+
+    async fn list_storage(
+        &self,
+        session: &ProxmoxSession,
+        node: &str,
+    ) -> Result<Vec<ProxmoxStorage>> {
+        list_storage(session, node).await
+    }
+
+    async fn get_next_vm_id(&self, session: &ProxmoxSession) -> Result<u32> {
+        get_next_vm_id(session).await
+    }
+
+    async fn create_vm<P: ProgressCallback>(
+        &self,
+        session: &ProxmoxSession,
+        config: &ProxmoxVmConfig,
+        progress_callback: &P,
+    ) -> Result<ProxmoxVmResult> {
+        create_vm(session, config, progress_callback).await
+    }
 }
 
 #[cfg(test)]

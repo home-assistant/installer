@@ -6,8 +6,8 @@
 
 use crate::error::{Error, Result};
 use crate::types::{BlockDevice, DeviceType, FlashProgress, FlashStage};
-use crate::ProgressCallback;
-use std::path::PathBuf;
+use crate::{Backend, DeviceBackend, ProgressCallback};
+use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "linux")]
 #[path = "disk/linux/mod.rs"]
@@ -104,14 +104,37 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
 
 /// Write an image file to a block device with progress updates
 pub async fn write_image<P: ProgressCallback>(
-    image_path: &PathBuf,
+    image_path: &Path,
     device_id: &str,
     verify: bool,
     progress_callback: &P,
 ) -> Result<()> {
     std::fs::metadata(image_path)?;
 
-    imp::write_image(image_path, device_id, verify, progress_callback).await
+    // Platform writers move an owned copy of the path into a blocking task.
+    imp::write_image(
+        &image_path.to_path_buf(),
+        device_id,
+        verify,
+        progress_callback,
+    )
+    .await
+}
+
+impl DeviceBackend for Backend {
+    async fn list_devices(&self) -> Result<Vec<BlockDevice>> {
+        list_devices().await
+    }
+
+    async fn write_image<P: ProgressCallback>(
+        &self,
+        image_path: &Path,
+        device_id: &str,
+        verify: bool,
+        progress_callback: &P,
+    ) -> Result<()> {
+        write_image(image_path, device_id, verify, progress_callback).await
+    }
 }
 
 #[cfg(test)]

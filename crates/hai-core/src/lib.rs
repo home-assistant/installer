@@ -7,6 +7,12 @@
 //! The library is designed to be frontend-agnostic, supporting both the
 //! Tauri desktop application and potential TUI implementations.
 
+// The backend traits use `async fn`. They are only ever used through the
+// concrete `Backend` type (static dispatch, never `dyn`), so the returned
+// futures' `Send`-ness is inferred at each call site. The missing `Send` bound
+// the lint warns about therefore cannot bite us.
+#![allow(async_fn_in_trait)]
+
 pub mod disk;
 pub mod download;
 pub mod error;
@@ -23,6 +29,108 @@ pub mod utm;
 
 pub use error::{Error, Result};
 pub use types::*;
+
+use std::path::{Path, PathBuf};
+
+// ===========================================================================
+// Backend traits
+// ===========================================================================
+//
+// One trait per backend concern. They describe the surface the application
+// uses from hai-core, so that a frontend can be wired to an alternative
+// implementation (for example a mock) without touching the domain modules.
+
+/// Release metadata and image download.
+pub trait ReleaseSource {
+    /// Fetch the device manifest (list of supported boards).
+    async fn get_device_manifest(&self) -> Result<DeviceManifest>;
+
+    /// Fetch a HAOS release by version, or the latest when `version == "latest"`.
+    async fn get_haos_release(&self, version: &str) -> Result<HaosRelease>;
+
+    /// Download an image to `dest_path`, reporting progress.
+    async fn download_image<P: ProgressCallback>(
+        &self,
+        url: &str,
+        dest_path: &Path,
+        progress_callback: &P,
+    ) -> Result<()>;
+
+    /// Extract a `.xz` archive to `dest_path`, reporting progress.
+    async fn extract_xz<P: ProgressCallback>(
+        &self,
+        archive_path: &Path,
+        dest_path: &Path,
+        progress_callback: &P,
+    ) -> Result<()>;
+
+    /// Directory where downloaded images are cached.
+    fn cache_dir(&self) -> Result<PathBuf>;
+}
+
+/// Block-device enumeration and raw image writing.
+pub trait DeviceBackend {
+    /// List block devices suitable for flashing.
+    async fn list_devices(&self) -> Result<Vec<BlockDevice>>;
+
+    /// Write an image to a device, reporting progress.
+    async fn write_image<P: ProgressCallback>(
+        &self,
+        image_path: &Path,
+        device_id: &str,
+        verify: bool,
+        progress_callback: &P,
+    ) -> Result<()>;
+}
+
+/// Proxmox VE provisioning.
+pub trait ProxmoxBackend {
+    /// Authenticate and verify the server meets the minimum version.
+    async fn authenticate(&self, credentials: &ProxmoxCredentials) -> Result<ProxmoxSession>;
+
+    /// List cluster nodes.
+    async fn list_nodes(&self, session: &ProxmoxSession) -> Result<Vec<ProxmoxNode>>;
+
+    /// List storage available on a node.
+    async fn list_storage(
+        &self,
+        session: &ProxmoxSession,
+        node: &str,
+    ) -> Result<Vec<ProxmoxStorage>>;
+
+    /// Get the next free VM id.
+    async fn get_next_vm_id(&self, session: &ProxmoxSession) -> Result<u32>;
+
+    /// Create a Home Assistant VM, reporting progress.
+    async fn create_vm<P: ProgressCallback>(
+        &self,
+        session: &ProxmoxSession,
+        config: &ProxmoxVmConfig,
+        progress_callback: &P,
+    ) -> Result<ProxmoxVmResult>;
+}
+
+/// UTM provisioning (macOS).
+pub trait UtmBackend {
+    /// Check whether UTM is installed and report its status.
+    async fn check_utm_status(&self) -> Result<UtmStatus>;
+
+    /// Create a Home Assistant VM in UTM, reporting progress.
+    async fn create_vm<P: ProgressCallback>(
+        &self,
+        config: &UtmVmConfig,
+        progress_callback: &P,
+    ) -> Result<UtmVmResult>;
+}
+
+/// hai-core's production backend.
+///
+/// Implements the backend traits by delegating to the domain modules. Each
+/// `impl` lives in the module it forwards to: `ReleaseSource` in [`download`],
+/// `DeviceBackend` in [`disk`], `ProxmoxBackend` in [`proxmox`] and
+/// `UtmBackend` in [`utm`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Backend;
 
 /// Trait for receiving progress updates during long-running operations.
 ///
