@@ -1670,7 +1670,6 @@ name = "hai-desktop"
 version = "0.1.0"
 dependencies = [
  "hai-core",
- "mockito",
  "reqwest",
  "serde",
  "serde_json",

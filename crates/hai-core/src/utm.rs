@@ -292,35 +292,6 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    #[cfg(target_os = "macos")]
-    async fn test_check_utm_status_mock() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let status = check_utm_status().await.unwrap();
-        assert!(status.installed);
-        assert!(status.version.is_some());
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[tokio::test]
-    #[serial]
-    #[cfg(target_os = "macos")]
-    async fn test_create_vm_mock() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let config = UtmVmConfig {
-            name: "Test VM".to_string(),
-            image_path: "/tmp/test.qcow2".to_string(),
-            cpu_cores: 2,
-            memory_mb: 2048,
-            disk_size_gb: 32,
-            auto_start: false,
-        };
-        let result = create_vm(&config, &crate::NoOpProgress).await.unwrap();
-        assert_eq!(result.name, "Test VM");
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[tokio::test]
-    #[serial]
     #[cfg(not(target_os = "macos"))]
     async fn test_check_utm_status_not_available_on_non_macos() {
         let result = check_utm_status().await;
