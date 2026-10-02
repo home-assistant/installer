@@ -7,7 +7,7 @@ use crate::error::{Error, Result};
 #[cfg(target_os = "macos")]
 use crate::types::{FlashProgress, FlashStage};
 use crate::types::{UtmStatus, UtmVmConfig, UtmVmResult};
-use crate::ProgressCallback;
+use crate::{Backend, ProgressCallback, UtmBackend};
 
 /// Check if UTM is installed and get its status
 pub async fn check_utm_status() -> Result<UtmStatus> {
@@ -282,6 +282,20 @@ end tell"#,
                 config.name
             )),
         })
+    }
+}
+
+impl UtmBackend for Backend {
+    async fn check_utm_status(&self) -> Result<UtmStatus> {
+        check_utm_status().await
+    }
+
+    async fn create_vm<P: ProgressCallback>(
+        &self,
+        config: &UtmVmConfig,
+        progress_callback: &P,
+    ) -> Result<UtmVmResult> {
+        create_vm(config, progress_callback).await
     }
 }
 

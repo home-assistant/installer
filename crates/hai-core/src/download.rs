@@ -8,7 +8,7 @@ use crate::types::{
     DeviceManifest, FlashProgress, FlashStage, GitHubRelease, HaosImage, HaosRelease, ImageFormat,
     StableVersionInfo, UpdateInfo,
 };
-use crate::ProgressCallback;
+use crate::{Backend, ProgressCallback, ReleaseSource};
 use directories::ProjectDirs;
 use futures_util::StreamExt;
 use std::path::{Path, PathBuf};
@@ -311,7 +311,7 @@ pub fn find_image_for_board<'a>(
 /// Download an image file with progress updates
 pub async fn download_image<P: ProgressCallback>(
     url: &str,
-    dest_path: &PathBuf,
+    dest_path: &Path,
     progress_callback: &P,
 ) -> Result<()> {
     #[cfg(feature = "mock")]
@@ -518,6 +518,38 @@ pub async fn extract_xz<P: ProgressCallback>(
     });
 
     Ok(())
+}
+
+impl ReleaseSource for Backend {
+    async fn get_device_manifest(&self) -> Result<DeviceManifest> {
+        get_device_manifest().await
+    }
+
+    async fn get_haos_release(&self, version: &str) -> Result<HaosRelease> {
+        get_haos_release(version).await
+    }
+
+    async fn download_image<P: ProgressCallback>(
+        &self,
+        url: &str,
+        dest_path: &Path,
+        progress_callback: &P,
+    ) -> Result<()> {
+        download_image(url, dest_path, progress_callback).await
+    }
+
+    async fn extract_xz<P: ProgressCallback>(
+        &self,
+        archive_path: &Path,
+        dest_path: &Path,
+        progress_callback: &P,
+    ) -> Result<()> {
+        extract_xz(archive_path, dest_path, progress_callback).await
+    }
+
+    fn cache_dir(&self) -> Result<PathBuf> {
+        get_cache_dir()
+    }
 }
 
 #[cfg(test)]

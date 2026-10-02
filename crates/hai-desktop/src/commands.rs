@@ -4,12 +4,17 @@
 //! It handles the bridge between Tauri's Channel<T> and hai-core's ProgressCallback trait.
 
 use hai_core::{
-    disk, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, FlashProgress, FlashStage,
-    HaosRelease, ImageFormat, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
-    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
+    download, is_mock_enabled, mock, Backend, BlockDevice, DeviceBackend, DeviceManifest,
+    FlashProgress, FlashStage, HaosRelease, ImageFormat, ProgressCallback, ProxmoxBackend,
+    ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig,
+    ProxmoxVmResult, ReleaseSource, UpdateInfo,
 };
 use std::time::Duration;
 use tauri::ipc::Channel;
+
+// Only the macOS-only UTM commands call through this trait.
+#[cfg(target_os = "macos")]
+use hai_core::UtmBackend;
 
 // =============================================================================
 // Tauri Progress Callback Adapter
@@ -86,7 +91,7 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
     if is_mock_enabled() {
         Ok(mock::get_mock_block_devices())
     } else {
-        disk::list_devices().await.map_err(|e| e.to_string())
+        Backend.list_devices().await.map_err(|e| e.to_string())
     }
 }
 
@@ -135,8 +140,24 @@ pub async fn flash_image(
         });
     }
 
-    let start_time = std::time::Instant::now();
     let callback = TauriProgressCallback::new(&progress_channel);
+    run_flash(&Backend, &request, &callback).await
+}
+
+/// Download, extract, and write the image for `request`.
+///
+/// Generic over the backend so the whole flow can run against any
+/// `ReleaseSource + DeviceBackend` implementation.
+async fn run_flash<B, P>(
+    backend: &B,
+    request: &FlashRequest,
+    callback: &P,
+) -> Result<FlashResult, String>
+where
+    B: ReleaseSource + DeviceBackend,
+    P: ProgressCallback,
+{
+    let start_time = std::time::Instant::now();
 
     // Send initial progress
     callback.on_progress(FlashProgress {
@@ -148,7 +169,8 @@ pub async fn flash_image(
     });
 
     // Fetch the latest HAOS release
-    let release = download::get_haos_release("latest")
+    let release = backend
+        .get_haos_release("latest")
         .await
         .map_err(|e| format!("Failed to fetch release info: {}", e))?;
 
@@ -166,11 +188,14 @@ pub async fn flash_image(
     });
 
     // Get cache directory and download
-    let cache_dir = download::get_cache_dir().map_err(|e| format!("Cache error: {}", e))?;
+    let cache_dir = backend
+        .cache_dir()
+        .map_err(|e| format!("Cache error: {}", e))?;
     let image_filename = format!("haos_{}.img.xz", request.board);
     let compressed_path = cache_dir.join(&image_filename);
 
-    download::download_image(&image.download_url, &compressed_path, &callback)
+    backend
+        .download_image(&image.download_url, &compressed_path, callback)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -178,7 +203,8 @@ pub async fn flash_image(
     let extracted_filename = image_filename.replace(".xz", "");
     let extracted_path = cache_dir.join(&extracted_filename);
 
-    download::extract_xz(&compressed_path, &extracted_path, &callback)
+    backend
+        .extract_xz(&compressed_path, &extracted_path, callback)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -188,7 +214,8 @@ pub async fn flash_image(
         .map_err(|e| format!("Failed to get image size: {}", e))?
         .len();
 
-    let device_list = disk::list_devices()
+    let device_list = backend
+        .list_devices()
         .await
         .map_err(|e| format!("Failed to list devices: {}", e))?;
 
@@ -203,26 +230,27 @@ pub async fn flash_image(
     }
 
     // Write to device
-    disk::write_image(
-        &extracted_path,
-        &request.device_id,
-        request.verify,
-        &callback,
-    )
-    .await
-    .map_err(|e| match e {
-        // Verify-phase failures are tagged VerificationFailed; the rest are writes.
-        hai_core::Error::VerificationFailed(msg) => format!("Verification failed: {}", msg),
-        // Already carries its own "Disk service unavailable:" prefix.
-        err @ hai_core::Error::DiskServiceUnavailable(_) => err.to_string(),
-        // A disconnect doesn't require a prefix
-        err @ hai_core::Error::DriveDisconnected => err.to_string(),
-        // Self-explanatory messages; a "Write failed:" prefix would bury them.
-        err @ hai_core::Error::ImageTooLarge { .. } => err.to_string(),
-        err @ hai_core::Error::Cancelled => err.to_string(),
-        hai_core::Error::PermissionDenied(msg) => msg,
-        other => format!("Write failed: {}", other),
-    })?;
+    backend
+        .write_image(
+            &extracted_path,
+            &request.device_id,
+            request.verify,
+            callback,
+        )
+        .await
+        .map_err(|e| match e {
+            // Verify-phase failures are tagged VerificationFailed; the rest are writes.
+            hai_core::Error::VerificationFailed(msg) => format!("Verification failed: {}", msg),
+            // Already carries its own "Disk service unavailable:" prefix.
+            err @ hai_core::Error::DiskServiceUnavailable(_) => err.to_string(),
+            // A disconnect doesn't require a prefix
+            err @ hai_core::Error::DriveDisconnected => err.to_string(),
+            // Self-explanatory messages; a "Write failed:" prefix would bury them.
+            err @ hai_core::Error::ImageTooLarge { .. } => err.to_string(),
+            err @ hai_core::Error::Cancelled => err.to_string(),
+            hai_core::Error::PermissionDenied(msg) => msg,
+            other => format!("Write failed: {}", other),
+        })?;
 
     // Clean up extracted image
     let _ = tokio::fs::remove_file(&extracted_path).await;
@@ -301,7 +329,8 @@ pub async fn get_haos_release(version: Option<String>) -> Result<HaosRelease, St
     }
 
     let ver = version.as_deref().unwrap_or("latest");
-    download::get_haos_release(ver)
+    Backend
+        .get_haos_release(ver)
         .await
         .map_err(|e| e.to_string())
 }
@@ -317,7 +346,8 @@ pub async fn check_for_updates() -> Result<UpdateInfo, String> {
 /// Get the device manifest
 #[tauri::command]
 pub async fn get_manifest() -> Result<DeviceManifest, String> {
-    download::get_device_manifest()
+    Backend
+        .get_device_manifest()
         .await
         .map_err(|e| e.to_string())
 }
@@ -381,8 +411,6 @@ pub fn get_system_info() -> SystemInfo {
 pub async fn download_utm_image(
     progress_channel: Channel<FlashProgress>,
 ) -> Result<String, String> {
-    use hai_core::utm;
-
     if is_mock_enabled() {
         simulate_utm_download_progress(&progress_channel).await;
         let mock_path = "/tmp/mock-haos.qcow2";
@@ -402,14 +430,29 @@ pub async fn download_utm_image(
 
     let callback = TauriProgressCallback::new(&progress_channel);
 
-    // Get architecture (also verifies UTM is available)
-    let _status = utm::check_utm_status().await.map_err(|e| e.to_string())?;
+    // Verify UTM is available before doing any work.
+    Backend
+        .check_utm_status()
+        .await
+        .map_err(|e| e.to_string())?;
     let arch = if cfg!(target_arch = "aarch64") {
         "generic-aarch64"
     } else {
         "generic-x86-64"
     };
 
+    run_utm_download(&Backend, arch, &callback).await
+}
+
+/// Download and extract the HAOS qcow2 image for `arch`, returning the extracted path.
+///
+/// Generic over the backend so the flow can run against any `ReleaseSource`.
+#[cfg(target_os = "macos")]
+async fn run_utm_download<B, P>(backend: &B, arch: &str, callback: &P) -> Result<String, String>
+where
+    B: ReleaseSource,
+    P: ProgressCallback,
+{
     callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
         progress: 0,
@@ -418,22 +461,25 @@ pub async fn download_utm_image(
         message: "Fetching release info...".to_string(),
     });
 
-    let release = download::get_haos_release("latest")
+    let release = backend
+        .get_haos_release("latest")
         .await
         .map_err(|e| format!("Failed to fetch release: {}", e))?;
 
     let image = download::find_image_for_board(&release, arch, ImageFormat::Qcow2)
         .ok_or_else(|| format!("No qcow2 image found for: {}", arch))?;
 
-    let cache_dir = download::get_cache_dir().map_err(|e| e.to_string())?;
+    let cache_dir = backend.cache_dir().map_err(|e| e.to_string())?;
     let compressed_path = cache_dir.join(format!("haos_{}.qcow2.xz", arch));
 
-    download::download_image(&image.download_url, &compressed_path, &callback)
+    backend
+        .download_image(&image.download_url, &compressed_path, callback)
         .await
         .map_err(|e| e.to_string())?;
 
     let extracted_path = cache_dir.join(format!("haos_{}.qcow2", arch));
-    download::extract_xz(&compressed_path, &extracted_path, &callback)
+    backend
+        .extract_xz(&compressed_path, &extracted_path, callback)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -497,9 +543,7 @@ pub async fn download_utm_image(
 #[tauri::command]
 #[cfg(target_os = "macos")]
 pub async fn check_utm_status() -> Result<hai_core::UtmStatus, String> {
-    hai_core::utm::check_utm_status()
-        .await
-        .map_err(|e| e.to_string())
+    Backend.check_utm_status().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -537,7 +581,8 @@ pub async fn create_utm_vm(config: hai_core::UtmVmConfig) -> Result<String, Stri
         return Ok("mock-vm-id-12345".to_string());
     }
 
-    let result = hai_core::utm::create_vm(&config, &hai_core::NoOpProgress)
+    // Fully qualified: `create_vm` is defined on both UtmBackend and ProxmoxBackend.
+    let result = UtmBackend::create_vm(&Backend, &config, &hai_core::NoOpProgress)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -695,7 +740,8 @@ pub async fn proxmox_connect(credentials: ProxmoxCredentials) -> Result<ProxmoxS
         });
     }
 
-    hai_core::proxmox::authenticate(&credentials)
+    Backend
+        .authenticate(&credentials)
         .await
         .map_err(|e| e.to_string())
 }
@@ -723,7 +769,8 @@ pub async fn proxmox_list_nodes(session: ProxmoxSession) -> Result<Vec<ProxmoxNo
         ]);
     }
 
-    hai_core::proxmox::list_nodes(&session)
+    Backend
+        .list_nodes(&session)
         .await
         .map_err(|e| e.to_string())
 }
@@ -763,7 +810,8 @@ pub async fn proxmox_list_storage(
         ]);
     }
 
-    hai_core::proxmox::list_storage(&session, &node)
+    Backend
+        .list_storage(&session, &node)
         .await
         .map_err(|e| e.to_string())
 }
@@ -776,7 +824,8 @@ pub async fn proxmox_get_next_vm_id(session: ProxmoxSession) -> Result<u32, Stri
         return Ok(100);
     }
 
-    hai_core::proxmox::get_next_vm_id(&session)
+    Backend
+        .get_next_vm_id(&session)
         .await
         .map_err(|e| e.to_string())
 }
@@ -798,7 +847,8 @@ pub async fn proxmox_create_vm(
     }
 
     let callback = TauriProgressCallback::new(&progress_channel);
-    hai_core::proxmox::create_vm(&session, &config, &callback)
+    // Fully qualified: `create_vm` is defined on both ProxmoxBackend and UtmBackend.
+    ProxmoxBackend::create_vm(&Backend, &session, &config, &callback)
         .await
         .map_err(|e| e.to_string())
 }
