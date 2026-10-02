@@ -223,6 +223,56 @@ test.describe("Proxmox Installation Flow", () => {
     await expect(page.locator("proxmox-connect-view")).toBeVisible();
   });
 
+  test("step 2: keeps the configuration when stepping back to it", async ({
+    page,
+  }) => {
+    await navigateToProxmoxStep2(page);
+
+    const configView = page.locator("proxmox-configure-view");
+    const nameInput = configView.locator(".name-input").first();
+    const coresValue = configView.locator(".setting-value").first();
+
+    const defaultCores = await coresValue.textContent();
+
+    // Pick something other than the defaults
+    await nameInput.clear();
+    await nameInput.fill("my-home-assistant");
+
+    const coresSlider = configView.locator('input[type="range"]').first();
+    await coresSlider.focus();
+    await coresSlider.press("ArrowRight");
+
+    const chosenCores = await coresValue.textContent();
+    expect(chosenCores).not.toBe(defaultCores);
+
+    // Forward to the confirmation step...
+    const nextButton = page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button");
+    await expect(nextButton).toHaveJSProperty("disabled", false);
+    await nextButton.click();
+    await expect(page.locator("proxmox-confirm-view")).toBeVisible();
+    await expect(page.locator("proxmox-confirm-view")).toContainText(
+      "my-home-assistant"
+    );
+
+    // ...then back to double-check: the settings must still be the user's,
+    // not silently reset to the defaults
+    await page.locator("wizard-shell").locator(".header wa-button").click();
+    await expect(configView).toBeVisible();
+    await expect(configView.locator(".name-input").first()).toHaveValue(
+      "my-home-assistant"
+    );
+    await expect(coresValue).toHaveText(chosenCores!);
+
+    // And forward again, so what gets installed is what was picked
+    await expect(nextButton).toHaveJSProperty("disabled", false);
+    await nextButton.click();
+    await expect(page.locator("proxmox-confirm-view")).toContainText(
+      "my-home-assistant"
+    );
+  });
+
   test("step 3: shows confirmation view", async ({ page }) => {
     await navigateToProxmoxStep3(page);
 

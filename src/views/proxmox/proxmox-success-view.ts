@@ -1,6 +1,11 @@
 import { LitElement, html, css, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
+import {
+  DEFAULT_PROXMOX_NODE,
+  DEFAULT_PROXMOX_VM_ID,
+  DEFAULT_PROXMOX_VM_NAME,
+} from "../../state/vm-defaults.js";
 import { openExternalLink } from "../../utils/external-url.js";
 
 @customElement("proxmox-success-view")
@@ -210,13 +215,11 @@ export class ProxmoxSuccessView extends LitElement {
   }
 
   render() {
-    const vmName =
-      (this._wizardState.selections.vmName as string) || "HomeAssistant";
-    const vmId = (this._wizardState.selections.proxmoxVmId as number) || 100;
-    const node = (this._wizardState.selections.proxmoxNode as string) || "pve";
-    const ipAddress = this._wizardState.selections.ipAddress as
-      | string
-      | undefined;
+    const selections = this._wizardState.selections;
+    const vmName = selections.vmName || DEFAULT_PROXMOX_VM_NAME;
+    const vmId = selections.proxmoxVmId || DEFAULT_PROXMOX_VM_ID;
+    const node = selections.proxmoxNode || DEFAULT_PROXMOX_NODE;
+    const ipAddress = selections.ipAddress;
     const haUrl = ipAddress
       ? `http://${ipAddress}:8123`
       : "http://homeassistant.local:8123";
