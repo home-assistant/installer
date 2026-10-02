@@ -1,14 +1,13 @@
 //! Mock data for testing and development
 //!
-//! This module provides mock implementations of devices, manifests, and
+//! This module provides mock implementations of devices, releases, and
 //! other data for testing the application without real hardware.
 //!
 //! Mock mode is enabled when the `HA_INSTALLER_MOCK` environment variable
 //! is set to "1" or "true".
 
 use crate::types::{
-    BlockDevice, Device, DeviceCategory, DeviceManifest, DeviceType, HaosConfig, HaosImage,
-    HaosRelease, ImageFormat, StableVersionInfo, UpdateInfo,
+    BlockDevice, DeviceType, HaosImage, HaosRelease, ImageFormat, StableVersionInfo,
 };
 use std::collections::HashMap;
 
@@ -61,188 +60,6 @@ pub fn get_mock_block_devices() -> Vec<BlockDevice> {
             vendor: Some("Samsung".to_string()),
         },
     ]
-}
-
-/// Returns mock device manifest for testing
-pub fn get_mock_manifest() -> DeviceManifest {
-    DeviceManifest {
-        version: 1,
-        devices: vec![
-            // Raspberry Pi devices
-            Device {
-                id: "rpi5".to_string(),
-                name: "Raspberry Pi 5".to_string(),
-                category: DeviceCategory::RaspberryPi,
-                image_url: Some("/assets/devices/raspberry_pi_5.png".to_string()),
-                haos: HaosConfig {
-                    board: "rpi5-64".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi5-64-{version}.img.xz".to_string(),
-                },
-            },
-            Device {
-                id: "rpi4".to_string(),
-                name: "Raspberry Pi 4".to_string(),
-                category: DeviceCategory::RaspberryPi,
-                image_url: Some("/assets/devices/raspberry_pi_4.png".to_string()),
-                haos: HaosConfig {
-                    board: "rpi4-64".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi4-64-{version}.img.xz".to_string(),
-                },
-            },
-            Device {
-                id: "rpi3".to_string(),
-                name: "Raspberry Pi 3".to_string(),
-                category: DeviceCategory::RaspberryPi,
-                image_url: Some("/assets/devices/raspberry_pi_3.png".to_string()),
-                haos: HaosConfig {
-                    board: "rpi3-64".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi3-64-{version}.img.xz".to_string(),
-                },
-            },
-            // ODROID devices
-            Device {
-                id: "odroid-n2".to_string(),
-                name: "ODROID-N2/N2+".to_string(),
-                category: DeviceCategory::Odroid,
-                image_url: Some("/assets/devices/hardkernel_odroid-n2.png".to_string()),
-                haos: HaosConfig {
-                    board: "odroid-n2".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-n2-{version}.img.xz".to_string(),
-                },
-            },
-            Device {
-                id: "odroid-c2".to_string(),
-                name: "ODROID-C2".to_string(),
-                category: DeviceCategory::Odroid,
-                image_url: Some("/assets/devices/hardkernel_odroid-c2.png".to_string()),
-                haos: HaosConfig {
-                    board: "odroid-c2".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-c2-{version}.img.xz".to_string(),
-                },
-            },
-            Device {
-                id: "odroid-c4".to_string(),
-                name: "ODROID-C4".to_string(),
-                category: DeviceCategory::Odroid,
-                image_url: Some("/assets/devices/hardkernel_odroid-c4.png".to_string()),
-                haos: HaosConfig {
-                    board: "odroid-c4".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-c4-{version}.img.xz".to_string(),
-                },
-            },
-            Device {
-                id: "odroid-m1".to_string(),
-                name: "ODROID-M1".to_string(),
-                category: DeviceCategory::Odroid,
-                image_url: Some("/assets/devices/hardkernel_odroid-m1.png".to_string()),
-                haos: HaosConfig {
-                    board: "odroid-m1".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-m1-{version}.img.xz".to_string(),
-                },
-            },
-            Device {
-                id: "odroid-m1s".to_string(),
-                name: "ODROID-M1S".to_string(),
-                category: DeviceCategory::Odroid,
-                image_url: Some("/assets/devices/hardkernel_odroid-m1s.png".to_string()),
-                haos: HaosConfig {
-                    board: "odroid-m1s".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-m1s-{version}.img.xz".to_string(),
-                },
-            },
-            Device {
-                id: "odroid-xu4".to_string(),
-                name: "ODROID-XU4".to_string(),
-                category: DeviceCategory::Odroid,
-                image_url: Some("/assets/devices/hardkernel_odroid-xu4.png".to_string()),
-                haos: HaosConfig {
-                    board: "odroid-xu".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-xu-{version}.img.xz".to_string(),
-                },
-            },
-            // Khadas devices
-            Device {
-                id: "khadas-vim3".to_string(),
-                name: "Khadas VIM3".to_string(),
-                category: DeviceCategory::Khadas,
-                image_url: Some("/assets/devices/khadas_vim3.png".to_string()),
-                haos: HaosConfig {
-                    board: "khadas-vim3".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_khadas-vim3-{version}.img.xz".to_string(),
-                },
-            },
-            // ASUS devices
-            Device {
-                id: "asus-tinker".to_string(),
-                name: "ASUS Tinker Board".to_string(),
-                category: DeviceCategory::Asus,
-                image_url: Some("/assets/devices/asus_tinker.png".to_string()),
-                haos: HaosConfig {
-                    board: "tinker".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_tinker-{version}.img.xz".to_string(),
-                },
-            },
-            // Home Assistant Hardware
-            Device {
-                id: "ha-green".to_string(),
-                name: "Home Assistant Green".to_string(),
-                category: DeviceCategory::HomeAssistantHardware,
-                image_url: Some("/assets/devices/homeassistant_green.png".to_string()),
-                haos: HaosConfig {
-                    board: "green".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_green-{version}.img.xz".to_string(),
-                },
-            },
-            Device {
-                id: "ha-yellow".to_string(),
-                name: "Home Assistant Yellow".to_string(),
-                category: DeviceCategory::HomeAssistantHardware,
-                image_url: Some("/assets/devices/homeassistant_yellow.png".to_string()),
-                haos: HaosConfig {
-                    board: "yellow".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_yellow-{version}.img.xz".to_string(),
-                },
-            },
-            // Generic x86-64
-            Device {
-                id: "generic-x86-64".to_string(),
-                name: "Intel/AMD (x86-64)".to_string(),
-                category: DeviceCategory::GenericX86,
-                image_url: Some("/assets/icons/cpu-64-bit.svg".to_string()),
-                haos: HaosConfig {
-                    board: "generic-x86-64".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_generic-x86-64-{version}.img.xz".to_string(),
-                },
-            },
-            // Generic ARM64
-            Device {
-                id: "generic-aarch64".to_string(),
-                name: "ARM (aarch64)".to_string(),
-                category: DeviceCategory::GenericArm64,
-                image_url: Some("/assets/icons/chip.svg".to_string()),
-                haos: HaosConfig {
-                    board: "generic-aarch64".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_generic-aarch64-{version}.img.xz".to_string(),
-                },
-            },
-        ],
-    }
-}
-
-/// Returns mock update info for testing
-pub fn get_mock_update_info() -> UpdateInfo {
-    UpdateInfo {
-        update_available: false,
-        current_version: "0.1.0".to_string(),
-        latest_version: "0.1.0".to_string(),
-        download_url: Some(
-            "https://github.com/home-assistant/home-assistant-installer/releases".to_string(),
-        ),
-        release_notes_url: Some(
-            "https://github.com/home-assistant/home-assistant-installer/releases".to_string(),
-        ),
-        is_beta: false,
-    }
 }
 
 /// Returns mock stable version info (simulating version.home-assistant.io/stable.json)
@@ -349,12 +166,6 @@ mod tests {
     }
 
     #[test]
-    fn test_mock_manifest_has_devices() {
-        let manifest = get_mock_manifest();
-        assert!(!manifest.devices.is_empty());
-    }
-
-    #[test]
     fn test_mock_block_devices_have_valid_sizes() {
         let devices = get_mock_block_devices();
         for device in devices {
@@ -384,50 +195,11 @@ mod tests {
     }
 
     #[test]
-    fn test_mock_manifest_has_unique_device_ids() {
-        let manifest = get_mock_manifest();
-        let mut ids = std::collections::HashSet::new();
-        for device in &manifest.devices {
-            assert!(
-                ids.insert(device.id.clone()),
-                "Duplicate device ID found: {}",
-                device.id
-            );
-        }
-    }
-
-    #[test]
     fn test_mock_haos_release_has_images() {
         let release = get_mock_haos_release();
         assert!(
             !release.images.is_empty(),
             "HAOS release should have at least one image"
-        );
-    }
-
-    #[test]
-    fn test_mock_update_info_versions_valid() {
-        let update_info = get_mock_update_info();
-        assert!(
-            !update_info.current_version.is_empty(),
-            "Current version should not be empty"
-        );
-        assert!(
-            !update_info.latest_version.is_empty(),
-            "Latest version should not be empty"
-        );
-    }
-
-    #[test]
-    fn test_mock_update_info_has_urls() {
-        let update_info = get_mock_update_info();
-        assert!(
-            update_info.download_url.is_some(),
-            "Download URL should be present"
-        );
-        assert!(
-            update_info.release_notes_url.is_some(),
-            "Release notes URL should be present"
         );
     }
 
@@ -527,74 +299,6 @@ mod tests {
             assert!(
                 device.model.is_some(),
                 "Device {} should have model",
-                device.id
-            );
-        }
-    }
-
-    #[test]
-    fn test_mock_manifest_version() {
-        let manifest = get_mock_manifest();
-        assert_eq!(manifest.version, 1);
-    }
-
-    #[test]
-    fn test_mock_manifest_has_all_categories() {
-        let manifest = get_mock_manifest();
-        let categories: std::collections::HashSet<_> =
-            manifest.devices.iter().map(|d| &d.category).collect();
-
-        assert!(
-            categories.contains(&DeviceCategory::RaspberryPi),
-            "Should have Raspberry Pi devices"
-        );
-        assert!(
-            categories.contains(&DeviceCategory::Odroid),
-            "Should have ODROID devices"
-        );
-        assert!(
-            categories.contains(&DeviceCategory::HomeAssistantHardware),
-            "Should have Home Assistant hardware"
-        );
-        assert!(
-            categories.contains(&DeviceCategory::GenericX86),
-            "Should have generic x86"
-        );
-        assert!(
-            categories.contains(&DeviceCategory::GenericArm64),
-            "Should have generic ARM64"
-        );
-    }
-
-    #[test]
-    fn test_mock_manifest_devices_have_haos_config() {
-        let manifest = get_mock_manifest();
-        for device in &manifest.devices {
-            assert!(
-                !device.haos.board.is_empty(),
-                "Device {} should have HAOS board",
-                device.id
-            );
-            assert!(
-                !device.haos.download_url.is_empty(),
-                "Device {} should have HAOS download URL",
-                device.id
-            );
-            assert!(
-                device.haos.download_url.contains("{version}"),
-                "Device {} download URL should have version placeholder",
-                device.id
-            );
-        }
-    }
-
-    #[test]
-    fn test_mock_manifest_devices_have_image_urls() {
-        let manifest = get_mock_manifest();
-        for device in &manifest.devices {
-            assert!(
-                device.image_url.is_some(),
-                "Device {} should have image URL",
                 device.id
             );
         }

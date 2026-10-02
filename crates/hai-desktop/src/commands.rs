@@ -309,7 +309,9 @@ pub async fn get_haos_release(version: Option<String>) -> Result<HaosRelease, St
 /// Check for application updates
 #[tauri::command]
 pub async fn check_for_updates() -> Result<UpdateInfo, String> {
-    Ok(mock::get_mock_update_info())
+    download::check_for_updates()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Get the device manifest
