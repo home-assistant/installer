@@ -21,10 +21,11 @@
 
 use crate::error::{Error, Result};
 use crate::types::{
-    FlashProgress, FlashStage, ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage,
-    ProxmoxVmConfig, ProxmoxVmResult,
+    FlashProgress, FlashStage, HaosImage, HaosRelease, ImageFormat, ProxmoxCredentials,
+    ProxmoxNode, ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult,
 };
 use crate::ProgressCallback;
+use std::collections::HashSet;
 
 /// Minimum required Proxmox VE version for disk image import via API.
 /// Version 8.4.1 added support for uploading qcow2/raw/img/vmdk files with content=import.
@@ -403,25 +404,345 @@ pub async fn list_storage(session: &ProxmoxSession, node: &str) -> Result<Vec<Pr
     Ok(storage)
 }
 
-/// Find the first active storage on a node that accepts `import` content.
-///
-/// Returns an actionable error when no such storage exists, since `import`
-/// is not enabled on a default Proxmox install.
-pub async fn get_storage_name(session: &ProxmoxSession, node: &str) -> Result<String> {
-    let storage_list = list_storage(session, node).await?;
+/// Pick the first active storage that accepts `import` content and has room for the upload.
+fn select_import_storage(storage_list: &[ProxmoxStorage], required_bytes: u64) -> Result<String> {
+    let mut too_small = Vec::new();
+
     for storage in storage_list {
-        // ESXi advertises `import` but is a source-only backend with no path, so uploads to it fail.
-        if storage.active
-            && storage.storage_type != "esxi"
-            && storage.content.iter().any(|content| content == "import")
-        {
-            return Ok(storage.name);
+        if is_import_candidate(storage) {
+            if storage.available >= required_bytes {
+                return Ok(storage.name.clone());
+            }
+            too_small.push(storage.name.as_str());
         }
     }
+
+    if !too_small.is_empty() {
+        return Err(Error::ProxmoxApi(format!(
+            "Not enough free space for the {} MB image on import storage: {}. Free up space or enable 'import' on another storage.",
+            required_bytes / 1_000_000,
+            too_small.join(", ")
+        )));
+    }
+
     Err(Error::ProxmoxApi(
         "No active storage with 'import' content type found. Enable 'import' on an active directory storage in PVE."
             .to_string(),
     ))
+}
+
+/// Whether the image could be uploaded to this storage, ignoring free space and permissions.
+fn is_import_candidate(storage: &ProxmoxStorage) -> bool {
+    // ESXi advertises `import` but is a source-only backend with no path, so uploads to it fail.
+    storage.active
+        && storage.storage_type != "esxi"
+        && storage.content.iter().any(|content| content == "import")
+}
+
+/// Keep only the import storages the logged-in user is allowed to upload to and import from.
+async fn uploadable_import_storages(
+    session: &ProxmoxSession,
+    storage_list: &[ProxmoxStorage],
+) -> Result<Vec<ProxmoxStorage>> {
+    let mut allowed = Vec::new();
+    let mut denied = Vec::new();
+
+    for storage in storage_list.iter().filter(|s| is_import_candidate(s)) {
+        let path = format!("/storage/{}", storage.name);
+        let privileges = fetch_privileges(session, &path).await?;
+        let can_upload = privileges.contains("Datastore.AllocateTemplate");
+        // VM creation reads the uploaded image, which needs one of these (Storage.pm check_volume_access).
+        let can_read = [
+            "Datastore.Allocate",
+            "Datastore.AllocateSpace",
+            "Datastore.Audit",
+        ]
+        .iter()
+        .any(|privilege| privileges.contains(*privilege));
+
+        if can_upload && can_read {
+            allowed.push(storage.clone());
+        } else {
+            denied.push(storage.name.as_str());
+        }
+    }
+
+    if allowed.is_empty() && !denied.is_empty() {
+        return Err(Error::ProxmoxApi(format!(
+            "Your Proxmox user cannot both upload to and read from any import storage (needs Datastore.AllocateTemplate plus one of Datastore.Allocate, Datastore.AllocateSpace, or Datastore.Audit on: {}).",
+            denied.join(", ")
+        )));
+    }
+
+    Ok(allowed)
+}
+
+/// Fail early if the storage chosen for the VM disk is missing, inactive, can't hold disks,
+/// or doesn't have room for the disk.
+fn check_disk_storage(
+    storage_list: &[ProxmoxStorage],
+    disk_storage: &str,
+    disk_size_gb: u32,
+) -> Result<()> {
+    let storage = storage_list
+        .iter()
+        .find(|storage| storage.name == disk_storage)
+        .ok_or_else(|| {
+            Error::ProxmoxApi(format!(
+                "Storage '{}' was not found on this node.",
+                disk_storage
+            ))
+        })?;
+
+    if !storage.active {
+        return Err(Error::ProxmoxApi(format!(
+            "Storage '{}' is not active.",
+            disk_storage
+        )));
+    }
+
+    if !storage.content.iter().any(|content| content == "images") {
+        return Err(Error::ProxmoxApi(format!(
+            "Storage '{}' cannot hold VM disks. Enable the 'Disk image' content type on it in PVE.",
+            disk_storage
+        )));
+    }
+
+    // Proxmox disk sizes like "32G" are GiB.
+    let required_bytes = u64::from(disk_size_gb) * 1024 * 1024 * 1024;
+    if storage.available < required_bytes {
+        return Err(Error::ProxmoxApi(format!(
+            "Not enough free space on '{}' for the {} GB disk ({} GB free).",
+            disk_storage,
+            disk_size_gb,
+            storage.available / (1024 * 1024 * 1024)
+        )));
+    }
+
+    Ok(())
+}
+
+/// Fail early if `vm_id` is already taken anywhere in the cluster.
+pub async fn ensure_vm_id_free(session: &ProxmoxSession, vm_id: u32) -> Result<()> {
+    #[cfg(feature = "mock")]
+    {
+        if crate::is_mock_enabled() {
+            return Ok(());
+        }
+    }
+
+    let response = send_nextid_request(session, Some(vm_id)).await?;
+
+    let status = response.status();
+    if status.is_success() {
+        return Ok(());
+    }
+
+    if status != reqwest::StatusCode::BAD_REQUEST {
+        return Err(Error::ProxmoxApi(format!(
+            "Failed to check VM ID: {}",
+            status
+        )));
+    }
+
+    // Proxmox rejects a taken or invalid ID with 400; pass its reason on when it gives one.
+    let body = response.text().await.unwrap_or_default();
+    let reason = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|json| Some(json.get("errors")?.get("vmid")?.as_str()?.to_string()));
+
+    Err(Error::ProxmoxApi(match reason {
+        Some(reason) => format!(
+            "VM ID {} can't be used ({}). Choose a different ID.",
+            vm_id, reason
+        ),
+        None => format!("VM ID {} can't be used. Choose a different ID.", vm_id),
+    }))
+}
+
+/// Call `/cluster/nextid`; with `vm_id` set, Proxmox checks that ID cluster-wide instead of picking one.
+async fn send_nextid_request(
+    session: &ProxmoxSession,
+    vm_id: Option<u32>,
+) -> Result<reqwest::Response> {
+    let mut url = format!(
+        "{}/api2/json/cluster/nextid",
+        session.server_url.trim_end_matches('/')
+    );
+    if let Some(vm_id) = vm_id {
+        url.push_str(&format!("?vmid={}", vm_id));
+    }
+
+    create_client(30)?
+        .get(&url)
+        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
+        .send()
+        .await
+        .map_err(|e| Error::ProxmoxApi(format!("Failed to query VM ID: {}", e)))
+}
+
+/// Fail early if the node is missing from the cluster or not online.
+fn check_node_online(nodes: &[ProxmoxNode], node: &str) -> Result<()> {
+    let found = nodes.iter().find(|n| n.name == node).ok_or_else(|| {
+        Error::ProxmoxApi(format!("Node '{}' was not found in the cluster.", node))
+    })?;
+
+    if found.status != "online" {
+        return Err(Error::ProxmoxApi(format!(
+            "Node '{}' is {}, not online.",
+            node, found.status
+        )));
+    }
+
+    Ok(())
+}
+
+/// Network bridge the VM's network card is attached to.
+const VM_BRIDGE: &str = "vmbr0";
+
+/// Privileges Proxmox checks on `/vms/{id}` for the options `create_vm_with_disk` sends.
+const VM_CREATE_PRIVILEGES: &[&str] = &[
+    "VM.Allocate",
+    "VM.Config.CPU",
+    "VM.Config.Memory",
+    "VM.Config.Options",
+    "VM.Config.HWType",
+    "VM.Config.Network",
+    "VM.Config.Disk",
+];
+
+/// Privileges the logged-in user has on `path`, including inherited ones.
+async fn fetch_privileges(session: &ProxmoxSession, path: &str) -> Result<HashSet<String>> {
+    let client = create_client(30)?;
+
+    let url = format!(
+        "{}/api2/json/access/permissions?path={}",
+        session.server_url.trim_end_matches('/'),
+        urlencoding::encode(path)
+    );
+
+    let response = client
+        .get(&url)
+        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
+        .send()
+        .await
+        .map_err(|e| Error::ProxmoxApi(format!("Failed to check permissions: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(Error::ProxmoxApi(format!(
+            "Failed to check permissions: {}",
+            response.status()
+        )));
+    }
+
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| Error::ProxmoxApi(format!("Failed to parse permissions: {}", e)))?;
+
+    Ok(json
+        .get("data")
+        .and_then(|data| data.get(path))
+        .and_then(|privileges| privileges.as_object())
+        .map(|privileges| privileges.keys().cloned().collect())
+        .unwrap_or_default())
+}
+
+/// Fail with the list of missing privileges if `granted` lacks any of `required`.
+fn ensure_privileges(granted: &HashSet<String>, path: &str, required: &[&str]) -> Result<()> {
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|privilege| !granted.contains(*privilege))
+        .collect();
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    Err(Error::ProxmoxApi(format!(
+        "Your Proxmox user is missing {} on {}.",
+        missing.join(", "),
+        path
+    )))
+}
+
+/// Fail early if the logged-in user isn't allowed to create, configure, and start this VM.
+async fn ensure_user_can_create_vm(
+    session: &ProxmoxSession,
+    config: &ProxmoxVmConfig,
+) -> Result<()> {
+    let vm_path = format!("/vms/{}", config.vm_id);
+    let mut required = VM_CREATE_PRIVILEGES.to_vec();
+    if config.auto_start {
+        required.push("VM.PowerMgmt");
+    }
+    ensure_privileges(
+        &fetch_privileges(session, &vm_path).await?,
+        &vm_path,
+        &required,
+    )?;
+
+    // Plain bridges are checked under the built-in `localnetwork` SDN zone.
+    let bridge_path = format!("/sdn/zones/localnetwork/{}", VM_BRIDGE);
+    ensure_privileges(
+        &fetch_privileges(session, &bridge_path).await?,
+        &bridge_path,
+        &["SDN.Use"],
+    )
+}
+
+/// Estimate the extracted qcow2 size from the `.xz` download size, which is all we know up front.
+fn estimated_extracted_size(compressed_bytes: u64) -> u64 {
+    // Measured 2026-10: HAOS 18.3 1.90x, 17.3 1.98x, 16.3 2.73x. 2.75x covers all of them so the
+    // storage isn't left completely full; the exact size is rechecked after extraction.
+    compressed_bytes.saturating_mul(11) / 4 // 2.75x
+}
+
+/// Everything that can be checked before the download starts.
+async fn pre_install_checks(
+    session: &ProxmoxSession,
+    config: &ProxmoxVmConfig,
+    download_bytes: u64,
+) -> Result<()> {
+    let nodes = list_nodes(session).await?;
+    check_node_online(&nodes, &config.node)?;
+
+    ensure_user_can_create_vm(session, config).await?;
+
+    // Fetch storage once and run every storage check against it.
+    let storage_list = list_storage(session, &config.node).await?;
+
+    check_disk_storage(&storage_list, &config.storage, config.disk_size_gb)?;
+    let disk_path = format!("/storage/{}", config.storage);
+    ensure_privileges(
+        &fetch_privileges(session, &disk_path).await?,
+        &disk_path,
+        &["Datastore.AllocateSpace"],
+    )?;
+
+    let upload_candidates = uploadable_import_storages(session, &storage_list).await?;
+    select_import_storage(&upload_candidates, estimated_extracted_size(download_bytes))?;
+
+    ensure_vm_id_free(session, config.vm_id).await?;
+
+    Ok(())
+}
+
+/// Repeat the checks that may have changed during the download, now the exact upload size is known.
+async fn recheck_before_upload(
+    session: &ProxmoxSession,
+    config: &ProxmoxVmConfig,
+    extracted_path: &std::path::Path,
+) -> Result<String> {
+    ensure_vm_id_free(session, config.vm_id).await?;
+
+    // This can be removed if Proxmox reports the size error correctly, otherwise it may only
+    // fail at the 30 minute timeout.
+    let extracted_size = tokio::fs::metadata(extracted_path).await?.len();
+    let storage_list = list_storage(session, &config.node).await?;
+    let upload_candidates = uploadable_import_storages(session, &storage_list).await?;
+    select_import_storage(&upload_candidates, extracted_size)
 }
 
 /// Get the next available VM ID on the Proxmox server.
@@ -433,19 +754,7 @@ pub async fn get_next_vm_id(session: &ProxmoxSession) -> Result<u32> {
         }
     }
 
-    let url = format!(
-        "{}/api2/json/cluster/nextid",
-        session.server_url.trim_end_matches('/')
-    );
-
-    let client = create_client(30)?;
-
-    let response = client
-        .get(&url)
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .send()
-        .await
-        .map_err(|e| Error::ProxmoxApi(format!("Failed to get next VM ID: {}", e)))?;
+    let response = send_nextid_request(session, None).await?;
 
     if !response.status().is_success() {
         return Err(Error::ProxmoxApi(format!(
@@ -756,7 +1065,7 @@ async fn create_vm_with_disk(
             ("ostype", "l26".to_string()), // Linux 2.6/3.x/4.x/5.x/6.x kernel
             ("efidisk0", efidisk0_spec),  // EFI disk for UEFI
             ("scsi0", scsi0_spec),        // Main disk with import
-            ("net0", "virtio,bridge=vmbr0".to_string()), // VirtIO network
+            ("net0", format!("virtio,bridge={}", VM_BRIDGE)), // VirtIO network
             ("agent", "enabled=1".to_string()), // QEMU guest agent
             ("boot", "order=scsi0".to_string()), // Boot from main disk
         ])
@@ -1014,14 +1323,16 @@ pub async fn create_vm<P: ProgressCallback>(
         .get("ova")
         .ok_or_else(|| Error::ProxmoxApi("No HAOS version found for OVA".to_string()))?;
 
-    // Build the download URL for the qcow2.xz image
-    let download_url = format!(
-        "https://github.com/home-assistant/operating-system/releases/download/{}/haos_ova-{}.qcow2.xz",
-        haos_version, haos_version
-    );
+    // Look up the OVA image in the release to get its download URL.
+    // Use the OVA's own version rather than "latest", which may differ.
+    let release: HaosRelease = crate::download::get_haos_release(haos_version).await?;
+    let image: &HaosImage =
+        crate::download::find_image_for_board(&release, "ova", ImageFormat::Qcow2).ok_or_else(
+            || Error::DownloadFailed(format!("No OVA image in HAOS release {}", haos_version)),
+        )?;
 
-    //Get the proxmox storage name for install before downloading the image and wasting bandwidth
-    let storage_name = get_storage_name(session, &config.node).await?;
+    // Catch anything that would fail later before spending time on the download
+    pre_install_checks(session, config, image.size).await?;
 
     // Step 2: Download the compressed image locally
     progress_callback.on_progress(FlashProgress {
@@ -1037,7 +1348,8 @@ pub async fn create_vm<P: ProgressCallback>(
     let compressed_path = cache_dir.join(&compressed_filename);
 
     // Download the image
-    crate::download::download_image(&download_url, &compressed_path, progress_callback).await?;
+    crate::download::download_image(&image.download_url, &compressed_path, progress_callback)
+        .await?;
 
     // Step 3: Extract the compressed image
     progress_callback.on_progress(FlashProgress {
@@ -1052,6 +1364,8 @@ pub async fn create_vm<P: ProgressCallback>(
     let extracted_path = cache_dir.join(&extracted_filename);
 
     crate::download::extract_xz(&compressed_path, &extracted_path, progress_callback).await?;
+
+    let storage_name = recheck_before_upload(session, config, &extracted_path).await?;
 
     // Step 4: Upload the extracted image to Proxmox storage, fetched dynamically with import flag
     let image_filename = upload_image_to_proxmox(
@@ -1192,7 +1506,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_get_storage_name_mock() {
+    async fn test_mock_storage_has_import_storage() {
         std::env::set_var("HA_INSTALLER_MOCK", "1");
         let session = ProxmoxSession {
             server_url: "https://proxmox.local:8006".to_string(),
@@ -1201,8 +1515,21 @@ mod tests {
         };
         // The mock fixture must expose an import-capable storage, otherwise the
         // whole Proxmox flow is unreachable without a live server.
-        let storage_name = get_storage_name(&session, "pve").await.unwrap();
-        assert_eq!(storage_name, "local");
+        let storage_list = list_storage(&session, "pve").await.unwrap();
+        assert_eq!(select_import_storage(&storage_list, 0).unwrap(), "local");
+        std::env::remove_var("HA_INSTALLER_MOCK");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_ensure_vm_id_free_mock() {
+        std::env::set_var("HA_INSTALLER_MOCK", "1");
+        let session = ProxmoxSession {
+            server_url: "https://proxmox.local:8006".to_string(),
+            ticket: "mock-ticket".to_string(),
+            csrf_token: "mock-csrf".to_string(),
+        };
+        assert!(ensure_vm_id_free(&session, 100).await.is_ok());
         std::env::remove_var("HA_INSTALLER_MOCK");
     }
 
@@ -1371,6 +1698,205 @@ mod tests {
         };
         assert_eq!(storage.name, "local");
         assert!(storage.active);
+    }
+
+    fn storage(name: &str, active: bool, content: &[&str]) -> ProxmoxStorage {
+        ProxmoxStorage {
+            name: name.to_string(),
+            storage_type: "dir".to_string(),
+            content: content.iter().map(|c| c.to_string()).collect(),
+            available: 100_000_000_000,
+            total: 500_000_000_000,
+            active,
+        }
+    }
+
+    #[test]
+    fn test_check_disk_storage_accepts_active_images_storage() {
+        let storage_list = vec![
+            storage("local", true, &["iso", "import"]),
+            storage("local-lvm", true, &["images", "rootdir"]),
+        ];
+        assert!(check_disk_storage(&storage_list, "local-lvm", 32).is_ok());
+    }
+
+    #[test]
+    fn test_check_disk_storage_rejects_storage_without_enough_space() {
+        let storage_list = vec![ProxmoxStorage {
+            available: 20 * 1024 * 1024 * 1024,
+            ..storage("local-lvm", true, &["images"])
+        }];
+        match check_disk_storage(&storage_list, "local-lvm", 32) {
+            Err(Error::ProxmoxApi(msg)) => {
+                assert!(msg.contains("Not enough free space"), "{}", msg);
+                assert!(msg.contains("32 GB"), "{}", msg);
+                assert!(msg.contains("20 GB free"), "{}", msg);
+            }
+            other => panic!("Expected not-enough-space error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_check_disk_storage_rejects_missing_storage() {
+        let storage_list = vec![storage("local-lvm", true, &["images"])];
+        match check_disk_storage(&storage_list, "ceph-pool", 32) {
+            Err(Error::ProxmoxApi(msg)) => assert!(msg.contains("not found"), "{}", msg),
+            other => panic!("Expected not-found error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_check_disk_storage_rejects_inactive_storage() {
+        let storage_list = vec![storage("local-lvm", false, &["images"])];
+        match check_disk_storage(&storage_list, "local-lvm", 32) {
+            Err(Error::ProxmoxApi(msg)) => assert!(msg.contains("not active"), "{}", msg),
+            other => panic!("Expected inactive error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_check_disk_storage_rejects_storage_without_images() {
+        // The import storage is a common wrong pick: it's active but can't hold VM disks.
+        let storage_list = vec![storage("local", true, &["iso", "import"])];
+        match check_disk_storage(&storage_list, "local", 32) {
+            Err(Error::ProxmoxApi(msg)) => assert!(msg.contains("Disk image"), "{}", msg),
+            other => panic!("Expected missing-images error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_select_import_storage_selects_first_eligible_storage() {
+        let storage_list = vec![
+            storage("local", true, &["images", "rootdir", "iso"]),
+            storage("offline-import", false, &["import", "iso"]),
+            ProxmoxStorage {
+                storage_type: "esxi".to_string(),
+                ..storage("esxi-import", true, &["import"])
+            },
+            storage("local-import", true, &["iso", "import"]),
+            storage("other-import", true, &["import"]),
+        ];
+
+        // "local" lacks import, "offline-import" is inactive and "esxi-import"
+        // cannot receive uploads, so the first eligible storage wins.
+        assert_eq!(
+            select_import_storage(&storage_list, 0).unwrap(),
+            "local-import"
+        );
+    }
+
+    #[test]
+    fn test_select_import_storage_no_active_import_storage() {
+        let storage_list = vec![
+            storage("local", true, &["images", "rootdir", "iso"]),
+            storage("offline-import", false, &["import"]),
+            ProxmoxStorage {
+                storage_type: "esxi".to_string(),
+                ..storage("esxi-import", true, &["import"])
+            },
+        ];
+
+        match select_import_storage(&storage_list, 0) {
+            Err(Error::ProxmoxApi(msg)) => assert!(msg.contains("import"), "{}", msg),
+            other => panic!("Expected no-import-storage error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_estimated_extracted_size_rejects_import_storage_that_only_fits_the_download() {
+        // 510 MB download (HAOS 18.3) with 600 MB free: fits the .xz, not the ~970 MB qcow2.
+        let storage_list = vec![ProxmoxStorage {
+            available: 600_000_000,
+            ..storage("local", true, &["import"])
+        }];
+        assert!(select_import_storage(&storage_list, 510_000_000).is_ok());
+        assert!(
+            select_import_storage(&storage_list, estimated_extracted_size(510_000_000)).is_err()
+        );
+    }
+
+    #[test]
+    fn test_select_import_storage_skips_storage_without_enough_space() {
+        let storage_list = vec![
+            ProxmoxStorage {
+                available: 500_000_000,
+                ..storage("small-import", true, &["import"])
+            },
+            ProxmoxStorage {
+                available: 50_000_000_000,
+                ..storage("big-import", true, &["import"])
+            },
+        ];
+        let result = select_import_storage(&storage_list, 1_000_000_000);
+        assert_eq!(result.unwrap(), "big-import");
+    }
+
+    #[test]
+    fn test_select_import_storage_reports_full_import_storage() {
+        let storage_list = vec![ProxmoxStorage {
+            available: 500_000_000,
+            ..storage("small-import", true, &["import"])
+        }];
+        match select_import_storage(&storage_list, 1_000_000_000) {
+            Err(Error::ProxmoxApi(msg)) => {
+                assert!(msg.contains("Not enough free space"), "{}", msg);
+                assert!(msg.contains("small-import"), "{}", msg);
+            }
+            other => panic!("Expected not-enough-space error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_ensure_privileges_lists_only_missing_privileges() {
+        let granted: HashSet<String> = ["VM.Allocate", "VM.Audit"]
+            .iter()
+            .map(|p| p.to_string())
+            .collect();
+
+        assert!(ensure_privileges(&granted, "/vms/100", &["VM.Allocate"]).is_ok());
+
+        match ensure_privileges(&granted, "/vms/100", &["VM.Allocate", "VM.Config.CPU"]) {
+            Err(Error::ProxmoxApi(msg)) => {
+                assert!(msg.contains("VM.Config.CPU"), "{}", msg);
+                assert!(msg.contains("/vms/100"), "{}", msg);
+                assert!(!msg.contains("VM.Allocate"), "{}", msg);
+            }
+            other => panic!("Expected missing-privilege error, got {:?}", other),
+        }
+    }
+
+    fn node(name: &str, status: &str) -> ProxmoxNode {
+        ProxmoxNode {
+            name: name.to_string(),
+            status: status.to_string(),
+            cpu_usage: None,
+            memory_used: None,
+            memory_total: None,
+        }
+    }
+
+    #[test]
+    fn test_check_node_online_accepts_online_node() {
+        let nodes = vec![node("pve", "online"), node("pve2", "offline")];
+        assert!(check_node_online(&nodes, "pve").is_ok());
+    }
+
+    #[test]
+    fn test_check_node_online_rejects_offline_node() {
+        let nodes = vec![node("pve", "online"), node("pve2", "offline")];
+        match check_node_online(&nodes, "pve2") {
+            Err(Error::ProxmoxApi(msg)) => assert!(msg.contains("offline"), "{}", msg),
+            other => panic!("Expected offline error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_check_node_online_rejects_missing_node() {
+        let nodes = vec![node("pve", "online")];
+        match check_node_online(&nodes, "pve3") {
+            Err(Error::ProxmoxApi(msg)) => assert!(msg.contains("not found"), "{}", msg),
+            other => panic!("Expected not-found error, got {:?}", other),
+        }
     }
 
     // =========================================================================
@@ -1754,161 +2280,401 @@ mod tests {
 
         #[tokio::test]
         #[serial]
-        async fn test_get_storage_name_selects_first_active_import_storage() {
+        async fn test_ensure_vm_id_free_uses_generic_message_without_reason() {
             std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
-            let storage_mock = server
-                .mock("GET", "/api2/json/nodes/pve/storage")
-                .with_status(200)
+            let nextid_mock = server
+                .mock("GET", "/api2/json/cluster/nextid")
+                .match_query(Matcher::UrlEncoded("vmid".to_string(), "101".to_string()))
+                .with_status(400)
                 .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": [
-                            {
-                                "storage": "local",
-                                "type": "dir",
-                                "content": "images,rootdir,iso",
-                                "avail": 100000000000,
-                                "total": 500000000000,
-                                "active": 1
-                            },
-                            {
-                                "storage": "offline-import",
-                                "type": "dir",
-                                "content": "import,iso",
-                                "avail": 100000000000,
-                                "total": 500000000000,
-                                "active": 0
-                            },
-                            {
-                                "storage": "esxi-import",
-                                "type": "esxi",
-                                "content": "import",
-                                "avail": 0,
-                                "total": 0,
-                                "active": 1
-                            },
-                            {
-                                "storage": "local-import",
-                                "type": "dir",
-                                "content": "iso,import",
-                                "avail": 300000000000,
-                                "total": 900000000000,
-                                "active": 1
-                            },
-                            {
-                                "storage": "other-import",
-                                "type": "dir",
-                                "content": "import",
-                                "avail": 400000000000,
-                                "total": 900000000000,
-                                "active": 1
-                            }
-                        ]
-                    }"#,
-                )
+                .with_body(r#"{"data": null}"#)
                 .create_async()
                 .await;
 
-            let session = ProxmoxSession {
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = get_storage_name(&session, "pve").await;
-
-            // "local" lacks import, "offline-import" is inactive and "esxi-import"
-            // cannot receive uploads, so the first eligible storage wins.
-            assert_eq!(result.unwrap(), "local-import");
-
-            storage_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_storage_name_no_active_import_storage() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
-            let mut server = Server::new_async().await;
-
-            let storage_mock = server
-                .mock("GET", "/api2/json/nodes/pve/storage")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": [
-                            {
-                                "storage": "local",
-                                "type": "dir",
-                                "content": "images,rootdir,iso",
-                                "avail": 100000000000,
-                                "total": 500000000000,
-                                "active": 1
-                            },
-                            {
-                                "storage": "offline-import",
-                                "type": "dir",
-                                "content": "import",
-                                "avail": 100000000000,
-                                "total": 500000000000,
-                                "active": 0
-                            },
-                            {
-                                "storage": "esxi-import",
-                                "type": "esxi",
-                                "content": "import",
-                                "avail": 0,
-                                "total": 0,
-                                "active": 1
-                            }
-                        ]
-                    }"#,
-                )
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = get_storage_name(&session, "pve").await;
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("import"), "unexpected message: {}", msg);
-            } else {
-                panic!("Expected ProxmoxApi error when no active import storage exists");
+            match ensure_vm_id_free(&test_session(&server), 101).await {
+                Err(Error::ProxmoxApi(msg)) => {
+                    assert_eq!(msg, "VM ID 101 can't be used. Choose a different ID.");
+                }
+                other => panic!("Expected taken-ID error, got {:?}", other),
             }
 
-            storage_mock.assert_async().await;
+            nextid_mock.assert_async().await;
         }
 
         #[tokio::test]
         #[serial]
-        async fn test_get_storage_name_propagates_list_storage_error() {
+        async fn test_ensure_vm_id_free_rejects_taken_id() {
             std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
-            let storage_mock = server
-                .mock("GET", "/api2/json/nodes/pve/storage")
+            let nextid_mock = server
+                .mock("GET", "/api2/json/cluster/nextid")
+                .match_query(Matcher::UrlEncoded("vmid".to_string(), "101".to_string()))
+                .with_status(400)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"errors": {"vmid": "VM 101 already exists"}, "data": null}"#)
+                .create_async()
+                .await;
+
+            match ensure_vm_id_free(&test_session(&server), 101).await {
+                Err(Error::ProxmoxApi(msg)) => {
+                    assert!(msg.contains("101"), "{}", msg);
+                    assert!(msg.contains("already exists"), "{}", msg);
+                }
+                other => panic!("Expected taken-ID error, got {:?}", other),
+            }
+
+            nextid_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_ensure_vm_id_free_accepts_free_id() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            let nextid_mock = server
+                .mock("GET", "/api2/json/cluster/nextid")
+                .match_query(Matcher::UrlEncoded("vmid".to_string(), "102".to_string()))
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"data": "102"}"#)
+                .create_async()
+                .await;
+
+            let result = ensure_vm_id_free(&test_session(&server), 102).await;
+            assert!(result.is_ok(), "unexpected error: {:?}", result.err());
+
+            nextid_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_ensure_vm_id_free_server_error() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            let nextid_mock = server
+                .mock("GET", "/api2/json/cluster/nextid")
+                .match_query(Matcher::UrlEncoded("vmid".to_string(), "100".to_string()))
                 .with_status(500)
                 .with_body("Internal Server Error")
                 .create_async()
                 .await;
 
-            let session = ProxmoxSession {
+            match ensure_vm_id_free(&test_session(&server), 100).await {
+                Err(Error::ProxmoxApi(msg)) => assert!(msg.contains("500"), "{}", msg),
+                other => panic!("Expected server error, got {:?}", other),
+            }
+
+            nextid_mock.assert_async().await;
+        }
+
+        fn test_session(server: &mockito::ServerGuard) -> ProxmoxSession {
+            ProxmoxSession {
                 server_url: server.url(),
                 ticket: "test-ticket".to_string(),
                 csrf_token: "test-csrf".to_string(),
+            }
+        }
+
+        fn vm_config(auto_start: bool) -> ProxmoxVmConfig {
+            ProxmoxVmConfig {
+                vm_id: 100,
+                name: "homeassistant".to_string(),
+                node: "pve".to_string(),
+                storage: "local-lvm".to_string(),
+                cpu_cores: 2,
+                memory_mb: 4096,
+                disk_size_gb: 32,
+                auto_start,
+            }
+        }
+
+        /// Mock `/access/permissions` for one path, in the shape Proxmox returns.
+        async fn mock_privileges(
+            server: &mut mockito::ServerGuard,
+            path: &str,
+            privileges: &[&str],
+        ) -> mockito::Mock {
+            let granted: serde_json::Map<String, serde_json::Value> = privileges
+                .iter()
+                .map(|privilege| (privilege.to_string(), serde_json::json!(1)))
+                .collect();
+            server
+                .mock("GET", "/api2/json/access/permissions")
+                .match_query(Matcher::UrlEncoded("path".to_string(), path.to_string()))
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(serde_json::json!({ "data": { path: granted } }).to_string())
+                .create_async()
+                .await
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_ensure_user_can_create_vm_allowed() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            let mut vm_privileges = VM_CREATE_PRIVILEGES.to_vec();
+            vm_privileges.push("VM.PowerMgmt");
+            let vm_mock = mock_privileges(&mut server, "/vms/100", &vm_privileges).await;
+            let bridge_mock =
+                mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"]).await;
+
+            let result = ensure_user_can_create_vm(&test_session(&server), &vm_config(true)).await;
+            assert!(result.is_ok(), "unexpected error: {:?}", result.err());
+
+            vm_mock.assert_async().await;
+            bridge_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_ensure_user_can_create_vm_denied() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            // A read-only user can log in fine but only has audit rights.
+            let vm_mock = mock_privileges(&mut server, "/vms/100", &["VM.Audit"]).await;
+
+            match ensure_user_can_create_vm(&test_session(&server), &vm_config(true)).await {
+                Err(Error::ProxmoxApi(msg)) => {
+                    assert!(msg.contains("VM.Allocate"), "{}", msg);
+                    assert!(msg.contains("VM.PowerMgmt"), "{}", msg);
+                    assert!(!msg.contains("VM.Audit"), "{}", msg);
+                }
+                other => panic!("Expected permission error, got {:?}", other),
+            }
+
+            vm_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_ensure_user_can_create_vm_needs_power_only_for_auto_start() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            let vm_mock = mock_privileges(&mut server, "/vms/100", VM_CREATE_PRIVILEGES).await;
+            let bridge_mock =
+                mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"]).await;
+
+            let result = ensure_user_can_create_vm(&test_session(&server), &vm_config(false)).await;
+            assert!(result.is_ok(), "unexpected error: {:?}", result.err());
+
+            vm_mock.assert_async().await;
+            bridge_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_ensure_user_can_create_vm_needs_bridge_access() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            let vm_mock = mock_privileges(&mut server, "/vms/100", VM_CREATE_PRIVILEGES).await;
+            let bridge_mock =
+                mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &[]).await;
+
+            match ensure_user_can_create_vm(&test_session(&server), &vm_config(false)).await {
+                Err(Error::ProxmoxApi(msg)) => {
+                    assert!(msg.contains("SDN.Use"), "{}", msg);
+                    assert!(msg.contains("vmbr0"), "{}", msg);
+                }
+                other => panic!("Expected bridge permission error, got {:?}", other),
+            }
+
+            vm_mock.assert_async().await;
+            bridge_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_uploadable_import_storages_skips_storage_without_upload_permission() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            let denied_mock =
+                mock_privileges(&mut server, "/storage/shared-import", &["Datastore.Audit"]).await;
+            let upload_only_mock = mock_privileges(
+                &mut server,
+                "/storage/upload-only",
+                &["Datastore.AllocateTemplate"],
+            )
+            .await;
+            let allowed_mock = mock_privileges(
+                &mut server,
+                "/storage/local",
+                &["Datastore.AllocateTemplate", "Datastore.Audit"],
+            )
+            .await;
+
+            // local-lvm can't take uploads, so its permissions are never asked for.
+            let storage_list = vec![
+                storage("shared-import", true, &["import"]),
+                storage("upload-only", true, &["import"]),
+                storage("local", true, &["iso", "import"]),
+                storage("local-lvm", true, &["images"]),
+            ];
+
+            let result = uploadable_import_storages(&test_session(&server), &storage_list)
+                .await
+                .unwrap();
+            let names: Vec<&str> = result.iter().map(|s| s.name.as_str()).collect();
+            assert_eq!(names, vec!["local"]);
+
+            denied_mock.assert_async().await;
+            upload_only_mock.assert_async().await;
+            allowed_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_uploadable_import_storages_reports_when_none_allowed() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            let denied_mock =
+                mock_privileges(&mut server, "/storage/local", &["Datastore.Audit"]).await;
+
+            let storage_list = vec![storage("local", true, &["iso", "import"])];
+
+            match uploadable_import_storages(&test_session(&server), &storage_list).await {
+                Err(Error::ProxmoxApi(msg)) => {
+                    assert!(msg.contains("Datastore.AllocateTemplate"), "{}", msg);
+                    assert!(msg.contains("local"), "{}", msg);
+                }
+                other => panic!("Expected upload permission error, got {:?}", other),
+            }
+
+            denied_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_pre_install_checks_pass_on_healthy_server() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            let nodes_mock = server
+                .mock("GET", "/api2/json/nodes")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"data": [{"node": "pve", "status": "online"}]}"#)
+                .create_async()
+                .await;
+
+            let mut vm_privileges = VM_CREATE_PRIVILEGES.to_vec();
+            vm_privileges.push("VM.PowerMgmt");
+            let permission_mocks = vec![
+                mock_privileges(&mut server, "/vms/100", &vm_privileges).await,
+                mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"]).await,
+                mock_privileges(
+                    &mut server,
+                    "/storage/local-lvm",
+                    &["Datastore.AllocateSpace"],
+                )
+                .await,
+                mock_privileges(
+                    &mut server,
+                    "/storage/local",
+                    &["Datastore.AllocateTemplate", "Datastore.Audit"],
+                )
+                .await,
+            ];
+
+            let storage_mock = server
+                .mock("GET", "/api2/json/nodes/pve/storage")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(
+                    r#"{
+                        "data": [
+                            {"storage": "local", "type": "dir", "content": "iso,import",
+                             "avail": 100000000000, "total": 500000000000, "active": 1},
+                            {"storage": "local-lvm", "type": "lvmthin", "content": "images,rootdir",
+                             "avail": 200000000000, "total": 1000000000000, "active": 1}
+                        ]
+                    }"#,
+                )
+                .create_async()
+                .await;
+
+            let nextid_mock = server
+                .mock("GET", "/api2/json/cluster/nextid")
+                .match_query(Matcher::UrlEncoded("vmid".to_string(), "100".to_string()))
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"data": "100"}"#)
+                .create_async()
+                .await;
+
+            let config = ProxmoxVmConfig {
+                vm_id: 100,
+                name: "homeassistant".to_string(),
+                node: "pve".to_string(),
+                storage: "local-lvm".to_string(),
+                cpu_cores: 2,
+                memory_mb: 4096,
+                disk_size_gb: 32,
+                auto_start: true,
             };
 
-            let result = get_storage_name(&session, "pve").await;
-            assert!(result.is_err());
+            let result = pre_install_checks(&test_session(&server), &config, 400_000_000).await;
+            assert!(result.is_ok(), "unexpected error: {:?}", result.err());
 
+            nodes_mock.assert_async().await;
+            for mock in permission_mocks {
+                mock.assert_async().await;
+            }
             storage_mock.assert_async().await;
+            nextid_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_pre_install_checks_stop_at_offline_node() {
+            std::env::remove_var("HA_INSTALLER_MOCK");
+            let mut server = Server::new_async().await;
+
+            let nodes_mock = server
+                .mock("GET", "/api2/json/nodes")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"data": [{"node": "pve", "status": "offline"}]}"#)
+                .create_async()
+                .await;
+
+            // Nothing after the node check should run once it fails.
+            let permissions_mock = server
+                .mock("GET", "/api2/json/access/permissions")
+                .match_query(Matcher::Any)
+                .expect(0)
+                .create_async()
+                .await;
+
+            let config = ProxmoxVmConfig {
+                vm_id: 100,
+                name: "homeassistant".to_string(),
+                node: "pve".to_string(),
+                storage: "local-lvm".to_string(),
+                cpu_cores: 2,
+                memory_mb: 4096,
+                disk_size_gb: 32,
+                auto_start: true,
+            };
+
+            match pre_install_checks(&test_session(&server), &config, 400_000_000).await {
+                Err(Error::ProxmoxApi(msg)) => assert!(msg.contains("offline"), "{}", msg),
+                other => panic!("Expected offline node error, got {:?}", other),
+            }
+
+            nodes_mock.assert_async().await;
+            permissions_mock.assert_async().await;
         }
 
         #[tokio::test]
