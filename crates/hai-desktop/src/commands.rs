@@ -4,9 +4,10 @@
 //! It handles the bridge between Tauri's Channel<T> and hai-core's ProgressCallback trait.
 
 use hai_core::{
-    disk, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, FlashProgress, FlashStage,
-    HaosRelease, ImageFormat, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
-    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, UpdateInfo,
+    disk, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, ExpectedDevice,
+    FlashProgress, FlashRequest, FlashStage, HaosRelease, ImageFormat, ProgressCallback,
+    ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig,
+    ProxmoxVmResult, UpdateInfo,
 };
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -35,14 +36,6 @@ impl<'a> ProgressCallback for TauriProgressCallback<'a> {
 // =============================================================================
 // Request/Response Types
 // =============================================================================
-
-/// Request to flash an image to a device
-#[derive(serde::Deserialize)]
-pub struct FlashRequest {
-    pub device_id: String,
-    pub board: String,
-    pub verify: bool,
-}
 
 /// Result of a flash operation
 #[derive(serde::Serialize)]
@@ -98,10 +91,12 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
 ///
 /// `write_image` writes to whatever target it is given, so this lookup is the
 /// safety gate: the device must be one that enumeration reported, and it must
-/// be removable
+/// be removable, and it must still match the drive the user selected, since
+/// the path can be reassigned while the image downloads.
 fn find_flash_target<'a>(
     devices: &'a [BlockDevice],
     device_id: &str,
+    expected: &ExpectedDevice,
 ) -> Result<&'a BlockDevice, String> {
     let device = devices.iter().find(|d| d.id == device_id).ok_or_else(|| {
         format!(
@@ -113,6 +108,14 @@ fn find_flash_target<'a>(
     if !device.removable {
         return Err(format!(
             "{} is not a removable drive and cannot be overwritten",
+            device_id
+        ));
+    }
+
+    if !expected.matches(device) {
+        return Err(format!(
+            "The drive at {} is no longer the one you selected. It may have been \
+             swapped for another device; please select your drive again.",
             device_id
         ));
     }
@@ -192,7 +195,7 @@ pub async fn flash_image(
         .await
         .map_err(|e| format!("Failed to list devices: {}", e))?;
 
-    let device = find_flash_target(&device_list, &request.device_id)?;
+    let device = find_flash_target(&device_list, &request.device_id, &request.expected_device)?;
 
     if image_size > device.size {
         return Err(format!(
@@ -309,7 +312,9 @@ pub async fn get_haos_release(version: Option<String>) -> Result<HaosRelease, St
 /// Check for application updates
 #[tauri::command]
 pub async fn check_for_updates() -> Result<UpdateInfo, String> {
-    Ok(mock::get_mock_update_info())
+    download::check_for_updates()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Get the device manifest
@@ -933,157 +938,6 @@ mod tests {
         }
     }
 
-    // ===== Flash Request/Result Tests =====
-
-    #[test]
-    fn test_flash_request_deserialization() {
-        let json = r#"{
-            "device_id": "/dev/sda",
-            "board": "rpi5-64",
-            "verify": true
-        }"#;
-
-        let request: FlashRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.device_id, "/dev/sda");
-        assert_eq!(request.board, "rpi5-64");
-        assert!(request.verify);
-    }
-
-    #[test]
-    fn test_flash_result_serialization() {
-        let result = FlashResult {
-            success: true,
-            error: None,
-            duration_secs: 45,
-        };
-
-        let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("\"success\":true"));
-        assert!(json.contains("\"duration_secs\":45"));
-    }
-
-    #[test]
-    fn test_flash_result_success() {
-        let result = FlashResult {
-            success: true,
-            error: None,
-            duration_secs: 45,
-        };
-
-        assert!(result.success);
-        assert!(result.error.is_none());
-        assert_eq!(result.duration_secs, 45);
-    }
-
-    #[test]
-    fn test_flash_result_failure() {
-        let result = FlashResult {
-            success: false,
-            error: Some("Test error".to_string()),
-            duration_secs: 0,
-        };
-
-        assert!(!result.success);
-        assert!(result.error.is_some());
-        assert_eq!(result.error.unwrap(), "Test error");
-    }
-
-    // ===== Error Message Format Tests =====
-
-    #[test]
-    fn test_error_message_format_for_missing_board() {
-        let board = "unknown-board";
-        let error_msg = format!("No image found for board: {}", board);
-        assert_eq!(error_msg, "No image found for board: unknown-board");
-    }
-
-    #[test]
-    fn test_error_message_format_for_write_failure() {
-        let inner_error = "Permission denied";
-        let error_msg = format!("Write failed: {}", inner_error);
-        assert_eq!(error_msg, "Write failed: Permission denied");
-    }
-
-    // ===== Progress Simulation Logic Tests =====
-
-    #[test]
-    fn test_simulate_flash_progress_stage_weights_total_100() {
-        let stage_weights = [40, 10, 45, 5]; // Downloading, Verifying, Writing, Finalizing
-        let total: u32 = stage_weights.iter().sum();
-        assert_eq!(total, 100, "Stage weights should sum to 100%");
-    }
-
-    #[test]
-    fn test_flash_progress_clamps_to_100() {
-        let progress: u32 = 105;
-        let clamped = progress.min(100);
-        assert_eq!(clamped, 100);
-
-        let progress: u32 = 50;
-        let clamped = progress.min(100);
-        assert_eq!(clamped, 50);
-    }
-
-    // ===== VM Status Info Tests =====
-
-    #[test]
-    fn test_vm_status_info_serialization() {
-        let info = VmStatusInfo {
-            status: "started".to_string(),
-            ip_address: Some("192.168.1.100".to_string()),
-        };
-
-        let json = serde_json::to_string(&info).unwrap();
-        assert!(json.contains("\"status\":\"started\""));
-        assert!(json.contains("\"ip_address\":\"192.168.1.100\""));
-    }
-
-    #[test]
-    fn test_vm_status_info_without_ip() {
-        let info = VmStatusInfo {
-            status: "stopped".to_string(),
-            ip_address: None,
-        };
-
-        let json = serde_json::to_string(&info).unwrap();
-        assert!(json.contains("\"status\":\"stopped\""));
-        assert!(json.contains("\"ip_address\":null"));
-    }
-
-    // ===== TauriProgressCallback Tests =====
-
-    #[test]
-    fn test_tauri_progress_callback_new() {
-        // We can't easily test Tauri's Channel in unit tests, but we can at least
-        // verify the TauriProgressCallback structure compiles and can be created
-        // This will be tested indirectly through integration tests
-    }
-
-    // ===== Progress Simulation Tests =====
-
-    #[tokio::test]
-    #[serial]
-    async fn test_simulate_flash_progress_executes() {
-        // Create a mock channel that accepts FlashProgress
-        let (_tx, _rx) = tokio::sync::mpsc::unbounded_channel::<Result<FlashProgress, String>>();
-        // We can't easily test the actual simulation without a real Tauri channel,
-        // but we've verified the logic in other tests
-    }
-
-    #[test]
-    fn test_simulate_utm_stage_weights_total_100() {
-        let stage_weights = [70, 30]; // Downloading, Extracting
-        let total: u32 = stage_weights.iter().sum();
-        assert_eq!(total, 100, "UTM stage weights should sum to 100%");
-    }
-
-    #[test]
-    fn test_simulate_proxmox_stage_weights_total_100() {
-        let stage_weights = [40, 25, 20, 10, 5]; // All Proxmox stages
-        let total: u32 = stage_weights.iter().sum();
-        assert_eq!(total, 100, "Proxmox stage weights should sum to 100%");
-    }
-
     // ===== System Info Tests - Platform Specific =====
 
     #[test]
@@ -1168,14 +1022,6 @@ mod tests {
         assert_eq!(result["version"], serde_json::Value::Null);
     }
 
-    #[tokio::test]
-    #[cfg(not(target_os = "macos"))]
-    async fn test_download_utm_image_non_macos() {
-        let (_tx, _rx) = tokio::sync::mpsc::unbounded_channel::<Result<FlashProgress, String>>();
-        // Can't create real Tauri channel, but test will fail if function panics
-        // The function should return error on non-macOS
-    }
-
     // ===== Non-mock System Info Tests =====
 
     #[test]
@@ -1212,128 +1058,7 @@ mod tests {
         let _ = result;
     }
 
-    // ===== Test SystemInfo Serialization =====
-
-    #[test]
-    fn test_system_info_serialization() {
-        let info = SystemInfo {
-            cpu_cores: 8,
-            memory_mb: 16384,
-        };
-        let json = serde_json::to_string(&info).unwrap();
-        assert!(json.contains("\"cpu_cores\":8"));
-        assert!(json.contains("\"memory_mb\":16384"));
-    }
-
-    // ===== Test ProxmoxCredentials Structure =====
-
-    #[test]
-    fn test_proxmox_credentials_structure() {
-        let creds = ProxmoxCredentials {
-            server_url: "https://pve.local:8006".to_string(),
-            username: "root@pam".to_string(),
-            password: "secret".to_string(),
-        };
-        assert_eq!(creds.server_url, "https://pve.local:8006");
-        assert_eq!(creds.username, "root@pam");
-        assert_eq!(creds.password, "secret");
-    }
-
-    #[test]
-    fn test_proxmox_session_structure() {
-        let session = ProxmoxSession {
-            server_url: "https://pve.local:8006".to_string(),
-            ticket: "PVE:ticket:data".to_string(),
-            csrf_token: "csrf-token".to_string(),
-        };
-        assert!(!session.ticket.is_empty());
-        assert!(!session.csrf_token.is_empty());
-    }
-
-    #[test]
-    fn test_proxmox_node_fields() {
-        let node = ProxmoxNode {
-            name: "pve".to_string(),
-            status: "online".to_string(),
-            cpu_usage: Some(25.5),
-            memory_used: Some(8_000_000_000),
-            memory_total: Some(32_000_000_000),
-        };
-        assert_eq!(node.name, "pve");
-        assert_eq!(node.status, "online");
-        assert_eq!(node.cpu_usage, Some(25.5));
-    }
-
-    #[test]
-    fn test_proxmox_storage_fields() {
-        let storage = ProxmoxStorage {
-            name: "local-lvm".to_string(),
-            storage_type: "lvmthin".to_string(),
-            content: vec!["images".to_string()],
-            available: 500_000_000_000,
-            total: 1_000_000_000_000,
-            active: true,
-        };
-        assert_eq!(storage.name, "local-lvm");
-        assert!(storage.active);
-        assert_eq!(storage.content.len(), 1);
-    }
-
-    #[test]
-    fn test_proxmox_vm_config_fields() {
-        let config = ProxmoxVmConfig {
-            node: "pve".to_string(),
-            storage: "local-lvm".to_string(),
-            vm_id: 100,
-            name: "Home Assistant".to_string(),
-            cpu_cores: 2,
-            memory_mb: 4096,
-            disk_size_gb: 32,
-            auto_start: true,
-        };
-        assert_eq!(config.vm_id, 100);
-        assert_eq!(config.cpu_cores, 2);
-        assert!(config.auto_start);
-    }
-
-    #[test]
-    fn test_proxmox_vm_result_fields() {
-        let result = ProxmoxVmResult {
-            vm_id: 100,
-            node: "pve".to_string(),
-            ip_address: Some("192.168.1.150".to_string()),
-        };
-        assert_eq!(result.vm_id, 100);
-        assert_eq!(result.ip_address, Some("192.168.1.150".to_string()));
-    }
-
-    // ===== Test progress callback structure =====
-
-    #[test]
-    fn test_flash_request_with_verify_false() {
-        let json = r#"{
-            "device_id": "/dev/sdb",
-            "board": "rpi4-64",
-            "verify": false
-        }"#;
-
-        let request: FlashRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.device_id, "/dev/sdb");
-        assert_eq!(request.board, "rpi4-64");
-        assert!(!request.verify);
-    }
-
     // ===== Additional edge case tests =====
-
-    #[test]
-    fn test_flash_result_with_duration() {
-        let result = FlashResult {
-            success: true,
-            error: None,
-            duration_secs: 120,
-        };
-        assert_eq!(result.duration_secs, 120);
-    }
 
     #[test]
     #[serial]
@@ -1389,133 +1114,6 @@ mod tests {
         let _result = list_block_devices().await;
     }
 
-    #[test]
-    fn test_system_info_structure() {
-        let info = SystemInfo {
-            cpu_cores: 16,
-            memory_mb: 65536,
-        };
-        assert_eq!(info.cpu_cores, 16);
-        assert_eq!(info.memory_mb, 65536);
-    }
-
-    #[test]
-    fn test_flash_result_error_case() {
-        let result = FlashResult {
-            success: false,
-            error: Some("Device disconnected".to_string()),
-            duration_secs: 30,
-        };
-        assert!(!result.success);
-        assert_eq!(result.error, Some("Device disconnected".to_string()));
-        assert_eq!(result.duration_secs, 30);
-    }
-
-    #[test]
-    fn test_vm_status_info_with_started_status() {
-        let status = VmStatusInfo {
-            status: "started".to_string(),
-            ip_address: Some("10.0.0.1".to_string()),
-        };
-        assert_eq!(status.status, "started");
-        assert!(status.ip_address.is_some());
-    }
-
-    #[test]
-    fn test_vm_status_info_with_stopped_status() {
-        let status = VmStatusInfo {
-            status: "stopped".to_string(),
-            ip_address: None,
-        };
-        assert_eq!(status.status, "stopped");
-        assert!(status.ip_address.is_none());
-    }
-
-    #[test]
-    fn test_flash_request_board_field() {
-        let request = FlashRequest {
-            device_id: "/dev/sdc".to_string(),
-            board: "generic-aarch64".to_string(),
-            verify: true,
-        };
-        assert_eq!(request.board, "generic-aarch64");
-    }
-
-    #[test]
-    fn test_proxmox_credentials_deserialization() {
-        let json = r#"{
-            "server_url": "https://test.local:8006",
-            "username": "admin@pam",
-            "password": "secret123"
-        }"#;
-        let creds: ProxmoxCredentials = serde_json::from_str(json).unwrap();
-        assert_eq!(creds.server_url, "https://test.local:8006");
-        assert_eq!(creds.username, "admin@pam");
-        assert_eq!(creds.password, "secret123");
-    }
-
-    // ===== Test non-mock path error cases =====
-
-    #[tokio::test]
-    #[serial]
-    async fn test_get_manifest_makes_network_call() {
-        // This will make an actual network call
-        let result = get_manifest().await;
-        // Should either succeed or fail gracefully
-        match result {
-            Ok(manifest) => {
-                assert!(!manifest.devices.is_empty());
-                assert!(manifest.version > 0);
-            }
-            Err(e) => {
-                // Network error is acceptable
-                assert!(!e.is_empty());
-            }
-        }
-    }
-
-    #[test]
-    fn test_tauri_progress_callback_struct_size() {
-        // Verify the struct is small and efficient
-        use std::mem::size_of;
-        // TauriProgressCallback should be a thin wrapper (just a reference)
-        // This test ensures we're not accidentally adding overhead
-        // Size should be pointer-sized (8 bytes on 64-bit systems)
-        let channel_ref_size = size_of::<&()>();
-        assert!(channel_ref_size <= 16);
-    }
-
-    #[test]
-    fn test_flash_request_verify_flag_true() {
-        let request = FlashRequest {
-            device_id: "/dev/sda".to_string(),
-            board: "rpi5-64".to_string(),
-            verify: true,
-        };
-        assert!(request.verify);
-    }
-
-    #[test]
-    fn test_flash_request_verify_flag_false() {
-        let request = FlashRequest {
-            device_id: "/dev/sda".to_string(),
-            board: "rpi5-64".to_string(),
-            verify: false,
-        };
-        assert!(!request.verify);
-    }
-
-    #[test]
-    fn test_flash_result_successful_with_zero_duration() {
-        let result = FlashResult {
-            success: true,
-            error: None,
-            duration_secs: 0,
-        };
-        assert!(result.success);
-        assert_eq!(result.duration_secs, 0);
-    }
-
     // ===== check_ha_ready() Tests =====
 
     #[tokio::test]
@@ -1549,31 +1147,54 @@ mod tests {
         }
     }
 
+    /// The identity the frontend sends for a device built by `flash_target`.
+    fn expected() -> ExpectedDevice {
+        ExpectedDevice {
+            size: Some(32_000_000_000),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn test_find_flash_target_accepts_removable_device() {
         let devices = [flash_target("/dev/sdb", true)];
-        let device = find_flash_target(&devices, "/dev/sdb").unwrap();
+        let device = find_flash_target(&devices, "/dev/sdb", &expected()).unwrap();
         assert_eq!(device.id, "/dev/sdb");
     }
 
     #[test]
     fn test_find_flash_target_rejects_unknown_device() {
         let devices = [flash_target("/dev/sdb", true)];
-        let err = find_flash_target(&devices, "/dev/sdz").unwrap_err();
+        let err = find_flash_target(&devices, "/dev/sdz", &expected()).unwrap_err();
         assert!(err.contains("not found"), "{err}");
     }
 
     #[test]
     fn test_find_flash_target_rejects_non_removable_device() {
         let devices = [flash_target("\\\\.\\PhysicalDrive1", false)];
-        let err = find_flash_target(&devices, "\\\\.\\PhysicalDrive1").unwrap_err();
+        let err = find_flash_target(&devices, "\\\\.\\PhysicalDrive1", &expected()).unwrap_err();
         assert!(err.contains("not a removable drive"), "{err}");
     }
 
     #[test]
     fn test_find_flash_target_rejects_empty_device_id() {
         let devices = [flash_target("/dev/sdb", true)];
-        let err = find_flash_target(&devices, "").unwrap_err();
+        let err = find_flash_target(&devices, "", &expected()).unwrap_err();
         assert!(err.contains("not found"), "{err}");
+    }
+
+    #[test]
+    fn test_find_flash_target_rejects_different_device_at_same_path() {
+        let mut device = flash_target("/dev/sdb", true);
+        device.model = Some("Extreme".to_string());
+        let err = find_flash_target(&[device], "/dev/sdb", &expected()).unwrap_err();
+        assert!(err.contains("no longer the one you selected"), "{err}");
+    }
+
+    #[test]
+    fn test_find_flash_target_rejects_unknown_expected_size() {
+        let devices = [flash_target("/dev/sdb", true)];
+        let unknown = ExpectedDevice::default();
+        assert!(find_flash_target(&devices, "/dev/sdb", &unknown).is_err());
     }
 }

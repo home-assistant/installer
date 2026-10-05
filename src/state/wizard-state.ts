@@ -9,7 +9,13 @@ export interface WizardStep {
 
 export interface WizardSelections {
   device?: string;
+  /** Device id of the selected drive; also the path sent to the backend. */
   drive?: string;
+  /** Rest of the selected drive's identity, kept so it can be re-verified. */
+  driveName?: string;
+  driveSize?: number;
+  driveModel?: string;
+  driveVendor?: string;
   [key: string]: unknown;
 }
 

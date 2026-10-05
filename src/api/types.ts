@@ -109,6 +109,19 @@ export interface FlashRequest {
   board: string;
   /** Whether to verify after writing */
   verify: boolean;
+  /**
+   * What the device at `device_id` looked like when it was selected. The
+   * backend re-checks it right before writing, after the image download, so a
+   * different disk that took over the path in the meantime is refused.
+   */
+  expected_device: {
+    /** Omitted when unknown */
+    size?: number;
+    /** Omitted when unknown */
+    model?: string;
+    /** Omitted when unknown */
+    vendor?: string;
+  };
 }
 
 /** Result of a flash operation */
