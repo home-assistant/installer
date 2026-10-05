@@ -72,10 +72,8 @@ pub trait ReleaseSource {
 ///
 /// `list_devices` returns every block device the platform reports, internal
 /// disks included, and `write_image` writes to whatever device id it is given.
-/// Neither checks that the target is safe to overwrite. Callers must validate
-/// the target right before writing: re-enumerate, require the id to be present
-/// in that fresh list, and require the device to be `removable` (hai-desktop
-/// does this in `find_flash_target`).
+/// Neither checks that the target is safe to overwrite, that is the caller's
+/// responsibility.
 pub trait DeviceBackend {
     /// List all block devices on the system.
     async fn list_devices(&self) -> Result<Vec<BlockDevice>>;
