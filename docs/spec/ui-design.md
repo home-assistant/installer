@@ -275,7 +275,7 @@ Casita helps make the app feel friendly and approachable, especially for non-tec
 │             1. Insert SD card into Pi                               │
 │             2. Connect power                                        │
 │             3. Wait ~20 minutes for first boot                      │
-│             4. Visit homeassistant.local.                           │
+│             4. Visit homeassistant.local                            │
 │                                                                     │
 │  ┌────────────────────────────────────────────────────────────────┐ │
 │  │                                                                │ │

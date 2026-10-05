@@ -118,7 +118,7 @@
 │   2. Connect ethernet (recommended) or prepare WiFi         │
 │   3. Power on the device                                    │
 │   4. Wait ~20 minutes for first boot                        │
-│   5. Visit http://homeassistant.local.                      │
+│   5. Visit http://homeassistant.local                       │
 │                                                             │
 │                              [ Flash Another ] [ Done ]     │
 │                                                             │
@@ -293,7 +293,7 @@ Then continues to drive selection and flashing.
 │   Next steps:                                               │
 │                                                             │
 │   1. Wait ~20 minutes for first boot                        │
-│   2. Visit http://homeassistant.local.                      │
+│   2. Visit http://homeassistant.local                       │
 │      (or check the VM console for the IP address)           │
 │                                                             │
 │                              [ Create Another ] [ Done ]    │
