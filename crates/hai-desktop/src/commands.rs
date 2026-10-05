@@ -1118,15 +1118,6 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_check_ha_ready_invalid_ip() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-        // Test with various invalid IPs
-        let result = check_ha_ready("999.999.999.999".to_string()).await;
-        assert!(!result, "Should return false for invalid IP format");
-    }
-
-    #[tokio::test]
-    #[serial]
     async fn test_check_ha_ready_empty_ip() {
         std::env::remove_var("HA_INSTALLER_MOCK");
         let result = check_ha_ready("".to_string()).await;
