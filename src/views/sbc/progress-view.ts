@@ -6,6 +6,7 @@ import {
   formatBytes,
   type FlashProgress,
 } from "../../api/index.js";
+import { readDriveSelection } from "../../utils/drive-selection.js";
 import "../../components/progress-bar.js";
 
 @customElement("progress-view")
@@ -367,12 +368,12 @@ export class ProgressView extends LitElement {
     this._error = null;
 
     const selections = this._wizardState.selections;
-    const driveId = selections.drive as string;
+    const drive = readDriveSelection(selections);
     const deviceConfig = selections.deviceConfig as
       | { board: string }
       | undefined;
 
-    if (!driveId || !deviceConfig) {
+    if (!drive || !deviceConfig) {
       this._error = "Missing drive or device configuration";
       this._isFlashing = false;
       return;
@@ -381,9 +382,16 @@ export class ProgressView extends LitElement {
     try {
       const result = await flashImage(
         {
-          device_id: driveId,
+          device_id: drive.id,
           board: deviceConfig.board,
           verify: true,
+          // The download before the write can take minutes; the backend
+          // re-checks this right before writing.
+          expected_device: {
+            size: drive.size,
+            model: drive.model,
+            vendor: drive.vendor,
+          },
         },
         (progress) => {
           // Track stage changes for ETA calculation

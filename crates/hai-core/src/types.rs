@@ -155,6 +155,27 @@ pub struct FlashRequest {
     pub board: String,
     /// Whether to verify after writing
     pub verify: bool,
+    /// What the device at `device_id` looked like when the user selected it
+    pub expected_device: ExpectedDevice,
+}
+
+/// Identity of the selected drive, re-checked right before writing.
+///
+/// `device_id` is a path the OS can reassign to another device, for example
+/// while the image downloads. `None` means the field was unknown.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ExpectedDevice {
+    pub size: Option<u64>,
+    pub model: Option<String>,
+    pub vendor: Option<String>,
+}
+
+impl ExpectedDevice {
+    /// Whether `device` still looks like the selected drive. Every device
+    /// reports a size, so an unknown expected size never matches.
+    pub fn matches(&self, device: &BlockDevice) -> bool {
+        self.size == Some(device.size) && self.model == device.model && self.vendor == device.vendor
+    }
 }
 
 /// HAOS release information from GitHub
@@ -634,6 +655,7 @@ mod tests {
             device_id: "/dev/sda".to_string(),
             board: "rpi5-64".to_string(),
             verify: true,
+            expected_device: ExpectedDevice::default(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -650,6 +672,7 @@ mod tests {
             device_id: "disk2".to_string(),
             board: "green".to_string(),
             verify: false,
+            expected_device: ExpectedDevice::default(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
