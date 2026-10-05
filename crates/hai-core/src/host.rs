@@ -43,12 +43,12 @@ pub fn system_info() -> Result<SystemInfo> {
     }
 }
 
-/// Whether the Home Assistant webserver is accepting connections on port 8123.
+/// Whether the Home Assistant webserver is accepting connections on port 80.
 pub async fn check_ha_ready(ip: &str) -> bool {
     use tokio::net::TcpStream;
     use tokio::time::timeout;
 
-    let addr = format!("{}:8123", ip);
+    let addr = format!("{}:80", ip);
     matches!(
         timeout(Duration::from_secs(3), TcpStream::connect(&addr)).await,
         Ok(Ok(_))
@@ -57,7 +57,7 @@ pub async fn check_ha_ready(ip: &str) -> bool {
 
 /// Whether Home Assistant has finished starting up (serves its manifest).
 pub async fn check_ha_updated(ip: &str) -> bool {
-    let url = format!("http://{}:8123/manifest.json", ip);
+    let url = format!("http://{}/manifest.json", ip);
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()

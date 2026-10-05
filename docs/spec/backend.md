@@ -249,7 +249,7 @@ impl UtmClient {
 /// Check if we have internet connectivity
 pub async fn check_connectivity() -> ConnectivityStatus;
 
-/// Check if Home Assistant is ready (port 8123 responding)
+/// Check if Home Assistant is ready (port 80 responding)
 pub async fn check_ha_ready(ip: &str) -> Result<bool>;
 
 /// Check if Home Assistant has finished updating (manifest.json)

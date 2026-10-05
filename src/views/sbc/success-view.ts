@@ -252,12 +252,12 @@ export class SuccessView extends LitElement {
             <span class="step-text"
               >Open
               <a
-                href="http://homeassistant.local:8123"
+                href="http://homeassistant.local"
                 target="_blank"
                 rel="noopener noreferrer"
                 @click=${(event: Event) =>
-                  openExternalLink(event, "http://homeassistant.local:8123")}
-                >homeassistant.local:8123</a
+                  openExternalLink(event, "http://homeassistant.local")}
+                >homeassistant.local</a
               >
               in your browser</span
             >
