@@ -69,11 +69,20 @@ pub trait ReleaseSource {
 }
 
 /// Block-device enumeration and raw image writing.
+///
+/// `list_devices` returns every block device the platform reports, internal
+/// disks included, and `write_image` writes to whatever device id it is given.
+/// Neither checks that the target is safe to overwrite. Callers must validate
+/// the target right before writing: re-enumerate, require the id to be present
+/// in that fresh list, and require the device to be `removable` (hai-desktop
+/// does this in `find_flash_target`).
 pub trait DeviceBackend {
-    /// List block devices suitable for flashing.
+    /// List all block devices on the system.
     async fn list_devices(&self) -> Result<Vec<BlockDevice>>;
 
-    /// Write an image to a device, reporting progress.
+    /// Write an image to the device with this id, reporting progress.
+    ///
+    /// Performs no identity or removability check of its own.
     async fn write_image<P: ProgressCallback>(
         &self,
         image_path: &Path,
