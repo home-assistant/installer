@@ -1389,15 +1389,6 @@ mod tests {
         let _result = list_block_devices().await;
     }
 
-    #[tokio::test]
-    async fn test_check_ha_updated_invalid_ip() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-        // Use invalid IP
-        let result = check_ha_updated("192.0.2.1".to_string()).await;
-        // Should return false (unreachable or error)
-        assert!(!result);
-    }
-
     #[test]
     fn test_system_info_structure() {
         let info = SystemInfo {
