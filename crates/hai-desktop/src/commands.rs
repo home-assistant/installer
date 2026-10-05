@@ -515,23 +515,6 @@ pub fn check_utm_status() -> serde_json::Value {
     })
 }
 
-/// Get the Mac's CPU architecture
-#[tauri::command]
-#[cfg(target_os = "macos")]
-pub fn get_mac_architecture() -> String {
-    if cfg!(target_arch = "aarch64") {
-        "aarch64".to_string()
-    } else {
-        "x86_64".to_string()
-    }
-}
-
-#[tauri::command]
-#[cfg(not(target_os = "macos"))]
-pub fn get_mac_architecture() -> String {
-    "unsupported".to_string()
-}
-
 /// Create a Home Assistant VM in UTM
 #[tauri::command]
 #[cfg(target_os = "macos")]
@@ -584,23 +567,6 @@ pub fn resize_utm_vm_disk(_vm_id: String, _size_gb: u32) -> Result<(), String> {
 #[tauri::command]
 #[cfg(not(target_os = "macos"))]
 pub fn resize_utm_vm_disk(_vm_id: String, _size_gb: u32) -> Result<(), String> {
-    Err("UTM is only available on macOS".to_string())
-}
-
-/// List UTM VMs
-#[tauri::command]
-#[cfg(target_os = "macos")]
-pub fn list_utm_vms() -> Result<Vec<String>, String> {
-    if is_mock_enabled() {
-        return Ok(vec!["Home Assistant".to_string()]);
-    }
-    // TODO: Implement via utmctl or AppleScript
-    Ok(vec![])
-}
-
-#[tauri::command]
-#[cfg(not(target_os = "macos"))]
-pub fn list_utm_vms() -> Result<Vec<String>, String> {
     Err("UTM is only available on macOS".to_string())
 }
 
@@ -953,20 +919,6 @@ mod tests {
     // ===== UTM Command Tests - macOS Specific =====
 
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_get_mac_architecture() {
-        let arch = get_mac_architecture();
-        assert!(arch == "aarch64" || arch == "x86_64");
-    }
-
-    #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn test_get_mac_architecture_non_macos() {
-        let arch = get_mac_architecture();
-        assert_eq!(arch, "unsupported");
-    }
-
-    #[test]
     #[cfg(not(target_os = "macos"))]
     fn test_create_utm_vm_non_macos() {
         let result = create_utm_vm(serde_json::json!({
@@ -992,14 +944,6 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     fn test_resize_utm_vm_disk_non_macos() {
         let result = resize_utm_vm_disk("test-vm-id".to_string(), 64);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("macOS"));
-    }
-
-    #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn test_list_utm_vms_non_macos() {
-        let result = list_utm_vms();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("macOS"));
     }
@@ -1078,18 +1022,6 @@ mod tests {
         let result = resize_utm_vm_disk("test-vm".to_string(), 64);
         // Should return Ok even though not implemented
         assert!(result.is_ok());
-    }
-
-    #[test]
-    #[serial]
-    #[cfg(target_os = "macos")]
-    fn test_list_utm_vms_non_mock_returns_empty() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-        let result = list_utm_vms();
-        assert!(result.is_ok());
-        let vms = result.unwrap();
-        // Returns empty list when not implemented
-        assert_eq!(vms.len(), 0);
     }
 
     #[test]

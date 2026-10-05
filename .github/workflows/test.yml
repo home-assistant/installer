@@ -68,6 +68,11 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Install cargo-shear
+        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-shear
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
@@ -78,6 +83,9 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all --check
+
+      - name: Check unused dependencies
+        run: cargo shear --locked --deny-warnings --format=github
 
       - name: Run Clippy
         run: cargo clippy --workspace -- -D warnings

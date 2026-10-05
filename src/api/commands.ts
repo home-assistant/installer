@@ -369,17 +369,6 @@ async function simulateUtmDownload(
 }
 
 /**
- * Get the Mac's CPU architecture.
- * Returns "aarch64" for Apple Silicon, "x86_64" for Intel, or "unsupported".
- */
-export async function getMacArchitecture(): Promise<string> {
-  if (isBrowserOnly()) {
-    return "aarch64"; // Mock as Apple Silicon
-  }
-  return invoke<string>("get_mac_architecture");
-}
-
-/**
  * Create a Home Assistant VM in UTM.
  * @param config The VM configuration
  * @returns The VM ID if successful
@@ -419,17 +408,6 @@ export async function resizeUtmVmDisk(
     return;
   }
   return invoke<void>("resize_utm_vm_disk", { vmId, sizeGb });
-}
-
-/**
- * List all UTM VMs.
- * @returns Array of VM names
- */
-export async function listUtmVms(): Promise<string[]> {
-  if (isBrowserOnly()) {
-    return ["Home Assistant"];
-  }
-  return invoke<string[]>("list_utm_vms");
 }
 
 /**

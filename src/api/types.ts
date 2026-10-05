@@ -152,8 +152,6 @@ export interface HaosImage {
   download_url: string;
   /** File size in bytes */
   size: number;
-  /** SHA256 checksum (hex string) */
-  sha256: string;
 }
 
 // ============================================================================
