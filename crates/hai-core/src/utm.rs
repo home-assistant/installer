@@ -44,21 +44,6 @@ pub async fn create_vm<P: ProgressCallback>(
     }
 }
 
-/// List existing UTM VMs
-pub fn list_vms() -> Result<Vec<String>> {
-    #[cfg(target_os = "macos")]
-    {
-        macos::list_vms()
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        Err(Error::UnsupportedPlatform(
-            "UTM is only available on macOS".to_string(),
-        ))
-    }
-}
-
 /// Get the status of a UTM VM
 pub fn vm_status(vm_id: &str) -> Result<VmStatusInfo> {
     #[cfg(target_os = "macos")]
@@ -81,11 +66,6 @@ mod macos {
     use std::process::Command;
 
     const UTM_APP_PATH: &str = "/Applications/UTM.app";
-
-    pub fn list_vms() -> Result<Vec<String>> {
-        // TODO: Implement via utmctl or AppleScript
-        Ok(vec![])
-    }
 
     pub fn vm_status(_vm_id: &str) -> Result<VmStatusInfo> {
         // TODO: Implement via utmctl

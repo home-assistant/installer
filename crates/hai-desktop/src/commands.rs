@@ -543,7 +543,8 @@ pub fn list_utm_vms() -> Result<Vec<String>, String> {
     if is_mock_enabled() {
         return Ok(vec!["Home Assistant".to_string()]);
     }
-    hai_core::utm::list_vms().map_err(|e| e.to_string())
+    // TODO: Implement via utmctl or AppleScript
+    Ok(vec![])
 }
 
 #[tauri::command]
