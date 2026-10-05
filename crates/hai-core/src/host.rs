@@ -8,8 +8,6 @@ use crate::types::SystemInfo;
 use std::time::Duration;
 
 /// Query the host for CPU core count and total memory.
-///
-/// TODO: wire up native queries for Linux and Windows.
 pub fn system_info() -> Result<SystemInfo> {
     #[cfg(target_os = "macos")]
     {
