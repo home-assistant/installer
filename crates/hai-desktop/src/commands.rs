@@ -4,9 +4,10 @@
 //! It handles the bridge between Tauri's Channel<T> and hai-core's ProgressCallback trait.
 
 use hai_core::{
-    disk, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, FlashProgress, FlashStage,
-    HaosRelease, ImageFormat, ProgressCallback, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
-    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, SystemInfo, UpdateInfo, VmStatusInfo,
+    disk, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, ExpectedDevice,
+    FlashProgress, FlashRequest, FlashStage, HaosRelease, ImageFormat, ProgressCallback,
+    ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig,
+    ProxmoxVmResult, SystemInfo, UpdateInfo, VmStatusInfo,
 };
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -35,14 +36,6 @@ impl<'a> ProgressCallback for TauriProgressCallback<'a> {
 // =============================================================================
 // Request/Response Types
 // =============================================================================
-
-/// Request to flash an image to a device
-#[derive(serde::Deserialize)]
-pub struct FlashRequest {
-    pub device_id: String,
-    pub board: String,
-    pub verify: bool,
-}
 
 /// Result of a flash operation
 #[derive(serde::Serialize)]
@@ -84,10 +77,12 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
 ///
 /// `write_image` writes to whatever target it is given, so this lookup is the
 /// safety gate: the device must be one that enumeration reported, and it must
-/// be removable
+/// be removable, and it must still match the drive the user selected, since
+/// the path can be reassigned while the image downloads.
 fn find_flash_target<'a>(
     devices: &'a [BlockDevice],
     device_id: &str,
+    expected: &ExpectedDevice,
 ) -> Result<&'a BlockDevice, String> {
     let device = devices.iter().find(|d| d.id == device_id).ok_or_else(|| {
         format!(
@@ -99,6 +94,14 @@ fn find_flash_target<'a>(
     if !device.removable {
         return Err(format!(
             "{} is not a removable drive and cannot be overwritten",
+            device_id
+        ));
+    }
+
+    if !expected.matches(device) {
+        return Err(format!(
+            "The drive at {} is no longer the one you selected. It may have been \
+             swapped for another device; please select your drive again.",
             device_id
         ));
     }
@@ -178,7 +181,7 @@ pub async fn flash_image(
         .await
         .map_err(|e| format!("Failed to list devices: {}", e))?;
 
-    let device = find_flash_target(&device_list, &request.device_id)?;
+    let device = find_flash_target(&device_list, &request.device_id, &request.expected_device)?;
 
     if image_size > device.size {
         return Err(format!(
@@ -295,7 +298,9 @@ pub async fn get_haos_release(version: Option<String>) -> Result<HaosRelease, St
 /// Check for application updates
 #[tauri::command]
 pub async fn check_for_updates() -> Result<UpdateInfo, String> {
-    Ok(mock::get_mock_update_info())
+    download::check_for_updates()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Get the device manifest
@@ -963,13 +968,16 @@ mod tests {
         let json = r#"{
             "device_id": "/dev/sda",
             "board": "rpi5-64",
-            "verify": true
+            "verify": true,
+            "expected_device": { "size": 32000000000 }
         }"#;
 
         let request: FlashRequest = serde_json::from_str(json).unwrap();
         assert_eq!(request.device_id, "/dev/sda");
         assert_eq!(request.board, "rpi5-64");
         assert!(request.verify);
+        // The frontend omits fields it does not know.
+        assert_eq!(request.expected_device, expected());
     }
 
     #[test]
@@ -1547,7 +1555,8 @@ mod tests {
         let json = r#"{
             "device_id": "/dev/sdb",
             "board": "rpi4-64",
-            "verify": false
+            "verify": false,
+            "expected_device": {}
         }"#;
 
         let request: FlashRequest = serde_json::from_str(json).unwrap();
@@ -1848,6 +1857,7 @@ mod tests {
             device_id: "/dev/sdc".to_string(),
             board: "generic-aarch64".to_string(),
             verify: true,
+            expected_device: expected(),
         };
         assert_eq!(request.board, "generic-aarch64");
     }
@@ -2005,6 +2015,7 @@ mod tests {
             device_id: "/dev/sda".to_string(),
             board: "rpi5-64".to_string(),
             verify: true,
+            expected_device: expected(),
         };
         assert!(request.verify);
     }
@@ -2015,6 +2026,7 @@ mod tests {
             device_id: "/dev/sda".to_string(),
             board: "rpi5-64".to_string(),
             verify: false,
+            expected_device: expected(),
         };
         assert!(!request.verify);
     }
@@ -2589,31 +2601,54 @@ mod tests {
         }
     }
 
+    /// The identity the frontend sends for a device built by `flash_target`.
+    fn expected() -> ExpectedDevice {
+        ExpectedDevice {
+            size: Some(32_000_000_000),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn test_find_flash_target_accepts_removable_device() {
         let devices = [flash_target("/dev/sdb", true)];
-        let device = find_flash_target(&devices, "/dev/sdb").unwrap();
+        let device = find_flash_target(&devices, "/dev/sdb", &expected()).unwrap();
         assert_eq!(device.id, "/dev/sdb");
     }
 
     #[test]
     fn test_find_flash_target_rejects_unknown_device() {
         let devices = [flash_target("/dev/sdb", true)];
-        let err = find_flash_target(&devices, "/dev/sdz").unwrap_err();
+        let err = find_flash_target(&devices, "/dev/sdz", &expected()).unwrap_err();
         assert!(err.contains("not found"), "{err}");
     }
 
     #[test]
     fn test_find_flash_target_rejects_non_removable_device() {
         let devices = [flash_target("\\\\.\\PhysicalDrive1", false)];
-        let err = find_flash_target(&devices, "\\\\.\\PhysicalDrive1").unwrap_err();
+        let err = find_flash_target(&devices, "\\\\.\\PhysicalDrive1", &expected()).unwrap_err();
         assert!(err.contains("not a removable drive"), "{err}");
     }
 
     #[test]
     fn test_find_flash_target_rejects_empty_device_id() {
         let devices = [flash_target("/dev/sdb", true)];
-        let err = find_flash_target(&devices, "").unwrap_err();
+        let err = find_flash_target(&devices, "", &expected()).unwrap_err();
         assert!(err.contains("not found"), "{err}");
+    }
+
+    #[test]
+    fn test_find_flash_target_rejects_different_device_at_same_path() {
+        let mut device = flash_target("/dev/sdb", true);
+        device.model = Some("Extreme".to_string());
+        let err = find_flash_target(&[device], "/dev/sdb", &expected()).unwrap_err();
+        assert!(err.contains("no longer the one you selected"), "{err}");
+    }
+
+    #[test]
+    fn test_find_flash_target_rejects_unknown_expected_size() {
+        let devices = [flash_target("/dev/sdb", true)];
+        let unknown = ExpectedDevice::default();
+        assert!(find_flash_target(&devices, "/dev/sdb", &unknown).is_err());
     }
 }

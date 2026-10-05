@@ -34,6 +34,8 @@ import {
   type WizardFlow,
   type WizardState,
 } from "../state/wizard-state.js";
+import { listBlockDevices } from "../api/index.js";
+import { findDrive, readDriveSelection } from "../utils/drive-selection.js";
 import { openExternalUrl } from "../utils/external-url.js";
 
 export type ViewName =
@@ -84,6 +86,9 @@ export class AppShell extends LitElement {
   @state()
   private _proxmoxConnecting = false;
 
+  @state()
+  private _verifyingDrive = false;
+
   private _unsubscribe?: () => void;
 
   connectedCallback() {
@@ -99,16 +104,19 @@ export class AppShell extends LitElement {
   }
 
   render() {
-    const driveName =
-      (this._wizardState.selections.driveName as string) ||
-      "the selected drive";
+    const selections = this._wizardState.selections;
 
     return html`
       ${this._renderView()}
       ${this._currentView === "welcome" ? this._renderToolboxButton() : ""}
       <confirm-dialog
         ?open=${this._showConfirmDialog}
-        .driveName=${driveName}
+        .driveName=${selections.driveName || "the selected drive"}
+        .drivePath=${selections.drive || ""}
+        .driveModel=${[selections.driveVendor, selections.driveModel]
+          .filter(Boolean)
+          .join(" ")}
+        .driveSize=${selections.driveSize}
         @dialog-cancel=${this._onDialogCancel}
         @dialog-confirm=${this._onDialogConfirm}
       ></confirm-dialog>
@@ -167,8 +175,14 @@ export class AppShell extends LitElement {
 
     return html`
       <wizard-shell
-        .nextDisabled=${nextDisabled || this._proxmoxConnecting}
-        .nextLabel=${this._proxmoxConnecting ? "Connecting..." : nextLabel}
+        .nextDisabled=${nextDisabled ||
+        this._proxmoxConnecting ||
+        this._verifyingDrive}
+        .nextLabel=${this._proxmoxConnecting
+          ? "Connecting..."
+          : this._verifyingDrive
+            ? "Checking drive..."
+            : nextLabel}
         .hideFooter=${hideFooter}
         .hideBack=${hideBack}
         .hideNext=${hideNext}
@@ -361,13 +375,22 @@ export class AppShell extends LitElement {
   }
 
   private _onSelectPath(e: CustomEvent<{ path: WizardFlow }>) {
+    this._resetErrorState();
     wizardState.startFlow(e.detail.path);
     this._currentView = "wizard";
   }
 
   private _onWizardCancel() {
+    this._resetErrorState();
     wizardState.reset();
     this._currentView = "welcome";
+  }
+
+  /** A stale error flag would show Cancel/"Try again" over the next live write. */
+  private _resetErrorState() {
+    this._flashError = false;
+    this._utmInstallError = false;
+    this._proxmoxInstallError = false;
   }
 
   private async _onWizardNext() {
@@ -439,12 +462,16 @@ export class AppShell extends LitElement {
       currentStep?.id === "confirm" &&
       (flow === "sbc" || flow === "minipc")
     ) {
+      if (!(await this._verifySelectedDrive())) {
+        return;
+      }
       this._showConfirmDialog = true;
       return;
     }
 
     if (wizardState.isLastStep) {
       // Flow complete - go back to welcome
+      this._resetErrorState();
       wizardState.reset();
       this._currentView = "welcome";
     } else {
@@ -452,12 +479,66 @@ export class AppShell extends LitElement {
     }
   }
 
+  /**
+   * Confirm the selected path still belongs to the same device; the OS can
+   * hand it to another one. On failure, go back to the drive step, which
+   * re-scans and explains why the selection was cleared.
+   *
+   * Resolves false without acting if the user navigated, cancelled or changed
+   * the selection while the scan ran: the result no longer applies.
+   */
+  private async _verifySelectedDrive(): Promise<boolean> {
+    const started = wizardState.getState();
+    const selection = readDriveSelection(started.selections);
+    let found = false;
+
+    if (selection) {
+      this._verifyingDrive = true;
+      try {
+        found = !!findDrive(await listBlockDevices(), selection);
+      } catch {
+        // The scan failed, so the device cannot be confirmed. Treat that the
+        // same as a device that is gone.
+      } finally {
+        this._verifyingDrive = false;
+      }
+    }
+
+    // Every navigation, cancel or selection change replaces these.
+    const current = wizardState.getState();
+    if (
+      current.selections !== started.selections ||
+      current.currentStepIndex !== started.currentStepIndex
+    ) {
+      return false;
+    }
+
+    if (!found) {
+      this._goToDriveStep();
+    }
+    return found;
+  }
+
+  private _goToDriveStep() {
+    const index = this._wizardState.steps.findIndex(
+      (step) => step.id === "drive"
+    );
+    if (index >= 0) {
+      wizardState.goToStep(index);
+    }
+  }
+
   private _onDialogCancel() {
     this._showConfirmDialog = false;
   }
 
-  private _onDialogConfirm() {
+  private async _onDialogConfirm() {
     this._showConfirmDialog = false;
+    // The dialog can sit open for any length of time and the next step starts
+    // writing immediately, so check the device one last time.
+    if (!(await this._verifySelectedDrive())) {
+      return;
+    }
     // Proceed to flash step
     wizardState.nextStep();
   }

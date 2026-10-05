@@ -6,7 +6,7 @@
 use crate::error::{Error, Result};
 use crate::types::{
     DeviceManifest, FlashProgress, FlashStage, GitHubRelease, HaosImage, HaosRelease, ImageFormat,
-    StableVersionInfo,
+    StableVersionInfo, UpdateInfo,
 };
 use crate::ProgressCallback;
 use directories::ProjectDirs;
@@ -39,19 +39,27 @@ pub fn get_cache_dir() -> Result<PathBuf> {
 }
 
 /// Fetch the device manifest
-///
-/// In mock mode, returns mock data. Otherwise fetches from the network.
 pub async fn get_device_manifest() -> Result<DeviceManifest> {
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            return Ok(crate::mock::get_mock_manifest());
-        }
-    }
-
-    // For now, return the mock manifest as a fallback
+    // For now, return the manifest bundled with the installer
     // TODO: Implement actual network fetch
-    Ok(crate::mock::get_mock_manifest())
+    Ok(crate::manifest::bundled_manifest())
+}
+
+/// Check whether a newer installer release is available
+pub async fn check_for_updates() -> Result<UpdateInfo> {
+    // TODO: Implement an actual update check
+    Ok(UpdateInfo {
+        update_available: false,
+        current_version: "0.1.0".to_string(),
+        latest_version: "0.1.0".to_string(),
+        download_url: Some(
+            "https://github.com/home-assistant/home-assistant-installer/releases".to_string(),
+        ),
+        release_notes_url: Some(
+            "https://github.com/home-assistant/home-assistant-installer/releases".to_string(),
+        ),
+        is_beta: false,
+    })
 }
 
 /// Check if cache should be skipped via environment variable
@@ -525,11 +533,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_device_manifest_mock() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
+    async fn test_get_device_manifest_returns_bundled() {
         let manifest = get_device_manifest().await.unwrap();
-        assert!(!manifest.devices.is_empty());
-        std::env::remove_var("HA_INSTALLER_MOCK");
+        let bundled = crate::manifest::bundled_manifest();
+        assert_eq!(manifest.version, bundled.version);
+        assert_eq!(manifest.devices.len(), bundled.devices.len());
     }
 
     #[test]
@@ -1328,14 +1336,6 @@ mod tests {
 
         // Can't easily test this without dependency injection
         // This test documents the intent
-    }
-
-    #[tokio::test]
-    async fn test_get_device_manifest_fallback() {
-        // Without mock mode, should return mock manifest as fallback
-        std::env::remove_var("HA_INSTALLER_MOCK");
-        let manifest = get_device_manifest().await.unwrap();
-        assert!(!manifest.devices.is_empty());
     }
 
     // HTTP Mock Tests Module

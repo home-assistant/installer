@@ -50,6 +50,38 @@ describe("confirm-dialog", () => {
     expect(driveName!.textContent).to.equal("My USB Drive");
   });
 
+  describe("target device details", () => {
+    const labels = (el: ConfirmDialog) =>
+      [...el.shadowRoot!.querySelectorAll(".detail-label")].map((label) =>
+        label.textContent!.trim()
+      );
+
+    it("shows the path, model and size of the drive to be erased", async () => {
+      const el = await fixture<ConfirmDialog>(html`
+        <confirm-dialog
+          open
+          drivePath="/dev/sdb"
+          driveModel="SanDisk Ultra"
+          driveSize="32000000000"
+        ></confirm-dialog>
+      `);
+
+      expect(labels(el)).to.deep.equal(["Device", "Model", "Size"]);
+      const details = el.shadowRoot!.querySelector(".drive-details")!;
+      expect(details.textContent).to.contain("/dev/sdb");
+      expect(details.textContent).to.contain("SanDisk Ultra");
+      expect(details.textContent).to.contain("29.8 GB");
+    });
+
+    it("leaves out an unknown size", async () => {
+      const el = await fixture<ConfirmDialog>(html`
+        <confirm-dialog open drivePath="/dev/sdb"></confirm-dialog>
+      `);
+
+      expect(labels(el)).to.deep.equal(["Device"]);
+    });
+  });
+
   it("renders cancel button", async () => {
     const el = await fixture<ConfirmDialog>(html`
       <confirm-dialog open></confirm-dialog>
