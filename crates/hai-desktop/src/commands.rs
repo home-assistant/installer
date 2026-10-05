@@ -641,7 +641,7 @@ pub async fn check_ha_ready(ip_address: String) -> bool {
     use tokio::net::TcpStream;
     use tokio::time::timeout;
 
-    let addr = format!("{}:8123", ip_address);
+    let addr = format!("{}:80", ip_address);
     matches!(
         timeout(Duration::from_secs(3), TcpStream::connect(&addr)).await,
         Ok(Ok(_))
@@ -655,7 +655,7 @@ pub async fn check_ha_updated(ip_address: String) -> bool {
         return true;
     }
 
-    let url = format!("http://{}:8123/manifest.json", ip_address);
+    let url = format!("http://{}/manifest.json", ip_address);
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
@@ -1733,12 +1733,12 @@ mod tests {
         let ip_with_port = server_url.strip_prefix("http://").unwrap();
         let ip = ip_with_port.split(':').next().unwrap();
 
-        // Override default port 8123 by using the mock server's port directly
-        // Since check_ha_updated constructs the URL with :8123, we need to use a different approach
+        // Override default port 80 by using the mock server's port directly
+        // Since check_ha_updated constructs the URL, we need to use a different approach
         // For now, test with the actual function behavior
         // This test verifies the function doesn't crash with an unreachable IP
         let result = check_ha_updated(ip.to_string()).await;
-        // Function will return false because it connects to port 8123, not the mock server port
+        // Function will return false because it connects to port 80, not the mock server port
         // This is a limitation - we document the HTTP call pattern
         let _ = result;
     }
@@ -1759,7 +1759,7 @@ mod tests {
         let ip_with_port = server_url.strip_prefix("http://").unwrap();
         let ip = ip_with_port.split(':').next().unwrap();
 
-        // Similar limitation as above - function hardcodes port 8123
+        // Similar limitation as above - function hardcodes port 80
         let result = check_ha_updated(ip.to_string()).await;
         let _ = result;
     }
@@ -1859,7 +1859,7 @@ mod tests {
         std::env::remove_var("HA_INSTALLER_MOCK");
         // Test localhost with a port that's likely not in use
         let result = check_ha_ready("127.0.0.1".to_string()).await;
-        // Result depends on whether port 8123 is actually open locally
+        // Result depends on whether port 80 is actually open locally
         let _ = result;
     }
 
@@ -2065,7 +2065,7 @@ mod tests {
 
         // Test with hostname instead of IP
         let result = check_ha_updated("localhost".to_string()).await;
-        // Result depends on whether HA is actually running on localhost:8123
+        // Result depends on whether HA is actually running on localhost
         let _ = result;
     }
 

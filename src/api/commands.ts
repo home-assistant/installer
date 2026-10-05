@@ -458,7 +458,7 @@ export async function getUtmVmStatus(vmId: string): Promise<VmStatusInfo> {
 /**
  * Check if Home Assistant webserver is ready at the given IP address.
  * @param ipAddress The IP address to check
- * @returns True if the webserver is reachable on port 8123
+ * @returns True if the webserver is reachable on port 80
  */
 export async function checkHaReady(ipAddress: string): Promise<boolean> {
   if (isBrowserOnly()) {
