@@ -12,7 +12,7 @@ A cross-platform desktop application for installing Home Assistant OS on various
 
 ## Installation
 
-Download the latest release for your platform from the [Releases](https://github.com/home-assistant/hai/releases) page.
+Download the latest release for your platform from the [Releases](https://github.com/home-assistant/installer/releases) page.
 
 ## Development
 
@@ -26,8 +26,8 @@ Download the latest release for your platform from the [Releases](https://github
 
 ```bash
 # Clone the repository
-git clone https://github.com/home-assistant/hai.git
-cd hai
+git clone https://github.com/home-assistant/installer.git
+cd installer
 
 # Install dependencies
 npm install

@@ -7,7 +7,7 @@ use hai_core::{
     disk, download, is_mock_enabled, mock, BlockDevice, DeviceManifest, ExpectedDevice,
     FlashProgress, FlashRequest, FlashStage, HaosRelease, ImageFormat, ProgressCallback,
     ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig,
-    ProxmoxVmResult, UpdateInfo,
+    ProxmoxVmResult, SystemInfo, UpdateInfo, VmStatusInfo,
 };
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -43,20 +43,6 @@ pub struct FlashResult {
     pub success: bool,
     pub error: Option<String>,
     pub duration_secs: u64,
-}
-
-/// System information for VM configuration
-#[derive(serde::Serialize)]
-pub struct SystemInfo {
-    pub cpu_cores: usize,
-    pub memory_mb: u64,
-}
-
-/// VM status info returned to frontend
-#[derive(Debug, serde::Serialize)]
-pub struct VmStatusInfo {
-    pub status: String,
-    pub ip_address: Option<String>,
 }
 
 // =============================================================================
@@ -331,47 +317,15 @@ pub async fn get_manifest() -> Result<DeviceManifest, String> {
 
 /// Get system information (CPU cores and memory) for VM configuration limits
 #[tauri::command]
-pub fn get_system_info() -> SystemInfo {
+pub fn get_system_info() -> Result<SystemInfo, String> {
     if is_mock_enabled() {
-        return SystemInfo {
+        return Ok(SystemInfo {
             cpu_cores: 10,
             memory_mb: 32768,
-        };
+        });
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        use std::process::Command;
-
-        let cpu_cores = Command::new("sysctl")
-            .args(["-n", "hw.ncpu"])
-            .output()
-            .ok()
-            .and_then(|output| String::from_utf8(output.stdout).ok())
-            .and_then(|s| s.trim().parse::<usize>().ok())
-            .unwrap_or(4);
-
-        let memory_bytes = Command::new("sysctl")
-            .args(["-n", "hw.memsize"])
-            .output()
-            .ok()
-            .and_then(|output| String::from_utf8(output.stdout).ok())
-            .and_then(|s| s.trim().parse::<u64>().ok())
-            .unwrap_or(8 * 1024 * 1024 * 1024);
-
-        SystemInfo {
-            cpu_cores,
-            memory_mb: memory_bytes / (1024 * 1024),
-        }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        SystemInfo {
-            cpu_cores: 4,
-            memory_mb: 8192,
-        }
-    }
+    hai_core::host::system_info().map_err(|e| e.to_string())
 }
 
 // =============================================================================
@@ -573,18 +527,14 @@ pub fn resize_utm_vm_disk(_vm_id: String, _size_gb: u32) -> Result<(), String> {
 /// Get the status of a UTM VM
 #[tauri::command]
 #[cfg(target_os = "macos")]
-pub fn get_utm_vm_status(_vm_id: String) -> Result<VmStatusInfo, String> {
+pub fn get_utm_vm_status(vm_id: String) -> Result<VmStatusInfo, String> {
     if is_mock_enabled() {
         return Ok(VmStatusInfo {
             status: "started".to_string(),
             ip_address: Some("192.168.1.100".to_string()),
         });
     }
-    // TODO: Implement via utmctl
-    Ok(VmStatusInfo {
-        status: "unknown".to_string(),
-        ip_address: None,
-    })
+    hai_core::utm::vm_status(&vm_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -604,14 +554,7 @@ pub async fn check_ha_ready(ip_address: String) -> bool {
         return true;
     }
 
-    use tokio::net::TcpStream;
-    use tokio::time::timeout;
-
-    let addr = format!("{}:80", ip_address);
-    matches!(
-        timeout(Duration::from_secs(3), TcpStream::connect(&addr)).await,
-        Ok(Ok(_))
-    )
+    hai_core::host::check_ha_ready(&ip_address).await
 }
 
 /// Check if Home Assistant has finished updating
@@ -621,19 +564,7 @@ pub async fn check_ha_updated(ip_address: String) -> bool {
         return true;
     }
 
-    let url = format!("http://{}/manifest.json", ip_address);
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    match client.get(&url).send().await {
-        Ok(response) => response.status().is_success(),
-        Err(_) => false,
-    }
+    hai_core::host::check_ha_updated(&ip_address).await
 }
 
 // =============================================================================
@@ -904,18 +835,6 @@ mod tests {
         }
     }
 
-    // ===== System Info Tests - Platform Specific =====
-
-    #[test]
-    #[serial]
-    fn test_system_info_non_mock_mode() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-        let info = get_system_info();
-        // Should return valid values
-        assert!(info.cpu_cores > 0);
-        assert!(info.memory_mb > 0);
-    }
-
     // ===== UTM Command Tests - macOS Specific =====
 
     #[test]
@@ -973,7 +892,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn test_system_info_macos_fallback_on_error() {
         std::env::remove_var("HA_INSTALLER_MOCK");
-        let info = get_system_info();
+        let info = get_system_info().unwrap();
         // Should return valid values even if sysctl fails (fallback to defaults)
         assert!(info.cpu_cores >= 4);
         assert!(info.memory_mb >= 8192);
@@ -984,10 +903,7 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     fn test_system_info_non_macos() {
         std::env::remove_var("HA_INSTALLER_MOCK");
-        let info = get_system_info();
-        // Should return default values
-        assert_eq!(info.cpu_cores, 4);
-        assert_eq!(info.memory_mb, 8192);
+        assert!(get_system_info().is_err());
     }
 
     // ===== Additional edge case tests =====

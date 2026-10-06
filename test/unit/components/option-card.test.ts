@@ -28,19 +28,19 @@ describe("option-card", () => {
     const img = el.shadowRoot!.querySelector(".icon-container img");
     expect(img).to.exist;
     expect(img!.getAttribute("src")).to.include("sbc-placeholder.svg");
+    // Decorative: the title already names the button.
+    expect(img!.getAttribute("alt")).to.equal("");
   });
 
   it("renders with a custom image", async () => {
     const el = await fixture<OptionCard>(html`
-      <option-card
-        title="Custom"
-        image="/custom/path.svg"
-      ></option-card>
+      <option-card title="Custom" image="/custom/path.svg"></option-card>
     `);
 
     const img = el.shadowRoot!.querySelector(".icon-container img");
     expect(img).to.exist;
     expect(img!.getAttribute("src")).to.equal("/custom/path.svg");
+    expect(img!.getAttribute("alt")).to.equal("");
   });
 
   it("renders placeholder when no icon or image provided", async () => {
@@ -72,5 +72,45 @@ describe("option-card", () => {
     const img = el.shadowRoot!.querySelector(".icon-container img");
     expect(img).to.exist;
     expect(img!.getAttribute("src")).to.include("home-assistant-hardware.svg");
+  });
+
+  describe("keyboard operability", () => {
+    it("exposes button semantics and is reachable with Tab", async () => {
+      const el = await fixture<OptionCard>(html`
+        <option-card title="Proxmox"></option-card>
+      `);
+
+      expect(el.getAttribute("role")).to.equal("button");
+      expect(el.getAttribute("tabindex")).to.equal("0");
+    });
+
+    it("activates on Enter and Space", async () => {
+      const el = await fixture<OptionCard>(html`
+        <option-card title="Proxmox"></option-card>
+      `);
+
+      let clicks = 0;
+      el.addEventListener("click", () => clicks++);
+
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+      expect(clicks).to.equal(1);
+
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+      expect(clicks).to.equal(2);
+    });
+
+    it("ignores other keys", async () => {
+      const el = await fixture<OptionCard>(html`
+        <option-card title="Proxmox"></option-card>
+      `);
+
+      let clicks = 0;
+      el.addEventListener("click", () => clicks++);
+
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+
+      expect(clicks).to.equal(0);
+    });
   });
 });

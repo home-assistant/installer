@@ -25,10 +25,12 @@ async function mountLoaded(): Promise<DriveSelectionView> {
   return el;
 }
 
+// The cards are radios in a <wa-radio-group>, so selection lives in
+// `checked` and identity in `value`.
 const selectedIds = (el: DriveSelectionView) =>
   [...el.shadowRoot!.querySelectorAll("drive-card")]
-    .filter((card) => (card as HTMLElement & { selected: boolean }).selected)
-    .map((card) => (card as HTMLElement & { driveId: string }).driveId);
+    .filter((card) => (card as HTMLElement & { checked: boolean }).checked)
+    .map((card) => (card as HTMLElement & { value: string }).value);
 
 describe("drive-selection-view", () => {
   beforeEach(() => wizardState.startFlow("sbc"));

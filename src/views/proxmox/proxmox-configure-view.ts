@@ -7,11 +7,14 @@ import {
   proxmoxGetNextVmId,
   formatBytes,
 } from "../../api/commands.js";
-import type {
-  ProxmoxSession,
-  ProxmoxNode,
-  ProxmoxStorage,
-} from "../../api/types.js";
+import type { ProxmoxNode, ProxmoxStorage } from "../../api/types.js";
+import {
+  DEFAULT_CPU_CORES,
+  DEFAULT_DISK_SIZE_GB,
+  DEFAULT_MEMORY_MB,
+  DEFAULT_PROXMOX_VM_ID,
+  DEFAULT_PROXMOX_VM_NAME,
+} from "../../state/vm-defaults.js";
 
 @customElement("proxmox-configure-view")
 export class ProxmoxConfigureView extends LitElement {
@@ -286,28 +289,58 @@ export class ProxmoxConfigureView extends LitElement {
   private _selectedStorage = "";
 
   @state()
-  private _vmId = 100;
+  private _vmId = DEFAULT_PROXMOX_VM_ID;
 
   @state()
-  private _vmName = "home-assistant";
+  private _vmName = DEFAULT_PROXMOX_VM_NAME;
 
   @state()
-  private _cpuCores = 4;
+  private _cpuCores = DEFAULT_CPU_CORES;
 
   @state()
-  private _memoryMb = 4096;
+  private _memoryMb = DEFAULT_MEMORY_MB;
 
   @state()
-  private _diskSizeGb = 32;
+  private _diskSizeGb = DEFAULT_DISK_SIZE_GB;
 
   private _unsubscribe?: () => void;
+
+  /**
+   * Whether the VM ID was restored from the wizard state or typed by the user.
+   * Either way the API's "next free ID" suggestion must not overwrite it.
+   */
+  private _vmIdChosen = false;
+
+  /** Bumped per storage lookup, so only the latest one applies its result */
+  private _storageLookup = 0;
 
   connectedCallback() {
     super.connectedCallback();
     this._unsubscribe = wizardState.subscribe((state) => {
       this._wizardState = state;
     });
+    this._restoreSelections();
     this._loadNodes();
+  }
+
+  /**
+   * Seed the form from what is already in the wizard state, so stepping back
+   * to an earlier step and forward again keeps the user's settings. The
+   * defaults above only apply on the first visit.
+   */
+  private _restoreSelections() {
+    const selections = this._wizardState.selections;
+    this._selectedNode = selections.proxmoxNode ?? "";
+    this._selectedStorage = selections.proxmoxStorage ?? "";
+    this._vmName = selections.vmName ?? DEFAULT_PROXMOX_VM_NAME;
+    this._cpuCores = selections.cpuCores ?? DEFAULT_CPU_CORES;
+    this._memoryMb = selections.memoryMb ?? DEFAULT_MEMORY_MB;
+    this._diskSizeGb = selections.diskSizeGb ?? DEFAULT_DISK_SIZE_GB;
+
+    if (selections.proxmoxVmId !== undefined) {
+      this._vmId = selections.proxmoxVmId;
+      this._vmIdChosen = true;
+    }
   }
 
   disconnectedCallback() {
@@ -316,9 +349,7 @@ export class ProxmoxConfigureView extends LitElement {
   }
 
   private async _loadNodes() {
-    const session = this._wizardState.selections.proxmoxSession as
-      | ProxmoxSession
-      | undefined;
+    const session = this._wizardState.selections.proxmoxSession;
 
     if (!session) {
       this._error = "No Proxmox session available";
@@ -332,12 +363,30 @@ export class ProxmoxConfigureView extends LitElement {
         proxmoxGetNextVmId(session),
       ]);
 
-      this._nodes = nodes.filter((n) => n.status === "online");
-      this._vmId = nextVmId;
+      // The user may have left this step while the lookups were in flight;
+      // saving now would write over what the next step reads
+      if (!this.isConnected) return;
 
-      if (this._nodes.length > 0) {
-        this._selectedNode = this._nodes[0].name;
+      this._nodes = nodes.filter((n) => n.status === "online");
+
+      // The next free VM ID is only a suggestion - never overwrite an ID the
+      // user has already been shown and may have changed
+      if (!this._vmIdChosen) {
+        this._vmId = nextVmId;
+      }
+
+      // Keep a restored node as long as it is still online
+      const nodeStillOnline = this._nodes.some(
+        (n) => n.name === this._selectedNode
+      );
+      if (!nodeStillOnline) {
+        this._selectedNode = this._nodes[0]?.name ?? "";
+      }
+
+      if (this._selectedNode) {
         await this._loadStorage();
+        // The storage lookup is another chance to have left this step
+        if (!this.isConnected) return;
       }
 
       this._saveSelections();
@@ -357,26 +406,46 @@ export class ProxmoxConfigureView extends LitElement {
   private async _loadStorage() {
     if (!this._selectedNode) return;
 
-    const session = this._wizardState.selections.proxmoxSession as
-      | ProxmoxSession
-      | undefined;
+    const session = this._wizardState.selections.proxmoxSession;
 
     if (!session) return;
 
+    const node = this._selectedNode;
+    // Switching nodes quickly can have lookups finish out of order, even two
+    // for the same node; only the latest one may update the storage
+    const lookup = ++this._storageLookup;
+    const isLatest = () => lookup === this._storageLookup;
+    const isStale = () => !this.isConnected || !isLatest();
+
     this._loadingStorage = true;
     try {
-      const storages = await proxmoxListStorage(session, this._selectedNode);
+      const storages = await proxmoxListStorage(session, node);
+
+      if (isStale()) return;
+
       // Filter to only show storage that supports VM images
       this._storages = storages.filter(
         (s) => s.active && s.content.includes("images")
       );
 
-      if (this._storages.length > 0 && !this._selectedStorage) {
-        this._selectedStorage = this._storages[0].name;
+      // Keep the selected storage if this node still offers it, otherwise
+      // fall back to the first one available
+      const storageStillAvailable = this._storages.some(
+        (s) => s.name === this._selectedStorage
+      );
+      if (!storageStillAvailable) {
+        this._selectedStorage = this._storages[0]?.name ?? "";
       }
 
       this._saveSelections();
     } catch (error) {
+      if (isStale()) return;
+      // Nothing this node offers could be checked, so neither a restored
+      // storage nor one from a previous node may stay selected: an empty one
+      // keeps the step from continuing
+      this._storages = [];
+      this._selectedStorage = "";
+      this._saveSelections();
       // Show storage error to user
       this._error =
         typeof error === "string"
@@ -385,7 +454,8 @@ export class ProxmoxConfigureView extends LitElement {
             ? error.message
             : "Failed to load storage";
     } finally {
-      this._loadingStorage = false;
+      // A newer lookup is still running and owns the loading state
+      if (isLatest()) this._loadingStorage = false;
     }
   }
 
@@ -414,7 +484,8 @@ export class ProxmoxConfigureView extends LitElement {
 
   private _onVmIdChange(e: Event) {
     const input = e.target as HTMLInputElement;
-    this._vmId = parseInt(input.value, 10) || 100;
+    this._vmId = parseInt(input.value, 10) || DEFAULT_PROXMOX_VM_ID;
+    this._vmIdChosen = true;
     this._saveSelections();
   }
 
@@ -425,7 +496,7 @@ export class ProxmoxConfigureView extends LitElement {
     let name = input.value.replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "");
     // Max 63 characters
     name = name.slice(0, 63);
-    this._vmName = name || "home-assistant";
+    this._vmName = name || DEFAULT_PROXMOX_VM_NAME;
     // Update input to show sanitized value
     input.value = this._vmName;
     this._saveSelections();
@@ -435,7 +506,7 @@ export class ProxmoxConfigureView extends LitElement {
     const input = e.target as HTMLInputElement;
     const index = parseInt(input.value, 10);
     const coreOptions = this._getCoreOptions();
-    this._cpuCores = coreOptions[index] || 4;
+    this._cpuCores = coreOptions[index] || DEFAULT_CPU_CORES;
     this._saveSelections();
   }
 
@@ -443,7 +514,7 @@ export class ProxmoxConfigureView extends LitElement {
     const input = e.target as HTMLInputElement;
     const index = parseInt(input.value, 10);
     const memoryOptions = this._getMemoryOptions();
-    this._memoryMb = memoryOptions[index] || 4096;
+    this._memoryMb = memoryOptions[index] || DEFAULT_MEMORY_MB;
     this._saveSelections();
   }
 
@@ -451,7 +522,7 @@ export class ProxmoxConfigureView extends LitElement {
     const input = e.target as HTMLInputElement;
     const index = parseInt(input.value, 10);
     const diskOptions = this._getDiskSizeOptions();
-    this._diskSizeGb = diskOptions[index] || 32;
+    this._diskSizeGb = diskOptions[index] || DEFAULT_DISK_SIZE_GB;
     this._saveSelections();
   }
 
@@ -633,14 +704,16 @@ export class ProxmoxConfigureView extends LitElement {
             ${this._loadingNodes
               ? html`<span class="loading-text">Loading nodes...</span>`
               : html`
-                  <select
-                    class="select-dropdown"
-                    .value=${this._selectedNode}
-                    @change=${this._onNodeChange}
-                  >
+                  <select class="select-dropdown" @change=${this._onNodeChange}>
                     ${this._nodes.map(
+                      // Selecting on the option, not the select: the select's
+                      // value is set before its options exist, so a restored
+                      // node other than the first would not show
                       (node) => html`
-                        <option value=${node.name}>
+                        <option
+                          value=${node.name}
+                          ?selected=${node.name === this._selectedNode}
+                        >
                           ${node.name}
                           ${node.cpu_usage !== undefined
                             ? `(CPU: ${node.cpu_usage.toFixed(1)}%)`
@@ -666,13 +739,15 @@ export class ProxmoxConfigureView extends LitElement {
               : html`
                   <select
                     class="select-dropdown"
-                    .value=${this._selectedStorage}
                     @change=${this._onStorageChange}
                     ?disabled=${this._storages.length === 0}
                   >
                     ${this._storages.map(
                       (storage) => html`
-                        <option value=${storage.name}>
+                        <option
+                          value=${storage.name}
+                          ?selected=${storage.name === this._selectedStorage}
+                        >
                           ${storage.name} (${formatBytes(storage.available)}
                           free)
                         </option>

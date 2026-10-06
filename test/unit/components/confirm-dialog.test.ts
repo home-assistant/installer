@@ -315,27 +315,43 @@ describe("confirm-dialog", () => {
   });
 
   describe("password note", () => {
-    const originalPlatform = navigator.platform;
-
-    const setPlatform = (value: string) => {
-      Object.defineProperty(window.navigator, "platform", {
+    const setUserAgent = (value: string) => {
+      Object.defineProperty(window.navigator, "userAgent", {
         value,
         configurable: true,
       });
     };
 
-    afterEach(() => setPlatform(originalPlatform));
+    // The stub shadows the prototype getter; deleting it restores the real UA.
+    afterEach(() => {
+      delete (window.navigator as { userAgent?: string }).userAgent;
+    });
 
-    const cases: Array<{ label: string; platform: string; shown: boolean }> = [
-      { label: "macOS", platform: "MacIntel", shown: true },
-      { label: "Linux", platform: "Linux x86_64", shown: true },
+    const cases: Array<{ label: string; userAgent: string; shown: boolean }> = [
+      {
+        label: "macOS",
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+        shown: true,
+      },
+      {
+        label: "Linux",
+        userAgent:
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+        shown: true,
+      },
       // Windows has no in-flow prompt: the app must already run elevated.
-      { label: "Windows", platform: "Win32", shown: false },
+      {
+        label: "Windows",
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edg/130.0.0.0",
+        shown: false,
+      },
     ];
 
-    for (const { label, platform, shown } of cases) {
+    for (const { label, userAgent, shown } of cases) {
       it(`${shown ? "shows" : "hides"} the note on ${label}`, async () => {
-        setPlatform(platform);
+        setUserAgent(userAgent);
         const el = await fixture<ConfirmDialog>(html`
           <confirm-dialog open></confirm-dialog>
         `);

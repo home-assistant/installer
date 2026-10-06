@@ -1,9 +1,4 @@
-import type {
-  BlockDevice,
-  DeviceManifest,
-  HaosRelease,
-  UpdateInfo,
-} from "./types.js";
+import type { BlockDevice, DeviceManifest, HaosRelease } from "./types.js";
 
 /**
  * Mock block devices for testing
@@ -217,20 +212,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
       },
     },
   ],
-};
-
-/**
- * Mock update info for testing
- */
-export const MOCK_UPDATE_INFO: UpdateInfo = {
-  update_available: false,
-  current_version: "0.1.0",
-  latest_version: "0.1.0",
-  download_url:
-    "https://github.com/home-assistant/home-assistant-installer/releases",
-  release_notes_url:
-    "https://github.com/home-assistant/home-assistant-installer/releases",
-  is_beta: false,
 };
 
 /**

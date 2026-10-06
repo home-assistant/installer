@@ -10,6 +10,7 @@
 pub mod disk;
 pub mod download;
 pub mod error;
+pub mod host;
 pub mod manifest;
 pub mod types;
 
