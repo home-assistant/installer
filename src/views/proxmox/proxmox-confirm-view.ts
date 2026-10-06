@@ -1,6 +1,15 @@
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
+import {
+  DEFAULT_CPU_CORES,
+  DEFAULT_DISK_SIZE_GB,
+  DEFAULT_MEMORY_MB,
+  DEFAULT_PROXMOX_NODE,
+  DEFAULT_PROXMOX_STORAGE,
+  DEFAULT_PROXMOX_VM_ID,
+  DEFAULT_PROXMOX_VM_NAME,
+} from "../../state/vm-defaults.js";
 import { getHaosRelease } from "../../api/commands.js";
 
 @customElement("proxmox-confirm-view")
@@ -154,13 +163,13 @@ export class ProxmoxConfirmView extends LitElement {
 
   render() {
     const selections = this._wizardState.selections;
-    const vmName = (selections.vmName as string) || "home-assistant";
-    const vmId = (selections.proxmoxVmId as number) || 100;
-    const node = (selections.proxmoxNode as string) || "pve";
-    const storage = (selections.proxmoxStorage as string) || "local";
-    const cpuCores = (selections.cpuCores as number) || 4;
-    const memoryMb = (selections.memoryMb as number) || 4096;
-    const diskSizeGb = (selections.diskSizeGb as number) || 32;
+    const vmName = selections.vmName || DEFAULT_PROXMOX_VM_NAME;
+    const vmId = selections.proxmoxVmId || DEFAULT_PROXMOX_VM_ID;
+    const node = selections.proxmoxNode || DEFAULT_PROXMOX_NODE;
+    const storage = selections.proxmoxStorage || DEFAULT_PROXMOX_STORAGE;
+    const cpuCores = selections.cpuCores || DEFAULT_CPU_CORES;
+    const memoryMb = selections.memoryMb || DEFAULT_MEMORY_MB;
+    const diskSizeGb = selections.diskSizeGb || DEFAULT_DISK_SIZE_GB;
 
     return html`
       <h2>Ready to install</h2>

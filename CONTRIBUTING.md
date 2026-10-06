@@ -15,8 +15,8 @@ and instructions for contributing.
 
 ```bash
 # Clone the repository
-git clone https://github.com/home-assistant/hai.git
-cd hai
+git clone https://github.com/home-assistant/installer.git
+cd installer
 
 # Install dependencies
 npm install
@@ -92,7 +92,6 @@ When contributing UI changes, remember:
 
 ## Getting Help
 
-- [GitHub Discussions](https://github.com/home-assistant/hai/discussions)
 - [Home Assistant Discord](https://discord.gg/home-assistant)
 - [Community Forum](https://community.home-assistant.io/)
 

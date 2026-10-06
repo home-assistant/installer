@@ -111,9 +111,7 @@ test.describe("Other Options View", () => {
   test("all options have external link indicator", async ({ page }) => {
     await page.locator('option-card[title="Others"]').click();
 
-    const options = page
-      .locator("other-options-view")
-      .locator(".option-item");
+    const options = page.locator("other-options-view").locator(".option-item");
     const count = await options.count();
 
     // Should have 5 options
@@ -130,9 +128,7 @@ test.describe("Other Options View", () => {
   test("all options have icons", async ({ page }) => {
     await page.locator('option-card[title="Others"]').click();
 
-    const options = page
-      .locator("other-options-view")
-      .locator(".option-item");
+    const options = page.locator("other-options-view").locator(".option-item");
     const count = await options.count();
 
     // Each option should have an icon

@@ -6,7 +6,7 @@
 use crate::error::{Error, Result};
 #[cfg(target_os = "macos")]
 use crate::types::{FlashProgress, FlashStage};
-use crate::types::{UtmStatus, UtmVmConfig, UtmVmResult};
+use crate::types::{UtmStatus, UtmVmConfig, UtmVmResult, VmStatusInfo};
 use crate::{Backend, ProgressCallback, UtmBackend};
 
 /// Check if UTM is installed and get its status
@@ -44,12 +44,36 @@ async fn create_vm<P: ProgressCallback>(
     }
 }
 
+/// Get the status of a UTM VM
+pub fn vm_status(vm_id: &str) -> Result<VmStatusInfo> {
+    #[cfg(target_os = "macos")]
+    {
+        macos::vm_status(vm_id)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = vm_id;
+        Err(Error::UnsupportedPlatform(
+            "UTM is only available on macOS".to_string(),
+        ))
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     use super::*;
     use std::process::Command;
 
     const UTM_APP_PATH: &str = "/Applications/UTM.app";
+
+    pub(super) fn vm_status(_vm_id: &str) -> Result<VmStatusInfo> {
+        // TODO: Implement via utmctl
+        Ok(VmStatusInfo {
+            status: "unknown".to_string(),
+            ip_address: None,
+        })
+    }
 
     pub(super) async fn check_utm_status() -> Result<UtmStatus> {
         #[cfg(feature = "mock")]

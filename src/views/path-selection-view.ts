@@ -3,6 +3,7 @@ import { customElement } from "lit/decorators.js";
 
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../components/option-card.js";
+import { getPlatform } from "../utils/platform.js";
 
 export type InstallationPath =
   | "sbc"
@@ -127,10 +128,7 @@ export class PathSelectionView extends LitElement {
   }
 
   private _renderVMOption() {
-    // TODO: Check if running on macOS
-    const isMacOS = window.navigator.platform.toLowerCase().includes("mac");
-
-    if (!isMacOS) {
+    if (getPlatform() !== "macos") {
       return null;
     }
 

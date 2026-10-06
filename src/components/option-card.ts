@@ -6,6 +6,12 @@ export class OptionCard extends LitElement {
   static styles = css`
     :host {
       display: block;
+      outline: none;
+    }
+
+    :host(:focus-visible) .card {
+      outline: var(--wa-focus-ring);
+      outline-offset: var(--wa-focus-ring-offset);
     }
 
     .card {
@@ -96,6 +102,27 @@ export class OptionCard extends LitElement {
   @property({ type: String })
   image = "";
 
+  connectedCallback() {
+    super.connectedCallback();
+    this.setAttribute("role", "button");
+    this.setAttribute("tabindex", "0");
+    this.addEventListener("keydown", this._onKeyDown);
+  }
+
+  disconnectedCallback() {
+    this.removeEventListener("keydown", this._onKeyDown);
+    super.disconnectedCallback();
+  }
+
+  // The views attach `@click` to the host, so activating by keyboard just
+  // re-dispatches a click rather than adding a second event to wire up.
+  private _onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      this.click();
+    }
+  };
+
   render() {
     return html`
       <div class="card">
@@ -106,9 +133,12 @@ export class OptionCard extends LitElement {
     `;
   }
 
+  // The card itself carries role="button", so its accessible name is
+  // computed from its contents. The visible name below already supplies that;
+  // giving the image an alt would have screen readers announce it twice.
   private _renderIcon() {
     if (this.image) {
-      return html`<img src=${this.image} alt=${this.title} />`;
+      return html`<img src=${this.image} alt="" />`;
     }
 
     // Use placeholder icons based on icon type
@@ -123,7 +153,7 @@ export class OptionCard extends LitElement {
 
     const iconSrc = iconMap[this.icon];
     if (iconSrc) {
-      return html`<img src=${iconSrc} alt=${this.title} />`;
+      return html`<img src=${iconSrc} alt="" />`;
     }
 
     return html`<div class="icon-placeholder"></div>`;
