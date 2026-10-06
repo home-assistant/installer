@@ -45,7 +45,7 @@ async fn create_vm<P: ProgressCallback>(
 }
 
 /// Get the status of a UTM VM
-pub fn vm_status(vm_id: &str) -> Result<VmStatusInfo> {
+fn vm_status(vm_id: &str) -> Result<VmStatusInfo> {
     #[cfg(target_os = "macos")]
     {
         macos::vm_status(vm_id)
@@ -320,6 +320,10 @@ impl UtmBackend for Backend {
         progress_callback: &P,
     ) -> Result<UtmVmResult> {
         create_vm(config, progress_callback).await
+    }
+
+    fn vm_status(&self, vm_id: &str) -> Result<VmStatusInfo> {
+        vm_status(vm_id)
     }
 }
 

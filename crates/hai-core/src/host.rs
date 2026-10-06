@@ -5,10 +5,11 @@
 
 use crate::error::{Error, Result};
 use crate::types::SystemInfo;
+use crate::{Backend, HostBackend};
 use std::time::Duration;
 
 /// Query the host for CPU core count and total memory.
-pub fn system_info() -> Result<SystemInfo> {
+fn system_info() -> Result<SystemInfo> {
     #[cfg(target_os = "macos")]
     {
         use std::process::Command;
@@ -44,7 +45,7 @@ pub fn system_info() -> Result<SystemInfo> {
 }
 
 /// Whether the Home Assistant webserver is accepting connections on port 80.
-pub async fn check_ha_ready(ip: &str) -> bool {
+async fn check_ha_ready(ip: &str) -> bool {
     use tokio::net::TcpStream;
     use tokio::time::timeout;
 
@@ -56,7 +57,7 @@ pub async fn check_ha_ready(ip: &str) -> bool {
 }
 
 /// Whether Home Assistant has finished starting up (serves its manifest).
-pub async fn check_ha_updated(ip: &str) -> bool {
+async fn check_ha_updated(ip: &str) -> bool {
     let url = format!("http://{}/manifest.json", ip);
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
@@ -69,5 +70,19 @@ pub async fn check_ha_updated(ip: &str) -> bool {
     match client.get(&url).send().await {
         Ok(response) => response.status().is_success(),
         Err(_) => false,
+    }
+}
+
+impl HostBackend for Backend {
+    fn system_info(&self) -> Result<SystemInfo> {
+        system_info()
+    }
+
+    async fn check_ha_ready(&self, ip: &str) -> bool {
+        check_ha_ready(ip).await
+    }
+
+    async fn check_ha_updated(&self, ip: &str) -> bool {
+        check_ha_updated(ip).await
     }
 }

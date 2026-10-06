@@ -5,9 +5,10 @@
 
 use hai_core::{
     is_mock_enabled, mock, Backend, BlockDevice, DeviceBackend, DeviceManifest, ExpectedDevice,
-    FlashProgress, FlashRequest, FlashStage, HaosRelease, ImageFormat, ProgressCallback,
-    ProxmoxBackend, ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage,
-    ProxmoxVmConfig, ProxmoxVmResult, ReleaseSource, SystemInfo, UpdateInfo, VmStatusInfo,
+    FlashProgress, FlashRequest, FlashStage, HaosRelease, HostBackend, ImageFormat,
+    ProgressCallback, ProxmoxBackend, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
+    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, ReleaseSource, SystemInfo, UpdateInfo,
+    VmStatusInfo,
 };
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -353,7 +354,7 @@ pub fn get_system_info() -> Result<SystemInfo, String> {
         });
     }
 
-    hai_core::host::system_info().map_err(|e| e.to_string())
+    Backend.system_info().map_err(|e| e.to_string())
 }
 
 // =============================================================================
@@ -578,7 +579,7 @@ pub fn get_utm_vm_status(vm_id: String) -> Result<VmStatusInfo, String> {
             ip_address: Some("192.168.1.100".to_string()),
         });
     }
-    hai_core::utm::vm_status(&vm_id).map_err(|e| e.to_string())
+    Backend.vm_status(&vm_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -598,7 +599,7 @@ pub async fn check_ha_ready(ip_address: String) -> bool {
         return true;
     }
 
-    hai_core::host::check_ha_ready(&ip_address).await
+    Backend.check_ha_ready(&ip_address).await
 }
 
 /// Check if Home Assistant has finished updating
@@ -608,7 +609,7 @@ pub async fn check_ha_updated(ip_address: String) -> bool {
         return true;
     }
 
-    hai_core::host::check_ha_updated(&ip_address).await
+    Backend.check_ha_updated(&ip_address).await
 }
 
 // =============================================================================

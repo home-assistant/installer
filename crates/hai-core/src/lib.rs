@@ -133,14 +133,29 @@ pub trait UtmBackend {
         config: &UtmVmConfig,
         progress_callback: &P,
     ) -> Result<UtmVmResult>;
+
+    /// Get the status of a UTM VM.
+    fn vm_status(&self, vm_id: &str) -> Result<VmStatusInfo>;
+}
+
+/// Host system queries and Home Assistant reachability checks.
+pub trait HostBackend {
+    /// Host CPU/memory info for VM sizing limits.
+    fn system_info(&self) -> Result<SystemInfo>;
+
+    /// Whether the Home Assistant webserver is reachable at `ip`.
+    async fn check_ha_ready(&self, ip: &str) -> bool;
+
+    /// Whether Home Assistant has finished starting up at `ip`.
+    async fn check_ha_updated(&self, ip: &str) -> bool;
 }
 
 /// hai-core's production backend.
 ///
 /// Implements the backend traits by delegating to the domain modules. Each
 /// `impl` lives in the module it forwards to: `ReleaseSource` in [`download`],
-/// `DeviceBackend` in [`disk`], `ProxmoxBackend` in [`proxmox`] and
-/// `UtmBackend` in [`utm`].
+/// `DeviceBackend` in [`disk`], `ProxmoxBackend` in [`proxmox`], `UtmBackend`
+/// in [`utm`] and `HostBackend` in [`host`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Backend;
 
