@@ -4,10 +4,10 @@
 //! It handles the bridge between Tauri's Channel<T> and hai-core's ProgressCallback trait.
 
 use hai_core::{
-    download, is_mock_enabled, mock, Backend, BlockDevice, DeviceBackend, DeviceManifest,
-    ExpectedDevice, FlashProgress, FlashRequest, FlashStage, HaosRelease, ImageFormat,
-    ProgressCallback, ProxmoxBackend, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
-    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, ReleaseSource, UpdateInfo,
+    is_mock_enabled, mock, Backend, BlockDevice, DeviceBackend, DeviceManifest, ExpectedDevice,
+    FlashProgress, FlashRequest, FlashStage, HaosRelease, ImageFormat, ProgressCallback,
+    ProxmoxBackend, ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage,
+    ProxmoxVmConfig, ProxmoxVmResult, ReleaseSource, UpdateInfo,
 };
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -178,7 +178,8 @@ where
 
     // Find the raw disk image for the requested board. Some boards also ship a
     // qcow2 under the same board name, which must never be written to a drive.
-    let image = download::find_image_for_board(&release, &request.board, ImageFormat::Raw)
+    let image = release
+        .image_for(&request.board, ImageFormat::Raw)
         .ok_or_else(|| format!("No image found for board: {}", request.board))?;
 
     callback.on_progress(FlashProgress {
@@ -340,9 +341,7 @@ pub async fn get_haos_release(version: Option<String>) -> Result<HaosRelease, St
 /// Check for application updates
 #[tauri::command]
 pub async fn check_for_updates() -> Result<UpdateInfo, String> {
-    download::check_for_updates()
-        .await
-        .map_err(|e| e.to_string())
+    Backend.check_for_updates().await.map_err(|e| e.to_string())
 }
 
 /// Get the device manifest
@@ -468,7 +467,8 @@ where
         .await
         .map_err(|e| format!("Failed to fetch release: {}", e))?;
 
-    let image = download::find_image_for_board(&release, arch, ImageFormat::Qcow2)
+    let image = release
+        .image_for(arch, ImageFormat::Qcow2)
         .ok_or_else(|| format!("No qcow2 image found for: {}", arch))?;
 
     let cache_dir = backend.cache_dir().map_err(|e| e.to_string())?;

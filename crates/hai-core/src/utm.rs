@@ -10,7 +10,7 @@ use crate::types::{UtmStatus, UtmVmConfig, UtmVmResult};
 use crate::{Backend, ProgressCallback, UtmBackend};
 
 /// Check if UTM is installed and get its status
-pub async fn check_utm_status() -> Result<UtmStatus> {
+async fn check_utm_status() -> Result<UtmStatus> {
     #[cfg(target_os = "macos")]
     {
         macos::check_utm_status().await
@@ -25,7 +25,7 @@ pub async fn check_utm_status() -> Result<UtmStatus> {
 }
 
 /// Create a Home Assistant VM using UTM
-pub async fn create_vm<P: ProgressCallback>(
+async fn create_vm<P: ProgressCallback>(
     config: &UtmVmConfig,
     progress_callback: &P,
 ) -> Result<UtmVmResult> {
@@ -51,7 +51,7 @@ mod macos {
 
     const UTM_APP_PATH: &str = "/Applications/UTM.app";
 
-    pub async fn check_utm_status() -> Result<UtmStatus> {
+    pub(super) async fn check_utm_status() -> Result<UtmStatus> {
         #[cfg(feature = "mock")]
         {
             if crate::is_mock_enabled() {
@@ -150,7 +150,7 @@ end tell"#,
         Ok(())
     }
 
-    pub async fn create_vm<P: ProgressCallback>(
+    pub(super) async fn create_vm<P: ProgressCallback>(
         config: &UtmVmConfig,
         progress_callback: &P,
     ) -> Result<UtmVmResult> {

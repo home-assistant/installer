@@ -28,7 +28,7 @@ const USER_AGENT: &str = "HomeAssistantInstaller/0.1.0";
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
 
 /// Get the cache directory for downloaded images
-pub fn get_cache_dir() -> Result<PathBuf> {
+pub(crate) fn get_cache_dir() -> Result<PathBuf> {
     let project_dirs = ProjectDirs::from("io", "home-assistant", "installer")
         .ok_or_else(|| Error::InvalidConfig("Could not determine cache directory".to_string()))?;
 
@@ -39,14 +39,14 @@ pub fn get_cache_dir() -> Result<PathBuf> {
 }
 
 /// Fetch the device manifest
-pub async fn get_device_manifest() -> Result<DeviceManifest> {
+async fn get_device_manifest() -> Result<DeviceManifest> {
     // For now, return the manifest bundled with the installer
     // TODO: Implement actual network fetch
     Ok(crate::manifest::bundled_manifest())
 }
 
 /// Check whether a newer installer release is available
-pub async fn check_for_updates() -> Result<UpdateInfo> {
+async fn check_for_updates() -> Result<UpdateInfo> {
     // TODO: Implement an actual update check
     Ok(UpdateInfo {
         update_available: false,
@@ -147,7 +147,7 @@ async fn get_stable_version_from_url(url: &str) -> Result<StableVersionInfo> {
 }
 
 /// Fetch the stable version info from Home Assistant
-pub async fn get_stable_version() -> Result<StableVersionInfo> {
+pub(crate) async fn get_stable_version() -> Result<StableVersionInfo> {
     #[cfg(feature = "mock")]
     {
         if crate::is_mock_enabled() {
@@ -159,7 +159,7 @@ pub async fn get_stable_version() -> Result<StableVersionInfo> {
 }
 
 /// Get the latest stable HAOS version from the version API
-pub async fn get_latest_haos_version() -> Result<String> {
+async fn get_latest_haos_version() -> Result<String> {
     let version_info = get_stable_version().await?;
 
     // All boards should have the same version, just get the first one
@@ -172,7 +172,7 @@ pub async fn get_latest_haos_version() -> Result<String> {
 }
 
 /// Fetch the latest HAOS release information
-pub async fn fetch_latest_release() -> Result<HaosRelease> {
+async fn fetch_latest_release() -> Result<HaosRelease> {
     let version = get_latest_haos_version().await?;
     fetch_release(&version).await
 }
@@ -200,7 +200,7 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
 }
 
 /// Fetch a specific HAOS release by version
-pub async fn fetch_release(version: &str) -> Result<HaosRelease> {
+async fn fetch_release(version: &str) -> Result<HaosRelease> {
     #[cfg(feature = "mock")]
     {
         if crate::is_mock_enabled() {
@@ -212,7 +212,7 @@ pub async fn fetch_release(version: &str) -> Result<HaosRelease> {
 }
 
 /// Fetch HAOS release info for a specific version (or "latest")
-pub async fn get_haos_release(version: &str) -> Result<HaosRelease> {
+async fn get_haos_release(version: &str) -> Result<HaosRelease> {
     #[cfg(feature = "mock")]
     {
         if crate::is_mock_enabled() {
@@ -296,20 +296,8 @@ pub fn parse_board_from_filename(filename: &str, version: &str) -> Result<String
     parse_board_from_filename_with_suffix(filename, version, ".img.xz")
 }
 
-/// Find the image for a specific board and format in a release
-pub fn find_image_for_board<'a>(
-    release: &'a HaosRelease,
-    board: &str,
-    format: ImageFormat,
-) -> Option<&'a HaosImage> {
-    release
-        .images
-        .iter()
-        .find(|img| img.board == board && img.format == format)
-}
-
 /// Download an image file with progress updates
-pub async fn download_image<P: ProgressCallback>(
+pub(crate) async fn download_image<P: ProgressCallback>(
     url: &str,
     dest_path: &Path,
     progress_callback: &P,
@@ -397,7 +385,7 @@ pub async fn download_image<P: ProgressCallback>(
 }
 
 /// Extract a .xz compressed file
-pub async fn extract_xz<P: ProgressCallback>(
+pub(crate) async fn extract_xz<P: ProgressCallback>(
     archive_path: &Path,
     dest_path: &Path,
     progress_callback: &P,
@@ -547,6 +535,10 @@ impl ReleaseSource for Backend {
         extract_xz(archive_path, dest_path, progress_callback).await
     }
 
+    async fn check_for_updates(&self) -> Result<UpdateInfo> {
+        check_for_updates().await
+    }
+
     fn cache_dir(&self) -> Result<PathBuf> {
         get_cache_dir()
     }
@@ -629,84 +621,6 @@ mod tests {
         // Wrong version
         let result = parse_board_from_filename("haos_rpi5-64-14.2.img.xz", "14.3");
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_find_image_for_board_found() {
-        let release = HaosRelease {
-            version: "14.2".to_string(),
-            images: vec![
-                HaosImage {
-                    board: "rpi5-64".to_string(),
-                    format: ImageFormat::Raw,
-                    download_url: "https://example.com/rpi5.img.xz".to_string(),
-                    size: 100,
-                    sha256: "abc".to_string(),
-                },
-                HaosImage {
-                    board: "green".to_string(),
-                    format: ImageFormat::Raw,
-                    download_url: "https://example.com/green.img.xz".to_string(),
-                    size: 200,
-                    sha256: "def".to_string(),
-                },
-            ],
-        };
-
-        let found = find_image_for_board(&release, "green", ImageFormat::Raw);
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().board, "green");
-        assert_eq!(found.unwrap().size, 200);
-    }
-
-    #[test]
-    fn test_find_image_for_board_not_found() {
-        let release = HaosRelease {
-            version: "14.2".to_string(),
-            images: vec![HaosImage {
-                board: "rpi5-64".to_string(),
-                format: ImageFormat::Raw,
-                download_url: "https://example.com/rpi5.img.xz".to_string(),
-                size: 100,
-                sha256: "abc".to_string(),
-            }],
-        };
-
-        let found = find_image_for_board(&release, "nonexistent", ImageFormat::Raw);
-        assert!(found.is_none());
-    }
-
-    #[test]
-    fn test_find_image_for_board_picks_requested_format() {
-        // generic-aarch64 ships both a raw image and a qcow2 under the same board name.
-        // Put the qcow2 first so a board-only lookup would pick the wrong one.
-        let release = HaosRelease {
-            version: "14.2".to_string(),
-            images: vec![
-                HaosImage {
-                    board: "generic-aarch64".to_string(),
-                    format: ImageFormat::Qcow2,
-                    download_url: "https://example.com/aarch64.qcow2.xz".to_string(),
-                    size: 300,
-                    sha256: "qcow".to_string(),
-                },
-                HaosImage {
-                    board: "generic-aarch64".to_string(),
-                    format: ImageFormat::Raw,
-                    download_url: "https://example.com/aarch64.img.xz".to_string(),
-                    size: 200,
-                    sha256: "raw".to_string(),
-                },
-            ],
-        };
-
-        let raw = find_image_for_board(&release, "generic-aarch64", ImageFormat::Raw).unwrap();
-        assert_eq!(raw.download_url, "https://example.com/aarch64.img.xz");
-
-        let qcow2 = find_image_for_board(&release, "generic-aarch64", ImageFormat::Qcow2).unwrap();
-        assert_eq!(qcow2.download_url, "https://example.com/aarch64.qcow2.xz");
-
-        assert!(find_image_for_board(&release, "rpi5-64", ImageFormat::Qcow2).is_none());
     }
 
     #[test]

@@ -98,12 +98,12 @@ async fn run_with_progress<P: ProgressCallback>(
 }
 
 /// List all block devices on the system
-pub async fn list_devices() -> Result<Vec<BlockDevice>> {
+async fn list_devices() -> Result<Vec<BlockDevice>> {
     imp::list_devices().await
 }
 
 /// Write an image file to a block device with progress updates
-pub async fn write_image<P: ProgressCallback>(
+async fn write_image<P: ProgressCallback>(
     image_path: &Path,
     device_id: &str,
     verify: bool,

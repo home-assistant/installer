@@ -187,6 +187,15 @@ pub struct HaosRelease {
     pub images: Vec<HaosImage>,
 }
 
+impl HaosRelease {
+    /// The image for `board` in `format`, if the release ships one.
+    pub fn image_for(&self, board: &str, format: ImageFormat) -> Option<&HaosImage> {
+        self.images
+            .iter()
+            .find(|img| img.board == board && img.format == format)
+    }
+}
+
 /// Disk format of a HAOS image
 ///
 /// A release can ship several formats for the same board (e.g. generic-aarch64
@@ -1014,5 +1023,87 @@ mod tests {
         let parsed: UtmVmResult = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.name, "Home Assistant");
         assert!(parsed.path.is_none());
+    }
+
+    #[test]
+    fn test_image_for_found() {
+        let release = HaosRelease {
+            version: "14.2".to_string(),
+            images: vec![
+                HaosImage {
+                    board: "rpi5-64".to_string(),
+                    format: ImageFormat::Raw,
+                    download_url: "https://example.com/rpi5.img.xz".to_string(),
+                    size: 100,
+                    sha256: "abc".to_string(),
+                },
+                HaosImage {
+                    board: "green".to_string(),
+                    format: ImageFormat::Raw,
+                    download_url: "https://example.com/green.img.xz".to_string(),
+                    size: 200,
+                    sha256: "def".to_string(),
+                },
+            ],
+        };
+
+        let found = release.image_for("green", ImageFormat::Raw);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().board, "green");
+        assert_eq!(found.unwrap().size, 200);
+    }
+
+    #[test]
+    fn test_image_for_not_found() {
+        let release = HaosRelease {
+            version: "14.2".to_string(),
+            images: vec![HaosImage {
+                board: "rpi5-64".to_string(),
+                format: ImageFormat::Raw,
+                download_url: "https://example.com/rpi5.img.xz".to_string(),
+                size: 100,
+                sha256: "abc".to_string(),
+            }],
+        };
+
+        let found = release.image_for("nonexistent", ImageFormat::Raw);
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn test_image_for_picks_requested_format() {
+        // generic-aarch64 ships both a raw image and a qcow2 under the same board name.
+        // Put the qcow2 first so a board-only lookup would pick the wrong one.
+        let release = HaosRelease {
+            version: "14.2".to_string(),
+            images: vec![
+                HaosImage {
+                    board: "generic-aarch64".to_string(),
+                    format: ImageFormat::Qcow2,
+                    download_url: "https://example.com/aarch64.qcow2.xz".to_string(),
+                    size: 300,
+                    sha256: "qcow".to_string(),
+                },
+                HaosImage {
+                    board: "generic-aarch64".to_string(),
+                    format: ImageFormat::Raw,
+                    download_url: "https://example.com/aarch64.img.xz".to_string(),
+                    size: 200,
+                    sha256: "raw".to_string(),
+                },
+            ],
+        };
+
+        let raw = release
+            .image_for("generic-aarch64", ImageFormat::Raw)
+            .unwrap();
+        assert_eq!(raw.download_url, "https://example.com/aarch64.img.xz");
+
+        let qcow2 = release
+            .image_for("generic-aarch64", ImageFormat::Qcow2)
+            .unwrap();
+        assert_eq!(qcow2.download_url, "https://example.com/aarch64.qcow2.xz");
+
+        assert!(release.image_for("rpi5-64", ImageFormat::Qcow2).is_none());
     }
 }
