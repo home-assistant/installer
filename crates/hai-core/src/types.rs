@@ -222,8 +222,6 @@ pub struct HaosImage {
     pub download_url: String,
     /// File size in bytes
     pub size: u64,
-    /// SHA256 checksum (hex string)
-    pub sha256: String,
 }
 
 /// GitHub release asset from API
@@ -232,8 +230,6 @@ pub struct GitHubAsset {
     pub name: String,
     pub size: u64,
     pub browser_download_url: String,
-    /// Digest in format "sha256:hexstring"
-    pub digest: Option<String>,
 }
 
 /// GitHub release from API
@@ -616,14 +612,12 @@ mod tests {
                     format: ImageFormat::Raw,
                     download_url: "https://example.com/haos-rpi5-16.3.img.xz".to_string(),
                     size: 500000000,
-                    sha256: "abc123def456".to_string(),
                 },
                 HaosImage {
                     board: "generic-x86-64".to_string(),
                     format: ImageFormat::Raw,
                     download_url: "https://example.com/haos-generic-x86-16.3.img.xz".to_string(),
                     size: 600000000,
-                    sha256: "def789abc012".to_string(),
                 },
             ],
         };
@@ -638,7 +632,6 @@ mod tests {
             assert_eq!(original.board, deserialized.board);
             assert_eq!(original.download_url, deserialized.download_url);
             assert_eq!(original.size, deserialized.size);
-            assert_eq!(original.sha256, deserialized.sha256);
         }
     }
 
@@ -880,22 +873,6 @@ mod tests {
 
     // HaosImage edge cases
     #[test]
-    fn test_haos_image_empty_sha256() {
-        let image = HaosImage {
-            board: "rpi5-64".to_string(),
-            format: ImageFormat::Raw,
-            download_url: "https://example.com/image.xz".to_string(),
-            size: 500_000_000,
-            sha256: "".to_string(),
-        };
-        let json = serde_json::to_string(&image).unwrap();
-        let parsed: HaosImage = serde_json::from_str(&json).unwrap();
-        assert!(parsed.sha256.is_empty());
-        assert_eq!(parsed.board, "rpi5-64");
-        assert_eq!(parsed.size, 500_000_000);
-    }
-
-    #[test]
     fn test_haos_image_format_serialization() {
         assert_eq!(serde_json::to_string(&ImageFormat::Raw).unwrap(), "\"raw\"");
         assert_eq!(
@@ -904,7 +881,7 @@ mod tests {
         );
 
         // A missing format defaults to raw
-        let json = r#"{"board":"green","download_url":"u","size":1,"sha256":""}"#;
+        let json = r#"{"board":"green","download_url":"u","size":1}"#;
         let parsed: HaosImage = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.format, ImageFormat::Raw);
     }
@@ -1035,14 +1012,12 @@ mod tests {
                     format: ImageFormat::Raw,
                     download_url: "https://example.com/rpi5.img.xz".to_string(),
                     size: 100,
-                    sha256: "abc".to_string(),
                 },
                 HaosImage {
                     board: "green".to_string(),
                     format: ImageFormat::Raw,
                     download_url: "https://example.com/green.img.xz".to_string(),
                     size: 200,
-                    sha256: "def".to_string(),
                 },
             ],
         };
@@ -1062,7 +1037,6 @@ mod tests {
                 format: ImageFormat::Raw,
                 download_url: "https://example.com/rpi5.img.xz".to_string(),
                 size: 100,
-                sha256: "abc".to_string(),
             }],
         };
 
@@ -1082,14 +1056,12 @@ mod tests {
                     format: ImageFormat::Qcow2,
                     download_url: "https://example.com/aarch64.qcow2.xz".to_string(),
                     size: 300,
-                    sha256: "qcow".to_string(),
                 },
                 HaosImage {
                     board: "generic-aarch64".to_string(),
                     format: ImageFormat::Raw,
                     download_url: "https://example.com/aarch64.img.xz".to_string(),
                     size: 200,
-                    sha256: "raw".to_string(),
                 },
             ],
         };

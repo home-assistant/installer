@@ -248,18 +248,11 @@ fn parse_github_release(release: GitHubRelease) -> Result<HaosRelease> {
             Err(_) => continue,
         };
 
-        // Parse SHA256 from digest field
-        let sha256 = asset
-            .digest
-            .and_then(|d| d.strip_prefix("sha256:").map(|s| s.to_string()))
-            .unwrap_or_default();
-
         images.push(HaosImage {
             board,
             format,
             download_url: asset.browser_download_url,
             size: asset.size,
-            sha256,
         });
     }
 
@@ -632,20 +625,17 @@ mod tests {
                     name: "haos_rpi5-64-14.2.img.xz".to_string(),
                     size: 500_000_000,
                     browser_download_url: "https://github.com/download/rpi5.img.xz".to_string(),
-                    digest: Some("sha256:abc123".to_string()),
                 },
                 GitHubAsset {
                     name: "haos_generic-x86-64-14.2.qcow2.xz".to_string(),
                     size: 600_000_000,
                     browser_download_url: "https://github.com/download/x86.qcow2.xz".to_string(),
-                    digest: Some("sha256:def456".to_string()),
                 },
                 // Should be ignored (wrong extension)
                 GitHubAsset {
                     name: "haos_rpi5-64-14.2.img.xz.sha256".to_string(),
                     size: 100,
                     browser_download_url: "https://github.com/download/sha256".to_string(),
-                    digest: None,
                 },
             ],
         };
@@ -658,7 +648,6 @@ mod tests {
         let rpi_image = parsed.images.iter().find(|i| i.board == "rpi5-64").unwrap();
         assert_eq!(rpi_image.format, ImageFormat::Raw);
         assert_eq!(rpi_image.size, 500_000_000);
-        assert_eq!(rpi_image.sha256, "abc123");
 
         // Check x86 qcow2 image
         let x86_image = parsed
@@ -668,7 +657,6 @@ mod tests {
             .unwrap();
         assert_eq!(x86_image.format, ImageFormat::Qcow2);
         assert_eq!(x86_image.size, 600_000_000);
-        assert_eq!(x86_image.sha256, "def456");
     }
 
     #[tokio::test]
@@ -680,7 +668,6 @@ mod tests {
             format: ImageFormat::Raw,
             download_url: "https://example.com/test.img.xz".to_string(),
             size: 100,
-            sha256: "abc".to_string(),
         };
         let result = is_cached(&image).await.unwrap();
         assert!(!result);
@@ -696,7 +683,6 @@ mod tests {
             format: ImageFormat::Raw,
             download_url: "https://example.com/nonexistent-file-12345.img.xz".to_string(),
             size: 100,
-            sha256: "abc".to_string(),
         };
         let result = is_cached(&image).await.unwrap();
         assert!(!result);
@@ -725,7 +711,6 @@ mod tests {
             format: ImageFormat::Raw,
             download_url: "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz".to_string(),
             size: 100,
-            sha256: "abc".to_string(),
         };
 
         let path = get_cached_image_path(&image).unwrap();
@@ -794,7 +779,6 @@ mod tests {
             format: ImageFormat::Raw,
             download_url: "no-slashes-here".to_string(),
             size: 100,
-            sha256: "abc".to_string(),
         };
 
         let path = get_cached_image_path(&image).unwrap();
@@ -822,7 +806,6 @@ mod tests {
                 test_file.file_name().unwrap().to_string_lossy()
             ),
             size: 100,
-            sha256: "abc".to_string(),
         };
 
         let result = is_cached(&image).await.unwrap();
@@ -1181,7 +1164,6 @@ mod tests {
                 test_file.file_name().unwrap().to_string_lossy()
             ),
             size: 100,
-            sha256: "abc".to_string(),
         };
 
         let result = is_cached(&image).await.unwrap();
@@ -1200,44 +1182,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_parse_github_release_with_missing_digest() {
-        use crate::types::{GitHubAsset, GitHubRelease};
-
-        let release = GitHubRelease {
-            tag_name: "14.2".to_string(),
-            assets: vec![GitHubAsset {
-                name: "haos_rpi4-14.2.img.xz".to_string(),
-                size: 500_000_000,
-                browser_download_url: "https://github.com/download/rpi4.img.xz".to_string(),
-                digest: None, // No digest
-            }],
-        };
-
-        let parsed = parse_github_release(release).unwrap();
-        assert_eq!(parsed.images.len(), 1);
-        assert_eq!(parsed.images[0].sha256, ""); // Should be empty string
-    }
-
-    #[tokio::test]
-    async fn test_parse_github_release_with_digest_no_prefix() {
-        use crate::types::{GitHubAsset, GitHubRelease};
-
-        let release = GitHubRelease {
-            tag_name: "14.2".to_string(),
-            assets: vec![GitHubAsset {
-                name: "haos_rpi4-14.2.img.xz".to_string(),
-                size: 500_000_000,
-                browser_download_url: "https://github.com/download/rpi4.img.xz".to_string(),
-                digest: Some("abc123".to_string()), // No "sha256:" prefix
-            }],
-        };
-
-        let parsed = parse_github_release(release).unwrap();
-        assert_eq!(parsed.images.len(), 1);
-        assert_eq!(parsed.images[0].sha256, ""); // Should be empty when prefix missing
-    }
-
-    #[tokio::test]
     async fn test_parse_github_release_invalid_filename_skipped() {
         use crate::types::{GitHubAsset, GitHubRelease};
 
@@ -1247,7 +1191,6 @@ mod tests {
                 name: "invalid_filename.img.xz".to_string(), // Doesn't match pattern
                 size: 500_000_000,
                 browser_download_url: "https://github.com/download/invalid.img.xz".to_string(),
-                digest: Some("sha256:abc".to_string()),
             }],
         };
 
@@ -1651,74 +1594,6 @@ mod tests {
 
             mock.assert_async().await;
             redirect_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_fetch_release_missing_digest() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/tags/14.2")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                    "tag_name": "14.2",
-                    "assets": [{
-                        "name": "haos_rpi4-14.2.img.xz",
-                        "size": 400000000,
-                        "browser_download_url": "https://github.com/download/rpi4.img.xz",
-                        "digest": null
-                    }]
-                }"#,
-                )
-                .create_async()
-                .await;
-
-            let result = fetch_release_from_api(&server.url(), "14.2").await;
-            assert!(result.is_ok());
-
-            let release = result.unwrap();
-            assert_eq!(release.images.len(), 1);
-            assert_eq!(release.images[0].sha256, ""); // Should be empty when digest is null
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_fetch_release_digest_without_prefix() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/tags/14.2")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                    "tag_name": "14.2",
-                    "assets": [{
-                        "name": "haos_rpi4-14.2.img.xz",
-                        "size": 400000000,
-                        "browser_download_url": "https://github.com/download/rpi4.img.xz",
-                        "digest": "abc123"
-                    }]
-                }"#,
-                )
-                .create_async()
-                .await;
-
-            let result = fetch_release_from_api(&server.url(), "14.2").await;
-            assert!(result.is_ok());
-
-            let release = result.unwrap();
-            assert_eq!(release.images.len(), 1);
-            assert_eq!(release.images[0].sha256, ""); // Should be empty when sha256: prefix is missing
-
-            mock.assert_async().await;
         }
 
         #[tokio::test]

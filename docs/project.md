@@ -375,7 +375,7 @@ This document outlines the phased implementation of HAI (Home Assistant Installe
 - [x] Add happy Casita mascot with blinking animation
 - [x] Show "You're all set!" message
 - [x] Show next steps list (remove drive, insert, wait, open browser)
-- [x] Add homeassistant.local:8123 as clickable link
+- [x] Add homeassistant.local as clickable link
 - [x] Add "Done" button in footer
 
 ### Companion App Section

@@ -369,17 +369,6 @@ async function simulateUtmDownload(
 }
 
 /**
- * Get the Mac's CPU architecture.
- * Returns "aarch64" for Apple Silicon, "x86_64" for Intel, or "unsupported".
- */
-export async function getMacArchitecture(): Promise<string> {
-  if (isBrowserOnly()) {
-    return "aarch64"; // Mock as Apple Silicon
-  }
-  return invoke<string>("get_mac_architecture");
-}
-
-/**
  * Create a Home Assistant VM in UTM.
  * @param config The VM configuration
  * @returns The VM ID if successful
@@ -422,17 +411,6 @@ export async function resizeUtmVmDisk(
 }
 
 /**
- * List all UTM VMs.
- * @returns Array of VM names
- */
-export async function listUtmVms(): Promise<string[]> {
-  if (isBrowserOnly()) {
-    return ["Home Assistant"];
-  }
-  return invoke<string[]>("list_utm_vms");
-}
-
-/**
  * VM status info from backend.
  */
 export interface VmStatusInfo {
@@ -458,7 +436,7 @@ export async function getUtmVmStatus(vmId: string): Promise<VmStatusInfo> {
 /**
  * Check if Home Assistant webserver is ready at the given IP address.
  * @param ipAddress The IP address to check
- * @returns True if the webserver is reachable on port 8123
+ * @returns True if the webserver is reachable on port 80
  */
 export async function checkHaReady(ipAddress: string): Promise<boolean> {
   if (isBrowserOnly()) {
