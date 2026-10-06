@@ -34,8 +34,8 @@ npm test
 # Unit tests only
 npm run test:unit
 
-# E2E tests (with mock mode)
-HA_INSTALLER_MOCK=true npm run test:e2e
+# E2E tests
+npm run test:e2e
 
 # Rust tests
 cargo test --workspace

@@ -319,101 +319,26 @@ export default defineConfig({
 
 ---
 
-## 4. Mock Mode
+## 4. Mock Backend
 
-Enable testing without real hardware.
+Develop and test the desktop app without real hardware, a network connection, or a Proxmox/UTM host.
 
-### hai-core Mock Support
+hai-core defines one trait per backend concern (`ReleaseSource`, `DeviceBackend`, `ProxmoxBackend`, `UtmBackend`, `HostBackend`) and two implementations:
 
-Mock functionality lives in hai-core and is controlled via feature flag and environment variable:
+- `hai_core::Backend` — the real implementation, delegating to the domain modules.
+- `hai_core::BackendMock` — canned data and simulated progress, compiled only with the `mock` feature.
 
-```rust
-// crates/hai-core/src/mock.rs
+hai-desktop picks one at compile time in `crates/hai-desktop/src/backend.rs`; both are zero-sized unit structs, so the commands simply call `Backend.<method>()`. Release builds never contain mock code.
 
-pub fn is_mock_mode() -> bool {
-    std::env::var("HA_INSTALLER_MOCK").is_ok()
-}
+```bash
+# Desktop app with the mock backend
+npm run tauri dev -- --features mock
 
-pub fn mock_devices() -> Vec<BlockDevice> {
-    vec![
-        BlockDevice {
-            id: "mock-sd-32".into(),
-            name: "Mock SD Card".into(),
-            size: 32_000_000_000,
-            device_type: DeviceType::SdCard,
-        },
-        BlockDevice {
-            id: "mock-usb-64".into(),
-            name: "Mock USB Drive".into(),
-            size: 64_000_000_000,
-            device_type: DeviceType::Usb,
-        },
-    ]
-}
-
-pub async fn mock_flash<C: ProgressCallback>(callback: &C) -> Result<FlashResult> {
-    // Simulate download progress
-    for i in 0..=50 {
-        callback.on_progress(FlashProgress {
-            stage: FlashStage::Downloading,
-            percent: i * 2,
-            bytes_written: 0,
-            total_bytes: 0,
-        });
-        tokio::time::sleep(Duration::from_millis(30)).await;
-    }
-
-    // Simulate write progress
-    for i in 0..=50 {
-        callback.on_progress(FlashProgress {
-            stage: FlashStage::Writing,
-            percent: i * 2,
-            bytes_written: (i as u64) * 100_000_000,
-            total_bytes: 5_000_000_000,
-        });
-        tokio::time::sleep(Duration::from_millis(30)).await;
-    }
-
-    Ok(FlashResult { success: true, .. })
-}
+# Rust tests, including the ones that run the flows against the mock backend
+cargo test --workspace --features hai-desktop/mock
 ```
 
-### hai-core Device Functions with Mock Support
-
-```rust
-// crates/hai-core/src/devices.rs
-
-pub async fn list_block_devices() -> Result<Vec<BlockDevice>> {
-    if mock::is_mock_mode() {
-        return Ok(mock::mock_devices());
-    }
-    real_list_block_devices().await
-}
-```
-
-### hai-desktop Thin Wrapper
-
-```rust
-// crates/hai-desktop/src/commands.rs
-
-#[tauri::command]
-pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
-    hai_core::devices::list_block_devices()
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn flash_image(
-    request: FlashRequest,
-    progress: Channel<FlashProgress>,
-) -> Result<FlashResult, String> {
-    let callback = TauriProgressAdapter(progress);
-    hai_core::flash::flash_image(request, &callback)
-        .await
-        .map_err(|e| e.to_string())
-}
-```
+Playwright E2E tests run in a plain browser without Tauri. There the frontend falls back to the fixtures in `src/api/mock-data.ts`; the Rust mock backend is not involved.
 
 ---
 
@@ -429,7 +354,7 @@ home-assistant-installer/
 │   │   ├── flash.rs                     # Contains inline unit tests
 │   │   ├── proxmox.rs                   # Contains inline unit tests
 │   │   ├── utm.rs                       # Contains inline unit tests
-│   │   └── mock.rs                      # Mock data and functions
+│   │   └── mock/                        # BackendMock (feature "mock")
 │   │
 │   └── hai-desktop/
 │       ├── src/
@@ -483,6 +408,6 @@ npm run test:unit
 # Run E2E tests only
 npm run test:e2e
 
-# Run with mock mode enabled
-HA_INSTALLER_MOCK=1 npm run test:e2e
+# Run the desktop app with the mock backend
+npm run tauri dev -- --features mock
 ```

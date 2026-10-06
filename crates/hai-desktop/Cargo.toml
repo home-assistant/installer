@@ -16,9 +16,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { workspace = true }
 
+[features]
+# Dev-only: build with the mock backend (`tauri dev --features mock`).
+mock = ["hai-core/mock"]
+
 [dependencies]
 # Internal crates
-hai-core = { workspace = true, features = ["proxmox", "utm", "mock"] }
+hai-core = { workspace = true, features = ["proxmox", "utm"] }
 
 # Tauri
 tauri = { workspace = true }

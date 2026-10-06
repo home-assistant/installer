@@ -29,7 +29,7 @@ HAI uses a Cargo workspace to separate concerns and enable code reuse:
 │   │   • Proxmox VE API integration                          │   │
 │   │   • UTM automation (macOS)                              │   │
 │   │   • HA readiness checks                                 │   │
-│   │   • Mock mode support                                   │   │
+│   │   • Mock backend (feature "mock", dev only)              │   │
 │   │                                                         │   │
 │   └─────────────────────────────────────────────────────────┘   │
 │                            ▲                                    │
@@ -80,7 +80,7 @@ home-assistant-installer/
 │   │       ├── proxmox.rs        # Proxmox VE API
 │   │       ├── utm.rs            # UTM automation (macOS)
 │   │       ├── network.rs        # HA readiness checks
-│   │       └── mock.rs           # Mock mode support
+│   │       └── mock/             # BackendMock (feature "mock")
 │   │
 │   └── hai-desktop/              # Tauri desktop app
 │       ├── Cargo.toml
@@ -157,7 +157,7 @@ The shared library containing all business logic.
 | `proxmox` | Proxmox VE API client |
 | `utm` | UTM automation via AppleScript (macOS) |
 | `network` | Connectivity and HA readiness checks |
-| `mock` | Mock data for testing |
+| `mock` | `BackendMock`: canned data and simulated progress (feature `mock`, dev only) |
 
 ### Progress Callback Trait
 

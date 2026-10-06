@@ -105,8 +105,6 @@ jobs:
       
       - name: Run E2E tests
         run: npm run test:e2e
-        env:
-          HA_INSTALLER_MOCK: "true"
       
       - name: Upload test results
         uses: actions/upload-artifact@v4

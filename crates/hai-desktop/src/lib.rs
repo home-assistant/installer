@@ -3,12 +3,13 @@
 //! This crate provides the Tauri desktop application for HAI.
 //! It uses hai-core for business logic and provides Tauri command wrappers.
 
+mod backend;
 mod commands;
 
 use commands::{
     check_for_updates, check_ha_ready, check_ha_updated, check_utm_status, create_utm_vm,
     download_utm_image, flash_image, get_haos_release, get_manifest, get_system_info,
-    get_utm_vm_status, is_mock_mode, list_block_devices, proxmox_connect, proxmox_create_vm,
+    get_utm_vm_status, list_block_devices, proxmox_connect, proxmox_create_vm,
     proxmox_get_next_vm_id, proxmox_list_nodes, proxmox_list_storage, resize_utm_vm_disk,
     start_utm_vm,
 };
@@ -18,7 +19,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            is_mock_mode,
             list_block_devices,
             flash_image,
             check_for_updates,

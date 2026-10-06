@@ -68,17 +68,6 @@ fn version_meets_minimum(version: (u32, u32, u32), minimum: (u32, u32, u32)) -> 
 /// This function also verifies the Proxmox version is at least 8.4.1,
 /// which is required for disk image import via the API.
 async fn authenticate(credentials: &ProxmoxCredentials) -> Result<ProxmoxSession> {
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            return Ok(ProxmoxSession {
-                server_url: credentials.server_url.clone(),
-                ticket: "mock-ticket".to_string(),
-                csrf_token: "mock-csrf-token".to_string(),
-            });
-        }
-    }
-
     // Validate URL format (skip in tests to allow mockito HTTP server)
     #[cfg(not(test))]
     if !credentials.server_url.starts_with("https://") {
@@ -214,28 +203,6 @@ async fn authenticate(credentials: &ProxmoxCredentials) -> Result<ProxmoxSession
 
 /// List available nodes on the Proxmox cluster
 async fn list_nodes(session: &ProxmoxSession) -> Result<Vec<ProxmoxNode>> {
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            return Ok(vec![
-                ProxmoxNode {
-                    name: "pve".to_string(),
-                    status: "online".to_string(),
-                    cpu_usage: Some(0.15),
-                    memory_used: Some(4_000_000_000),
-                    memory_total: Some(16_000_000_000),
-                },
-                ProxmoxNode {
-                    name: "pve2".to_string(),
-                    status: "online".to_string(),
-                    cpu_usage: Some(0.25),
-                    memory_used: Some(8_000_000_000),
-                    memory_total: Some(32_000_000_000),
-                },
-            ]);
-        }
-    }
-
     let client = create_client(30)?;
 
     let url = format!(
@@ -313,35 +280,6 @@ async fn list_nodes(session: &ProxmoxSession) -> Result<Vec<ProxmoxNode>> {
 
 /// List available storage on a node
 async fn list_storage(session: &ProxmoxSession, node: &str) -> Result<Vec<ProxmoxStorage>> {
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            let _ = node;
-            return Ok(vec![
-                ProxmoxStorage {
-                    name: "local".to_string(),
-                    storage_type: "dir".to_string(),
-                    content: vec![
-                        "images".to_string(),
-                        "rootdir".to_string(),
-                        "import".to_string(),
-                    ],
-                    available: 100_000_000_000,
-                    total: 500_000_000_000,
-                    active: true,
-                },
-                ProxmoxStorage {
-                    name: "local-lvm".to_string(),
-                    storage_type: "lvmthin".to_string(),
-                    content: vec!["images".to_string(), "rootdir".to_string()],
-                    available: 200_000_000_000,
-                    total: 1_000_000_000_000,
-                    active: true,
-                },
-            ]);
-        }
-    }
-
     let client = create_client(30)?;
 
     let url = format!(
@@ -426,13 +364,6 @@ async fn get_storage_name(session: &ProxmoxSession, node: &str) -> Result<String
 
 /// Get the next available VM ID on the Proxmox server.
 async fn get_next_vm_id(session: &ProxmoxSession) -> Result<u32> {
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            return Ok(100);
-        }
-    }
-
     let url = format!(
         "{}/api2/json/cluster/nextid",
         session.server_url.trim_end_matches('/')
@@ -960,42 +891,6 @@ async fn create_vm<P: ProgressCallback>(
     config: &ProxmoxVmConfig,
     progress_callback: &P,
 ) -> Result<ProxmoxVmResult> {
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            // Simulate VM creation progress
-            let stages = [
-                (10, "Downloading HAOS image..."),
-                (30, "Uploading to Proxmox..."),
-                (50, "Creating VM..."),
-                (70, "Configuring VM..."),
-                (90, "Starting VM..."),
-                (100, "Complete"),
-            ];
-
-            for (progress, message) in stages {
-                progress_callback.on_progress(FlashProgress {
-                    stage: if progress < 100 {
-                        FlashStage::Downloading
-                    } else {
-                        FlashStage::Complete
-                    },
-                    progress,
-                    bytes_processed: 0,
-                    total_bytes: 0,
-                    message: message.to_string(),
-                });
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            }
-
-            return Ok(ProxmoxVmResult {
-                vm_id: config.vm_id,
-                node: config.node.clone(),
-                ip_address: Some("192.168.1.100".to_string()),
-            });
-        }
-    }
-
     // Step 1: Get HAOS release info
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
@@ -1338,7 +1233,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_authenticate_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             // Mock authentication endpoint
@@ -1396,7 +1290,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_authenticate_wrong_credentials() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             // Mock 401 response for wrong credentials
@@ -1428,7 +1321,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_authenticate_access_denied() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             // Mock 403 response for insufficient permissions
@@ -1460,7 +1352,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_authenticate_old_proxmox_version() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             // Mock successful auth
@@ -1519,7 +1410,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_list_nodes_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let nodes_mock = server
@@ -1571,7 +1461,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_list_nodes_auth_expired() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let nodes_mock = server
@@ -1602,7 +1491,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_list_storage_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let storage_mock = server
@@ -1656,7 +1544,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_list_storage_empty() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let storage_mock = server
@@ -1685,7 +1572,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_storage_name_selects_first_active_import_storage() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let storage_mock = server
@@ -1759,7 +1645,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_storage_name_no_active_import_storage() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let storage_mock = server
@@ -1819,7 +1704,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_storage_name_propagates_list_storage_error() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let storage_mock = server
@@ -1844,7 +1728,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_next_vm_id_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let vmid_mock = server
@@ -1871,7 +1754,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_next_vm_id_as_number() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             // Some Proxmox versions return the ID as a number
@@ -1899,7 +1781,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_next_vm_id_high_number() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let vmid_mock = server
@@ -1926,7 +1807,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_list_nodes_server_error() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let nodes_mock = server
@@ -1951,7 +1831,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_authenticate_missing_ticket_in_response() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let auth_mock = server
@@ -1989,7 +1868,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_authenticate_missing_csrf_in_response() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let auth_mock = server
@@ -2028,7 +1906,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_list_storage_node_not_found() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let storage_mock = server
@@ -2053,7 +1930,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_next_vm_id_invalid_format() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let vmid_mock = server
@@ -2085,7 +1961,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_list_nodes_permission_denied() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let nodes_mock = server
@@ -2116,7 +1991,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_wait_for_task_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let task_mock = server
@@ -2159,7 +2033,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_wait_for_task_failure() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let task_mock = server
@@ -2207,7 +2080,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_wait_for_task_timeout() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let task_mock = server
@@ -2255,7 +2127,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_wait_for_task_http_error() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let task_mock = server
@@ -2288,7 +2159,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_create_vm_with_disk_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let vm_create_mock = server
@@ -2361,7 +2231,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_create_vm_with_disk_error() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let vm_create_mock = server
@@ -2397,7 +2266,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_start_vm_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let start_mock = server
@@ -2448,7 +2316,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_start_vm_error() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let start_mock = server
@@ -2479,7 +2346,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_wait_for_vm_ip_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let ip_mock = server
@@ -2530,7 +2396,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_wait_for_vm_ip_skip_loopback() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let ip_mock = server
@@ -2585,7 +2450,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_wait_for_ha_webserver_at_url_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let web_mock = server
@@ -2604,7 +2468,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_wait_for_ha_webserver_at_url_404_is_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let web_mock = server
@@ -2623,7 +2486,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_wait_for_ha_updated_at_url_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let manifest_mock = server
@@ -2642,7 +2504,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_authenticate_missing_data() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let auth_mock = server
@@ -2674,7 +2535,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_authenticate_invalid_json() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let auth_mock = server
@@ -2706,7 +2566,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_authenticate_version_check_error() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let auth_mock = server
@@ -2747,7 +2606,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_authenticate_version_missing_version_field() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let auth_mock = server
@@ -2802,7 +2660,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_authenticate_invalid_version_string() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let auth_mock = server
@@ -2858,7 +2715,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_authenticate_server_error() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let auth_mock = server
@@ -2889,7 +2745,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_next_vm_id_unexpected_type() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let vmid_mock = server
@@ -2921,7 +2776,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_next_vm_id_missing_data() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let vmid_mock = server
@@ -2953,7 +2807,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_next_vm_id_server_error() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let vmid_mock = server
@@ -2977,7 +2830,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_list_storage_invalid_json() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let storage_mock = server
@@ -3009,7 +2861,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_list_storage_missing_data() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let storage_mock = server
@@ -3041,7 +2892,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_list_nodes_invalid_json() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let nodes_mock = server
@@ -3073,7 +2923,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_list_nodes_missing_data() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let nodes_mock = server
@@ -3105,7 +2954,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_wait_for_task_missing_data() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let task_mock = server
@@ -3146,7 +2994,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_wait_for_task_invalid_json() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             let task_mock = server
@@ -3187,7 +3034,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_upload_image_to_proxmox_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             // Create a temp file to upload
@@ -3242,7 +3088,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_upload_image_to_proxmox_http_error() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             // Create a temp file to upload
@@ -3281,7 +3126,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_upload_image_to_proxmox_invalid_response() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             // Create a temp file to upload
@@ -3321,7 +3165,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_upload_image_to_proxmox_missing_upid() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = Server::new_async().await;
 
             // Create a temp file to upload
@@ -3361,7 +3204,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_upload_image_to_proxmox_file_not_found() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let server = Server::new_async().await;
 
             let session = ProxmoxSession {

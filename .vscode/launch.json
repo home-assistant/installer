@@ -25,14 +25,11 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Tauri App (Mock Mode)",
+      "name": "Tauri App (Mock Backend)",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "tauri", "dev"],
+      "runtimeArgs": ["run", "tauri", "dev", "--", "--features", "mock"],
       "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"],
-      "env": {
-        "HA_INSTALLER_MOCK": "true"
-      }
+      "skipFiles": ["<node_internals>/**"]
     },
     {
       "type": "lldb",
@@ -55,20 +52,21 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Tauri (Debug Rust, Mock Mode)",
+      "name": "Tauri (Debug Rust, Mock Backend)",
       "cargo": {
         "args": [
           "build",
           "--manifest-path=./crates/hai-desktop/Cargo.toml",
-          "--no-default-features"
+          "--no-default-features",
+          "--features",
+          "mock"
         ],
         "problemMatcher": "$rustc"
       },
       "sourceLanguages": ["rust"],
       "preLaunchTask": "dev-server",
       "env": {
-        "RUST_BACKTRACE": "full",
-        "HA_INSTALLER_MOCK": "true"
+        "RUST_BACKTRACE": "full"
       }
     }
   ]

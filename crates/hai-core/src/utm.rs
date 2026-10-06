@@ -76,17 +76,6 @@ mod macos {
     }
 
     pub(super) async fn check_utm_status() -> Result<UtmStatus> {
-        #[cfg(feature = "mock")]
-        {
-            if crate::is_mock_enabled() {
-                return Ok(UtmStatus {
-                    installed: true,
-                    version: Some("4.0.0".to_string()),
-                    path: Some(UTM_APP_PATH.to_string()),
-                });
-            }
-        }
-
         // Check if UTM.app exists
         let utm_path = std::path::Path::new(UTM_APP_PATH);
         if !utm_path.exists() {
@@ -178,44 +167,6 @@ end tell"#,
         config: &UtmVmConfig,
         progress_callback: &P,
     ) -> Result<UtmVmResult> {
-        #[cfg(feature = "mock")]
-        {
-            if crate::is_mock_enabled() {
-                // Simulate VM creation progress
-                let stages = [
-                    (10, "Downloading HAOS image..."),
-                    (30, "Extracting image..."),
-                    (50, "Creating UTM VM..."),
-                    (70, "Configuring VM settings..."),
-                    (90, "Starting VM..."),
-                    (100, "Complete"),
-                ];
-
-                for (progress, message) in stages {
-                    progress_callback.on_progress(FlashProgress {
-                        stage: if progress < 100 {
-                            FlashStage::Downloading
-                        } else {
-                            FlashStage::Complete
-                        },
-                        progress,
-                        bytes_processed: 0,
-                        total_bytes: 0,
-                        message: message.to_string(),
-                    });
-                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                }
-
-                return Ok(UtmVmResult {
-                    name: config.name.clone(),
-                    path: Some(format!(
-                        "~/Library/Containers/com.utmapp.UTM/Data/Documents/{}.utm",
-                        config.name
-                    )),
-                });
-            }
-        }
-
         // Verify UTM is installed
         let status = check_utm_status().await?;
         if !status.installed {
@@ -404,9 +355,6 @@ mod tests {
         #[tokio::test]
         #[serial_test::serial]
         async fn test_check_utm_status_not_installed() {
-            // Temporarily disable mock mode to test the real path
-            std::env::remove_var("HA_INSTALLER_MOCK");
-
             // Since UTM is unlikely to be installed at the exact path we check,
             // or if it is, we can still verify the logic works
             let status = check_utm_status().await.unwrap();
@@ -425,9 +373,6 @@ mod tests {
         #[tokio::test]
         #[serial_test::serial]
         async fn test_create_vm_non_mock_utm_not_installed() {
-            // Disable mock mode
-            std::env::remove_var("HA_INSTALLER_MOCK");
-
             let config = UtmVmConfig {
                 name: "Test VM".to_string(),
                 image_path: "/tmp/test.qcow2".to_string(),
@@ -457,9 +402,6 @@ mod tests {
         #[tokio::test]
         #[serial_test::serial]
         async fn test_create_vm_non_mock_image_not_found() {
-            // Disable mock mode
-            std::env::remove_var("HA_INSTALLER_MOCK");
-
             // Create a temporary directory for testing
             let temp_dir = std::env::temp_dir();
             let non_existent_image = temp_dir.join("non_existent_image.qcow2");
@@ -606,9 +548,6 @@ mod tests {
         #[tokio::test]
         #[serial_test::serial]
         async fn test_create_vm_with_existing_image_file() {
-            // Disable mock mode
-            std::env::remove_var("HA_INSTALLER_MOCK");
-
             // Create a temporary image file
             use std::io::Write;
             let temp_dir = std::env::temp_dir();

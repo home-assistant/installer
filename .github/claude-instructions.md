@@ -32,7 +32,7 @@ It helps users install Home Assistant OS on various hardware platforms.
 5. Update relevant documentation
 
 ## Important Notes
-- Mock mode available for testing: `HA_INSTALLER_MOCK=true`
+- Mock backend available for testing: `npm run tauri dev -- --features mock`
 - Manifest data comes from version.home-assistant.io
 - No auto-update; version check with download prompt only
 - Releases are signed with cosign

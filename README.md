@@ -46,12 +46,12 @@ npm run test          # Run unit tests
 npm run test:e2e      # Run E2E tests
 ```
 
-### Mock Mode
+### Mock Backend
 
-For testing without real hardware:
+For testing without real hardware, a network connection, or a Proxmox/UTM host, build the app with the mock backend. It is compiled in only with this feature flag, so release builds never contain it:
 
 ```bash
-HA_INSTALLER_MOCK=true npm run tauri dev
+npm run tauri dev -- --features mock
 ```
 
 ## Tech Stack

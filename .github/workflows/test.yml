@@ -90,6 +90,12 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --workspace -- -D warnings
 
+      - name: Run Clippy (mock backend)
+        run: cargo clippy --workspace --features hai-desktop/mock -- -D warnings
+
+      - name: Run tests (mock backend)
+        run: cargo test --workspace --features hai-desktop/mock
+
   test-frontend:
     name: Test Frontend
     runs-on: ubuntu-latest

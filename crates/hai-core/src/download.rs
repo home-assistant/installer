@@ -148,13 +148,6 @@ async fn get_stable_version_from_url(url: &str) -> Result<StableVersionInfo> {
 
 /// Fetch the stable version info from Home Assistant
 pub(crate) async fn get_stable_version() -> Result<StableVersionInfo> {
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            return Ok(crate::mock::get_mock_stable_version());
-        }
-    }
-
     get_stable_version_from_url(VERSION_URL).await
 }
 
@@ -201,25 +194,11 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
 
 /// Fetch a specific HAOS release by version
 async fn fetch_release(version: &str) -> Result<HaosRelease> {
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            return Ok(crate::mock::get_mock_haos_release());
-        }
-    }
-
     fetch_release_from_api(HAOS_RELEASES_API, version).await
 }
 
 /// Fetch HAOS release info for a specific version (or "latest")
 async fn get_haos_release(version: &str) -> Result<HaosRelease> {
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            return Ok(crate::mock::get_mock_haos_release());
-        }
-    }
-
     if version == "latest" {
         fetch_latest_release().await
     } else {
@@ -295,24 +274,6 @@ pub(crate) async fn download_image<P: ProgressCallback>(
     dest_path: &Path,
     progress_callback: &P,
 ) -> Result<()> {
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            // Simulate download progress
-            for i in 0..=100 {
-                progress_callback.on_progress(FlashProgress {
-                    stage: FlashStage::Downloading,
-                    progress: i,
-                    bytes_processed: (i as u64) * 1_000_000,
-                    total_bytes: 100_000_000,
-                    message: "Downloading image (mock)...".to_string(),
-                });
-                tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-            }
-            return Ok(());
-        }
-    }
-
     let client = reqwest::Client::new();
     let response = client.get(url).send().await?;
 
@@ -384,24 +345,6 @@ pub(crate) async fn extract_xz<P: ProgressCallback>(
     progress_callback: &P,
 ) -> Result<()> {
     use std::sync::mpsc;
-
-    #[cfg(feature = "mock")]
-    {
-        if crate::is_mock_enabled() {
-            // Simulate extraction progress
-            for i in 0..=100 {
-                progress_callback.on_progress(FlashProgress {
-                    stage: FlashStage::Extracting,
-                    progress: i,
-                    bytes_processed: (i as u64) * 5_000_000,
-                    total_bytes: 500_000_000,
-                    message: "Extracting image (mock)...".to_string(),
-                });
-                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-            }
-            return Ok(());
-        }
-    }
 
     // For extraction, we don't know the final size upfront (xz doesn't store it)
     // Use 0 for total_bytes to signal indeterminate progress
@@ -800,8 +743,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_download_image_http_404_error() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-
         let mut server = mockito::Server::new_async().await;
 
         let mock = server
@@ -828,8 +769,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_download_image_http_500_error() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-
         let mut server = mockito::Server::new_async().await;
 
         let mock = server
@@ -855,8 +794,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_download_image_success_without_checksum() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-
         let mut server = mockito::Server::new_async().await;
 
         let test_data = b"test image data content";
@@ -886,8 +823,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_download_image_with_progress_updates() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-
         use std::sync::{Arc, Mutex};
 
         struct TestProgressCallback {
@@ -941,8 +876,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_download_image_no_content_length() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-
         let mut server = mockito::Server::new_async().await;
 
         let test_data = b"small data";
@@ -968,8 +901,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_extract_xz_real_file() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-
         use std::io::Write;
 
         let cache_dir = get_cache_dir().unwrap();
@@ -1001,8 +932,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_extract_xz_nonexistent_file() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-
         let cache_dir = get_cache_dir().unwrap();
         let archive_path = cache_dir.join("nonexistent_archive.xz");
         let dest_path = cache_dir.join("output.img");
@@ -1014,8 +943,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_extract_xz_corrupt_archive_is_discarded() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-
         use std::io::Write;
 
         let cache_dir = get_cache_dir().unwrap();
@@ -1046,8 +973,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_extract_xz_with_progress() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-
         use std::io::Write;
         use std::sync::{Arc, Mutex};
 
@@ -1189,7 +1114,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_stable_version_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1218,7 +1142,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_stable_version_http_404() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1241,7 +1164,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_stable_version_http_500() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1260,7 +1182,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_stable_version_invalid_json() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1281,7 +1202,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_stable_version_empty_response() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1302,7 +1222,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_stable_version_malformed_json() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1324,7 +1243,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_fetch_release_success() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1370,7 +1288,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_fetch_release_http_404() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1394,7 +1311,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_fetch_release_http_500() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1412,7 +1328,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_fetch_release_invalid_json() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1432,7 +1347,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_fetch_release_empty_assets() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1461,7 +1375,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_fetch_release_mixed_assets() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1510,7 +1423,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_fetch_release_with_redirects() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1553,7 +1465,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_download_image_empty_response() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1582,7 +1493,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_download_image_with_redirect() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let redirect_mock = server
@@ -1620,7 +1530,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_stable_version_with_extra_fields() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1655,7 +1564,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_fetch_release_with_qcow2_only() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;
 
             let mock = server
@@ -1692,8 +1600,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_fetch_release_connection_refused() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
-
             // Use a port that's likely not in use
             let result = fetch_release_from_api("http://127.0.0.1:59999", "14.2").await;
             assert!(result.is_err());
@@ -1702,8 +1608,6 @@ mod tests {
         #[tokio::test]
         #[serial]
         async fn test_get_stable_version_connection_refused() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
-
             let result = get_stable_version_from_url("http://127.0.0.1:59998/stable.json").await;
             assert!(result.is_err());
         }

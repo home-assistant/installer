@@ -8,9 +8,9 @@
 //! Tauri desktop application and potential TUI implementations.
 
 // The backend traits use `async fn`. They are only ever used through the
-// concrete `Backend` type (static dispatch, never `dyn`), so the returned
-// futures' `Send`-ness is inferred at each call site. The missing `Send` bound
-// the lint warns about therefore cannot bite us.
+// concrete `Backend`/`BackendMock` types (static dispatch, never `dyn`), so the
+// returned futures' `Send`-ness is inferred at each call site. The missing
+// `Send` bound the lint warns about therefore cannot bite us.
 #![allow(async_fn_in_trait)]
 
 pub mod disk;
@@ -30,6 +30,8 @@ pub mod proxmox;
 pub mod utm;
 
 pub use error::{Error, Result};
+#[cfg(feature = "mock")]
+pub use mock::BackendMock;
 pub use types::*;
 
 use std::path::{Path, PathBuf};
@@ -39,8 +41,8 @@ use std::path::{Path, PathBuf};
 // ===========================================================================
 //
 // One trait per backend concern. They describe the surface the application
-// uses from hai-core, so that a frontend can be wired to an alternative
-// implementation (for example a mock) without touching the domain modules.
+// uses from hai-core, so that a frontend can be wired to `BackendMock` instead
+// of `Backend` without touching the domain modules.
 
 /// Release metadata and image download.
 pub trait ReleaseSource {
@@ -196,17 +198,6 @@ impl ProgressCallback for NoOpProgress {
     }
 }
 
-/// Check if mock mode is enabled via environment variable.
-///
-/// Mock mode is enabled when the `HA_INSTALLER_MOCK` environment variable
-/// is set to "1" or "true". This is useful for testing and development.
-pub fn is_mock_enabled() -> bool {
-    match std::env::var("HA_INSTALLER_MOCK") {
-        Ok(val) => val == "1" || val.to_lowercase() == "true",
-        Err(_) => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,12 +215,5 @@ mod tests {
 
         // Should not panic
         callback.on_progress(progress);
-    }
-
-    #[test]
-    fn test_mock_mode_default_disabled() {
-        // Remove the env var if it exists
-        std::env::remove_var("HA_INSTALLER_MOCK");
-        assert!(!is_mock_enabled());
     }
 }

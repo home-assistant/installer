@@ -3,14 +3,13 @@
 //! This module provides Tauri IPC commands that wrap the hai-core library.
 //! It handles the bridge between Tauri's Channel<T> and hai-core's ProgressCallback trait.
 
+use crate::backend::Backend;
 use hai_core::{
-    is_mock_enabled, mock, Backend, BlockDevice, DeviceBackend, DeviceManifest, ExpectedDevice,
-    FlashProgress, FlashRequest, FlashStage, HaosRelease, HostBackend, ImageFormat,
-    ProgressCallback, ProxmoxBackend, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
-    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, ReleaseSource, SystemInfo, UpdateInfo,
-    VmStatusInfo,
+    BlockDevice, DeviceBackend, DeviceManifest, ExpectedDevice, FlashProgress, FlashRequest,
+    FlashStage, HaosRelease, HostBackend, ImageFormat, ProgressCallback, ProxmoxBackend,
+    ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig,
+    ProxmoxVmResult, ReleaseSource, SystemInfo, UpdateInfo, VmStatusInfo,
 };
-use std::time::Duration;
 use tauri::ipc::Channel;
 
 // Only the macOS-only UTM commands call through this trait.
@@ -43,21 +42,11 @@ impl<'a> ProgressCallback for TauriProgressCallback<'a> {
 // =============================================================================
 
 /// Result of a flash operation
-#[derive(serde::Serialize)]
+#[derive(Debug, serde::Serialize)]
 pub struct FlashResult {
     pub success: bool,
     pub error: Option<String>,
     pub duration_secs: u64,
-}
-
-// =============================================================================
-// Mock Mode Commands
-// =============================================================================
-
-/// Check if mock mode is enabled
-#[tauri::command]
-pub fn is_mock_mode() -> bool {
-    is_mock_enabled()
 }
 
 // =============================================================================
@@ -67,11 +56,7 @@ pub fn is_mock_mode() -> bool {
 /// List all block devices
 #[tauri::command]
 pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
-    if is_mock_enabled() {
-        Ok(mock::get_mock_block_devices())
-    } else {
-        Backend.list_devices().await.map_err(|e| e.to_string())
-    }
+    Backend.list_devices().await.map_err(|e| e.to_string())
 }
 
 // =============================================================================
@@ -120,23 +105,14 @@ pub async fn flash_image(
     request: FlashRequest,
     progress_channel: Channel<FlashProgress>,
 ) -> Result<FlashResult, String> {
-    if is_mock_enabled() {
-        simulate_flash_progress(&progress_channel).await;
-        return Ok(FlashResult {
-            success: true,
-            error: None,
-            duration_secs: 45,
-        });
-    }
-
     let callback = TauriProgressCallback::new(&progress_channel);
     run_flash(&Backend, &request, &callback).await
 }
 
 /// Download, extract, and write the image for `request`.
 ///
-/// Generic over the backend so the whole flow can run against any
-/// `ReleaseSource + DeviceBackend` implementation.
+/// Generic over the backend so the whole flow can be exercised against
+/// `BackendMock`.
 async fn run_flash<B, P>(
     backend: &B,
     request: &FlashRequest,
@@ -262,51 +238,6 @@ where
     })
 }
 
-/// Simulate flash progress for mock mode
-async fn simulate_flash_progress(channel: &Channel<FlashProgress>) {
-    let total_bytes: u64 = 2 * 1024 * 1024 * 1024;
-    let stages: [(FlashStage, &str, u32); 4] = [
-        (FlashStage::Downloading, "Downloading image...", 40),
-        (FlashStage::Verifying, "Verifying download...", 10),
-        (FlashStage::Writing, "Writing to device...", 45),
-        (FlashStage::Finalizing, "Finalizing...", 5),
-    ];
-
-    let mut overall_progress: u32 = 0;
-
-    for (stage, message, stage_weight) in stages {
-        let steps: u32 = 10;
-        for step in 0..=steps {
-            let stage_progress = step * 100 / steps;
-            let bytes_for_stage = (total_bytes as f64
-                * (stage_weight as f64 / 100.0)
-                * (step as f64 / steps as f64)) as u64;
-
-            let current_progress = overall_progress + (stage_progress * stage_weight / 100);
-
-            let _ = channel.send(FlashProgress {
-                stage: stage.clone(),
-                progress: current_progress.min(100) as u8,
-                bytes_processed: bytes_for_stage
-                    + (total_bytes as f64 * (overall_progress as f64 / 100.0)) as u64,
-                total_bytes,
-                message: message.to_string(),
-            });
-
-            tokio::time::sleep(Duration::from_millis(200)).await;
-        }
-        overall_progress += stage_weight;
-    }
-
-    let _ = channel.send(FlashProgress {
-        stage: FlashStage::Complete,
-        progress: 100,
-        bytes_processed: total_bytes,
-        total_bytes,
-        message: "Installation complete!".to_string(),
-    });
-}
-
 // =============================================================================
 // Release/Manifest Commands
 // =============================================================================
@@ -314,10 +245,6 @@ async fn simulate_flash_progress(channel: &Channel<FlashProgress>) {
 /// Get the latest HAOS release information
 #[tauri::command]
 pub async fn get_haos_release(version: Option<String>) -> Result<HaosRelease, String> {
-    if is_mock_enabled() {
-        return Ok(mock::get_mock_haos_release());
-    }
-
     let ver = version.as_deref().unwrap_or("latest");
     Backend
         .get_haos_release(ver)
@@ -347,13 +274,6 @@ pub async fn get_manifest() -> Result<DeviceManifest, String> {
 /// Get system information (CPU cores and memory) for VM configuration limits
 #[tauri::command]
 pub fn get_system_info() -> Result<SystemInfo, String> {
-    if is_mock_enabled() {
-        return Ok(SystemInfo {
-            cpu_cores: 10,
-            memory_mb: 32768,
-        });
-    }
-
     Backend.system_info().map_err(|e| e.to_string())
 }
 
@@ -367,23 +287,6 @@ pub fn get_system_info() -> Result<SystemInfo, String> {
 pub async fn download_utm_image(
     progress_channel: Channel<FlashProgress>,
 ) -> Result<String, String> {
-    if is_mock_enabled() {
-        simulate_utm_download_progress(&progress_channel).await;
-        let mock_path = "/tmp/mock-haos.qcow2";
-        // Create minimal valid qcow2 header
-        let qcow2_header: [u8; 512] = {
-            let mut header = [0u8; 512];
-            header[0..4].copy_from_slice(&[0x51, 0x46, 0x49, 0xfb]);
-            header[4..8].copy_from_slice(&[0x00, 0x00, 0x00, 0x03]);
-            header[20..24].copy_from_slice(&[0x00, 0x00, 0x00, 0x10]);
-            header[24..32].copy_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]);
-            header
-        };
-        std::fs::write(mock_path, qcow2_header)
-            .map_err(|e| format!("Failed to create mock qcow2: {}", e))?;
-        return Ok(mock_path.to_string());
-    }
-
     let callback = TauriProgressCallback::new(&progress_channel);
 
     // Verify UTM is available before doing any work.
@@ -402,8 +305,8 @@ pub async fn download_utm_image(
 
 /// Download and extract the HAOS qcow2 image for `arch`, returning the extracted path.
 ///
-/// Generic over the backend so the flow can run against any `ReleaseSource`.
-#[cfg(target_os = "macos")]
+/// Generic over the backend so it can be exercised against `BackendMock`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 async fn run_utm_download<B, P>(backend: &B, arch: &str, callback: &P) -> Result<String, String>
 where
     B: ReleaseSource,
@@ -451,43 +354,6 @@ where
     Ok(extracted_path.to_string_lossy().to_string())
 }
 
-#[cfg(target_os = "macos")]
-async fn simulate_utm_download_progress(channel: &Channel<FlashProgress>) {
-    let stages: [(FlashStage, &str, u32); 2] = [
-        (FlashStage::Downloading, "Downloading HAOS image...", 70),
-        (FlashStage::Extracting, "Extracting image...", 30),
-    ];
-
-    let mut overall_progress: u32 = 0;
-
-    for (stage, message, stage_weight) in stages {
-        let steps: u32 = 10;
-        for step in 0..=steps {
-            let stage_progress = step * 100 / steps;
-            let current_progress = overall_progress + (stage_progress * stage_weight / 100);
-
-            let _ = channel.send(FlashProgress {
-                stage: stage.clone(),
-                progress: current_progress.min(100) as u8,
-                bytes_processed: 0,
-                total_bytes: 0,
-                message: message.to_string(),
-            });
-
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        overall_progress += stage_weight;
-    }
-
-    let _ = channel.send(FlashProgress {
-        stage: FlashStage::Complete,
-        progress: 100,
-        bytes_processed: 0,
-        total_bytes: 0,
-        message: "Download complete!".to_string(),
-    });
-}
-
 #[tauri::command]
 #[cfg(not(target_os = "macos"))]
 pub async fn download_utm_image(
@@ -517,10 +383,6 @@ pub fn check_utm_status() -> serde_json::Value {
 #[tauri::command]
 #[cfg(target_os = "macos")]
 pub async fn create_utm_vm(config: hai_core::UtmVmConfig) -> Result<String, String> {
-    if is_mock_enabled() {
-        return Ok("mock-vm-id-12345".to_string());
-    }
-
     // Fully qualified: `create_vm` is defined on both UtmBackend and ProxmoxBackend.
     let result = UtmBackend::create_vm(&Backend, &config, &hai_core::NoOpProgress)
         .await
@@ -539,9 +401,6 @@ pub fn create_utm_vm(_config: serde_json::Value) -> Result<String, String> {
 #[tauri::command]
 #[cfg(target_os = "macos")]
 pub fn start_utm_vm(_vm_id: String) -> Result<(), String> {
-    if is_mock_enabled() {
-        return Ok(());
-    }
     // TODO: Implement via AppleScript
     Ok(())
 }
@@ -556,9 +415,6 @@ pub fn start_utm_vm(_vm_id: String) -> Result<(), String> {
 #[tauri::command]
 #[cfg(target_os = "macos")]
 pub fn resize_utm_vm_disk(_vm_id: String, _size_gb: u32) -> Result<(), String> {
-    if is_mock_enabled() {
-        return Ok(());
-    }
     // TODO: Implement via qemu-img
     Ok(())
 }
@@ -573,12 +429,6 @@ pub fn resize_utm_vm_disk(_vm_id: String, _size_gb: u32) -> Result<(), String> {
 #[tauri::command]
 #[cfg(target_os = "macos")]
 pub fn get_utm_vm_status(vm_id: String) -> Result<VmStatusInfo, String> {
-    if is_mock_enabled() {
-        return Ok(VmStatusInfo {
-            status: "started".to_string(),
-            ip_address: Some("192.168.1.100".to_string()),
-        });
-    }
     Backend.vm_status(&vm_id).map_err(|e| e.to_string())
 }
 
@@ -595,20 +445,12 @@ pub fn get_utm_vm_status(_vm_id: String) -> Result<VmStatusInfo, String> {
 /// Check if Home Assistant webserver is ready
 #[tauri::command]
 pub async fn check_ha_ready(ip_address: String) -> bool {
-    if is_mock_enabled() {
-        return true;
-    }
-
     Backend.check_ha_ready(&ip_address).await
 }
 
 /// Check if Home Assistant has finished updating
 #[tauri::command]
 pub async fn check_ha_updated(ip_address: String) -> bool {
-    if is_mock_enabled() {
-        return true;
-    }
-
     Backend.check_ha_updated(&ip_address).await
 }
 
@@ -619,27 +461,6 @@ pub async fn check_ha_updated(ip_address: String) -> bool {
 /// Connect to a Proxmox VE server
 #[tauri::command]
 pub async fn proxmox_connect(credentials: ProxmoxCredentials) -> Result<ProxmoxSession, String> {
-    if is_mock_enabled() {
-        tokio::time::sleep(Duration::from_millis(1500)).await;
-        return Ok(ProxmoxSession {
-            server_url: credentials.server_url,
-            ticket: format!(
-                "mock-ticket-{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis()
-            ),
-            csrf_token: format!(
-                "mock-csrf-{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis()
-            ),
-        });
-    }
-
     Backend
         .authenticate(&credentials)
         .await
@@ -649,26 +470,6 @@ pub async fn proxmox_connect(credentials: ProxmoxCredentials) -> Result<ProxmoxS
 /// List available nodes on Proxmox
 #[tauri::command]
 pub async fn proxmox_list_nodes(session: ProxmoxSession) -> Result<Vec<ProxmoxNode>, String> {
-    if is_mock_enabled() {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        return Ok(vec![
-            ProxmoxNode {
-                name: "pve".to_string(),
-                status: "online".to_string(),
-                cpu_usage: Some(12.5),
-                memory_used: Some(8 * 1024 * 1024 * 1024),
-                memory_total: Some(32 * 1024 * 1024 * 1024),
-            },
-            ProxmoxNode {
-                name: "pve2".to_string(),
-                status: "online".to_string(),
-                cpu_usage: Some(8.2),
-                memory_used: Some(4 * 1024 * 1024 * 1024),
-                memory_total: Some(16 * 1024 * 1024 * 1024),
-            },
-        ]);
-    }
-
     Backend
         .list_nodes(&session)
         .await
@@ -681,35 +482,6 @@ pub async fn proxmox_list_storage(
     session: ProxmoxSession,
     node: String,
 ) -> Result<Vec<ProxmoxStorage>, String> {
-    if is_mock_enabled() {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        return Ok(vec![
-            ProxmoxStorage {
-                name: "local".to_string(),
-                storage_type: "dir".to_string(),
-                content: vec![
-                    "images".to_string(),
-                    "rootdir".to_string(),
-                    "vztmpl".to_string(),
-                    "backup".to_string(),
-                    "iso".to_string(),
-                    "snippets".to_string(),
-                ],
-                available: 200 * 1024 * 1024 * 1024,
-                total: 500 * 1024 * 1024 * 1024,
-                active: true,
-            },
-            ProxmoxStorage {
-                name: "local-lvm".to_string(),
-                storage_type: "lvmthin".to_string(),
-                content: vec!["images".to_string(), "rootdir".to_string()],
-                available: 400 * 1024 * 1024 * 1024,
-                total: 1024 * 1024 * 1024 * 1024,
-                active: true,
-            },
-        ]);
-    }
-
     Backend
         .list_storage(&session, &node)
         .await
@@ -719,11 +491,6 @@ pub async fn proxmox_list_storage(
 /// Get the next available VM ID on Proxmox
 #[tauri::command]
 pub async fn proxmox_get_next_vm_id(session: ProxmoxSession) -> Result<u32, String> {
-    if is_mock_enabled() {
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        return Ok(100);
-    }
-
     Backend
         .get_next_vm_id(&session)
         .await
@@ -737,59 +504,11 @@ pub async fn proxmox_create_vm(
     config: ProxmoxVmConfig,
     progress_channel: Channel<FlashProgress>,
 ) -> Result<ProxmoxVmResult, String> {
-    if is_mock_enabled() {
-        simulate_proxmox_install_progress(&progress_channel).await;
-        return Ok(ProxmoxVmResult {
-            vm_id: config.vm_id,
-            node: config.node,
-            ip_address: Some("192.168.1.150".to_string()),
-        });
-    }
-
     let callback = TauriProgressCallback::new(&progress_channel);
     // Fully qualified: `create_vm` is defined on both ProxmoxBackend and UtmBackend.
     ProxmoxBackend::create_vm(&Backend, &session, &config, &callback)
         .await
         .map_err(|e| e.to_string())
-}
-
-async fn simulate_proxmox_install_progress(channel: &Channel<FlashProgress>) {
-    let stages: [(FlashStage, &str, u32); 5] = [
-        (FlashStage::Downloading, "Downloading HAOS image...", 40),
-        (FlashStage::Extracting, "Uploading to Proxmox...", 25),
-        (FlashStage::Writing, "Creating virtual machine...", 20),
-        (FlashStage::Verifying, "Starting Home Assistant...", 10),
-        (FlashStage::Finalizing, "Waiting for network...", 5),
-    ];
-
-    let mut overall_progress: u32 = 0;
-
-    for (stage, message, stage_weight) in stages {
-        let steps: u32 = 10;
-        for step in 0..=steps {
-            let stage_progress = step * 100 / steps;
-            let current_progress = overall_progress + (stage_progress * stage_weight / 100);
-
-            let _ = channel.send(FlashProgress {
-                stage: stage.clone(),
-                progress: current_progress.min(100) as u8,
-                bytes_processed: 0,
-                total_bytes: 0,
-                message: message.to_string(),
-            });
-
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        overall_progress += stage_weight;
-    }
-
-    let _ = channel.send(FlashProgress {
-        stage: FlashStage::Complete,
-        progress: 100,
-        bytes_processed: 0,
-        total_bytes: 0,
-        message: "Installation complete!".to_string(),
-    });
 }
 
 // =============================================================================
@@ -800,39 +519,6 @@ async fn simulate_proxmox_install_progress(channel: &Channel<FlashProgress>) {
 mod tests {
     use super::*;
     use serial_test::serial;
-
-    // ===== Mock Mode Tests =====
-
-    #[test]
-    #[serial]
-    fn test_is_mock_mode_returns_correct_value() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        assert!(is_mock_mode());
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_mock_mode_returns_false_when_disabled() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-        assert!(!is_mock_mode());
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_mock_mode_returns_true_for_true_string() {
-        std::env::set_var("HA_INSTALLER_MOCK", "true");
-        assert!(is_mock_mode());
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_mock_mode_returns_false_for_invalid_value() {
-        std::env::set_var("HA_INSTALLER_MOCK", "0");
-        assert!(!is_mock_mode());
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
 
     // ===== Update Info Tests =====
 
@@ -937,22 +623,24 @@ mod tests {
 
     // ===== Non-mock System Info Tests =====
 
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[test]
     #[serial]
     #[cfg(target_os = "macos")]
     fn test_system_info_macos_fallback_on_error() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
         let info = get_system_info().unwrap();
         // Should return valid values even if sysctl fails (fallback to defaults)
         assert!(info.cpu_cores >= 4);
         assert!(info.memory_mb >= 8192);
     }
 
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[test]
     #[serial]
     #[cfg(not(target_os = "macos"))]
     fn test_system_info_non_macos() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
         assert!(get_system_info().is_err());
     }
 
@@ -962,7 +650,6 @@ mod tests {
     #[serial]
     #[cfg(target_os = "macos")]
     fn test_start_utm_vm_non_mock_returns_ok() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
         let result = start_utm_vm("test-vm".to_string());
         // Should return Ok even though not implemented
         assert!(result.is_ok());
@@ -972,17 +659,17 @@ mod tests {
     #[serial]
     #[cfg(target_os = "macos")]
     fn test_resize_utm_vm_disk_non_mock_returns_ok() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
         let result = resize_utm_vm_disk("test-vm".to_string(), 64);
         // Should return Ok even though not implemented
         assert!(result.is_ok());
     }
 
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[test]
     #[serial]
     #[cfg(target_os = "macos")]
     fn test_get_utm_vm_status_non_mock_returns_unknown() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
         let result = get_utm_vm_status("test-vm".to_string());
         assert!(result.is_ok());
         let status = result.unwrap();
@@ -992,10 +679,10 @@ mod tests {
 
     // ===== check_ha_ready() Tests =====
 
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[tokio::test]
     #[serial]
     async fn test_check_ha_ready_empty_ip() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
         let result = check_ha_ready("".to_string()).await;
         assert!(!result, "Should return false for empty IP");
     }
@@ -1063,5 +750,93 @@ mod tests {
         let devices = [flash_target("/dev/sdb", true)];
         let unknown = ExpectedDevice::default();
         assert!(find_flash_target(&devices, "/dev/sdb", &unknown).is_err());
+    }
+}
+
+#[cfg(all(test, feature = "mock"))]
+mod mock_tests {
+    use super::*;
+    use hai_core::{BackendMock, NoOpProgress};
+    use serial_test::serial;
+
+    /// A request for `device_id` whose `expected_device` matches what the mock
+    /// backend enumerates, so the flash-target guard lets it through.
+    async fn request(device_id: &str, board: &str) -> FlashRequest {
+        let device = BackendMock
+            .list_devices()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|d| d.id == device_id)
+            .unwrap();
+        FlashRequest {
+            device_id: device.id,
+            board: board.to_string(),
+            verify: true,
+            expected_device: ExpectedDevice {
+                size: Some(device.size),
+                model: device.model,
+                vendor: device.vendor,
+            },
+        }
+    }
+
+    #[tokio::test]
+    #[serial] // all share the mock cache directory
+    async fn run_flash_completes_against_mock_backend() {
+        let result = run_flash(
+            &BackendMock,
+            &request("mock-sd-card-32gb", "rpi5-64").await,
+            &NoOpProgress,
+        )
+        .await
+        .unwrap();
+        assert!(result.success);
+    }
+
+    #[tokio::test]
+    #[serial] // all share the mock cache directory
+    async fn run_flash_rejects_unknown_board() {
+        let err = run_flash(
+            &BackendMock,
+            &request("mock-sd-card-32gb", "no-such-board").await,
+            &NoOpProgress,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("No image found"));
+    }
+
+    #[tokio::test]
+    #[serial] // all share the mock cache directory
+    async fn run_flash_rejects_non_removable_device() {
+        let err = run_flash(
+            &BackendMock,
+            &request("mock-nvme-500gb", "rpi5-64").await,
+            &NoOpProgress,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("not a removable drive"));
+    }
+
+    #[tokio::test]
+    #[serial] // all share the mock cache directory
+    async fn run_flash_rejects_swapped_device() {
+        let mut request = request("mock-sd-card-32gb", "rpi5-64").await;
+        request.expected_device.size = Some(64 * 1024 * 1024 * 1024);
+        let err = run_flash(&BackendMock, &request, &NoOpProgress)
+            .await
+            .unwrap_err();
+        assert!(err.contains("no longer the one you selected"));
+    }
+
+    #[tokio::test]
+    #[serial] // all share the mock cache directory
+    async fn run_utm_download_returns_extracted_image() {
+        let path = run_utm_download(&BackendMock, "generic-aarch64", &NoOpProgress)
+            .await
+            .unwrap();
+        assert!(std::path::Path::new(&path).exists());
     }
 }

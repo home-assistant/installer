@@ -7,7 +7,7 @@ edition.workspace = true
 description = "Core library for Home Assistant Installer"
 
 [features]
-default = ["proxmox", "utm", "mock"]
+default = ["proxmox", "utm"]
 proxmox = []
 utm = []
 mock = []
