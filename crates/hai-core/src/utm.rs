@@ -288,10 +288,9 @@ end tell"#,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
 
     #[tokio::test]
-    #[serial]
+    #[serial_test::serial]
     #[cfg(not(target_os = "macos"))]
     async fn test_check_utm_status_not_available_on_non_macos() {
         let result = check_utm_status().await;
@@ -305,7 +304,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
+    #[serial_test::serial]
     #[cfg(not(target_os = "macos"))]
     async fn test_create_vm_not_available_on_non_macos() {
         let config = UtmVmConfig {

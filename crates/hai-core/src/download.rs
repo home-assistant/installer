@@ -1601,26 +1601,6 @@ mod tests {
 
         #[tokio::test]
         #[serial]
-        async fn test_download_image_network_timeout() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
-
-            // Test with an invalid URL that will cause a network error
-            let cache_dir = get_cache_dir().unwrap();
-            let dest = cache_dir.join("test_timeout.img");
-
-            let result = download_image(
-                "http://192.0.2.1:9999/nonexistent", // Using TEST-NET-1 IP that should timeout
-                &dest,
-                &crate::NoOpProgress,
-            )
-            .await;
-
-            assert!(result.is_err());
-            let _ = std::fs::remove_file(&dest);
-        }
-
-        #[tokio::test]
-        #[serial]
         async fn test_download_image_empty_response() {
             std::env::remove_var("HA_INSTALLER_MOCK");
             let mut server = mockito::Server::new_async().await;

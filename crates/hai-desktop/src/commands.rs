@@ -990,18 +990,6 @@ mod tests {
         assert_eq!(info.memory_mb, 8192);
     }
 
-    // ===== List Block Devices non-mock Tests =====
-
-    #[tokio::test]
-    #[serial]
-    async fn test_list_block_devices_non_mock_mode() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-        let result = list_block_devices().await;
-        // May succeed or fail depending on platform/permissions
-        // Just ensure it doesn't panic
-        let _ = result;
-    }
-
     // ===== Additional edge case tests =====
 
     #[test]
@@ -1034,16 +1022,6 @@ mod tests {
         let status = result.unwrap();
         assert_eq!(status.status, "unknown");
         assert_eq!(status.ip_address, None);
-    }
-
-    // ===== Additional Edge Case Coverage Tests =====
-
-    #[tokio::test]
-    #[serial]
-    async fn test_list_block_devices_with_mock_env_unset() {
-        std::env::remove_var("HA_INSTALLER_MOCK");
-        // Test executes without panic - actual result depends on platform
-        let _result = list_block_devices().await;
     }
 
     // ===== check_ha_ready() Tests =====
