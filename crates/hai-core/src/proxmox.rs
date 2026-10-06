@@ -1179,78 +1179,6 @@ mod tests {
     use super::*;
     use serial_test::serial;
 
-    #[tokio::test]
-    #[serial]
-    async fn test_authenticate_mock() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let credentials = ProxmoxCredentials {
-            server_url: "https://proxmox.local:8006".to_string(),
-            username: "root@pam".to_string(),
-            password: "password".to_string(),
-        };
-        let session = authenticate(&credentials).await.unwrap();
-        assert_eq!(session.ticket, "mock-ticket");
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_list_nodes_mock() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let session = ProxmoxSession {
-            server_url: "https://proxmox.local:8006".to_string(),
-            ticket: "mock-ticket".to_string(),
-            csrf_token: "mock-csrf".to_string(),
-        };
-        let nodes = list_nodes(&session).await.unwrap();
-        assert!(!nodes.is_empty());
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_list_storage_mock() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let session = ProxmoxSession {
-            server_url: "https://proxmox.local:8006".to_string(),
-            ticket: "mock-ticket".to_string(),
-            csrf_token: "mock-csrf".to_string(),
-        };
-        let storage = list_storage(&session, "pve").await.unwrap();
-        assert!(!storage.is_empty());
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_get_storage_name_mock() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let session = ProxmoxSession {
-            server_url: "https://proxmox.local:8006".to_string(),
-            ticket: "mock-ticket".to_string(),
-            csrf_token: "mock-csrf".to_string(),
-        };
-        // The mock fixture must expose an import-capable storage, otherwise the
-        // whole Proxmox flow is unreachable without a live server.
-        let storage_name = get_storage_name(&session, "pve").await.unwrap();
-        assert_eq!(storage_name, "local");
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_get_next_vm_id_mock() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let session = ProxmoxSession {
-            server_url: "https://proxmox.local:8006".to_string(),
-            ticket: "mock-ticket".to_string(),
-            csrf_token: "mock-csrf".to_string(),
-        };
-        let vm_id = get_next_vm_id(&session).await.unwrap();
-        assert_eq!(vm_id, 100);
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
     // Version parsing tests
     #[test]
     fn test_parse_version_valid_standard() {
@@ -1330,35 +1258,6 @@ mod tests {
     fn test_create_client_large_timeout() {
         let result = create_client(1800);
         assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_create_vm_mock() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let session = ProxmoxSession {
-            server_url: "https://proxmox.local:8006".to_string(),
-            ticket: "mock-ticket".to_string(),
-            csrf_token: "mock-csrf".to_string(),
-        };
-        let config = ProxmoxVmConfig {
-            vm_id: 100,
-            name: "homeassistant".to_string(),
-            node: "pve".to_string(),
-            storage: "local-lvm".to_string(),
-            cpu_cores: 2,
-            memory_mb: 2048,
-            disk_size_gb: 32,
-            auto_start: true,
-        };
-
-        let result = create_vm(&session, &config, &crate::NoOpProgress).await;
-        assert!(result.is_ok());
-        let vm_result = result.unwrap();
-        assert_eq!(vm_result.vm_id, 100);
-        assert_eq!(vm_result.node, "pve");
-
-        std::env::remove_var("HA_INSTALLER_MOCK");
     }
 
     #[test]

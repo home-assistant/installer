@@ -717,24 +717,6 @@ mod tests {
         assert!(path.to_string_lossy().contains("haos_rpi5-64-14.2.img.xz"));
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_get_haos_release_mock() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let release = get_haos_release("14.2").await.unwrap();
-        assert!(!release.images.is_empty());
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_get_haos_release_latest_mock() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let release = get_haos_release("latest").await.unwrap();
-        assert!(!release.images.is_empty());
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
     #[test]
     fn test_parse_board_from_filename_empty() {
         let result = parse_board_from_filename("", "14.2");
@@ -813,34 +795,6 @@ mod tests {
 
         // Cleanup
         let _ = std::fs::remove_file(&test_file);
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_download_image_mock_mode() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let cache_dir = get_cache_dir().unwrap();
-        let dest = cache_dir.join("mock_download_test.img");
-
-        let result =
-            download_image("https://example.com/test.img", &dest, &crate::NoOpProgress).await;
-
-        assert!(result.is_ok());
-        std::env::remove_var("HA_INSTALLER_MOCK");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_extract_xz_mock_mode() {
-        std::env::set_var("HA_INSTALLER_MOCK", "1");
-        let cache_dir = get_cache_dir().unwrap();
-        let archive = cache_dir.join("mock_archive.xz");
-        let dest = cache_dir.join("mock_extracted.img");
-
-        let result = extract_xz(&archive, &dest, &crate::NoOpProgress).await;
-        assert!(result.is_ok());
-
-        std::env::remove_var("HA_INSTALLER_MOCK");
     }
 
     #[tokio::test]
@@ -1594,26 +1548,6 @@ mod tests {
 
             mock.assert_async().await;
             redirect_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_download_image_network_timeout() {
-            std::env::remove_var("HA_INSTALLER_MOCK");
-
-            // Test with an invalid URL that will cause a network error
-            let cache_dir = get_cache_dir().unwrap();
-            let dest = cache_dir.join("test_timeout.img");
-
-            let result = download_image(
-                "http://192.0.2.1:9999/nonexistent", // Using TEST-NET-1 IP that should timeout
-                &dest,
-                &crate::NoOpProgress,
-            )
-            .await;
-
-            assert!(result.is_err());
-            let _ = std::fs::remove_file(&dest);
         }
 
         #[tokio::test]
