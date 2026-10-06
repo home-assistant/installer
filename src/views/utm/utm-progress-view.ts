@@ -732,7 +732,7 @@ export class UtmProgressView extends LitElement {
   }
 
   /**
-   * Wait for Home Assistant webserver to be ready on port 8123.
+   * Wait for Home Assistant webserver to be ready on port 80.
    * Polls every 2 seconds for up to 5 minutes.
    * This is an indeterminate stage - no progress updates needed.
    */

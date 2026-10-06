@@ -829,9 +829,9 @@ async fn start_vm(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<()
     Ok(())
 }
 
-/// Wait for the Home Assistant webserver to be ready on port 8123.
+/// Wait for the Home Assistant webserver to be ready on port 80.
 async fn wait_for_ha_webserver(ip: &str) -> bool {
-    let base_url = format!("http://{}:8123", ip);
+    let base_url = format!("http://{}", ip);
     wait_for_ha_webserver_at_url(&base_url).await
 }
 
@@ -864,7 +864,7 @@ async fn wait_for_ha_webserver_at_url(base_url: &str) -> bool {
 
 /// Wait for Home Assistant to finish updating to the latest version.
 async fn wait_for_ha_updated(ip: &str) -> bool {
-    let base_url = format!("http://{}:8123", ip);
+    let base_url = format!("http://{}", ip);
     wait_for_ha_updated_at_url(&base_url).await
 }
 

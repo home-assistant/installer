@@ -218,11 +218,9 @@ export class ProxmoxSuccessView extends LitElement {
       | string
       | undefined;
     const haUrl = ipAddress
-      ? `http://${ipAddress}:8123`
-      : "http://homeassistant.local:8123";
-    const displayUrl = ipAddress
-      ? `${ipAddress}:8123`
-      : "homeassistant.local:8123";
+      ? `http://${ipAddress}`
+      : "http://homeassistant.local";
+    const displayUrl = ipAddress || "homeassistant.local";
 
     return html`
       <div class="mascot-container">${this._renderCasitaHappy()}</div>

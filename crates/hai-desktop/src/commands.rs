@@ -607,7 +607,7 @@ pub async fn check_ha_ready(ip_address: String) -> bool {
     use tokio::net::TcpStream;
     use tokio::time::timeout;
 
-    let addr = format!("{}:8123", ip_address);
+    let addr = format!("{}:80", ip_address);
     matches!(
         timeout(Duration::from_secs(3), TcpStream::connect(&addr)).await,
         Ok(Ok(_))
@@ -621,7 +621,7 @@ pub async fn check_ha_updated(ip_address: String) -> bool {
         return true;
     }
 
-    let url = format!("http://{}:8123/manifest.json", ip_address);
+    let url = format!("http://{}/manifest.json", ip_address);
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
