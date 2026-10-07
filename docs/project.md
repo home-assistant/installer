@@ -812,8 +812,8 @@ This document outlines the phased implementation of HAI (Home Assistant Installe
 
 ### Signing
 
-- [ ] macOS code signing
-- [ ] macOS notarization
+- [x] macOS code signing
+- [x] macOS notarization
 - [ ] Windows signing (if applicable)
 - [ ] Cosign signing for all artifacts
 

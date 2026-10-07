@@ -443,17 +443,37 @@ No private keys to manage or rotate.
 
 ## Required Secrets
 
+Repository secrets:
+
 | Secret | Description |
 |--------|-------------|
 | `CODECOV_TOKEN` | Codecov upload token (from codecov.io) |
 | `TAURI_SIGNING_PRIVATE_KEY` | Key for signing Tauri updates |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for signing key |
-| `APPLE_CERTIFICATE` | Base64-encoded .p12 certificate |
-| `APPLE_CERTIFICATE_PASSWORD` | Certificate password |
-| `APPLE_SIGNING_IDENTITY` | e.g., "Developer ID Application: Open Home Foundation" |
-| `APPLE_ID` | Apple ID email for notarization |
-| `APPLE_PASSWORD` | App-specific password |
-| `APPLE_TEAM_ID` | Apple Developer Team ID |
+
+Secrets of the protected `release` environment, which only `main` may deploy
+to. The macOS build job of the test workflow binds to this environment on
+pushes to `main`, signs and notarizes the app and the DMG, and uploads the
+result. Pull request builds don't reference the environment and stay unsigned.
+
+| Secret | Description |
+|--------|-------------|
+| `APPLE_CERTIFICATE` | Base64-encoded .p12 export of the "Developer ID Application" certificate and its private key |
+| `APPLE_CERTIFICATE_PASSWORD` | Password chosen when exporting the .p12 |
+| `APPLE_SIGNING_IDENTITY` | Name of that certificate, e.g. `Developer ID Application: Open Home Foundation (TEAMID)`. Tauri refuses to sign if the imported certificate doesn't match it |
+| `APPLE_API_ISSUER` | App Store Connect API issuer ID (a UUID) |
+| `APPLE_API_KEY` | App Store Connect API key ID |
+| `APPLE_API_PRIVATE_KEY` | Contents of the `AuthKey_<key id>.p8` file |
+
+The App Store Connect API key only needs the Developer role; it is used for
+notarization alone. The job compiles with `tauri build --no-bundle` and only
+then runs `tauri bundle` with the `APPLE_*` variables, so no npm or cargo build
+script ever has the credentials in its environment. Tauri reads the variables
+itself: it imports the certificate into a temporary keychain, signs the app
+with the hardened runtime, notarizes and staples it, and signs the DMG. The
+workflow then notarizes and staples the DMG too, since Gatekeeper assesses the
+disk image when a download is opened, and verifies both with `codesign`,
+`stapler` and `spctl`.
 
 ---
 

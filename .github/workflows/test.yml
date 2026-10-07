@@ -257,6 +257,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
+    # The macOS build of main is signed and notarized, so the DMG it uploads
+    # can be opened without Gatekeeper warnings. The Apple credentials live in
+    # the protected `release` environment, which only main may deploy to, so
+    # pull request builds never see them and stay unsigned.
+    environment: ${{ matrix.os == 'macos-latest' && github.event_name == 'push' && 'release' || '' }}
+    env:
+      SIGN_MACOS: ${{ matrix.os == 'macos-latest' && github.event_name == 'push' }}
     strategy:
       fail-fast: false
       matrix:
@@ -275,7 +282,10 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
 
+      # The signed build is what users install, so it compiles everything
+      # itself instead of linking objects another run cached.
       - name: Cache cargo
+        if: env.SIGN_MACOS != 'true'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install Tauri dependencies (Linux)
@@ -287,10 +297,108 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Compiling and bundling are separate steps so that the Apple credentials
+      # below are only ever in the environment of the bundler, never of npm or
+      # cargo build scripts.
       - name: Build
-        run: npm run tauri build
+        run: npm run tauri build -- --no-bundle
+
+      - name: Bundle
+        if: env.SIGN_MACOS != 'true'
+        run: npm run tauri bundle
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
+
+      # Tauri skips signing when APPLE_CERTIFICATE is missing and silently
+      # skips notarization when the API key is, so check up front rather than
+      # upload an unsigned DMG from main.
+      - name: Check the signing credentials
+        if: env.SIGN_MACOS == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          missing=0
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY APPLE_API_PRIVATE_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::The secret $name is not set in the release environment"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      # notarytool reads the App Store Connect key from a file.
+      - name: Write the notarization API key
+        if: env.SIGN_MACOS == 'true'
+        env:
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          umask 077
+          printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$RUNNER_TEMP/AuthKey.p8"
+
+      # With these variables set, Tauri imports the certificate into a
+      # temporary keychain, signs the app inside out with the hardened runtime,
+      # notarizes it, staples the ticket and signs the DMG around it. It
+      # refuses to sign if the certificate's name does not match
+      # APPLE_SIGNING_IDENTITY, which catches an export of the wrong identity.
+      - name: Bundle (signed)
+        if: env.SIGN_MACOS == 'true'
+        run: npm run tauri bundle
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+
+      # Tauri notarizes the app but not the DMG, and Gatekeeper assesses the
+      # DMG itself when a download is opened (tauri-apps/tauri#7533).
+      - name: Notarize and staple the DMG
+        if: env.SIGN_MACOS == 'true'
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          dmg=(target/release/bundle/dmg/*.dmg)
+          if [[ ${#dmg[@]} -ne 1 || ! -f "${dmg[0]}" ]]; then
+            echo "::error::Expected exactly one DMG, found: ${dmg[*]}"
+            exit 1
+          fi
+          auth=(--key "$RUNNER_TEMP/AuthKey.p8" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER")
+
+          echo "Notarizing ${dmg[0]}"
+          # notarytool may exit non-zero on a rejection; print Apple's log
+          # before failing, since it names the file that caused it.
+          result=$(xcrun notarytool submit "${dmg[0]}" "${auth[@]}" --wait --output-format json) || true
+          echo "$result"
+          if [[ "$(jq -r .status <<< "$result")" != "Accepted" ]]; then
+            xcrun notarytool log "$(jq -r .id <<< "$result")" "${auth[@]}" || true
+            echo "::error::Apple did not accept the notarization of ${dmg[0]}"
+            exit 1
+          fi
+          xcrun stapler staple "${dmg[0]}"
+
+      - name: Verify the signature and notarization
+        if: env.SIGN_MACOS == 'true'
+        run: |
+          app=(target/release/bundle/macos/*.app)
+          dmg=(target/release/bundle/dmg/*.dmg)
+          codesign --verify --deep --strict --verbose=2 "${app[0]}"
+          codesign --display --verbose=2 "${app[0]}"
+          xcrun stapler validate "${app[0]}"
+          spctl --assess --type execute --verbose=2 "${app[0]}"
+          xcrun stapler validate "${dmg[0]}"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "${dmg[0]}"
+
+      - name: Remove the notarization API key
+        if: always() && env.SIGN_MACOS == 'true'
+        run: rm -f "$RUNNER_TEMP/AuthKey.p8"
 
       # Uploads every installer as its own artifact, named after the file
       # itself, unarchived so users download the installer directly instead
