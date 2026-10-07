@@ -113,46 +113,80 @@ describe("proxmox-connect-view", () => {
     expect(error!.textContent).to.include("fill in all fields");
   });
 
-  it("connects on Enter in a field, but not on Enter on the password toggle", async () => {
-    const { el, inputs } = await renderView();
-    let connects = 0;
-    el.connect = async () => {
-      connects++;
-      return false;
-    };
+  /** Count the Next requests the view sends to the wizard. */
+  function countNext(el: ProxmoxConnectView) {
+    const counter = { next: 0 };
+    el.addEventListener("wizard-next", () => counter.next++);
+    return counter;
+  }
 
-    const enter = () =>
-      new KeyboardEvent("keydown", {
-        key: "Enter",
-        bubbles: true,
-        composed: true,
-      });
+  const enter = (init: KeyboardEventInit = {}) =>
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      composed: true,
+      ...init,
+    });
+
+  it("asks the wizard for Next on Enter in a field, not on the password toggle", async () => {
+    const { el, inputs } = await renderView();
+    const counter = countNext(el);
 
     const toggle = inputs[2].shadowRoot!.querySelector(".password-toggle")!;
     toggle.dispatchEvent(enter());
-    expect(connects, "Enter on the password toggle").to.equal(0);
+    expect(counter.next, "Enter on the password toggle").to.equal(0);
 
     nativeInput(inputs[2]).dispatchEvent(enter());
-    expect(connects, "Enter in the password field").to.equal(1);
+    expect(counter.next, "Enter in the password field").to.equal(1);
   });
 
-  it("does not connect on Enter that confirms an input method composition", async () => {
+  it("ignores Enter that confirms an input method composition", async () => {
     const { el, inputs } = await renderView();
-    let connects = 0;
-    el.connect = async () => {
-      connects++;
-      return false;
-    };
+    const counter = countNext(el);
 
-    nativeInput(inputs[1]).dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "Enter",
-        isComposing: true,
-        bubbles: true,
-        composed: true,
-      })
-    );
-    expect(connects).to.equal(0);
+    nativeInput(inputs[1]).dispatchEvent(enter({ isComposing: true }));
+    expect(counter.next).to.equal(0);
+  });
+
+  describe("coming back from a later step", () => {
+    beforeEach(() => {
+      wizardState.setSelection("proxmoxSession", {
+        server_url: "https://192.168.1.100:8006",
+        ticket: "ticket",
+        csrf_token: "csrf",
+      });
+      wizardState.setSelection("proxmoxUsername", "installer@pve");
+      wizardState.setSelection("proxmoxConnected", true);
+    });
+
+    it("shows the server and user, but never the password", async () => {
+      const { inputs } = await renderView();
+
+      expect(nativeInput(inputs[0]).value).to.equal(
+        "https://192.168.1.100:8006"
+      );
+      expect(nativeInput(inputs[1]).value).to.equal("installer@pve");
+      expect(nativeInput(inputs[2]).value).to.equal("");
+    });
+
+    it("moves on without logging in again", async () => {
+      const { el } = await renderView();
+
+      // The password field is empty, so a new login would fail validation
+      const session = wizardState.getState().selections.proxmoxSession;
+      expect(await el.connect()).to.be.true;
+      expect(wizardState.getState().selections.proxmoxSession).to.equal(
+        session
+      );
+    });
+
+    it("asks for the password again once a field changes", async () => {
+      const { el, inputs } = await renderView();
+
+      await typeInto(el, inputs[1], "root@pam");
+      expect(await el.connect()).to.be.false;
+      expect(wizardState.getState().selections.proxmoxConnected).to.be.false;
+    });
   });
 
   it("disables the fields while connecting and stores the session", async () => {

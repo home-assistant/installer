@@ -41,8 +41,13 @@ export interface WizardSelections {
   /** Set once the disk of the VM in `vmId` has been resized. */
   utmDiskResized?: boolean;
 
-  /** Proxmox target picked in the "Configure VM" step. */
+  /** Proxmox login, kept so going back to the connect step doesn't log in again. */
   proxmoxSession?: ProxmoxSession;
+  proxmoxUsername?: string;
+  /** Cleared when a connect field changes, so the session no longer applies. */
+  proxmoxConnected?: boolean;
+
+  /** Proxmox target picked in the "Configure VM" step. */
   proxmoxNode?: string;
   proxmoxStorage?: string;
   proxmoxVmId?: number;
