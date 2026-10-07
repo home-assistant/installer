@@ -231,7 +231,7 @@ mod tests {
         }
 
         // Error without a raw OS error code
-        let err = std::io::Error::new(ErrorKind::Other, "generic error");
+        let err = std::io::Error::other("generic error");
         assert!(!is_drive_disconnected(&err));
     }
 

@@ -720,7 +720,7 @@ mod tests {
         let test_file = cache_dir.join("test_size_mismatch.img.xz");
 
         // Write 50 bytes
-        std::fs::write(&test_file, &[0u8; 50]).unwrap();
+        std::fs::write(&test_file, [0u8; 50]).unwrap();
 
         // Image expects 100 bytes
         let image = HaosImage {
@@ -859,6 +859,7 @@ mod tests {
 
         let result = download_image(&url, &dest, &callback).await;
         assert!(result.is_ok());
+        mock.assert_async().await;
 
         // Check that we got progress callbacks
         let progress_calls = calls.lock().unwrap();
@@ -869,7 +870,6 @@ mod tests {
             .iter()
             .all(|p| p.stage == FlashStage::Downloading));
 
-        mock.assert_async().await;
         std::fs::remove_file(&dest).unwrap();
     }
 
@@ -1032,7 +1032,7 @@ mod tests {
         let test_file = cache_dir.join("test_matching_size.img.xz");
 
         // Write exactly 100 bytes
-        std::fs::write(&test_file, &[0u8; 100]).unwrap();
+        std::fs::write(&test_file, [0u8; 100]).unwrap();
 
         // Image expects exactly 100 bytes
         let image = HaosImage {

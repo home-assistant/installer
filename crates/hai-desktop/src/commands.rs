@@ -518,7 +518,6 @@ pub async fn proxmox_create_vm(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
 
     // ===== Update Info Tests =====
 
@@ -626,7 +625,6 @@ mod tests {
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[test]
-    #[serial]
     #[cfg(target_os = "macos")]
     fn test_system_info_macos_fallback_on_error() {
         let info = get_system_info().unwrap();
@@ -638,7 +636,6 @@ mod tests {
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[test]
-    #[serial]
     #[cfg(not(target_os = "macos"))]
     fn test_system_info_non_macos() {
         assert!(get_system_info().is_err());
@@ -647,7 +644,6 @@ mod tests {
     // ===== Additional edge case tests =====
 
     #[test]
-    #[serial]
     #[cfg(target_os = "macos")]
     fn test_start_utm_vm_non_mock_returns_ok() {
         let result = start_utm_vm("test-vm".to_string());
@@ -656,7 +652,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     #[cfg(target_os = "macos")]
     fn test_resize_utm_vm_disk_non_mock_returns_ok() {
         let result = resize_utm_vm_disk("test-vm".to_string(), 64);
@@ -667,7 +662,6 @@ mod tests {
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[test]
-    #[serial]
     #[cfg(target_os = "macos")]
     fn test_get_utm_vm_status_non_mock_returns_unknown() {
         let result = get_utm_vm_status("test-vm".to_string());
@@ -681,7 +675,6 @@ mod tests {
 
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[tokio::test]
-    #[serial]
     async fn test_check_ha_ready_empty_ip() {
         let result = check_ha_ready("".to_string()).await;
         assert!(!result, "Should return false for empty IP");
