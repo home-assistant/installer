@@ -715,7 +715,7 @@ export class ProxmoxConfigureView extends LitElement {
                           ?selected=${node.name === this._selectedNode}
                         >
                           ${node.name}
-                          ${node.cpu_usage !== undefined
+                          ${node.cpu_usage != null
                             ? `(CPU: ${node.cpu_usage.toFixed(1)}%)`
                             : ""}
                         </option>

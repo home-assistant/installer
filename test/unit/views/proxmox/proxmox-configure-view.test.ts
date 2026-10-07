@@ -49,6 +49,50 @@ describe("proxmox-configure-view", () => {
     restoreTauriIpc();
   });
 
+  // Proxmox leaves out a node's stats for users without Sys.Audit, and the
+  // backend sends those as null
+  it("lists a node that has no CPU stats", async () => {
+    mockTauriIpc((cmd) => {
+      switch (cmd) {
+        case "proxmox_list_nodes":
+          return [
+            {
+              name: "pve",
+              status: "online",
+              cpu_usage: 12.5,
+              memory_used: null,
+              memory_total: null,
+            },
+            {
+              name: "pve2",
+              status: "online",
+              cpu_usage: null,
+              memory_used: null,
+              memory_total: null,
+            },
+          ];
+        case "proxmox_get_next_vm_id":
+          return 100;
+        case "proxmox_list_storage":
+          return [];
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+
+    const el = fixtureSync<ProxmoxConfigureView>(html`
+      <proxmox-configure-view></proxmox-configure-view>
+    `);
+    await waitUntil(
+      () => el.shadowRoot!.querySelectorAll(".select-dropdown option").length,
+      "the node dropdown never rendered"
+    );
+
+    const options = [
+      ...el.shadowRoot!.querySelectorAll(".select-dropdown option"),
+    ].map((option) => option.textContent!.replace(/\s+/g, " ").trim());
+    expect(options).to.include.members(["pve (CPU: 12.5%)", "pve2"]);
+  });
+
   it("saves the defaults on a first visit", async () => {
     await mount();
 

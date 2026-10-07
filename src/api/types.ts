@@ -211,11 +211,11 @@ export interface ProxmoxNode {
   /** Node status (online/offline) */
   status: string;
   /** CPU usage percentage */
-  cpu_usage?: number;
+  cpu_usage: number | null;
   /** Memory usage in bytes */
-  memory_used?: number;
+  memory_used: number | null;
   /** Total memory in bytes */
-  memory_total?: number;
+  memory_total: number | null;
 }
 
 /** Proxmox storage information */
