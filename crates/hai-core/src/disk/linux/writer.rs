@@ -316,6 +316,13 @@ fn map_udisks_error(err: zbus::Error, context: &str) -> Error {
         {
             return Error::DeviceBusy(context.to_string());
         }
+        // A locked card fails right at the open, as EROFS in the message.
+        if message
+            .as_deref()
+            .is_some_and(|m| m.contains("Read-only file system"))
+        {
+            return Error::WriteProtected;
+        }
         return Error::Io(std::io::Error::other(format!(
             "udisks2 error while {context}: {err}"
         )));
@@ -418,6 +425,16 @@ mod tests {
         assert!(
             matches!(mapped, Error::PermissionDenied(msg) if msg == "Not authorized to open the device")
         );
+    }
+
+    #[test]
+    fn test_map_udisks_error_read_only_is_write_protected() {
+        let err = method_error(
+            "org.freedesktop.UDisks2.Error.Failed",
+            Some("Error opening device /dev/sdb: Read-only file system"),
+        );
+        let mapped = map_udisks_error(err, "opening the device");
+        assert!(matches!(mapped, Error::WriteProtected), "{mapped:?}");
     }
 
     #[test]

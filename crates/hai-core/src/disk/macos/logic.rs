@@ -114,6 +114,11 @@ pub fn classify_authopen_failure(exit_code: Option<i32>, stderr: &str, device_id
     if haystack.contains("resource busy") || haystack.contains("device busy") {
         return Error::DeviceBusy(device_busy_message(device_id));
     }
+    // A locked card fails the O_RDWR open with EROFS. Checked before the
+    // permission errors, so it doesn't get the privacy settings advice.
+    if haystack.contains("read-only file system") {
+        return Error::WriteProtected;
+    }
     if haystack.contains("permission denied")
         || haystack.contains("operation not permitted")
         || haystack.contains("not authorized")
@@ -414,6 +419,16 @@ mod tests {
     fn authopen_cancellation_is_not_a_failure() {
         let err = classify_authopen_failure(Some(1), "authopen: canceled", "/dev/rdisk4");
         assert!(matches!(err, Error::Cancelled), "{err:?}");
+    }
+
+    #[test]
+    fn authopen_on_a_locked_card_is_write_protected() {
+        let err = classify_authopen_failure(
+            Some(1),
+            "authopen: /dev/rdisk4: Read-only file system",
+            "/dev/rdisk4",
+        );
+        assert!(matches!(err, Error::WriteProtected), "{err:?}");
     }
 
     #[test]
