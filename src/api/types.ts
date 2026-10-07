@@ -44,6 +44,10 @@ export type FlashStage =
   | "writing"
   | "verifying"
   | "finalizing"
+  | "uploading"
+  | "creating_vm"
+  | "starting_vm"
+  | "waiting_for_ip"
   | "complete"
   | "error";
 

@@ -2,7 +2,11 @@ import { LitElement, html, css, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { proxmoxCreateVm, formatBytes } from "../../api/commands.js";
-import type { FlashProgress, ProxmoxVmConfig } from "../../api/types.js";
+import type {
+  FlashProgress,
+  FlashStage,
+  ProxmoxVmConfig,
+} from "../../api/types.js";
 import {
   DEFAULT_CPU_CORES,
   DEFAULT_DISK_SIZE_GB,
@@ -13,18 +17,27 @@ import {
   DEFAULT_PROXMOX_VM_NAME,
 } from "../../state/vm-defaults.js";
 import { isCancelled, throwIfCancelled } from "../../utils/polling.js";
+import { waitForHaReady, waitForHaUpdated } from "../../utils/wait-for-ha.js";
 import "../../components/progress-bar.js";
 
-type InstallStage =
-  | "downloading"
-  | "extracting"
-  | "writing"
-  | "verifying"
-  | "finalizing"
-  | "ready"
-  | "updating"
-  | "complete"
-  | "error";
+/** The stages `proxmoxCreateVm` reports, in order */
+const BACKEND_STAGES = [
+  "downloading",
+  "extracting",
+  "uploading",
+  "creating_vm",
+  "starting_vm",
+  "waiting_for_ip",
+] as const satisfies readonly FlashStage[];
+
+type BackendStage = (typeof BACKEND_STAGES)[number];
+
+/** The backend's stages, then the waits for Home Assistant run from here */
+type InstallStage = BackendStage | "ready" | "updating" | "complete" | "error";
+
+function isBackendStage(stage: FlashStage): stage is BackendStage {
+  return (BACKEND_STAGES as readonly FlashStage[]).includes(stage);
+}
 
 // Stages that have measurable progress (0-100%)
 const MEASURABLE_STAGES: InstallStage[] = ["downloading"];
@@ -32,9 +45,10 @@ const MEASURABLE_STAGES: InstallStage[] = ["downloading"];
 // Stages that use indeterminate progress (waiting for something, or unknown total size)
 const INDETERMINATE_STAGES: InstallStage[] = [
   "extracting",
-  "writing",
-  "verifying",
-  "finalizing",
+  "uploading",
+  "creating_vm",
+  "starting_vm",
+  "waiting_for_ip",
   "ready",
   "updating",
 ];
@@ -353,7 +367,12 @@ export class ProxmoxProgressView extends LitElement {
     return this._error !== null;
   }
 
-  /** Retry the install operation */
+  /**
+   * Retry the install operation.
+   *
+   * A VM created by an earlier attempt is picked up from the wizard state
+   * instead of being created again - see `_startInstall`.
+   */
   retry(): void {
     this._error = null;
     this._stage = "downloading";
@@ -417,38 +436,60 @@ export class ProxmoxProgressView extends LitElement {
     };
 
     try {
-      this._stage = "downloading";
-      this._stageStartTime = Date.now();
-      this._stageStartBytes = 0;
+      // Skipped when an earlier attempt already created the VM: running it
+      // again after a late failure would try to create a second VM with the
+      // same id.
+      let result = selections.proxmoxVmResult;
+      if (!result) {
+        this._stage = "downloading";
+        this._stageStartTime = Date.now();
+        this._stageStartBytes = 0;
 
-      const result = await proxmoxCreateVm(
-        session,
-        config,
-        (progress: FlashProgress) => {
-          // Progress keeps arriving from the backend after a cancel; a
-          // detached view must stop reporting on it
-          if (signal.aborted) return;
+        result = await proxmoxCreateVm(
+          session,
+          config,
+          (progress: FlashProgress) => {
+            // Progress keeps arriving from the backend after a cancel; a
+            // detached view must stop reporting on it
+            if (signal.aborted) return;
 
-          // Use raw per-stage progress
-          const newStage = progress.stage as InstallStage;
-          if (newStage !== this._stage) {
-            this._stage = newStage;
-            this._stageStartTime = Date.now();
-            this._stageStartBytes = progress.bytes_processed;
+            if (!isBackendStage(progress.stage)) {
+              // A stage the backend gained without this view learning it
+              console.warn(
+                `Ignoring unknown Proxmox install stage: ${progress.stage}`
+              );
+              return;
+            }
+            const newStage = progress.stage;
+            if (newStage !== this._stage) {
+              this._stage = newStage;
+              this._stageStartTime = Date.now();
+              this._stageStartBytes = progress.bytes_processed;
+            }
+
+            this._progress = progress.progress;
+            this._bytesProcessed = progress.bytes_processed;
+            this._totalBytes = progress.total_bytes;
           }
+        );
 
-          this._progress = progress.progress;
-          this._bytesProcessed = progress.bytes_processed;
-          this._totalBytes = progress.total_bytes;
-        }
-      );
+        throwIfCancelled(signal);
+        wizardState.setSelection("proxmoxVmResult", result);
+      }
 
-      throwIfCancelled(signal);
+      const ipAddress = result.ip_address;
+      if (ipAddress) {
+        wizardState.setSelection("ipAddress", ipAddress);
 
-      // Store result in wizard state
-      wizardState.setSelection("proxmoxVmResult", result);
-      if (result.ip_address) {
-        wizardState.setSelection("ipAddress", result.ip_address);
+        // Wait for the Home Assistant webserver to be ready
+        this._startStage("ready");
+        await waitForHaReady(ipAddress, "Proxmox", signal);
+        throwIfCancelled(signal);
+
+        // Wait for Home Assistant to finish updating
+        this._startStage("updating");
+        await waitForHaUpdated(ipAddress, signal);
+        throwIfCancelled(signal);
       }
 
       // Complete
@@ -495,6 +536,15 @@ export class ProxmoxProgressView extends LitElement {
         composed: true,
       })
     );
+  }
+
+  /** Move to an indeterminate stage, clearing the previous stage's progress */
+  private _startStage(stage: InstallStage) {
+    this._stage = stage;
+    this._progress = 0;
+    this._stageStartTime = null;
+    this._bytesProcessed = 0;
+    this._totalBytes = 0;
   }
 
   render() {
@@ -577,10 +627,11 @@ export class ProxmoxProgressView extends LitElement {
   private _renderStagesIndicator(currentStage: string) {
     const stages = [
       { id: "downloading", label: "Downloading Home Assistant OS" },
-      { id: "extracting", label: "Uploading image to Proxmox" },
-      { id: "writing", label: "Creating virtual machine" },
-      { id: "verifying", label: "Starting Home Assistant OS" },
-      { id: "finalizing", label: "Waiting for network connection" },
+      { id: "extracting", label: "Extracting the image" },
+      { id: "uploading", label: "Uploading image to Proxmox" },
+      { id: "creating_vm", label: "Creating virtual machine" },
+      { id: "starting_vm", label: "Starting Home Assistant OS" },
+      { id: "waiting_for_ip", label: "Waiting for network connection" },
       { id: "ready", label: "Waiting for Home Assistant" },
       { id: "updating", label: "Installing latest Home Assistant" },
     ];
@@ -671,12 +722,14 @@ export class ProxmoxProgressView extends LitElement {
       case "downloading":
         return "Downloading";
       case "extracting":
+        return "Extracting";
+      case "uploading":
         return "Uploading";
-      case "writing":
+      case "creating_vm":
         return "Creating";
-      case "verifying":
+      case "starting_vm":
         return "Starting";
-      case "finalizing":
+      case "waiting_for_ip":
         return "Connecting";
       case "ready":
         return "Waiting";
@@ -696,12 +749,14 @@ export class ProxmoxProgressView extends LitElement {
       case "downloading":
         return "Downloading Home Assistant OS";
       case "extracting":
+        return "Extracting the image";
+      case "uploading":
         return "Uploading image to Proxmox";
-      case "writing":
+      case "creating_vm":
         return "Creating virtual machine";
-      case "verifying":
+      case "starting_vm":
         return "Starting Home Assistant OS";
-      case "finalizing":
+      case "waiting_for_ip":
         return "Waiting for network connection";
       case "ready":
         return "Waiting for Home Assistant";

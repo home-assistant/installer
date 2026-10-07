@@ -44,39 +44,34 @@ fn system_info() -> Result<SystemInfo> {
     }
 }
 
-/// Whether the Home Assistant webserver is accepting connections on port 80.
+/// Whether the Home Assistant webserver at `ip` answers HTTP on port 80.
 async fn check_ha_ready(ip: &str) -> bool {
-    use tokio::net::TcpStream;
-    use tokio::time::timeout;
-
-    // An empty host isn't an error everywhere: Windows resolves ":80" to the
-    // local machine, so any local web server would pass for Home Assistant.
+    // Never probe an empty host: Windows resolves it to the local machine, so
+    // any local web server would pass for Home Assistant.
     if ip.trim().is_empty() {
         return false;
     }
 
-    let addr = format!("{}:80", ip);
-    matches!(
-        timeout(Duration::from_secs(3), TcpStream::connect(&addr)).await,
-        Ok(Ok(_))
-    )
+    // Any non-5xx reply means the webserver is up, even if `/` itself is not served.
+    get_status(&format!("http://{}", ip))
+        .await
+        .is_some_and(|status| !status.is_server_error())
 }
 
-/// Whether Home Assistant has finished starting up (serves its manifest).
+/// Whether Home Assistant at `ip` has finished starting up (serves its manifest).
 async fn check_ha_updated(ip: &str) -> bool {
-    let url = format!("http://{}/manifest.json", ip);
-    let client = match reqwest::Client::builder()
+    get_status(&format!("http://{}/manifest.json", ip))
+        .await
+        .is_some_and(|status| status.is_success())
+}
+
+async fn get_status(url: &str) -> Option<reqwest::StatusCode> {
+    let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
-    {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    match client.get(&url).send().await {
-        Ok(response) => response.status().is_success(),
-        Err(_) => false,
-    }
+        .ok()?;
+    let response = client.get(url).send().await.ok()?;
+    Some(response.status())
 }
 
 impl HostBackend for Backend {
@@ -90,5 +85,77 @@ impl HostBackend for Backend {
 
     async fn check_ha_updated(&self, ip: &str) -> bool {
         check_ha_updated(ip).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mockito::Server;
+
+    #[tokio::test]
+    async fn test_check_ha_ready_success() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/")
+            .with_status(200)
+            .create_async()
+            .await;
+
+        assert!(check_ha_ready(&server.host_with_port()).await);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_check_ha_ready_404_is_ready() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        assert!(check_ha_ready(&server.host_with_port()).await);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_check_ha_ready_5xx_is_not_ready() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/")
+            .with_status(502)
+            .create_async()
+            .await;
+
+        assert!(!check_ha_ready(&server.host_with_port()).await);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_check_ha_updated_success() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/manifest.json")
+            .with_status(200)
+            .with_body(r#"{"version": "2023.12.0"}"#)
+            .create_async()
+            .await;
+
+        assert!(check_ha_updated(&server.host_with_port()).await);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_check_ha_updated_404_is_not_updated() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/manifest.json")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        assert!(!check_ha_updated(&server.host_with_port()).await);
+        mock.assert_async().await;
     }
 }

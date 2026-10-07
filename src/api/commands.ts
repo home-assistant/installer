@@ -583,28 +583,35 @@ async function simulateProxmoxInstall(
     },
     {
       stage: "extracting",
-      message: "Uploading to Proxmox...",
-      weight: 25,
-      steps: 25,
+      message: "Extracting image...",
+      weight: 10,
+      steps: 10,
       delay: 80,
     },
     {
-      stage: "writing",
-      message: "Creating virtual machine...",
+      stage: "uploading",
+      message: "Uploading to Proxmox...",
       weight: 20,
       steps: 20,
+      delay: 80,
+    },
+    {
+      stage: "creating_vm",
+      message: "Creating virtual machine...",
+      weight: 15,
+      steps: 15,
       delay: 100,
     },
     {
-      stage: "verifying",
-      message: "Starting Home Assistant OS...",
+      stage: "starting_vm",
+      message: "Starting virtual machine...",
       weight: 10,
       steps: 10,
       delay: 150,
     },
     {
-      stage: "finalizing",
-      message: "Waiting for network...",
+      stage: "waiting_for_ip",
+      message: "Waiting for network connection...",
       weight: 5,
       steps: 10,
       delay: 200,
@@ -630,14 +637,6 @@ async function simulateProxmoxInstall(
     }
     overallProgress += weight;
   }
-
-  onProgress({
-    stage: "complete",
-    progress: 100,
-    bytes_processed: 0,
-    total_bytes: 0,
-    message: "Installation complete!",
-  });
 
   return {
     vm_id: config.vm_id,

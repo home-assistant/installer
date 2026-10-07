@@ -74,13 +74,20 @@ impl FlashProgress {
 pub enum FlashStage {
     Downloading,
     Extracting,
+    /// Writing the image to a disk
     Writing,
+    /// Verifying the image written to a disk
     Verifying,
+    /// Flushing a written disk before it is removed
     Finalizing,
-    /// Waiting for Home Assistant to be ready
-    Ready,
-    /// Updating Home Assistant to latest version
-    Updating,
+    /// Uploading the image to a hypervisor's storage
+    Uploading,
+    /// Creating a VM from the uploaded image
+    CreatingVm,
+    /// Starting a newly created VM
+    StartingVm,
+    /// Waiting for a started VM to report its IP address
+    WaitingForIp,
     Complete,
     Error,
 }
@@ -472,8 +479,10 @@ mod tests {
             FlashStage::Writing,
             FlashStage::Verifying,
             FlashStage::Finalizing,
-            FlashStage::Ready,
-            FlashStage::Updating,
+            FlashStage::Uploading,
+            FlashStage::CreatingVm,
+            FlashStage::StartingVm,
+            FlashStage::WaitingForIp,
             FlashStage::Complete,
             FlashStage::Error,
         ];
@@ -602,8 +611,13 @@ mod tests {
             (FlashStage::Writing, "Writing to device..."),
             (FlashStage::Verifying, "Verifying write..."),
             (FlashStage::Finalizing, "Finalizing..."),
-            (FlashStage::Ready, "Waiting for Home Assistant..."),
-            (FlashStage::Updating, "Updating to latest version..."),
+            (FlashStage::Uploading, "Uploading to Proxmox..."),
+            (FlashStage::CreatingVm, "Creating virtual machine..."),
+            (FlashStage::StartingVm, "Starting virtual machine..."),
+            (
+                FlashStage::WaitingForIp,
+                "Waiting for network connection...",
+            ),
             (FlashStage::Complete, "Complete!"),
             (FlashStage::Error, "Error occurred"),
         ];

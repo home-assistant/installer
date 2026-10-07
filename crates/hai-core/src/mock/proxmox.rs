@@ -78,21 +78,21 @@ impl ProxmoxBackend for BackendMock {
         config: &ProxmoxVmConfig,
         progress_callback: &P,
     ) -> Result<ProxmoxVmResult> {
-        for (progress, message) in [
-            (10, "Downloading HAOS image..."),
-            (30, "Uploading to Proxmox..."),
-            (50, "Creating VM..."),
-            (70, "Configuring VM..."),
-            (90, "Starting VM..."),
-            (100, "Complete"),
+        // Same stages, in the same order, as the real `create_vm`
+        for (stage, message) in [
+            (FlashStage::Downloading, "Downloading HAOS image..."),
+            (FlashStage::Extracting, "Extracting image..."),
+            (FlashStage::Uploading, "Uploading to Proxmox..."),
+            (FlashStage::CreatingVm, "Creating virtual machine..."),
+            (FlashStage::StartingVm, "Starting virtual machine..."),
+            (
+                FlashStage::WaitingForIp,
+                "Waiting for network connection...",
+            ),
         ] {
             progress_callback.on_progress(FlashProgress {
-                stage: if progress < 100 {
-                    FlashStage::Downloading
-                } else {
-                    FlashStage::Complete
-                },
-                progress,
+                stage,
+                progress: 0,
                 bytes_processed: 0,
                 total_bytes: 0,
                 message: message.to_string(),

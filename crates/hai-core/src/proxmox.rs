@@ -506,7 +506,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
         .to_string();
 
     progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Writing,
+        stage: FlashStage::Uploading,
         progress: 0,
         bytes_processed: 0,
         total_bytes: 0,
@@ -530,7 +530,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
         .map_err(|e| Error::ProxmoxApi(format!("Failed to read image file: {}", e)))?;
 
     progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Writing,
+        stage: FlashStage::Uploading,
         progress: 5,
         bytes_processed: 0,
         total_bytes: file_size,
@@ -622,7 +622,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
         .ok_or_else(|| Error::ProxmoxApi("Upload response missing task UPID".to_string()))?;
 
     progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Writing,
+        stage: FlashStage::Uploading,
         progress: 95,
         bytes_processed: file_size,
         total_bytes: file_size,
@@ -633,7 +633,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     wait_for_task(session, node, upid, 1800).await?;
 
     progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Writing,
+        stage: FlashStage::Uploading,
         progress: 100,
         bytes_processed: file_size,
         total_bytes: file_size,
@@ -760,73 +760,6 @@ async fn start_vm(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<()
     Ok(())
 }
 
-/// Wait for the Home Assistant webserver to be ready on port 80.
-async fn wait_for_ha_webserver(ip: &str) -> bool {
-    let base_url = format!("http://{}", ip);
-    wait_for_ha_webserver_at_url(&base_url).await
-}
-
-/// Internal helper that accepts a full base URL (for testing).
-async fn wait_for_ha_webserver_at_url(base_url: &str) -> bool {
-    let client = match create_client(10) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    // Try for up to 5 minutes (150 attempts * 2 seconds)
-    for _ in 0..150 {
-        match client.get(base_url).send().await {
-            Ok(response) => {
-                // Any response means the webserver is up
-                if response.status().is_success() || response.status().as_u16() < 500 {
-                    return true;
-                }
-            }
-            Err(_) => {
-                // Connection refused or other error, keep trying
-            }
-        }
-
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    }
-
-    false
-}
-
-/// Wait for Home Assistant to finish updating to the latest version.
-async fn wait_for_ha_updated(ip: &str) -> bool {
-    let base_url = format!("http://{}", ip);
-    wait_for_ha_updated_at_url(&base_url).await
-}
-
-/// Internal helper that accepts a full base URL (for testing).
-async fn wait_for_ha_updated_at_url(base_url: &str) -> bool {
-    let url = format!("{}/manifest.json", base_url);
-    let client = match create_client(10) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    // Try for up to 1 hour (1800 attempts * 2 seconds)
-    for _ in 0..1800 {
-        match client.get(&url).send().await {
-            Ok(response) => {
-                // 200 OK means Home Assistant is fully ready
-                if response.status().is_success() {
-                    return true;
-                }
-            }
-            Err(_) => {
-                // Connection refused or other error, keep trying
-            }
-        }
-
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    }
-
-    false
-}
-
 /// Wait for the VM to get an IP address via QEMU guest agent.
 async fn wait_for_vm_ip(session: &ProxmoxSession, node: &str, vm_id: u32) -> Option<String> {
     let url = format!(
@@ -885,7 +818,7 @@ async fn wait_for_vm_ip(session: &ProxmoxSession, node: &str, vm_id: u32) -> Opt
     None
 }
 
-/// Create a Home Assistant VM on Proxmox
+/// Create and start a Home Assistant VM on Proxmox
 async fn create_vm<P: ProgressCallback>(
     session: &ProxmoxSession,
     config: &ProxmoxVmConfig,
@@ -960,7 +893,7 @@ async fn create_vm<P: ProgressCallback>(
 
     // Step 5: Create the VM with disk import
     progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Verifying,
+        stage: FlashStage::CreatingVm,
         progress: 0,
         bytes_processed: 0,
         total_bytes: 0,
@@ -972,7 +905,7 @@ async fn create_vm<P: ProgressCallback>(
     // Step 6: Start the VM if requested
     if config.auto_start {
         progress_callback.on_progress(FlashProgress {
-            stage: FlashStage::Finalizing,
+            stage: FlashStage::StartingVm,
             progress: 0,
             bytes_processed: 0,
             total_bytes: 0,
@@ -984,7 +917,7 @@ async fn create_vm<P: ProgressCallback>(
 
     // Step 7: Wait for IP address
     progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Ready,
+        stage: FlashStage::WaitingForIp,
         progress: 0,
         bytes_processed: 0,
         total_bytes: 0,
@@ -996,40 +929,6 @@ async fn create_vm<P: ProgressCallback>(
     } else {
         None
     };
-
-    // Step 8: Wait for Home Assistant webserver to be ready
-    if let Some(ref ip) = ip_address {
-        progress_callback.on_progress(FlashProgress {
-            stage: FlashStage::Ready,
-            progress: 50,
-            bytes_processed: 0,
-            total_bytes: 0,
-            message: "Waiting for Home Assistant to start...".to_string(),
-        });
-
-        // Wait for webserver (don't fail if it times out)
-        wait_for_ha_webserver(ip).await;
-
-        // Step 9: Wait for Home Assistant to finish updating
-        progress_callback.on_progress(FlashProgress {
-            stage: FlashStage::Updating,
-            progress: 0,
-            bytes_processed: 0,
-            total_bytes: 0,
-            message: "Updating to the latest version...".to_string(),
-        });
-
-        // Wait for manifest.json (don't fail if it times out)
-        wait_for_ha_updated(ip).await;
-    }
-
-    progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Complete,
-        progress: 100,
-        bytes_processed: 0,
-        total_bytes: 0,
-        message: "Installation complete!".to_string(),
-    });
 
     Ok(ProxmoxVmResult {
         vm_id: config.vm_id,
@@ -2446,60 +2345,6 @@ mod tests {
         // NOTE: Skipping test_wait_for_vm_ip_no_ip because it takes 5+ minutes
         // wait_for_vm_ip retries 150 times with 2 second sleep = 300 seconds
         // The success paths are already tested above
-
-        #[tokio::test]
-        #[serial]
-        async fn test_wait_for_ha_webserver_at_url_success() {
-            let mut server = Server::new_async().await;
-
-            let web_mock = server
-                .mock("GET", "/")
-                .with_status(200)
-                .with_body("Home Assistant")
-                .create_async()
-                .await;
-
-            let result = wait_for_ha_webserver_at_url(&server.url()).await;
-            assert!(result);
-
-            web_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_wait_for_ha_webserver_at_url_404_is_success() {
-            let mut server = Server::new_async().await;
-
-            let web_mock = server
-                .mock("GET", "/")
-                .with_status(404)
-                .with_body("Not Found")
-                .create_async()
-                .await;
-
-            let result = wait_for_ha_webserver_at_url(&server.url()).await;
-            assert!(result); // 404 is < 500, so it's considered "up"
-
-            web_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_wait_for_ha_updated_at_url_success() {
-            let mut server = Server::new_async().await;
-
-            let manifest_mock = server
-                .mock("GET", "/manifest.json")
-                .with_status(200)
-                .with_body(r#"{"version": "2023.12.0"}"#)
-                .create_async()
-                .await;
-
-            let result = wait_for_ha_updated_at_url(&server.url()).await;
-            assert!(result);
-
-            manifest_mock.assert_async().await;
-        }
 
         #[tokio::test]
         #[serial]

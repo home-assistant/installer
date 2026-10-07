@@ -7,8 +7,6 @@ import {
   resizeUtmVmDisk,
   startUtmVm,
   getUtmVmStatus,
-  checkHaReady,
-  checkHaUpdated,
   formatBytes,
   type VmStatusInfo,
 } from "../../api/commands.js";
@@ -25,6 +23,7 @@ import {
   pollUntil,
   throwIfCancelled,
 } from "../../utils/polling.js";
+import { waitForHaReady, waitForHaUpdated } from "../../utils/wait-for-ha.js";
 import "../../components/progress-bar.js";
 
 type InstallStage =
@@ -51,17 +50,11 @@ const INDETERMINATE_STAGES: InstallStage[] = [
   "updating",
 ];
 
-/** Delay between polls while waiting for the VM and Home Assistant */
+/** Delay between polls while waiting for the VM's IP address */
 const POLL_INTERVAL_MS = 2000;
 
 /** How long to wait for the VM to report an IP address */
 const VM_IP_TIMEOUT_MS = 5 * 60 * 1000;
-
-/** How long to wait for the Home Assistant webserver to answer */
-const HA_READY_TIMEOUT_MS = 5 * 60 * 1000;
-
-/** How long to wait for Home Assistant to finish updating itself */
-const HA_UPDATED_TIMEOUT_MS = 60 * 60 * 1000;
 
 /** VM statuses that mean the VM does not need to be started again */
 const RUNNING_VM_STATUSES = ["started", "running"];
@@ -499,12 +492,12 @@ export class UtmProgressView extends LitElement {
       if (ipAddress) {
         // Wait for the Home Assistant webserver to be ready
         this._startStage("ready");
-        await this._waitForHaReady(ipAddress, signal);
+        await waitForHaReady(ipAddress, "UTM", signal);
         throwIfCancelled(signal);
 
         // Wait for Home Assistant to finish updating
         this._startStage("updating");
-        await this._waitForHaUpdated(ipAddress, signal);
+        await waitForHaUpdated(ipAddress, signal);
         throwIfCancelled(signal);
       }
 
@@ -840,52 +833,6 @@ export class UtmProgressView extends LitElement {
       }
       throw error;
     }
-  }
-
-  /**
-   * Wait for the Home Assistant webserver to be ready on port 80, polling
-   * every 2 seconds for up to 5 minutes.
-   *
-   * A timeout throws: reporting "Installation complete!" for a VM where Home
-   * Assistant never came up leaves the user with no idea what went wrong.
-   */
-  private async _waitForHaReady(
-    ipAddress: string,
-    signal: AbortSignal
-  ): Promise<void> {
-    await pollUntil(async () => (await checkHaReady(ipAddress)) || null, {
-      interval: POLL_INTERVAL_MS,
-      timeout: HA_READY_TIMEOUT_MS,
-      signal,
-      timeoutMessage:
-        `Home Assistant did not respond at ${ipAddress} within 5 minutes. ` +
-        `The virtual machine was created - check whether it is running in UTM, ` +
-        `then try again to keep waiting for it.`,
-    });
-  }
-
-  /**
-   * Wait for Home Assistant to finish updating to the latest version.
-   * This checks for the manifest.json endpoint which becomes available
-   * after the initial setup and updates are complete.
-   * Polls every 2 seconds for up to 1 hour.
-   *
-   * As with the readiness check, a timeout throws instead of quietly
-   * reporting success.
-   */
-  private async _waitForHaUpdated(
-    ipAddress: string,
-    signal: AbortSignal
-  ): Promise<void> {
-    await pollUntil(async () => (await checkHaUpdated(ipAddress)) || null, {
-      interval: POLL_INTERVAL_MS,
-      timeout: HA_UPDATED_TIMEOUT_MS,
-      signal,
-      timeoutMessage:
-        `Home Assistant did not finish installing updates within 60 minutes. ` +
-        `Open http://${ipAddress} to check on it, or try again to keep ` +
-        `waiting for it.`,
-    });
   }
 
   private _renderCasitaMascot(stage: string, thinkingText: string) {

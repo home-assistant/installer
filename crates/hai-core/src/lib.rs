@@ -115,7 +115,7 @@ pub trait ProxmoxBackend {
     /// Get the next free VM id.
     async fn get_next_vm_id(&self, session: &ProxmoxSession) -> Result<u32>;
 
-    /// Create a Home Assistant VM, reporting progress.
+    /// Create and start a Home Assistant VM.
     async fn create_vm<P: ProgressCallback>(
         &self,
         session: &ProxmoxSession,

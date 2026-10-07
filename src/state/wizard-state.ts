@@ -1,4 +1,8 @@
-import type { HaosConfig, ProxmoxSession } from "../api/types.js";
+import type {
+  HaosConfig,
+  ProxmoxSession,
+  ProxmoxVmResult,
+} from "../api/types.js";
 import type { InstallationPath } from "../views/path-selection-view.js";
 
 export type WizardFlow = InstallationPath;
@@ -48,6 +52,8 @@ export interface WizardSelections {
   proxmoxNode?: string;
   proxmoxStorage?: string;
   proxmoxVmId?: number;
+  /** Set once the Proxmox VM exists, so a retry resumes instead of starting over. */
+  proxmoxVmResult?: ProxmoxVmResult;
 
   [key: string]: unknown;
 }

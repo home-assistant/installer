@@ -1,5 +1,8 @@
-import { expect, fixtureSync, html } from "@open-wc/testing";
-import type { ProxmoxVmResult } from "../../../../src/api/types.js";
+import { expect, fixtureSync, html, oneEvent } from "@open-wc/testing";
+import type {
+  FlashProgress,
+  ProxmoxVmResult,
+} from "../../../../src/api/types.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/proxmox/proxmox-progress-view.js";
 import type { ProxmoxProgressView } from "../../../../src/views/proxmox/proxmox-progress-view.js";
@@ -18,15 +21,20 @@ function abortSignalOf(el: ProxmoxProgressView): AbortSignal | undefined {
 
 /**
  * Hold `proxmox_create_vm` open until the test resolves it, instead of
- * running the multi-second browser-only simulation.
+ * running the multi-second browser-only simulation. Home Assistant answers
+ * every readiness check at once.
  */
 function mockCreateVm() {
   const called = deferred<void>();
   const result = deferred<ProxmoxVmResult>();
   mockTauriIpc((cmd) => {
-    if (cmd === "proxmox_create_vm") {
-      called.resolve();
-      return result.promise;
+    switch (cmd) {
+      case "proxmox_create_vm":
+        called.resolve();
+        return result.promise;
+      case "check_ha_ready":
+      case "check_ha_updated":
+        return true;
     }
     throw new Error(`Unexpected IPC command: ${cmd}`);
   });
@@ -125,6 +133,105 @@ describe("proxmox-progress-view", () => {
     expect(wizardState.getState().selections.ipAddress).to.equal(
       "192.168.1.50"
     );
+  });
+
+  it("waits for Home Assistant before advancing", async () => {
+    const haReady = deferred<boolean>();
+    const checked: string[] = [];
+    mockTauriIpc((cmd) => {
+      switch (cmd) {
+        case "proxmox_create_vm":
+          return { vm_id: 100, node: "pve", ip_address: "192.168.1.50" };
+        case "check_ha_ready":
+          checked.push(cmd);
+          return haReady.promise;
+        case "check_ha_updated":
+          checked.push(cmd);
+          return true;
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+
+    const el = mount();
+    let completed = false;
+    el.addEventListener("install-complete", () => {
+      completed = true;
+    });
+    await settle();
+
+    // The VM exists, but Home Assistant has not answered yet
+    expect(completed).to.be.false;
+    expect(wizardState.getState().selections.proxmoxVmResult).to.exist;
+    await el.updateComplete;
+    expect(el.shadowRoot!.textContent).to.contain("Waiting for Home Assistant");
+
+    haReady.resolve(true);
+    await oneEvent(el, "install-complete");
+    expect(checked).to.deep.equal(["check_ha_ready", "check_ha_updated"]);
+  });
+
+  it("resumes a retried install instead of creating a second VM", async () => {
+    // What a failed attempt leaves behind once the VM exists
+    wizardState.setSelection("proxmoxVmResult", {
+      vm_id: 100,
+      node: "pve",
+      ip_address: "192.168.1.50",
+    });
+    // `proxmox_create_vm` is not handled, so calling it fails the install
+    mockTauriIpc((cmd) => {
+      switch (cmd) {
+        case "check_ha_ready":
+        case "check_ha_updated":
+          return true;
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+
+    const el = mount();
+    await oneEvent(el, "install-complete");
+
+    expect(el.hasError).to.be.false;
+    expect(wizardState.getState().selections.ipAddress).to.equal(
+      "192.168.1.50"
+    );
+  });
+
+  it("shows the step the backend reports", async () => {
+    const createVm = deferred<ProxmoxVmResult>();
+    let report!: (progress: FlashProgress) => void;
+    mockTauriIpc((cmd, args) => {
+      if (cmd === "proxmox_create_vm") {
+        const { progressChannel } = args as {
+          progressChannel: { onmessage: (progress: FlashProgress) => void };
+        };
+        report = (progress) => progressChannel.onmessage(progress);
+        return createVm.promise;
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+
+    const el = mount();
+    await settle();
+
+    // Each backend stage, with the heading shown for it
+    const steps: Array<[FlashProgress["stage"], string]> = [
+      ["extracting", "Extracting the image"],
+      ["uploading", "Uploading image to Proxmox"],
+      ["creating_vm", "Creating virtual machine"],
+      ["starting_vm", "Starting Home Assistant OS"],
+      ["waiting_for_ip", "Waiting for network connection"],
+    ];
+    for (const [stage, heading] of steps) {
+      report({
+        stage,
+        progress: 0,
+        bytes_processed: 0,
+        total_bytes: 0,
+        message: "",
+      });
+      await el.updateComplete;
+      expect(el.shadowRoot!.querySelector("h2")!.textContent).to.equal(heading);
+    }
   });
 
   it("reports an error without starting when there is no session", async () => {
