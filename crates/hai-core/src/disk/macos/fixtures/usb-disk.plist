@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>DeviceIdentifier</key><string>disk2</string>
+    <key>DeviceNode</key><string>/dev/disk2</string>
+    <key>ParentWholeDisk</key><string>disk2</string>
+    <key>WholeDisk</key><true/>
+    <key>VirtualOrPhysical</key><string>Physical</string>
+    <key>BusProtocol</key><string>USB</string>
+    <key>Internal</key><false/>
+    <key>Removable</key><false/>
+    <key>RemovableMedia</key><false/>
+    <key>Ejectable</key><true/>
+    <key>MediaName</key><string>Samsung Portable SSD T7</string>
+    <key>Size</key><integer>500000000000</integer>
+</dict></plist>

@@ -39,7 +39,11 @@ function selectTargets({ withBoard = true } = {}) {
   wizardState.setSelection("device", "rpi5");
   wizardState.setSelection("deviceName", "Raspberry Pi 5");
   if (withBoard) {
-    wizardState.setSelection("deviceConfig", { board: "rpi5-64" });
+    wizardState.setSelection("deviceConfig", {
+      board: "rpi5-64",
+      download_url:
+        "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi5-64-{version}.img.xz",
+    });
   }
   storeDriveSelection(CONNECTED);
 }
@@ -149,10 +153,10 @@ describe("app-shell", () => {
   describe("error state between runs", () => {
     it("is cleared when the wizard is cancelled", async () => {
       await enterSbcFlow(el);
-      // Without a board there is nothing to download, so no write starts.
+      // Without a board there is nothing to download, so no write starts:
+      // the progress view reports the flash error itself.
       selectTargets({ withBoard: false });
       await goToStep(el, "flash");
-      fire(shellOf(el).querySelector("progress-view")!, "flash-error");
       await waitUntil(() => shellOf(el).nextLabel === "Try again");
 
       fire(shellOf(el), "wizard-cancel");

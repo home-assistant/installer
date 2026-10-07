@@ -147,12 +147,13 @@ export class ProxmoxConnectView extends LitElement {
     try {
       const parsed = new URL(url);
       if (parsed.protocol !== "https:") {
-        this._error = "URL must use HTTPS (e.g., https://192.168.1.100:8006)";
+        this._error =
+          "URL must use HTTPS (for example, https://192.168.1.100:8006)";
         return false;
       }
     } catch {
       this._error =
-        "Please enter a valid URL (e.g., https://192.168.1.100:8006)";
+        "Enter a valid URL (for example, https://192.168.1.100:8006)";
       return false;
     }
 
@@ -263,7 +264,7 @@ export class ProxmoxConnectView extends LitElement {
           type="url"
           input-id="server-url"
           label="Server URL"
-          hint="Full URL to your Proxmox server (e.g., https://192.168.1.100:8006)"
+          hint="Full URL to your Proxmox server (for example, https://192.168.1.100:8006)"
           placeholder="https://192.168.1.100:8006"
           autocomplete="url"
           autocapitalize="off"

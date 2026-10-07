@@ -91,16 +91,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-m1s-{version}.img.xz".to_string(),
                 },
             },
-            Device {
-                id: "odroid-xu4".to_string(),
-                name: "ODROID-XU4".to_string(),
-                category: DeviceCategory::Odroid,
-                image_url: Some("/assets/devices/hardkernel_odroid-xu4.png".to_string()),
-                haos: HaosConfig {
-                    board: "odroid-xu".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-xu-{version}.img.xz".to_string(),
-                },
-            },
             // Khadas devices
             Device {
                 id: "khadas-vim3".to_string(),
@@ -110,17 +100,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                 haos: HaosConfig {
                     board: "khadas-vim3".to_string(),
                     download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_khadas-vim3-{version}.img.xz".to_string(),
-                },
-            },
-            // ASUS devices
-            Device {
-                id: "asus-tinker".to_string(),
-                name: "ASUS Tinker Board".to_string(),
-                category: DeviceCategory::Asus,
-                image_url: Some("/assets/devices/asus_tinker.png".to_string()),
-                haos: HaosConfig {
-                    board: "tinker".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_tinker-{version}.img.xz".to_string(),
                 },
             },
             // Home Assistant Hardware
@@ -244,6 +223,37 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn test_bundled_manifest_only_offers_boards_haos_ships() {
+        // The boards stable.json lists for flashing, as of HAOS 18.3. A board missing here
+        // fails only after the user confirmed the erase, so keep this list
+        // in step with HAOS (#157 tracks checking it automatically).
+        const SHIPPED: &[&str] = &[
+            "generic-aarch64",
+            "generic-x86-64",
+            "green",
+            "khadas-vim3",
+            "odroid-c2",
+            "odroid-c4",
+            "odroid-m1",
+            "odroid-m1s",
+            "odroid-n2",
+            "rpi3-64",
+            "rpi4-64",
+            "rpi5-64",
+            "yellow",
+        ];
+
+        for device in bundled_manifest().devices {
+            assert!(
+                SHIPPED.contains(&device.haos.board.as_str()),
+                "Device {} uses board {}, which HAOS doesn't ship",
+                device.id,
+                device.haos.board
+            );
+        }
+    }
+
     #[test]
     fn test_bundled_manifest_devices_have_image_urls() {
         let manifest = bundled_manifest();

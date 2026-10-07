@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>AllDisksAndPartitions</key><array>
+        <dict>
+            <key>DeviceIdentifier</key><string>disk2</string>
+            <key>Content</key><string>GUID_partition_scheme</string>
+            <key>Partitions</key><array><dict>
+                <key>DeviceIdentifier</key><string>disk2s2</string>
+                <key>Content</key><string>Apple_APFS</string>
+            </dict></array>
+        </dict>
+        <dict><key>DeviceIdentifier</key><string>disk3</string></dict>
+        <dict><key>DeviceIdentifier</key><string>disk4</string></dict>
+        <dict><key>DeviceIdentifier</key><string>disk5</string></dict>
+    </array>
+</dict></plist>

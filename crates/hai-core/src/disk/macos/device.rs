@@ -1,8 +1,12 @@
 //! macOS block device enumeration via `diskutil`.
 
-use super::super::*;
-use crate::error::Error;
+use crate::disk::macos_safety::{self, DiskInfo as DiskUtilInfo};
+use crate::disk::mentions_sd_card;
+use crate::error::{Error, Result};
+use crate::types::{BlockDevice, DeviceType};
 use serde::Deserialize;
+use std::collections::HashSet;
+use std::path::Path;
 use std::process::Command;
 
 #[derive(Debug, Deserialize)]
@@ -31,31 +35,49 @@ struct PartitionEntry {
     _size: u64,
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct DiskUtilInfo {
-    #[serde(rename = "Ejectable", default)]
-    pub(super) ejectable: bool,
-    #[serde(rename = "Removable", default)]
-    pub(super) removable: bool,
-    #[serde(rename = "RemovableMedia", default)]
-    pub(super) removable_media: bool,
-    #[serde(rename = "SolidState", default)]
-    pub(super) solid_state: bool,
-    #[serde(rename = "MediaName", default)]
-    pub(super) media_name: Option<String>,
-    #[serde(rename = "IORegistryEntryName", default)]
-    pub(super) io_registry_entry_name: Option<String>,
-    #[serde(rename = "DeviceNode", default)]
-    pub(super) device_node: Option<String>,
-    #[serde(rename = "Size", default)]
-    pub(super) size: u64,
-    #[serde(rename = "BusProtocol", default)]
-    pub(super) bus_protocol: Option<String>,
-    #[serde(rename = "MediaType", default)]
-    pub(super) media_type: Option<String>,
+fn disk_info(device: &str) -> Result<DiskUtilInfo> {
+    let output = Command::new("diskutil")
+        .args(["info", "-plist", device])
+        .output()?;
+    if !output.status.success() {
+        return Err(Error::DeviceNotFound(format!(
+            "Cannot inspect {device}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+    plist::from_bytes(&output.stdout).map_err(|e| Error::InvalidConfig(e.to_string()))
+}
+
+fn system_disks() -> Result<HashSet<String>> {
+    let mut mounts = vec!["/"];
+    if Path::new("/System/Volumes/Data").try_exists()? {
+        mounts.push("/System/Volumes/Data");
+    }
+    macos_safety::system_disks(&mounts, disk_info)
+}
+
+/// This gate also runs in the writer, before unmounting or requesting access.
+pub(super) fn validate_flash_target(device_id: &str) -> Result<()> {
+    let disk_id = device_id.strip_prefix("/dev/disk").ok_or_else(|| {
+        Error::PermissionDenied("The flash target must be a whole /dev/diskN device".into())
+    })?;
+    if disk_id.is_empty() || !disk_id.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(Error::PermissionDenied(
+            "The flash target must be a whole /dev/diskN device".into(),
+        ));
+    }
+    let system_disks = system_disks()?;
+    let disk: DiskUtilInfo = disk_info(device_id)?;
+    if device_id != format!("/dev/{}", disk.device_identifier) {
+        return Err(Error::PermissionDenied(
+            "diskutil returned an inconsistent identity for the flash target".into(),
+        ));
+    }
+    disk.validate_target(&system_disks)
 }
 
 pub async fn list_devices() -> Result<Vec<BlockDevice>> {
+    let system_disks = system_disks()?;
     // Get list of all disks using diskutil
     let output = Command::new("diskutil")
         .args(["list", "-plist"])
@@ -72,29 +94,25 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
     let disk_list: DiskUtilList =
         plist::from_bytes(&output.stdout).map_err(|e| Error::InvalidConfig(e.to_string()))?;
 
+    Ok(devices_from_list(disk_list, &system_disks, disk_info))
+}
+
+fn devices_from_list(
+    disk_list: DiskUtilList,
+    system_disks: &HashSet<String>,
+    mut info: impl FnMut(&str) -> Result<DiskUtilInfo>,
+) -> Vec<BlockDevice> {
     let mut devices = Vec::new();
 
     // Get detailed info for each whole disk (not partitions)
     for disk in disk_list.all_disks_and_partitions {
-        // Skip synthesized disks (APFS containers, etc.)
-        if disk.device_identifier.starts_with("synthesized") {
-            continue;
-        }
-
-        // Get detailed disk info
-        let info_output = Command::new("diskutil")
-            .args(["info", "-plist", &disk.device_identifier])
-            .output()
-            .map_err(Error::Io)?;
-
-        if !info_output.status.success() {
-            continue;
-        }
-
-        let disk_info: DiskUtilInfo = match plist::from_bytes(&info_output.stdout) {
+        let disk_info = match info(&disk.device_identifier) {
             Ok(info) => info,
             Err(_) => continue,
         };
+        if disk_info.validate_target(system_disks).is_err() {
+            continue;
+        }
 
         // `Internal` is deliberately not consulted: a built-in SD slot is
         // internal yet holds removable media, and external USB SSDs report
@@ -129,7 +147,7 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
         });
     }
 
-    Ok(devices)
+    devices
 }
 
 pub(super) fn determine_device_type(info: &DiskUtilInfo) -> DeviceType {
@@ -213,8 +231,61 @@ pub(crate) fn parse_media_name(name: &str) -> (Option<String>, Option<String>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{determine_device_type, parse_media_name, DiskUtilInfo};
+    use super::{
+        determine_device_type, devices_from_list, parse_media_name, validate_flash_target,
+        DiskUtilInfo, DiskUtilList,
+    };
     use crate::types::DeviceType;
+    use std::collections::HashSet;
+
+    #[test]
+    fn enumeration_filters_virtual_and_system_disks_with_the_backend_gate() {
+        for system_disks in [HashSet::new(), HashSet::from(["disk2".into()])] {
+            let list: DiskUtilList =
+                plist::from_bytes(include_bytes!("fixtures/list.plist")).unwrap();
+            let devices = devices_from_list(list, &system_disks, |device| {
+                let xml = match device {
+                    "disk2" => include_str!("fixtures/usb-disk.plist"),
+                    "disk3" => include_str!("fixtures/apfs-container.plist"),
+                    "disk4" => include_str!("fixtures/disk-image.plist"),
+                    "disk5" => return Err(crate::error::Error::DeviceNotFound(device.into())),
+                    _ => panic!("unexpected device {device}"),
+                };
+                Ok(plist::from_bytes(xml.as_bytes()).unwrap())
+            });
+            if system_disks.is_empty() {
+                assert_eq!(devices.len(), 1);
+                assert_eq!(devices[0].id, "/dev/disk2");
+            } else {
+                assert!(devices.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn parses_safety_and_display_metadata_from_the_same_plist() {
+        let details: DiskUtilInfo =
+            plist::from_bytes(include_bytes!("fixtures/usb-disk.plist")).unwrap();
+        assert_eq!(details.device_identifier, "disk2");
+        assert_eq!(details.device_node.as_deref(), Some("/dev/disk2"));
+        assert_eq!(details.size, 500_000_000_000);
+        assert!(details.ejectable);
+        assert!(details.validate_target(&Default::default()).is_ok());
+    }
+
+    #[test]
+    fn rejects_non_whole_disk_paths_before_inspecting_or_unmounting() {
+        for path in [
+            "disk2",
+            "/dev/rdisk2",
+            "/dev/disk2s2",
+            "/dev/disk",
+            "/tmp/disk2",
+        ] {
+            let error = validate_flash_target(path).unwrap_err();
+            assert!(error.to_string().contains("whole /dev/diskN"));
+        }
+    }
 
     #[test]
     fn test_parse_media_name_with_vendor() {
@@ -257,6 +328,7 @@ mod tests {
             size: 32_000_000_000,
             bus_protocol: Some("USB".to_string()),
             media_type: Some("SD Card".to_string()),
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::SdCard);
     }
@@ -274,6 +346,7 @@ mod tests {
             size: 32_000_000_000,
             bus_protocol: None,
             media_type: None,
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::SdCard);
     }
@@ -291,6 +364,7 @@ mod tests {
             size: 64_000_000_000,
             bus_protocol: Some("USB".to_string()),
             media_type: None,
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::UsbDrive);
     }
@@ -309,6 +383,7 @@ mod tests {
             size: 500_000_000_000,
             bus_protocol: Some("USB".to_string()),
             media_type: Some("SSD".to_string()),
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::UsbDrive);
     }
@@ -326,6 +401,7 @@ mod tests {
             size: 128_000_000_000,
             bus_protocol: Some("USB".to_string()),
             media_type: Some("SDXC".to_string()),
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::SdCard);
     }
@@ -343,6 +419,7 @@ mod tests {
             size: 500_000_000_000,
             bus_protocol: Some("PCI-Express".to_string()),
             media_type: None,
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::Nvme);
     }
@@ -360,6 +437,7 @@ mod tests {
             size: 500_000_000_000,
             bus_protocol: Some("PCI".to_string()),
             media_type: None,
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::Ssd);
     }
@@ -377,6 +455,7 @@ mod tests {
             size: 256_000_000_000,
             bus_protocol: Some("SATA".to_string()),
             media_type: None,
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::Ssd);
     }
@@ -394,6 +473,7 @@ mod tests {
             size: 1_000_000_000_000,
             bus_protocol: Some("SATA".to_string()),
             media_type: None,
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::Hdd);
     }
@@ -411,6 +491,7 @@ mod tests {
             size: 128_000_000_000,
             bus_protocol: Some("Unknown".to_string()),
             media_type: None,
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::Ssd);
     }
@@ -428,6 +509,7 @@ mod tests {
             size: 128_000_000_000,
             bus_protocol: None,
             media_type: None,
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::Unknown);
     }
@@ -504,6 +586,7 @@ mod tests {
             size: 32_000_000_000,
             bus_protocol: None,
             media_type: None,
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::Unknown);
     }
@@ -521,6 +604,7 @@ mod tests {
             size: 32_000_000_000,
             bus_protocol: Some("".to_string()),
             media_type: None,
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::Unknown);
     }
@@ -538,6 +622,7 @@ mod tests {
             size: 32_000_000_000,
             bus_protocol: None,
             media_type: Some("sd".to_string()),
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::SdCard);
     }
@@ -555,6 +640,7 @@ mod tests {
             size: 32_000_000_000,
             bus_protocol: None,
             media_type: None,
+            ..Default::default()
         };
         assert_eq!(determine_device_type(&info), DeviceType::SdCard);
     }

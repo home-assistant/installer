@@ -101,12 +101,6 @@ export class DriveCard extends WaRadio {
         margin: 0;
       }
 
-      .description {
-        font-size: 0.75rem;
-        color: var(--wa-color-text-quiet);
-        margin: 0.25rem 0 0 0;
-      }
-
       .size {
         font-size: 1rem;
         font-weight: 500;
@@ -163,9 +157,6 @@ export class DriveCard extends WaRadio {
               ? this.disabledReason
               : this._getDetails()}
           </p>
-          ${!this.disabled
-            ? html`<p class="description">${this._getDescription()}</p>`
-            : nothing}
         </div>
         <span class="size">${this._formatSize(this.driveSize)}</span>
         ${this.checked
@@ -183,23 +174,6 @@ export class DriveCard extends WaRadio {
       parts.push(this._getTypeLabel());
     }
     return parts.join(" ");
-  }
-
-  private _getDescription(): string {
-    switch (this.deviceType) {
-      case "sd_card":
-        return "Great for Raspberry Pi and similar single-board computers";
-      case "usb_drive":
-        return "Portable and easy to set up";
-      case "ssd":
-        return "Fast and reliable for daily use";
-      case "hdd":
-        return "High capacity storage option";
-      case "nvme":
-        return "Maximum performance storage";
-      default:
-        return "External storage device";
-    }
   }
 
   private _getTypeLabel(): string {

@@ -39,9 +39,7 @@ describe("welcome-view", () => {
   it("dispatches navigate event when Let's go is clicked", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
-    const button = el.shadowRoot!.querySelector(
-      "wa-button"
-    ) as HTMLButtonElement;
+    const button = el.shadowRoot!.querySelector("wa-button")!;
 
     setTimeout(() => button.click());
     const event = await oneEvent(el, "navigate");

@@ -341,7 +341,7 @@ export class ProgressView extends LitElement {
     this._progress = null;
     this._stageStartTime = null;
     this._stageStartBytes = 0;
-    this._startFlashing();
+    void this._startFlashing();
   }
 
   private _unsubscribe?: () => void;
@@ -353,7 +353,7 @@ export class ProgressView extends LitElement {
     });
 
     // Start flashing when view is connected
-    this._startFlashing();
+    void this._startFlashing();
   }
 
   disconnectedCallback() {
@@ -369,13 +369,11 @@ export class ProgressView extends LitElement {
 
     const selections = this._wizardState.selections;
     const drive = readDriveSelection(selections);
-    const deviceConfig = selections.deviceConfig as
-      | { board: string }
-      | undefined;
+    const deviceConfig = selections.deviceConfig;
 
     if (!drive || !deviceConfig) {
-      this._error = "Missing drive or device configuration";
       this._isFlashing = false;
+      this._setError("Missing drive or device configuration");
       return;
     }
 

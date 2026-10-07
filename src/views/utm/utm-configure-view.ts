@@ -226,7 +226,7 @@ export class UtmConfigureView extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this._restoreSelections();
-    this._loadSystemInfo();
+    void this._loadSystemInfo();
   }
 
   /**
