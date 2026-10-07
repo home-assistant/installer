@@ -393,6 +393,7 @@ jobs:
           codesign --display --verbose=2 "${app[0]}"
           xcrun stapler validate "${app[0]}"
           spctl --assess --type execute --verbose=2 "${app[0]}"
+          codesign --verify --strict --verbose=2 "${dmg[0]}"
           xcrun stapler validate "${dmg[0]}"
           spctl --assess --type open --context context:primary-signature --verbose=2 "${dmg[0]}"
 
