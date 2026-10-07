@@ -3,7 +3,7 @@
 //! Used by the VM flows to size a new VM and to poll a freshly started
 //! Home Assistant instance.
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::types::SystemInfo;
 use crate::{Backend, HostBackend};
 use std::time::Duration;
@@ -38,7 +38,7 @@ fn system_info() -> Result<SystemInfo> {
 
     #[cfg(not(target_os = "macos"))]
     {
-        Err(Error::UnsupportedPlatform(
+        Err(crate::error::Error::UnsupportedPlatform(
             "Host system info is only implemented on macOS".to_string(),
         ))
     }
