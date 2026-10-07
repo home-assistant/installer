@@ -7,7 +7,7 @@
 use crate::error::{Error, Result};
 use crate::types::{BlockDevice, DeviceType, FlashProgress, FlashStage};
 use crate::{Backend, DeviceBackend, ProgressCallback};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[cfg(target_os = "linux")]
 #[path = "disk/linux/mod.rs"]
@@ -111,14 +111,7 @@ async fn write_image<P: ProgressCallback>(
 ) -> Result<()> {
     std::fs::metadata(image_path)?;
 
-    // Platform writers move an owned copy of the path into a blocking task.
-    imp::write_image(
-        &image_path.to_path_buf(),
-        device_id,
-        verify,
-        progress_callback,
-    )
-    .await
+    imp::write_image(image_path, device_id, verify, progress_callback).await
 }
 
 impl DeviceBackend for Backend {
@@ -245,9 +238,8 @@ mod tests {
     async fn test_write_image_nonexistent_image() {
         // The image metadata check runs before any platform code, so a
         // missing image surfaces as Io and the device id is never touched.
-        let image_path = PathBuf::from("/nonexistent/image/file.img");
-        let result =
-            write_image(&image_path, "unused-device-id", false, &crate::NoOpProgress).await;
+        let image_path = Path::new("/nonexistent/image/file.img");
+        let result = write_image(image_path, "unused-device-id", false, &crate::NoOpProgress).await;
         assert!(matches!(result.unwrap_err(), Error::Io(_)));
     }
 }

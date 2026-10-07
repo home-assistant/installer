@@ -69,7 +69,7 @@ enum Handshake {
 }
 
 pub async fn write_image<P: ProgressCallback>(
-    image_path: &PathBuf,
+    image_path: &Path,
     device_id: &str,
     verify: bool,
     progress_callback: &P,
@@ -98,7 +98,7 @@ pub async fn write_image<P: ProgressCallback>(
     let (progress_tx, progress_rx) = mpsc::channel::<FlashProgress>();
 
     // Perform write and optional verify in a blocking task
-    let image_path_clone = image_path.clone();
+    let image_path_clone = image_path.to_path_buf();
     let raw_device_clone = raw_device.clone();
     let disk_id_clone = disk_id.to_string();
 

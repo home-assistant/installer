@@ -11,7 +11,7 @@ use zbus::zvariant::{OwnedFd, OwnedObjectPath, Value};
 use zbus::Connection;
 
 pub async fn write_image<P: ProgressCallback>(
-    image_path: &PathBuf,
+    image_path: &Path,
     device_id: &str,
     verify: bool,
     progress_callback: &P,
@@ -37,7 +37,7 @@ pub async fn write_image<P: ProgressCallback>(
     // Send progress updates from the blocking task through a channel.
     let (progress_tx, progress_rx) = mpsc::channel::<FlashProgress>();
 
-    let image_path_clone = image_path.clone();
+    let image_path_clone = image_path.to_path_buf();
 
     let write_handle = tokio::task::spawn_blocking(move || {
         write_and_verify(&image_path_clone, device, image_size, verify, progress_tx)
@@ -65,7 +65,7 @@ pub async fn write_image<P: ProgressCallback>(
 }
 
 fn write_and_verify(
-    image_path: &PathBuf,
+    image_path: &Path,
     mut device: File,
     total_size: u64,
     verify: bool,
@@ -101,7 +101,7 @@ fn write_and_verify(
 }
 
 fn write_to_device(
-    image_path: &PathBuf,
+    image_path: &Path,
     dest: &mut File,
     total_size: u64,
     progress_tx: &mpsc::Sender<FlashProgress>,
@@ -160,7 +160,7 @@ fn write_to_device(
 }
 
 fn verify_write(
-    image_path: &PathBuf,
+    image_path: &Path,
     dest: &mut File,
     total_size: u64,
     progress_tx: &mpsc::Sender<FlashProgress>,
@@ -468,13 +468,7 @@ mod tests {
 
         let mut dest = tempfile::tempfile().unwrap();
         let (tx, rx) = mpsc::channel();
-        write_to_device(
-            &image.path().to_path_buf(),
-            &mut dest,
-            data.len() as u64,
-            &tx,
-        )
-        .unwrap();
+        write_to_device(image.path(), &mut dest, data.len() as u64, &tx).unwrap();
 
         dest.seek(SeekFrom::Start(0)).unwrap();
         let mut written = Vec::new();
@@ -496,7 +490,7 @@ mod tests {
         dest.seek(SeekFrom::Start(0)).unwrap();
 
         let (tx, _rx) = mpsc::channel();
-        let result = verify_write(&image.path().to_path_buf(), &mut dest, 13, &tx);
+        let result = verify_write(image.path(), &mut dest, 13, &tx);
         assert!(matches!(result, Err(Error::VerificationFailed(_))));
     }
 
@@ -508,14 +502,7 @@ mod tests {
 
         let device = tempfile::tempfile().unwrap();
         let (tx, rx) = mpsc::channel();
-        write_and_verify(
-            &image.path().to_path_buf(),
-            device,
-            data.len() as u64,
-            true,
-            tx,
-        )
-        .unwrap();
+        write_and_verify(image.path(), device, data.len() as u64, true, tx).unwrap();
 
         let stages: Vec<FlashStage> = rx.try_iter().map(|u| u.stage).collect();
         assert!(stages.contains(&FlashStage::Writing));

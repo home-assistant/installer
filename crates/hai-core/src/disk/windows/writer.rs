@@ -7,7 +7,7 @@ use std::process::Command;
 use std::sync::mpsc;
 
 pub async fn write_image<P: ProgressCallback>(
-    image_path: &PathBuf,
+    image_path: &Path,
     device_id: &str,
     verify: bool,
     progress_callback: &P,
@@ -32,7 +32,7 @@ pub async fn write_image<P: ProgressCallback>(
     // Send progress updates from the blocking task through a channel.
     let (progress_tx, progress_rx) = mpsc::channel::<FlashProgress>();
 
-    let image_path_clone = image_path.clone();
+    let image_path_clone = image_path.to_path_buf();
     let device_id_clone = device_id.to_string();
 
     let write_handle = tokio::task::spawn_blocking(move || {
@@ -65,7 +65,7 @@ pub async fn write_image<P: ProgressCallback>(
 }
 
 fn write_and_verify(
-    image_path: &PathBuf,
+    image_path: &Path,
     device_path: &str,
     total_size: u64,
     verify: bool,
@@ -110,7 +110,7 @@ fn open_device_for_write(device_path: &str) -> Result<File> {
 }
 
 fn write_to_device(
-    image_path: &PathBuf,
+    image_path: &Path,
     device_path: &str,
     total_size: u64,
     progress_tx: &mpsc::Sender<FlashProgress>,
@@ -171,7 +171,7 @@ fn write_to_device(
 }
 
 fn verify_write(
-    image_path: &PathBuf,
+    image_path: &Path,
     device_path: &str,
     total_size: u64,
     progress_tx: &mpsc::Sender<FlashProgress>,
