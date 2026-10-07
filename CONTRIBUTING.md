@@ -28,6 +28,9 @@ npm run tauri dev
 ### Running Tests
 
 ```bash
+# Type-check source and tests
+npm run typecheck
+
 # All tests
 npm test
 

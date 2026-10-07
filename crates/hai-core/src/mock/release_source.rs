@@ -96,6 +96,10 @@ impl ReleaseSource for BackendMock {
         Ok(mock_haos_release())
     }
 
+    async fn get_latest_haos_release_for_board(&self, _board: &str) -> Result<HaosRelease> {
+        Ok(mock_haos_release())
+    }
+
     async fn download_image<P: ProgressCallback>(
         &self,
         _url: &str,

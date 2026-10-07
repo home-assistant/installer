@@ -5,7 +5,9 @@
 //! images to them.
 
 use crate::error::{Error, Result};
-use crate::types::{BlockDevice, DeviceType, FlashProgress, FlashStage};
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+use crate::types::DeviceType;
+use crate::types::{BlockDevice, FlashProgress, FlashStage};
 use crate::{Backend, DeviceBackend, ProgressCallback};
 use std::path::Path;
 
@@ -26,6 +28,15 @@ mod imp;
 #[path = "disk/macos/logic.rs"]
 mod macos_logic;
 
+#[cfg(any(target_os = "macos", test))]
+#[path = "disk/macos/safety.rs"]
+mod macos_safety;
+
+#[cfg(all(test, not(target_os = "macos")))]
+#[allow(dead_code)]
+#[path = "disk/macos/device.rs"]
+mod macos_device_tests;
+
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 compile_error!("hai-core supports only Linux, macOS and Windows");
 
@@ -44,7 +55,7 @@ const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
 /// Whether a media type/model string refers to an SD card. Matches "SD" as
 /// its own word (plus SDHC/SDXC/microSD variants) so names like "Samsung
 /// Portable SSD" don't count.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 fn mentions_sd_card(s: &str) -> bool {
     let s = s.to_lowercase();
     s.split(|c: char| !c.is_ascii_alphanumeric()).any(|token| {

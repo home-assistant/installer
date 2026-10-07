@@ -141,7 +141,7 @@ export class UtmConfirmView extends LitElement {
     this._unsubscribe = wizardState.subscribe((state) => {
       this._wizardState = state;
     });
-    this._loadInfo();
+    void this._loadInfo();
   }
 
   private async _loadInfo() {

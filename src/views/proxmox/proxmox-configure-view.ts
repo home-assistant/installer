@@ -320,7 +320,7 @@ export class ProxmoxConfigureView extends LitElement {
       this._wizardState = state;
     });
     this._restoreSelections();
-    this._loadNodes();
+    void this._loadNodes();
   }
 
   /**

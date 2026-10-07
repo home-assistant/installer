@@ -52,6 +52,9 @@ pub trait ReleaseSource {
     /// Fetch a HAOS release by version, or the latest when `version == "latest"`.
     async fn get_haos_release(&self, version: &str) -> Result<HaosRelease>;
 
+    /// Fetch the release stable.json currently lists for `board`.
+    async fn get_latest_haos_release_for_board(&self, board: &str) -> Result<HaosRelease>;
+
     /// Download an image to `dest_path`, reporting progress.
     async fn download_image<P: ProgressCallback>(
         &self,

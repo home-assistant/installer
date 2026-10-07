@@ -130,15 +130,12 @@ export class WelcomeView extends LitElement {
 
       <div class="welcome-text">
         <p>
-          Welcome to the exciting start of your local and
-          <span style="white-space: nowrap">privacy-first</span><br />home
-          automation journey.
+          Welcome to Home Assistant, a local and privacy-first home automation
+          platform.
         </p>
         <p>
-          This application will help you get Home Assistant installed<br />on
-          the hardware of your choice in just a few steps, ensuring your smart
-          home adventure has a smooth and
-          <span style="white-space: nowrap">worry-free</span> start 🚀
+          This installer guides you through setting up Home Assistant on your
+          hardware.
         </p>
       </div>
 
@@ -163,7 +160,7 @@ export class WelcomeView extends LitElement {
             "https://www.home-assistant.io/installation/"
           )}
       >
-        I want to learn more first...
+        Learn more about installing Home Assistant
       </a>
 
       <a

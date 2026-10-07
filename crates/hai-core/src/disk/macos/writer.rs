@@ -74,6 +74,8 @@ pub async fn write_image<P: ProgressCallback>(
     verify: bool,
     progress_callback: &P,
 ) -> Result<()> {
+    super::device::validate_flash_target(device_id)?;
+
     // Extract disk identifier from device path
     let disk_id = device_id.strip_prefix("/dev/").unwrap_or(device_id);
 
@@ -561,11 +563,11 @@ mod tests {
         std::fs::write(temp_file.path(), b"test data").unwrap();
         let image_path = temp_file.path().to_path_buf();
 
-        // Fails at unmount_disk: the device does not exist.
+        // Rejected by the safety gate before any unmount or authorization.
         let device_id = "/dev/nonexistent_disk999";
 
         let result = write_image(&image_path, device_id, false, &crate::NoOpProgress).await;
-        assert!(result.is_err());
+        assert!(matches!(result, Err(Error::PermissionDenied(_))));
     }
 
     #[test]
@@ -1003,6 +1005,13 @@ mod tests {
         let image = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(image.path(), &data).unwrap();
         image
+    }
+
+    #[test]
+    fn disk_images_are_rejected_by_the_flash_target_gate() {
+        let Some(ram) = RamDisk::attach() else { return };
+        let error = super::super::device::validate_flash_target(&ram.device).unwrap_err();
+        assert!(error.to_string().contains("not a physical whole disk"));
     }
 
     #[test]

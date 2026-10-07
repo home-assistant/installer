@@ -392,7 +392,7 @@ export class ProxmoxProgressView extends LitElement {
     this._progress = 0;
     this._stageStartTime = null;
     this._stageStartBytes = 0;
-    this._startInstall();
+    void this._startInstall();
   }
 
   connectedCallback() {
@@ -401,7 +401,7 @@ export class ProxmoxProgressView extends LitElement {
       this._wizardState = state;
     });
 
-    this._startInstall();
+    void this._startInstall();
   }
 
   disconnectedCallback() {

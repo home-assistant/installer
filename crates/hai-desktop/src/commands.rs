@@ -129,9 +129,9 @@ where
         message: "Fetching release info...".to_string(),
     });
 
-    // Fetch the latest HAOS release
+    // Fetch the release this board is on
     let release = backend
-        .get_haos_release("latest")
+        .get_latest_haos_release_for_board(&request.board)
         .await
         .map_err(|e| format!("Failed to fetch release info: {}", e))?;
 
@@ -315,7 +315,7 @@ where
     });
 
     let release = backend
-        .get_haos_release("latest")
+        .get_latest_haos_release_for_board(arch)
         .await
         .map_err(|e| format!("Failed to fetch release: {}", e))?;
 

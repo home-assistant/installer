@@ -341,7 +341,7 @@ export class ProgressView extends LitElement {
     this._progress = null;
     this._stageStartTime = null;
     this._stageStartBytes = 0;
-    this._startFlashing();
+    void this._startFlashing();
   }
 
   private _unsubscribe?: () => void;
@@ -353,7 +353,7 @@ export class ProgressView extends LitElement {
     });
 
     // Start flashing when view is connected
-    this._startFlashing();
+    void this._startFlashing();
   }
 
   disconnectedCallback() {

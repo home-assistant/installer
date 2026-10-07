@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>DeviceIdentifier</key><string>disk3</string>
+    <key>WholeDisk</key><true/>
+    <key>ParentWholeDisk</key><string>disk3</string>
+    <key>VirtualOrPhysical</key><string>Virtual</string>
+    <key>BusProtocol</key><string>USB</string>
+    <key>APFSContainerReference</key><string>disk3</string>
+    <key>APFSPhysicalStores</key><array><dict>
+        <key>APFSPhysicalStore</key><string>disk2s2</string>
+    </dict></array>
+    <key>Removable</key><false/>
+    <key>Ejectable</key><true/>
+</dict></plist>

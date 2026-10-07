@@ -54,9 +54,7 @@ describe("path-selection-view", () => {
       html`<path-selection-view></path-selection-view>`
     );
 
-    const backButton = el.shadowRoot!.querySelector(
-      "wa-button"
-    ) as HTMLButtonElement;
+    const backButton = el.shadowRoot!.querySelector("wa-button")!;
 
     setTimeout(() => backButton.click());
     const event = await oneEvent(el, "navigate");

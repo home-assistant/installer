@@ -1,6 +1,6 @@
 import { LitElement, html, css } from "lit";
 import { customElement } from "lit/decorators.js";
-import { openExternalUrl } from "../utils/external-url.js";
+import { openExternalLink, openExternalUrl } from "../utils/external-url.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 
 interface OtherOption {
@@ -13,7 +13,8 @@ interface OtherOption {
 const OTHER_OPTIONS: OtherOption[] = [
   {
     title: "Docker container",
-    description: "Run Home Assistant container",
+    description:
+      "Run Home Assistant Container without apps (add-ons) or the Supervisor",
     url: "https://www.home-assistant.io/installation/linux#docker-compose",
     icon: "docker",
   },
@@ -92,6 +93,10 @@ export class OtherOptionsView extends LitElement {
       gap: 1rem;
       max-width: 600px;
       width: 100%;
+    }
+
+    .subtitle a {
+      color: var(--ha-primary-color, #03a9f4);
     }
 
     .option-item {
@@ -187,6 +192,17 @@ export class OtherOptionsView extends LitElement {
         <p class="subtitle">
           These options are not directly supported by this installer, but you
           can follow our documentation to set them up.
+          <a
+            href="https://www.home-assistant.io/installation/#about-installation-types"
+            target="_blank"
+            rel="noopener noreferrer"
+            @click=${(event: Event) =>
+              openExternalLink(
+                event,
+                "https://www.home-assistant.io/installation/#about-installation-types"
+              )}
+            >Compare installation types</a
+          >.
         </p>
 
         <div class="options-list">

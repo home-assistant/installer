@@ -167,7 +167,7 @@ export class ConfirmationView extends LitElement {
     this._unsubscribe = wizardState.subscribe((state) => {
       this._wizardState = state;
     });
-    this._loadHaosVersion();
+    void this._loadHaosVersion();
   }
 
   private async _loadHaosVersion() {
