@@ -382,7 +382,8 @@ pub fn resize_utm_vm_disk(vm_id: String, size_gb: u32) -> Result<(), String> {
 /// Get the status of a UTM VM
 #[tauri::command]
 pub fn get_utm_vm_status(vm_id: String) -> Result<VmStatusInfo, String> {
-    Backend.vm_status(&vm_id).map_err(|e| e.to_string())
+    // Fully qualified: `vm_status` is defined on both UtmBackend and ProxmoxBackend.
+    UtmBackend::vm_status(&Backend, &vm_id).map_err(|e| e.to_string())
 }
 
 // =============================================================================
@@ -454,6 +455,19 @@ pub async fn proxmox_create_vm(
     let callback = TauriProgressCallback::new(&progress_channel);
     // Fully qualified: `create_vm` is defined on both ProxmoxBackend and UtmBackend.
     ProxmoxBackend::create_vm(&Backend, &session, &config, &callback)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get the status of a Proxmox VM
+#[tauri::command]
+pub async fn proxmox_get_vm_status(
+    session: ProxmoxSession,
+    node: String,
+    vm_id: u32,
+) -> Result<VmStatusInfo, String> {
+    // Fully qualified: `vm_status` is defined on both ProxmoxBackend and UtmBackend.
+    ProxmoxBackend::vm_status(&Backend, &session, &node, vm_id)
         .await
         .map_err(|e| e.to_string())
 }

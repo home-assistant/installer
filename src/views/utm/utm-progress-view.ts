@@ -17,13 +17,12 @@ import {
   DEFAULT_MEMORY_MB,
   DEFAULT_UTM_VM_NAME,
 } from "../../state/vm-defaults.js";
+import { isCancelled, throwIfCancelled } from "../../utils/polling.js";
 import {
-  PollTimeoutError,
-  isCancelled,
-  pollUntil,
-  throwIfCancelled,
-} from "../../utils/polling.js";
-import { waitForHaReady, waitForHaUpdated } from "../../utils/wait-for-ha.js";
+  waitForHaReady,
+  waitForHaUpdated,
+  waitForVmIp,
+} from "../../utils/wait-for-vm.js";
 import "../../components/progress-bar.js";
 
 type InstallStage =
@@ -49,12 +48,6 @@ const INDETERMINATE_STAGES: InstallStage[] = [
   "ready",
   "updating",
 ];
-
-/** Delay between polls while waiting for the VM's IP address */
-const POLL_INTERVAL_MS = 2000;
-
-/** How long to wait for the VM to report an IP address */
-const VM_IP_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** VM statuses that mean the VM does not need to be started again */
 const RUNNING_VM_STATUSES = ["started", "running"];
@@ -483,23 +476,23 @@ export class UtmProgressView extends LitElement {
       // Wait for the VM to get an IP address. Asked again on a retry rather
       // than reusing the last one: a restarted VM can get a new DHCP lease.
       this._startStage("waiting");
-      const ipAddress = await this._waitForVmIp(vmId, signal);
+      const ipAddress = await waitForVmIp(
+        async () => (await getUtmVmStatus(vmId)).ip_address,
+        "UTM",
+        signal
+      );
       throwIfCancelled(signal);
-      // Cleared when none was found, so the success view does not link to an
-      // address from an earlier attempt
-      wizardState.setSelection("ipAddress", ipAddress ?? undefined);
+      wizardState.setSelection("ipAddress", ipAddress);
 
-      if (ipAddress) {
-        // Wait for the Home Assistant webserver to be ready
-        this._startStage("ready");
-        await waitForHaReady(ipAddress, "UTM", signal);
-        throwIfCancelled(signal);
+      // Wait for the Home Assistant webserver to be ready
+      this._startStage("ready");
+      await waitForHaReady(ipAddress, "UTM", signal);
+      throwIfCancelled(signal);
 
-        // Wait for Home Assistant to finish updating
-        this._startStage("updating");
-        await waitForHaUpdated(ipAddress, signal);
-        throwIfCancelled(signal);
-      }
+      // Wait for Home Assistant to finish updating
+      this._startStage("updating");
+      await waitForHaUpdated(ipAddress, signal);
+      throwIfCancelled(signal);
 
       // Complete
       this._stage = "complete";
@@ -802,36 +795,6 @@ export class UtmProgressView extends LitElement {
         return "Installation complete!";
       default:
         return "Installing Home Assistant";
-    }
-  }
-
-  /**
-   * Wait for the VM to get an IP address, polling every 2 seconds for up to
-   * 5 minutes.
-   *
-   * A timeout here is not fatal: the VM is up either way and the success view
-   * falls back to homeassistant.local. Without an address there is nothing to
-   * poll Home Assistant on, so the caller skips the checks below.
-   */
-  private async _waitForVmIp(
-    vmId: string,
-    signal: AbortSignal
-  ): Promise<string | null> {
-    try {
-      return await pollUntil(
-        async () => (await getUtmVmStatus(vmId)).ip_address,
-        {
-          interval: POLL_INTERVAL_MS,
-          timeout: VM_IP_TIMEOUT_MS,
-          signal,
-          timeoutMessage: "The virtual machine did not report an IP address",
-        }
-      );
-    } catch (error) {
-      if (error instanceof PollTimeoutError) {
-        return null;
-      }
-      throw error;
     }
   }
 

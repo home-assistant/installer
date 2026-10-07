@@ -21,8 +21,8 @@ function abortSignalOf(el: ProxmoxProgressView): AbortSignal | undefined {
 
 /**
  * Hold `proxmox_create_vm` open until the test resolves it, instead of
- * running the multi-second browser-only simulation. Home Assistant answers
- * every readiness check at once.
+ * running the multi-second browser-only simulation. The VM reports its
+ * address and Home Assistant answers every readiness check at once.
  */
 function mockCreateVm() {
   const called = deferred<void>();
@@ -32,6 +32,8 @@ function mockCreateVm() {
       case "proxmox_create_vm":
         called.resolve();
         return result.promise;
+      case "proxmox_get_vm_status":
+        return { status: "running", ip_address: "192.168.1.50" };
       case "check_ha_ready":
       case "check_ha_updated":
         return true;
@@ -97,11 +99,7 @@ describe("proxmox-progress-view", () => {
     // Detach while the backend call is in flight, then let it succeed
     await createVm.called;
     el.remove();
-    createVm.resolve({
-      vm_id: 100,
-      node: "pve",
-      ip_address: "192.168.1.50",
-    });
+    createVm.resolve({ vm_id: 100, node: "pve" });
     await settle();
 
     expect(completed, "install-complete fired after detach").to.be.false;
@@ -120,11 +118,7 @@ describe("proxmox-progress-view", () => {
     });
 
     await createVm.called;
-    createVm.resolve({
-      vm_id: 100,
-      node: "pve",
-      ip_address: "192.168.1.50",
-    });
+    createVm.resolve({ vm_id: 100, node: "pve" });
     await settle();
 
     // The same harness does observe the result while attached, so the
@@ -141,7 +135,9 @@ describe("proxmox-progress-view", () => {
     mockTauriIpc((cmd) => {
       switch (cmd) {
         case "proxmox_create_vm":
-          return { vm_id: 100, node: "pve", ip_address: "192.168.1.50" };
+          return { vm_id: 100, node: "pve" };
+        case "proxmox_get_vm_status":
+          return { status: "running", ip_address: "192.168.1.50" };
         case "check_ha_ready":
           checked.push(cmd);
           return haReady.promise;
@@ -172,14 +168,12 @@ describe("proxmox-progress-view", () => {
 
   it("resumes a retried install instead of creating a second VM", async () => {
     // What a failed attempt leaves behind once the VM exists
-    wizardState.setSelection("proxmoxVmResult", {
-      vm_id: 100,
-      node: "pve",
-      ip_address: "192.168.1.50",
-    });
+    wizardState.setSelection("proxmoxVmResult", { vm_id: 100, node: "pve" });
     // `proxmox_create_vm` is not handled, so calling it fails the install
     mockTauriIpc((cmd) => {
       switch (cmd) {
+        case "proxmox_get_vm_status":
+          return { status: "running", ip_address: "192.168.1.50" };
         case "check_ha_ready":
         case "check_ha_updated":
           return true;
@@ -194,6 +188,89 @@ describe("proxmox-progress-view", () => {
     expect(wizardState.getState().selections.ipAddress).to.equal(
       "192.168.1.50"
     );
+  });
+
+  it("asks the VM for its address again on a retry", async () => {
+    // A previous attempt found the VM at an address it no longer has
+    wizardState.setSelection("proxmoxVmResult", { vm_id: 100, node: "pve" });
+    wizardState.setSelection("ipAddress", "192.168.1.50");
+
+    const askedFor: unknown[] = [];
+    const checkedHosts: unknown[] = [];
+    mockTauriIpc((cmd, args) => {
+      switch (cmd) {
+        case "proxmox_get_vm_status":
+          askedFor.push(args);
+          return { status: "running", ip_address: "192.168.1.100" };
+        case "check_ha_ready":
+        case "check_ha_updated":
+          checkedHosts.push((args as { ipAddress: string }).ipAddress);
+          return true;
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+
+    const el = mount();
+    await oneEvent(el, "install-complete");
+
+    // Asked about the VM the first attempt created
+    expect(askedFor).to.have.length(1);
+    expect(askedFor[0]).to.include({ node: "pve", vmId: 100 });
+    expect(wizardState.getState().selections.ipAddress).to.equal(
+      "192.168.1.100"
+    );
+    expect(checkedHosts).to.not.include("192.168.1.50");
+  });
+
+  it("fails when the VM never reports an address, and recovers on retry", async () => {
+    // Jump the clock past the 5-minute deadline from inside the first check,
+    // instead of waiting it out
+    const realNow = Date.now;
+    let clockOffset = 0;
+    Date.now = () => realNow.call(Date) + clockOffset;
+
+    try {
+      const calls: string[] = [];
+      let ipAddress: string | null = null;
+      mockTauriIpc((cmd) => {
+        calls.push(cmd);
+        switch (cmd) {
+          case "proxmox_create_vm":
+            return { vm_id: 100, node: "pve" };
+          case "proxmox_get_vm_status":
+            if (!ipAddress) clockOffset += 6 * 60 * 1000;
+            return { status: "running", ip_address: ipAddress };
+          case "check_ha_ready":
+          case "check_ha_updated":
+            return true;
+        }
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+
+      const el = mount();
+      await oneEvent(el, "install-error");
+
+      expect(el.shadowRoot!.textContent).to.contain(
+        "did not report an IP address"
+      );
+      // Not reported as installed, and nothing to check Home Assistant on
+      expect(calls).to.not.include("check_ha_ready");
+      // The VM is kept, so a retry does not create a second one
+      expect(wizardState.getState().selections.proxmoxVmResult).to.exist;
+
+      // The VM comes up on the network, then the user retries
+      ipAddress = "192.168.1.100";
+      const completed = oneEvent(el, "install-complete");
+      el.retry();
+      await completed;
+
+      expect(calls.filter((c) => c === "proxmox_create_vm")).to.have.length(1);
+      expect(wizardState.getState().selections.ipAddress).to.equal(
+        "192.168.1.100"
+      );
+    } finally {
+      Date.now = realNow;
+    }
   });
 
   it("shows the step the backend reports", async () => {
@@ -219,7 +296,6 @@ describe("proxmox-progress-view", () => {
       ["uploading", "Uploading image to Proxmox"],
       ["creating_vm", "Creating virtual machine"],
       ["starting_vm", "Starting Home Assistant OS"],
-      ["waiting_for_ip", "Waiting for network connection"],
     ];
     for (const [stage, heading] of steps) {
       report({

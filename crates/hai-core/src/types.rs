@@ -86,8 +86,6 @@ pub enum FlashStage {
     CreatingVm,
     /// Starting a newly created VM
     StartingVm,
-    /// Waiting for a started VM to report its IP address
-    WaitingForIp,
     Complete,
     Error,
 }
@@ -350,8 +348,6 @@ pub struct ProxmoxVmResult {
     pub vm_id: u32,
     /// Node where VM was created
     pub node: String,
-    /// IP address if available
-    pub ip_address: Option<String>,
 }
 
 // ============================================================================
@@ -482,7 +478,6 @@ mod tests {
             FlashStage::Uploading,
             FlashStage::CreatingVm,
             FlashStage::StartingVm,
-            FlashStage::WaitingForIp,
             FlashStage::Complete,
             FlashStage::Error,
         ];
@@ -614,10 +609,6 @@ mod tests {
             (FlashStage::Uploading, "Uploading to Proxmox..."),
             (FlashStage::CreatingVm, "Creating virtual machine..."),
             (FlashStage::StartingVm, "Starting virtual machine..."),
-            (
-                FlashStage::WaitingForIp,
-                "Waiting for network connection...",
-            ),
             (FlashStage::Complete, "Complete!"),
             (FlashStage::Error, "Error occurred"),
         ];
@@ -966,30 +957,13 @@ mod tests {
     }
 
     #[test]
-    fn test_proxmox_vm_result_with_ip() {
+    fn test_proxmox_vm_result_roundtrip() {
         let result = ProxmoxVmResult {
             vm_id: 100,
             node: "pve".to_string(),
-            ip_address: Some("192.168.1.100".to_string()),
-        };
-        let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("192.168.1.100"));
-
-        let parsed: ProxmoxVmResult = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.vm_id, 100);
-        assert_eq!(parsed.ip_address, Some("192.168.1.100".to_string()));
-    }
-
-    #[test]
-    fn test_proxmox_vm_result_without_ip() {
-        let result = ProxmoxVmResult {
-            vm_id: 100,
-            node: "pve".to_string(),
-            ip_address: None,
         };
         let json = serde_json::to_string(&result).unwrap();
         let parsed: ProxmoxVmResult = serde_json::from_str(&json).unwrap();
-        assert!(parsed.ip_address.is_none());
         assert_eq!(parsed.vm_id, 100);
         assert_eq!(parsed.node, "pve");
     }

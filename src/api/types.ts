@@ -47,7 +47,6 @@ export type FlashStage =
   | "uploading"
   | "creating_vm"
   | "starting_vm"
-  | "waiting_for_ip"
   | "complete"
   | "error";
 
@@ -264,6 +263,4 @@ export interface ProxmoxVmResult {
   vm_id: number;
   /** Node where VM was created */
   node: string;
-  /** IP address if available */
-  ip_address?: string;
 }

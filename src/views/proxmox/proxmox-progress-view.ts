@@ -1,7 +1,11 @@
 import { LitElement, html, css, svg } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
-import { proxmoxCreateVm, formatBytes } from "../../api/commands.js";
+import {
+  proxmoxCreateVm,
+  proxmoxGetVmStatus,
+  formatBytes,
+} from "../../api/commands.js";
 import type {
   FlashProgress,
   FlashStage,
@@ -17,7 +21,11 @@ import {
   DEFAULT_PROXMOX_VM_NAME,
 } from "../../state/vm-defaults.js";
 import { isCancelled, throwIfCancelled } from "../../utils/polling.js";
-import { waitForHaReady, waitForHaUpdated } from "../../utils/wait-for-ha.js";
+import {
+  waitForHaReady,
+  waitForHaUpdated,
+  waitForVmIp,
+} from "../../utils/wait-for-vm.js";
 import "../../components/progress-bar.js";
 
 /** The stages `proxmoxCreateVm` reports, in order */
@@ -27,13 +35,18 @@ const BACKEND_STAGES = [
   "uploading",
   "creating_vm",
   "starting_vm",
-  "waiting_for_ip",
 ] as const satisfies readonly FlashStage[];
 
 type BackendStage = (typeof BACKEND_STAGES)[number];
 
-/** The backend's stages, then the waits for Home Assistant run from here */
-type InstallStage = BackendStage | "ready" | "updating" | "complete" | "error";
+/** The backend's stages, then the waits for the VM and Home Assistant run from here */
+type InstallStage =
+  | BackendStage
+  | "waiting_for_ip"
+  | "ready"
+  | "updating"
+  | "complete"
+  | "error";
 
 function isBackendStage(stage: FlashStage): stage is BackendStage {
   return (BACKEND_STAGES as readonly FlashStage[]).includes(stage);
@@ -477,20 +490,27 @@ export class ProxmoxProgressView extends LitElement {
         wizardState.setSelection("proxmoxVmResult", result);
       }
 
-      const ipAddress = result.ip_address;
-      if (ipAddress) {
-        wizardState.setSelection("ipAddress", ipAddress);
+      // Wait for the VM to get an IP address. Asked again on a retry rather
+      // than reusing the last one: a restarted VM can get a new DHCP lease.
+      this._startStage("waiting_for_ip");
+      const { node, vm_id } = result;
+      const ipAddress = await waitForVmIp(
+        async () => (await proxmoxGetVmStatus(session, node, vm_id)).ip_address,
+        "Proxmox",
+        signal
+      );
+      throwIfCancelled(signal);
+      wizardState.setSelection("ipAddress", ipAddress);
 
-        // Wait for the Home Assistant webserver to be ready
-        this._startStage("ready");
-        await waitForHaReady(ipAddress, "Proxmox", signal);
-        throwIfCancelled(signal);
+      // Wait for the Home Assistant webserver to be ready
+      this._startStage("ready");
+      await waitForHaReady(ipAddress, "Proxmox", signal);
+      throwIfCancelled(signal);
 
-        // Wait for Home Assistant to finish updating
-        this._startStage("updating");
-        await waitForHaUpdated(ipAddress, signal);
-        throwIfCancelled(signal);
-      }
+      // Wait for Home Assistant to finish updating
+      this._startStage("updating");
+      await waitForHaUpdated(ipAddress, signal);
+      throwIfCancelled(signal);
 
       // Complete
       this._stage = "complete";

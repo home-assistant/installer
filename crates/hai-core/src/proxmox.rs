@@ -22,9 +22,10 @@
 use crate::error::{Error, Result};
 use crate::types::{
     FlashProgress, FlashStage, ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage,
-    ProxmoxVmConfig, ProxmoxVmResult,
+    ProxmoxVmConfig, ProxmoxVmResult, VmStatusInfo,
 };
 use crate::{Backend, ProgressCallback, ProxmoxBackend};
+use std::sync::LazyLock;
 
 /// Minimum required Proxmox VE version for disk image import via API.
 /// Version 8.4.1 added support for uploading qcow2/raw/img/vmdk files with content=import.
@@ -760,40 +761,74 @@ async fn start_vm(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<()
     Ok(())
 }
 
-/// Wait for the VM to get an IP address via QEMU guest agent.
-async fn wait_for_vm_ip(session: &ProxmoxSession, node: &str, vm_id: u32) -> Option<String> {
-    let url = format!(
-        "{}/api2/json/nodes/{}/qemu/{}/agent/network-get-interfaces",
+/// Shared by every status check: the frontend polls every 2 seconds while it
+/// waits for the VM's IP address, and a client per check would redo its setup
+/// each time.
+static VM_STATUS_CLIENT: LazyLock<Option<reqwest::Client>> =
+    LazyLock::new(|| create_client(10).ok());
+
+/// Get a VM's run status and, while it runs, its IP address.
+///
+/// The address comes from the QEMU guest agent and stays `None` until the
+/// agent reports one.
+async fn vm_status(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<VmStatusInfo> {
+    let client = VM_STATUS_CLIENT
+        .as_ref()
+        .ok_or_else(|| Error::ProxmoxApi("Failed to create HTTP client".to_string()))?;
+    let vm_url = format!(
+        "{}/api2/json/nodes/{}/qemu/{}",
         session.server_url.trim_end_matches('/'),
         node,
         vm_id
     );
 
-    let client = create_client(10).ok()?;
+    let response = client
+        .get(format!("{}/status/current", vm_url))
+        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
+        .send()
+        .await
+        .map_err(|e| Error::ProxmoxApi(format!("Failed to get VM status: {}", e)))?;
 
-    // Try for up to 5 minutes (150 attempts * 2 seconds)
-    for _ in 0..150 {
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-
-        if let Some(ip) = fetch_vm_ip(&client, &url, session).await {
-            return Some(ip);
-        }
+    if !response.status().is_success() {
+        return Err(Error::ProxmoxApi(format!(
+            "Failed to get VM status: {}",
+            response.status()
+        )));
     }
 
-    None
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| Error::ProxmoxApi(format!("Failed to parse VM status: {}", e)))?;
+
+    let status = json
+        .get("data")
+        .and_then(|d| d.get("status"))
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| Error::ProxmoxApi("Invalid VM status response".to_string()))?
+        .to_string();
+
+    // A stopped VM has no guest agent to ask
+    let ip_address = if status == "running" {
+        get_vm_ip(client, &vm_url, session).await
+    } else {
+        None
+    };
+
+    Ok(VmStatusInfo { status, ip_address })
 }
 
-/// Ask the guest agent for the VM's IP address once.
+/// Ask the VM's guest agent for its IP address once.
 ///
 /// Any failure means "not yet": right after boot the guest agent is often not
 /// running, so requests fail or return an error until it is.
-async fn fetch_vm_ip(
+async fn get_vm_ip(
     client: &reqwest::Client,
-    url: &str,
+    vm_url: &str,
     session: &ProxmoxSession,
 ) -> Option<String> {
     let response = client
-        .get(url)
+        .get(format!("{}/agent/network-get-interfaces", vm_url))
         .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
         .send()
         .await
@@ -933,25 +968,9 @@ async fn create_vm<P: ProgressCallback>(
         start_vm(session, &config.node, config.vm_id).await?;
     }
 
-    // Step 7: Wait for IP address
-    progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::WaitingForIp,
-        progress: 0,
-        bytes_processed: 0,
-        total_bytes: 0,
-        message: "Waiting for network connection...".to_string(),
-    });
-
-    let ip_address = if config.auto_start {
-        wait_for_vm_ip(session, &config.node, config.vm_id).await
-    } else {
-        None
-    };
-
     Ok(ProxmoxVmResult {
         vm_id: config.vm_id,
         node: config.node.clone(),
-        ip_address,
     })
 }
 
@@ -974,6 +993,15 @@ impl ProxmoxBackend for Backend {
 
     async fn get_next_vm_id(&self, session: &ProxmoxSession) -> Result<u32> {
         get_next_vm_id(session).await
+    }
+
+    async fn vm_status(
+        &self,
+        session: &ProxmoxSession,
+        node: &str,
+        vm_id: u32,
+    ) -> Result<VmStatusInfo> {
+        vm_status(session, node, vm_id).await
     }
 
     async fn create_vm<P: ProgressCallback>(
@@ -2260,143 +2288,132 @@ mod tests {
             start_mock.assert_async().await;
         }
 
-        #[tokio::test]
-        #[serial]
-        async fn test_wait_for_vm_ip_success() {
-            let mut server = Server::new_async().await;
+        const VM_STATUS_PATH: &str = "/api2/json/nodes/pve/qemu/100/status/current";
+        const VM_AGENT_PATH: &str = "/api2/json/nodes/pve/qemu/100/agent/network-get-interfaces";
 
-            let ip_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/qemu/100/agent/network-get-interfaces",
-                )
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "result": [
-                                {
-                                    "name": "lo",
-                                    "ip-addresses": []
-                                },
-                                {
-                                    "name": "eth0",
-                                    "ip-addresses": [
-                                        {
-                                            "ip-address-type": "ipv4",
-                                            "ip-address": "192.168.1.100"
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    }"#,
-                )
-                .expect_at_least(1)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
+        fn vm_session(server: &mockito::ServerGuard) -> ProxmoxSession {
+            ProxmoxSession {
                 server_url: server.url(),
                 ticket: "test-ticket".to_string(),
                 csrf_token: "test-csrf".to_string(),
-            };
+            }
+        }
 
-            let result = wait_for_vm_ip(&session, "pve", 100).await;
-            assert!(result.is_some());
-            assert_eq!(result.unwrap(), "192.168.1.100");
-
-            ip_mock.assert_async().await;
+        async fn mock_vm_run_status(
+            server: &mut mockito::ServerGuard,
+            status: &str,
+        ) -> mockito::Mock {
+            server
+                .mock("GET", VM_STATUS_PATH)
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(format!(r#"{{"data": {{"status": "{}"}}}}"#, status))
+                .expect_at_least(1)
+                .create_async()
+                .await
         }
 
         #[tokio::test]
         #[serial]
-        async fn test_wait_for_vm_ip_skip_loopback() {
+        async fn test_vm_status_running_with_ip() {
             let mut server = Server::new_async().await;
-
-            let ip_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/qemu/100/agent/network-get-interfaces",
-                )
+            let status_mock = mock_vm_run_status(&mut server, "running").await;
+            let agent_mock = server
+                .mock("GET", VM_AGENT_PATH)
                 .with_status(200)
                 .with_header("content-type", "application/json")
                 .with_body(
-                    r#"{
-                        "data": {
-                            "result": [
-                                {
-                                    "name": "eth0",
-                                    "ip-addresses": [
-                                        {
-                                            "ip-address-type": "ipv4",
-                                            "ip-address": "127.0.0.1"
-                                        },
-                                        {
-                                            "ip-address-type": "ipv4",
-                                            "ip-address": "192.168.1.100"
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    }"#,
+                    r#"{"data": {"result": [
+                        {"name": "lo", "ip-addresses": []},
+                        {"name": "eth0", "ip-addresses": [
+                            {"ip-address-type": "ipv4", "ip-address": "192.168.1.100"}
+                        ]}
+                    ]}}"#,
                 )
-                .expect_at_least(1)
                 .create_async()
                 .await;
 
-            let session = ProxmoxSession {
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
+            let status = vm_status(&vm_session(&server), "pve", 100).await.unwrap();
+            assert_eq!(status.status, "running");
+            assert_eq!(status.ip_address.as_deref(), Some("192.168.1.100"));
 
-            let result = wait_for_vm_ip(&session, "pve", 100).await;
-            assert!(result.is_some());
-            assert_eq!(result.unwrap(), "192.168.1.100");
-
-            ip_mock.assert_async().await;
+            status_mock.assert_async().await;
+            agent_mock.assert_async().await;
         }
 
         #[tokio::test]
         #[serial]
-        async fn test_wait_for_vm_ip_keeps_polling_after_unreadable_reply() {
+        async fn test_vm_status_no_ip_while_agent_is_not_up() {
             let mut server = Server::new_async().await;
-            let path = "/api2/json/nodes/pve/qemu/100/agent/network-get-interfaces";
+            let session = vm_session(&server);
+            let _status_mock = mock_vm_run_status(&mut server, "running").await;
 
-            // The guest agent is not up yet: the first reply is not JSON
-            let not_ready_mock = server
-                .mock("GET", path)
-                .with_status(200)
-                .with_body("guest agent is not running")
-                .expect(1)
+            // What Proxmox answers while the guest agent is not running yet
+            let error_mock = server
+                .mock("GET", VM_AGENT_PATH)
+                .with_status(500)
+                .with_body(r#"{"data": null, "message": "QEMU guest agent is not running"}"#)
                 .create_async()
                 .await;
-            let ip_mock = server
-                .mock("GET", path)
+            let status = vm_status(&session, "pve", 100).await.unwrap();
+            assert_eq!(status.status, "running");
+            assert_eq!(status.ip_address, None);
+            error_mock.assert_async().await;
+            error_mock.remove_async().await;
+
+            let unreadable_mock = server
+                .mock("GET", VM_AGENT_PATH)
                 .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{"data": {"result": [{"name": "eth0", "ip-addresses": [
-                        {"ip-address-type": "ipv4", "ip-address": "192.168.1.100"}
-                    ]}]}}"#,
-                )
+                .with_body("not json")
+                .create_async()
+                .await;
+            let status = vm_status(&session, "pve", 100).await.unwrap();
+            assert_eq!(status.ip_address, None);
+            unreadable_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_vm_status_stopped_does_not_ask_the_agent() {
+            let mut server = Server::new_async().await;
+            let _status_mock = mock_vm_run_status(&mut server, "stopped").await;
+            let agent_mock = server
+                .mock("GET", VM_AGENT_PATH)
+                .expect(0)
                 .create_async()
                 .await;
 
-            let session = ProxmoxSession {
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
+            let status = vm_status(&vm_session(&server), "pve", 100).await.unwrap();
+            assert_eq!(status.status, "stopped");
+            assert_eq!(status.ip_address, None);
 
-            let result = wait_for_vm_ip(&session, "pve", 100).await;
-            assert_eq!(result.as_deref(), Some("192.168.1.100"));
+            agent_mock.assert_async().await;
+        }
 
-            not_ready_mock.assert_async().await;
-            ip_mock.assert_async().await;
+        #[tokio::test]
+        #[serial]
+        async fn test_vm_status_fails_when_proxmox_does() {
+            let mut server = Server::new_async().await;
+            let _status_mock = server
+                .mock("GET", VM_STATUS_PATH)
+                .with_status(401)
+                .create_async()
+                .await;
+
+            let result = vm_status(&vm_session(&server), "pve", 100).await;
+            assert!(matches!(result, Err(Error::ProxmoxApi(_))));
+        }
+
+        #[test]
+        fn test_find_vm_ip_skips_loopback_addresses() {
+            let json = serde_json::json!({"data": {"result": [
+                {"name": "eth0", "ip-addresses": [
+                    {"ip-address-type": "ipv4", "ip-address": "127.0.0.1"},
+                    {"ip-address-type": "ipv4", "ip-address": "192.168.1.100"}
+                ]}
+            ]}});
+
+            assert_eq!(find_vm_ip(&json).as_deref(), Some("192.168.1.100"));
         }
 
         #[test]

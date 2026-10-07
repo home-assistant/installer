@@ -6,6 +6,7 @@
 use crate::error::Result;
 use crate::types::SystemInfo;
 use crate::{Backend, HostBackend};
+use std::sync::LazyLock;
 use std::time::Duration;
 
 /// Query the host for CPU core count and total memory.
@@ -65,11 +66,18 @@ async fn check_ha_updated(ip: &str) -> bool {
         .is_some_and(|status| status.is_success())
 }
 
-async fn get_status(url: &str) -> Option<reqwest::StatusCode> {
-    let client = reqwest::Client::builder()
+/// Shared by every check: the frontend polls these every 2 seconds, for up to
+/// an hour, and a client per check would redo its setup and drop its
+/// connections each time.
+static HA_CLIENT: LazyLock<Option<reqwest::Client>> = LazyLock::new(|| {
+    reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
-        .ok()?;
+        .ok()
+});
+
+async fn get_status(url: &str) -> Option<reqwest::StatusCode> {
+    let client = HA_CLIENT.as_ref()?;
     let response = client.get(url).send().await.ok()?;
     Some(response.status())
 }

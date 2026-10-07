@@ -533,11 +533,36 @@ export async function proxmoxGetNextVmId(
 }
 
 /**
- * Create a Home Assistant VM on Proxmox.
+ * Get the status of a Proxmox VM including its IP address if available.
+ * @param session The authentication session
+ * @param node Node the VM runs on
+ * @param vmId The VM ID
+ * @returns VM status and IP address
+ */
+export async function proxmoxGetVmStatus(
+  session: ProxmoxSession,
+  node: string,
+  vmId: number
+): Promise<VmStatusInfo> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return {
+      status: "running",
+      ip_address: "192.168.1.150",
+    };
+  }
+  return invoke<VmStatusInfo>("proxmox_get_vm_status", {
+    session,
+    node,
+    vmId,
+  });
+}
+
+/**
+ * Create and start a Home Assistant VM on Proxmox.
  * @param session The authentication session
  * @param config VM configuration
  * @param onProgress Callback for progress updates
- * @returns Result with VM ID and IP address
+ * @returns Result with VM ID and node
  */
 export async function proxmoxCreateVm(
   session: ProxmoxSession,
@@ -605,16 +630,9 @@ async function simulateProxmoxInstall(
     {
       stage: "starting_vm",
       message: "Starting virtual machine...",
-      weight: 10,
+      weight: 15,
       steps: 10,
       delay: 150,
-    },
-    {
-      stage: "waiting_for_ip",
-      message: "Waiting for network connection...",
-      weight: 5,
-      steps: 10,
-      delay: 200,
     },
   ];
 
@@ -641,6 +659,5 @@ async function simulateProxmoxInstall(
   return {
     vm_id: config.vm_id,
     node: config.node,
-    ip_address: "192.168.1.150",
   };
 }
