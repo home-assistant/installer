@@ -623,7 +623,6 @@ mod tests {
     // ===== Non-mock System Info Tests =====
 
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
-    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[test]
     #[cfg(target_os = "macos")]
     fn test_system_info_macos_fallback_on_error() {
@@ -633,7 +632,6 @@ mod tests {
         assert!(info.memory_mb >= 8192);
     }
 
-    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[test]
     #[cfg(not(target_os = "macos"))]
@@ -659,7 +657,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[test]
     #[cfg(target_os = "macos")]

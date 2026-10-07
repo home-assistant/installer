@@ -10,3 +10,9 @@ pub use hai_core::Backend;
 
 #[cfg(feature = "mock")]
 pub use hai_core::BackendMock as Backend;
+
+// The mock reports a successful flash without writing anything. A Cargo
+// feature is independent of the build profile, so refuse the combination
+// instead of trusting every release workflow to leave the flag off.
+#[cfg(all(feature = "mock", not(debug_assertions)))]
+compile_error!("the mock backend must not be used in release builds");
