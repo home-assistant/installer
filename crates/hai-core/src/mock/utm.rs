@@ -52,6 +52,14 @@ impl UtmBackend for BackendMock {
         })
     }
 
+    fn start_vm(&self, _vm_id: &str) -> Result<()> {
+        Ok(())
+    }
+
+    fn resize_vm_disk(&self, _vm_id: &str, _size_gb: u32) -> Result<()> {
+        Ok(())
+    }
+
     fn vm_status(&self, _vm_id: &str) -> Result<VmStatusInfo> {
         Ok(VmStatusInfo {
             status: "started".to_string(),

@@ -367,16 +367,16 @@ pub async fn create_utm_vm(config: hai_core::UtmVmConfig) -> Result<String, Stri
 
 /// Start a UTM VM
 #[tauri::command]
-pub fn start_utm_vm(_vm_id: String) -> Result<(), String> {
-    // TODO: Implement via AppleScript
-    Ok(())
+pub fn start_utm_vm(vm_id: String) -> Result<(), String> {
+    Backend.start_vm(&vm_id).map_err(|e| e.to_string())
 }
 
 /// Resize a UTM VM's disk
 #[tauri::command]
-pub fn resize_utm_vm_disk(_vm_id: String, _size_gb: u32) -> Result<(), String> {
-    // TODO: Implement via qemu-img
-    Ok(())
+pub fn resize_utm_vm_disk(vm_id: String, size_gb: u32) -> Result<(), String> {
+    Backend
+        .resize_vm_disk(&vm_id, size_gb)
+        .map_err(|e| e.to_string())
 }
 
 /// Get the status of a UTM VM

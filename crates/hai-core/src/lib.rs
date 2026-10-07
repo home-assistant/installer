@@ -136,6 +136,12 @@ pub trait UtmBackend {
         progress_callback: &P,
     ) -> Result<UtmVmResult>;
 
+    /// Start a UTM VM.
+    fn start_vm(&self, vm_id: &str) -> Result<()>;
+
+    /// Resize a UTM VM's disk to `size_gb`.
+    fn resize_vm_disk(&self, vm_id: &str, size_gb: u32) -> Result<()>;
+
     /// Get the status of a UTM VM.
     fn vm_status(&self, vm_id: &str) -> Result<VmStatusInfo>;
 }
