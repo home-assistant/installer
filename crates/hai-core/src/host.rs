@@ -49,6 +49,12 @@ async fn check_ha_ready(ip: &str) -> bool {
     use tokio::net::TcpStream;
     use tokio::time::timeout;
 
+    // An empty host isn't an error everywhere: Windows resolves ":80" to the
+    // local machine, so any local web server would pass for Home Assistant.
+    if ip.trim().is_empty() {
+        return false;
+    }
+
     let addr = format!("{}:80", ip);
     matches!(
         timeout(Duration::from_secs(3), TcpStream::connect(&addr)).await,
