@@ -2,6 +2,7 @@ import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { getManifest, type Device } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
+import { getPlatform } from "../../utils/platform.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 
 @customElement("minipc-architecture-selection-view")
@@ -22,8 +23,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
       text-align: center;
     }
 
-    .subtitle,
-    .mac-note {
+    .subtitle {
       font-size: 1rem;
       color: var(--ha-secondary-text-color, #727272);
       margin: 0 0 2rem 0;
@@ -40,7 +40,11 @@ export class MiniPCArchitectureSelectionView extends LitElement {
     }
 
     .mac-note {
-      margin-top: 1rem;
+      font-size: 1rem;
+      color: var(--ha-secondary-text-color, #727272);
+      margin: 1rem 0 2rem 0;
+      text-align: center;
+      max-width: 500px;
     }
 
     .option-card {
@@ -326,7 +330,8 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                     OS
                   </p>
                   <p class="option-examples">
-                    Examples: Ampere-based servers and compatible ARM boards
+                    Examples: Ampere-based servers and other UEFI ARM64
+                    machines. A Raspberry Pi or ODROID has its own option.
                   </p>
                 </div>
                 ${this._selectedDeviceId === this._arm64Device.id
@@ -336,10 +341,12 @@ export class MiniPCArchitectureSelectionView extends LitElement {
             `
           : ""}
       </div>
-      <p class="mac-note">
-        Apple Silicon Macs need a virtual machine. Run this installer on your
-        Mac and select <strong>Virtual machine</strong> to use UTM.
-      </p>
+      ${getPlatform() === "macos"
+        ? html`<p class="mac-note">
+            Want Home Assistant on this Mac itself? Start over and choose
+            <strong>Virtual machine</strong> to run it in UTM.
+          </p>`
+        : ""}
     `;
   }
 
