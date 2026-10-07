@@ -141,7 +141,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Rust clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 ---
