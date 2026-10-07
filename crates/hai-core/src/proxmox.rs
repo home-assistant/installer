@@ -775,41 +775,59 @@ async fn wait_for_vm_ip(session: &ProxmoxSession, node: &str, vm_id: u32) -> Opt
     for _ in 0..150 {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-        let response = client
-            .get(&url)
-            .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-            .send()
-            .await
-            .ok()?;
+        if let Some(ip) = fetch_vm_ip(&client, &url, session).await {
+            return Some(ip);
+        }
+    }
 
-        if response.status().is_success() {
-            let json: serde_json::Value = response.json().await.ok()?;
+    None
+}
 
-            // Look for an IPv4 address on a non-loopback interface
-            if let Some(interfaces) = json
-                .get("data")
-                .and_then(|d| d.get("result"))
-                .and_then(|r| r.as_array())
-            {
-                for iface in interfaces {
-                    let name = iface.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                    if name == "lo" {
-                        continue;
-                    }
+/// Ask the guest agent for the VM's IP address once.
+///
+/// Any failure means "not yet": right after boot the guest agent is often not
+/// running, so requests fail or return an error until it is.
+async fn fetch_vm_ip(
+    client: &reqwest::Client,
+    url: &str,
+    session: &ProxmoxSession,
+) -> Option<String> {
+    let response = client
+        .get(url)
+        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
+        .send()
+        .await
+        .ok()?;
 
-                    if let Some(ip_addresses) = iface.get("ip-addresses").and_then(|a| a.as_array())
-                    {
-                        for addr in ip_addresses {
-                            if addr.get("ip-address-type").and_then(|t| t.as_str()) == Some("ipv4")
-                            {
-                                if let Some(ip) = addr.get("ip-address").and_then(|i| i.as_str()) {
-                                    if !ip.starts_with("127.") {
-                                        return Some(ip.to_string());
-                                    }
-                                }
-                            }
-                        }
-                    }
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let json: serde_json::Value = response.json().await.ok()?;
+    find_vm_ip(&json)
+}
+
+/// The first IPv4 address on a non-loopback interface in a guest agent
+/// `network-get-interfaces` reply.
+fn find_vm_ip(json: &serde_json::Value) -> Option<String> {
+    let interfaces = json.get("data")?.get("result")?.as_array()?;
+
+    for iface in interfaces {
+        let name = iface.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        if name == "lo" {
+            continue;
+        }
+
+        let Some(ip_addresses) = iface.get("ip-addresses").and_then(|a| a.as_array()) else {
+            continue;
+        };
+        for addr in ip_addresses {
+            if addr.get("ip-address-type").and_then(|t| t.as_str()) != Some("ipv4") {
+                continue;
+            }
+            if let Some(ip) = addr.get("ip-address").and_then(|i| i.as_str()) {
+                if !ip.starts_with("127.") {
+                    return Some(ip.to_string());
                 }
             }
         }
@@ -2342,9 +2360,59 @@ mod tests {
             ip_mock.assert_async().await;
         }
 
-        // NOTE: Skipping test_wait_for_vm_ip_no_ip because it takes 5+ minutes
-        // wait_for_vm_ip retries 150 times with 2 second sleep = 300 seconds
-        // The success paths are already tested above
+        #[tokio::test]
+        #[serial]
+        async fn test_wait_for_vm_ip_keeps_polling_after_unreadable_reply() {
+            let mut server = Server::new_async().await;
+            let path = "/api2/json/nodes/pve/qemu/100/agent/network-get-interfaces";
+
+            // The guest agent is not up yet: the first reply is not JSON
+            let not_ready_mock = server
+                .mock("GET", path)
+                .with_status(200)
+                .with_body("guest agent is not running")
+                .expect(1)
+                .create_async()
+                .await;
+            let ip_mock = server
+                .mock("GET", path)
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(
+                    r#"{"data": {"result": [{"name": "eth0", "ip-addresses": [
+                        {"ip-address-type": "ipv4", "ip-address": "192.168.1.100"}
+                    ]}]}}"#,
+                )
+                .create_async()
+                .await;
+
+            let session = ProxmoxSession {
+                server_url: server.url(),
+                ticket: "test-ticket".to_string(),
+                csrf_token: "test-csrf".to_string(),
+            };
+
+            let result = wait_for_vm_ip(&session, "pve", 100).await;
+            assert_eq!(result.as_deref(), Some("192.168.1.100"));
+
+            not_ready_mock.assert_async().await;
+            ip_mock.assert_async().await;
+        }
+
+        #[test]
+        fn test_find_vm_ip_without_usable_address() {
+            // Only loopback and IPv6 - what a VM reports before DHCP finishes
+            let json = serde_json::json!({"data": {"result": [
+                {"name": "lo", "ip-addresses": [
+                    {"ip-address-type": "ipv4", "ip-address": "127.0.0.1"}
+                ]},
+                {"name": "eth0", "ip-addresses": [
+                    {"ip-address-type": "ipv6", "ip-address": "fe80::1"}
+                ]}
+            ]}});
+
+            assert_eq!(find_vm_ip(&json), None);
+        }
 
         #[tokio::test]
         #[serial]
