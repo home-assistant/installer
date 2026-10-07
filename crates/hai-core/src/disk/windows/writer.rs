@@ -116,7 +116,8 @@ fn open_device_for_write(device_path: &str) -> Result<File> {
 
 /// Ask the disk driver whether the media accepts writes. A write handle opens
 /// fine on an SD card with its lock switch on; only a write, or this ioctl,
-/// tells. Any other failure is left for the write itself to report.
+/// tells. A disconnect is reported right away; any other failure, like a
+/// driver without this ioctl, is left for the write itself to report.
 fn ensure_media_writable(device: &File) -> Result<()> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::System::Ioctl::IOCTL_DISK_IS_WRITABLE;
@@ -141,8 +142,12 @@ fn ensure_media_writable(device: &File) -> Result<()> {
         return Ok(());
     }
 
-    if is_write_protected(&std::io::Error::last_os_error()) {
+    let err = std::io::Error::last_os_error();
+    if is_write_protected(&err) {
         Err(Error::WriteProtected)
+    } else if is_drive_disconnected(&err) {
+        // Gone already; Clear-Disk would only fail with a less useful error
+        Err(Error::DriveDisconnected)
     } else {
         Ok(())
     }
