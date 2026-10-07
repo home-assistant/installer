@@ -55,6 +55,30 @@ fn mentions_sd_card(s: &str) -> bool {
     })
 }
 
+/// Raw OS error codes that mean the drive went away. The numbers differ per
+/// OS: on Windows 6 is `ERROR_INVALID_HANDLE` and 19 `ERROR_WRITE_PROTECT`.
+#[cfg(unix)]
+const DISCONNECTED_OS_ERRORS: &[i32] = &[
+    6,  // ENXIO: device not configured
+    19, // ENODEV: no such device
+];
+#[cfg(windows)]
+const DISCONNECTED_OS_ERRORS: &[i32] = &[
+    21,   // ERROR_NOT_READY
+    433,  // ERROR_NO_SUCH_DEVICE
+    1167, // ERROR_DEVICE_NOT_CONNECTED
+];
+
+/// Raw OS error codes that mean the drive refuses writes.
+#[cfg(unix)]
+const WRITE_PROTECTED_OS_ERRORS: &[i32] = &[
+    30, // EROFS: read-only file system
+];
+#[cfg(windows)]
+const WRITE_PROTECTED_OS_ERRORS: &[i32] = &[
+    19, // ERROR_WRITE_PROTECT
+];
+
 /// Check if an I/O error indicates the drive was disconnected
 fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
     matches!(
@@ -62,11 +86,32 @@ fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
         std::io::ErrorKind::NotFound
             | std::io::ErrorKind::BrokenPipe
             | std::io::ErrorKind::UnexpectedEof
-    ) || io_err.raw_os_error().is_some_and(|code| {
-        // macOS: ENXIO (6) = "Device not configured"
-        // Linux: ENODEV (19) = "No such device", ENXIO (6)
-        matches!(code, 6 | 19)
-    })
+    ) || io_err
+        .raw_os_error()
+        .is_some_and(|code| DISCONNECTED_OS_ERRORS.contains(&code))
+}
+
+/// Check if an I/O error means the drive is write-protected, like an SD card
+/// with its lock switch on.
+fn is_write_protected(io_err: &std::io::Error) -> bool {
+    io_err.kind() == std::io::ErrorKind::ReadOnlyFilesystem
+        || io_err
+            .raw_os_error()
+            .is_some_and(|code| WRITE_PROTECTED_OS_ERRORS.contains(&code))
+}
+
+/// Map an I/O error from reading or writing the device onto an [`Error`]:
+/// a disconnect and write protection get their own errors, so the user is
+/// told what to do about them.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn device_io_error(io_err: std::io::Error) -> Error {
+    if is_drive_disconnected(&io_err) {
+        Error::DriveDisconnected
+    } else if is_write_protected(&io_err) {
+        Error::WriteProtected
+    } else {
+        Error::Io(io_err)
+    }
 }
 
 /// Drive a blocking task while forwarding its progress updates to the
@@ -184,13 +229,85 @@ mod tests {
             );
         }
 
-        // Raw OS error codes: ENXIO (6) and ENODEV (19)
-        for code in [6, 19] {
+        for &code in DISCONNECTED_OS_ERRORS {
             assert!(
                 is_drive_disconnected(&std::io::Error::from_raw_os_error(code)),
                 "os error {code} should be detected as disconnected"
             );
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_unix_disconnect_codes() {
+        // ENXIO and ENODEV
+        for code in [6, 19] {
+            assert!(is_drive_disconnected(&std::io::Error::from_raw_os_error(
+                code
+            )));
+        }
+    }
+
+    /// The Unix numbers mean something else on Windows: 6 is
+    /// ERROR_INVALID_HANDLE and 19 ERROR_WRITE_PROTECT, a locked SD card.
+    #[test]
+    #[cfg(windows)]
+    fn test_windows_disconnect_codes() {
+        for code in [21, 433, 1167] {
+            assert!(
+                is_drive_disconnected(&std::io::Error::from_raw_os_error(code)),
+                "os error {code} should be detected as disconnected"
+            );
+        }
+        for code in [6, 19] {
+            assert!(
+                !is_drive_disconnected(&std::io::Error::from_raw_os_error(code)),
+                "os error {code} should NOT be detected as disconnected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_write_protected() {
+        assert!(is_write_protected(&std::io::Error::new(
+            std::io::ErrorKind::ReadOnlyFilesystem,
+            "test"
+        )));
+
+        #[cfg(unix)]
+        let locked = 30; // EROFS
+        #[cfg(windows)]
+        let locked = 19; // ERROR_WRITE_PROTECT
+        assert!(is_write_protected(&std::io::Error::from_raw_os_error(
+            locked
+        )));
+        assert!(!is_drive_disconnected(&std::io::Error::from_raw_os_error(
+            locked
+        )));
+
+        assert!(!is_write_protected(&std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "test"
+        )));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    fn test_device_io_error_maps_disconnect_and_write_protection() {
+        use std::io::{Error as IoError, ErrorKind};
+
+        assert!(matches!(
+            device_io_error(IoError::new(ErrorKind::BrokenPipe, "gone")),
+            Error::DriveDisconnected
+        ));
+        assert!(matches!(
+            device_io_error(IoError::new(ErrorKind::ReadOnlyFilesystem, "locked")),
+            Error::WriteProtected
+        ));
+        assert!(matches!(
+            device_io_error(IoError::other("something else")),
+            Error::Io(_)
+        ));
     }
 
     #[test]
@@ -218,7 +335,8 @@ mod tests {
             );
         }
 
-        // Non-matching raw OS error codes: EPERM (1) and EACCES (13)
+        // Non-matching raw OS error codes: EPERM / ERROR_INVALID_FUNCTION (1)
+        // and EACCES / ERROR_INVALID_DATA (13)
         for code in [1, 13] {
             assert!(
                 !is_drive_disconnected(&std::io::Error::from_raw_os_error(code)),

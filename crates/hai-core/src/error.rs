@@ -38,6 +38,11 @@ pub enum Error {
     #[error("Drive disconnected")]
     DriveDisconnected,
 
+    #[error(
+        "The drive is write-protected. If it's an SD card, slide the lock switch on its side up and try again."
+    )]
+    WriteProtected,
+
     #[error("Platform not supported: {0}")]
     UnsupportedPlatform(String),
 
@@ -164,6 +169,13 @@ mod tests {
         let error = Error::DriveDisconnected;
         let msg = error.to_string();
         assert_eq!(msg, "Drive disconnected");
+    }
+
+    #[test]
+    fn test_display_write_protected_says_what_to_do() {
+        let msg = Error::WriteProtected.to_string();
+        assert!(msg.contains("write-protected"), "{msg}");
+        assert!(msg.contains("lock switch"), "{msg}");
     }
 
     #[test]

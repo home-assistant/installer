@@ -97,14 +97,16 @@ fn open_device_for_write(device_path: &str) -> Result<File> {
         .write(true)
         .open(device_path)
         .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::PermissionDenied {
+            // Before the permission check, so a locked card never gets the
+            // advice to run as Administrator.
+            if is_write_protected(&e) {
+                Error::WriteProtected
+            } else if e.kind() == std::io::ErrorKind::PermissionDenied {
                 Error::PermissionDenied(
                     "Administrator access required. Please run as Administrator.".to_string(),
                 )
-            } else if is_drive_disconnected(&e) {
-                Error::DriveDisconnected
             } else {
-                Error::Io(e)
+                device_io_error(e)
             }
         })
 }
@@ -129,13 +131,8 @@ fn write_to_device(
             break;
         }
 
-        dest.write_all(&buffer[..bytes_read]).map_err(|e| {
-            if is_drive_disconnected(&e) {
-                Error::DriveDisconnected
-            } else {
-                Error::Io(e)
-            }
-        })?;
+        dest.write_all(&buffer[..bytes_read])
+            .map_err(device_io_error)?;
 
         bytes_written += bytes_read as u64;
 
@@ -151,13 +148,7 @@ fn write_to_device(
         }
     }
 
-    dest.sync_all().map_err(|e| {
-        if is_drive_disconnected(&e) {
-            Error::DriveDisconnected
-        } else {
-            Error::Io(e)
-        }
-    })?;
+    dest.sync_all().map_err(device_io_error)?;
 
     // Send final progress
     let _ = progress_tx.send(FlashProgress::new(
@@ -177,13 +168,7 @@ fn verify_write(
     progress_tx: &mpsc::Sender<FlashProgress>,
 ) -> Result<()> {
     let mut source = File::open(image_path)?;
-    let mut dest = File::open(device_path).map_err(|e| {
-        if is_drive_disconnected(&e) {
-            Error::DriveDisconnected
-        } else {
-            Error::Io(e)
-        }
-    })?;
+    let mut dest = File::open(device_path).map_err(device_io_error)?;
 
     let mut source_buffer = vec![0u8; WRITE_BUFFER_SIZE];
     let mut dest_buffer = vec![0u8; WRITE_BUFFER_SIZE];
@@ -197,13 +182,7 @@ fn verify_write(
         }
 
         dest.read_exact(&mut dest_buffer[..source_read])
-            .map_err(|e| {
-                if is_drive_disconnected(&e) {
-                    Error::DriveDisconnected
-                } else {
-                    Error::Io(e)
-                }
-            })?;
+            .map_err(device_io_error)?;
 
         if source_buffer[..source_read] != dest_buffer[..source_read] {
             return Err(Error::VerificationFailed(
