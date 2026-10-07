@@ -529,6 +529,13 @@ mod tests {
         assert!(info.memory_mb >= 8192);
     }
 
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn test_system_info_non_macos() {
+        assert!(get_system_info().is_err());
+    }
+
     // ===== Additional edge case tests =====
 
     #[test]
@@ -545,6 +552,24 @@ mod tests {
         let result = resize_utm_vm_disk("test-vm".to_string(), 64);
         // Should return Ok even though not implemented
         assert!(result.is_ok());
+    }
+
+    // Off macOS the commands no longer gate themselves; hai-core has to
+    // refuse them, and that refusal has to reach the frontend.
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn test_start_utm_vm_unsupported_off_macos() {
+        let err = start_utm_vm("test-vm".to_string()).unwrap_err();
+        assert!(err.contains("only available on macOS"), "{err}");
+    }
+
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn test_resize_utm_vm_disk_unsupported_off_macos() {
+        let err = resize_utm_vm_disk("test-vm".to_string(), 64).unwrap_err();
+        assert!(err.contains("only available on macOS"), "{err}");
     }
 
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
