@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 test.describe("Proxmox Installation Flow", () => {
   test.beforeEach(async ({ page }) => {
@@ -187,7 +187,6 @@ test.describe("Proxmox Installation Flow", () => {
     await navigateToProxmoxStep2(page);
 
     const configView = page.locator("proxmox-configure-view");
-    const cpuSlider = configView.locator('input[type="range"]').first();
 
     // Should show CPU value
     await expect(configView).toContainText("cores");
@@ -512,7 +511,7 @@ test.describe("Proxmox Installation Flow", () => {
 });
 
 // Helper functions to navigate to specific steps
-async function navigateToProxmoxStep2(page: any) {
+async function navigateToProxmoxStep2(page: Page) {
   const connectView = page.locator("proxmox-connect-view");
   await connectView.locator("#server-url").fill("https://192.168.1.100:8006");
   await connectView.locator("#username").fill("root@pam");
@@ -521,7 +520,7 @@ async function navigateToProxmoxStep2(page: any) {
   await expect(page.locator("proxmox-configure-view")).toBeVisible();
 }
 
-async function navigateToProxmoxStep3(page: any) {
+async function navigateToProxmoxStep3(page: Page) {
   await navigateToProxmoxStep2(page);
   // Node/storage defaults load async, so Next stays disabled briefly. Playwright
   // can't detect a wa-button's disabled state, so wait for it explicitly before
@@ -534,14 +533,14 @@ async function navigateToProxmoxStep3(page: any) {
   await expect(page.locator("proxmox-confirm-view")).toBeVisible();
 }
 
-async function navigateToProxmoxStep4(page: any) {
+async function navigateToProxmoxStep4(page: Page) {
   await navigateToProxmoxStep3(page);
   // No confirmation dialog for Proxmox flow - proceeds directly to install
   await page.locator("wizard-shell").locator(".footer-right wa-button").click();
   await expect(page.locator("proxmox-progress-view")).toBeVisible();
 }
 
-async function navigateToProxmoxStep5(page: any) {
+async function navigateToProxmoxStep5(page: Page) {
   await navigateToProxmoxStep4(page);
   await expect(page.locator("proxmox-success-view")).toBeVisible({
     timeout: 30000,

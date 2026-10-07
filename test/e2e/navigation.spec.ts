@@ -86,7 +86,7 @@ test.describe("Navigation Flow", () => {
   test("welcome view shows learn more link", async ({ page }) => {
     const learnMore = page.locator("welcome-view").locator(".learn-more");
     await expect(learnMore).toBeVisible();
-    await expect(learnMore).toContainText("learn more");
+    await expect(learnMore).toContainText("Learn more");
     await expect(learnMore).toHaveAttribute(
       "href",
       "https://www.home-assistant.io/installation/"

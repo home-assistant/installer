@@ -59,7 +59,16 @@ test.describe("Other Options View", () => {
       .locator(".option-item")
       .filter({ hasText: "Docker container" });
     await expect(dockerOption).toBeVisible();
-    await expect(dockerOption).toContainText("Home Assistant container");
+    await expect(dockerOption).toContainText("Home Assistant Container");
+    await expect(dockerOption).toContainText(
+      "without apps (add-ons) or the Supervisor"
+    );
+    await expect(
+      page.getByRole("link", { name: "Compare installation types" })
+    ).toHaveAttribute(
+      "href",
+      "https://www.home-assistant.io/installation/#about-installation-types"
+    );
   });
 
   test("displays Synology NAS option", async ({ page }) => {

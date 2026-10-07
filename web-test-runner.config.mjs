@@ -32,7 +32,9 @@ export default {
     fullA11ySnapshotPlugin(),
     esbuildPlugin({
       ts: true,
-      tsconfig: "./tsconfig.test.json",
+      // The plugin passes raw config to esbuild, which does not resolve
+      // extends. Read the shared compiler settings directly.
+      tsconfig: "./tsconfig.json",
       // Vite sets this; the unit tests run through esbuild instead, and use
       // the same browser mock as the dev server.
       define: { "import.meta.env.DEV": "true" },

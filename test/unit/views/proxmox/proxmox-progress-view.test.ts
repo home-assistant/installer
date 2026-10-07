@@ -130,11 +130,21 @@ describe("proxmox-progress-view", () => {
   it("reports an error without starting when there is no session", async () => {
     wizardState.startFlow("proxmox");
 
-    const el = mount();
-    await el.updateComplete;
+    // The app shell only shows Cancel and Try again after install-error
+    let errorEvents = 0;
+    const onError = () => errorEvents++;
+    document.addEventListener("install-error", onError);
 
-    expect(abortSignalOf(el), "install should not have started").to.not.exist;
-    expect(el.hasError).to.be.true;
-    expect(el.shadowRoot!.textContent).to.contain("No Proxmox session");
+    try {
+      const el = mount();
+      await el.updateComplete;
+
+      expect(abortSignalOf(el), "install should not have started").to.not.exist;
+      expect(el.hasError).to.be.true;
+      expect(el.shadowRoot!.textContent).to.contain("No Proxmox session");
+      expect(errorEvents).to.equal(1);
+    } finally {
+      document.removeEventListener("install-error", onError);
+    }
   });
 });

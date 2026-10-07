@@ -22,7 +22,8 @@ export class MiniPCArchitectureSelectionView extends LitElement {
       text-align: center;
     }
 
-    .subtitle {
+    .subtitle,
+    .mac-note {
       font-size: 1rem;
       color: var(--ha-secondary-text-color, #727272);
       margin: 0 0 2rem 0;
@@ -36,6 +37,10 @@ export class MiniPCArchitectureSelectionView extends LitElement {
       gap: 1rem;
       width: 100%;
       max-width: 700px;
+    }
+
+    .mac-note {
+      margin-top: 1rem;
     }
 
     .option-card {
@@ -202,7 +207,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this._loadDevices();
+    void this._loadDevices();
 
     // Check if there's already a selection in wizard state
     const state = wizardState.getState();
@@ -317,11 +322,11 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                 <div class="option-content">
                   <p class="option-title">ARM (aarch64)</p>
                   <p class="option-description">
-                    ARM-based architecture used by some newer mini PCs and
-                    single-board computers
+                    ARM64 systems with UEFI firmware supported by Home Assistant
+                    OS
                   </p>
                   <p class="option-examples">
-                    Examples: Apple Silicon Mac mini, Ampere-based systems
+                    Examples: Ampere-based servers and compatible ARM boards
                   </p>
                 </div>
                 ${this._selectedDeviceId === this._arm64Device.id
@@ -331,6 +336,10 @@ export class MiniPCArchitectureSelectionView extends LitElement {
             `
           : ""}
       </div>
+      <p class="mac-note">
+        Apple Silicon Macs need a virtual machine. Run this installer on your
+        Mac and select <strong>Virtual machine</strong> to use UTM.
+      </p>
     `;
   }
 

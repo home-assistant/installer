@@ -151,13 +151,38 @@ pub(crate) async fn get_stable_version() -> Result<StableVersionInfo> {
 async fn get_latest_haos_version() -> Result<String> {
     let version_info = get_stable_version().await?;
 
-    // All boards should have the same version, just get the first one
-    version_info
-        .hassos
-        .values()
-        .next()
-        .cloned()
+    newest_version(version_info.hassos.values())
         .ok_or_else(|| Error::DownloadFailed("No HAOS versions found in stable.json".to_string()))
+}
+
+/// The HAOS version stable.json lists for `board`.
+///
+/// Boards can be held back during a staged rollout, so the version a board
+/// should get is its own entry, not whatever another board is on.
+async fn get_latest_haos_version_for_board(board: &str) -> Result<String> {
+    version_for_board(&get_stable_version().await?, board)
+}
+
+fn version_for_board(version_info: &StableVersionInfo, board: &str) -> Result<String> {
+    version_info.hassos.get(board).cloned().ok_or_else(|| {
+        Error::DownloadFailed(format!(
+            "Home Assistant OS has no current release for board: {}",
+            board
+        ))
+    })
+}
+
+/// The newest of a set of HAOS versions (`18.3` beats `9.5`), so the answer
+/// doesn't depend on HashMap order.
+fn newest_version<'a>(versions: impl Iterator<Item = &'a String>) -> Option<String> {
+    fn numeric(version: &str) -> Vec<u32> {
+        version
+            .split('.')
+            .map(|part| part.parse().unwrap_or(0))
+            .collect()
+    }
+
+    versions.max_by_key(|version| numeric(version)).cloned()
 }
 
 /// Fetch the latest HAOS release information
@@ -449,6 +474,11 @@ impl ReleaseSource for Backend {
         get_haos_release(version).await
     }
 
+    async fn get_latest_haos_release_for_board(&self, board: &str) -> Result<HaosRelease> {
+        let version = get_latest_haos_version_for_board(board).await?;
+        fetch_release(&version).await
+    }
+
     async fn download_image<P: ProgressCallback>(
         &self,
         url: &str,
@@ -479,6 +509,42 @@ impl ReleaseSource for Backend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn stable_with(boards: &[(&str, &str)]) -> StableVersionInfo {
+        serde_json::from_value(serde_json::json!({
+            "hassos": boards
+                .iter()
+                .map(|(board, version)| (board.to_string(), version.to_string()))
+                .collect::<std::collections::HashMap<_, _>>(),
+        }))
+        .expect("a stable.json with only hassos parses")
+    }
+
+    #[test]
+    fn test_version_for_board_uses_that_boards_entry() {
+        // A board held back during a staged rollout keeps its own version
+        let stable = stable_with(&[("rpi5-64", "18.3"), ("odroid-n2", "18.2")]);
+
+        assert_eq!(version_for_board(&stable, "odroid-n2").unwrap(), "18.2");
+        assert_eq!(version_for_board(&stable, "rpi5-64").unwrap(), "18.3");
+    }
+
+    #[test]
+    fn test_version_for_board_rejects_a_board_without_a_release() {
+        let stable = stable_with(&[("rpi5-64", "18.3")]);
+
+        match version_for_board(&stable, "tinker") {
+            Err(Error::DownloadFailed(msg)) => assert!(msg.contains("tinker"), "{msg}"),
+            other => panic!("Expected DownloadFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_newest_version_compares_numerically() {
+        let versions = ["9.5", "18.3", "18.10", "17.0"].map(String::from);
+        assert_eq!(newest_version(versions.iter()).as_deref(), Some("18.10"));
+        assert_eq!(newest_version([].iter()), None);
+    }
     use crate::types::GitHubAsset;
     use serial_test::serial;
 

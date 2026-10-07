@@ -248,8 +248,13 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
     await expect(armOption).toBeVisible();
 
     await expect(armOption.locator(".option-examples")).toContainText(
-      "Apple Silicon"
+      "Ampere-based servers"
     );
+    await expect(armOption).not.toContainText("Apple Silicon");
+    await expect(archView.locator(".mac-note")).toContainText(
+      "Virtual machine"
+    );
+    await expect(archView.locator(".mac-note")).toContainText("UTM");
   });
 
   test("selecting an architecture and clicking Next navigates to drive selection", async ({

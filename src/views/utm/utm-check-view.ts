@@ -214,7 +214,7 @@ export class UtmCheckView extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this._checkStatus();
+    void this._checkStatus();
   }
 
   private async _checkStatus() {

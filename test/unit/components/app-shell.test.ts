@@ -149,10 +149,10 @@ describe("app-shell", () => {
   describe("error state between runs", () => {
     it("is cleared when the wizard is cancelled", async () => {
       await enterSbcFlow(el);
-      // Without a board there is nothing to download, so no write starts.
+      // Without a board there is nothing to download, so no write starts:
+      // the progress view reports the flash error itself.
       selectTargets({ withBoard: false });
       await goToStep(el, "flash");
-      fire(shellOf(el).querySelector("progress-view")!, "flash-error");
       await waitUntil(() => shellOf(el).nextLabel === "Try again");
 
       fire(shellOf(el), "wizard-cancel");

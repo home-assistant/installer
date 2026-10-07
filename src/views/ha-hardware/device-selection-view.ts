@@ -118,7 +118,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this._loadDevices();
+    void this._loadDevices();
 
     // Check if there's already a selection in wizard state
     const state = wizardState.getState();

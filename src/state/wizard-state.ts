@@ -1,4 +1,4 @@
-import type { ProxmoxSession } from "../api/types.js";
+import type { HaosConfig, ProxmoxSession } from "../api/types.js";
 import type { InstallationPath } from "../views/path-selection-view.js";
 
 export type WizardFlow = InstallationPath;
@@ -18,6 +18,8 @@ export interface WizardStep {
  */
 export interface WizardSelections {
   device?: string;
+  /** HAOS image of the selected device; its board picks the image to flash. */
+  deviceConfig?: HaosConfig;
   /** Device id of the selected drive; also the path sent to the backend. */
   drive?: string;
   /** Rest of the selected drive's identity, kept so it can be re-verified. */
@@ -61,22 +63,22 @@ type WizardStateListener = (state: WizardState) => void;
 
 const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
   sbc: [
-    { id: "device", title: "Select Device" },
-    { id: "drive", title: "Select Drive" },
+    { id: "device", title: "Select device" },
+    { id: "drive", title: "Select drive" },
     { id: "confirm", title: "Confirm" },
     { id: "flash", title: "Install" },
     { id: "success", title: "Done" },
   ],
   minipc: [
-    { id: "method", title: "Installation Method" },
-    { id: "architecture", title: "Select Architecture" },
-    { id: "drive", title: "Select Drive" },
+    { id: "method", title: "Installation method" },
+    { id: "architecture", title: "Select architecture" },
+    { id: "drive", title: "Select drive" },
     { id: "confirm", title: "Confirm" },
     { id: "flash", title: "Install" },
     { id: "success", title: "Done" },
   ],
   "ha-hardware": [
-    { id: "device", title: "Select Device" },
+    { id: "device", title: "Select device" },
     { id: "connect", title: "Connect" },
     { id: "success", title: "Done" },
   ],
@@ -88,7 +90,7 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
     { id: "success", title: "Done" },
   ],
   vm: [
-    { id: "check", title: "Check Requirements" },
+    { id: "check", title: "Check requirements" },
     { id: "configure", title: "Configure VM" },
     { id: "confirm", title: "Confirm" },
     { id: "install", title: "Install" },

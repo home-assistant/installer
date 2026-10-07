@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "@playwright/test";
 
 test.describe("UTM Installation Flow", () => {
   test.beforeEach(async ({ page }) => {
@@ -32,8 +32,8 @@ test.describe("UTM Installation Flow", () => {
   test("shows step indicator with all steps", async ({ page }) => {
     const stepIndicator = page.locator("step-indicator");
     await expect(stepIndicator).toBeVisible();
-    // Should show: Check Requirements, Configure VM, Confirm, Install, Done
-    await expect(stepIndicator).toContainText("Check Requirements");
+    // Should show: Check requirements, Configure VM, Confirm, Install, Done
+    await expect(stepIndicator).toContainText("Check requirements");
     await expect(stepIndicator).toContainText("Configure VM");
     await expect(stepIndicator).toContainText("Confirm");
     await expect(stepIndicator).toContainText("Install");
@@ -572,14 +572,14 @@ test.describe("UTM Installation Flow", () => {
 // Playwright's isEnabled()/isDisabled() only understand native/ARIA disabled
 // state, not a custom element's `disabled` property. Read wa-button's property
 // directly instead.
-function buttonDisabled(locator: any): Promise<boolean> {
+function buttonDisabled(locator: Locator): Promise<boolean> {
   return locator.evaluate(
     (el: HTMLElement & { disabled: boolean }) => el.disabled
   );
 }
 
 // Helper functions to navigate to specific steps
-async function navigateToUtmStep2(page: any) {
+async function navigateToUtmStep2(page: Page) {
   // Wait for UTM check to complete
   await page.waitForTimeout(1000);
 
@@ -596,20 +596,20 @@ async function navigateToUtmStep2(page: any) {
   await expect(page.locator("utm-configure-view")).toBeVisible();
 }
 
-async function navigateToUtmStep3(page: any) {
+async function navigateToUtmStep3(page: Page) {
   await navigateToUtmStep2(page);
   await page.locator("wizard-shell").locator(".footer-right wa-button").click();
   await expect(page.locator("utm-confirm-view")).toBeVisible();
 }
 
-async function navigateToUtmStep4(page: any) {
+async function navigateToUtmStep4(page: Page) {
   await navigateToUtmStep3(page);
   // No confirmation dialog for VM flow - proceeds directly to install
   await page.locator("wizard-shell").locator(".footer-right wa-button").click();
   await expect(page.locator("utm-progress-view")).toBeVisible();
 }
 
-async function navigateToUtmStep5(page: any) {
+async function navigateToUtmStep5(page: Page) {
   await navigateToUtmStep4(page);
   await expect(page.locator("utm-success-view")).toBeVisible({
     timeout: 30000,

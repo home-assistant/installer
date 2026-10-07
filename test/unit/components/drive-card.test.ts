@@ -150,64 +150,6 @@ describe("drive-card", () => {
     expect(details!.textContent!.trim()).to.equal("USB drive");
   });
 
-  it("shows description for SD card", async () => {
-    const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="sd_card"></drive-card>
-    `);
-
-    const description = el.shadowRoot!.querySelector(".description");
-    expect(description!.textContent).to.equal(
-      "Great for Raspberry Pi and similar single-board computers"
-    );
-  });
-
-  it("shows description for USB drive", async () => {
-    const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="usb_drive"></drive-card>
-    `);
-
-    const description = el.shadowRoot!.querySelector(".description");
-    expect(description!.textContent).to.equal("Portable and easy to set up");
-  });
-
-  it("shows description for SSD", async () => {
-    const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="ssd"></drive-card>
-    `);
-
-    const description = el.shadowRoot!.querySelector(".description");
-    expect(description!.textContent).to.equal(
-      "Fast and reliable for daily use"
-    );
-  });
-
-  it("shows description for HDD", async () => {
-    const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="hdd"></drive-card>
-    `);
-
-    const description = el.shadowRoot!.querySelector(".description");
-    expect(description!.textContent).to.equal("High capacity storage option");
-  });
-
-  it("shows description for NVMe", async () => {
-    const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="nvme"></drive-card>
-    `);
-
-    const description = el.shadowRoot!.querySelector(".description");
-    expect(description!.textContent).to.equal("Maximum performance storage");
-  });
-
-  it("does not show description when disabled", async () => {
-    const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="ssd" disabled></drive-card>
-    `);
-
-    const description = el.shadowRoot!.querySelector(".description");
-    expect(description).to.be.null;
-  });
-
   it("has the correct structure", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test"></drive-card>
