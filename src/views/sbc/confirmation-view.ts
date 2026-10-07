@@ -1,7 +1,6 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
-import type { HaosConfig } from "../../api/types.js";
 import { getHaosRelease } from "../../api/commands.js";
 
 @customElement("confirmation-view")
@@ -198,7 +197,7 @@ export class ConfirmationView extends LitElement {
     const driveModel = [selections.driveVendor, selections.driveModel]
       .filter(Boolean)
       .join(" ");
-    const deviceConfig = selections.deviceConfig as HaosConfig | undefined;
+    const deviceConfig = selections.deviceConfig;
 
     return html`
       <h2>Ready to install</h2>

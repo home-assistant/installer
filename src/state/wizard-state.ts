@@ -1,4 +1,4 @@
-import type { ProxmoxSession } from "../api/types.js";
+import type { HaosConfig, ProxmoxSession } from "../api/types.js";
 import type { InstallationPath } from "../views/path-selection-view.js";
 
 export type WizardFlow = InstallationPath;
@@ -18,6 +18,8 @@ export interface WizardStep {
  */
 export interface WizardSelections {
   device?: string;
+  /** HAOS image of the selected device; its board picks the image to flash. */
+  deviceConfig?: HaosConfig;
   /** Device id of the selected drive; also the path sent to the backend. */
   drive?: string;
   /** Rest of the selected drive's identity, kept so it can be re-verified. */

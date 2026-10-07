@@ -394,8 +394,7 @@ export class ProxmoxProgressView extends LitElement {
     const session = selections.proxmoxSession;
 
     if (!session) {
-      this._error = "No Proxmox session available";
-      this._stage = "error";
+      this._setError("No Proxmox session available");
       return;
     }
 
@@ -470,18 +469,12 @@ export class ProxmoxProgressView extends LitElement {
         return;
       }
 
-      this._stage = "error";
-      this._error =
+      this._setError(
         typeof error === "string"
           ? error
           : error instanceof Error
             ? error.message
-            : "Failed to create virtual machine";
-      this.dispatchEvent(
-        new CustomEvent("install-error", {
-          bubbles: true,
-          composed: true,
-        })
+            : "Failed to create virtual machine"
       );
     } finally {
       // A newer attempt may own the component by now (cancel, then retry)
@@ -490,6 +483,18 @@ export class ProxmoxProgressView extends LitElement {
         this._abortController = undefined;
       }
     }
+  }
+
+  /** Show an error, and tell the app shell so it shows Cancel and Try again. */
+  private _setError(message: string) {
+    this._stage = "error";
+    this._error = message;
+    this.dispatchEvent(
+      new CustomEvent("install-error", {
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   render() {
