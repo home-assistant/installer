@@ -208,15 +208,9 @@ jobs:
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
           # Get version from workspace Cargo.toml
           CARGO_VERSION=$(grep -A1 '\[workspace.package\]' Cargo.toml | grep 'version' | sed 's/.*"\(.*\)".*/\1/')
-          PKG_VERSION=$(node -p "require('./package.json').version")
 
           if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
             echo "Tag version ($TAG_VERSION) doesn't match Cargo.toml ($CARGO_VERSION)"
-            exit 1
-          fi
-
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "Tag version ($TAG_VERSION) doesn't match package.json ($PKG_VERSION)"
             exit 1
           fi
 
@@ -396,7 +390,7 @@ Users can verify the authenticity of downloads using cosign:
 cosign verify-blob \
   --signature hai_macos-arm64.dmg.sig \
   --certificate hai_macos-arm64.dmg.pem \
-  --certificate-identity-regexp "https://github.com/home-assistant/hai/" \
+  --certificate-identity-regexp "https://github.com/home-assistant/installer/" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   hai_macos-arm64.dmg
 
@@ -404,7 +398,7 @@ cosign verify-blob \
 cosign verify-blob \
   --signature SHA256SUMS.txt.sig \
   --certificate SHA256SUMS.txt.pem \
-  --certificate-identity-regexp "https://github.com/home-assistant/hai/" \
+  --certificate-identity-regexp "https://github.com/home-assistant/installer/" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   SHA256SUMS.txt
 ```
@@ -465,7 +459,7 @@ No private keys to manage or rotate.
 
 ## Release Process
 
-1. Update version in `package.json` and root `Cargo.toml` workspace section
+1. Bump `version` in the `[workspace.package]` section of the root `Cargo.toml` and run `cargo check` to refresh `Cargo.lock`
 2. Create PR with version bump
 3. Merge to main after review
 4. Create and push tag: `git tag v1.0.0 && git push origin v1.0.0`
@@ -473,7 +467,12 @@ No private keys to manage or rotate.
 6. Review draft release and artifacts
 7. Publish release (makes it immutable)
 
-Note: The workspace uses `version.workspace = true` in crate Cargo.toml files, so version only needs updating in the root workspace Cargo.toml.
+The root `Cargo.toml` is the only place the app version lives:
+
+- The crates inherit it via `version.workspace = true`.
+- `tauri.conf.json` has no `version`, so Tauri uses the `hai-desktop` crate version for the bundles and the runtime `PackageInfo`.
+- Rust code reads it with `env!("CARGO_PKG_VERSION")` (e.g. the HTTP User-Agent).
+- `package.json` is private and never published; its version stays at `0.0.0` and is not bumped.
 
 ---
 

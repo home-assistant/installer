@@ -22,7 +22,7 @@ const HAOS_RELEASES_API: &str =
     "https://api.github.com/repos/home-assistant/operating-system/releases";
 
 /// User agent for API requests
-const USER_AGENT: &str = "HomeAssistantInstaller/0.1.0";
+const USER_AGENT: &str = concat!("HomeAssistantInstaller/", env!("CARGO_PKG_VERSION"));
 
 /// How often to send progress updates (every N bytes)
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
@@ -50,14 +50,10 @@ async fn check_for_updates() -> Result<UpdateInfo> {
     // TODO: Implement an actual update check
     Ok(UpdateInfo {
         update_available: false,
-        current_version: "0.1.0".to_string(),
-        latest_version: "0.1.0".to_string(),
-        download_url: Some(
-            "https://github.com/home-assistant/home-assistant-installer/releases".to_string(),
-        ),
-        release_notes_url: Some(
-            "https://github.com/home-assistant/home-assistant-installer/releases".to_string(),
-        ),
+        current_version: env!("CARGO_PKG_VERSION").to_string(),
+        latest_version: env!("CARGO_PKG_VERSION").to_string(),
+        download_url: Some("https://github.com/home-assistant/installer/releases".to_string()),
+        release_notes_url: Some("https://github.com/home-assistant/installer/releases".to_string()),
         is_beta: false,
     })
 }
@@ -1118,7 +1114,7 @@ mod tests {
 
             let mock = server
                 .mock("GET", "/stable.json")
-                .match_header("User-Agent", "HomeAssistantInstaller/0.1.0")
+                .match_header("User-Agent", USER_AGENT)
                 .with_status(200)
                 .with_header("content-type", "application/json")
                 .with_body(r#"{"hassos":{"rpi4":"14.2","generic-x86-64":"14.2"}}"#)
@@ -1247,7 +1243,7 @@ mod tests {
 
             let mock = server
                 .mock("GET", "/tags/14.2")
-                .match_header("User-Agent", "HomeAssistantInstaller/0.1.0")
+                .match_header("User-Agent", USER_AGENT)
                 .match_header("Accept", "application/vnd.github.v3+json")
                 .with_status(200)
                 .with_header("content-type", "application/json")

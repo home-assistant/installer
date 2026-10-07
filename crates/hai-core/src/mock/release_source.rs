@@ -11,14 +11,10 @@ use super::{simulate, simulate_indeterminate, touch_placeholder, BackendMock};
 fn mock_update_info() -> UpdateInfo {
     UpdateInfo {
         update_available: false,
-        current_version: "0.1.0".to_string(),
-        latest_version: "0.1.0".to_string(),
-        download_url: Some(
-            "https://github.com/home-assistant/home-assistant-installer/releases".to_string(),
-        ),
-        release_notes_url: Some(
-            "https://github.com/home-assistant/home-assistant-installer/releases".to_string(),
-        ),
+        current_version: env!("CARGO_PKG_VERSION").to_string(),
+        latest_version: env!("CARGO_PKG_VERSION").to_string(),
+        download_url: Some("https://github.com/home-assistant/installer/releases".to_string()),
+        release_notes_url: Some("https://github.com/home-assistant/installer/releases".to_string()),
         is_beta: false,
     }
 }
