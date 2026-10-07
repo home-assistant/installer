@@ -220,7 +220,7 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Home Assistant Installer",
-  "identifier": "org.openhomefoundation.hai",
+  "identifier": "io.home-assistant.installer",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
