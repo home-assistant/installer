@@ -36,6 +36,10 @@ rustix = { workspace = true }
 zbus = { workspace = true }
 libc = { workspace = true }
 
+# Windows specific
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true }
+
 [dev-dependencies]
 tokio = { workspace = true }
 tempfile = { workspace = true }

@@ -105,6 +105,24 @@ pub async fn flash_image(
     run_flash(&Backend, &request, &callback).await
 }
 
+/// The message for a failed write, as the frontend shows it.
+fn write_error_message(err: hai_core::Error) -> String {
+    match err {
+        // Verify-phase failures are tagged VerificationFailed; the rest are writes.
+        hai_core::Error::VerificationFailed(msg) => format!("Verification failed: {}", msg),
+        // Already carries its own "Disk service unavailable:" prefix.
+        err @ hai_core::Error::DiskServiceUnavailable(_) => err.to_string(),
+        // A disconnect doesn't require a prefix
+        err @ hai_core::Error::DriveDisconnected => err.to_string(),
+        // Self-explanatory messages; a "Write failed:" prefix would bury them.
+        err @ hai_core::Error::WriteProtected => err.to_string(),
+        err @ hai_core::Error::ImageTooLarge { .. } => err.to_string(),
+        err @ hai_core::Error::Cancelled => err.to_string(),
+        hai_core::Error::PermissionDenied(msg) => msg,
+        other => format!("Write failed: {}", other),
+    }
+}
+
 /// Download, extract, and write the image for `request`.
 ///
 /// Generic over the backend so the whole flow can be exercised against
@@ -200,19 +218,7 @@ where
             callback,
         )
         .await
-        .map_err(|e| match e {
-            // Verify-phase failures are tagged VerificationFailed; the rest are writes.
-            hai_core::Error::VerificationFailed(msg) => format!("Verification failed: {}", msg),
-            // Already carries its own "Disk service unavailable:" prefix.
-            err @ hai_core::Error::DiskServiceUnavailable(_) => err.to_string(),
-            // A disconnect doesn't require a prefix
-            err @ hai_core::Error::DriveDisconnected => err.to_string(),
-            // Self-explanatory messages; a "Write failed:" prefix would bury them.
-            err @ hai_core::Error::ImageTooLarge { .. } => err.to_string(),
-            err @ hai_core::Error::Cancelled => err.to_string(),
-            hai_core::Error::PermissionDenied(msg) => msg,
-            other => format!("Write failed: {}", other),
-        })?;
+        .map_err(write_error_message)?;
 
     // Clean up extracted image
     let _ = tokio::fs::remove_file(&extracted_path).await;
@@ -465,6 +471,19 @@ pub async fn proxmox_create_vm(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn write_error_message_shows_write_protection_without_a_prefix() {
+        let msg = write_error_message(hai_core::Error::WriteProtected);
+        assert_eq!(msg, hai_core::Error::WriteProtected.to_string());
+        assert!(!msg.starts_with("Write failed"), "{msg}");
+    }
+
+    #[test]
+    fn write_error_message_prefixes_a_plain_io_error() {
+        let msg = write_error_message(hai_core::Error::Io(std::io::Error::other("boom")));
+        assert!(msg.starts_with("Write failed"), "{msg}");
+    }
 
     // ===== Update Info Tests =====
 

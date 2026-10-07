@@ -55,6 +55,13 @@ rustix = { version = "1", features = ["fs", "net"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 libc = "0.2"
 
+# Windows specific
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_IO",
+  "Win32_System_Ioctl",
+] }
+
 # Tauri
 tauri = { version = "~2.12.0", features = [] }
 tauri-build = { version = "2", features = [] }
