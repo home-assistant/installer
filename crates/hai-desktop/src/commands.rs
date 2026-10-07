@@ -628,9 +628,10 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn test_system_info_macos_fallback_on_error() {
         let info = get_system_info().unwrap();
-        // Should return valid values even if sysctl fails (fallback to defaults)
-        assert!(info.cpu_cores >= 4);
-        assert!(info.memory_mb >= 8192);
+        // Real values from sysctl, or the fallback defaults if it fails.
+        // Either way they're non-zero; CI runners can have fewer than 4 cores.
+        assert!(info.cpu_cores >= 1);
+        assert!(info.memory_mb > 0);
     }
 
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers

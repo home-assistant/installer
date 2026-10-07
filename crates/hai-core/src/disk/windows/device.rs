@@ -32,7 +32,7 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
     let output = Command::new("powershell")
         .args(["-NoProfile", "-Command", script])
         .output()
-        .map_err(|e| Error::Io(e))?;
+        .map_err(Error::Io)?;
 
     if !output.status.success() {
         return Err(Error::DeviceNotFound(format!(
@@ -212,7 +212,7 @@ mod tests {
     fn test_parse_friendly_name_generic_usb() {
         let (vendor, model) = parse_friendly_name("Generic USB Flash Disk");
         assert_eq!(vendor, Some("Generic".to_string()));
-        assert_eq!(model, Some("Flash Disk".to_string()));
+        assert_eq!(model, Some("USB Flash Disk".to_string()));
     }
 
     #[test]

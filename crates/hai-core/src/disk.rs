@@ -44,6 +44,7 @@ const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
 /// Whether a media type/model string refers to an SD card. Matches "SD" as
 /// its own word (plus SDHC/SDXC/microSD variants) so names like "Samsung
 /// Portable SSD" don't count.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn mentions_sd_card(s: &str) -> bool {
     let s = s.to_lowercase();
     s.split(|c: char| !c.is_ascii_alphanumeric()).any(|token| {
@@ -135,6 +136,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn test_mentions_sd_card_whole_word_variants() {
         for s in [
             "SD",
@@ -153,6 +155,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn test_mentions_sd_card_rejects_substrings() {
         for s in [
             "",
