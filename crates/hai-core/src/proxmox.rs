@@ -410,6 +410,18 @@ async fn get_next_vm_id(session: &ProxmoxSession) -> Result<u32> {
     Ok(vm_id)
 }
 
+/// The node a task runs on, from its UPID (`UPID:<node>:<pid>:...`).
+///
+/// A task's status can only be read on the node that ran it. In a cluster
+/// that isn't always the node the request was sent to, so the UPID is the
+/// one place to trust.
+fn task_node(upid: &str) -> Option<&str> {
+    upid.strip_prefix("UPID:")?
+        .split(':')
+        .next()
+        .filter(|node| !node.is_empty())
+}
+
 /// Wait for a Proxmox task to complete.
 async fn wait_for_task(
     session: &ProxmoxSession,
@@ -420,7 +432,7 @@ async fn wait_for_task(
     let url = format!(
         "{}/api2/json/nodes/{}/tasks/{}/status",
         session.server_url.trim_end_matches('/'),
-        node,
+        task_node(upid).unwrap_or(node),
         urlencoding::encode(upid)
     );
 
@@ -443,10 +455,15 @@ async fn wait_for_task(
             .await
             .map_err(|e| Error::ProxmoxApi(format!("Failed to check task status: {}", e)))?;
 
-        if !response.status().is_success() {
+        let status = response.status();
+        if !status.is_success() {
+            // Proxmox explains a 400 in the body ("no such task", a parameter
+            // that failed verification); the status line alone hides it.
+            let body = response.text().await.unwrap_or_default();
             return Err(Error::ProxmoxApi(format!(
-                "Failed to check task status: {}",
-                response.status()
+                "Failed to check task status ({}): {}",
+                status,
+                body.trim()
             )));
         }
 
@@ -2154,6 +2171,91 @@ mod tests {
             assert!(result.is_err());
 
             task_mock.assert_async().await;
+        }
+
+        #[test]
+        fn test_task_node_comes_from_the_upid() {
+            assert_eq!(
+                task_node("UPID:pve2:0012ABCD:00ABCDEF:6703A1B2:imgcopy::root@pam:"),
+                Some("pve2")
+            );
+            assert_eq!(task_node("UPID::00000001:"), None);
+            assert_eq!(task_node("not a upid"), None);
+        }
+
+        /// In a cluster the task can run on another node than the one the
+        /// request went to; its status only exists on the node in the UPID.
+        #[tokio::test]
+        #[serial]
+        async fn test_wait_for_task_polls_the_node_from_the_upid() {
+            let mut server = Server::new_async().await;
+
+            let task_mock = server
+                .mock(
+                    "GET",
+                    "/api2/json/nodes/pve2/tasks/UPID%3Apve2%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
+                )
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"data": {"status": "stopped", "exitstatus": "OK"}}"#)
+                .create_async()
+                .await;
+
+            let session = ProxmoxSession {
+                server_url: server.url(),
+                ticket: "test-ticket".to_string(),
+                csrf_token: "test-csrf".to_string(),
+            };
+
+            let result = wait_for_task(
+                &session,
+                "pve1",
+                "UPID:pve2:00000001:00000002:00000003:test:root@pam:",
+                10,
+            )
+            .await;
+            assert!(result.is_ok(), "{result:?}");
+
+            task_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_wait_for_task_error_includes_what_proxmox_said() {
+            let mut server = Server::new_async().await;
+
+            let _task_mock = server
+                .mock(
+                    "GET",
+                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
+                )
+                .with_status(400)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"errors":{"upid":"no such task"},"data":null}"#)
+                .create_async()
+                .await;
+
+            let session = ProxmoxSession {
+                server_url: server.url(),
+                ticket: "test-ticket".to_string(),
+                csrf_token: "test-csrf".to_string(),
+            };
+
+            let result = wait_for_task(
+                &session,
+                "pve",
+                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
+                10,
+            )
+            .await;
+
+            match result {
+                Err(Error::ProxmoxApi(msg)) => {
+                    assert!(msg.contains("400"), "{msg}");
+                    assert!(msg.contains("no such task"), "{msg}");
+                }
+                other => panic!("Expected ProxmoxApi error, got {other:?}"),
+            }
         }
 
         #[tokio::test]
