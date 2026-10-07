@@ -25,7 +25,7 @@ pub fn run() {
             get_manifest,
             get_haos_release,
             get_system_info,
-            // UTM commands (macOS only, stubs on other platforms)
+            // UTM commands (hai-core reports UTM as unsupported off macOS)
             check_utm_status,
             download_utm_image,
             create_utm_vm,

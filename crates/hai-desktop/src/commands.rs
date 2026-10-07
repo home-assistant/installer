@@ -8,13 +8,9 @@ use hai_core::{
     BlockDevice, DeviceBackend, DeviceManifest, ExpectedDevice, FlashProgress, FlashRequest,
     FlashStage, HaosRelease, HostBackend, ImageFormat, ProgressCallback, ProxmoxBackend,
     ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig,
-    ProxmoxVmResult, ReleaseSource, SystemInfo, UpdateInfo, VmStatusInfo,
+    ProxmoxVmResult, ReleaseSource, SystemInfo, UpdateInfo, UtmBackend, VmStatusInfo,
 };
 use tauri::ipc::Channel;
-
-// Only the macOS-only UTM commands call through this trait.
-#[cfg(target_os = "macos")]
-use hai_core::UtmBackend;
 
 // =============================================================================
 // Tauri Progress Callback Adapter
@@ -283,7 +279,6 @@ pub fn get_system_info() -> Result<SystemInfo, String> {
 
 /// Download the HAOS qcow2 image for UTM
 #[tauri::command]
-#[cfg(target_os = "macos")]
 pub async fn download_utm_image(
     progress_channel: Channel<FlashProgress>,
 ) -> Result<String, String> {
@@ -306,7 +301,6 @@ pub async fn download_utm_image(
 /// Download and extract the HAOS qcow2 image for `arch`, returning the extracted path.
 ///
 /// Generic over the backend so it can be exercised against `BackendMock`.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 async fn run_utm_download<B, P>(backend: &B, arch: &str, callback: &P) -> Result<String, String>
 where
     B: ReleaseSource,
@@ -354,34 +348,14 @@ where
     Ok(extracted_path.to_string_lossy().to_string())
 }
 
-#[tauri::command]
-#[cfg(not(target_os = "macos"))]
-pub async fn download_utm_image(
-    _progress_channel: Channel<FlashProgress>,
-) -> Result<String, String> {
-    Err("UTM is only available on macOS".to_string())
-}
-
 /// Check if UTM is installed and get its status
 #[tauri::command]
-#[cfg(target_os = "macos")]
 pub async fn check_utm_status() -> Result<hai_core::UtmStatus, String> {
     Backend.check_utm_status().await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-#[cfg(not(target_os = "macos"))]
-pub fn check_utm_status() -> serde_json::Value {
-    serde_json::json!({
-        "installed": false,
-        "path": null,
-        "version": null
-    })
-}
-
 /// Create a Home Assistant VM in UTM
 #[tauri::command]
-#[cfg(target_os = "macos")]
 pub async fn create_utm_vm(config: hai_core::UtmVmConfig) -> Result<String, String> {
     // Fully qualified: `create_vm` is defined on both UtmBackend and ProxmoxBackend.
     let result = UtmBackend::create_vm(&Backend, &config, &hai_core::NoOpProgress)
@@ -391,51 +365,24 @@ pub async fn create_utm_vm(config: hai_core::UtmVmConfig) -> Result<String, Stri
     Ok(result.name)
 }
 
-#[tauri::command]
-#[cfg(not(target_os = "macos"))]
-pub fn create_utm_vm(_config: serde_json::Value) -> Result<String, String> {
-    Err("UTM is only available on macOS".to_string())
-}
-
 /// Start a UTM VM
 #[tauri::command]
-#[cfg(target_os = "macos")]
 pub fn start_utm_vm(_vm_id: String) -> Result<(), String> {
     // TODO: Implement via AppleScript
     Ok(())
 }
 
-#[tauri::command]
-#[cfg(not(target_os = "macos"))]
-pub fn start_utm_vm(_vm_id: String) -> Result<(), String> {
-    Err("UTM is only available on macOS".to_string())
-}
-
 /// Resize a UTM VM's disk
 #[tauri::command]
-#[cfg(target_os = "macos")]
 pub fn resize_utm_vm_disk(_vm_id: String, _size_gb: u32) -> Result<(), String> {
     // TODO: Implement via qemu-img
     Ok(())
 }
 
-#[tauri::command]
-#[cfg(not(target_os = "macos"))]
-pub fn resize_utm_vm_disk(_vm_id: String, _size_gb: u32) -> Result<(), String> {
-    Err("UTM is only available on macOS".to_string())
-}
-
 /// Get the status of a UTM VM
 #[tauri::command]
-#[cfg(target_os = "macos")]
 pub fn get_utm_vm_status(vm_id: String) -> Result<VmStatusInfo, String> {
     Backend.vm_status(&vm_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-#[cfg(not(target_os = "macos"))]
-pub fn get_utm_vm_status(_vm_id: String) -> Result<VmStatusInfo, String> {
-    Err("UTM is only available on macOS".to_string())
 }
 
 // =============================================================================
@@ -570,56 +517,6 @@ mod tests {
         }
     }
 
-    // ===== UTM Command Tests - macOS Specific =====
-
-    #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn test_create_utm_vm_non_macos() {
-        let result = create_utm_vm(serde_json::json!({
-            "name": "Test VM",
-            "memory_mb": 4096,
-            "cpu_cores": 2,
-            "disk_size_gb": 32,
-            "image_path": "/tmp/test.qcow2"
-        }));
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("macOS"));
-    }
-
-    #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn test_start_utm_vm_non_macos() {
-        let result = start_utm_vm("test-vm-id".to_string());
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("macOS"));
-    }
-
-    #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn test_resize_utm_vm_disk_non_macos() {
-        let result = resize_utm_vm_disk("test-vm-id".to_string(), 64);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("macOS"));
-    }
-
-    #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn test_get_utm_vm_status_non_macos() {
-        let result = get_utm_vm_status("test-vm-id".to_string());
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("macOS"));
-    }
-
-    #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn test_check_utm_status_non_macos() {
-        let result = check_utm_status();
-        // Should return a JSON value with installed: false
-        assert_eq!(result["installed"], false);
-        assert_eq!(result["path"], serde_json::Value::Null);
-        assert_eq!(result["version"], serde_json::Value::Null);
-    }
-
     // ===== Non-mock System Info Tests =====
 
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
@@ -630,13 +527,6 @@ mod tests {
         // Should return valid values even if sysctl fails (fallback to defaults)
         assert!(info.cpu_cores >= 4);
         assert!(info.memory_mb >= 8192);
-    }
-
-    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
-    #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn test_system_info_non_macos() {
-        assert!(get_system_info().is_err());
     }
 
     // ===== Additional edge case tests =====

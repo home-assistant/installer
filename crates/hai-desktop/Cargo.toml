@@ -30,7 +30,6 @@ tauri-plugin-opener = { workspace = true }
 
 # Serialization (for Tauri commands)
 serde = { workspace = true }
-serde_json = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
