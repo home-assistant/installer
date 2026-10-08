@@ -32,6 +32,13 @@ function mount(): UtmProgressView {
   `);
 }
 
+/** The error shown by the shared progress layout, which renders it in its own shadow root. */
+function errorText(view: UtmProgressView) {
+  return view
+    .shadowRoot!.querySelector("install-progress")!
+    .shadowRoot!.querySelector(".error-message")?.textContent;
+}
+
 describe("utm-progress-view", () => {
   beforeEach(() => {
     wizardState.startFlow("vm");
@@ -427,9 +434,7 @@ describe("utm-progress-view", () => {
     const next = mount();
     await next.updateComplete;
     expect(next.hasError).to.be.true;
-    expect(next.shadowRoot!.textContent).to.contain(
-      "already created with earlier settings"
-    );
+    expect(errorText(next)).to.contain("already created with earlier settings");
     next.retry();
     await next.updateComplete;
     expect(next.hasError).to.be.true;
@@ -466,9 +471,7 @@ describe("utm-progress-view", () => {
       await error;
       await el.updateComplete;
       expect(el.hasError).to.be.true;
-      expect(el.shadowRoot!.textContent).to.contain(
-        "Check UTM before trying again"
-      );
+      expect(errorText(el)).to.contain("Check UTM before trying again");
       expect(wizardState.getState().selections.vmId).to.equal(
         change === "new VM" ? "newer-vm" : undefined
       );
@@ -612,9 +615,7 @@ describe("utm-progress-view", () => {
     }
     await el.updateComplete;
     expect(completed).to.be.false;
-    expect(el.shadowRoot!.textContent).to.contain(
-      "did not report an IPv4 address"
-    );
+    expect(errorText(el)).to.contain("did not report an IPv4 address");
     expect(wizardState.getState().selections.ipAddress).to.be.undefined;
     expect(calls).to.not.include("check_ha_ready");
     expect(calls).to.not.include("check_ha_updated");
