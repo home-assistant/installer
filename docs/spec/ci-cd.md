@@ -1,5 +1,8 @@
 # CI/CD (GitHub Actions)
 
+The proposed protected Windows signing setup and its external acceptance gates
+are documented in [Windows signing](../windows-signing.md).
+
 ## Principles
 
 - **Immutable releases**: Once a version is released, it cannot be changed

@@ -252,11 +252,36 @@ jobs:
           flags: backend
           fail_ci_if_error: false
 
+  test-windows-signing:
+    name: Test Windows signing guards
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install NSIS for compile-only fixtures
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nsis
+
+      - name: Test signing and NSIS failure guards
+        shell: pwsh
+        run: |
+          ./.github/scripts/windows-signing.tests.ps1
+          ./.github/scripts/windows-signing-nsis.tests.ps1
+
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
+      id-token: write # Federation must trust only the upstream release environment.
+    environment: ${{ matrix.os == 'windows-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main' && 'release' || '' }}
+    env:
+      SIGN_WINDOWS: ${{ matrix.os == 'windows-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     strategy:
       fail-fast: false
       matrix:
@@ -276,6 +301,7 @@ jobs:
         uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
 
       - name: Cache cargo
+        if: env.SIGN_WINDOWS != 'true'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install Tauri dependencies (Linux)
@@ -288,9 +314,68 @@ jobs:
         run: npm ci
 
       - name: Build
+        if: env.SIGN_WINDOWS != 'true'
         run: npm run tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
+
+      - name: Compile Windows before signing login
+        if: env.SIGN_WINDOWS == 'true'
+        run: npm run tauri build -- --no-bundle
+
+      - name: Test Windows signing guards
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/windows-signing.tests.ps1
+
+      - name: Prepare Windows signing
+        if: env.SIGN_WINDOWS == 'true'
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          WINDOWS_SIGNING_ENDPOINT: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
+          WINDOWS_SIGNING_ACCOUNT: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
+          WINDOWS_SIGNING_PROFILE: ${{ vars.WINDOWS_SIGNING_PROFILE }}
+          WINDOWS_SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+        run: ./.github/scripts/windows-signing.ps1 -Mode Prepare
+
+      - name: Azure login for Windows signing
+        if: env.SIGN_WINDOWS == 'true'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+        env:
+          AZURE_CORE_OUTPUT: none
+
+      - name: Bundle and verify Windows signatures
+        if: env.SIGN_WINDOWS == 'true'
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
+          WINDOWS_SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+        run: |
+          npm run tauri bundle -- --config "$env:RUNNER_TEMP/windows-signing/tauri-signing.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Signed Windows bundling failed' }
+          # Tauri restores the unsigned build binary. The signing command
+          # verifies the patched application before each package embeds it.
+          foreach ($format in @(@{ Folder = 'msi'; Filter = '*.msi' }, @{ Folder = 'nsis'; Filter = '*.exe' })) {
+            $installers = @(Get-ChildItem -LiteralPath "target/release/bundle/$($format.Folder)" -Filter $format.Filter -File)
+            if ($installers.Count -ne 1) { throw "Expected exactly one $($format.Folder) installer" }
+            ./.github/scripts/windows-signing.ps1 -Mode Verify -File $installers[0].FullName
+          }
+
+      - name: Remove Windows signing files
+        if: always() && env.SIGN_WINDOWS == 'true'
+        shell: pwsh
+        run: Remove-Item -LiteralPath "$env:RUNNER_TEMP/windows-signing" -Recurse -Force -ErrorAction SilentlyContinue
+
+      - name: Test NSIS signing failure guards on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/windows-signing-nsis.tests.ps1 -MakeNsis "$env:LOCALAPPDATA/tauri/NSIS/makensis.exe"
 
       # Uploads every installer as its own artifact, named after the file
       # itself, unarchived so users download the installer directly instead
