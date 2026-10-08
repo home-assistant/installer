@@ -141,7 +141,10 @@ describe("proxmox-progress-view", () => {
 
       expect(abortSignalOf(el), "install should not have started").to.not.exist;
       expect(el.hasError).to.be.true;
-      expect(el.shadowRoot!.textContent).to.contain("No Proxmox session");
+      expect(
+        el.shadowRoot!.querySelector("install-progress")!.shadowRoot!
+          .textContent
+      ).to.contain("No Proxmox session");
       expect(errorEvents).to.equal(1);
     } finally {
       document.removeEventListener("install-error", onError);

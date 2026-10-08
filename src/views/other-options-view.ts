@@ -10,11 +10,13 @@ interface OtherOption {
   icon: string;
 }
 
+const INSTALLATION_TYPES_URL =
+  "https://www.home-assistant.io/installation/#about-installation-types";
+
 const OTHER_OPTIONS: OtherOption[] = [
   {
-    title: "Docker container",
-    description:
-      "Run Home Assistant Container without apps (add-ons) or the Supervisor",
+    title: "Home Assistant Container",
+    description: "Run it with Docker, without apps (add-ons) or the Supervisor",
     url: "https://www.home-assistant.io/installation/linux#docker-compose",
     icon: "docker",
   },
@@ -193,14 +195,11 @@ export class OtherOptionsView extends LitElement {
           These options are not directly supported by this installer, but you
           can follow our documentation to set them up.
           <a
-            href="https://www.home-assistant.io/installation/#about-installation-types"
+            href=${INSTALLATION_TYPES_URL}
             target="_blank"
             rel="noopener noreferrer"
             @click=${(event: Event) =>
-              openExternalLink(
-                event,
-                "https://www.home-assistant.io/installation/#about-installation-types"
-              )}
+              openExternalLink(event, INSTALLATION_TYPES_URL)}
             >Compare installation types</a
           >.
         </p>

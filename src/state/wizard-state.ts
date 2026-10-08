@@ -1,4 +1,4 @@
-import type { HaosConfig, ProxmoxSession } from "../api/types.js";
+import type { HaosConfig, ProxmoxSession, UtmVmConfig } from "../api/types.js";
 import type { InstallationPath } from "../views/path-selection-view.js";
 
 export type WizardFlow = InstallationPath;
@@ -38,16 +38,26 @@ export interface WizardSelections {
   ipAddress?: string;
 
   /** UTM install progress, so a retry resumes instead of starting over. */
-  utmImagePath?: string;
   vmId?: string;
+  /** Native creation outlives its view; reentry must await the same result. */
+  utmCreation?: { config: UtmVmConfig; result: Promise<string> };
+  /** A completed VM with superseded settings must not be silently recreated. */
+  utmSupersededVmId?: string;
   /** Set once the disk of the VM in `vmId` has been resized. */
   utmDiskResized?: boolean;
 
-  /** Proxmox target picked in the "Configure VM" step. */
+  /** Proxmox login, kept so going back to the connect step doesn't log in again. */
   proxmoxSession?: ProxmoxSession;
+  proxmoxUsername?: string;
+  /** Cleared when a connect field changes, so the session no longer applies. */
+  proxmoxConnected?: boolean;
+
+  /** Proxmox target picked in the "Configure VM" step. */
   proxmoxNode?: string;
   proxmoxStorage?: string;
   proxmoxVmId?: number;
+  /** Node and storage selections were verified by the current configure view. */
+  proxmoxConfigureReady?: boolean;
 
   [key: string]: unknown;
 }
@@ -109,7 +119,13 @@ function createInitialState(): WizardState {
 
 class WizardStateStore {
   private state: WizardState = createInitialState();
+  private _flowGeneration = 0;
   private listeners: Set<WizardStateListener> = new Set();
+
+  /** Identifies a flow across navigation and selection updates. */
+  get flowGeneration(): number {
+    return this._flowGeneration;
+  }
 
   getState(): WizardState {
     return this.state;
@@ -125,6 +141,7 @@ class WizardStateStore {
   }
 
   startFlow(flow: WizardFlow) {
+    this._flowGeneration++;
     this.state = {
       currentFlow: flow,
       currentStepIndex: 0,
@@ -179,6 +196,7 @@ class WizardStateStore {
   }
 
   reset() {
+    this._flowGeneration++;
     this.state = createInitialState();
     this.notify();
   }

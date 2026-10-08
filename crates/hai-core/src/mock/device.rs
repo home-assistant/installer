@@ -13,7 +13,7 @@ fn mock_block_devices() -> Vec<BlockDevice> {
         BlockDevice {
             id: "mock-sd-card-32gb".to_string(),
             name: "SD Card 32GB".to_string(),
-            size: 32 * 1024 * 1024 * 1024, // 32 GB
+            size: 32_000_000_000, // 32 GB
             device_type: DeviceType::SdCard,
             removable: true,
             model: Some("SanDisk Ultra".to_string()),
@@ -22,7 +22,7 @@ fn mock_block_devices() -> Vec<BlockDevice> {
         BlockDevice {
             id: "mock-sd-card-64gb".to_string(),
             name: "SD Card 64GB".to_string(),
-            size: 64 * 1024 * 1024 * 1024, // 64 GB
+            size: 64_000_000_000, // 64 GB
             device_type: DeviceType::SdCard,
             removable: true,
             model: Some("Samsung EVO Plus".to_string()),
@@ -31,7 +31,7 @@ fn mock_block_devices() -> Vec<BlockDevice> {
         BlockDevice {
             id: "mock-usb-drive-128gb".to_string(),
             name: "USB Drive 128GB".to_string(),
-            size: 128 * 1024 * 1024 * 1024, // 128 GB
+            size: 128_000_000_000, // 128 GB
             device_type: DeviceType::UsbDrive,
             removable: true,
             model: Some("USB Flash Drive".to_string()),
@@ -40,7 +40,7 @@ fn mock_block_devices() -> Vec<BlockDevice> {
         BlockDevice {
             id: "mock-ssd-256gb".to_string(),
             name: "External SSD 256GB".to_string(),
-            size: 256 * 1024 * 1024 * 1024, // 256 GB
+            size: 256_000_000_000, // 256 GB
             device_type: DeviceType::Ssd,
             removable: true,
             model: Some("Portable SSD T7".to_string()),
@@ -49,7 +49,7 @@ fn mock_block_devices() -> Vec<BlockDevice> {
         BlockDevice {
             id: "mock-nvme-500gb".to_string(),
             name: "NVMe Drive 500GB".to_string(),
-            size: 500 * 1024 * 1024 * 1024, // 500 GB
+            size: 500_000_000_000, // 500 GB
             device_type: DeviceType::Nvme,
             removable: false,
             model: Some("970 EVO Plus".to_string()),

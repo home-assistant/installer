@@ -93,6 +93,23 @@ When contributing UI changes, remember:
 3. **Follow HA branding**: Use Home Assistant colors and style
 4. **Include Casita**: Use the mascot for personality in appropriate places
 
+## Storage Capacity
+
+Board entries in the bundled manifest define minimum and recommended nominal
+drive capacities in decimal bytes. The initial policy is 16 GB minimum and
+32 GB recommended: the [Home Assistant FAQ](https://www.home-assistant.io/faq/)
+recommends 32 GB, while the
+[ODROID guide](https://www.home-assistant.io/installation/odroid/) lists 16 GB
+eMMC configurations.
+
+Reported capacity may be up to 5% below the nominal capacity to account for
+manufacturer-reserved space. For example, the 16 GB and 32 GB classes require
+at least 15.2 GB and 30.4 GB reported capacity, respectively. Keep the frontend
+classification and native minimum check consistent. This allowance never
+applies to the separate exact-byte check that the extracted image fits the
+drive. Display reported capacity using the shared decimal formatter; do not
+substitute a nominal label or use display rounding to decide eligibility.
+
 ## Getting Help
 
 - [Home Assistant Discord](https://discord.gg/home-assistant)

@@ -1,7 +1,7 @@
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
-import { getHaosRelease } from "../../api/commands.js";
+import { formatBytes, getHaosRelease } from "../../api/commands.js";
 
 @customElement("confirmation-view")
 export class ConfirmationView extends LitElement {
@@ -267,12 +267,8 @@ export class ConfirmationView extends LitElement {
   }
 
   private _formatSize(bytes: number | undefined): string {
-    if (!bytes) return "Unknown size";
-    const gb = bytes / (1024 * 1024 * 1024);
-    if (gb >= 1000) {
-      return `${(gb / 1024).toFixed(1)} TB`;
-    }
-    return `${gb.toFixed(0)} GB`;
+    if (bytes === undefined) return "Unknown size";
+    return formatBytes(bytes);
   }
 
   private _renderBoardIcon() {

@@ -87,13 +87,6 @@ export class PathSelectionView extends LitElement {
 
         <div class="options-grid">
           <option-card
-            title="Home Assistant hardware"
-            description="Home Assistant Green, Yellow, or Blue by Nabu Casa"
-            icon="ha-hardware"
-            @click=${() => this._onSelectPath("ha-hardware")}
-          ></option-card>
-
-          <option-card
             title="Raspberry Pi & other boards"
             description="Single board computers like Raspberry Pi, ODROID, and more"
             icon="sbc"

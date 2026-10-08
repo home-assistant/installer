@@ -39,7 +39,7 @@ test.describe("Navigation Flow", () => {
     // Check for all options
     await expect(
       pathSelectionView.locator('option-card[title="Home Assistant hardware"]')
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(
       pathSelectionView.locator(
         'option-card[title="Raspberry Pi & other boards"]'
@@ -99,16 +99,6 @@ test.describe("Path Selection Options", () => {
     await page.goto("/");
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
-  });
-
-  test("Home Assistant Hardware option has correct description", async ({
-    page,
-  }) => {
-    const card = page.locator('option-card[title="Home Assistant hardware"]');
-    await expect(card).toHaveAttribute(
-      "description",
-      /Green.*Yellow.*Blue.*Nabu Casa/
-    );
   });
 
   test("Raspberry Pi option has correct description", async ({ page }) => {

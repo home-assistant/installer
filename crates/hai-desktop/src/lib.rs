@@ -5,29 +5,56 @@
 
 mod backend;
 mod commands;
+mod flash_state;
+
+#[cfg(desktop)]
+use tauri::Manager;
 
 use commands::{
-    check_for_updates, check_ha_ready, check_ha_updated, check_utm_status, create_utm_vm,
-    download_utm_image, flash_image, get_haos_release, get_manifest, get_system_info,
-    get_utm_vm_status, list_block_devices, proxmox_connect, proxmox_create_vm,
+    check_connection, check_ha_ready, check_ha_updated, check_utm_status, create_utm_vm,
+    discard_utm_image, download_utm_image, flash_image, get_haos_release, get_manifest,
+    get_system_info, get_utm_vm_status, list_block_devices, proxmox_connect, proxmox_create_vm,
     proxmox_get_next_vm_id, proxmox_list_nodes, proxmox_list_storage, resize_utm_vm_disk,
     start_utm_vm,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // Register first so a second launch exits before initializing other plugins.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
+        .manage(flash_state::FlashState::default())
+        .manage(commands::PendingUtmImages::default())
+        .setup(|_| {
+            if let Ok(cache) = hai_core::ReleaseSource::cache_dir(&backend::Backend) {
+                if let Err(error) = hai_core::download::prune_cached_images(&cache) {
+                    eprintln!("Could not prune cached images: {error}");
+                }
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            check_connection,
             list_block_devices,
             flash_image,
-            check_for_updates,
             get_manifest,
             get_haos_release,
             get_system_info,
             // UTM commands (hai-core reports UTM as unsupported off macOS)
             check_utm_status,
             download_utm_image,
+            discard_utm_image,
             create_utm_vm,
             start_utm_vm,
             resize_utm_vm_disk,

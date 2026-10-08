@@ -251,10 +251,18 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
       "Ampere-based servers"
     );
     await expect(armOption).not.toContainText("Apple Silicon");
-    await expect(archView.locator(".mac-note")).toContainText(
-      "Virtual machine"
+
+    // The pointer to the VM flow is only for someone sitting at a Mac
+    const onMac = await page.evaluate(() =>
+      /Macintosh|Mac OS X/.test(navigator.userAgent)
     );
-    await expect(archView.locator(".mac-note")).toContainText("UTM");
+    if (onMac) {
+      await expect(archView.locator(".mac-note")).toContainText(
+        "Virtual machine"
+      );
+    } else {
+      await expect(archView.locator(".mac-note")).toHaveCount(0);
+    }
   });
 
   test("selecting an architecture and clicking Next navigates to drive selection", async ({

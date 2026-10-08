@@ -70,7 +70,7 @@ describe("confirm-dialog", () => {
       const details = el.shadowRoot!.querySelector(".drive-details")!;
       expect(details.textContent).to.contain("/dev/sdb");
       expect(details.textContent).to.contain("SanDisk Ultra");
-      expect(details.textContent).to.contain("29.8 GB");
+      expect(details.textContent).to.contain("32 GB");
     });
 
     it("leaves out an unknown size", async () => {

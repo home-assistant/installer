@@ -4,13 +4,24 @@
 //! It handles the bridge between Tauri's Channel<T> and hai-core's ProgressCallback trait.
 
 use crate::backend::Backend;
+use crate::flash_state::FlashState;
+use hai_core::download::TemporaryImage;
 use hai_core::{
     BlockDevice, DeviceBackend, DeviceManifest, ExpectedDevice, FlashProgress, FlashRequest,
     FlashStage, HaosRelease, HostBackend, ImageFormat, ProgressCallback, ProxmoxBackend,
     ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig,
-    ProxmoxVmResult, ReleaseSource, SystemInfo, UpdateInfo, UtmBackend, VmStatusInfo,
+    ProxmoxVmResult, ReleaseSource, SystemInfo, UtmBackend, VmStatusInfo,
 };
 use tauri::ipc::Channel;
+
+#[derive(Default)]
+pub struct PendingUtmImages(std::sync::Mutex<std::collections::HashMap<String, TemporaryImage>>);
+
+impl PendingUtmImages {
+    fn take(&self, image_path: &str) -> Option<TemporaryImage> {
+        self.0.lock().unwrap().remove(image_path)
+    }
+}
 
 // =============================================================================
 // Tauri Progress Callback Adapter
@@ -49,6 +60,22 @@ pub struct FlashResult {
 // Device Commands
 // =============================================================================
 
+/// Check internet access before starting an installation flow.
+#[tauri::command]
+pub async fn check_connection() -> Result<(), String> {
+    Backend
+        .check_connection()
+        .await
+        .map_err(connection_error_message)
+}
+
+fn connection_error_message(error: hai_core::Error) -> String {
+    match error {
+        hai_core::Error::DownloadFailed(message) => message,
+        error => error.to_string(),
+    }
+}
+
 /// List all block devices
 #[tauri::command]
 pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
@@ -69,6 +96,7 @@ fn find_flash_target<'a>(
     devices: &'a [BlockDevice],
     device_id: &str,
     expected: &ExpectedDevice,
+    board: &str,
 ) -> Result<&'a BlockDevice, String> {
     let device = devices.iter().find(|d| d.id == device_id).ok_or_else(|| {
         format!(
@@ -92,6 +120,19 @@ fn find_flash_target<'a>(
         ));
     }
 
+    let config = hai_core::manifest::bundled_manifest()
+        .devices
+        .into_iter()
+        .find(|device| device.haos.board == board)
+        .ok_or_else(|| format!("No storage requirements found for board: {}", board))?
+        .haos;
+    if device.size < config.minimum_reported_storage_bytes() {
+        return Err(format!(
+            "The selected drive is too small. At least a {:.0} GB drive is required.",
+            config.minimum_storage_bytes as f64 / 1_000_000_000.0
+        ));
+    }
+
     Ok(device)
 }
 
@@ -100,9 +141,14 @@ fn find_flash_target<'a>(
 pub async fn flash_image(
     request: FlashRequest,
     progress_channel: Channel<FlashProgress>,
+    state: tauri::State<'_, FlashState>,
 ) -> Result<FlashResult, String> {
-    let callback = TauriProgressCallback::new(&progress_channel);
-    run_flash(&Backend, &request, &callback).await
+    state
+        .run(async move {
+            let callback = TauriProgressCallback::new(&progress_channel);
+            run_flash(&Backend, &request, &callback).await
+        })
+        .await
 }
 
 /// The message for a failed write, as the frontend shows it.
@@ -138,6 +184,10 @@ where
 {
     let start_time = std::time::Instant::now();
 
+    backend
+        .check_write_privileges()
+        .map_err(|e| e.to_string())?;
+
     // Send initial progress
     callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
@@ -171,20 +221,20 @@ where
     let cache_dir = backend
         .cache_dir()
         .map_err(|e| format!("Cache error: {}", e))?;
-    let image_filename = format!("haos_{}.img.xz", request.board);
-    let compressed_path = cache_dir.join(&image_filename);
+    let temporary_image =
+        TemporaryImage::new(&cache_dir, ImageFormat::Raw).map_err(|e| e.to_string())?;
+    let compressed_path = temporary_image.archive_path();
 
     backend
-        .download_image(&image.download_url, &compressed_path, callback)
+        .download_image(image, &compressed_path, callback)
         .await
         .map_err(|e| e.to_string())?;
 
     // Extract the image
-    let extracted_filename = image_filename.replace(".xz", "");
-    let extracted_path = cache_dir.join(&extracted_filename);
+    let extracted_path = temporary_image.path();
 
     backend
-        .extract_xz(&compressed_path, &extracted_path, callback)
+        .extract_temporary_image(&temporary_image, callback)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -199,7 +249,12 @@ where
         .await
         .map_err(|e| format!("Failed to list devices: {}", e))?;
 
-    let device = find_flash_target(&device_list, &request.device_id, &request.expected_device)?;
+    let device = find_flash_target(
+        &device_list,
+        &request.device_id,
+        &request.expected_device,
+        &request.board,
+    )?;
 
     if image_size > device.size {
         return Err(format!(
@@ -220,8 +275,7 @@ where
         .await
         .map_err(write_error_message)?;
 
-    // Clean up extracted image
-    let _ = tokio::fs::remove_file(&extracted_path).await;
+    drop(temporary_image);
 
     let duration = start_time.elapsed();
 
@@ -254,12 +308,6 @@ pub async fn get_haos_release(version: Option<String>) -> Result<HaosRelease, St
         .map_err(|e| e.to_string())
 }
 
-/// Check for application updates
-#[tauri::command]
-pub async fn check_for_updates() -> Result<UpdateInfo, String> {
-    Backend.check_for_updates().await.map_err(|e| e.to_string())
-}
-
 /// Get the device manifest
 #[tauri::command]
 pub async fn get_manifest() -> Result<DeviceManifest, String> {
@@ -287,6 +335,7 @@ pub fn get_system_info() -> Result<SystemInfo, String> {
 #[tauri::command]
 pub async fn download_utm_image(
     progress_channel: Channel<FlashProgress>,
+    pending: tauri::State<'_, PendingUtmImages>,
 ) -> Result<String, String> {
     let callback = TauriProgressCallback::new(&progress_channel);
 
@@ -295,19 +344,25 @@ pub async fn download_utm_image(
         .check_utm_status()
         .await
         .map_err(|e| e.to_string())?;
-    let arch = if cfg!(target_arch = "aarch64") {
-        "generic-aarch64"
-    } else {
-        "generic-x86-64"
-    };
+    #[cfg(all(feature = "mock", not(target_os = "macos")))]
+    let arch = hai_core::utm::UtmArchitecture::X86_64;
+    #[cfg(any(not(feature = "mock"), target_os = "macos"))]
+    let arch = hai_core::utm::UtmArchitecture::host().map_err(|e| e.to_string())?;
 
-    run_utm_download(&Backend, arch, &callback).await
+    let image = run_utm_download(&Backend, arch.haos_board(), &callback).await?;
+    let path = image.path().to_string_lossy().into_owned();
+    pending.0.lock().unwrap().insert(path.clone(), image);
+    Ok(path)
 }
 
 /// Download and extract the HAOS qcow2 image for `arch`, returning the extracted path.
 ///
 /// Generic over the backend so it can be exercised against `BackendMock`.
-async fn run_utm_download<B, P>(backend: &B, arch: &str, callback: &P) -> Result<String, String>
+async fn run_utm_download<B, P>(
+    backend: &B,
+    arch: &str,
+    callback: &P,
+) -> Result<TemporaryImage, String>
 where
     B: ReleaseSource,
     P: ProgressCallback,
@@ -330,16 +385,17 @@ where
         .ok_or_else(|| format!("No qcow2 image found for: {}", arch))?;
 
     let cache_dir = backend.cache_dir().map_err(|e| e.to_string())?;
-    let compressed_path = cache_dir.join(format!("haos_{}.qcow2.xz", arch));
+    let temporary_image =
+        TemporaryImage::new(&cache_dir, ImageFormat::Qcow2).map_err(|e| e.to_string())?;
+    let compressed_path = temporary_image.archive_path();
 
     backend
-        .download_image(&image.download_url, &compressed_path, callback)
+        .download_image(image, &compressed_path, callback)
         .await
         .map_err(|e| e.to_string())?;
 
-    let extracted_path = cache_dir.join(format!("haos_{}.qcow2", arch));
     backend
-        .extract_xz(&compressed_path, &extracted_path, callback)
+        .extract_temporary_image(&temporary_image, callback)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -351,7 +407,14 @@ where
         message: "Download complete!".to_string(),
     });
 
-    Ok(extracted_path.to_string_lossy().to_string())
+    Ok(temporary_image)
+}
+
+/// Release a downloaded image abandoned before VM creation. Unknown paths are
+/// never deleted, and an image being imported has already left this registry.
+#[tauri::command]
+pub fn discard_utm_image(image_path: String, pending: tauri::State<'_, PendingUtmImages>) {
+    pending.take(&image_path);
 }
 
 /// Check if UTM is installed and get its status
@@ -362,17 +425,50 @@ pub async fn check_utm_status() -> Result<hai_core::UtmStatus, String> {
 
 /// Create a Home Assistant VM in UTM
 #[tauri::command]
-pub async fn create_utm_vm(config: hai_core::UtmVmConfig) -> Result<String, String> {
-    // Fully qualified: `create_vm` is defined on both UtmBackend and ProxmoxBackend.
-    let result = UtmBackend::create_vm(&Backend, &config, &hai_core::NoOpProgress)
-        .await
-        .map_err(|e| e.to_string())?;
+pub async fn create_utm_vm(
+    config: hai_core::UtmVmConfig,
+    pending: tauri::State<'_, PendingUtmImages>,
+) -> Result<String, String> {
+    run_utm_creation(&Backend, &config, &pending).await
+}
 
-    Ok(result.name)
+async fn run_utm_creation<B: UtmBackend>(
+    backend: &B,
+    config: &hai_core::UtmVmConfig,
+    pending: &PendingUtmImages,
+) -> Result<String, String> {
+    let image = pending
+        .take(&config.image_path)
+        .ok_or_else(|| "Temporary image is no longer available; download it again".to_string())?;
+    image.begin_utm_import().map_err(|error| {
+        format!(
+            "Could not prepare the UTM import: {error}. UTM was not contacted. \
+         Any retained source directory at {} can be removed manually.",
+            image.path().parent().unwrap().display()
+        )
+    })?;
+    // Fully qualified: `create_vm` is defined on both UtmBackend and ProxmoxBackend.
+    let result = UtmBackend::create_vm(backend, config, &hai_core::NoOpProgress).await;
+    if let Err(hai_core::Error::UtmOperationUncertain(error)) = &result {
+        return Err(format!(
+            "UTM may still be importing the image: {error}. Source retained at {}. \
+             Check UTM before retrying. Remove the source directory manually only after \
+             confirming UTM has finished or stopped importing.",
+            image.path().parent().unwrap().display()
+        ));
+    }
+    // A completed creation or confirmed rejection no longer needs the source.
+    if let Err(error) = image.finish_utm_import() {
+        eprintln!(
+            "Could not release UTM source {}: {error}",
+            image.path().display()
+        );
+    }
+    result.map(|result| result.id).map_err(|e| e.to_string())
 }
 
 /// Start a UTM VM
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_utm_vm(vm_id: String) -> Result<(), String> {
     Backend.start_vm(&vm_id).map_err(|e| e.to_string())
 }
@@ -386,7 +482,7 @@ pub fn resize_utm_vm_disk(vm_id: String, size_gb: u32) -> Result<(), String> {
 }
 
 /// Get the status of a UTM VM
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_utm_vm_status(vm_id: String) -> Result<VmStatusInfo, String> {
     Backend.vm_status(&vm_id).map_err(|e| e.to_string())
 }
@@ -411,6 +507,22 @@ pub async fn check_ha_updated(ip_address: String) -> bool {
 // Proxmox Commands
 // =============================================================================
 
+/// Preserve authentication failures so the configure view can offer reconnect.
+#[derive(Debug, serde::Serialize)]
+pub struct ProxmoxLookupError {
+    message: String,
+    session_expired: bool,
+}
+
+impl From<hai_core::Error> for ProxmoxLookupError {
+    fn from(error: hai_core::Error) -> Self {
+        Self {
+            message: error.to_string(),
+            session_expired: matches!(error, hai_core::Error::ProxmoxSessionExpired),
+        }
+    }
+}
+
 /// Connect to a Proxmox VE server
 #[tauri::command]
 pub async fn proxmox_connect(credentials: ProxmoxCredentials) -> Result<ProxmoxSession, String> {
@@ -422,11 +534,10 @@ pub async fn proxmox_connect(credentials: ProxmoxCredentials) -> Result<ProxmoxS
 
 /// List available nodes on Proxmox
 #[tauri::command]
-pub async fn proxmox_list_nodes(session: ProxmoxSession) -> Result<Vec<ProxmoxNode>, String> {
-    Backend
-        .list_nodes(&session)
-        .await
-        .map_err(|e| e.to_string())
+pub async fn proxmox_list_nodes(
+    session: ProxmoxSession,
+) -> Result<Vec<ProxmoxNode>, ProxmoxLookupError> {
+    Backend.list_nodes(&session).await.map_err(Into::into)
 }
 
 /// List available storage on a Proxmox node
@@ -434,20 +545,17 @@ pub async fn proxmox_list_nodes(session: ProxmoxSession) -> Result<Vec<ProxmoxNo
 pub async fn proxmox_list_storage(
     session: ProxmoxSession,
     node: String,
-) -> Result<Vec<ProxmoxStorage>, String> {
+) -> Result<Vec<ProxmoxStorage>, ProxmoxLookupError> {
     Backend
         .list_storage(&session, &node)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(Into::into)
 }
 
 /// Get the next available VM ID on Proxmox
 #[tauri::command]
-pub async fn proxmox_get_next_vm_id(session: ProxmoxSession) -> Result<u32, String> {
-    Backend
-        .get_next_vm_id(&session)
-        .await
-        .map_err(|e| e.to_string())
+pub async fn proxmox_get_next_vm_id(session: ProxmoxSession) -> Result<u32, ProxmoxLookupError> {
+    Backend.get_next_vm_id(&session).await.map_err(Into::into)
 }
 
 /// Create a Home Assistant VM on Proxmox
@@ -473,6 +581,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_proxmox_lookup_error_preserves_authentication_failure() {
+        let expired = ProxmoxLookupError::from(hai_core::Error::ProxmoxSessionExpired);
+        let value = tauri::ipc::InvokeError::from(expired).0;
+        assert_eq!(value["session_expired"], true);
+        assert!(value["message"].as_str().unwrap().contains("reconnect"));
+
+        let denied =
+            ProxmoxLookupError::from(hai_core::Error::ProxmoxApi("Access denied".to_string()));
+        let value = tauri::ipc::InvokeError::from(denied).0;
+        assert_eq!(value["session_expired"], false);
+        assert_eq!(value["message"], "Proxmox API error: Access denied");
+    }
+
+    #[test]
+    fn connection_error_message_unwraps_download_errors() {
+        let message =
+            "Cannot reach version.home-assistant.io. Check your internet connection and try again.";
+        let error = hai_core::Error::DownloadFailed(message.to_string());
+        assert_eq!(connection_error_message(error), message);
+    }
+
+    #[test]
+    fn connection_error_message_preserves_other_errors() {
+        assert_eq!(
+            connection_error_message(hai_core::Error::Cancelled),
+            "Operation cancelled"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn check_connection_uses_mock_backend() {
+        assert!(check_connection().await.is_ok());
+    }
+
+    #[test]
     fn write_error_message_shows_write_protection_without_a_prefix() {
         let msg = write_error_message(hai_core::Error::WriteProtected);
         assert_eq!(msg, hai_core::Error::WriteProtected.to_string());
@@ -480,26 +624,23 @@ mod tests {
     }
 
     #[test]
+    fn write_error_message_shows_capacity_failure_without_a_prefix() {
+        for written in [0, 3_000_000_000] {
+            let msg = write_error_message(hai_core::Error::ImageTooLarge {
+                written,
+                image_size: 4_000_000_000,
+            });
+            assert_eq!(
+                msg,
+                "Image is larger than the selected drive: image size is 4000000000 bytes"
+            );
+        }
+    }
+
+    #[test]
     fn write_error_message_prefixes_a_plain_io_error() {
         let msg = write_error_message(hai_core::Error::Io(std::io::Error::other("boom")));
         assert!(msg.starts_with("Write failed"), "{msg}");
-    }
-
-    // ===== Update Info Tests =====
-
-    #[tokio::test]
-    async fn test_check_for_updates_returns_ok() {
-        let result = check_for_updates().await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_check_for_updates_has_valid_structure() {
-        let result = check_for_updates().await;
-        assert!(result.is_ok());
-        let update_info = result.unwrap();
-        assert!(!update_info.current_version.is_empty());
-        assert!(!update_info.latest_version.is_empty());
     }
 
     // ===== Manifest Tests =====
@@ -559,10 +700,9 @@ mod tests {
     // ===== Additional edge case tests =====
 
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_start_utm_vm_non_mock_returns_ok() {
+    #[cfg(feature = "mock")]
+    fn test_start_utm_vm_mock_returns_ok() {
         let result = start_utm_vm("test-vm".to_string());
-        // Should return Ok even though not implemented
         assert!(result.is_ok());
     }
 
@@ -592,15 +732,14 @@ mod tests {
         assert!(err.contains("only available on macOS"), "{err}");
     }
 
-    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_get_utm_vm_status_non_mock_returns_unknown() {
+    #[cfg(feature = "mock")]
+    fn test_get_utm_vm_status_mock_returns_running_vm() {
         let result = get_utm_vm_status("test-vm".to_string());
         assert!(result.is_ok());
         let status = result.unwrap();
-        assert_eq!(status.status, "unknown");
-        assert_eq!(status.ip_address, None);
+        assert_eq!(status.status, "started");
+        assert_eq!(status.ip_address.as_deref(), Some("192.168.1.100"));
     }
 
     // ===== check_ha_ready() Tests =====
@@ -637,28 +776,29 @@ mod tests {
     #[test]
     fn test_find_flash_target_accepts_removable_device() {
         let devices = [flash_target("/dev/sdb", true)];
-        let device = find_flash_target(&devices, "/dev/sdb", &expected()).unwrap();
+        let device = find_flash_target(&devices, "/dev/sdb", &expected(), "rpi5-64").unwrap();
         assert_eq!(device.id, "/dev/sdb");
     }
 
     #[test]
     fn test_find_flash_target_rejects_unknown_device() {
         let devices = [flash_target("/dev/sdb", true)];
-        let err = find_flash_target(&devices, "/dev/sdz", &expected()).unwrap_err();
+        let err = find_flash_target(&devices, "/dev/sdz", &expected(), "rpi5-64").unwrap_err();
         assert!(err.contains("not found"), "{err}");
     }
 
     #[test]
     fn test_find_flash_target_rejects_non_removable_device() {
         let devices = [flash_target("\\\\.\\PhysicalDrive1", false)];
-        let err = find_flash_target(&devices, "\\\\.\\PhysicalDrive1", &expected()).unwrap_err();
+        let err = find_flash_target(&devices, "\\\\.\\PhysicalDrive1", &expected(), "rpi5-64")
+            .unwrap_err();
         assert!(err.contains("not a removable drive"), "{err}");
     }
 
     #[test]
     fn test_find_flash_target_rejects_empty_device_id() {
         let devices = [flash_target("/dev/sdb", true)];
-        let err = find_flash_target(&devices, "", &expected()).unwrap_err();
+        let err = find_flash_target(&devices, "", &expected(), "rpi5-64").unwrap_err();
         assert!(err.contains("not found"), "{err}");
     }
 
@@ -666,7 +806,7 @@ mod tests {
     fn test_find_flash_target_rejects_different_device_at_same_path() {
         let mut device = flash_target("/dev/sdb", true);
         device.model = Some("Extreme".to_string());
-        let err = find_flash_target(&[device], "/dev/sdb", &expected()).unwrap_err();
+        let err = find_flash_target(&[device], "/dev/sdb", &expected(), "rpi5-64").unwrap_err();
         assert!(err.contains("no longer the one you selected"), "{err}");
     }
 
@@ -674,7 +814,157 @@ mod tests {
     fn test_find_flash_target_rejects_unknown_expected_size() {
         let devices = [flash_target("/dev/sdb", true)];
         let unknown = ExpectedDevice::default();
-        assert!(find_flash_target(&devices, "/dev/sdb", &unknown).is_err());
+        assert!(find_flash_target(&devices, "/dev/sdb", &unknown, "rpi5-64").is_err());
+    }
+
+    #[test]
+    fn test_find_flash_target_enforces_nominal_board_minimum() {
+        for size in [
+            8_000_000_000,
+            15_199_999_999,
+            15_200_000_000,
+            15_600_000_000,
+            15_931_539_456,
+            16_000_000_000,
+        ] {
+            let mut device = flash_target("/dev/sdb", true);
+            device.size = size;
+            let expected = ExpectedDevice {
+                size: Some(size),
+                ..Default::default()
+            };
+            let devices = [device];
+            let result = find_flash_target(&devices, "/dev/sdb", &expected, "rpi5-64");
+            if size < 15_200_000_000 {
+                let error = result.unwrap_err();
+                assert!(error.contains("too small"), "{error}");
+                assert!(error.contains("16 GB"), "{error}");
+            } else {
+                assert!(result.is_ok(), "{size}: {result:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_find_flash_target_rejects_missing_board_requirements() {
+        let devices = [flash_target("/dev/sdb", true)];
+        let error =
+            find_flash_target(&devices, "/dev/sdb", &expected(), "unknown-board").unwrap_err();
+        assert!(error.contains("No storage requirements"), "{error}");
+    }
+
+    struct PreflightBackend {
+        check: fn() -> hai_core::Result<()>,
+    }
+
+    impl DeviceBackend for PreflightBackend {
+        fn check_write_privileges(&self) -> hai_core::Result<()> {
+            (self.check)()
+        }
+
+        async fn list_devices(&self) -> hai_core::Result<Vec<BlockDevice>> {
+            panic!("must not enumerate devices");
+        }
+
+        async fn write_image<P: ProgressCallback>(
+            &self,
+            _: &std::path::Path,
+            _: &str,
+            _: bool,
+            _: &P,
+        ) -> hai_core::Result<()> {
+            panic!("must not write a drive");
+        }
+    }
+
+    impl ReleaseSource for PreflightBackend {
+        async fn check_connection(&self) -> hai_core::Result<()> {
+            panic!("must not check connectivity during flashing");
+        }
+
+        async fn get_device_manifest(&self) -> hai_core::Result<DeviceManifest> {
+            panic!("must not fetch a manifest");
+        }
+
+        async fn get_haos_release(&self, _: &str) -> hai_core::Result<HaosRelease> {
+            panic!("must not fetch a release by version");
+        }
+
+        async fn get_latest_haos_release_for_board(
+            &self,
+            _: &str,
+        ) -> hai_core::Result<HaosRelease> {
+            Err(hai_core::Error::InvalidConfig(
+                "release lookup reached".into(),
+            ))
+        }
+
+        async fn download_image<P: ProgressCallback>(
+            &self,
+            _: &hai_core::HaosImage,
+            _: &std::path::Path,
+            _: &P,
+        ) -> hai_core::Result<()> {
+            panic!("must not download an image");
+        }
+
+        async fn extract_xz<P: ProgressCallback>(
+            &self,
+            _: &std::path::Path,
+            _: &std::path::Path,
+            _: &P,
+        ) -> hai_core::Result<()> {
+            panic!("must not extract an image");
+        }
+
+        fn cache_dir(&self) -> hai_core::Result<std::path::PathBuf> {
+            panic!("must not create a cache directory");
+        }
+    }
+
+    struct NoProgressExpected;
+
+    impl ProgressCallback for NoProgressExpected {
+        fn on_progress(&self, _: FlashProgress) {
+            panic!("must not report progress before privilege preflight succeeds");
+        }
+    }
+
+    #[tokio::test]
+    async fn privilege_failures_abort_before_progress_or_release_lookup() {
+        fn not_elevated() -> hai_core::Result<()> {
+            Err(hai_core::Error::PermissionDenied(
+                "Run as administrator".into(),
+            ))
+        }
+        fn query_failed() -> hai_core::Result<()> {
+            Err(hai_core::Error::Io(std::io::Error::other(
+                "token query failed",
+            )))
+        }
+        async fn attempt(
+            check: fn() -> hai_core::Result<()>,
+            callback: &impl ProgressCallback,
+        ) -> Result<FlashResult, String> {
+            let request = FlashRequest {
+                device_id: "unused-device".into(),
+                board: "rpi5-64".into(),
+                verify: true,
+                expected_device: ExpectedDevice::default(),
+            };
+            run_flash(&PreflightBackend { check }, &request, callback).await
+        }
+
+        for check in [not_elevated, query_failed] {
+            let err = attempt(check, &NoProgressExpected).await.unwrap_err();
+            assert_eq!(err, check().unwrap_err().to_string());
+        }
+
+        // An authorized attempt reaches release lookup without real network I/O.
+        let retry = attempt(|| Ok(()), &hai_core::NoOpProgress)
+            .await
+            .unwrap_err();
+        assert!(retry.contains("release lookup reached"), "{retry}");
     }
 }
 
@@ -683,6 +973,302 @@ mod mock_tests {
     use super::*;
     use hai_core::{BackendMock, NoOpProgress};
     use serial_test::serial;
+
+    struct LifecycleBackend {
+        cache: tempfile::TempDir,
+        outcome: &'static str,
+        extracted: std::sync::Mutex<Option<std::path::PathBuf>>,
+        write_started: tokio::sync::Notify,
+    }
+
+    impl ReleaseSource for LifecycleBackend {
+        async fn check_connection(&self) -> hai_core::Result<()> {
+            panic!("must not check connectivity during installation");
+        }
+
+        async fn get_device_manifest(&self) -> hai_core::Result<DeviceManifest> {
+            BackendMock.get_device_manifest().await
+        }
+        async fn get_haos_release(&self, version: &str) -> hai_core::Result<HaosRelease> {
+            BackendMock.get_haos_release(version).await
+        }
+        async fn get_latest_haos_release_for_board(
+            &self,
+            board: &str,
+        ) -> hai_core::Result<HaosRelease> {
+            BackendMock.get_latest_haos_release_for_board(board).await
+        }
+        async fn download_image<P: ProgressCallback>(
+            &self,
+            _: &hai_core::HaosImage,
+            dest: &std::path::Path,
+            _: &P,
+        ) -> hai_core::Result<()> {
+            std::fs::write(dest, b"archive")?;
+            Ok(())
+        }
+        async fn extract_xz<P: ProgressCallback>(
+            &self,
+            _: &std::path::Path,
+            dest: &std::path::Path,
+            _: &P,
+        ) -> hai_core::Result<()> {
+            *self.extracted.lock().unwrap() = Some(dest.to_path_buf());
+            std::fs::write(dest, b"image")?;
+            if self.outcome == "extract" {
+                return Err(hai_core::Error::ExtractionFailed(
+                    "test extraction failure".into(),
+                ));
+            }
+            Ok(())
+        }
+        fn cache_dir(&self) -> hai_core::Result<std::path::PathBuf> {
+            Ok(self.cache.path().to_path_buf())
+        }
+    }
+
+    impl DeviceBackend for LifecycleBackend {
+        async fn list_devices(&self) -> hai_core::Result<Vec<BlockDevice>> {
+            BackendMock.list_devices().await
+        }
+        async fn write_image<P: ProgressCallback>(
+            &self,
+            path: &std::path::Path,
+            _: &str,
+            _: bool,
+            _: &P,
+        ) -> hai_core::Result<()> {
+            assert_eq!(std::fs::read(path).unwrap(), b"image");
+            match self.outcome {
+                "write" => Err(hai_core::Error::Io(std::io::Error::other(
+                    "test write failure",
+                ))),
+                "cancel" => Err(hai_core::Error::Cancelled),
+                "suspend" => {
+                    self.write_started.notify_one();
+                    std::future::pending().await
+                }
+                _ => Ok(()),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn flash_releases_extraction_on_every_exit() {
+        for outcome in ["success", "extract", "write", "cancel", "suspend"] {
+            let backend = LifecycleBackend {
+                cache: tempfile::tempdir().unwrap(),
+                outcome,
+                extracted: Default::default(),
+                write_started: Default::default(),
+            };
+            let request = request("mock-sd-card-32gb", "rpi5-64").await;
+            let result = if outcome == "suspend" {
+                let flash = run_flash(&backend, &request, &NoOpProgress);
+                tokio::pin!(flash);
+                tokio::select! {
+                    _ = backend.write_started.notified() => None,
+                    result = &mut flash => Some(result),
+                }
+            } else {
+                Some(run_flash(&backend, &request, &NoOpProgress).await)
+            };
+            match outcome {
+                "success" => assert!(result.unwrap().unwrap().success),
+                "suspend" => assert!(result.is_none()),
+                "cancel" => assert!(result.unwrap().unwrap_err().contains("cancelled")),
+                _ => assert!(result.unwrap().is_err()),
+            }
+            let path = backend.extracted.lock().unwrap().clone().unwrap();
+            assert!(!path.exists(), "{outcome}");
+            assert!(!path.parent().unwrap().exists(), "{outcome}");
+            assert_eq!(std::fs::read_dir(backend.cache.path()).unwrap().count(), 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn utm_download_keeps_images_private_until_owner_releases_them() {
+        for outcome in ["success", "extract"] {
+            let backend = LifecycleBackend {
+                cache: tempfile::tempdir().unwrap(),
+                outcome,
+                extracted: Default::default(),
+                write_started: Default::default(),
+            };
+            let result = run_utm_download(&backend, "generic-aarch64", &NoOpProgress).await;
+            assert_eq!(result.is_ok(), outcome == "success");
+            if let Ok(image) = &result {
+                assert!(image.path().exists());
+                assert!(image.archive_path().exists());
+            }
+            drop(result);
+            let path = backend.extracted.lock().unwrap().clone().unwrap();
+            assert!(!path.exists());
+            assert_eq!(std::fs::read_dir(backend.cache.path()).unwrap().count(), 0);
+        }
+    }
+
+    #[test]
+    fn utm_registry_never_deletes_unknown_or_in_use_images() {
+        let cache = tempfile::tempdir().unwrap();
+        let user_file = cache.path().join("user.qcow2");
+        std::fs::write(&user_file, b"user image").unwrap();
+        let pending = PendingUtmImages::default();
+        assert!(pending.take(user_file.to_str().unwrap()).is_none());
+        assert!(user_file.exists());
+        let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
+        let path = image.path().to_string_lossy().into_owned();
+        std::fs::write(&path, b"owned image").unwrap();
+        pending.0.lock().unwrap().insert(path.clone(), image);
+        let importing = pending.take(&path).unwrap();
+        assert!(pending.take(&path).is_none());
+        assert!(std::path::Path::new(&path).exists());
+        drop(importing);
+        assert!(!std::path::Path::new(&path).exists());
+        assert!(user_file.exists());
+    }
+
+    struct UtmCreationBackend {
+        outcome: &'static str,
+        started: tokio::sync::Notify,
+    }
+
+    impl UtmBackend for UtmCreationBackend {
+        async fn check_utm_status(&self) -> hai_core::Result<hai_core::UtmStatus> {
+            unreachable!()
+        }
+
+        async fn create_vm<P: ProgressCallback>(
+            &self,
+            config: &hai_core::UtmVmConfig,
+            _: &P,
+        ) -> hai_core::Result<hai_core::UtmVmResult> {
+            let source = std::path::Path::new(&config.image_path);
+            assert!(source.exists());
+            assert!(source.parent().unwrap().join(".utm-import").exists());
+            self.started.notify_one();
+            match self.outcome {
+                "release-failure" => {
+                    let marker = source.parent().unwrap().join(".utm-import");
+                    std::fs::remove_file(&marker).unwrap();
+                    std::fs::create_dir(marker).unwrap();
+                    Ok(hai_core::UtmVmResult {
+                        id: "stable-utm-id".into(),
+                        name: config.name.clone(),
+                        path: None,
+                    })
+                }
+                "success" => Ok(hai_core::UtmVmResult {
+                    id: "stable-utm-id".into(),
+                    name: config.name.clone(),
+                    path: None,
+                }),
+                "rejected" => Err(hai_core::Error::Utm("Invalid configuration".into())),
+                "timeout" => Err(hai_core::Error::UtmOperationUncertain(
+                    "AppleEvent timed out (-1712)".into(),
+                )),
+                "transport" => Err(hai_core::Error::UtmOperationUncertain(
+                    "Failed to wait for AppleScript".into(),
+                )),
+                "cancelled" => std::future::pending().await,
+                _ => unreachable!(),
+            }
+        }
+
+        fn start_vm(&self, _: &str) -> hai_core::Result<()> {
+            unreachable!()
+        }
+        fn resize_vm_disk(&self, _: &str, _: u32) -> hai_core::Result<()> {
+            unreachable!()
+        }
+        fn vm_status(&self, _: &str) -> hai_core::Result<VmStatusInfo> {
+            unreachable!()
+        }
+    }
+
+    #[tokio::test]
+    async fn utm_source_cleanup_requires_a_confirmed_outcome() {
+        for outcome in [
+            "success",
+            "rejected",
+            "timeout",
+            "transport",
+            "cancelled",
+            "marker-failure",
+            "release-failure",
+        ] {
+            let cache = tempfile::tempdir().unwrap();
+            let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
+            let path = image.path();
+            std::fs::write(&path, b"source image").unwrap();
+            if outcome == "marker-failure" {
+                std::fs::create_dir(path.parent().unwrap().join(".utm-import")).unwrap();
+            }
+            let pending = PendingUtmImages::default();
+            pending
+                .0
+                .lock()
+                .unwrap()
+                .insert(path.to_string_lossy().into_owned(), image);
+            let config = hai_core::UtmVmConfig {
+                name: "Test VM".into(),
+                image_path: path.to_string_lossy().into_owned(),
+                cpu_cores: 2,
+                memory_mb: 2048,
+                disk_size_gb: 32,
+                auto_start: false,
+            };
+            let backend = UtmCreationBackend {
+                outcome,
+                started: tokio::sync::Notify::new(),
+            };
+            if outcome == "cancelled" {
+                let creation = run_utm_creation(&backend, &config, &pending);
+                tokio::pin!(creation);
+                tokio::select! {
+                    _ = &mut creation => panic!("Creation must still be pending"),
+                    _ = backend.started.notified() => {}
+                }
+                assert!(pending.take(&config.image_path).is_none());
+                assert!(path.exists());
+            } else {
+                let result = run_utm_creation(&backend, &config, &pending).await;
+                assert_eq!(
+                    result.is_ok(),
+                    matches!(outcome, "success" | "release-failure"),
+                    "{outcome}"
+                );
+                if let Ok(id) = &result {
+                    assert_eq!(id, "stable-utm-id");
+                    assert_ne!(id, &config.name);
+                }
+                if matches!(outcome, "timeout" | "transport") {
+                    let error = result.as_ref().unwrap_err();
+                    assert!(error.contains(&format!(
+                        "Source retained at {}.",
+                        path.parent().unwrap().display()
+                    )));
+                    assert!(!error.contains(&config.image_path));
+                    assert!(error.contains("manually"));
+                }
+                if outcome == "marker-failure" {
+                    let error = result.unwrap_err();
+                    assert!(error.contains("UTM was not contacted"));
+                    assert!(error.contains(path.parent().unwrap().to_str().unwrap()));
+                    assert!(error.contains("manually"));
+                }
+            }
+            // This is the same removal used by the frontend's discard command.
+            assert!(pending.take(&config.image_path).is_none());
+            drop(pending);
+            hai_core::download::prune_cached_images(cache.path()).unwrap();
+            assert_eq!(
+                path.exists(),
+                !matches!(outcome, "success" | "rejected"),
+                "{outcome}"
+            );
+        }
+    }
 
     /// A request for `device_id` whose `expected_device` matches what the mock
     /// backend enumerates, so the flash-target guard lets it through.
@@ -703,6 +1289,94 @@ mod mock_tests {
                 model: device.model,
                 vendor: device.vendor,
             },
+        }
+    }
+
+    struct DigestFailureBackend {
+        cache: tempfile::TempDir,
+    }
+
+    impl ReleaseSource for DigestFailureBackend {
+        async fn check_connection(&self) -> hai_core::Result<()> {
+            panic!("must not check connectivity during installation");
+        }
+
+        async fn get_device_manifest(&self) -> hai_core::Result<hai_core::DeviceManifest> {
+            unreachable!()
+        }
+
+        async fn get_haos_release(&self, _: &str) -> hai_core::Result<HaosRelease> {
+            unreachable!("must use the selected board's release")
+        }
+
+        async fn get_latest_haos_release_for_board(
+            &self,
+            board: &str,
+        ) -> hai_core::Result<HaosRelease> {
+            BackendMock.get_latest_haos_release_for_board(board).await
+        }
+
+        async fn download_image<P: ProgressCallback>(
+            &self,
+            image: &hai_core::HaosImage,
+            _: &std::path::Path,
+            _: &P,
+        ) -> hai_core::Result<()> {
+            assert!(image.download_url.contains(&image.board));
+            Err(hai_core::Error::ChecksumMismatch {
+                expected: "published digest".into(),
+                actual: "tampered digest".into(),
+            })
+        }
+
+        async fn extract_xz<P: ProgressCallback>(
+            &self,
+            _: &std::path::Path,
+            _: &std::path::Path,
+            _: &P,
+        ) -> hai_core::Result<()> {
+            panic!("unverified image reached extraction")
+        }
+
+        fn cache_dir(&self) -> hai_core::Result<std::path::PathBuf> {
+            Ok(self.cache.path().to_path_buf())
+        }
+    }
+
+    impl DeviceBackend for DigestFailureBackend {
+        async fn list_devices(&self) -> hai_core::Result<Vec<BlockDevice>> {
+            panic!("unverified image reached device preparation")
+        }
+
+        async fn write_image<P: ProgressCallback>(
+            &self,
+            _: &std::path::Path,
+            _: &str,
+            _: bool,
+            _: &P,
+        ) -> hai_core::Result<()> {
+            panic!("unverified image reached the writer")
+        }
+    }
+
+    #[tokio::test]
+    async fn digest_failure_stops_flash_and_utm_before_extraction() {
+        let backend = DigestFailureBackend {
+            cache: tempfile::tempdir().unwrap(),
+        };
+        let error = run_flash(
+            &backend,
+            &request("mock-sd-card-32gb", "rpi5-64").await,
+            &NoOpProgress,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("Checksum mismatch"));
+        for board in ["generic-aarch64", "ova"] {
+            let error = run_utm_download(&backend, board, &NoOpProgress)
+                .await
+                .unwrap_err();
+            assert!(error.contains("Checksum mismatch"));
         }
     }
 
@@ -759,9 +1433,62 @@ mod mock_tests {
     #[tokio::test]
     #[serial] // all share the mock cache directory
     async fn run_utm_download_returns_extracted_image() {
-        let path = run_utm_download(&BackendMock, "generic-aarch64", &NoOpProgress)
+        use hai_core::utm::UtmArchitecture;
+
+        for arch in [UtmArchitecture::Aarch64, UtmArchitecture::X86_64] {
+            let release = BackendMock
+                .get_latest_haos_release_for_board(arch.haos_board())
+                .await
+                .unwrap();
+            let image = release
+                .image_for(arch.haos_board(), ImageFormat::Qcow2)
+                .unwrap();
+            assert!(image
+                .download_url
+                .ends_with(&format!("haos_{}-16.3.qcow2.xz", arch.haos_board())));
+            let image = run_utm_download(&BackendMock, arch.haos_board(), &NoOpProgress)
+                .await
+                .unwrap();
+            let path = image.path();
+            assert!(path.exists());
+            drop(image);
+            assert!(!path.exists());
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[cfg(not(target_os = "macos"))]
+    async fn mock_utm_download_command_works_without_native_mac_architecture() {
+        use tauri::Manager;
+
+        // Off macOS the mock command uses the Intel OVA board without Rosetta
+        // detection; run_utm_download_returns_extracted_image covers that board.
+        let app = tauri::test::mock_app();
+        app.manage(PendingUtmImages::default());
+        let path = download_utm_image(Channel::new(|_| Ok(())), app.state())
             .await
             .unwrap();
         assert!(std::path::Path::new(&path).exists());
+        assert!(path.ends_with(".qcow2"));
+        assert!(app
+            .state::<PendingUtmImages>()
+            .0
+            .lock()
+            .unwrap()
+            .contains_key(&path));
+        discard_utm_image(path.clone(), app.state());
+        assert!(!std::path::Path::new(&path).exists());
+    }
+
+    #[tokio::test]
+    async fn mock_release_preserves_raw_intel_image_without_inventing_qcow2() {
+        let release = BackendMock.get_haos_release("latest").await.unwrap();
+        assert!(release
+            .image_for("generic-x86-64", ImageFormat::Raw)
+            .is_some());
+        assert!(release
+            .image_for("generic-x86-64", ImageFormat::Qcow2)
+            .is_none());
     }
 }

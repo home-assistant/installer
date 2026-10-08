@@ -83,6 +83,10 @@ export interface HaosConfig {
   board: string;
   /** Download URL template */
   download_url: string;
+  /** Minimum nominal target capacity in decimal bytes; allow 5% reserved space. */
+  minimum_storage_bytes: number;
+  /** Recommended nominal target capacity in decimal bytes; same 5% allowance. */
+  recommended_storage_bytes: number;
 }
 
 /** Flash request parameters */
@@ -136,6 +140,8 @@ export interface HaosImage {
   download_url: string;
   /** File size in bytes */
   size: number;
+  /** GitHub digest of the compressed asset; required for installation. */
+  digest?: string | null;
 }
 
 // ============================================================================
@@ -192,6 +198,8 @@ export interface ProxmoxCredentials {
   username: string;
   /** Password */
   password: string;
+  /** Optional time-based one-time password from an authenticator app */
+  totp?: string;
 }
 
 /** Proxmox session (authentication result) */

@@ -8,6 +8,7 @@ import {
   formatBytes,
 } from "../../api/commands.js";
 import type { ProxmoxNode, ProxmoxStorage } from "../../api/types.js";
+import "@home-assistant/webawesome/dist/components/button/button.js";
 import {
   DEFAULT_CPU_CORES,
   DEFAULT_DISK_SIZE_GB,
@@ -283,6 +284,9 @@ export class ProxmoxConfigureView extends LitElement {
   private _error: string | null = null;
 
   @state()
+  private _sessionExpired = false;
+
+  @state()
   private _selectedNode = "";
 
   @state()
@@ -349,23 +353,45 @@ export class ProxmoxConfigureView extends LitElement {
   }
 
   private async _loadNodes() {
+    this._loadingNodes = true;
+    this._error = null;
+    this._sessionExpired = false;
+    // Preserve choices across reconnects, but block Next until revalidated.
+    wizardState.setSelection("proxmoxConfigureReady", false);
     const session = this._wizardState.selections.proxmoxSession;
+    const isCurrentSession = () =>
+      this._wizardState.selections.proxmoxSession === session;
 
     if (!session) {
-      this._error = "No Proxmox session available";
+      this._setError({
+        message: "Connect to Proxmox to continue.",
+        session_expired: true,
+      });
       this._loadingNodes = false;
       return;
     }
 
     try {
-      const [nodes, nextVmId] = await Promise.all([
+      const results = await Promise.allSettled([
         proxmoxListNodes(session),
         proxmoxGetNextVmId(session),
       ]);
 
       // The user may have left this step while the lookups were in flight;
       // saving now would write over what the next step reads
-      if (!this.isConnected) return;
+      if (!this.isConnected || !isCurrentSession()) return;
+
+      // An expired session must take precedence over an ordinary failure
+      // from the other lookup, regardless of which one finishes first.
+      const failures = results.filter((result) => result.status === "rejected");
+      if (failures.length) {
+        const expired = failures.find(
+          (result) => result.reason?.session_expired === true
+        );
+        throw (expired ?? failures[0]).reason;
+      }
+      const nodes = (results[0] as PromiseFulfilledResult<ProxmoxNode[]>).value;
+      const nextVmId = (results[1] as PromiseFulfilledResult<number>).value;
 
       this._nodes = nodes.filter((n) => n.status === "online");
 
@@ -373,6 +399,7 @@ export class ProxmoxConfigureView extends LitElement {
       // user has already been shown and may have changed
       if (!this._vmIdChosen) {
         this._vmId = nextVmId;
+        this._vmIdChosen = true;
       }
 
       // Keep a restored node as long as it is still online
@@ -386,20 +413,16 @@ export class ProxmoxConfigureView extends LitElement {
       if (this._selectedNode) {
         await this._loadStorage();
         // The storage lookup is another chance to have left this step
-        if (!this.isConnected) return;
+        if (!this.isConnected || !isCurrentSession()) return;
       }
 
       this._saveSelections();
     } catch (error) {
-      // Tauri invoke errors are strings, not Error objects
-      this._error =
-        typeof error === "string"
-          ? error
-          : error instanceof Error
-            ? error.message
-            : "Failed to load Proxmox nodes";
+      if (!this.isConnected || !isCurrentSession()) return;
+      this._setError(error);
     } finally {
       this._loadingNodes = false;
+      if (this.isConnected && isCurrentSession()) this._saveSelections();
     }
   }
 
@@ -415,9 +438,13 @@ export class ProxmoxConfigureView extends LitElement {
     // for the same node; only the latest one may update the storage
     const lookup = ++this._storageLookup;
     const isLatest = () => lookup === this._storageLookup;
-    const isStale = () => !this.isConnected || !isLatest();
+    const isCurrentSession = () =>
+      this._wizardState.selections.proxmoxSession === session;
+    const isStale = () =>
+      !this.isConnected || !isLatest() || !isCurrentSession();
 
     this._loadingStorage = true;
+    wizardState.setSelection("proxmoxConfigureReady", false);
     try {
       const storages = await proxmoxListStorage(session, node);
 
@@ -439,30 +466,77 @@ export class ProxmoxConfigureView extends LitElement {
 
       this._saveSelections();
     } catch (error) {
-      if (isStale()) return;
-      // Nothing this node offers could be checked, so neither a restored
-      // storage nor one from a previous node may stay selected: an empty one
-      // keeps the step from continuing
+      if (!this.isConnected || !isCurrentSession()) return;
+      if (!isLatest()) {
+        // Session expiry applies to every node, even if this lookup was
+        // superseded. Ordinary failures still belong to the old selection.
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "session_expired" in error &&
+          error.session_expired === true
+        ) {
+          this._setError(error);
+        }
+        return;
+      }
+      // Keep the choice for retry/reconnect; readiness prevents using it
+      // until a successful lookup verifies that it is still available.
       this._storages = [];
-      this._selectedStorage = "";
       this._saveSelections();
-      // Show storage error to user
-      this._error =
-        typeof error === "string"
-          ? error
-          : error instanceof Error
-            ? error.message
-            : "Failed to load storage";
+      this._setError(error);
     } finally {
       // A newer lookup is still running and owns the loading state
-      if (isLatest()) this._loadingStorage = false;
+      if (isLatest()) {
+        this._loadingStorage = false;
+        if (this.isConnected && isCurrentSession()) this._saveSelections();
+      }
     }
+  }
+
+  private _setError(error: unknown) {
+    this._sessionExpired =
+      typeof error === "object" &&
+      error !== null &&
+      "session_expired" in error &&
+      error.session_expired === true;
+    this._error =
+      typeof error === "string"
+        ? error
+        : typeof error === "object" &&
+            error !== null &&
+            "message" in error &&
+            typeof error.message === "string"
+          ? error.message
+          : "Failed to load Proxmox configuration";
+    if (this._sessionExpired) {
+      wizardState.setSelection("proxmoxSession", undefined);
+      wizardState.setSelection("proxmoxConnected", false);
+    }
+    wizardState.setSelection("proxmoxConfigureReady", false);
+  }
+
+  private _retry() {
+    if (this._loadingNodes || this._loadingStorage) return;
+    void this._loadNodes();
+  }
+
+  private _reconnect() {
+    wizardState.goToStep(0);
   }
 
   private _saveSelections() {
     wizardState.setSelection("proxmoxNode", this._selectedNode);
     wizardState.setSelection("proxmoxStorage", this._selectedStorage);
-    wizardState.setSelection("proxmoxVmId", this._vmId);
+    wizardState.setSelection(
+      "proxmoxConfigureReady",
+      !this._loadingNodes && !this._loadingStorage && !this._error
+    );
+    // A failed initial lookup must not turn the fallback ID into a choice
+    // that suppresses the next-free-ID suggestion after reconnecting.
+    if (this._vmIdChosen) {
+      wizardState.setSelection("proxmoxVmId", this._vmId);
+    }
     wizardState.setSelection("vmName", this._vmName);
     wizardState.setSelection("cpuCores", this._cpuCores);
     wizardState.setSelection("memoryMb", this._memoryMb);
@@ -657,7 +731,14 @@ export class ProxmoxConfigureView extends LitElement {
         <h2>Configure virtual machine</h2>
         <p class="subtitle">Configure your Home Assistant VM on Proxmox</p>
         <div class="config-card">
-          <p class="error-text">${this._error}</p>
+          <p class="error-text" role="alert">${this._error}</p>
+          <wa-button
+            variant="brand"
+            @click=${this._sessionExpired ? this._reconnect : this._retry}
+            ?disabled=${this._loadingNodes || this._loadingStorage}
+          >
+            ${this._sessionExpired ? "Reconnect" : "Try again"}
+          </wa-button>
         </div>
       `;
     }

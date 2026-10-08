@@ -1,4 +1,5 @@
 mod device;
+mod volumes;
 mod writer;
 
 pub use device::list_devices;

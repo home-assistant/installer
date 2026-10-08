@@ -13,7 +13,8 @@ utm = []
 mock = []
 
 [dependencies]
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tokio-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -23,10 +24,13 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 xz2 = { workspace = true }
 directories = { workspace = true }
+fs2 = { workspace = true }
 urlencoding = { workspace = true }
+tempfile = { workspace = true }
 
 # macOS specific
 [target.'cfg(target_os = "macos")'.dependencies]
+libc = { workspace = true }
 plist = { workspace = true }
 security-framework = { workspace = true }
 rustix = { workspace = true }
@@ -42,7 +46,7 @@ windows-sys = { workspace = true }
 
 [dev-dependencies]
 plist = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["net"] }
 tempfile = { workspace = true }
 serial_test = { workspace = true }
 mockito = { workspace = true }

@@ -13,18 +13,6 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Tauri App (No Cache)",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "tauri", "dev"],
-      "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"],
-      "env": {
-        "HA_INSTALLER_NO_CACHE": "true"
-      }
-    },
-    {
-      "type": "node",
-      "request": "launch",
       "name": "Tauri App (Mock Backend)",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "tauri", "dev", "--", "--features", "mock"],

@@ -46,6 +46,9 @@ use std::path::{Path, PathBuf};
 
 /// Release metadata and image download.
 pub trait ReleaseSource {
+    /// Check that the Home Assistant version service can be reached.
+    async fn check_connection(&self) -> Result<()>;
+
     /// Fetch the device manifest (list of supported boards).
     async fn get_device_manifest(&self) -> Result<DeviceManifest>;
 
@@ -55,10 +58,10 @@ pub trait ReleaseSource {
     /// Fetch the release stable.json currently lists for `board`.
     async fn get_latest_haos_release_for_board(&self, board: &str) -> Result<HaosRelease>;
 
-    /// Download an image to `dest_path`, reporting progress.
+    /// Download an image to `dest_path`, verifying its trusted compressed-asset digest.
     async fn download_image<P: ProgressCallback>(
         &self,
-        url: &str,
+        image: &HaosImage,
         dest_path: &Path,
         progress_callback: &P,
     ) -> Result<()>;
@@ -71,8 +74,16 @@ pub trait ReleaseSource {
         progress_callback: &P,
     ) -> Result<()>;
 
-    /// Check whether a newer installer release is available.
-    async fn check_for_updates(&self) -> Result<UpdateInfo>;
+    /// Extract into an owned temporary image. Background workers must retain a
+    /// clone until they stop using the directory, even if the caller is cancelled.
+    async fn extract_temporary_image<P: ProgressCallback>(
+        &self,
+        image: &download::TemporaryImage,
+        progress_callback: &P,
+    ) -> Result<()> {
+        self.extract_xz(&image.archive_path(), &image.path(), progress_callback)
+            .await
+    }
 
     /// Directory where downloaded images are cached.
     fn cache_dir(&self) -> Result<PathBuf>;
@@ -80,17 +91,24 @@ pub trait ReleaseSource {
 
 /// Block-device enumeration and raw image writing.
 ///
-/// `list_devices` returns every block device the platform reports, internal
-/// disks included, and `write_image` writes to whatever device id it is given.
-/// Neither checks that the target is safe to overwrite, that is the caller's
-/// responsibility.
+/// On Linux, enumeration excludes read-only disks and disks backing system
+/// mounts, active swap, or active storage. The writer repeats these checks before
+/// unmounting and opening the device. Callers must still validate the target's
+/// identity and enforce their removability policy across platforms.
 pub trait DeviceBackend {
-    /// List all block devices on the system.
+    /// Check process privileges before preparing an image, without opening a drive.
+    /// Defaults to success for backends that authorize access during `write_image`.
+    fn check_write_privileges(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// List block devices, subject to platform-specific filtering.
     async fn list_devices(&self) -> Result<Vec<BlockDevice>>;
 
     /// Write an image to the device with this id, reporting progress.
     ///
-    /// Performs no identity or removability check of its own.
+    /// Platform safety checks do not replace caller validation of device
+    /// identity and removability.
     async fn write_image<P: ProgressCallback>(
         &self,
         image_path: &Path,

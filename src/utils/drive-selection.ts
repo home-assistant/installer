@@ -1,4 +1,4 @@
-import type { BlockDevice } from "../api/types.js";
+import type { BlockDevice, HaosConfig } from "../api/types.js";
 import { wizardState, type WizardSelections } from "../state/wizard-state.js";
 
 /**
@@ -48,17 +48,54 @@ export function isSameDrive(a: DriveIdentity, b: DriveIdentity): boolean {
   );
 }
 
-/** Drives smaller than this (1 GB) are not offered as flash targets. */
-export const MIN_DRIVE_SIZE_BYTES = 1_000_000_000;
+export type DriveFit =
+  | "unavailable"
+  | "too-small"
+  | "below-recommended"
+  | "recommended";
+
+/** Nominal capacity allows 5% for manufacturer-reserved space. Keep in sync
+ * with HaosConfig::minimum_reported_storage_bytes in hai-core. */
+function reportedCapacityFloor(nominal: number): number {
+  return nominal - Math.floor(nominal / 20);
+}
+
+/** Compare reported bytes; display rounding must never decide eligibility. */
+export function getDriveFit(
+  size: number | undefined,
+  config?: HaosConfig
+): DriveFit {
+  if (
+    size === undefined ||
+    !Number.isFinite(size) ||
+    size <= 0 ||
+    !config ||
+    !Number.isFinite(config.minimum_storage_bytes) ||
+    config.minimum_storage_bytes <= 0 ||
+    !Number.isFinite(config.recommended_storage_bytes) ||
+    config.recommended_storage_bytes < config.minimum_storage_bytes
+  )
+    return "unavailable";
+  if (size < reportedCapacityFloor(config.minimum_storage_bytes))
+    return "too-small";
+  if (size < reportedCapacityFloor(config.recommended_storage_bytes))
+    return "below-recommended";
+  return "recommended";
+}
 
 /**
  * Enumeration returns every disk, internal ones included, so this is the gate
- * for what the SBC flow offers: a drive must be removable and at least
- * {@link MIN_DRIVE_SIZE_BYTES}. The pre-erase re-checks use it too, so they
- * accept exactly the drives the picker offers.
+ * for selection and the pre-erase re-checks. Small removable drives remain
+ * visible in the picker, but cannot be selected.
  */
-export function isEligibleFlashTarget(drive: BlockDevice): boolean {
-  return drive.removable && drive.size >= MIN_DRIVE_SIZE_BYTES;
+export function isEligibleFlashTarget(
+  drive: BlockDevice,
+  config?: HaosConfig
+): boolean {
+  const fit = getDriveFit(drive.size, config);
+  return (
+    drive.removable && (fit === "below-recommended" || fit === "recommended")
+  );
 }
 
 /**
@@ -67,11 +104,12 @@ export function isEligibleFlashTarget(drive: BlockDevice): boolean {
  */
 export function findDrive(
   drives: BlockDevice[],
-  identity: DriveIdentity
+  identity: DriveIdentity,
+  config?: HaosConfig
 ): BlockDevice | null {
   return (
     drives
-      .filter(isEligibleFlashTarget)
+      .filter((drive) => isEligibleFlashTarget(drive, config))
       .find((drive) => isSameDrive(driveIdentity(drive), identity)) ?? null
   );
 }

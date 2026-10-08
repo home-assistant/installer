@@ -1,10 +1,15 @@
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { listBlockDevices, type BlockDevice } from "../../api/index.js";
+import {
+  formatBytes,
+  listBlockDevices,
+  type BlockDevice,
+} from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import {
   clearDriveSelection,
   findDrive,
+  getDriveFit,
   isEligibleFlashTarget,
   readDriveSelection,
   storeDriveSelection,
@@ -12,11 +17,6 @@ import {
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../components/drive-card.js";
-
-export {
-  isEligibleFlashTarget,
-  MIN_DRIVE_SIZE_BYTES,
-} from "../../utils/drive-selection.js";
 
 @customElement("drive-selection-view")
 export class DriveSelectionView extends LitElement {
@@ -245,7 +245,7 @@ export class DriveSelectionView extends LitElement {
     let drives: BlockDevice[];
     let error: string | null = null;
     try {
-      drives = (await listBlockDevices()).filter(isEligibleFlashTarget);
+      drives = (await listBlockDevices()).filter((drive) => drive.removable);
     } catch (err) {
       error = err instanceof Error ? err.message : "Failed to load drives";
       // The scan failed, so the selection cannot be confirmed. Drop it rather
@@ -278,7 +278,13 @@ export class DriveSelectionView extends LitElement {
       return;
     }
 
-    if (findDrive(this._drives, selection)) {
+    if (
+      findDrive(
+        this._drives,
+        selection,
+        wizardState.getState().selections.deviceConfig
+      )
+    ) {
       this._selectedDriveId = selection.id;
       this._selectionLost = false;
       return;
@@ -291,14 +297,6 @@ export class DriveSelectionView extends LitElement {
 
   private _isMiniPCFlow(): boolean {
     return wizardState.getState().currentFlow === "minipc";
-  }
-
-  private _getMinimumDriveSize(): number {
-    // Mini PC flow requires 16GB minimum (NVMe/SSD)
-    // SBC flow requires 2GB minimum (SD card)
-    return this._isMiniPCFlow()
-      ? 16 * 1000 * 1000 * 1000 // 16 GB
-      : 2 * 1000 * 1000 * 1000; // 2 GB
   }
 
   render() {
@@ -342,6 +340,7 @@ export class DriveSelectionView extends LitElement {
   }
 
   private _renderContent() {
+    const config = wizardState.getState().selections.deviceConfig;
     // Full-page spinner only on the initial scan (nothing to show yet).
     // A refresh with drives already listed keeps the list visible and shows
     // the loading state on the refresh button instead.
@@ -422,18 +421,21 @@ export class DriveSelectionView extends LitElement {
       >
         ${[...this._drives]
           .sort((a, b) => {
-            const minSize = this._getMinimumDriveSize();
-            const tolerance = 100 * 1000 * 1000;
-            const aTooSmall = a.size < minSize - tolerance;
-            const bTooSmall = b.size < minSize - tolerance;
+            const aTooSmall = !isEligibleFlashTarget(a, config);
+            const bTooSmall = !isEligibleFlashTarget(b, config);
             // Sort selectable drives first, then by size descending
             if (aTooSmall !== bTooSmall) return aTooSmall ? 1 : -1;
             return b.size - a.size;
           })
           .map((drive) => {
-            const minSize = this._getMinimumDriveSize();
-            const tooSmall = drive.size < minSize - 100 * 1000 * 1000; // Allow some tolerance for reported sizes
-            const minSizeGB = minSize / (1000 * 1000 * 1000);
+            const fit = getDriveFit(drive.size, config);
+            const disabled = !isEligibleFlashTarget(drive, config);
+            const reason =
+              fit === "too-small"
+                ? `Minimum ${formatBytes(config!.minimum_storage_bytes)} drive required`
+                : fit === "unavailable"
+                  ? "Drive capacity or board requirements unavailable"
+                  : "";
 
             return html`
               <drive-card
@@ -443,9 +445,10 @@ export class DriveSelectionView extends LitElement {
                 .deviceType=${drive.device_type}
                 .model=${drive.model || ""}
                 .vendor=${drive.vendor || ""}
-                .disabled=${tooSmall}
-                .disabledReason=${tooSmall
-                  ? `⚠ Minimum ${minSizeGB} GB required`
+                .disabled=${disabled}
+                .disabledReason=${reason}
+                .capacityWarning=${fit === "below-recommended"
+                  ? `A ${formatBytes(config!.recommended_storage_bytes)} drive is recommended. Space for apps, history, and backups will be limited.`
                   : ""}
               ></drive-card>
             `;
@@ -457,7 +460,13 @@ export class DriveSelectionView extends LitElement {
   private _onDriveChange(e: Event) {
     const id = (e.target as { value?: string | number | null }).value;
     const drive = this._drives.find((d) => d.id === id);
-    if (drive) {
+    if (
+      drive &&
+      isEligibleFlashTarget(
+        drive,
+        wizardState.getState().selections.deviceConfig
+      )
+    ) {
       this._onSelectDrive(drive);
     }
   }

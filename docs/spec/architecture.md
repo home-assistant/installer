@@ -128,8 +128,7 @@ home-assistant-installer/
 │                   └── utm/
 │
 ├── docs/
-│   ├── spec/                     # This documentation
-│   └── project.md                # Roadmap
+│   └── spec/                     # This documentation
 ├── test/
 │   ├── unit/                     # Frontend unit tests
 │   └── e2e/                      # Playwright E2E tests
@@ -151,7 +150,7 @@ The shared library containing all business logic.
 | `types` | Shared data types (`BlockDevice`, `FlashProgress`, etc.) |
 | `error` | Unified error handling with `thiserror` |
 | `devices` | Platform-specific block device enumeration |
-| `download` | Image download, verification, extraction, caching |
+| `download` | Image download, verification, extraction, temporary-file cleanup |
 | `manifest` | Device manifest bundled with the installer |
 | `flash` | Disk writing with progress and verification |
 | `proxmox` | Proxmox VE API client |
@@ -220,7 +219,7 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, String> {
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Home Assistant Installer",
-  "identifier": "org.openhomefoundation.hai",
+  "identifier": "io.home-assistant.installer",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",

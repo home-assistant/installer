@@ -12,22 +12,35 @@ describe("api/commands", () => {
     });
 
     it("formats kilobytes", () => {
-      expect(formatBytes(1024)).to.equal("1 KB");
-      expect(formatBytes(1536)).to.equal("1.5 KB");
+      expect(formatBytes(1000)).to.equal("1 KB");
+      expect(formatBytes(1500)).to.equal("1.5 KB");
     });
 
     it("formats megabytes", () => {
-      expect(formatBytes(1048576)).to.equal("1 MB");
-      expect(formatBytes(1572864)).to.equal("1.5 MB");
+      expect(formatBytes(1000000)).to.equal("1 MB");
+      expect(formatBytes(1500000)).to.equal("1.5 MB");
     });
 
     it("formats gigabytes", () => {
-      expect(formatBytes(1073741824)).to.equal("1 GB");
-      expect(formatBytes(34359738368)).to.equal("32 GB");
+      expect(formatBytes(1000000000)).to.equal("1 GB");
+      expect(formatBytes(16000000000)).to.equal("16 GB");
+      expect(formatBytes(32000000000)).to.equal("32 GB");
     });
 
     it("formats terabytes", () => {
-      expect(formatBytes(1099511627776)).to.equal("1 TB");
+      expect(formatBytes(1000000000000)).to.equal("1 TB");
+    });
+
+    it("does not round a drive up to a capacity threshold", () => {
+      expect(formatBytes(16_000_000_000 - 1)).to.equal("15.9 GB");
+      expect(formatBytes(32_000_000_000 - 1)).to.equal("31.9 GB");
+    });
+
+    it("handles invalid and oversized input without an undefined unit", () => {
+      for (const invalid of [NaN, Infinity, -1]) {
+        expect(formatBytes(invalid)).to.equal("Unknown size");
+      }
+      expect(formatBytes(1_000_000_000_000_000)).to.equal("1000 TB");
     });
   });
 });

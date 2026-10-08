@@ -28,6 +28,14 @@ import type {
  */
 const MOCK_ALLOWED = import.meta.env.DEV;
 
+/** Check the Home Assistant version service before starting a flow. */
+export async function checkConnection(): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return;
+  }
+  return invoke<void>("check_connection");
+}
+
 function isBrowserOnly(): boolean {
   return typeof window !== "undefined" && !("__TAURI__" in window);
 }
@@ -195,16 +203,22 @@ export async function getManifest(): Promise<DeviceManifest> {
 }
 
 /**
- * Format bytes to a human-readable string.
+ * Format bytes using decimal units, matching storage manufacturers.
  */
 export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "Unknown size";
   if (bytes === 0) return "0 B";
 
-  const k = 1024;
+  const k = 1000;
   const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.max(
+    0,
+    Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)))
+  );
 
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  // Do not round a drive just below a capacity threshold up to that threshold.
+  const value = Math.floor((bytes / Math.pow(k, i)) * 10) / 10;
+  return `${value} ${sizes[i]}`;
 }
 
 /**
@@ -252,6 +266,12 @@ export async function checkUtmStatus(): Promise<UtmStatus> {
     };
   }
   return invoke<UtmStatus>("check_utm_status");
+}
+
+/** Release a temporary image which was not consumed by VM creation. */
+export async function discardUtmImage(imagePath: string): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) return;
+  await invoke("discard_utm_image", { imagePath });
 }
 
 /**

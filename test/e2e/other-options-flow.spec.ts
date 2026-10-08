@@ -57,7 +57,7 @@ test.describe("Other Options View", () => {
     const dockerOption = page
       .locator("other-options-view")
       .locator(".option-item")
-      .filter({ hasText: "Docker container" });
+      .filter({ hasText: "Home Assistant Container" });
     await expect(dockerOption).toBeVisible();
     await expect(dockerOption).toContainText("Home Assistant Container");
     await expect(dockerOption).toContainText(

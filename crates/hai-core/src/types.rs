@@ -85,23 +85,6 @@ pub enum FlashStage {
     Error,
 }
 
-/// Update information
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateInfo {
-    /// Whether an update is available
-    pub update_available: bool,
-    /// Current version
-    pub current_version: String,
-    /// Latest available version
-    pub latest_version: String,
-    /// Download URL for the latest version
-    pub download_url: Option<String>,
-    /// Release notes URL
-    pub release_notes_url: Option<String>,
-    /// Whether this is a beta release
-    pub is_beta: bool,
-}
-
 /// Device manifest for supported devices
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceManifest {
@@ -144,6 +127,18 @@ pub struct HaosConfig {
     pub board: String,
     /// Download URL template
     pub download_url: String,
+    /// Minimum nominal target capacity in decimal bytes, with 5% reserved-space allowance.
+    pub minimum_storage_bytes: u64,
+    /// Recommended nominal target capacity in decimal bytes, with the same allowance.
+    pub recommended_storage_bytes: u64,
+}
+
+impl HaosConfig {
+    /// Actual reported capacity needed for the nominal minimum. Keep the 5%
+    /// allowance in sync with reportedCapacityFloor in the frontend.
+    pub fn minimum_reported_storage_bytes(&self) -> u64 {
+        self.minimum_storage_bytes - self.minimum_storage_bytes / 20
+    }
 }
 
 /// Flash request parameters
@@ -222,6 +217,9 @@ pub struct HaosImage {
     pub download_url: String,
     /// File size in bytes
     pub size: u64,
+    /// GitHub's digest of the compressed asset. Required for installation.
+    #[serde(default)]
+    pub digest: Option<String>,
 }
 
 /// GitHub release asset from API
@@ -230,6 +228,7 @@ pub struct GitHubAsset {
     pub name: String,
     pub size: u64,
     pub browser_download_url: String,
+    pub digest: Option<String>,
 }
 
 /// GitHub release from API
@@ -270,6 +269,9 @@ pub struct ProxmoxCredentials {
     pub username: String,
     /// Password
     pub password: String,
+    /// Optional time-based one-time password from an authenticator app.
+    #[serde(default)]
+    pub totp: Option<String>,
 }
 
 /// Proxmox session (authentication result)
@@ -371,6 +373,8 @@ pub struct UtmVmConfig {
 /// UTM VM creation result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UtmVmResult {
+    /// UTM's unique identifier, used for subsequent status and start commands
+    pub id: String,
     /// The created VM name
     pub name: String,
     /// Path to the VM bundle
@@ -633,12 +637,14 @@ mod tests {
                     board: "rpi5-64".to_string(),
                     format: ImageFormat::Raw,
                     download_url: "https://example.com/haos-rpi5-16.3.img.xz".to_string(),
+                    digest: None,
                     size: 500000000,
                 },
                 HaosImage {
                     board: "generic-x86-64".to_string(),
                     format: ImageFormat::Raw,
                     download_url: "https://example.com/haos-generic-x86-16.3.img.xz".to_string(),
+                    digest: None,
                     size: 600000000,
                 },
             ],
@@ -742,31 +748,6 @@ mod tests {
     }
 
     #[test]
-    fn test_update_info_roundtrip() {
-        let update_info = UpdateInfo {
-            update_available: true,
-            current_version: "1.0.0".to_string(),
-            latest_version: "1.1.0".to_string(),
-            download_url: Some("https://example.com/download".to_string()),
-            release_notes_url: Some("https://example.com/notes".to_string()),
-            is_beta: false,
-        };
-
-        let json = serde_json::to_string(&update_info).unwrap();
-        let deserialized: UpdateInfo = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(update_info.update_available, deserialized.update_available);
-        assert_eq!(update_info.current_version, deserialized.current_version);
-        assert_eq!(update_info.latest_version, deserialized.latest_version);
-        assert_eq!(update_info.download_url, deserialized.download_url);
-        assert_eq!(
-            update_info.release_notes_url,
-            deserialized.release_notes_url
-        );
-        assert_eq!(update_info.is_beta, deserialized.is_beta);
-    }
-
-    #[test]
     fn test_device_manifest_roundtrip() {
         let manifest = DeviceManifest {
             version: 1,
@@ -776,6 +757,8 @@ mod tests {
                 category: DeviceCategory::RaspberryPi,
                 image_url: Some("https://example.com/rpi5.png".to_string()),
                 haos: HaosConfig {
+                    minimum_storage_bytes: 16_000_000_000,
+                    recommended_storage_bytes: 32_000_000_000,
                     board: "rpi5-64".to_string(),
                     download_url: "https://example.com/haos-{version}-rpi5.img.xz".to_string(),
                 },
@@ -917,6 +900,8 @@ mod tests {
             category: DeviceCategory::RaspberryPi,
             image_url: Some("/assets/rpi5.png".to_string()),
             haos: HaosConfig {
+                minimum_storage_bytes: 16_000_000_000,
+                recommended_storage_bytes: 32_000_000_000,
                 board: "rpi5-64".to_string(),
                 download_url: "https://github.com/.../haos_rpi5-64-{version}.img.xz".to_string(),
             },
@@ -1003,11 +988,13 @@ mod tests {
     #[test]
     fn test_utm_vm_result_roundtrip_full() {
         let result = UtmVmResult {
+            id: "unique-vm-id".to_string(),
             name: "Home Assistant".to_string(),
             path: Some("/Users/test/VMs/HA.utm".to_string()),
         };
         let json = serde_json::to_string(&result).unwrap();
         let parsed: UtmVmResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, "unique-vm-id");
         assert_eq!(parsed.name, "Home Assistant");
         assert_eq!(parsed.path, Some("/Users/test/VMs/HA.utm".to_string()));
     }
@@ -1015,11 +1002,13 @@ mod tests {
     #[test]
     fn test_utm_vm_result_without_path() {
         let result = UtmVmResult {
+            id: "unique-vm-id".to_string(),
             name: "Home Assistant".to_string(),
             path: None,
         };
         let json = serde_json::to_string(&result).unwrap();
         let parsed: UtmVmResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, "unique-vm-id");
         assert_eq!(parsed.name, "Home Assistant");
         assert!(parsed.path.is_none());
     }
@@ -1033,12 +1022,14 @@ mod tests {
                     board: "rpi5-64".to_string(),
                     format: ImageFormat::Raw,
                     download_url: "https://example.com/rpi5.img.xz".to_string(),
+                    digest: None,
                     size: 100,
                 },
                 HaosImage {
                     board: "green".to_string(),
                     format: ImageFormat::Raw,
                     download_url: "https://example.com/green.img.xz".to_string(),
+                    digest: None,
                     size: 200,
                 },
             ],
@@ -1058,6 +1049,7 @@ mod tests {
                 board: "rpi5-64".to_string(),
                 format: ImageFormat::Raw,
                 download_url: "https://example.com/rpi5.img.xz".to_string(),
+                digest: None,
                 size: 100,
             }],
         };
@@ -1077,12 +1069,14 @@ mod tests {
                     board: "generic-aarch64".to_string(),
                     format: ImageFormat::Qcow2,
                     download_url: "https://example.com/aarch64.qcow2.xz".to_string(),
+                    digest: None,
                     size: 300,
                 },
                 HaosImage {
                     board: "generic-aarch64".to_string(),
                     format: ImageFormat::Raw,
                     download_url: "https://example.com/aarch64.img.xz".to_string(),
+                    digest: None,
                     size: 200,
                 },
             ],

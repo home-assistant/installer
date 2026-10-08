@@ -34,6 +34,13 @@ serde = { workspace = true }
 # Async runtime
 tokio = { workspace = true }
 
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = { workspace = true }
+
 [dev-dependencies]
+tauri = { workspace = true, features = ["test"] }
+plist = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }
 serial_test = { workspace = true }
+tempfile = { workspace = true }

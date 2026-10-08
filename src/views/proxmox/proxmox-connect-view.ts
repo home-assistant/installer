@@ -109,6 +109,9 @@ export class ProxmoxConnectView extends LitElement {
   private _password = "";
 
   @state()
+  private _totp = "";
+
+  @state()
   private _connecting = false;
 
   @state()
@@ -117,8 +120,26 @@ export class ProxmoxConnectView extends LitElement {
   @state()
   private _error: string | null = null;
 
+  connectedCallback() {
+    super.connectedCallback();
+
+    // Coming back from a later step: show who we're connected as, and keep
+    // the session so Next doesn't ask for the password again.
+    const { proxmoxSession, proxmoxUsername, proxmoxConnected } =
+      wizardState.getState().selections;
+    if (proxmoxSession) {
+      this._serverUrl = proxmoxSession.server_url;
+      this._username = proxmoxUsername ?? this._username;
+      this._connected = proxmoxConnected === true;
+    }
+  }
+
   /** Connect to Proxmox server. Returns true if successful. */
   async connect(): Promise<boolean> {
+    if (this._connected) {
+      return true;
+    }
+
     if (!this._serverUrl || !this._username || !this._password) {
       this._error = "Please fill in all fields";
       return false;
@@ -147,12 +168,14 @@ export class ProxmoxConnectView extends LitElement {
         server_url: url,
         username: this._username,
         password: this._password,
+        totp: this._totp.trim() || undefined,
       });
 
       this._connected = true;
 
       // Store session in wizard state
       wizardState.setSelection("proxmoxSession", session);
+      wizardState.setSelection("proxmoxUsername", this._username);
       wizardState.setSelection("proxmoxConnected", true);
       return true;
     } catch (error) {
@@ -169,6 +192,7 @@ export class ProxmoxConnectView extends LitElement {
       wizardState.setSelection("proxmoxConnected", false);
       return false;
     } finally {
+      this._totp = "";
       this._connecting = false;
     }
   }
@@ -205,6 +229,11 @@ export class ProxmoxConnectView extends LitElement {
     this._resetConnection();
   }
 
+  private _onTotpChange(e: Event) {
+    this._totp = (e.target as WaInput).value ?? "";
+    this._resetConnection();
+  }
+
   private _resetConnection() {
     if (this._connected) {
       this._connected = false;
@@ -223,10 +252,13 @@ export class ProxmoxConnectView extends LitElement {
       e.key === "Enter" &&
       fromTextField &&
       !e.isComposing &&
-      !this._connecting &&
-      !this._connected
+      !this._connecting
     ) {
-      void this.connect();
+      // Same path as the Next button, so the app shell's connecting guard
+      // applies and a successful login moves on to the next step.
+      this.dispatchEvent(
+        new CustomEvent("wizard-next", { bubbles: true, composed: true })
+      );
     }
   }
 
@@ -279,6 +311,18 @@ export class ProxmoxConnectView extends LitElement {
           password-toggle
           .value=${this._password}
           @input=${this._onPasswordChange}
+          @keydown=${this._onKeyDown}
+          ?disabled=${this._connecting}
+        ></wa-input>
+
+        <wa-input
+          type="text"
+          input-id="totp"
+          label="Authenticator app code (optional)"
+          autocomplete="one-time-code"
+          inputmode="numeric"
+          .value=${this._totp}
+          @input=${this._onTotpChange}
           @keydown=${this._onKeyDown}
           ?disabled=${this._connecting}
         ></wa-input>

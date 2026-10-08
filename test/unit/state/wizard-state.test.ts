@@ -14,6 +14,25 @@ describe("wizard-state", () => {
     expect(state.selections).to.deep.equal({});
   });
 
+  it("changes the flow generation only for a new flow or reset", () => {
+    const initial = wizardState.flowGeneration;
+    wizardState.startFlow("vm");
+    const generation = wizardState.flowGeneration;
+    expect(generation).to.not.equal(initial);
+
+    wizardState.nextStep();
+    wizardState.previousStep();
+    wizardState.goToStep(3);
+    wizardState.setSelection("cpuCores", 4);
+    expect(wizardState.flowGeneration).to.equal(generation);
+
+    wizardState.startFlow("vm");
+    const nextGeneration = wizardState.flowGeneration;
+    expect(nextGeneration).to.not.equal(generation);
+    wizardState.reset();
+    expect(wizardState.flowGeneration).to.not.equal(nextGeneration);
+  });
+
   it("starts an SBC flow with correct steps", () => {
     wizardState.startFlow("sbc");
     const state = wizardState.getState();

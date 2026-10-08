@@ -4,6 +4,8 @@ import "../../../../src/views/proxmox/proxmox-connect-view.js";
 import type { ProxmoxConnectView } from "../../../../src/views/proxmox/proxmox-connect-view.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import { findByRole, fullA11ySnapshot } from "../../helpers/a11y.js";
+import { mockTauriIpc, restoreTauriIpc } from "../../tauri-ipc.js";
+import type { ProxmoxCredentials } from "../../../../src/api/types.js";
 
 async function renderView() {
   const el = await fixture<ProxmoxConnectView>(
@@ -32,6 +34,8 @@ describe("proxmox-connect-view", () => {
     wizardState.reset();
   });
 
+  afterEach(() => restoreTauriIpc());
+
   it("gives each credential field the autocomplete hint password managers expect", async () => {
     const { inputs } = await renderView();
 
@@ -48,6 +52,7 @@ describe("proxmox-connect-view", () => {
       { id: "server-url", type: "url", autocomplete: "url" },
       { id: "username", type: "text", autocomplete: "username" },
       { id: "password", type: "password", autocomplete: "current-password" },
+      { id: "totp", type: "text", autocomplete: "one-time-code" },
     ]);
   });
 
@@ -90,6 +95,44 @@ describe("proxmox-connect-view", () => {
     expect(el.isFormValid()).to.be.true;
   });
 
+  it("shows the second-factor error, retries with the code, and clears it", async () => {
+    const submitted: ProxmoxCredentials[] = [];
+    mockTauriIpc((cmd, args) => {
+      expect(cmd).to.equal("proxmox_connect");
+      const { credentials } = args as { credentials: ProxmoxCredentials };
+      submitted.push(credentials);
+      if (!credentials.totp) {
+        throw "Proxmox two-factor authentication: Enter the current authenticator app code.";
+      }
+      return {
+        server_url: credentials.server_url,
+        ticket: "complete",
+        csrf_token: "csrf",
+      };
+    });
+    const { el, inputs } = await renderView();
+    await typeInto(el, inputs[0], "https://192.168.1.100:8006");
+    await typeInto(el, inputs[2], "secret");
+    await typeInto(el, inputs[3], "   ");
+    expect(await el.connect()).to.be.false;
+    expect(submitted[0].totp).to.be.undefined;
+    await el.updateComplete;
+    expect(
+      el.shadowRoot!.querySelector(".status-description")!.textContent
+    ).to.include("two-factor");
+    expect(wizardState.getState().selections.proxmoxConnected).to.be.false;
+    expect(wizardState.getState().selections.proxmoxSession).to.be.undefined;
+    await typeInto(el, inputs[3], " 012345 ");
+    expect(await el.connect()).to.be.true;
+    await el.updateComplete;
+    await inputs[3].updateComplete;
+    expect(submitted[1].totp).to.equal("012345");
+    expect(nativeInput(inputs[3]).value).to.equal("");
+    expect(wizardState.getState().selections.proxmoxSession?.ticket).to.equal(
+      "complete"
+    );
+  });
+
   it("rejects a server URL that is not HTTPS", async () => {
     const { el, inputs } = await renderView();
     await typeInto(el, inputs[0], "http://192.168.1.100:8006");
@@ -113,46 +156,80 @@ describe("proxmox-connect-view", () => {
     expect(error!.textContent).to.include("fill in all fields");
   });
 
-  it("connects on Enter in a field, but not on Enter on the password toggle", async () => {
-    const { el, inputs } = await renderView();
-    let connects = 0;
-    el.connect = async () => {
-      connects++;
-      return false;
-    };
+  /** Count the Next requests the view sends to the wizard. */
+  function countNext(el: ProxmoxConnectView) {
+    const counter = { next: 0 };
+    el.addEventListener("wizard-next", () => counter.next++);
+    return counter;
+  }
 
-    const enter = () =>
-      new KeyboardEvent("keydown", {
-        key: "Enter",
-        bubbles: true,
-        composed: true,
-      });
+  const enter = (init: KeyboardEventInit = {}) =>
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      composed: true,
+      ...init,
+    });
+
+  it("asks the wizard for Next on Enter in a field, not on the password toggle", async () => {
+    const { el, inputs } = await renderView();
+    const counter = countNext(el);
 
     const toggle = inputs[2].shadowRoot!.querySelector(".password-toggle")!;
     toggle.dispatchEvent(enter());
-    expect(connects, "Enter on the password toggle").to.equal(0);
+    expect(counter.next, "Enter on the password toggle").to.equal(0);
 
     nativeInput(inputs[2]).dispatchEvent(enter());
-    expect(connects, "Enter in the password field").to.equal(1);
+    expect(counter.next, "Enter in the password field").to.equal(1);
   });
 
-  it("does not connect on Enter that confirms an input method composition", async () => {
+  it("ignores Enter that confirms an input method composition", async () => {
     const { el, inputs } = await renderView();
-    let connects = 0;
-    el.connect = async () => {
-      connects++;
-      return false;
-    };
+    const counter = countNext(el);
 
-    nativeInput(inputs[1]).dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "Enter",
-        isComposing: true,
-        bubbles: true,
-        composed: true,
-      })
-    );
-    expect(connects).to.equal(0);
+    nativeInput(inputs[1]).dispatchEvent(enter({ isComposing: true }));
+    expect(counter.next).to.equal(0);
+  });
+
+  describe("coming back from a later step", () => {
+    beforeEach(() => {
+      wizardState.setSelection("proxmoxSession", {
+        server_url: "https://192.168.1.100:8006",
+        ticket: "ticket",
+        csrf_token: "csrf",
+      });
+      wizardState.setSelection("proxmoxUsername", "installer@pve");
+      wizardState.setSelection("proxmoxConnected", true);
+    });
+
+    it("shows the server and user, but never the password", async () => {
+      const { inputs } = await renderView();
+
+      expect(nativeInput(inputs[0]).value).to.equal(
+        "https://192.168.1.100:8006"
+      );
+      expect(nativeInput(inputs[1]).value).to.equal("installer@pve");
+      expect(nativeInput(inputs[2]).value).to.equal("");
+    });
+
+    it("moves on without logging in again", async () => {
+      const { el } = await renderView();
+
+      // The password field is empty, so a new login would fail validation
+      const session = wizardState.getState().selections.proxmoxSession;
+      expect(await el.connect()).to.be.true;
+      expect(wizardState.getState().selections.proxmoxSession).to.equal(
+        session
+      );
+    });
+
+    it("asks for the password again once a field changes", async () => {
+      const { el, inputs } = await renderView();
+
+      await typeInto(el, inputs[1], "root@pam");
+      expect(await el.connect()).to.be.false;
+      expect(wizardState.getState().selections.proxmoxConnected).to.be.false;
+    });
   });
 
   it("disables the fields while connecting and stores the session", async () => {
