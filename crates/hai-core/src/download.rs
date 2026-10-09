@@ -1706,14 +1706,14 @@ mod tests {
 
     #[tokio::test]
     async fn metadata_connect_failures_are_safe_but_parse_errors_are_unchanged() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}/secret", listener.local_addr().unwrap());
-        drop(listener);
+        // Nothing can listen on port 0, so the connection fails right away.
+        // A freed ephemeral port could be taken by a parallel test's server.
+        let url = "http://127.0.0.1:0/secret";
         for github in [false, true] {
             let error = if github {
-                fetch_release_from_api(&url, "18.3").await.unwrap_err()
+                fetch_release_from_api(url, "18.3").await.unwrap_err()
             } else {
-                get_stable_version_from_url(&url).await.unwrap_err()
+                get_stable_version_from_url(url).await.unwrap_err()
             };
             let expected = if github {
                 GITHUB_CONNECTION_FAILURE_MESSAGE
