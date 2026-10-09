@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/hai-core", "crates/hai-desktop"]
+members = ["crates/hai-core", "crates/hai-desktop", "crates/hai-usb", "crates/hai-live"]
 
 [workspace.package]
 version = "0.1.0"
@@ -37,6 +37,16 @@ rustls-platform-verifier = "0.7"
 
 # Compression
 xz2 = "0.1"
+# Pure Rust xz decoder, for hai-live's static Linux build (no C toolchain needed)
+lzma-rs = "0.3"
+
+# Live USB image building (hai-usb)
+fatfs = "0.3"
+fscommon = "0.1"
+flate2 = "1"
+gpt = "4"
+hadris-iso = { version = "=2.5.0", features = ["unstable-streaming"] }
+tar = "0.4"
 
 # File system
 directories = "6"
