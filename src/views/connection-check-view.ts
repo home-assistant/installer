@@ -4,7 +4,7 @@ import { checkConnection } from "../api/commands.js";
 import { localize } from "../localization/localize.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/spinner/spinner.js";
-const sadCasita = new URL("../assets/casita/Sad.svg", import.meta.url).href;
+import "../components/casita-mascot.js";
 
 @customElement("connection-check-view")
 export class ConnectionCheckView extends LitElement {
@@ -19,11 +19,6 @@ export class ConnectionCheckView extends LitElement {
       box-sizing: border-box;
       text-align: center;
       color: var(--ha-text-color, #212121);
-    }
-    img {
-      width: 120px;
-      height: 120px;
-      object-fit: contain;
     }
     h2 {
       font-size: 1.5rem;
@@ -84,7 +79,7 @@ export class ConnectionCheckView extends LitElement {
               "views.connection_check_view.checking_connection"
             )}
           ></wa-spinner>`
-        : html`<img src=${sadCasita} alt="" />`}
+        : html`<casita-mascot mood="sad"></casita-mascot>`}
       <h2>
         ${this._checking
           ? localize("views.connection_check_view.checking_connection")

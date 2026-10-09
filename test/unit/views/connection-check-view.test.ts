@@ -57,6 +57,10 @@ describe("connection-check-view", () => {
     await waitUntil(() => !!el.shadowRoot!.querySelector('[role="alert"]'));
     expect(el.shadowRoot!.textContent).to.contain("HTTP 503");
     expect(el.shadowRoot!.textContent).not.to.contain("No internet connection");
+    // The shared mascot serves its artwork from public/, unlike a bundled path
+    expect(
+      el.shadowRoot!.querySelector("casita-mascot")!.getAttribute("mood")
+    ).to.equal("sad");
   });
 
   for (const action of ["back", "disconnect"]) {
