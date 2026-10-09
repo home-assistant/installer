@@ -1,4 +1,15 @@
+import { localize, localizeContent } from "../../localization/localize.js";
+import {
+  installerError,
+  renderErrorHelp,
+  type InstallerError,
+} from "../../utils/installer-error.js";
 import { LitElement, html, css } from "lit";
+import {
+  ViewAccessibility,
+  reducedMotionStyles,
+} from "../../utils/view-accessibility.js";
+import { InstallDiagnostics } from "../../utils/diagnostics.js";
 import { customElement, state } from "lit/decorators.js";
 import { checkUtmStatus } from "../../api/commands.js";
 import type { UtmStatus } from "../../api/types.js";
@@ -6,6 +17,7 @@ import { wizardState } from "../../state/wizard-state.js";
 import { openExternalUrl } from "../../utils/external-url.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/ha-svg-icon.js";
+import "../../components/casita-mascot.js";
 
 // mdi:download
 const mdiDownload = "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z";
@@ -15,7 +27,9 @@ const mdiRefresh =
 
 @customElement("utm-check-view")
 export class UtmCheckView extends LitElement {
+  protected readonly _accessibility = new ViewAccessibility(this);
   static styles = css`
+    ${reducedMotionStyles}
     :host {
       display: flex;
       flex-direction: column;
@@ -58,9 +72,9 @@ export class UtmCheckView extends LitElement {
       }
     }
 
-    .utm-logo {
-      width: 56px;
-      height: 56px;
+    casita-mascot {
+      width: 96px;
+      height: 96px;
     }
 
     .status-row {
@@ -161,7 +175,7 @@ export class UtmCheckView extends LitElement {
     .warning-title {
       font-size: 0.875rem;
       font-weight: 500;
-      color: #e65100;
+      color: var(--ha-text-color, #212121);
       margin: 0;
     }
 
@@ -173,7 +187,7 @@ export class UtmCheckView extends LitElement {
 
     .warning-description {
       font-size: 0.8125rem;
-      color: var(--ha-secondary-text-color, #727272);
+      color: var(--ha-text-color, #212121);
       margin: 0;
     }
 
@@ -182,7 +196,7 @@ export class UtmCheckView extends LitElement {
       padding: 0;
       margin: 0;
       font-size: 0.8125rem;
-      color: var(--ha-secondary-text-color, #727272);
+      color: var(--ha-text-color, #212121);
     }
 
     .warning-list li {
@@ -210,7 +224,7 @@ export class UtmCheckView extends LitElement {
   private _utmStatus: UtmStatus | null = null;
 
   @state()
-  private _error: string | null = null;
+  private _error: InstallerError | null = null;
 
   connectedCallback() {
     super.connectedCallback();
@@ -228,8 +242,11 @@ export class UtmCheckView extends LitElement {
       // Store UTM installed status in wizard state
       wizardState.setSelection("utmInstalled", status.installed);
     } catch (error) {
-      this._error =
-        error instanceof Error ? error.message : "Failed to check UTM status";
+      if (this.isConnected) new InstallDiagnostics("utm").fail(error);
+      this._error = installerError(
+        error,
+        localize("views.utm.utm_check_view.failed_to_check_utm_status")
+      );
       wizardState.setSelection("utmInstalled", false);
     } finally {
       this._loading = false;
@@ -238,26 +255,51 @@ export class UtmCheckView extends LitElement {
 
   render() {
     return html`
-      <h2>Virtual machine setup</h2>
-      <p class="subtitle">Run Home Assistant in a virtual machine using UTM</p>
+      <h2>${localize("views.utm.utm_check_view.virtual_machine_setup")}</h2>
+      <p class="subtitle">
+        ${localize(
+          "views.utm.utm_check_view.run_home_assistant_in_a_virtual_machine_using_utm"
+        )}
+      </p>
 
       <div class="warning-card">
-        <p class="warning-title">Best for testing & evaluation</p>
+        <p class="warning-title">
+          ${localize("views.utm.utm_check_view.best_for_testing_evaluation")}
+        </p>
         <p class="warning-description">
-          A virtual machine in UTM is great for trying Home Assistant out, but
-          maybe not the best solution to run your actual smart home on.
+          ${localize(
+            "views.utm.utm_check_view.a_virtual_machine_in_utm_is_great_for_trying_home_assistant_out_but_maybe_n"
+          )}
         </p>
         <ul class="warning-list">
-          <li>Your Mac needs to be running and you need to be logged in</li>
-          <li>The virtual machine won't start automatically on boot</li>
           <li>
-            For always-on Home Assistant, dedicated hardware is recommended
+            ${localize(
+              "views.utm.utm_check_view.your_mac_needs_to_be_running_and_you_need_to_be_logged_in"
+            )}
+          </li>
+          <li>
+            ${localize(
+              "views.utm.utm_check_view.the_virtual_machine_won_t_start_automatically_on_boot"
+            )}
+          </li>
+          <li>
+            ${localize(
+              "views.utm.utm_check_view.for_always_on_home_assistant_dedicated_hardware_is_recommended"
+            )}
           </li>
         </ul>
       </div>
 
       <div class="status-card">
-        ${this._renderUtmLogo()}
+        <casita-mascot
+          mood=${this._loading
+            ? "loading"
+            : this._error
+              ? "problem"
+              : this._utmStatus?.installed
+                ? "happy"
+                : "sad"}
+        ></casita-mascot>
         ${this._loading
           ? this._renderLoading()
           : this._error
@@ -269,10 +311,6 @@ export class UtmCheckView extends LitElement {
     `;
   }
 
-  private _renderUtmLogo() {
-    return html`<img class="utm-logo" src="/assets/icons/utm.svg" alt="UTM" />`;
-  }
-
   private _renderLoading() {
     return html`
       <div class="status-row">
@@ -280,7 +318,9 @@ export class UtmCheckView extends LitElement {
           <div class="spinner"></div>
         </div>
         <div class="status-text">
-          <p class="status-title">Checking for UTM...</p>
+          <p class="status-title">
+            ${localize("views.utm.utm_check_view.checking_for_utm")}
+          </p>
         </div>
       </div>
     `;
@@ -288,7 +328,7 @@ export class UtmCheckView extends LitElement {
 
   private _renderError() {
     return html`
-      <div class="status-row">
+      <div class="status-row" role="alert">
         <div class="status-icon warning">
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path
@@ -297,17 +337,26 @@ export class UtmCheckView extends LitElement {
           </svg>
         </div>
         <div class="status-text">
-          <p class="status-title">Error checking UTM</p>
-          <p class="status-description">${this._error}</p>
+          <p class="status-title">
+            ${localize("views.utm.utm_check_view.error_checking_utm")}
+          </p>
+          <p class="status-description" style="overflow-wrap: anywhere;">
+            ${this._error?.message}
+          </p>
+          ${renderErrorHelp()}
         </div>
       </div>
-      <wa-button
-        variant="brand"
-        appearance="outlined"
-        @click=${this._checkStatus}
-      >
-        ${this._renderRefreshIcon()} Try again
-      </wa-button>
+      ${this._error?.retryable
+        ? html`<wa-button
+            variant="brand"
+            appearance="outlined"
+            @click=${this._checkStatus}
+          >
+            ${localizeContent("views.utm.utm_check_view.value_try_again", {
+              value0: this._renderRefreshIcon(),
+            })}
+          </wa-button>`
+        : ""}
     `;
   }
 
@@ -321,15 +370,20 @@ export class UtmCheckView extends LitElement {
         </div>
         <div class="status-text">
           <p class="status-title">
-            UTM is
-            installed${this._utmStatus?.version
-              ? html` <span class="version-info"
-                  >(v${this._utmStatus.version})</span
-                >`
-              : ""}
+            ${this._utmStatus?.version
+              ? localizeContent("utm.installed_with_version", {
+                  version: html`<span class="version-info"
+                    >${localize("utm.version", {
+                      version: this._utmStatus.version,
+                    })}</span
+                  >`,
+                })
+              : localize("utm.installed")}
           </p>
           <p class="status-description">
-            Ready to create a Home Assistant virtual machine
+            ${localize(
+              "views.utm.utm_check_view.ready_to_create_a_home_assistant_virtual_machine"
+            )}
           </p>
         </div>
       </div>
@@ -347,10 +401,13 @@ export class UtmCheckView extends LitElement {
           </svg>
         </div>
         <div class="status-text">
-          <p class="status-title">UTM is not installed</p>
+          <p class="status-title">
+            ${localize("views.utm.utm_check_view.utm_is_not_installed")}
+          </p>
           <p class="status-description">
-            Download and install UTM to continue. UTM is a free, open-source
-            virtualization app for macOS.
+            ${localize(
+              "views.utm.utm_check_view.download_and_install_utm_to_continue_utm_is_a_free_open_source_virtualizati"
+            )}
           </p>
         </div>
       </div>
@@ -359,14 +416,18 @@ export class UtmCheckView extends LitElement {
         appearance="accent"
         @click=${this._openUtmDownload}
       >
-        ${this._renderDownloadIcon()} Download UTM
+        ${localizeContent("views.utm.utm_check_view.value_download_utm", {
+          value0: this._renderDownloadIcon(),
+        })}
       </wa-button>
       <wa-button
         variant="brand"
         appearance="outlined"
         @click=${this._checkStatus}
       >
-        ${this._renderRefreshIcon()} I've installed UTM
+        ${localizeContent("views.utm.utm_check_view.value_i_ve_installed_utm", {
+          value0: this._renderRefreshIcon(),
+        })}
       </wa-button>
     `;
   }

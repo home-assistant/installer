@@ -1,4 +1,6 @@
+import { formatNumber, localize } from "../localization/localize.js";
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { failMockOperation } from "./mock-failures.js";
 import type {
   BlockDevice,
   DeviceManifest,
@@ -11,11 +13,15 @@ import type {
   ProxmoxSession,
   ProxmoxStorage,
   ProxmoxVmConfig,
+  ProxmoxBridge,
   ProxmoxVmResult,
   SystemInfo,
   UtmStatus,
   UtmVmConfig,
+  VmStatusInfo,
 } from "./types.js";
+
+export type { VmStatusInfo } from "./types.js";
 
 /**
  * Whether to answer with mock data because there's no Tauri backend, as in
@@ -27,6 +33,14 @@ import type {
  * `if (false)` and Vite drops the mock branches and the fixture data.
  */
 const MOCK_ALLOWED = import.meta.env.DEV;
+
+/** Check the Home Assistant version service before starting a flow. */
+export async function checkConnection(): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return;
+  }
+  return invoke<void>("check_connection");
+}
 
 function isBrowserOnly(): boolean {
   return typeof window !== "undefined" && !("__TAURI__" in window);
@@ -95,7 +109,7 @@ async function simulateFlashProgress(
   }> = [
     {
       stage: "downloading",
-      message: "Downloading image...",
+      message: localize("api.commands.downloading_image"),
       weight: 30,
       totalBytes: compressedSize,
       showBytes: true,
@@ -104,7 +118,7 @@ async function simulateFlashProgress(
     },
     {
       stage: "extracting",
-      message: "Extracting image...",
+      message: localize("api.commands.extracting_image"),
       weight: 10,
       totalBytes: 0,
       showBytes: false,
@@ -113,7 +127,7 @@ async function simulateFlashProgress(
     },
     {
       stage: "writing",
-      message: "Writing to device...",
+      message: localize("api.commands.writing_to_device"),
       weight: 35,
       totalBytes: extractedSize,
       showBytes: true,
@@ -122,7 +136,7 @@ async function simulateFlashProgress(
     },
     {
       stage: "verifying",
-      message: "Verifying written data...",
+      message: localize("api.commands.verifying_written_data"),
       weight: 15,
       totalBytes: extractedSize,
       showBytes: true,
@@ -131,7 +145,7 @@ async function simulateFlashProgress(
     },
     {
       stage: "finalizing",
-      message: "Finalizing...",
+      message: localize("api.commands.finalizing"),
       weight: 10,
       totalBytes: 0,
       showBytes: false,
@@ -165,6 +179,8 @@ async function simulateFlashProgress(
         message,
       });
 
+      if (stage === "writing" && step === 0) failMockOperation("flash");
+
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
     overallProgress += weight;
@@ -175,11 +191,10 @@ async function simulateFlashProgress(
     progress: 100,
     bytes_processed: extractedSize,
     total_bytes: extractedSize,
-    message: "Installation complete!",
+    message: localize("api.commands.installation_complete"),
   });
 
   return {
-    success: true,
     duration_secs: 45,
   };
 }
@@ -195,27 +210,50 @@ export async function getManifest(): Promise<DeviceManifest> {
 }
 
 /**
- * Format bytes to a human-readable string.
+ * Format bytes using decimal units, matching storage manufacturers.
  */
 export function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
+  if (!Number.isFinite(bytes) || bytes < 0)
+    return localize("views.sbc.confirmation_view.unknown_size");
+  if (bytes === 0) return localize("api.commands.0_b");
 
-  const k = 1024;
+  const k = 1000;
   const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.max(
+    0,
+    Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)))
+  );
 
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  // Do not round a drive just below a capacity threshold up to that threshold.
+  const value = Math.floor((bytes / Math.pow(k, i)) * 10) / 10;
+  // Grouping would turn the oversized "1000 TB" clamp into "1,000 TB".
+  return localize("format.bytes", {
+    amount: formatNumber(value, { useGrouping: false }),
+    unit: sizes[i],
+  });
 }
 
 /**
  * Get HAOS release information.
  * @param version Optional specific version to fetch (defaults to latest stable)
+ * @param board Board whose stable release should be shown
  */
-export async function getHaosRelease(version?: string): Promise<HaosRelease> {
+export async function getHaosRelease(
+  version?: string,
+  board?: string
+): Promise<HaosRelease> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     return MOCK_HAOS_RELEASE;
   }
-  return invoke<HaosRelease>("get_haos_release", { version });
+  return invoke<HaosRelease>("get_haos_release", { version, board });
+}
+
+/** Get the stable release for the backend's UTM download architecture. */
+export async function getUtmHaosRelease(): Promise<HaosRelease> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return MOCK_HAOS_RELEASE;
+  }
+  return invoke<HaosRelease>("get_utm_haos_release");
 }
 
 // ============================================================================
@@ -252,6 +290,12 @@ export async function checkUtmStatus(): Promise<UtmStatus> {
     };
   }
   return invoke<UtmStatus>("check_utm_status");
+}
+
+/** Release a temporary image which was not consumed by VM creation. */
+export async function discardUtmImage(imagePath: string): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) return;
+  await invoke("discard_utm_image", { imagePath });
 }
 
 /**
@@ -292,13 +336,13 @@ async function simulateUtmDownload(
   }> = [
     {
       stage: "downloading",
-      message: "Downloading HAOS image...",
+      message: localize("api.commands.downloading_haos_image"),
       steps: 20,
       delay: 100,
     },
     {
       stage: "extracting",
-      message: "Extracting image...",
+      message: localize("api.commands.extracting_image"),
       steps: 10,
       delay: 100,
     },
@@ -330,7 +374,7 @@ async function simulateUtmDownload(
     progress: 100,
     bytes_processed: 0,
     total_bytes: 0,
-    message: "Download complete!",
+    message: localize("api.commands.download_complete"),
   });
 
   return "/tmp/mock-haos.qcow2";
@@ -343,6 +387,7 @@ async function simulateUtmDownload(
  */
 export async function createUtmVm(config: UtmVmConfig): Promise<string> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
+    failMockOperation("utm");
     // Simulate VM creation
     await new Promise((resolve) => setTimeout(resolve, 2000));
     return "mock-vm-id-12345";
@@ -376,14 +421,6 @@ export async function resizeUtmVmDisk(
     return;
   }
   return invoke<void>("resize_utm_vm_disk", { vmId, sizeGb });
-}
-
-/**
- * VM status info from backend.
- */
-export interface VmStatusInfo {
-  status: string;
-  ip_address: string | null;
 }
 
 /**
@@ -431,6 +468,16 @@ export async function checkHaUpdated(ipAddress: string): Promise<boolean> {
 
 /** Store for the current Proxmox session (browser-only mock) */
 let mockProxmoxSession: ProxmoxSession | null = null;
+
+/** Inspect TLS trust before authenticating. A fingerprint requires user approval. */
+export async function proxmoxCertificateFingerprint(
+  serverUrl: string
+): Promise<string | null> {
+  if (MOCK_ALLOWED && isBrowserOnly()) return null;
+  return invoke<string | null>("proxmox_certificate_fingerprint", {
+    serverUrl,
+  });
+}
 
 /**
  * Connect to a Proxmox VE server and authenticate.
@@ -517,6 +564,20 @@ export async function proxmoxListStorage(
   return invoke<ProxmoxStorage[]>("proxmox_list_storage", { session, node });
 }
 
+/** List bridges and eligible SDN VNets on the selected node. */
+export async function proxmoxListBridges(
+  session: ProxmoxSession,
+  node: string
+): Promise<ProxmoxBridge[]> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return [
+      { name: "vmbr0", network_type: "bridge", comments: null },
+      { name: "vmbr1", network_type: "bridge", comments: "LAN" },
+    ];
+  }
+  return invoke<ProxmoxBridge[]>("proxmox_list_bridges", { session, node });
+}
+
 /**
  * Get the next available VM ID on the Proxmox server.
  * @param session The authentication session
@@ -601,35 +662,35 @@ async function simulateProxmoxInstall(
   }> = [
     {
       stage: "downloading",
-      message: "Downloading HAOS image...",
+      message: localize("api.commands.downloading_haos_image"),
       weight: 40,
       steps: 40,
       delay: 100,
     },
     {
       stage: "extracting",
-      message: "Extracting image...",
+      message: localize("api.commands.extracting_image"),
       weight: 10,
       steps: 10,
       delay: 80,
     },
     {
       stage: "uploading",
-      message: "Uploading to Proxmox...",
+      message: localize("api.commands.uploading_to_proxmox"),
       weight: 20,
       steps: 20,
       delay: 80,
     },
     {
       stage: "creating_vm",
-      message: "Creating virtual machine...",
+      message: localize("api.commands.creating_virtual_machine"),
       weight: 15,
       steps: 15,
       delay: 100,
     },
     {
       stage: "starting_vm",
-      message: "Starting virtual machine...",
+      message: localize("api.commands.starting_home_assistant_os"),
       weight: 15,
       steps: 10,
       delay: 150,
@@ -650,6 +711,8 @@ async function simulateProxmoxInstall(
         total_bytes: 0,
         message,
       });
+
+      if (stage === "creating_vm" && step === 0) failMockOperation("proxmox");
 
       await new Promise((resolve) => setTimeout(resolve, delay));
     }

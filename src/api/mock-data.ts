@@ -7,29 +7,32 @@ export const MOCK_BLOCK_DEVICES: BlockDevice[] = [
   {
     id: "mock-sd-card-32gb",
     name: "SD Card 32GB",
-    size: 32 * 1024 * 1024 * 1024,
+    size: 32 * 1000 * 1000 * 1000,
     device_type: "sd_card",
     removable: true,
     model: "SanDisk Ultra",
     vendor: "SanDisk",
+    serial: "MOCK-SD-32",
   },
   {
     id: "mock-sd-card-64gb",
     name: "SD Card 64GB",
-    size: 64 * 1024 * 1024 * 1024,
+    size: 64 * 1000 * 1000 * 1000,
     device_type: "sd_card",
     removable: true,
     model: "Samsung EVO Plus",
     vendor: "Samsung",
+    serial: null,
   },
   {
     id: "mock-usb-drive-128gb",
     name: "USB Drive 128GB",
-    size: 128 * 1024 * 1024 * 1024,
+    size: 128 * 1000 * 1000 * 1000,
     device_type: "usb_drive",
     removable: true,
     model: "USB Flash Drive",
     vendor: "Kingston",
+    serial: "MOCK-USB-128",
   },
 ];
 
@@ -46,6 +49,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "raspberry_pi",
       image_url: "/assets/devices/raspberry_pi_5.png",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "rpi5-64",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi5-64-{version}.img.xz",
@@ -57,6 +62,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "raspberry_pi",
       image_url: "/assets/devices/raspberry_pi_4.png",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "rpi4-64",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi4-64-{version}.img.xz",
@@ -68,6 +75,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "raspberry_pi",
       image_url: "/assets/devices/raspberry_pi_3.png",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "rpi3-64",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi3-64-{version}.img.xz",
@@ -80,6 +89,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "odroid",
       image_url: "/assets/devices/hardkernel_odroid-n2.png",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "odroid-n2",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-n2-{version}.img.xz",
@@ -91,6 +102,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "odroid",
       image_url: "/assets/devices/hardkernel_odroid-c2.png",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "odroid-c2",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-c2-{version}.img.xz",
@@ -102,6 +115,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "odroid",
       image_url: "/assets/devices/hardkernel_odroid-c4.png",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "odroid-c4",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-c4-{version}.img.xz",
@@ -113,6 +128,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "odroid",
       image_url: "/assets/devices/hardkernel_odroid-m1.png",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "odroid-m1",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-m1-{version}.img.xz",
@@ -124,6 +141,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "odroid",
       image_url: "/assets/devices/hardkernel_odroid-m1s.png",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "odroid-m1s",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-m1s-{version}.img.xz",
@@ -136,6 +155,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "khadas",
       image_url: "/assets/devices/khadas_vim3.png",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "khadas-vim3",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_khadas-vim3-{version}.img.xz",
@@ -148,6 +169,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "home_assistant_hardware",
       image_url: "/assets/devices/homeassistant_green.png",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "green",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_green-{version}.img.xz",
@@ -159,6 +182,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "home_assistant_hardware",
       image_url: "/assets/devices/homeassistant_yellow.png",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "yellow",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_yellow-{version}.img.xz",
@@ -171,6 +196,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "generic_x86",
       image_url: "/assets/icons/cpu-64-bit.svg",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "generic-x86-64",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_generic-x86-64-{version}.img.xz",
@@ -183,6 +210,8 @@ export const MOCK_MANIFEST: DeviceManifest = {
       category: "generic_arm64",
       image_url: "/assets/icons/chip.svg",
       haos: {
+        minimum_storage_bytes: 16_000_000_000,
+        recommended_storage_bytes: 32_000_000_000,
         board: "generic-aarch64",
         download_url:
           "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_generic-aarch64-{version}.img.xz",
@@ -203,6 +232,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_rpi5-64-16.3.img.xz",
       size: 331_899_792,
+      digest: null,
     },
     {
       board: "rpi4-64",
@@ -210,6 +240,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_rpi4-64-16.3.img.xz",
       size: 322_239_272,
+      digest: null,
     },
     {
       board: "rpi3-64",
@@ -217,6 +248,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_rpi3-64-16.3.img.xz",
       size: 311_438_560,
+      digest: null,
     },
     {
       board: "odroid-n2",
@@ -224,6 +256,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_odroid-n2-16.3.img.xz",
       size: 298_412_092,
+      digest: null,
     },
     {
       board: "green",
@@ -231,6 +264,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_green-16.3.img.xz",
       size: 336_860_104,
+      digest: null,
     },
     {
       board: "yellow",
@@ -238,6 +272,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_yellow-16.3.img.xz",
       size: 322_261_788,
+      digest: null,
     },
     {
       board: "generic-x86-64",
@@ -245,6 +280,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_generic-x86-64-16.3.img.xz",
       size: 396_451_208,
+      digest: null,
     },
     {
       board: "generic-aarch64",
@@ -252,6 +288,7 @@ export const MOCK_HAOS_RELEASE: HaosRelease = {
       download_url:
         "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_generic-aarch64-16.3.img.xz",
       size: 341_537_340,
+      digest: null,
     },
   ],
 };

@@ -1,6 +1,8 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { WizardStep } from "../state/wizard-state.js";
+import { ifDefined } from "lit/directives/if-defined.js";
+import { localize } from "../localization/localize.js";
 
 @customElement("step-indicator")
 export class StepIndicator extends LitElement {
@@ -14,6 +16,7 @@ export class StepIndicator extends LitElement {
       align-items: center;
       justify-content: center;
       gap: 0.5rem;
+      flex-wrap: wrap;
     }
 
     .step {
@@ -71,13 +74,36 @@ export class StepIndicator extends LitElement {
       }
     }
 
-    /* Compact mode - only show dots */
+    /* Keep the names in the accessibility tree when only dots fit. */
     :host([compact]) .step-label {
-      display: none;
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
     }
 
     :host([compact]) .step-connector {
       width: 16px;
+    }
+
+    @media (max-width: 600px) {
+      .step-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+      }
+      .step-connector {
+        width: 8px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        transition: none !important;
+      }
     }
   `;
 
@@ -89,7 +115,11 @@ export class StepIndicator extends LitElement {
 
   render() {
     return html`
-      <div class="steps">
+      <div
+        class="steps"
+        role="list"
+        aria-label=${localize("components.step_indicator.installation_steps")}
+      >
         ${this.steps.map((step, index) => this._renderStep(step, index))}
       </div>
     `;
@@ -101,11 +131,16 @@ export class StepIndicator extends LitElement {
     const isLast = index === this.steps.length - 1;
 
     return html`
-      <div class="step">
+      <div
+        class="step"
+        role="listitem"
+        aria-current=${ifDefined(isActive ? "step" : undefined)}
+      >
         <span
           class="step-dot ${isActive ? "active" : ""} ${isCompleted
             ? "completed"
             : ""}"
+          aria-hidden="true"
         ></span>
         <span class="step-label ${isActive ? "active" : ""}">
           ${step.title}
@@ -114,6 +149,7 @@ export class StepIndicator extends LitElement {
       ${!isLast
         ? html`<span
             class="step-connector ${isCompleted ? "completed" : ""}"
+            aria-hidden="true"
           ></span>`
         : ""}
     `;

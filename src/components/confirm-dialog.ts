@@ -1,3 +1,4 @@
+import { localize, localizeContent } from "../localization/localize.js";
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
@@ -36,6 +37,12 @@ export class ConfirmDialog extends LitElement {
 
     wa-dialog {
       --width: 32rem;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      wa-dialog::part(dialog) {
+        animation: none !important;
+      }
     }
 
     .dialog-title {
@@ -128,25 +135,30 @@ export class ConfirmDialog extends LitElement {
         @wa-after-hide=${this._onAfterHide}
       >
         <span slot="label" class="dialog-title">
-          <span class="warning-icon">⚠️</span> Erase drive and install?
+          <span class="warning-icon">⚠️</span> ${localize(
+            "components.confirm_dialog.erase_drive_and_install"
+          )}
         </span>
 
         <p class="dialog-message">
-          All data on <span class="drive-name">${this.driveName}</span> will be
-          permanently erased. This action cannot be undone.
+          ${this.driveName
+            ? localizeContent("components.confirm_dialog.erase_warning", {
+                drive: html`<span class="drive-name">${this.driveName}</span>`,
+              })
+            : localize("components.confirm_dialog.erase_warning_unknown")}
         </p>
 
         ${this._renderDriveDetails()}
         ${this._promptsForPassword()
           ? html`<p class="password-note">
-              You may be prompted for your password to allow writing to the
-              drive. This is required because writing to external drives needs
-              administrator privileges.
+              ${localize(
+                "components.confirm_dialog.you_may_be_prompted_for_your_password_to_allow_writing_to_the_drive_this_is"
+              )}
             </p>`
           : ""}
 
         <wa-button slot="footer" appearance="outlined" @click=${this._onCancel}>
-          Cancel
+          ${localize("common.cancel")}
         </wa-button>
         <wa-button
           slot="footer"
@@ -154,7 +166,7 @@ export class ConfirmDialog extends LitElement {
           appearance="accent"
           @click=${this._onConfirm}
         >
-          Erase and install
+          ${localize("components.confirm_dialog.erase_and_install")}
         </wa-button>
       </wa-dialog>
     `;
@@ -169,19 +181,25 @@ export class ConfirmDialog extends LitElement {
       <dl class="drive-details">
         ${this.drivePath
           ? html`
-              <dt class="detail-label">Device</dt>
+              <dt class="detail-label">
+                ${localize("components.confirm_dialog.device")}
+              </dt>
               <dd class="detail-value path">${this.drivePath}</dd>
             `
           : nothing}
         ${this.driveModel
           ? html`
-              <dt class="detail-label">Model</dt>
+              <dt class="detail-label">
+                ${localize("components.confirm_dialog.model")}
+              </dt>
               <dd class="detail-value">${this.driveModel}</dd>
             `
           : nothing}
         ${this.driveSize !== undefined
           ? html`
-              <dt class="detail-label">Size</dt>
+              <dt class="detail-label">
+                ${localize("components.confirm_dialog.size")}
+              </dt>
               <dd class="detail-value">${formatBytes(this.driveSize)}</dd>
             `
           : nothing}
@@ -213,6 +231,7 @@ export class ConfirmDialog extends LitElement {
   }
 
   private _onConfirm() {
+    if (!this.open) return;
     this.open = false;
     this._dispatch("dialog-confirm");
   }

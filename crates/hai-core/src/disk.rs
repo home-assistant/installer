@@ -7,7 +7,7 @@
 use crate::error::{Error, Result};
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 use crate::types::DeviceType;
-use crate::types::{BlockDevice, FlashProgress, FlashStage};
+use crate::types::{BlockDevice, ExpectedDevice, FlashProgress, FlashStage};
 use crate::{Backend, DeviceBackend, ProgressCallback};
 use std::path::Path;
 
@@ -21,6 +21,10 @@ mod imp;
 #[path = "disk/windows/mod.rs"]
 mod imp;
 
+#[cfg(any(target_os = "windows", test))]
+#[path = "disk/windows/elevation.rs"]
+mod windows_elevation;
+
 // Pure logic behind the macOS write path, compiled under `test` on every
 // platform so the Linux-only backend test job covers it without shipping it
 // in non-macOS builds.
@@ -32,10 +36,18 @@ mod macos_logic;
 #[path = "disk/macos/safety.rs"]
 mod macos_safety;
 
+#[cfg(any(target_os = "windows", test))]
+#[path = "disk/windows/transfer.rs"]
+mod windows_transfer;
+
 #[cfg(all(test, not(target_os = "macos")))]
 #[allow(dead_code)]
 #[path = "disk/macos/device.rs"]
 mod macos_device_tests;
+
+#[cfg(any(target_os = "windows", test))]
+#[path = "disk/windows/serial.rs"]
+mod windows_serial;
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 compile_error!("hai-core supports only Linux, macOS and Windows");
@@ -52,6 +64,26 @@ const FAST_DRIVE_BUFFER_SIZE: usize = 64 * 1024 * 1024;
 #[allow(dead_code)]
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
 
+pub(super) fn normalize_serial(serial: Option<&str>) -> Option<String> {
+    serial
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+}
+
+fn check_identity(devices: &[BlockDevice], id: &str, expected: &ExpectedDevice) -> Result<()> {
+    if devices
+        .iter()
+        .any(|device| device.id == id && expected.matches(device))
+    {
+        Ok(())
+    } else {
+        Err(Error::DeviceNotFound(
+            "The selected drive changed or was disconnected. Select it again.".into(),
+        ))
+    }
+}
+
 /// Whether a media type/model string refers to an SD card. Matches "SD" as
 /// its own word (plus SDHC/SDXC/microSD variants) so names like "Samsung
 /// Portable SSD" don't count.
@@ -66,6 +98,30 @@ fn mentions_sd_card(s: &str) -> bool {
     })
 }
 
+/// Raw OS error codes that mean the drive went away. The numbers differ per
+/// OS: on Windows 6 is `ERROR_INVALID_HANDLE` and 19 `ERROR_WRITE_PROTECT`.
+#[cfg(unix)]
+const DISCONNECTED_OS_ERRORS: &[i32] = &[
+    6,  // ENXIO: device not configured
+    19, // ENODEV: no such device
+];
+#[cfg(windows)]
+const DISCONNECTED_OS_ERRORS: &[i32] = &[
+    21,   // ERROR_NOT_READY
+    433,  // ERROR_NO_SUCH_DEVICE
+    1167, // ERROR_DEVICE_NOT_CONNECTED
+];
+
+/// Raw OS error codes that mean the drive refuses writes.
+#[cfg(unix)]
+const WRITE_PROTECTED_OS_ERRORS: &[i32] = &[
+    30, // EROFS: read-only file system
+];
+#[cfg(windows)]
+const WRITE_PROTECTED_OS_ERRORS: &[i32] = &[
+    19, // ERROR_WRITE_PROTECT
+];
+
 /// Check if an I/O error indicates the drive was disconnected
 fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
     matches!(
@@ -73,11 +129,58 @@ fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
         std::io::ErrorKind::NotFound
             | std::io::ErrorKind::BrokenPipe
             | std::io::ErrorKind::UnexpectedEof
-    ) || io_err.raw_os_error().is_some_and(|code| {
-        // macOS: ENXIO (6) = "Device not configured"
-        // Linux: ENODEV (19) = "No such device", ENXIO (6)
-        matches!(code, 6 | 19)
-    })
+    ) || io_err
+        .raw_os_error()
+        .is_some_and(|code| DISCONNECTED_OS_ERRORS.contains(&code))
+}
+
+/// Check if an I/O error means the drive is write-protected, like an SD card
+/// with its lock switch on.
+fn is_write_protected(io_err: &std::io::Error) -> bool {
+    io_err.kind() == std::io::ErrorKind::ReadOnlyFilesystem
+        || io_err
+            .raw_os_error()
+            .is_some_and(|code| WRITE_PROTECTED_OS_ERRORS.contains(&code))
+}
+
+/// Map an I/O error from reading or writing the device onto an [`Error`]:
+/// a disconnect and write protection get their own errors, so the user is
+/// told what to do about them.
+#[cfg(any(target_os = "linux", target_os = "windows", test))]
+fn device_io_error(io_err: std::io::Error) -> Error {
+    if is_drive_disconnected(&io_err) {
+        Error::DriveDisconnected
+    } else if is_write_protected(&io_err) {
+        Error::WriteProtected
+    } else {
+        Error::Io(io_err)
+    }
+}
+
+/// Check known capacity before any destructive disk operation.
+pub fn ensure_image_fits(image_size: u64, drive_size: u64) -> Result<()> {
+    if image_size > drive_size {
+        return Err(Error::ImageTooLarge {
+            written: 0,
+            image_size,
+            drive_size: Some(drive_size),
+        });
+    }
+    Ok(())
+}
+
+// Also compiled in tests, which cover the Windows transfer on every platform
+#[cfg(any(target_os = "linux", target_os = "windows", test))]
+fn device_write_error(error: std::io::Error, written: u64, image_size: u64) -> Error {
+    if error.kind() == std::io::ErrorKind::StorageFull {
+        Error::ImageTooLarge {
+            written,
+            image_size,
+            drive_size: None,
+        }
+    } else {
+        device_io_error(error)
+    }
 }
 
 /// Drive a blocking task while forwarding its progress updates to the
@@ -118,15 +221,24 @@ async fn list_devices() -> Result<Vec<BlockDevice>> {
 async fn write_image<P: ProgressCallback>(
     image_path: &Path,
     device_id: &str,
+    expected: &ExpectedDevice,
     verify: bool,
     progress_callback: &P,
 ) -> Result<()> {
     std::fs::metadata(image_path)?;
 
-    imp::write_image(image_path, device_id, verify, progress_callback).await
+    imp::write_image(image_path, device_id, expected, verify, progress_callback).await
 }
 
 impl DeviceBackend for Backend {
+    fn check_write_privileges(&self) -> Result<()> {
+        #[cfg(target_os = "windows")]
+        return windows_elevation::check_write_privileges();
+
+        #[cfg(not(target_os = "windows"))]
+        Ok(())
+    }
+
     async fn list_devices(&self) -> Result<Vec<BlockDevice>> {
         list_devices().await
     }
@@ -135,16 +247,60 @@ impl DeviceBackend for Backend {
         &self,
         image_path: &Path,
         device_id: &str,
+        expected: &ExpectedDevice,
         verify: bool,
         progress_callback: &P,
     ) -> Result<()> {
-        write_image(image_path, device_id, verify, progress_callback).await
+        write_image(image_path, device_id, expected, verify, progress_callback).await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capacity_check_rejects_only_oversized_images() {
+        ensure_image_fits(1024, 1024).unwrap();
+        ensure_image_fits(512, 1024).unwrap();
+        assert!(matches!(
+            ensure_image_fits(2048, 1024),
+            Err(Error::ImageTooLarge {
+                written: 0,
+                image_size: 2048,
+                drive_size: Some(1024)
+            })
+        ));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    fn full_disk_write_retains_progress_and_size() {
+        #[cfg(target_os = "linux")]
+        let codes = [28, 28]; // ENOSPC
+        #[cfg(target_os = "windows")]
+        let codes = [39, 112]; // ERROR_HANDLE_DISK_FULL, ERROR_DISK_FULL
+        for code in codes {
+            assert!(matches!(
+                device_write_error(std::io::Error::from_raw_os_error(code), 10, 20),
+                Error::ImageTooLarge {
+                    written: 10,
+                    image_size: 20,
+                    drive_size: None
+                }
+            ));
+        }
+        assert!(matches!(
+            device_write_error(std::io::Error::other("unknown"), 10, 20),
+            Error::Io(_)
+        ));
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn write_privileges_are_authorized_later_off_windows() {
+        Backend.check_write_privileges().unwrap();
+    }
 
     #[test]
     #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -195,13 +351,85 @@ mod tests {
             );
         }
 
-        // Raw OS error codes: ENXIO (6) and ENODEV (19)
-        for code in [6, 19] {
+        for &code in DISCONNECTED_OS_ERRORS {
             assert!(
                 is_drive_disconnected(&std::io::Error::from_raw_os_error(code)),
                 "os error {code} should be detected as disconnected"
             );
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_unix_disconnect_codes() {
+        // ENXIO and ENODEV
+        for code in [6, 19] {
+            assert!(is_drive_disconnected(&std::io::Error::from_raw_os_error(
+                code
+            )));
+        }
+    }
+
+    /// The Unix numbers mean something else on Windows: 6 is
+    /// ERROR_INVALID_HANDLE and 19 ERROR_WRITE_PROTECT, a locked SD card.
+    #[test]
+    #[cfg(windows)]
+    fn test_windows_disconnect_codes() {
+        for code in [21, 433, 1167] {
+            assert!(
+                is_drive_disconnected(&std::io::Error::from_raw_os_error(code)),
+                "os error {code} should be detected as disconnected"
+            );
+        }
+        for code in [6, 19] {
+            assert!(
+                !is_drive_disconnected(&std::io::Error::from_raw_os_error(code)),
+                "os error {code} should NOT be detected as disconnected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_write_protected() {
+        assert!(is_write_protected(&std::io::Error::new(
+            std::io::ErrorKind::ReadOnlyFilesystem,
+            "test"
+        )));
+
+        #[cfg(unix)]
+        let locked = 30; // EROFS
+        #[cfg(windows)]
+        let locked = 19; // ERROR_WRITE_PROTECT
+        assert!(is_write_protected(&std::io::Error::from_raw_os_error(
+            locked
+        )));
+        assert!(!is_drive_disconnected(&std::io::Error::from_raw_os_error(
+            locked
+        )));
+
+        assert!(!is_write_protected(&std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "test"
+        )));
+    }
+
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    fn test_device_io_error_maps_disconnect_and_write_protection() {
+        use std::io::{Error as IoError, ErrorKind};
+
+        assert!(matches!(
+            device_io_error(IoError::new(ErrorKind::BrokenPipe, "gone")),
+            Error::DriveDisconnected
+        ));
+        assert!(matches!(
+            device_io_error(IoError::new(ErrorKind::ReadOnlyFilesystem, "locked")),
+            Error::WriteProtected
+        ));
+        assert!(matches!(
+            device_io_error(IoError::other("something else")),
+            Error::Io(_)
+        ));
     }
 
     #[test]
@@ -229,7 +457,8 @@ mod tests {
             );
         }
 
-        // Non-matching raw OS error codes: EPERM (1) and EACCES (13)
+        // Non-matching raw OS error codes: EPERM / ERROR_INVALID_FUNCTION (1)
+        // and EACCES / ERROR_INVALID_DATA (13)
         for code in [1, 13] {
             assert!(
                 !is_drive_disconnected(&std::io::Error::from_raw_os_error(code)),
@@ -253,7 +482,14 @@ mod tests {
         // The image metadata check runs before any platform code, so a
         // missing image surfaces as Io and the device id is never touched.
         let image_path = Path::new("/nonexistent/image/file.img");
-        let result = write_image(image_path, "unused-device-id", false, &crate::NoOpProgress).await;
+        let result = write_image(
+            image_path,
+            "unused-device-id",
+            &ExpectedDevice::default(),
+            false,
+            &crate::NoOpProgress,
+        )
+        .await;
         assert!(matches!(result.unwrap_err(), Error::Io(_)));
     }
 }

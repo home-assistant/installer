@@ -44,6 +44,7 @@ impl UtmBackend for BackendMock {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
         Ok(UtmVmResult {
+            id: "mock-utm-vm-id".to_string(),
             name: config.name.clone(),
             path: Some(format!(
                 "~/Library/Containers/com.utmapp.UTM/Data/Documents/{}.utm",

@@ -39,6 +39,14 @@ describe("step-indicator", () => {
     expect(dots[0].classList.contains("completed")).to.be.true;
     expect(dots[1].classList.contains("active")).to.be.true;
     expect(dots[2].classList.contains("active")).to.be.false;
+    const current = el.shadowRoot!.querySelectorAll('[aria-current="step"]');
+    expect(current.length).to.equal(1);
+    expect(current[0].textContent?.trim()).to.equal("Second Step");
+    el.currentIndex = 2;
+    await el.updateComplete;
+    expect(
+      el.shadowRoot!.querySelector('[aria-current="step"]')!.textContent?.trim()
+    ).to.equal("Third Step");
   });
 
   it("marks previous steps as completed", async () => {

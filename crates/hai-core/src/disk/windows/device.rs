@@ -24,6 +24,10 @@ struct PowerShellDisk {
 }
 
 pub async fn list_devices() -> Result<Vec<BlockDevice>> {
+    list_devices_sync()
+}
+
+pub(super) fn list_devices_sync() -> Result<Vec<BlockDevice>> {
     // Use PowerShell to get disk information in JSON format
     let script = r#"
         Get-Disk | Where-Object { $_.IsOffline -eq $false } | Select-Object Number, FriendlyName, Size, MediaType, BusType, IsSystem, IsBoot | ConvertTo-Json -Compress
@@ -83,14 +87,28 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
             .unwrap_or_else(|| format!("Disk {}", disk.number));
         let (vendor, model) = parse_friendly_name(&friendly_name);
 
+        let id = format!("\\\\.\\PhysicalDrive{}", disk.number);
+        // Use the same descriptor as the opened-handle check. Get-Disk can
+        // format its serial differently. No read/write access is requested.
+        use std::os::windows::fs::OpenOptionsExt;
+        let serial = std::fs::OpenOptions::new()
+            .access_mode(0)
+            .open(&id)
+            .ok()
+            .and_then(|device| {
+                crate::disk::windows_serial::read_serial(&device)
+                    .ok()
+                    .flatten()
+            });
         devices.push(BlockDevice {
-            id: format!("\\\\.\\PhysicalDrive{}", disk.number),
+            id,
             name: friendly_name,
             size,
             device_type,
             removable,
             model,
             vendor,
+            serial,
         });
     }
 

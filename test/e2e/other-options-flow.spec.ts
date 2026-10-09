@@ -56,8 +56,8 @@ test.describe("Other Options View", () => {
 
     const dockerOption = page
       .locator("other-options-view")
-      .locator(".option-item")
-      .filter({ hasText: "Docker container" });
+      .locator("option-card")
+      .filter({ hasText: "Home Assistant Container" });
     await expect(dockerOption).toBeVisible();
     await expect(dockerOption).toContainText("Home Assistant Container");
     await expect(dockerOption).toContainText(
@@ -76,7 +76,7 @@ test.describe("Other Options View", () => {
 
     const synologyOption = page
       .locator("other-options-view")
-      .locator(".option-item")
+      .locator("option-card")
       .filter({ hasText: "Synology NAS" });
     await expect(synologyOption).toBeVisible();
     await expect(synologyOption).toContainText("Virtual Machine Manager");
@@ -87,7 +87,7 @@ test.describe("Other Options View", () => {
 
     const qnapOption = page
       .locator("other-options-view")
-      .locator(".option-item")
+      .locator("option-card")
       .filter({ hasText: "QNAP NAS" });
     await expect(qnapOption).toBeVisible();
     await expect(qnapOption).toContainText("Virtualization Station");
@@ -98,7 +98,7 @@ test.describe("Other Options View", () => {
 
     const linuxVMOption = page
       .locator("other-options-view")
-      .locator(".option-item")
+      .locator("option-card")
       .filter({ hasText: "Linux virtual machine" });
     await expect(linuxVMOption).toBeVisible();
     await expect(linuxVMOption).toContainText("KVM");
@@ -110,7 +110,7 @@ test.describe("Other Options View", () => {
 
     const windowsVMOption = page
       .locator("other-options-view")
-      .locator(".option-item")
+      .locator("option-card")
       .filter({ hasText: "Windows virtual machine" });
     await expect(windowsVMOption).toBeVisible();
     await expect(windowsVMOption).toContainText("Hyper-V");
@@ -120,7 +120,7 @@ test.describe("Other Options View", () => {
   test("all options have external link indicator", async ({ page }) => {
     await page.locator('option-card[title="Others"]').click();
 
-    const options = page.locator("other-options-view").locator(".option-item");
+    const options = page.locator("other-options-view").locator("option-card");
     const count = await options.count();
 
     // Should have 5 options
@@ -128,7 +128,7 @@ test.describe("Other Options View", () => {
 
     // Each option should have an external icon
     for (let i = 0; i < count; i++) {
-      const externalIcon = options.nth(i).locator(".external-icon");
+      const externalIcon = options.nth(i).locator('[slot="end"]');
       await expect(externalIcon).toBeVisible();
       await expect(externalIcon).toContainText("↗");
     }
@@ -137,12 +137,12 @@ test.describe("Other Options View", () => {
   test("all options have icons", async ({ page }) => {
     await page.locator('option-card[title="Others"]').click();
 
-    const options = page.locator("other-options-view").locator(".option-item");
+    const options = page.locator("other-options-view").locator("option-card");
     const count = await options.count();
 
     // Each option should have an icon
     for (let i = 0; i < count; i++) {
-      const icon = options.nth(i).locator(".option-icon");
+      const icon = options.nth(i).locator(".icon-container");
       await expect(icon).toBeVisible();
     }
   });

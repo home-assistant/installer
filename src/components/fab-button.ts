@@ -4,6 +4,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { ifDefined } from "lit/directives/if-defined.js";
 import "./ha-svg-icon.js";
+import { reducedMotionStyles } from "../utils/view-accessibility.js";
 
 /**
  * Floating action button: a circular, icon-only wa-button pinned to the
@@ -14,6 +15,7 @@ import "./ha-svg-icon.js";
 @customElement("fab-button")
 export class FabButton extends LitElement {
   static styles = css`
+    ${reducedMotionStyles}
     :host {
       position: fixed;
       bottom: 1.5rem;
@@ -46,6 +48,15 @@ export class FabButton extends LitElement {
 
     :host(:active) wa-button:active {
       transform: scale(0.98);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      :host(:hover) wa-button,
+      :host(:active) wa-button:active {
+        transform: none;
+      }
+      wa-button::part(base) {
+        transition: none;
+      }
     }
   `;
 

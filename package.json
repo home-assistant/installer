@@ -4,12 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "generate:types": "cargo test -p hai-core export_typescript --locked -- --ignored",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "lint": "eslint src/ test/",
+    "localization:check": "node scripts/check-localization.mjs",
+    "test:localization": "node --test scripts/check-localization.test.mjs",
     "lint:fix": "eslint src/ test/ --fix",
     "format": "prettier --write \"{src,test}/**/*.{ts,css,json}\"",
     "format:check": "prettier --check \"{src,test}/**/*.{ts,css,json}\"",
@@ -21,6 +24,8 @@
     "@home-assistant/webawesome": "3.7.0-ha.1",
     "@tauri-apps/api": "~2.12.0",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-os": "2.3.2",
+    "intl-messageformat": "12.1.2",
     "lit": "^3.3.1"
   },
   "devDependencies": {

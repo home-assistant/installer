@@ -2,6 +2,9 @@ import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import WaRadio from "@home-assistant/webawesome/dist/components/radio/radio.js";
 import type { DeviceType } from "../api/types.js";
+import { formatBytes } from "../api/commands.js";
+import { localize } from "../localization/localize.js";
+import { reducedMotionStyles } from "../utils/view-accessibility.js";
 
 /**
  * A drive row that behaves as a radio inside a `<wa-radio-group>`.
@@ -12,7 +15,13 @@ import type { DeviceType } from "../api/types.js";
 @customElement("drive-card")
 export class DriveCard extends WaRadio {
   static css = [
+    reducedMotionStyles,
     css`
+      @media (prefers-reduced-motion: reduce) {
+        .card:active {
+          transform: none !important;
+        }
+      }
       :host {
         display: block;
         outline: none;
@@ -29,7 +38,8 @@ export class DriveCard extends WaRadio {
       }
 
       .card {
-        display: flex;
+        display: grid;
+        grid-template-columns: 48px minmax(0, 1fr) auto 24px;
         align-items: center;
         gap: 1rem;
         padding: 1rem 1.25rem;
@@ -108,10 +118,17 @@ export class DriveCard extends WaRadio {
         flex-shrink: 0;
       }
 
+      .capacity-warning {
+        grid-column: 1 / -1;
+        color: var(--wa-color-warning-on-quiet);
+        font-size: 0.8125rem;
+        margin: 0;
+      }
+
       .selected-indicator {
         width: 24px;
         height: 24px;
-        background-color: var(--ha-primary-color, #03a9f4);
+        background-color: var(--ha-primary-fill, #006787);
         border-radius: 50%;
         display: flex;
         align-items: center;
@@ -119,6 +136,20 @@ export class DriveCard extends WaRadio {
         color: var(--wa-color-brand-on-loud, white);
         font-size: 14px;
         flex-shrink: 0;
+      }
+
+      @media (max-width: 480px) {
+        .card {
+          grid-template-columns: 32px minmax(0, 1fr) auto 24px;
+          gap: 0.75rem;
+          padding: 1rem;
+        }
+
+        .icon-container,
+        .icon-container svg {
+          width: 32px;
+          height: 32px;
+        }
       }
     `,
   ];
@@ -146,6 +177,9 @@ export class DriveCard extends WaRadio {
   @property({ type: String })
   disabledReason = "";
 
+  @property({ type: String })
+  capacityWarning = "";
+
   render() {
     return html`
       <div class="card">
@@ -158,9 +192,12 @@ export class DriveCard extends WaRadio {
               : this._getDetails()}
           </p>
         </div>
-        <span class="size">${this._formatSize(this.driveSize)}</span>
+        <span class="size">${formatBytes(this.driveSize)}</span>
         ${this.checked
           ? html`<span class="selected-indicator" aria-hidden="true">✓</span>`
+          : nothing}
+        ${!this.disabled && this.capacityWarning
+          ? html`<p class="capacity-warning">${this.capacityWarning}</p>`
           : nothing}
       </div>
     `;
@@ -179,27 +216,18 @@ export class DriveCard extends WaRadio {
   private _getTypeLabel(): string {
     switch (this.deviceType) {
       case "sd_card":
-        return "SD card";
+        return localize("components.drive_card.sd_card");
       case "usb_drive":
-        return "USB drive";
+        return localize("components.drive_card.usb_drive");
       case "ssd":
-        return "SSD";
+        return localize("components.drive_card.ssd");
       case "hdd":
-        return "Hard drive";
+        return localize("components.drive_card.hard_drive");
       case "nvme":
-        return "NVMe";
+        return localize("components.drive_card.nvme");
       default:
-        return "Storage device";
+        return localize("components.drive_card.storage_device");
     }
-  }
-
-  private _formatSize(bytes: number): string {
-    if (bytes === 0) return "0 GB";
-    const gb = bytes / (1024 * 1024 * 1024);
-    if (gb >= 1000) {
-      return `${(gb / 1024).toFixed(1)} TB`;
-    }
-    return `${gb.toFixed(0)} GB`;
   }
 
   private _renderIcon() {

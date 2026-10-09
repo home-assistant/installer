@@ -70,7 +70,7 @@ describe("confirm-dialog", () => {
       const details = el.shadowRoot!.querySelector(".drive-details")!;
       expect(details.textContent).to.contain("/dev/sdb");
       expect(details.textContent).to.contain("SanDisk Ultra");
-      expect(details.textContent).to.contain("29.8 GB");
+      expect(details.textContent).to.contain("32 GB");
     });
 
     it("leaves out an unknown size", async () => {
@@ -132,6 +132,20 @@ describe("confirm-dialog", () => {
     setTimeout(() => confirmButton.click());
     const event = await oneEvent(el, "dialog-confirm");
     expect(event).to.exist;
+  });
+
+  it("does not confirm twice while the dialog closes", async () => {
+    const el = await fixture<ConfirmDialog>(
+      html`<confirm-dialog open></confirm-dialog>`
+    );
+    let confirms = 0;
+    el.addEventListener("dialog-confirm", () => confirms++);
+    const button = el.shadowRoot!.querySelector<HTMLElement>(
+      "wa-button[variant='danger']"
+    )!;
+    button.click();
+    button.click();
+    expect(confirms).to.equal(1);
   });
 
   it("closes dialog when cancel button is clicked", async () => {

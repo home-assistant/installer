@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Home Assistant Installer needs permission to control UTM to create and start your Home Assistant virtual machine.</string>
 	<!-- TCC checks the responsible process, so the elevated authopen helper
 	     still needs this application's removable-volumes access. -->
 	<key>NSRemovableVolumesUsageDescription</key>

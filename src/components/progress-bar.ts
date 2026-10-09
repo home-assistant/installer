@@ -1,4 +1,5 @@
 import { LitElement, html, css } from "lit";
+import { localize } from "../localization/localize.js";
 import { customElement, property } from "lit/decorators.js";
 import "@home-assistant/webawesome/dist/components/progress-bar/progress-bar.js";
 
@@ -54,7 +55,7 @@ export class ProgressBar extends LitElement {
         class=${this.error ? "error" : ""}
         ?indeterminate=${this.indeterminate}
         value=${value}
-        label=${this.label || "Progress"}
+        label=${this.label || localize("common.progress")}
       ></wa-progress-bar>
     `;
   }

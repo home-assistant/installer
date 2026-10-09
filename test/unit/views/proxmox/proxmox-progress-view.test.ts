@@ -8,6 +8,7 @@ import "../../../../src/views/proxmox/proxmox-progress-view.js";
 import type { ProxmoxProgressView } from "../../../../src/views/proxmox/proxmox-progress-view.js";
 import {
   deferred,
+  ipcError,
   mockTauriIpc,
   restoreTauriIpc,
   settle,
@@ -17,6 +18,15 @@ import {
 function abortSignalOf(el: ProxmoxProgressView): AbortSignal | undefined {
   return (el as unknown as { _abortController?: AbortController })
     ._abortController?.signal;
+}
+
+/** What the install view shows inside its shared progress layout */
+function progressOf(el: ProxmoxProgressView): ShadowRoot {
+  return el.shadowRoot!.querySelector("install-progress")!.shadowRoot!;
+}
+
+function errorText(el: ProxmoxProgressView): string {
+  return progressOf(el).querySelector(".error-message")!.textContent ?? "";
 }
 
 /**
@@ -129,6 +139,35 @@ describe("proxmox-progress-view", () => {
     );
   });
 
+  // A failed creation can hide a VM that was already created, so the view
+  // never repeats it in place
+  it("renders a creation failure without retrying it in place", async () => {
+    let attempts = 0;
+    mockTauriIpc((cmd) => {
+      expect(cmd).to.equal("proxmox_create_vm");
+      attempts++;
+      return Promise.reject({
+        code: "proxmox_api",
+        message: "Storage unavailable",
+        retryable: false,
+        details: {},
+      });
+    });
+    const el = mount();
+    let completed = 0;
+    let errors = 0;
+    el.addEventListener("install-complete", () => completed++);
+    el.addEventListener("install-error", () => errors++);
+    await settle();
+    expect(errorText(el)).to.contain("account permissions");
+    expect(completed).to.equal(0);
+    expect(errors).to.equal(1);
+    el.retry();
+    await settle();
+    expect(attempts).to.equal(1);
+    expect(el.hasError).to.be.true;
+  });
+
   it("waits for Home Assistant before advancing", async () => {
     const haReady = deferred<boolean>();
     const checked: string[] = [];
@@ -159,7 +198,9 @@ describe("proxmox-progress-view", () => {
     expect(completed).to.be.false;
     expect(wizardState.getState().selections.proxmoxVmResult).to.exist;
     await el.updateComplete;
-    expect(el.shadowRoot!.textContent).to.contain("Waiting for Home Assistant");
+    expect(progressOf(el).querySelector("h2")!.textContent).to.equal(
+      "Waiting for Home Assistant"
+    );
 
     haReady.resolve(true);
     await oneEvent(el, "install-complete");
@@ -248,11 +289,11 @@ describe("proxmox-progress-view", () => {
       });
 
       const el = mount();
-      await oneEvent(el, "install-error");
+      const failed = await oneEvent(el, "install-error");
+      await el.updateComplete;
 
-      expect(el.shadowRoot!.textContent).to.contain(
-        "did not report an IP address"
-      );
+      expect(failed.detail.retryable).to.be.true;
+      expect(errorText(el)).to.contain("did not report an IPv4 address");
       // Not reported as installed, and nothing to check Home Assistant on
       expect(calls).to.not.include("check_ha_ready");
       // The VM is kept, so a retry does not create a second one
@@ -271,6 +312,127 @@ describe("proxmox-progress-view", () => {
     } finally {
       Date.now = realNow;
     }
+  });
+
+  it("fails when Home Assistant never finishes updating, and recovers on retry", async () => {
+    const realNow = Date.now;
+    let clockOffset = 0;
+    Date.now = () => realNow.call(Date) + clockOffset;
+
+    try {
+      const calls: string[] = [];
+      let updated = false;
+      mockTauriIpc((cmd) => {
+        calls.push(cmd);
+        switch (cmd) {
+          case "proxmox_create_vm":
+            return { vm_id: 100, node: "pve" };
+          case "proxmox_get_vm_status":
+            return { status: "running", ip_address: "192.168.1.100" };
+          case "check_ha_ready":
+            return true;
+          case "check_ha_updated":
+            // Past the 60-minute deadline from inside the first check
+            if (!updated) clockOffset += 61 * 60 * 1000;
+            return updated;
+        }
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+
+      const el = mount();
+      let completed = false;
+      el.addEventListener("install-complete", () => {
+        completed = true;
+      });
+      await oneEvent(el, "install-error");
+      await el.updateComplete;
+
+      expect(completed).to.be.false;
+      expect(errorText(el)).to.contain("http://192.168.1.100");
+      expect(wizardState.getState().selections.proxmoxVmResult).to.exist;
+
+      updated = true;
+      const done = oneEvent(el, "install-complete");
+      el.retry();
+      await done;
+
+      expect(calls.filter((c) => c === "proxmox_create_vm")).to.have.length(1);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  // Asking again with the same session or the same missing permission fails
+  // the same way, so waiting would only hide the cause behind a timeout
+  for (const [error, guidance] of [
+    [
+      ipcError(
+        "proxmox_session_expired",
+        "Proxmox session expired or invalid. Please reconnect to Proxmox.",
+        false
+      ),
+      "reconnect",
+    ],
+    [
+      ipcError(
+        "proxmox_action_required",
+        "Access denied. Your Proxmox user may not have permission to see this VM's status.",
+        true
+      ),
+      "permission",
+    ],
+  ] as const) {
+    it(`stops waiting for the address on ${error.code}`, async () => {
+      wizardState.setSelection("proxmoxVmResult", { vm_id: 100, node: "pve" });
+      let statusCalls = 0;
+      const calls: string[] = [];
+      mockTauriIpc((cmd) => {
+        calls.push(cmd);
+        if (cmd === "proxmox_get_vm_status") {
+          statusCalls++;
+          return Promise.reject(error);
+        }
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+
+      const el = mount();
+      const failed = await oneEvent(el, "install-error");
+      await el.updateComplete;
+
+      expect(statusCalls).to.equal(1);
+      expect(failed.detail.retryable).to.equal(error.retryable);
+      expect(errorText(el)).to.contain(guidance);
+      expect(calls).to.not.include("check_ha_ready");
+      // The VM stays known, for when the user comes back to it
+      expect(wizardState.getState().selections.proxmoxVmResult).to.exist;
+    });
+  }
+
+  it("keeps waiting for the address through a transient status failure", async () => {
+    wizardState.setSelection("proxmoxVmResult", { vm_id: 100, node: "pve" });
+    let statusCalls = 0;
+    mockTauriIpc((cmd) => {
+      switch (cmd) {
+        case "proxmox_get_vm_status":
+          statusCalls++;
+          if (statusCalls === 1) {
+            return Promise.reject(
+              ipcError("proxmox_api", "Proxmox could not complete it", true)
+            );
+          }
+          return { status: "running", ip_address: "192.168.1.100" };
+        case "check_ha_ready":
+        case "check_ha_updated":
+          return true;
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+
+    const el = mount();
+    await oneEvent(el, "install-complete");
+
+    expect(statusCalls).to.equal(2);
+    expect(el.hasError).to.be.false;
   });
 
   it("shows the step the backend reports", async () => {
@@ -306,7 +468,7 @@ describe("proxmox-progress-view", () => {
         message: "",
       });
       await el.updateComplete;
-      expect(el.shadowRoot!.querySelector("h2")!.textContent).to.equal(heading);
+      expect(progressOf(el).querySelector("h2")!.textContent).to.equal(heading);
     }
   });
 
@@ -324,7 +486,7 @@ describe("proxmox-progress-view", () => {
 
       expect(abortSignalOf(el), "install should not have started").to.not.exist;
       expect(el.hasError).to.be.true;
-      expect(el.shadowRoot!.textContent).to.contain("No Proxmox session");
+      expect(progressOf(el).textContent).to.contain("No Proxmox session");
       expect(errorEvents).to.equal(1);
     } finally {
       document.removeEventListener("install-error", onError);

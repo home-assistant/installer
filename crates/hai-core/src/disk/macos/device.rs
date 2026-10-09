@@ -1,11 +1,11 @@
 //! macOS block device enumeration via `diskutil`.
 
 use crate::disk::macos_safety::{self, DiskInfo as DiskUtilInfo};
-use crate::disk::mentions_sd_card;
+use crate::disk::{mentions_sd_card, normalize_serial};
 use crate::error::{Error, Result};
 use crate::types::{BlockDevice, DeviceType};
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Command;
 
@@ -77,6 +77,10 @@ pub(super) fn validate_flash_target(device_id: &str) -> Result<()> {
 }
 
 pub async fn list_devices() -> Result<Vec<BlockDevice>> {
+    list_devices_sync()
+}
+
+pub(super) fn list_devices_sync() -> Result<Vec<BlockDevice>> {
     let system_disks = system_disks()?;
     // Get list of all disks using diskutil
     let output = Command::new("diskutil")
@@ -94,7 +98,83 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
     let disk_list: DiskUtilList =
         plist::from_bytes(&output.stdout).map_err(|e| Error::InvalidConfig(e.to_string()))?;
 
-    Ok(devices_from_list(disk_list, &system_disks, disk_info))
+    let mut devices = devices_from_list(disk_list, &system_disks, disk_info);
+    // Only storage-characteristic serials are used, never the host or a USB
+    // hub's serial, nor a UUID that flashing would overwrite. A failure must
+    // not look like "no serial": the recheck before writing would then report
+    // a changed drive that never changed.
+    let serials = storage_serials()?;
+    for device in &mut devices {
+        device.serial = serials.get(device.id.trim_start_matches("/dev/")).cloned();
+    }
+    Ok(devices)
+}
+
+fn storage_serials() -> Result<HashMap<String, String>> {
+    let output = Command::new("ioreg")
+        // SCSI drivers may publish the serial above IOBlockStorageDevice.
+        .args([
+            "-a",
+            "-l",
+            "-r",
+            "-k",
+            "Device Characteristics",
+            "-p",
+            "IOService",
+        ])
+        .output()?;
+    if !output.status.success() {
+        return Err(serials_unavailable());
+    }
+    serials_from_ioreg(&output.stdout)
+}
+
+fn serials_unavailable() -> Error {
+    Error::InvalidConfig("Could not read the drive serial numbers from the system.".into())
+}
+
+fn serials_from_ioreg(output: &[u8]) -> Result<HashMap<String, String>> {
+    let roots: Vec<plist::Value> = plist::from_bytes(output).map_err(|_| serials_unavailable())?;
+    let mut serials = HashMap::new();
+    for root in roots {
+        collect_serials(&root, None, &mut serials);
+    }
+    Ok(serials)
+}
+
+fn collect_serials(
+    node: &plist::Value,
+    inherited: Option<&String>,
+    serials: &mut HashMap<String, String>,
+) {
+    let Some(properties) = node.as_dictionary() else {
+        return;
+    };
+    let serial = properties
+        .get("Device Characteristics")
+        .and_then(plist::Value::as_dictionary)
+        .and_then(|characteristics| characteristics.get("Serial Number"))
+        .and_then(plist::Value::as_string);
+    // Normalize before inheriting: a blank serial on a middle node must not
+    // hide the real one reported further up
+    let serial = normalize_serial(serial);
+    let serial = serial.as_ref().or(inherited);
+    if properties.get("Whole").and_then(plist::Value::as_boolean) == Some(true) {
+        if let (Some(name), Some(serial)) = (
+            properties.get("BSD Name").and_then(plist::Value::as_string),
+            serial,
+        ) {
+            serials.insert(name.to_string(), serial.clone());
+        }
+    }
+    if let Some(children) = properties
+        .get("IORegistryEntryChildren")
+        .and_then(plist::Value::as_array)
+    {
+        for child in children {
+            collect_serials(child, serial, serials);
+        }
+    }
 }
 
 fn devices_from_list(
@@ -144,6 +224,7 @@ fn devices_from_list(
             removable,
             model,
             vendor,
+            serial: None,
         });
     }
 
@@ -231,6 +312,65 @@ pub(crate) fn parse_media_name(name: &str) -> (Option<String>, Option<String>) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn storage_serial_follows_only_its_own_whole_media() {
+        let tree: plist::Value = plist::from_bytes(br#"<plist version="1.0"><dict>
+          <key>IORegistryEntryChildren</key><array>
+            <dict><key>Device Characteristics</key><dict><key>Serial Number</key><string> STICK-A </string></dict>
+              <key>IORegistryEntryChildren</key><array><dict>
+                <key>BSD Name</key><string>disk2</string><key>Whole</key><true/>
+                <key>UUID</key><string>changes-when-flashed</string>
+                <key>IORegistryEntryChildren</key><array><dict>
+                  <key>BSD Name</key><string>disk2s1</string><key>Whole</key><false/>
+                </dict></array>
+              </dict></array>
+            </dict>
+            <dict><key>BSD Name</key><string>disk3</string><key>Whole</key><true/>
+              <key>UUID</key><string>not-a-hardware-serial</string>
+            </dict>
+            <dict><key>Device Characteristics</key><dict><key>Serial Number</key><string>STICK-B</string></dict>
+              <key>IORegistryEntryChildren</key><array><dict>
+                <key>BSD Name</key><string>disk4</string><key>Whole</key><true/>
+              </dict></array>
+            </dict>
+          </array>
+        </dict></plist>"#).unwrap();
+        let mut serials = std::collections::HashMap::new();
+        super::collect_serials(&tree, None, &mut serials);
+        assert_eq!(serials.len(), 2);
+        assert_eq!(serials["disk2"], "STICK-A");
+        assert_eq!(serials["disk4"], "STICK-B");
+    }
+
+    #[test]
+    fn blank_serial_on_a_middle_node_keeps_the_inherited_one() {
+        let tree: plist::Value = plist::from_bytes(br#"<plist version="1.0"><dict>
+          <key>Device Characteristics</key><dict><key>Serial Number</key><string>ABC123</string></dict>
+          <key>IORegistryEntryChildren</key><array><dict>
+            <key>Device Characteristics</key><dict><key>Serial Number</key><string>   </string></dict>
+            <key>IORegistryEntryChildren</key><array><dict>
+              <key>BSD Name</key><string>disk4</string><key>Whole</key><true/>
+            </dict></array>
+          </dict></array>
+        </dict></plist>"#).unwrap();
+        let mut serials = std::collections::HashMap::new();
+        super::collect_serials(&tree, None, &mut serials);
+        assert_eq!(serials["disk4"], "ABC123");
+    }
+
+    #[test]
+    fn unreadable_ioreg_output_is_an_error_not_missing_serials() {
+        assert!(super::serials_from_ioreg(b"not a plist").is_err());
+        let serials = super::serials_from_ioreg(br#"<plist version="1.0"><array><dict>
+          <key>Device Characteristics</key><dict><key>Serial Number</key><string>STICK-A</string></dict>
+          <key>IORegistryEntryChildren</key><array><dict>
+            <key>BSD Name</key><string>disk2</string><key>Whole</key><true/>
+          </dict></array>
+        </dict></array></plist>"#)
+        .unwrap();
+        assert_eq!(serials["disk2"], "STICK-A");
+    }
+
     use super::{
         determine_device_type, devices_from_list, parse_media_name, validate_flash_target,
         DiskUtilInfo, DiskUtilList,

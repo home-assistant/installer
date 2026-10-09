@@ -1,10 +1,26 @@
+import { localize, localizeContent } from "../../localization/localize.js";
+import {
+  installerError,
+  renderErrorHelp,
+  type InstallerError,
+} from "../../utils/installer-error.js";
 import { LitElement, html, css } from "lit";
+import {
+  ViewAccessibility,
+  reducedMotionStyles,
+} from "../../utils/view-accessibility.js";
+import { InstallDiagnostics } from "../../utils/diagnostics.js";
 import { customElement, state } from "lit/decorators.js";
-import { listBlockDevices, type BlockDevice } from "../../api/index.js";
+import {
+  formatBytes,
+  listBlockDevices,
+  type BlockDevice,
+} from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import {
   clearDriveSelection,
   findDrive,
+  getDriveFit,
   isEligibleFlashTarget,
   readDriveSelection,
   storeDriveSelection,
@@ -12,15 +28,13 @@ import {
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../components/drive-card.js";
-
-export {
-  isEligibleFlashTarget,
-  MIN_DRIVE_SIZE_BYTES,
-} from "../../utils/drive-selection.js";
+import "../../components/casita-mascot.js";
 
 @customElement("drive-selection-view")
 export class DriveSelectionView extends LitElement {
+  protected readonly _accessibility = new ViewAccessibility(this);
   static styles = css`
+    ${reducedMotionStyles}
     :host {
       display: flex;
       flex-direction: column;
@@ -186,17 +200,8 @@ export class DriveSelectionView extends LitElement {
       color: var(--ha-secondary-text-color, #727272);
     }
 
-    .empty-icon {
-      width: 64px;
-      height: 64px;
+    casita-mascot {
       margin-bottom: 1rem;
-      opacity: 0.5;
-    }
-
-    .empty-icon svg {
-      width: 100%;
-      height: 100%;
-      fill: var(--ha-secondary-text-color, #727272);
     }
 
     .empty-title {
@@ -219,7 +224,7 @@ export class DriveSelectionView extends LitElement {
   private _loading = true;
 
   @state()
-  private _error: string | null = null;
+  private _error: InstallerError | null = null;
 
   @state()
   private _selectedDriveId: string | null = null;
@@ -243,11 +248,16 @@ export class DriveSelectionView extends LitElement {
     this._error = null;
 
     let drives: BlockDevice[];
-    let error: string | null = null;
+    let error: InstallerError | null = null;
+    let scanError: unknown;
     try {
-      drives = (await listBlockDevices()).filter(isEligibleFlashTarget);
+      drives = (await listBlockDevices()).filter((drive) => drive.removable);
     } catch (err) {
-      error = err instanceof Error ? err.message : "Failed to load drives";
+      scanError = err;
+      error = installerError(
+        err,
+        localize("views.sbc.drive_selection_view.failed_to_load_drives")
+      );
       // The scan failed, so the selection cannot be confirmed. Drop it rather
       // than let a stale path through to the write.
       drives = [];
@@ -261,6 +271,7 @@ export class DriveSelectionView extends LitElement {
 
     this._drives = drives;
     this._error = error;
+    if (error) new InstallDiagnostics("flash").fail(scanError);
     this._loading = false;
     this._reconcileSelection();
   }
@@ -278,7 +289,13 @@ export class DriveSelectionView extends LitElement {
       return;
     }
 
-    if (findDrive(this._drives, selection)) {
+    if (
+      findDrive(
+        this._drives,
+        selection,
+        wizardState.getState().selections.deviceConfig
+      )
+    ) {
       this._selectedDriveId = selection.id;
       this._selectionLost = false;
       return;
@@ -293,30 +310,31 @@ export class DriveSelectionView extends LitElement {
     return wizardState.getState().currentFlow === "minipc";
   }
 
-  private _getMinimumDriveSize(): number {
-    // Mini PC flow requires 16GB minimum (NVMe/SSD)
-    // SBC flow requires 2GB minimum (SD card)
-    return this._isMiniPCFlow()
-      ? 16 * 1000 * 1000 * 1000 // 16 GB
-      : 2 * 1000 * 1000 * 1000; // 2 GB
-  }
-
   render() {
     const isMiniPC = this._isMiniPCFlow();
     const subtitle = isMiniPC
-      ? "Choose the NVMe/SSD drive to install Home Assistant on"
-      : "Choose the SD card or USB drive to install Home Assistant on";
+      ? localize(
+          "views.sbc.drive_selection_view.choose_the_nvme_ssd_drive_to_install_home_assistant_on"
+        )
+      : localize(
+          "views.sbc.drive_selection_view.choose_the_sd_card_or_usb_drive_to_install_home_assistant_on"
+        );
 
     return html`
-      <h2>Select your drive</h2>
+      <h2>${localize("views.sbc.drive_selection_view.select_your_drive")}</h2>
       <p class="subtitle">${subtitle}</p>
 
       <div class="warning">
         <span class="warning-icon">⚠️</span>
         <p class="warning-text">
-          <strong>Warning:</strong> All data on the selected drive will be
-          permanently erased. Make sure you have backed up any important files
-          before proceeding.
+          ${localizeContent(
+            "views.sbc.drive_selection_view.value_all_data_on_the_selected_drive_will_be_permanently_erased_make_sure_y",
+            {
+              value0: html`<strong
+                >${localize("views.sbc.drive_selection_view.warning")}</strong
+              >`,
+            }
+          )}
         </p>
       </div>
 
@@ -329,9 +347,9 @@ export class DriveSelectionView extends LitElement {
               <div class="notice">
                 <span class="notice-icon" aria-hidden="true">🔌</span>
                 <p class="notice-text">
-                  The drive you selected is no longer available, so the
-                  selection was cleared. Devices can reappear under the same
-                  name as a different drive, so please pick your drive again.
+                  ${localize(
+                    "views.sbc.drive_selection_view.the_drive_you_selected_is_no_longer_available_so_the_selection_was_cleared_"
+                  )}
                 </p>
               </div>
             `
@@ -342,6 +360,7 @@ export class DriveSelectionView extends LitElement {
   }
 
   private _renderContent() {
+    const config = wizardState.getState().selections.deviceConfig;
     // Full-page spinner only on the initial scan (nothing to show yet).
     // A refresh with drives already listed keeps the list visible and shows
     // the loading state on the refresh button instead.
@@ -349,7 +368,11 @@ export class DriveSelectionView extends LitElement {
       return html`
         <div class="loading">
           <div class="loading-spinner"></div>
-          <span>Scanning for drives...</span>
+          <span
+            >${localize(
+              "views.sbc.drive_selection_view.scanning_for_drives"
+            )}</span
+          >
         </div>
       `;
     }
@@ -358,33 +381,43 @@ export class DriveSelectionView extends LitElement {
       return html`
         <div class="error">
           <span class="error-icon">⚠️</span>
-          <p class="error-message">${this._error}</p>
-          <wa-button
-            variant="brand"
-            appearance="outlined"
-            @click=${this._loadDrives}
+          <p
+            class="error-message"
+            role="alert"
+            style="overflow-wrap: anywhere;"
           >
-            Try again
-          </wa-button>
+            ${this._error?.message}
+          </p>
+          ${renderErrorHelp()}
+          ${this._error.retryable
+            ? html`<wa-button
+                variant="brand"
+                appearance="outlined"
+                @click=${this._loadDrives}
+              >
+                ${localize("components.app_shell.try_again")}
+              </wa-button>`
+            : ""}
         </div>
       `;
     }
 
     if (this._drives.length === 0) {
+      const emptyTitle = localize(
+        "views.sbc.drive_selection_view.no_drives_found"
+      );
       const emptyText = this._isMiniPCFlow()
-        ? "Connect your drive using a USB adapter and select Refresh."
-        : "Insert an SD card or USB drive and select Refresh.";
+        ? localize(
+            "views.sbc.drive_selection_view.connect_your_drive_using_a_usb_adapter_and_select_refresh"
+          )
+        : localize(
+            "views.sbc.drive_selection_view.insert_an_sd_card_or_usb_drive_and_select_refresh"
+          );
 
       return html`
         <div class="empty-state">
-          <span class="empty-icon">
-            <svg viewBox="0 0 24 24">
-              <path
-                d="M18,8H16V4H18M15,8H13V4H15M12,8H10V4H12M18,2H10L4,8V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V4A2,2 0 0,0 18,2Z"
-              />
-            </svg>
-          </span>
-          <p class="empty-title">No drives found</p>
+          <casita-mascot mood="sad"></casita-mascot>
+          <p class="empty-title">${emptyTitle}</p>
           <p class="empty-text">${emptyText}</p>
           <wa-button
             variant="brand"
@@ -392,8 +425,7 @@ export class DriveSelectionView extends LitElement {
             @click=${this._loadDrives}
             style="margin-top: 1rem;"
           >
-            <span slot="start">↻</span>
-            Refresh
+            <span slot="start">↻</span> ${localize("common.refresh")}
           </wa-button>
         </div>
       `;
@@ -401,39 +433,48 @@ export class DriveSelectionView extends LitElement {
 
     return html`
       <div class="drives-header">
-        <p class="drives-title">Available drives</p>
+        <p class="drives-title">
+          ${localize("views.sbc.drive_selection_view.available_drives")}
+        </p>
         <wa-button
           variant="brand"
           appearance="outlined"
           @click=${this._loadDrives}
           ?loading=${this._loading}
         >
-          <span slot="start">↻</span>
-          Refresh
+          <span slot="start">↻</span> ${localize("common.refresh")}
         </wa-button>
       </div>
 
       <wa-radio-group
         class="drives-list"
         radio-tag="drive-card"
-        aria-label="Target drive"
+        aria-label=${localize("views.sbc.confirmation_view.target_drive")}
         .value=${this._selectedDriveId ?? ""}
         @change=${this._onDriveChange}
       >
         ${[...this._drives]
           .sort((a, b) => {
-            const minSize = this._getMinimumDriveSize();
-            const tolerance = 100 * 1000 * 1000;
-            const aTooSmall = a.size < minSize - tolerance;
-            const bTooSmall = b.size < minSize - tolerance;
+            const aTooSmall = !isEligibleFlashTarget(a, config);
+            const bTooSmall = !isEligibleFlashTarget(b, config);
             // Sort selectable drives first, then by size descending
             if (aTooSmall !== bTooSmall) return aTooSmall ? 1 : -1;
             return b.size - a.size;
           })
           .map((drive) => {
-            const minSize = this._getMinimumDriveSize();
-            const tooSmall = drive.size < minSize - 100 * 1000 * 1000; // Allow some tolerance for reported sizes
-            const minSizeGB = minSize / (1000 * 1000 * 1000);
+            const fit = getDriveFit(drive.size, config);
+            const disabled = !isEligibleFlashTarget(drive, config);
+            const reason =
+              fit === "too-small"
+                ? localize(
+                    "views.sbc.drive_selection_view.minimum_value_drive_required",
+                    { value0: formatBytes(config!.minimum_storage_bytes) }
+                  )
+                : fit === "unavailable"
+                  ? localize(
+                      "views.sbc.drive_selection_view.drive_capacity_or_board_requirements_unavailable"
+                    )
+                  : "";
 
             return html`
               <drive-card
@@ -443,9 +484,13 @@ export class DriveSelectionView extends LitElement {
                 .deviceType=${drive.device_type}
                 .model=${drive.model || ""}
                 .vendor=${drive.vendor || ""}
-                .disabled=${tooSmall}
-                .disabledReason=${tooSmall
-                  ? `⚠ Minimum ${minSizeGB} GB required`
+                .disabled=${disabled}
+                .disabledReason=${reason}
+                .capacityWarning=${fit === "below-recommended"
+                  ? localize(
+                      "views.sbc.drive_selection_view.a_value_drive_is_recommended_space_for_apps_history_and_backups_will_be_lim",
+                      { value0: formatBytes(config!.recommended_storage_bytes) }
+                    )
                   : ""}
               ></drive-card>
             `;
@@ -457,7 +502,13 @@ export class DriveSelectionView extends LitElement {
   private _onDriveChange(e: Event) {
     const id = (e.target as { value?: string | number | null }).value;
     const drive = this._drives.find((d) => d.id === id);
-    if (drive) {
+    if (
+      drive &&
+      isEligibleFlashTarget(
+        drive,
+        wizardState.getState().selections.deviceConfig
+      )
+    ) {
       this._onSelectDrive(drive);
     }
   }

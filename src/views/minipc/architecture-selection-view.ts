@@ -1,12 +1,28 @@
+import { localize, localizeContent } from "../../localization/localize.js";
+import {
+  installerError,
+  renderErrorHelp,
+  type InstallerError,
+} from "../../utils/installer-error.js";
 import { LitElement, html, css } from "lit";
+import {
+  ViewAccessibility,
+  reducedMotionStyles,
+} from "../../utils/view-accessibility.js";
+import { InstallDiagnostics } from "../../utils/diagnostics.js";
 import { customElement, state } from "lit/decorators.js";
 import { getManifest, type Device } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
+import { getPlatform } from "../../utils/platform.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
+import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
+import "@home-assistant/webawesome/dist/components/radio/radio.js";
 
 @customElement("minipc-architecture-selection-view")
 export class MiniPCArchitectureSelectionView extends LitElement {
+  protected readonly _accessibility = new ViewAccessibility(this);
   static styles = css`
+    ${reducedMotionStyles}
     :host {
       display: flex;
       flex-direction: column;
@@ -22,8 +38,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
       text-align: center;
     }
 
-    .subtitle,
-    .mac-note {
+    .subtitle {
       font-size: 1rem;
       color: var(--ha-secondary-text-color, #727272);
       margin: 0 0 2rem 0;
@@ -32,58 +47,50 @@ export class MiniPCArchitectureSelectionView extends LitElement {
     }
 
     .options {
-      display: flex;
-      flex-direction: row;
-      gap: 1rem;
+      display: block;
       width: 100%;
       max-width: 700px;
     }
 
-    .mac-note {
-      margin-top: 1rem;
+    .options::part(form-control-label) {
+      display: none;
     }
 
-    .option-card {
-      position: relative;
+    .options::part(form-control-input) {
+      display: flex;
+      gap: 1rem;
+    }
+
+    @media (max-width: 500px) {
+      .options::part(form-control-input) {
+        flex-direction: column;
+      }
+    }
+
+    .mac-note {
+      font-size: 1rem;
+      color: var(--ha-secondary-text-color, #727272);
+      margin: 1rem 0 2rem 0;
+      text-align: center;
+      max-width: 500px;
+    }
+
+    wa-radio {
+      flex: 1;
+      min-width: 0;
+      height: auto;
+      padding: 1.5rem;
+      border-radius: 12px;
+      align-items: flex-start;
+    }
+
+    wa-radio::part(label) {
       display: flex;
       flex-direction: column;
       align-items: center;
       text-align: center;
-      flex: 1;
+      white-space: normal;
       gap: 0.75rem;
-      padding: 1.5rem;
-      background-color: var(--ha-card-background, #ffffff);
-      border: 2px solid var(--ha-border-color, #e0e0e0);
-      border-radius: 12px;
-      cursor: pointer;
-      transition:
-        border-color 0.2s ease,
-        box-shadow 0.2s ease;
-    }
-
-    .option-card:hover {
-      border-color: var(--ha-primary-color, #03a9f4);
-      box-shadow: 0 2px 8px rgba(3, 169, 244, 0.15);
-    }
-
-    .option-card.selected {
-      border-color: var(--ha-primary-color, #03a9f4);
-      background-color: rgba(3, 169, 244, 0.05);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .option-card {
-        background-color: var(--ha-card-background, #1e1e1e);
-        border-color: var(--ha-border-color, #333333);
-      }
-
-      .option-card:hover {
-        box-shadow: 0 2px 8px rgba(3, 169, 244, 0.25);
-      }
-
-      .option-card.selected {
-        background-color: rgba(3, 169, 244, 0.1);
-      }
     }
 
     .option-icon {
@@ -122,21 +129,6 @@ export class MiniPCArchitectureSelectionView extends LitElement {
       color: var(--ha-secondary-text-color, #9e9e9e);
       margin: 0;
       line-height: 1.4;
-    }
-
-    .option-check {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      width: 24px;
-      height: 24px;
-      background-color: var(--ha-primary-color, #03a9f4);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 14px;
     }
 
     .loading {
@@ -200,7 +192,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
   private _loading = true;
 
   @state()
-  private _error: string | null = null;
+  private _error: InstallerError | null = null;
 
   @state()
   private _selectedDeviceId: string | null = null;
@@ -219,19 +211,51 @@ export class MiniPCArchitectureSelectionView extends LitElement {
   private async _loadDevices() {
     this._loading = true;
     this._error = null;
+    if (wizardState.getState().selections.deviceCatalogReady) {
+      wizardState.setSelection("deviceCatalogReady", false);
+    }
 
     try {
       const manifest = await getManifest();
+      if (!this.isConnected) return;
       // Find the generic x86-64 and ARM64 devices
       this._x86Device =
         manifest.devices.find((d) => d.category === "generic_x86") || null;
       this._arm64Device =
         manifest.devices.find((d) => d.category === "generic_arm64") || null;
+      if (
+        ![this._x86Device, this._arm64Device].some(
+          (device) => device?.id === this._selectedDeviceId
+        )
+      ) {
+        this._selectedDeviceId = null;
+        wizardState.setSelection("device", undefined);
+        wizardState.setSelection("deviceConfig", undefined);
+      }
+      wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
-      this._error =
-        err instanceof Error ? err.message : "Failed to load architectures";
+      if (this.isConnected) new InstallDiagnostics("flash").fail(err);
+      this._error = installerError(
+        err,
+        localize(
+          "views.minipc.architecture_selection_view.failed_to_load_architectures"
+        )
+      );
     } finally {
       this._loading = false;
+    }
+
+    // The setup action is removed on navigation. Give keyboard users a new
+    // focus target once the asynchronously loaded architecture choices exist.
+    await this.updateComplete;
+    const focusTarget =
+      this.shadowRoot?.querySelector("wa-radio-group") ??
+      this.shadowRoot?.querySelector("wa-button");
+    if (focusTarget) {
+      await focusTarget.updateComplete;
+      if (this.isConnected && document.activeElement === document.body) {
+        focusTarget.focus();
+      }
     }
   }
 
@@ -240,7 +264,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
       return html`
         <div class="loading">
           <div class="loading-spinner"></div>
-          <span>Loading...</span>
+          <span>${localize("common.loading")}</span>
         </div>
       `;
     }
@@ -253,32 +277,51 @@ export class MiniPCArchitectureSelectionView extends LitElement {
               <path d="M13,14H11V10H13M13,18H11V16H13M1,21H23L12,2L1,21Z" />
             </svg>
           </span>
-          <p class="error-message">${this._error}</p>
-          <wa-button
-            variant="brand"
-            appearance="outlined"
-            @click=${this._loadDevices}
+          <p
+            class="error-message"
+            role="alert"
+            style="overflow-wrap: anywhere;"
           >
-            Try again
-          </wa-button>
+            ${this._error?.message}
+          </p>
+          ${renderErrorHelp()}
+          ${this._error.retryable
+            ? html`<wa-button
+                variant="brand"
+                appearance="outlined"
+                @click=${this._loadDevices}
+              >
+                ${localize("components.app_shell.try_again")}
+              </wa-button>`
+            : ""}
         </div>
       `;
     }
 
     return html`
-      <h2>Select your architecture</h2>
-      <p class="subtitle">Choose the CPU architecture of your mini PC.</p>
+      <h2>
+        ${localize(
+          "views.minipc.architecture_selection_view.select_your_architecture"
+        )}
+      </h2>
+      <p class="subtitle">
+        ${localize(
+          "views.minipc.architecture_selection_view.choose_the_cpu_architecture_of_your_mini_pc"
+        )}
+      </p>
 
-      <div class="options">
+      <wa-radio-group
+        class="options"
+        orientation="horizontal"
+        label=${localize(
+          "views.minipc.architecture_selection_view.cpu_architecture"
+        )}
+        .value=${this._selectedDeviceId ?? ""}
+        @change=${this._onDeviceChange}
+      >
         ${this._x86Device
           ? html`
-              <div
-                class="option-card ${this._selectedDeviceId ===
-                this._x86Device.id
-                  ? "selected"
-                  : ""}"
-                @click=${() => this._onSelectDevice(this._x86Device!)}
-              >
+              <wa-radio appearance="button" .value=${this._x86Device.id}>
                 <div class="option-icon">
                   <svg viewBox="0 0 24 24">
                     <path
@@ -287,31 +330,28 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                   </svg>
                 </div>
                 <div class="option-content">
-                  <p class="option-title">Intel/AMD (x86-64)</p>
+                  <p class="option-title">
+                    ${localize(
+                      "views.minipc.architecture_selection_view.intel_amd_x86_64"
+                    )}
+                  </p>
                   <p class="option-description">
-                    Standard PC architecture used by most mini PCs, NUCs, and
-                    desktops
+                    ${localize(
+                      "views.minipc.architecture_selection_view.standard_pc_architecture_used_by_most_mini_pcs_nucs_and_desktops"
+                    )}
                   </p>
                   <p class="option-examples">
-                    Examples: Intel NUC, ASUS NUC, Beelink, GMKtec, Minisforum,
-                    Dell, HP
+                    ${localize(
+                      "views.minipc.architecture_selection_view.examples_intel_nuc_asus_nuc_beelink_gmktec_minisforum_dell_hp"
+                    )}
                   </p>
                 </div>
-                ${this._selectedDeviceId === this._x86Device.id
-                  ? html`<span class="option-check">✓</span>`
-                  : ""}
-              </div>
+              </wa-radio>
             `
           : ""}
         ${this._arm64Device
           ? html`
-              <div
-                class="option-card ${this._selectedDeviceId ===
-                this._arm64Device.id
-                  ? "selected"
-                  : ""}"
-                @click=${() => this._onSelectDevice(this._arm64Device!)}
-              >
+              <wa-radio appearance="button" .value=${this._arm64Device.id}>
                 <div class="option-icon">
                   <svg viewBox="0 0 24 24">
                     <path
@@ -320,27 +360,47 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                   </svg>
                 </div>
                 <div class="option-content">
-                  <p class="option-title">ARM (aarch64)</p>
+                  <p class="option-title">
+                    ${localize(
+                      "views.minipc.architecture_selection_view.arm_aarch64"
+                    )}
+                  </p>
                   <p class="option-description">
-                    ARM64 systems with UEFI firmware supported by Home Assistant
-                    OS
+                    ${localize(
+                      "views.minipc.architecture_selection_view.arm64_systems_with_uefi_firmware_supported_by_home_assistant_os"
+                    )}
                   </p>
                   <p class="option-examples">
-                    Examples: Ampere-based servers and compatible ARM boards
+                    ${localize(
+                      "views.minipc.architecture_selection_view.examples_ampere_based_servers_and_other_uefi_arm64_machines_a_raspberry_pi_"
+                    )}
                   </p>
                 </div>
-                ${this._selectedDeviceId === this._arm64Device.id
-                  ? html`<span class="option-check">✓</span>`
-                  : ""}
-              </div>
+              </wa-radio>
             `
           : ""}
-      </div>
-      <p class="mac-note">
-        Apple Silicon Macs need a virtual machine. Run this installer on your
-        Mac and select <strong>Virtual machine</strong> to use UTM.
-      </p>
+      </wa-radio-group>
+      ${getPlatform() === "macos"
+        ? html`<p class="mac-note">
+            ${localizeContent(
+              "views.minipc.architecture_selection_view.want_home_assistant_on_this_mac_itself_start_over_and_choose_value_to_run_i",
+              {
+                value0: html`<strong
+                  >${localize("components.app_shell.virtual_machine")}</strong
+                >`,
+              }
+            )}
+          </p>`
+        : ""}
     `;
+  }
+
+  private _onDeviceChange(e: Event) {
+    const id = (e.target as { value?: string }).value;
+    const device = [this._x86Device, this._arm64Device].find(
+      (device) => device?.id === id
+    );
+    if (device) this._onSelectDevice(device);
   }
 
   private _onSelectDevice(device: Device) {

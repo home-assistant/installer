@@ -4,10 +4,98 @@
 //! using UTM on macOS via AppleScript automation.
 
 use crate::error::{Error, Result};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 use crate::types::{FlashProgress, FlashStage};
 use crate::types::{UtmStatus, UtmVmConfig, UtmVmResult, VmStatusInfo};
 use crate::{Backend, ProgressCallback, UtmBackend};
+
+#[cfg(any(target_os = "macos", all(test, unix)))]
+fn applescript_output(output: std::process::Output) -> Result<String> {
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+    }
+    let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let code = message
+        .rsplit_once('(')
+        .and_then(|(_, code)| code.strip_suffix(')'))
+        .and_then(|code| code.parse::<i32>().ok());
+    // Timeout, missing reply, and a lost application connection do not prove
+    // that the command stopped. Neither does a terminated osascript process.
+    if output.status.code().is_none()
+        || matches!(code, None | Some(-1711 | -1712 | -1718 | -609 | -600))
+    {
+        Err(Error::UtmOperationUncertain(message))
+    } else {
+        Err(applescript_error(&message))
+    }
+}
+
+/// Native host architecture used for both the HAOS image and UTM configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UtmArchitecture {
+    Aarch64,
+    X86_64,
+}
+
+impl UtmArchitecture {
+    /// Detect the Mac's native architecture, including a process running under Rosetta.
+    pub fn host() -> Result<Self> {
+        #[cfg(target_os = "macos")]
+        {
+            Self::from_process(std::env::consts::ARCH, macos::translation_status)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Err(Error::UnsupportedPlatform(
+                "UTM is only available on macOS".to_string(),
+            ))
+        }
+    }
+
+    /// HAOS board whose qcow2 image boots on this architecture.
+    pub fn haos_board(self) -> &'static str {
+        match self {
+            Self::Aarch64 => "generic-aarch64",
+            Self::X86_64 => "ova",
+        }
+    }
+
+    /// Architecture name accepted by UTM's QEMU configuration.
+    pub fn qemu_architecture(self) -> &'static str {
+        match self {
+            Self::Aarch64 => "aarch64",
+            Self::X86_64 => "x86_64",
+        }
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    fn from_process(
+        process_arch: &str,
+        translation_status: impl FnOnce() -> std::io::Result<i32>,
+    ) -> Result<Self> {
+        match process_arch {
+            "aarch64" => Ok(Self::Aarch64),
+            "x86_64" => match translation_status() {
+                Ok(0) => Ok(Self::X86_64),
+                Ok(1) => Ok(Self::Aarch64),
+                // Intel macOS versions without Rosetta do not expose this sysctl.
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Self::X86_64),
+                Ok(value) => Err(Error::Utm(format!(
+                    "Unexpected Rosetta translation status: {}",
+                    value
+                ))),
+                Err(err) => Err(Error::Utm(format!(
+                    "Failed to detect the Mac's native architecture: {}",
+                    err
+                ))),
+            },
+            arch => Err(Error::UnsupportedPlatform(format!(
+                "Unsupported Mac architecture: {}",
+                arch
+            ))),
+        }
+    }
+}
 
 /// Check if UTM is installed and get its status
 async fn check_utm_status() -> Result<UtmStatus> {
@@ -48,9 +136,7 @@ async fn create_vm<P: ProgressCallback>(
 fn start_vm(vm_id: &str) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
-        // TODO: Implement via AppleScript
-        let _ = vm_id;
-        Ok(())
+        macos::start_vm(vm_id)
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -96,6 +182,119 @@ fn vm_status(vm_id: &str) -> Result<VmStatusInfo> {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn created_vm_start_error(name: &str, error: Error) -> Error {
+    Error::UtmVmCreated(format!(
+        "The virtual machine '{name}' was created, but the installer could not confirm it started. \
+         Open UTM to start it or remove it before installing again. {error}"
+    ))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn applescript_error(stderr: &str) -> Error {
+    // osascript reports the numeric Apple Event error after the localized message.
+    if stderr.trim().ends_with("(-1743)") {
+        Error::Utm(
+            "Home Assistant Installer is not allowed to control UTM. Open System Settings > Privacy & Security > Automation, enable UTM under Home Assistant Installer, then try again."
+                .to_string(),
+        )
+    } else {
+        Error::Utm(stderr.trim().to_string())
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn escaped_vm_id(vm_id: &str) -> String {
+    vm_id.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn query_vm_status(
+    vm_id: &str,
+    mut run: impl FnMut(&str) -> Result<String>,
+) -> Result<VmStatusInfo> {
+    let vm_id = escaped_vm_id(vm_id);
+    let status = run(&format!(
+        r#"tell application "UTM"
+    return status of virtual machine id "{vm_id}"
+end tell"#
+    ))?;
+    let ip_address = if status == "started" {
+        // The guest agent can be unavailable while HAOS boots. Keep the real
+        // running state so a retry does not try to start an already running VM.
+        run(&format!(
+            r#"tell application "UTM"
+    set addresses to query ip virtual machine id "{vm_id}"
+    set AppleScript's text item delimiters to linefeed
+    return addresses as text
+end tell"#
+        ))
+        .ok()
+        .and_then(|output| first_usable_ipv4(&output))
+    } else {
+        None
+    };
+    Ok(VmStatusInfo { status, ip_address })
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn first_usable_ipv4(output: &str) -> Option<String> {
+    // UTM returns addresses in guest-interface order, with IPv4 before IPv6.
+    // The current readiness checks and success links require an IPv4 host.
+    output
+        .lines()
+        .filter_map(|line| line.trim().parse::<std::net::Ipv4Addr>().ok())
+        .find(|ip| {
+            !ip.is_unspecified()
+                && !ip.is_loopback()
+                && !ip.is_link_local()
+                && !ip.is_multicast()
+                && !ip.is_broadcast()
+                && ip.octets()[0] != 0
+                && ip.octets()[0] < 240
+        })
+        .map(|ip| ip.to_string())
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn finish_vm_creation(
+    config: &UtmVmConfig,
+    vm_id: String,
+    progress_callback: &impl ProgressCallback,
+    start: impl FnOnce(&str) -> Result<()>,
+) -> Result<UtmVmResult> {
+    if config.auto_start {
+        progress_callback.on_progress(FlashProgress {
+            stage: FlashStage::Downloading,
+            progress: 50,
+            bytes_processed: 0,
+            total_bytes: 0,
+            message: "Starting virtual machine...".to_string(),
+        });
+        start(&vm_id)?;
+    }
+    progress_callback.on_progress(FlashProgress {
+        stage: FlashStage::Complete,
+        progress: 100,
+        bytes_processed: 0,
+        total_bytes: 0,
+        message: if config.auto_start {
+            "VM created and started"
+        } else {
+            "VM created"
+        }
+        .to_string(),
+    });
+    Ok(UtmVmResult {
+        id: vm_id,
+        name: config.name.clone(),
+        path: Some(format!(
+            "~/Library/Containers/com.utmapp.UTM/Data/Documents/{}.utm",
+            config.name
+        )),
+    })
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     use super::*;
@@ -103,12 +302,31 @@ mod macos {
 
     const UTM_APP_PATH: &str = "/Applications/UTM.app";
 
-    pub(super) fn vm_status(_vm_id: &str) -> Result<VmStatusInfo> {
-        // TODO: Implement via utmctl
-        Ok(VmStatusInfo {
-            status: "unknown".to_string(),
-            ip_address: None,
-        })
+    pub(super) fn translation_status() -> std::io::Result<i32> {
+        let mut translated: libc::c_int = 0;
+        let mut size = std::mem::size_of_val(&translated);
+        // Query this process directly: a child sysctl executable can run natively
+        // even when the installer is translated by Rosetta.
+        // https://developer.apple.com/documentation/apple-silicon/about-the-rosetta-translation-environment
+        let result = unsafe {
+            // SAFETY: the name is NUL-terminated, and the output pointer and size
+            // refer to a live c_int. Null newp makes this a read-only query.
+            libc::sysctlbyname(
+                c"sysctl.proc_translated".as_ptr(),
+                std::ptr::from_mut(&mut translated).cast(),
+                &mut size,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if result == -1 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(translated)
+    }
+
+    pub(super) fn vm_status(vm_id: &str) -> Result<VmStatusInfo> {
+        query_vm_status(vm_id, run_applescript)
     }
 
     pub(super) async fn check_utm_status() -> Result<UtmStatus> {
@@ -171,18 +389,18 @@ mod macos {
 
     /// Run an AppleScript and return the output
     pub(super) fn run_applescript(script: &str) -> Result<String> {
-        let output = Command::new("osascript")
+        let child = Command::new("osascript")
             .arg("-e")
             .arg(script)
-            .output()
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
             .map_err(|e| Error::Utm(format!("Failed to execute AppleScript: {}", e)))?;
-
-        if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(Error::Utm(stderr.trim().to_string()))
-        }
+        let output = child.wait_with_output().map_err(|error| {
+            Error::UtmOperationUncertain(format!("Failed to wait for AppleScript: {error}"))
+        })?;
+        applescript_output(output)
     }
 
     /// Start a VM by its ID
@@ -192,10 +410,15 @@ mod macos {
     set vm to virtual machine id "{}"
     start vm
 end tell"#,
-            vm_id
+            escaped_vm_id(vm_id)
         );
 
-        run_applescript(&script)?;
+        run_applescript(&script).map_err(|error| match error {
+            // Starting never reads the import source. A lost reply here must
+            // not retain an image whose creation already completed.
+            Error::UtmOperationUncertain(message) => Error::Utm(message),
+            error => error,
+        })?;
         Ok(())
     }
 
@@ -227,11 +450,7 @@ end tell"#,
         });
 
         // Get architecture and network interface
-        let arch = if cfg!(target_arch = "aarch64") {
-            "aarch64"
-        } else {
-            "x86_64"
-        };
+        let arch = UtmArchitecture::host()?.qemu_architecture();
         let network_interface = get_primary_network_interface();
 
         // Escape the name for AppleScript
@@ -267,31 +486,9 @@ end tell"#,
 
         let vm_id = run_applescript(&script)?;
 
-        // Start the VM
-        progress_callback.on_progress(FlashProgress {
-            stage: FlashStage::Downloading,
-            progress: 50,
-            bytes_processed: 0,
-            total_bytes: 0,
-            message: "Starting virtual machine...".to_string(),
-        });
-
-        start_vm(&vm_id)?;
-
-        progress_callback.on_progress(FlashProgress {
-            stage: FlashStage::Complete,
-            progress: 100,
-            bytes_processed: 0,
-            total_bytes: 0,
-            message: "VM created and started".to_string(),
-        });
-
-        Ok(UtmVmResult {
-            name: config.name.clone(),
-            path: Some(format!(
-                "~/Library/Containers/com.utmapp.UTM/Data/Documents/{}.utm",
-                config.name
-            )),
+        finish_vm_creation(config, vm_id, progress_callback, |vm_id| {
+            // The VM exists now, so a failed start must not invite a blind retry
+            start_vm(vm_id).map_err(|error| created_vm_start_error(&config.name, error))
         })
     }
 }
@@ -325,6 +522,233 @@ impl UtmBackend for Backend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failure_starting_a_created_vm_cannot_be_retried_as_creation() {
+        let error =
+            created_vm_start_error("My home", Error::Utm("Enable Automation access".into()));
+        let Error::UtmVmCreated(message) = error else {
+            panic!("expected created-VM error")
+        };
+        assert!(message.contains("My home"));
+        assert!(message.contains("Open UTM"));
+        assert!(message.contains("Enable Automation access"));
+        assert!(!message.contains("importing"));
+    }
+
+    #[test]
+    fn test_applescript_automation_denied() {
+        for stderr in [
+            "0:30: execution error: Not authorized to send Apple events to UTM. (-1743)\n",
+            "0:30: execution error: Keine Berechtigung zum Senden von Apple-Events an UTM. (-1743)\n",
+        ] {
+            let Error::Utm(message) = applescript_error(stderr) else {
+                panic!("Expected UTM error");
+            };
+            assert!(message.contains("System Settings > Privacy & Security > Automation"));
+            assert!(message.contains("enable UTM under Home Assistant Installer"));
+            assert!(message.contains("try again"));
+            assert!(!message.contains("execution error"));
+        }
+    }
+
+    #[test]
+    fn native_apple_silicon_uses_arm_without_querying_rosetta() {
+        let arch = UtmArchitecture::from_process("aarch64", || panic!("not needed")).unwrap();
+        assert_eq!(arch.haos_board(), "generic-aarch64");
+        assert_eq!(arch.qemu_architecture(), "aarch64");
+    }
+
+    #[test]
+    fn translated_intel_process_uses_native_arm_image_and_vm() {
+        let arch = UtmArchitecture::from_process("x86_64", || Ok(1)).unwrap();
+        assert_eq!(arch.haos_board(), "generic-aarch64");
+        assert_eq!(arch.qemu_architecture(), "aarch64");
+    }
+
+    #[test]
+    fn native_intel_uses_ova_image_and_x86_vm() {
+        for status in [Ok(0), Err(std::io::ErrorKind::NotFound.into())] {
+            let arch = UtmArchitecture::from_process("x86_64", || status).unwrap();
+            assert_eq!(arch.haos_board(), "ova");
+            assert_eq!(arch.qemu_architecture(), "x86_64");
+        }
+    }
+
+    #[test]
+    fn test_other_applescript_errors_keep_their_message() {
+        for stderr in [
+            "0:30: execution error: User canceled. (-128)\n",
+            "0:30: execution error: Virtual machine not found. (-1728)\n",
+            "0:30: execution error: Other failure. (-17430)\n",
+            "0:30: execution error: VM named (-1743) not found. (-1728)\n",
+            "",
+        ] {
+            let Error::Utm(message) = applescript_error(stderr) else {
+                panic!("Expected UTM error");
+            };
+            assert_eq!(message, stderr.trim());
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn applescript_distinguishes_rejection_from_unknown_completion() {
+        use std::os::unix::process::ExitStatusExt;
+        for (status, stderr, uncertain) in [
+            (
+                256,
+                "User canceled out of wait loop for reply. (-1711)",
+                true,
+            ),
+            (256, "UTM got an error: AppleEvent timed out. (-1712)", true),
+            (256, "Reply has not yet arrived. (-1718)", true),
+            (256, "Connection is invalid. (-609)", true),
+            (256, "Application is not running. (-600)", true),
+            (9, "", true),
+            (256, "Unexpected process failure", true),
+            (256, "Not authorized to send Apple events. (-1743)", false),
+            (256, "Keine Berechtigung fuer Apple-Events. (-1743)", false),
+            (
+                256,
+                "UTM got an error: Invalid configuration. (-10000)",
+                false,
+            ),
+            (256, "syntax error: Expected end of line. (-2741)", false),
+        ] {
+            let error = applescript_output(std::process::Output {
+                status: std::process::ExitStatus::from_raw(status),
+                stdout: Vec::new(),
+                stderr: stderr.as_bytes().to_vec(),
+            })
+            .unwrap_err();
+            if stderr.ends_with("(-1743)") {
+                assert!(error
+                    .to_string()
+                    .contains("System Settings > Privacy & Security > Automation"));
+            }
+            assert_eq!(
+                matches!(error, Error::UtmOperationUncertain(_)),
+                uncertain,
+                "{stderr}"
+            );
+        }
+        assert_eq!(
+            applescript_output(std::process::Output {
+                status: std::process::ExitStatus::from_raw(0),
+                stdout: b"vm-id\n".to_vec(),
+                stderr: Vec::new(),
+            })
+            .unwrap(),
+            "vm-id"
+        );
+    }
+
+    #[test]
+    fn status_and_address_queries_use_the_same_escaped_id() {
+        let mut calls = Vec::new();
+        let result = query_vm_status("unique\\\"id", |script| {
+            calls.push(script.to_string());
+            Ok(if calls.len() == 1 {
+                "started".to_string()
+            } else {
+                "169.254.1.2\n192.168.1.20\n172.30.32.1\nfe80::1".to_string()
+            })
+        })
+        .unwrap();
+        assert_eq!(result.status, "started");
+        assert_eq!(result.ip_address.as_deref(), Some("192.168.1.20"));
+        assert_eq!(calls.len(), 2);
+        for script in &calls {
+            assert!(script.contains(r#"virtual machine id "unique\\\"id""#));
+        }
+        assert!(calls[1].contains("text item delimiters to linefeed"));
+    }
+
+    #[test]
+    fn status_survives_guest_agent_not_ready() {
+        let mut calls = 0;
+        let result = query_vm_status("unique-id", |_| {
+            calls += 1;
+            if calls == 1 {
+                Ok("started".into())
+            } else {
+                Err(Error::Utm("Guest agent is not running".into()))
+            }
+        })
+        .unwrap();
+        assert_eq!(result.status, "started");
+        assert!(result.ip_address.is_none());
+        assert_eq!(calls, 2);
+    }
+
+    #[test]
+    fn only_started_vms_query_the_guest() {
+        for status in [
+            "stopped", "starting", "paused", "pausing", "stopping", "resuming",
+        ] {
+            let mut calls = 0;
+            let result = query_vm_status("unique-id", |_| {
+                calls += 1;
+                Ok(status.into())
+            })
+            .unwrap();
+            assert_eq!(result.status, status);
+            assert!(result.ip_address.is_none());
+            assert_eq!(calls, 1);
+        }
+        assert!(query_vm_status("missing-id", |_| Err(Error::Utm("VM not found".into()))).is_err());
+    }
+
+    #[test]
+    fn address_selection_excludes_unusable_hosts_without_rejecting_private_lans() {
+        for output in [
+            "",
+            "not-an-ip\n::1\nfe80::1\n2001:db8::1",
+            "0.0.0.0\n0.1.2.3\n127.0.0.2\n169.254.2.3\n224.0.0.1\n240.0.0.1\n255.255.255.255",
+        ] {
+            assert_eq!(first_usable_ipv4(output), None);
+        }
+        for ip in ["10.1.2.3", "172.17.0.5", "172.30.32.8", "192.168.1.20"] {
+            assert_eq!(
+                first_usable_ipv4(&format!("fe80::1\n {ip}\n192.168.2.1")),
+                Some(ip.into())
+            );
+        }
+    }
+
+    #[test]
+    fn creation_returns_the_id_before_start_unless_auto_start_was_requested() {
+        for auto_start in [false, true] {
+            let config = UtmVmConfig {
+                name: "Non-unique name".into(),
+                image_path: "/tmp/test.qcow2".into(),
+                cpu_cores: 2,
+                memory_mb: 2048,
+                disk_size_gb: 32,
+                auto_start,
+            };
+            let mut started = false;
+            let result =
+                finish_vm_creation(&config, "unique-id".into(), &crate::NoOpProgress, |id| {
+                    assert_eq!(id, "unique-id");
+                    started = true;
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(started, auto_start);
+            assert_eq!(result.id, "unique-id");
+            assert_eq!(result.name, config.name);
+        }
+    }
+
+    #[test]
+    fn architecture_detection_errors_do_not_guess_an_image() {
+        for status in [Ok(2), Err(std::io::ErrorKind::PermissionDenied.into())] {
+            assert!(UtmArchitecture::from_process("x86_64", || status).is_err());
+        }
+        assert!(UtmArchitecture::from_process("unknown", || panic!("not needed")).is_err());
+    }
 
     #[tokio::test]
     #[serial_test::serial]

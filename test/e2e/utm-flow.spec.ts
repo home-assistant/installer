@@ -1,25 +1,17 @@
-import { test, expect, type Page, type Locator } from "@playwright/test";
+import { type Page, type Locator } from "@playwright/test";
+import { test, expect } from "./fixtures.js";
+
+test.use({ platform: "macos" });
 
 test.describe("UTM Installation Flow", () => {
   test.beforeEach(async ({ page }) => {
-    // Use mock mode to simulate UTM environment
-    await page.goto("/?mock=true");
+    await page.goto("/");
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
 
-    // Select Virtual Machine option (only visible on macOS)
-    // In tests, we may need to check if it exists first
     const vmOption = page.locator('option-card[title="Virtual machine"]');
-    const vmOptionCount = await vmOption.count();
-
-    if (vmOptionCount > 0) {
-      await vmOption.click();
-    } else {
-      // If not visible (not on Mac), skip or use other-options path
-      // For this test, we'll assume the mock mode simulates Mac environment
-      // You may need to adjust based on test environment
-      test.skip(true, "Virtual Machine option not available (not on macOS)");
-    }
+    await expect(vmOption).toBeVisible();
+    await vmOption.click();
 
     await expect(page.locator("wizard-shell")).toBeVisible();
   });
@@ -60,10 +52,11 @@ test.describe("UTM Installation Flow", () => {
     await expect(warningCard).toContainText("Mac needs to be running");
   });
 
-  test("step 1: shows UTM logo", async ({ page }) => {
+  test("step 1: shows the supplied Casita status artwork", async ({ page }) => {
     const checkView = page.locator("utm-check-view");
-    const logo = checkView.locator(".utm-logo");
-    await expect(logo).toBeVisible();
+    const mascot = checkView.locator("casita-mascot img");
+    await expect(mascot).toBeVisible();
+    await expect(mascot).toHaveAttribute("src", "/assets/casita/Happy.svg");
   });
 
   test("step 1: shows loading state initially", async ({ page }) => {
@@ -152,15 +145,9 @@ test.describe("UTM Installation Flow", () => {
       .locator("wizard-shell")
       .locator(".footer-right wa-button");
 
-    // If button is enabled, we can proceed
-    if (!(await buttonDisabled(nextButton))) {
-      await nextButton.click();
-      await expect(page.locator("utm-configure-view")).toBeVisible();
-    } else {
-      // If disabled, UTM is not installed in mock mode
-      // This is expected behavior
-      await expect(nextButton).toHaveJSProperty("disabled", true);
-    }
+    await expect(nextButton).toHaveJSProperty("disabled", false);
+    await nextButton.click();
+    await expect(page.locator("utm-configure-view")).toBeVisible();
   });
 
   test("step 2: shows VM configuration view", async ({ page }) => {
@@ -189,7 +176,7 @@ test.describe("UTM Installation Flow", () => {
     await navigateToUtmStep2(page);
 
     const configView = page.locator("utm-configure-view");
-    const nameInput = configView.locator(".name-input");
+    const nameInput = configView.getByRole("textbox", { name: "Display name" });
 
     await nameInput.clear();
     await nameInput.fill("My Home Assistant VM");
@@ -203,7 +190,7 @@ test.describe("UTM Installation Flow", () => {
     await navigateToUtmStep2(page);
 
     const configView = page.locator("utm-configure-view");
-    const nameInput = configView.locator(".name-input");
+    const nameInput = configView.getByRole("textbox", { name: "Display name" });
     const coresValue = configView.locator(".setting-value").first();
 
     const defaultCores = await coresValue.textContent();
@@ -212,7 +199,10 @@ test.describe("UTM Installation Flow", () => {
     await nameInput.clear();
     await nameInput.fill("My Home Assistant VM");
 
-    const coresSlider = configView.locator('input[type="range"]').first();
+    const coresSlider = configView.getByRole("slider", {
+      name: "CPU cores",
+      exact: true,
+    });
     await coresSlider.focus();
     await coresSlider.press("ArrowRight");
 
@@ -233,9 +223,9 @@ test.describe("UTM Installation Flow", () => {
     // not silently reset to the defaults
     await page.locator("wizard-shell").locator(".header wa-button").click();
     await expect(configView).toBeVisible();
-    await expect(configView.locator(".name-input")).toHaveValue(
-      "My Home Assistant VM"
-    );
+    await expect(
+      configView.getByRole("textbox", { name: "Display name" })
+    ).toHaveValue("My Home Assistant VM");
     await expect(coresValue).toHaveText(chosenCores!);
 
     // And forward again, so what gets installed is what was picked
@@ -449,7 +439,7 @@ test.describe("UTM Installation Flow", () => {
     await navigateToUtmStep5(page);
 
     const successView = page.locator("utm-success-view");
-    await expect(successView.locator(".casita-mascot")).toBeVisible();
+    await expect(successView.locator("casita-mascot")).toBeVisible();
   });
 
   test("step 5: shows next steps instructions", async ({ page }) => {
@@ -510,10 +500,7 @@ test.describe("UTM Installation Flow", () => {
     // Restart flow
     await page.locator("welcome-view").locator("wa-button").click();
     const vmOption = page.locator('option-card[title="Virtual machine"]');
-    const vmOptionCount = await vmOption.count();
-    if (vmOptionCount === 0) {
-      test.skip(true, "Virtual Machine option not available");
-    }
+    await expect(vmOption).toBeVisible();
     await vmOption.click();
 
     // Test cancel on step 2
@@ -532,9 +519,7 @@ test.describe("UTM Installation Flow", () => {
       .locator("wizard-shell")
       .locator(".footer-right wa-button");
 
-    if (await buttonDisabled(nextButton)) {
-      test.skip(true, "UTM not detected as installed in mock mode");
-    }
+    await expect(nextButton).toHaveJSProperty("disabled", false);
 
     await nextButton.click();
 

@@ -1,6 +1,17 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import type { InstallerError } from "../../src/utils/installer-error.js";
 
 type IpcHandler = (cmd: string, args: unknown) => unknown;
+
+/** The JSON rejection value sent by a Tauri command, with no Error prototype. */
+export function ipcError(
+  code: string,
+  message: string,
+  retryable = false,
+  details: Record<string, unknown> = {}
+): InstallerError {
+  return { code, message, retryable, details };
+}
 
 /**
  * Route `src/api/commands.ts` through a Tauri IPC mock instead of its
@@ -10,10 +21,17 @@ type IpcHandler = (cmd: string, args: unknown) => unknown;
  * Commands not handled by `handler` reject, so an unexpected call fails loudly.
  * Undo with `restoreTauriIpc()`.
  */
-export function mockTauriIpc(handler: IpcHandler): void {
+export function mockTauriIpc(
+  handler: IpcHandler,
+  { includeLogs = false }: { includeLogs?: boolean } = {}
+): void {
   // `commands.ts` only goes through IPC when it detects Tauri
   (window as unknown as { __TAURI__?: object }).__TAURI__ = {};
-  mockIPC((cmd, args) => handler(cmd, args));
+  mockIPC((cmd, args) => {
+    // Diagnostics log every view's progress; only tests about logging see it
+    if (cmd === "log_frontend_event" && !includeLogs) return undefined;
+    return handler(cmd, args);
+  });
 }
 
 export function restoreTauriIpc(): void {

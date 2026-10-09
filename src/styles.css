@@ -4,9 +4,12 @@
 
 :root {
   /* Home Assistant brand colors */
-  --ha-primary-color: #03a9f4;
-  --ha-primary-color-dark: #0288d1;
-  --ha-error-color: #db4437;
+  /* HA frontend core tokens: primary-30/20/70, red-40/70. */
+  --ha-primary-color: #006787;
+  --ha-primary-color-dark: #004156;
+  --ha-primary-fill: #006787;
+  --ha-error-color: #b30532;
+  --ha-error-fill: #b30532;
   --ha-secondary-text-color: #727272;
   --ha-background-color: #ffffff;
   --ha-card-background: #ffffff;
@@ -16,7 +19,7 @@
    * through its variant -> generic token chain (e.g. variant="brand" resolves
    * --wa-color-fill-loud from --wa-color-brand-fill-loud). Defined here,
    * outside @layer wa-theme, so they win over the bundled default theme. */
-  --wa-color-brand-fill-loud: var(--ha-primary-color);
+  --wa-color-brand-fill-loud: var(--ha-primary-fill);
   --wa-color-brand-fill-quiet: color-mix(
     in srgb,
     var(--ha-primary-color) 12%,
@@ -26,7 +29,7 @@
   --wa-color-brand-on-quiet: var(--ha-primary-color);
   --wa-color-brand-on-loud: #ffffff;
 
-  --wa-color-danger-fill-loud: var(--ha-error-color);
+  --wa-color-danger-fill-loud: var(--ha-error-fill);
   --wa-color-danger-on-loud: #ffffff;
 
   /* Plain/neutral buttons (Back, Cancel) */
@@ -81,6 +84,8 @@ a:hover {
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --ha-primary-color: #7bd4fb;
+    --ha-error-color: #fd8f90;
     --ha-background-color: #1c1c1c;
     --ha-card-background: #1e1e1e;
     --ha-text-color: #e1e1e1;

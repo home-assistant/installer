@@ -92,6 +92,9 @@ pub fn map_device_io_error(err: std::io::Error, device_id: &str) -> Error {
     if super::is_drive_disconnected(&err) {
         return Error::DriveDisconnected;
     }
+    if super::is_write_protected(&err) {
+        return Error::WriteProtected;
+    }
 
     match err.raw_os_error() {
         Some(EBUSY) => Error::DeviceBusy(device_busy_message(device_id)),
@@ -110,6 +113,11 @@ pub fn classify_authopen_failure(exit_code: Option<i32>, stderr: &str, device_id
     }
     if haystack.contains("resource busy") || haystack.contains("device busy") {
         return Error::DeviceBusy(device_busy_message(device_id));
+    }
+    // A locked card fails the O_RDWR open with EROFS. Checked before the
+    // permission errors, so it doesn't get the privacy settings advice.
+    if haystack.contains("read-only file system") {
+        return Error::WriteProtected;
     }
     if haystack.contains("permission denied")
         || haystack.contains("operation not permitted")
@@ -371,15 +379,28 @@ mod tests {
 
     #[test]
     fn a_disconnect_still_wins_over_the_errno_mapping() {
-        // ENXIO would otherwise fall through to Error::Io.
-        let err = map_device_io_error(std::io::Error::from_raw_os_error(6), "/dev/rdisk4");
-        assert!(matches!(err, Error::DriveDisconnected));
+        // ENXIO would otherwise fall through to Error::Io. This logic also
+        // compiles in Windows test runs, where 6 is another error entirely.
+        #[cfg(unix)]
+        {
+            let err = map_device_io_error(std::io::Error::from_raw_os_error(6), "/dev/rdisk4");
+            assert!(matches!(err, Error::DriveDisconnected));
+        }
 
         let err = map_device_io_error(
             std::io::Error::new(std::io::ErrorKind::BrokenPipe, "gone"),
             "/dev/rdisk4",
         );
         assert!(matches!(err, Error::DriveDisconnected));
+    }
+
+    #[test]
+    fn a_locked_card_reads_as_write_protected() {
+        let err = map_device_io_error(
+            std::io::Error::new(std::io::ErrorKind::ReadOnlyFilesystem, "locked"),
+            "/dev/rdisk4",
+        );
+        assert!(matches!(err, Error::WriteProtected), "{err:?}");
     }
 
     #[test]
@@ -398,6 +419,16 @@ mod tests {
     fn authopen_cancellation_is_not_a_failure() {
         let err = classify_authopen_failure(Some(1), "authopen: canceled", "/dev/rdisk4");
         assert!(matches!(err, Error::Cancelled), "{err:?}");
+    }
+
+    #[test]
+    fn authopen_on_a_locked_card_is_write_protected() {
+        let err = classify_authopen_failure(
+            Some(1),
+            "authopen: /dev/rdisk4: Read-only file system",
+            "/dev/rdisk4",
+        );
+        assert!(matches!(err, Error::WriteProtected), "{err:?}");
     }
 
     #[test]

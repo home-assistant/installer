@@ -191,8 +191,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Single Board Computer Flow', () => {
   test.beforeEach(async ({ page }) => {
-    // Enable mock mode
-    await page.goto('/?mock=true');
+    // The development server uses browser mocks without a Tauri backend.
+    await page.goto('/');
     await page.getByRole('button', { name: "Let's go" }).click();
   });
 
@@ -237,7 +237,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Proxmox Flow', () => {
   test('shows error on invalid credentials', async ({ page }) => {
-    await page.goto('/?mock=true');
+    await page.goto('/');
     await page.getByRole('button', { name: "Let's go" }).click();
     await page.getByRole('button', { name: /Proxmox/i }).click();
     

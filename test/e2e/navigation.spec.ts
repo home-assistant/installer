@@ -39,7 +39,7 @@ test.describe("Navigation Flow", () => {
     // Check for all options
     await expect(
       pathSelectionView.locator('option-card[title="Home Assistant hardware"]')
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(
       pathSelectionView.locator(
         'option-card[title="Raspberry Pi & other boards"]'
@@ -99,16 +99,6 @@ test.describe("Path Selection Options", () => {
     await page.goto("/");
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
-  });
-
-  test("Home Assistant Hardware option has correct description", async ({
-    page,
-  }) => {
-    const card = page.locator('option-card[title="Home Assistant hardware"]');
-    await expect(card).toHaveAttribute(
-      "description",
-      /Green.*Yellow.*Blue.*Nabu Casa/
-    );
   });
 
   test("Raspberry Pi option has correct description", async ({ page }) => {
@@ -244,7 +234,7 @@ test.describe("Wizard Flow", () => {
 test.describe("SBC Device Selection", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to SBC flow
-    await page.goto("/?mock=true");
+    await page.goto("/");
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
@@ -301,7 +291,7 @@ test.describe("SBC Device Selection", () => {
 test.describe("SBC Drive Selection", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to drive selection step
-    await page.goto("/?mock=true");
+    await page.goto("/");
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
@@ -405,7 +395,7 @@ test.describe("SBC Drive Selection", () => {
 test.describe("SBC Confirmation", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to confirmation step
-    await page.goto("/?mock=true");
+    await page.goto("/");
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
@@ -564,7 +554,7 @@ test.describe("SBC Confirmation", () => {
 test.describe("SBC Flashing", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to flash step
-    await page.goto("/?mock=true");
+    await page.goto("/");
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
@@ -675,9 +665,11 @@ test.describe("SBC Flashing", () => {
 });
 
 test.describe("SBC Success", () => {
+  let selectedDeviceName: string;
+
   test.beforeEach(async ({ page }) => {
     // Navigate to success step
-    await page.goto("/?mock=true");
+    await page.goto("/");
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
@@ -688,6 +680,7 @@ test.describe("SBC Success", () => {
     // Select a device and proceed
     const deviceCard = page.locator("device-card").first();
     await expect(deviceCard).toBeVisible({ timeout: 5000 });
+    selectedDeviceName = await deviceCard.locator(".name").innerText();
     await deviceCard.click();
     await page
       .locator("wizard-shell")
@@ -726,7 +719,7 @@ test.describe("SBC Success", () => {
   test("shows happy Casita mascot", async ({ page }) => {
     const successView = page.locator("success-view");
     await expect(successView.locator(".mascot-container")).toBeVisible();
-    await expect(successView.locator(".casita-mascot")).toBeVisible();
+    await expect(successView.locator("casita-mascot")).toBeVisible();
   });
 
   test("shows success heading", async ({ page }) => {
@@ -735,12 +728,15 @@ test.describe("SBC Success", () => {
     );
   });
 
-  test("shows installation complete message with device name", async ({
+  test("shows storage-written message and selected-device guidance", async ({
     page,
   }) => {
     const successView = page.locator("success-view");
     await expect(successView.locator(".subtitle")).toContainText(
-      "Home Assistant has been installed on your"
+      "Home Assistant OS has been written to your storage device"
+    );
+    await expect(successView.locator(".step-item").nth(1)).toContainText(
+      `Insert the written storage into ${selectedDeviceName}.`
     );
   });
 
@@ -752,10 +748,17 @@ test.describe("SBC Success", () => {
     );
   });
 
-  test("shows four numbered steps", async ({ page }) => {
+  test("shows five numbered steps", async ({ page }) => {
     const successView = page.locator("success-view");
     const steps = successView.locator(".step-item");
-    await expect(steps).toHaveCount(4);
+    await expect(steps).toHaveCount(5);
+    await expect(steps.locator(".step-number")).toHaveText([
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+    ]);
   });
 
   test("shows companion app section", async ({ page }) => {

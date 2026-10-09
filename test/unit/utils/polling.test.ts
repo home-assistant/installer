@@ -301,5 +301,49 @@ describe("polling", () => {
 
       expect(error).to.be.instanceOf(CancelledError);
     });
+
+    it("rethrows an error matched by stopOn without retrying", async () => {
+      const controller = new AbortController();
+      const expired = { code: "session_expired" };
+      let calls = 0;
+
+      let error: unknown;
+      try {
+        await pollUntil(
+          async () => {
+            calls++;
+            throw expired;
+          },
+          {
+            ...pollOptions(controller.signal),
+            stopOn: (error) => error === expired,
+          }
+        );
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).to.equal(expired);
+      expect(calls).to.equal(1);
+    });
+
+    it("keeps retrying errors stopOn does not match", async () => {
+      const controller = new AbortController();
+      let calls = 0;
+
+      const result = await pollUntil(
+        async () => {
+          calls++;
+          if (calls < 2) {
+            throw new Error("connection refused");
+          }
+          return "ready";
+        },
+        { ...pollOptions(controller.signal), stopOn: () => false }
+      );
+
+      expect(result).to.equal("ready");
+      expect(calls).to.equal(2);
+    });
   });
 });

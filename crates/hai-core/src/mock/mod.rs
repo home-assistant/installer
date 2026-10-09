@@ -60,8 +60,8 @@ pub(crate) async fn simulate<P: ProgressCallback>(
     }
 }
 
-/// Mirror the real `extract_xz`: a few indeterminate updates (`total_bytes`
-/// 0 while bytes grow), then a single final 100%.
+/// Simulate a few indeterminate updates (`total_bytes` 0 while bytes grow),
+/// then a single final 100%.
 pub(crate) async fn simulate_indeterminate<P: ProgressCallback>(
     cb: &P,
     stage: FlashStage,

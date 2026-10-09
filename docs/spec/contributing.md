@@ -88,7 +88,7 @@ It helps users install Home Assistant OS on various hardware platforms.
 ## Important Notes
 - Mock backend available for testing: `npm run tauri dev -- --features mock`
 - Manifest data comes from version.home-assistant.io
-- No auto-update; version check with download prompt only
+- No auto-update or version check; installer updates are manual
 - Releases are signed with cosign
 ```
 
@@ -110,37 +110,46 @@ body:
         Thanks for taking the time to report a bug!
         Please fill out the information below to help us investigate.
 
-  - type: dropdown
+  - type: input
     id: platform
     attributes:
       label: Operating System
-      description: What OS are you running the installer on?
-      options:
-        - macOS (Apple Silicon)
-        - macOS (Intel)
-        - Windows 11
-        - Windows 10
-        - Linux (Ubuntu/Debian)
-        - Linux (Fedora/RHEL)
-        - Linux (Other)
+      description: Operating system and version
     validations:
       required: true
 
-  - type: dropdown
-    id: installation-path
+  - type: input
+    id: architecture
     attributes:
-      label: Installation Path
-      description: What were you trying to install?
-      options:
-        - Raspberry Pi / SBC
-        - Mini PC / NUC
-        - Home Assistant Yellow
-        - Home Assistant Green
-        - Proxmox VM
-        - UTM VM (macOS)
-        - Other
+      label: Architecture
+      placeholder: "aarch64 or x86_64"
     validations:
       required: true
+
+  - type: input
+    id: package
+    attributes:
+      label: Package Type
+      placeholder: "App, AppImage, Deb, Rpm, Nsis, Msi, or unbundled"
+
+  - type: input
+    id: flow
+    attributes:
+      label: Installation Flow
+      placeholder: "flash, utm, proxmox, or application"
+    validations:
+      required: true
+
+  - type: input
+    id: stage
+    attributes:
+      label: Failed Stage
+
+  - type: input
+    id: error
+    attributes:
+      label: Error Category
+      description: Diagnostics omit raw error details for privacy.
 
   - type: input
     id: version
@@ -186,7 +195,7 @@ body:
     id: logs
     attributes:
       label: Logs or Screenshots
-      description: Paste any error messages or attach screenshots
+      description: Paste the diagnostic log tail or attach logs/screenshots. This issue is public; review attachments for private information first.
     validations:
       required: false
 
@@ -679,16 +688,15 @@ hai/
 │   ├── copilot-review.yml
 │   └── claude-instructions.md
 ├── docs/
-│   ├── spec/
-│   │   ├── README.md
-│   │   ├── architecture.md
-│   │   ├── ui-design.md
-│   │   ├── user-flows.md
-│   │   ├── backend.md
-│   │   ├── testing.md
-│   │   ├── ci-cd.md
-│   │   └── contributing.md
-│   └── project.md
+│   └── spec/
+│       ├── README.md
+│       ├── architecture.md
+│       ├── ui-design.md
+│       ├── user-flows.md
+│       ├── backend.md
+│       ├── testing.md
+│       ├── ci-cd.md
+│       └── contributing.md
 ├── src-tauri/
 │   └── ...
 ├── src/

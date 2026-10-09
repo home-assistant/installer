@@ -1,6 +1,7 @@
 import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import WaRadio from "@home-assistant/webawesome/dist/components/radio/radio.js";
+import { reducedMotionStyles } from "../utils/view-accessibility.js";
 
 /**
  * A device tile that behaves as a radio inside a `<wa-radio-group>`.
@@ -13,7 +14,13 @@ import WaRadio from "@home-assistant/webawesome/dist/components/radio/radio.js";
 @customElement("device-card")
 export class DeviceCard extends WaRadio {
   static css = [
+    reducedMotionStyles,
     css`
+      @media (prefers-reduced-motion: reduce) {
+        .card:active {
+          transform: none !important;
+        }
+      }
       :host {
         display: block;
         outline: none;
@@ -103,7 +110,7 @@ export class DeviceCard extends WaRadio {
         right: 8px;
         width: 24px;
         height: 24px;
-        background-color: var(--ha-primary-color, #03a9f4);
+        background-color: var(--ha-primary-fill, #006787);
         border-radius: 50%;
         display: flex;
         align-items: center;

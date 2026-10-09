@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::process::Command;
 use std::sync::mpsc;
+use zbus::fdo::{ManagedObjects, ObjectManagerProxy};
 use zbus::proxy::CacheProperties;
 use zbus::zvariant::{OwnedFd, OwnedObjectPath, Value};
 use zbus::Connection;
@@ -13,19 +14,35 @@ use zbus::Connection;
 pub async fn write_image<P: ProgressCallback>(
     image_path: &Path,
     device_id: &str,
+    expected: &ExpectedDevice,
     verify: bool,
     progress_callback: &P,
 ) -> Result<()> {
+    check_identity(&super::device::list_devices().await?, device_id, expected)?;
     let connection = Connection::system()
         .await
         .map_err(|e| map_udisks_error(e, "connecting to the system bus"))?;
     let block_path = resolve_block_path(&connection, device_id).await?;
 
+    super::device::ensure_safe_target(device_id)?;
     unmount_disk(&connection, &block_path).await?;
 
     let image_size = std::fs::metadata(image_path)?.len();
 
+    super::device::ensure_safe_target(device_id)?;
     let device = open_device_rw(&connection, &block_path).await?;
+
+    // Authorization may take a while. Check again before the first write.
+    // rdev ties the fd to the enumerated node, but is not a hardware serial:
+    // Linux can reuse device numbers after unplugging a drive.
+    check_identity(&super::device::list_devices().await?, device_id, expected)?;
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+    let opened = device.metadata()?;
+    // Unplugged between the checks: report the disconnect, not a missing path
+    let current = std::fs::metadata(device_id).map_err(device_io_error)?;
+    if !opened.file_type().is_block_device() || opened.rdev() != current.rdev() {
+        return Err(Error::DriveDisconnected);
+    }
 
     progress_callback.on_progress(FlashProgress::new(
         FlashStage::Writing,
@@ -81,13 +98,7 @@ fn write_and_verify(
         // Tag verify-phase failures as VerificationFailed so the caller can
         // label them "Verification failed" rather than "Write failed".
         let verified = (|| {
-            device.seek(SeekFrom::Start(0)).map_err(|e| {
-                if is_drive_disconnected(&e) {
-                    Error::DriveDisconnected
-                } else {
-                    Error::Io(e)
-                }
-            })?;
+            device.seek(SeekFrom::Start(0)).map_err(device_io_error)?;
             verify_write(image_path, &mut device, total_size, &progress_tx)
         })();
 
@@ -118,13 +129,8 @@ fn write_to_device(
             break;
         }
 
-        dest.write_all(&buffer[..bytes_read]).map_err(|e| {
-            if is_drive_disconnected(&e) {
-                Error::DriveDisconnected
-            } else {
-                Error::Io(e)
-            }
-        })?;
+        dest.write_all(&buffer[..bytes_read])
+            .map_err(|error| device_write_error(error, bytes_written, total_size))?;
 
         bytes_written += bytes_read as u64;
 
@@ -140,13 +146,8 @@ fn write_to_device(
         }
     }
 
-    dest.sync_all().map_err(|e| {
-        if is_drive_disconnected(&e) {
-            Error::DriveDisconnected
-        } else {
-            Error::Io(e)
-        }
-    })?;
+    dest.sync_all()
+        .map_err(|error| device_write_error(error, bytes_written, total_size))?;
 
     // Send final progress
     let _ = progress_tx.send(FlashProgress::new(
@@ -179,13 +180,7 @@ fn verify_write(
         }
 
         dest.read_exact(&mut dest_buffer[..source_read])
-            .map_err(|e| {
-                if is_drive_disconnected(&e) {
-                    Error::DriveDisconnected
-                } else {
-                    Error::Io(e)
-                }
-            })?;
+            .map_err(device_io_error)?;
 
         if source_buffer[..source_read] != dest_buffer[..source_read] {
             return Err(Error::VerificationFailed(
@@ -220,38 +215,77 @@ fn verify_write(
 
 /// Unmount everything on the disk before writing.
 async fn unmount_disk(conn: &Connection, block_path: &OwnedObjectPath) -> Result<()> {
-    let mut targets = vec![block_path.clone()];
-    // Unpartitioned media has no PartitionTable interface; the property
-    // read fails and only the whole-disk filesystem is unmounted.
-    if let Ok(builder) = UDisks2PartitionTableProxy::builder(conn).path(block_path.clone()) {
-        if let Ok(table) = builder.cache_properties(CacheProperties::No).build().await {
-            if let Ok(partitions) = table.partitions().await {
-                targets.extend(partitions);
-            }
-        }
-    }
+    let manager = ObjectManagerProxy::builder(conn)
+        .destination("org.freedesktop.UDisks2")
+        .and_then(|builder| builder.path("/org/freedesktop/UDisks2"))
+        .map_err(|e| map_udisks_error(e, "addressing udisks2"))?
+        .cache_properties(CacheProperties::No)
+        .build()
+        .await
+        .map_err(|e| map_udisks_error(e, "reading the disk inventory"))?;
+    let objects = manager
+        .get_managed_objects()
+        .await
+        .map_err(|e| map_udisks_error(e.into(), "reading the disk inventory"))?;
 
-    for path in targets {
-        let builder = match UDisks2FilesystemProxy::builder(conn).path(path) {
-            Ok(builder) => builder,
-            Err(_) => continue,
-        };
-        let proxy = match builder.cache_properties(CacheProperties::No).build().await {
-            Ok(proxy) => proxy,
-            Err(_) => continue,
-        };
-        let mut options = HashMap::new();
-        options.insert("force", Value::from(true));
-        if let Err(e) = proxy.unmount(options).await {
-            if let err @ (Error::PermissionDenied(_) | Error::DiskServiceUnavailable(_)) =
-                map_udisks_error(e, "unmounting a volume")
-            {
-                return Err(err);
-            }
-        }
+    for path in unmount_targets(&objects, block_path)? {
+        let context =
+            format!("unmounting {path}; close applications using the drive and try again");
+        let proxy = UDisks2FilesystemProxy::builder(conn)
+            .path(path)
+            .map_err(|e| map_udisks_error(e, &context))?
+            .cache_properties(CacheProperties::No)
+            .build()
+            .await
+            .map_err(|e| map_udisks_error(e, &context))?;
+        check_unmount_result(proxy.unmount(HashMap::new()).await, &context)?;
     }
 
     Ok(())
+}
+
+fn unmount_targets(
+    objects: &ManagedObjects,
+    block_path: &OwnedObjectPath,
+) -> Result<Vec<OwnedObjectPath>> {
+    let block = objects
+        .get(block_path)
+        .ok_or_else(|| Error::DeviceNotFound(block_path.to_string()))?;
+    let mut targets = vec![block_path.clone()];
+    if let Some(table) = block.get("org.freedesktop.UDisks2.PartitionTable") {
+        let partitions = table
+            .get("Partitions")
+            .ok_or_else(|| Error::InvalidConfig("Missing disk partitions".into()))?;
+        let partitions: Vec<OwnedObjectPath> =
+            partitions
+                .try_clone()
+                .and_then(TryInto::try_into)
+                .map_err(|e| Error::InvalidConfig(format!("Invalid disk partitions: {e}")))?;
+        targets.extend(partitions);
+    }
+    let mut filesystems = Vec::new();
+    for path in targets {
+        let interfaces = objects
+            .get(&path)
+            .ok_or_else(|| Error::DeviceNotFound(path.to_string()))?;
+        // Blank disks and non-filesystem partitions need no unmount call.
+        if interfaces.contains_key("org.freedesktop.UDisks2.Filesystem") {
+            filesystems.push(path);
+        }
+    }
+    Ok(filesystems)
+}
+
+fn check_unmount_result(result: zbus::Result<()>, context: &str) -> Result<()> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(zbus::Error::MethodError(name, _, _))
+            if name.as_str() == "org.freedesktop.UDisks2.Error.NotMounted" =>
+        {
+            Ok(())
+        }
+        Err(e) => Err(map_udisks_error(e, context)),
+    }
 }
 
 async fn resolve_block_path(conn: &Connection, device_id: &str) -> Result<OwnedObjectPath> {
@@ -339,6 +373,13 @@ fn map_udisks_error(err: zbus::Error, context: &str) -> Error {
         {
             return Error::DeviceBusy(context.to_string());
         }
+        // A locked card fails right at the open, as EROFS in the message.
+        if message
+            .as_deref()
+            .is_some_and(|m| m.contains("Read-only file system"))
+        {
+            return Error::WriteProtected;
+        }
         return Error::Io(std::io::Error::other(format!(
             "udisks2 error while {context}: {err}"
         )));
@@ -382,16 +423,6 @@ trait UDisks2Filesystem {
     fn unmount(&self, options: HashMap<&str, Value<'_>>) -> zbus::Result<()>;
 }
 
-#[zbus::proxy(
-    interface = "org.freedesktop.UDisks2.PartitionTable",
-    default_service = "org.freedesktop.UDisks2",
-    gen_blocking = false
-)]
-trait UDisks2PartitionTable {
-    #[zbus(property)]
-    fn partitions(&self) -> zbus::Result<Vec<OwnedObjectPath>>;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,6 +439,109 @@ mod tests {
             message.map(String::from),
             msg,
         )
+    }
+
+    #[test]
+    fn unmount_targets_include_only_filesystems_on_the_selected_disk() {
+        let disk = OwnedObjectPath::try_from("/disk").unwrap();
+        let part = OwnedObjectPath::try_from("/disk1").unwrap();
+        let other = OwnedObjectPath::try_from("/other").unwrap();
+        let filesystem =
+            zbus::names::OwnedInterfaceName::try_from("org.freedesktop.UDisks2.Filesystem")
+                .unwrap();
+        let table =
+            zbus::names::OwnedInterfaceName::try_from("org.freedesktop.UDisks2.PartitionTable")
+                .unwrap();
+        let mut objects = ManagedObjects::new();
+        assert!(unmount_targets(&objects, &disk).is_err());
+        objects.insert(disk.clone(), HashMap::new());
+        assert!(unmount_targets(&objects, &disk).unwrap().is_empty());
+        objects
+            .get_mut(&disk)
+            .unwrap()
+            .insert(filesystem.clone(), HashMap::new());
+        assert_eq!(
+            unmount_targets(&objects, &disk).unwrap(),
+            vec![disk.clone()]
+        );
+        objects.insert(other, HashMap::from([(filesystem.clone(), HashMap::new())]));
+        objects.get_mut(&disk).unwrap().insert(
+            table.clone(),
+            HashMap::from([(
+                "Partitions".into(),
+                zbus::zvariant::OwnedValue::try_from(Value::from(vec![part.clone()])).unwrap(),
+            )]),
+        );
+        assert!(unmount_targets(&objects, &disk).is_err());
+        objects.insert(part.clone(), HashMap::new());
+        assert_eq!(
+            unmount_targets(&objects, &disk).unwrap(),
+            vec![disk.clone()]
+        );
+        objects
+            .get_mut(&part)
+            .unwrap()
+            .insert(filesystem, HashMap::new());
+        assert_eq!(
+            unmount_targets(&objects, &disk).unwrap(),
+            vec![disk.clone(), part]
+        );
+        objects
+            .get_mut(&disk)
+            .unwrap()
+            .get_mut(&table)
+            .unwrap()
+            .clear();
+        assert!(unmount_targets(&objects, &disk).is_err());
+    }
+
+    #[test]
+    fn unmount_ignores_only_already_unmounted_filesystems() {
+        assert!(check_unmount_result(Ok(()), "unmounting").is_ok());
+        assert!(check_unmount_result(
+            Err(method_error(
+                "org.freedesktop.UDisks2.Error.NotMounted",
+                None
+            )),
+            "unmounting"
+        )
+        .is_ok());
+        for name in [
+            "org.freedesktop.DBus.Error.UnknownInterface",
+            "org.freedesktop.DBus.Error.UnknownMethod",
+            "org.freedesktop.UDisks2.Error.DeviceBusy",
+            "org.freedesktop.UDisks2.Error.Failed",
+            "org.freedesktop.UDisks2.Error.NotAuthorized",
+            "org.freedesktop.DBus.Error.UnknownObject",
+            "org.freedesktop.DBus.Error.ServiceUnknown",
+        ] {
+            assert!(
+                check_unmount_result(Err(method_error(name, None)), "unmounting").is_err(),
+                "{name}"
+            );
+        }
+        assert!(check_unmount_result(
+            Err(zbus::Error::Failure("disconnected".into())),
+            "unmounting"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn busy_unmount_reports_which_volume_failed() {
+        for (name, message) in [
+            ("org.freedesktop.UDisks2.Error.DeviceBusy", None),
+            (
+                "org.freedesktop.UDisks2.Error.Failed",
+                Some("Device or resource busy"),
+            ),
+        ] {
+            let result =
+                check_unmount_result(Err(method_error(name, message)), "unmounting /dev/sdb1");
+            assert!(
+                matches!(result, Err(Error::DeviceBusy(context)) if context.contains("/dev/sdb1"))
+            );
+        }
     }
 
     #[test]
@@ -441,6 +575,16 @@ mod tests {
         assert!(
             matches!(mapped, Error::PermissionDenied(msg) if msg == "Not authorized to open the device")
         );
+    }
+
+    #[test]
+    fn test_map_udisks_error_read_only_is_write_protected() {
+        let err = method_error(
+            "org.freedesktop.UDisks2.Error.Failed",
+            Some("Error opening device /dev/sdb: Read-only file system"),
+        );
+        let mapped = map_udisks_error(err, "opening the device");
+        assert!(matches!(mapped, Error::WriteProtected), "{mapped:?}");
     }
 
     #[test]

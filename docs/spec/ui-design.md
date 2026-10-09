@@ -340,6 +340,8 @@ The Open Home Foundation Toolbox (https://toolbox.openhomefoundation.org/) is ac
 
 ## Update Banner
 
+Deferred, not implemented. Installer updates are currently manual; the app does not check for updates or display an update banner.
+
 When a new version is available:
 
 ```

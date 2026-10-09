@@ -3,6 +3,12 @@ import "../../../src/views/welcome-view.js";
 import type { WelcomeView } from "../../../src/views/welcome-view.js";
 
 describe("welcome-view", () => {
+  it("welcomes the user with the supplied Casita artwork", async () => {
+    const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
+    expect(el.shadowRoot!.querySelector("casita-mascot")!.mood).to.equal(
+      "winking"
+    );
+  });
   it("renders the Home Assistant logo", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 

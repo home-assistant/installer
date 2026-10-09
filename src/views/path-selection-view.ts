@@ -1,4 +1,6 @@
+import { localize } from "../localization/localize.js";
 import { LitElement, html, css } from "lit";
+import { ViewAccessibility } from "../utils/view-accessibility.js";
 import { customElement } from "lit/decorators.js";
 
 import "@home-assistant/webawesome/dist/components/button/button.js";
@@ -14,6 +16,7 @@ export type InstallationPath =
 
 @customElement("path-selection-view")
 export class PathSelectionView extends LitElement {
+  protected readonly _accessibility = new ViewAccessibility(this);
   static styles = css`
     :host {
       display: flex;
@@ -76,40 +79,46 @@ export class PathSelectionView extends LitElement {
     return html`
       <div class="header">
         <wa-button appearance="plain" @click=${this._onBack}>
-          <span slot="start">←</span>
-          Back
+          <span slot="start">←</span> ${localize("common.back")}
         </wa-button>
       </div>
 
       <div class="content">
-        <h1>What would you like to install on?</h1>
-        <p class="subtitle">Select how you want to run Home Assistant</p>
+        <h1>
+          ${localize(
+            "views.path_selection_view.what_would_you_like_to_install_on"
+          )}
+        </h1>
+        <p class="subtitle">
+          ${localize(
+            "views.path_selection_view.select_how_you_want_to_run_home_assistant"
+          )}
+        </p>
 
         <div class="options-grid">
           <option-card
-            title="Home Assistant hardware"
-            description="Home Assistant Green, Yellow, or Blue by Nabu Casa"
-            icon="ha-hardware"
-            @click=${() => this._onSelectPath("ha-hardware")}
-          ></option-card>
-
-          <option-card
-            title="Raspberry Pi & other boards"
-            description="Single board computers like Raspberry Pi, ODROID, and more"
+            title=${localize("components.app_shell.raspberry_pi_other_boards")}
+            description=${localize(
+              "views.path_selection_view.single_board_computers_like_raspberry_pi_odroid_and_more"
+            )}
             icon="sbc"
             @click=${() => this._onSelectPath("sbc")}
           ></option-card>
 
           <option-card
-            title="Generic (mini) PC"
-            description="x86-64 or ARM64 computers like Beelink, Intel NUC, and more"
+            title=${localize("components.app_shell.generic_mini_pc")}
+            description=${localize(
+              "views.path_selection_view.x86_64_or_arm64_computers_like_beelink_intel_nuc_and_more"
+            )}
             icon="minipc"
             @click=${() => this._onSelectPath("minipc")}
           ></option-card>
 
           <option-card
-            title="Proxmox server"
-            description="Create a VM on your Proxmox virtualization server"
+            title=${localize("components.app_shell.proxmox_server")}
+            description=${localize(
+              "views.path_selection_view.create_a_vm_on_your_proxmox_virtualization_server"
+            )}
             icon="proxmox"
             @click=${() => this._onSelectPath("proxmox")}
           ></option-card>
@@ -117,8 +126,10 @@ export class PathSelectionView extends LitElement {
           ${this._renderVMOption()}
 
           <option-card
-            title="Others"
-            description="Other options like Docker can be found in our documentation"
+            title=${localize("views.path_selection_view.others")}
+            description=${localize(
+              "views.path_selection_view.other_options_like_docker_can_be_found_in_our_documentation"
+            )}
             icon="others"
             @click=${this._onOtherOptions}
           ></option-card>
@@ -134,8 +145,10 @@ export class PathSelectionView extends LitElement {
 
     return html`
       <option-card
-        title="Virtual machine"
-        description="Run Home Assistant in UTM on your Mac"
+        title=${localize("components.app_shell.virtual_machine")}
+        description=${localize(
+          "views.path_selection_view.run_home_assistant_in_utm_on_your_mac"
+        )}
         icon="vm"
         @click=${() => this._onSelectPath("vm")}
       ></option-card>

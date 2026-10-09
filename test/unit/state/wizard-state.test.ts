@@ -14,6 +14,25 @@ describe("wizard-state", () => {
     expect(state.selections).to.deep.equal({});
   });
 
+  it("changes the flow generation only for a new flow or reset", () => {
+    const initial = wizardState.flowGeneration;
+    wizardState.startFlow("vm");
+    const generation = wizardState.flowGeneration;
+    expect(generation).to.not.equal(initial);
+
+    wizardState.nextStep();
+    wizardState.previousStep();
+    wizardState.goToStep(3);
+    wizardState.setSelection("cpuCores", 4);
+    expect(wizardState.flowGeneration).to.equal(generation);
+
+    wizardState.startFlow("vm");
+    const nextGeneration = wizardState.flowGeneration;
+    expect(nextGeneration).to.not.equal(generation);
+    wizardState.reset();
+    expect(wizardState.flowGeneration).to.not.equal(nextGeneration);
+  });
+
   it("starts an SBC flow with correct steps", () => {
     wizardState.startFlow("sbc");
     const state = wizardState.getState();
@@ -157,5 +176,33 @@ describe("wizard-state", () => {
 
     wizardState.nextStep();
     expect(wizardState.currentStep?.id).to.equal("drive");
+  });
+
+  it("invalidates catalog readiness before notifying a step change", () => {
+    for (const move of [
+      () => wizardState.nextStep(),
+      () => wizardState.previousStep(),
+      () => wizardState.goToStep(2),
+    ]) {
+      wizardState.startFlow("sbc");
+      wizardState.goToStep(1);
+      wizardState.setSelection("device", "rpi5");
+      wizardState.setSelection("drive", "saved-drive");
+      wizardState.setSelection("deviceCatalogReady", true);
+      const unsubscribe = wizardState.subscribe((state) => {
+        expect(state.selections.deviceCatalogReady).to.equal(false);
+        expect(state.selections.device).to.equal("rpi5");
+        expect(state.selections.drive).to.equal("saved-drive");
+      });
+      move();
+      unsubscribe();
+    }
+  });
+
+  it("preserves catalog readiness when the current step is selected again", () => {
+    wizardState.startFlow("sbc");
+    wizardState.setSelection("deviceCatalogReady", true);
+    wizardState.goToStep(0);
+    expect(wizardState.getState().selections.deviceCatalogReady).to.equal(true);
   });
 });

@@ -13,7 +13,8 @@ utm = []
 mock = []
 
 [dependencies]
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tokio-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -21,12 +22,17 @@ reqwest = { workspace = true }
 futures-util = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+rustls = { workspace = true }
+rustls-platform-verifier = { workspace = true }
 xz2 = { workspace = true }
 directories = { workspace = true }
+fs2 = { workspace = true }
 urlencoding = { workspace = true }
+tempfile = { workspace = true }
 
 # macOS specific
 [target.'cfg(target_os = "macos")'.dependencies]
+libc = { workspace = true }
 plist = { workspace = true }
 security-framework = { workspace = true }
 rustix = { workspace = true }
@@ -36,9 +42,16 @@ rustix = { workspace = true }
 zbus = { workspace = true }
 libc = { workspace = true }
 
+# Windows specific
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true }
+
 [dev-dependencies]
+ts-rs = { workspace = true }
 plist = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["net"] }
 tempfile = { workspace = true }
 serial_test = { workspace = true }
 mockito = { workspace = true }
+rcgen = { workspace = true }
+tokio-rustls = { workspace = true }

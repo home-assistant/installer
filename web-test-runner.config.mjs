@@ -32,6 +32,7 @@ export default {
     fullA11ySnapshotPlugin(),
     esbuildPlugin({
       ts: true,
+      loaders: { ".json": "json" },
       // The plugin passes raw config to esbuild, which does not resolve
       // extends. Read the shared compiler settings directly.
       tsconfig: "./tsconfig.json",

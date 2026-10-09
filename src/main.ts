@@ -2,7 +2,15 @@
 // Main entry point
 
 import "@home-assistant/webawesome/dist/styles/themes/default.css";
-import "./components/app-shell.js";
+import { initializeLocalization } from "./localization/initialize.js";
+import { installErrorLogging } from "./utils/diagnostics.js";
+
+installErrorLogging();
+
+// Initialize before component modules capture labels; failure still loads the UI.
+void initializeLocalization()
+  .catch(() => undefined)
+  .then(() => import("./components/app-shell.js"));
 
 // Web Awesome's dark theme is gated on a `wa-dark` class rather than
 // prefers-color-scheme, so sync it with the OS color scheme ourselves. This

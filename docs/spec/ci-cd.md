@@ -271,19 +271,28 @@ jobs:
       - name: Build frontend
         run: npm run build
       
+      # notarytool reads the App Store Connect key from a file
+      - name: Write the notarization API key (macOS)
+        if: matrix.os == 'macos-latest'
+        env:
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          umask 077
+          printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$RUNNER_TEMP/AuthKey.p8"
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS signing
+          # macOS signing and notarization, see "Required Secrets" below
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
         with:
           tagName: v__VERSION__
           releaseName: 'Home Assistant Installer v__VERSION__'
@@ -443,17 +452,37 @@ No private keys to manage or rotate.
 
 ## Required Secrets
 
+Repository secrets:
+
 | Secret | Description |
 |--------|-------------|
 | `CODECOV_TOKEN` | Codecov upload token (from codecov.io) |
 | `TAURI_SIGNING_PRIVATE_KEY` | Key for signing Tauri updates |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for signing key |
-| `APPLE_CERTIFICATE` | Base64-encoded .p12 certificate |
-| `APPLE_CERTIFICATE_PASSWORD` | Certificate password |
-| `APPLE_SIGNING_IDENTITY` | e.g., "Developer ID Application: Open Home Foundation" |
-| `APPLE_ID` | Apple ID email for notarization |
-| `APPLE_PASSWORD` | App-specific password |
-| `APPLE_TEAM_ID` | Apple Developer Team ID |
+
+Secrets of the protected `release` environment, which only `main` may deploy
+to. The macOS build job of the test workflow binds to this environment on
+pushes to `main`, signs and notarizes the app and the DMG, and uploads the
+result. Pull request builds don't reference the environment and stay unsigned.
+
+| Secret | Description |
+|--------|-------------|
+| `APPLE_CERTIFICATE` | Base64-encoded .p12 export of the "Developer ID Application" certificate and its private key |
+| `APPLE_CERTIFICATE_PASSWORD` | Password chosen when exporting the .p12 |
+| `APPLE_SIGNING_IDENTITY` | Name of that certificate, e.g. `Developer ID Application: Open Home Foundation (TEAMID)`. Tauri refuses to sign if the imported certificate doesn't match it |
+| `APPLE_API_ISSUER` | App Store Connect API issuer ID (a UUID) |
+| `APPLE_API_KEY` | App Store Connect API key ID |
+| `APPLE_API_PRIVATE_KEY` | Contents of the `AuthKey_<key id>.p8` file |
+
+The App Store Connect API key only needs the Developer role; it is used for
+notarization alone. The job compiles with `tauri build --no-bundle` and only
+then runs `tauri bundle` with the `APPLE_*` variables, so no npm or cargo build
+script ever has the credentials in its environment. Tauri reads the variables
+itself: it imports the certificate into a temporary keychain, signs the app
+with the hardened runtime, notarizes and staples it, and signs the DMG. The
+workflow then notarizes and staples the DMG too, since Gatekeeper assesses the
+disk image when a download is opened, and verifies both with `codesign`,
+`stapler` and `spctl`.
 
 ---
 

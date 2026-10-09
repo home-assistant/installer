@@ -1,3 +1,4 @@
+import { localize } from "../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
@@ -30,6 +31,12 @@ export class InfoDialog extends LitElement {
 
     wa-dialog {
       --width: 30rem;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      wa-dialog::part(dialog) {
+        animation: none !important;
+      }
     }
 
     .dialog-title {
@@ -69,7 +76,7 @@ export class InfoDialog extends LitElement {
   message = "";
 
   @property({ type: String })
-  primaryLabel = "OK";
+  primaryLabel = localize("components.info_dialog.ok");
 
   @property({ type: String })
   secondaryLabel = "";

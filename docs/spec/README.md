@@ -33,7 +33,6 @@ This architecture enables future additions like a TUI installer for live USB env
 
 ## Quick Links
 
-- [Project Roadmap](../project.md) - Phased implementation plan
 - [Contributing Guide](./contributing.md#contributing-guide)
 
 ## Target Platforms
@@ -57,3 +56,14 @@ The installer itself runs on:
 - Linux VMs (KVM, VirtualBox)
 - Containers (Docker, Portainer)
 - NAS devices (Unraid, Synology)
+
+## Beta Error Reporting
+
+For the first beta, do not add automatic diagnostic transmission or a reporting SDK. Use voluntary issue reports, with the manual diagnostics workflow tracked separately in [#152](https://github.com/home-assistant/installer/issues/152). That workflow is still pending; this decision does not implement logging, redaction, or a report-sharing UI.
+
+After the first beta, review whether those reports leave actionable gaps in hardware and OS coverage before deciding on opt-in reporting in [#153](https://github.com/home-assistant/installer/issues/153). The post-beta evaluation and provider choice are still open. Before adding reporting:
+
+- Get OHF agreement on a destination: hosted or self-hosted Sentry, or an OHF endpoint.
+- Choose explicit consent per report or for recurring reporting, show exactly what would be sent, and allow consent to be withdrawn.
+- Define and test scrubbing of credentials, tickets, hostnames, IPs, usernames, drive serials, and personal file paths.
+- Document the destination, collected fields, retention, and withdrawal behavior in the app and README before any diagnostic transmission is enabled.

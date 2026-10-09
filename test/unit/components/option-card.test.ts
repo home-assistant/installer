@@ -27,7 +27,7 @@ describe("option-card", () => {
 
     const img = el.shadowRoot!.querySelector(".icon-container img");
     expect(img).to.exist;
-    expect(img!.getAttribute("src")).to.include("sbc-placeholder.svg");
+    expect(img!.getAttribute("src")).to.include("raspberry_pi_5.png");
     // Decorative: the title already names the button.
     expect(img!.getAttribute("alt")).to.equal("");
   });
@@ -43,14 +43,27 @@ describe("option-card", () => {
     expect(img!.getAttribute("alt")).to.equal("");
   });
 
-  it("renders placeholder when no icon or image provided", async () => {
+  it("renders a neutral category icon when no icon or image is provided", async () => {
     const el = await fixture<OptionCard>(html`
       <option-card title="No Icon"></option-card>
     `);
 
-    const placeholder = el.shadowRoot!.querySelector(".icon-placeholder");
-    expect(placeholder).to.exist;
+    expect(el.shadowRoot!.querySelector("ha-svg-icon")!.path).to.not.be.empty;
   });
+
+  for (const icon of ["minipc", "proxmox", "vm", "others"]) {
+    it(`renders a decorative category icon for ${icon}`, async () => {
+      const el = await fixture<OptionCard>(html`
+        <option-card title="Path" icon=${icon}></option-card>
+      `);
+      const graphic = el.shadowRoot!.querySelector("ha-svg-icon")!;
+      await graphic.updateComplete;
+      expect(graphic.path).to.not.be.empty;
+      expect(
+        graphic.shadowRoot!.querySelector("svg")!.getAttribute("aria-hidden")
+      ).to.equal("true");
+    });
+  }
 
   it("has the correct card structure", async () => {
     const el = await fixture<OptionCard>(html`

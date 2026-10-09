@@ -8,7 +8,7 @@ const nextButton = (page: Page) =>
   page.locator("wizard-shell").locator(".footer-right wa-button");
 
 async function openConfirmation(page: Page) {
-  await page.goto("/?mock=true");
+  await page.goto("/");
   await page.locator("welcome-view").locator("wa-button").click();
   await page
     .locator('option-card[title="Raspberry Pi & other boards"]')
@@ -44,6 +44,37 @@ async function swapSelectedDrive(page: Page) {
 }
 
 test.describe("SBC Flow - drive swapped after selection", () => {
+  for (const serial of ["REPLACEMENT-SERIAL", null]) {
+    test(`erase confirmation rejects an identical model with serial ${serial === null ? "missing" : "changed"}`, async ({
+      page,
+    }) => {
+      await openConfirmation(page);
+      await nextButton(page).click();
+      const dialog = page.locator("confirm-dialog");
+      await expect(dialog.locator(".detail-value.path")).toBeVisible();
+      await page.evaluate(async (serial) => {
+        const mockData = "/src/api/mock-data.ts";
+        const state = "/src/state/wizard-state.ts";
+        const { MOCK_BLOCK_DEVICES } = (await import(
+          mockData
+        )) as typeof import("../../src/api/mock-data.js");
+        const { wizardState } = (await import(
+          state
+        )) as typeof import("../../src/state/wizard-state.js");
+        const selected = MOCK_BLOCK_DEVICES.find(
+          (drive) => drive.id === wizardState.getState().selections.drive
+        )!;
+        if (!wizardState.getState().selections.driveSerial)
+          throw new Error("Fixture must select a drive with a known serial");
+        selected.serial = serial;
+      }, serial);
+      await dialog.locator('wa-button[variant="danger"]').click();
+      await expect(page.locator("drive-selection-view")).toBeVisible();
+      await expect(page.locator("progress-view")).not.toBeVisible();
+      await expect(nextButton(page)).toHaveJSProperty("disabled", true);
+    });
+  }
+
   test("Install sends the user back to pick the drive again", async ({
     page,
   }) => {

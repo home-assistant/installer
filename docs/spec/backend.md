@@ -118,6 +118,59 @@ pub async fn list_internal_devices() -> Result<Vec<BlockDevice>>;
 
 ### Image Download
 
+Installation requires a `sha256:` digest with exactly 64 hexadecimal digits
+from the selected asset in GitHub's release API response. The downloader hashes
+the compressed bytes while streaming them to a private temporary file and only
+publishes the file after a match. Missing, null, malformed, and unsupported
+digests stop installation before download; a mismatch stops before extraction,
+drive writing, or VM import. There is no fallback to an XZ checksum or a guessed
+download URL. Older releases without a GitHub digest cannot be installed.
+
+The same policy applies to raw images and UTM/Proxmox qcow2 images, selected from
+the version for their board in `stable.json`. Each installation downloads a fresh
+image into its private temporary directory; archives are not retained for reuse.
+Startup cleanup removes recognized legacy stable archives and abandoned owned
+temporary directories. GitHub metadata obtained over HTTPS is the trust source;
+this does not verify a publisher
+signature or protect against compromised GitHub release metadata.
+
+Metadata and image requests share a client with a 10-second connection timeout
+and a 30-second idle-read timeout. Downloads that keep making progress have no
+overall deadline. Compressed bytes must match the release asset's size and digest
+before atomic publication.
+
+Available space is checked for the compressed size before download. GitHub does
+not supply the extracted size, so after download the verified archive is decoded
+once without writing to measure and validate all XZ streams. Extraction starts
+only when the remaining space can hold that output alongside the archive. This
+requires an extra decoding pass; memory is limited to 256 MiB and output to
+64 GiB. The extracted file is also published atomically. Space checks cannot
+reserve capacity against other applications writing concurrently.
+
+Before opening an installation flow, the desktop app checks the stable version
+service with a 15-second request timeout. A failed check offers Back and Retry;
+HTTP and invalid-response errors are distinguished from connection failures.
+
+Successful GitHub release metadata is cached by version for the application
+session. Requests for the latest release still resolve the current version before
+consulting that cache. Rate-limit responses explain how long to wait using
+`Retry-After` and, when the primary quota is exhausted, `X-RateLimit-Reset`.
+Unrecognized retry timing falls back to at least one minute, following
+[GitHub's rate-limit guidance](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+
+A cached release can continue using its known asset download URL without a new
+GitHub API request. A rate limit without cached metadata stops the installation:
+the installer does not synthesize asset metadata or skip verification to guess a
+direct download URL. An alternative trusted metadata/digest source for that case
+remains deferred under #170; the required digest verification is already enforced.
+
+Normal errors and cancellation remove the unverified temporary file. Installation
+downloads stage that file inside an owned `TemporaryImage` directory. After a quit
+or crash, startup `prune_cached_images` removes abandoned, unlocked owned
+directories, including these nested files; live owners and uncertain UTM imports
+remain protected. Direct library callers remain responsible for their destination
+directory's lifecycle.
+
 ```rust
 // crates/hai-core/src/download.rs
 
@@ -144,6 +197,16 @@ pub async fn extract_image(
 ```
 
 ### Disk Flashing
+
+The desktop app accepts only one flash at a time, rejecting another request
+before fetching release information or downloading an image. An owned task keeps
+the guard until download, extraction, writing, verification, and cleanup finish,
+even if the IPC caller disconnects. Disconnecting does not cancel the flash;
+job cancellation and window-close protection are tracked separately in #143.
+
+The single-instance plugin restores and focuses the existing window on another
+launch. This is not an exclusive lock against other disk-writing applications.
+Windows device sharing and volume locking remain separate work in #132.
 
 ```rust
 // crates/hai-core/src/flash.rs
@@ -293,7 +356,10 @@ async fn flash_image(image_path: PathBuf, target_device: String, window: Window)
 
 // Proxmox
 #[tauri::command]
-async fn proxmox_connect(url: String, username: String, password: String) -> Result<ProxmoxSession, String>
+async fn proxmox_certificate_fingerprint(server_url: String) -> Result<Option<String>, String>
+
+#[tauri::command]
+async fn proxmox_connect(credentials: ProxmoxCredentials) -> Result<ProxmoxSession, String>
 
 #[tauri::command]
 async fn proxmox_list_nodes(session: ProxmoxSession) -> Result<Vec<Node>, String>
@@ -310,10 +376,6 @@ async fn utm_is_installed() -> bool
 
 #[tauri::command]
 async fn utm_create_vm(config: VmConfig, window: Window) -> Result<(), String>
-
-// Updates
-#[tauri::command]
-async fn check_for_updates(include_beta: bool) -> Result<Option<UpdateInfo>, String>
 
 // Companion apps (macOS)
 #[tauri::command]
@@ -417,9 +479,11 @@ On launch:
 
 ## App Updates
 
-**No auto-update in v1.** Instead, version check with download prompt.
+Installer updates are manual: download and install a newer release for your platform from the [Releases](https://github.com/home-assistant/installer/releases) page. The app does not check for updates or display an update prompt.
 
-### Version Check Implementation
+### Deferred Version Check Proposal
+
+The following proposal is not implemented. There is no registered `check_for_updates` command or `UpdateInfo` type.
 
 ```rust
 #[derive(Deserialize)]

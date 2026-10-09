@@ -226,6 +226,31 @@ Then continues to drive selection and flashing.
 
 ### Step 1: Connect
 
+Before authentication, the installer looks at the server's certificate without
+sending an HTTP request. A certificate the operating system trusts is validated
+the normal way, and the login continues without a question.
+
+Any other certificate opens a "Trust this Proxmox server?" dialog. Most Proxmox
+servers use the certificate Proxmox created during installation, and people
+reach them by IP address, a local name, or a VPN address, so this is the common
+case. The dialog says so, points out that the browser shows the same warning for
+the Proxmox web interface, and shows the SHA-256 fingerprint for anyone who
+wants to compare it with System > Certificates. Credentials are only sent after
+"Trust and connect". Cancel, Escape, or leaving the view sends none.
+
+The trusted certificate is pinned for the login session: every later request,
+including uploads and VM API calls, must present exactly that certificate, and
+the TLS handshake signature is still verified. A changed certificate is refused
+and sends the user back to reconnect, where the new certificate gets the same
+question. The answer is remembered for the same server address and certificate,
+so a second attempt (an authenticator code, a mistyped password) doesn't ask
+again. Nothing is saved to disk.
+
+Server URLs must be bare HTTPS origins without embedded credentials, paths,
+queries, or fragments. API redirects are not followed. Proxmox connections are
+direct and do not use system proxies, so a proxy's certificate cannot be
+mistaken for the Proxmox certificate.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │

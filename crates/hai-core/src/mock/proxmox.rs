@@ -4,19 +4,26 @@
 use std::time::Duration;
 
 use crate::types::{
-    FlashProgress, FlashStage, ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage,
-    ProxmoxVmConfig, ProxmoxVmResult, VmStatusInfo,
+    FlashProgress, FlashStage, ProxmoxBridge, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
+    ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, VmStatusInfo,
 };
 use crate::{ProgressCallback, ProxmoxBackend, Result};
 
 use super::BackendMock;
 
 impl ProxmoxBackend for BackendMock {
+    async fn certificate_fingerprint(&self, _server_url: &str) -> Result<Option<String>> {
+        #[cfg(feature = "proxmox")]
+        crate::proxmox::tls::server_url(_server_url)?;
+        Ok(None)
+    }
+
     async fn authenticate(&self, credentials: &ProxmoxCredentials) -> Result<ProxmoxSession> {
         Ok(ProxmoxSession {
             server_url: credentials.server_url.clone(),
             ticket: "mock-ticket".to_string(),
             csrf_token: "mock-csrf-token".to_string(),
+            certificate_sha256: credentials.certificate_sha256.clone(),
         })
     }
 
@@ -66,6 +73,18 @@ impl ProxmoxBackend for BackendMock {
                 active: true,
             },
         ])
+    }
+
+    async fn list_bridges(
+        &self,
+        _session: &ProxmoxSession,
+        _node: &str,
+    ) -> Result<Vec<ProxmoxBridge>> {
+        Ok(vec![ProxmoxBridge {
+            name: "vmbr0".to_string(),
+            network_type: "bridge".to_string(),
+            comments: None,
+        }])
     }
 
     async fn get_next_vm_id(&self, _session: &ProxmoxSession) -> Result<u32> {

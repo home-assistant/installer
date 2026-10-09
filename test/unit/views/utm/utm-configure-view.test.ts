@@ -5,6 +5,9 @@ import {
   html,
   waitUntil,
 } from "@open-wc/testing";
+import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
+import type WaSlider from "@home-assistant/webawesome/dist/components/slider/slider.js";
+import { findByRole, fullA11ySnapshot } from "../../helpers/a11y.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/utm/utm-configure-view.js";
 import type { UtmConfigureView } from "../../../../src/views/utm/utm-configure-view.js";
@@ -36,6 +39,44 @@ describe("utm-configure-view", () => {
   afterEach(() => {
     wizardState.reset();
     restoreTauriIpc();
+  });
+
+  it("exposes named controls and announces actual slider sizes", async () => {
+    const el = await mount();
+    const sliders = [...el.shadowRoot!.querySelectorAll("wa-slider")];
+    await Promise.all(sliders.map((slider) => slider.updateComplete));
+    const snapshot = await fullA11ySnapshot();
+    expect(findByRole(snapshot, "textbox").map((node) => node.name)).to.include(
+      "Display name"
+    );
+    expect(
+      findByRole(snapshot, "slider").map((node) => node.name)
+    ).to.deep.equal(["CPU cores", "Memory", "Disk size"]);
+    expect(
+      sliders.map((slider) =>
+        slider
+          .shadowRoot!.querySelector('[role="slider"]')!
+          .getAttribute("aria-valuetext")
+      )
+    ).to.deep.equal(["4 cores", "4 GB", "32 GB"]);
+  });
+
+  it("keeps an unavailable memory range named and announces the minimum size", async () => {
+    mockTauriIpc((cmd) => {
+      if (cmd === "get_system_info") return { cpu_cores: 2, memory_mb: 2048 };
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+    const el = await mount();
+    const slider = el.shadowRoot!.querySelectorAll("wa-slider")[1];
+    await slider.updateComplete;
+    expect(slider.disabled).to.equal(true);
+    expect(slider.min).to.equal(0);
+    expect(slider.max).to.equal(0);
+    expect(
+      slider
+        .shadowRoot!.querySelector('[role="slider"]')!
+        .getAttribute("aria-valuetext")
+    ).to.equal("2 GB");
   });
 
   it("saves the defaults on a first visit", async () => {
@@ -75,7 +116,7 @@ describe("utm-configure-view", () => {
 
     const el = await mount();
 
-    const input = el.shadowRoot!.querySelector<HTMLInputElement>(".name-input");
+    const input = el.shadowRoot!.querySelector<WaInput>("wa-input");
     expect(input!.value).to.equal("My Home");
   });
 
@@ -138,11 +179,9 @@ describe("utm-configure-view", () => {
     await settle();
     await el.updateComplete;
 
-    const slider = el.shadowRoot!.querySelector(
-      'input[type="range"]'
-    ) as HTMLInputElement;
+    const slider = el.shadowRoot!.querySelector("wa-slider") as WaSlider;
     expect(wizardState.getState().selections.cpuCores).to.equal(10);
     expect(el.shadowRoot!.textContent).to.contain("10 cores");
-    expect(slider.value).to.equal("10");
+    expect(slider.value).to.equal(10);
   });
 });

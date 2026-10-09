@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 test.describe("Proxmox Installation Flow", () => {
   test.beforeEach(async ({ page }) => {
     // Use mock mode to avoid actual Proxmox connections
-    await page.goto("/?mock=true");
+    await page.goto("/");
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     // Select Proxmox Server option
@@ -36,7 +36,12 @@ test.describe("Proxmox Installation Flow", () => {
     const connectView = page.locator("proxmox-connect-view");
 
     // Check heading
-    await expect(connectView.locator("h2")).toContainText("Connect to Proxmox");
+    await expect(
+      connectView.getByRole("heading", {
+        name: "Connect to Proxmox VE",
+        exact: true,
+      })
+    ).toBeVisible();
 
     // Check form fields
     await expect(connectView.locator("#server-url")).toBeVisible();
@@ -175,7 +180,9 @@ test.describe("Proxmox Installation Flow", () => {
     await navigateToProxmoxStep2(page);
 
     const configView = page.locator("proxmox-configure-view");
-    const nameInput = configView.locator(".name-input").first();
+    const nameInput = configView
+      .getByRole("textbox", { name: "Display name" })
+      .first();
 
     await nameInput.clear();
     await nameInput.fill("my-home-assistant");
@@ -234,7 +241,9 @@ test.describe("Proxmox Installation Flow", () => {
     await navigateToProxmoxStep2(page);
 
     const configView = page.locator("proxmox-configure-view");
-    const nameInput = configView.locator(".name-input").first();
+    const nameInput = configView
+      .getByRole("textbox", { name: "Display name" })
+      .first();
     const coresValue = configView.locator(".setting-value").first();
 
     const defaultCores = await coresValue.textContent();
@@ -243,7 +252,10 @@ test.describe("Proxmox Installation Flow", () => {
     await nameInput.clear();
     await nameInput.fill("my-home-assistant");
 
-    const coresSlider = configView.locator('input[type="range"]').first();
+    const coresSlider = configView.getByRole("slider", {
+      name: "CPU cores",
+      exact: true,
+    });
     await coresSlider.focus();
     await coresSlider.press("ArrowRight");
 
@@ -265,9 +277,9 @@ test.describe("Proxmox Installation Flow", () => {
     // not silently reset to the defaults
     await page.locator("wizard-shell").locator(".header wa-button").click();
     await expect(configView).toBeVisible();
-    await expect(configView.locator(".name-input").first()).toHaveValue(
-      "my-home-assistant"
-    );
+    await expect(
+      configView.getByRole("textbox", { name: "Display name" }).first()
+    ).toHaveValue("my-home-assistant");
     await expect(coresValue).toHaveText(chosenCores!);
 
     // And forward again, so what gets installed is what was picked
@@ -408,7 +420,7 @@ test.describe("Proxmox Installation Flow", () => {
     await navigateToProxmoxStep5(page);
 
     const successView = page.locator("proxmox-success-view");
-    await expect(successView.locator(".casita-mascot")).toBeVisible();
+    await expect(successView.locator("casita-mascot")).toBeVisible();
   });
 
   test("step 5: shows VM access information", async ({ page }) => {

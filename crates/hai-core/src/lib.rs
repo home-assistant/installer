@@ -46,6 +46,9 @@ use std::path::{Path, PathBuf};
 
 /// Release metadata and image download.
 pub trait ReleaseSource {
+    /// Check that the Home Assistant version service can be reached.
+    async fn check_connection(&self) -> Result<()>;
+
     /// Fetch the device manifest (list of supported boards).
     async fn get_device_manifest(&self) -> Result<DeviceManifest>;
 
@@ -55,10 +58,10 @@ pub trait ReleaseSource {
     /// Fetch the release stable.json currently lists for `board`.
     async fn get_latest_haos_release_for_board(&self, board: &str) -> Result<HaosRelease>;
 
-    /// Download an image to `dest_path`, reporting progress.
+    /// Download an image to `dest_path`, verifying its trusted compressed-asset digest.
     async fn download_image<P: ProgressCallback>(
         &self,
-        url: &str,
+        image: &HaosImage,
         dest_path: &Path,
         progress_callback: &P,
     ) -> Result<()>;
@@ -71,8 +74,16 @@ pub trait ReleaseSource {
         progress_callback: &P,
     ) -> Result<()>;
 
-    /// Check whether a newer installer release is available.
-    async fn check_for_updates(&self) -> Result<UpdateInfo>;
+    /// Extract into an owned temporary image. Background workers must retain a
+    /// clone until they stop using the directory, even if the caller is cancelled.
+    async fn extract_temporary_image<P: ProgressCallback>(
+        &self,
+        image: &download::TemporaryImage,
+        progress_callback: &P,
+    ) -> Result<()> {
+        self.extract_xz(&image.archive_path(), &image.path(), progress_callback)
+            .await
+    }
 
     /// Directory where downloaded images are cached.
     fn cache_dir(&self) -> Result<PathBuf>;
@@ -80,21 +91,30 @@ pub trait ReleaseSource {
 
 /// Block-device enumeration and raw image writing.
 ///
-/// `list_devices` returns every block device the platform reports, internal
-/// disks included, and `write_image` writes to whatever device id it is given.
-/// Neither checks that the target is safe to overwrite, that is the caller's
-/// responsibility.
+/// On Linux, enumeration excludes read-only disks and disks backing system
+/// mounts, active swap, or active storage. The writer repeats these checks before
+/// unmounting and opening the device. Callers must choose an eligible target
+/// and capture its identity; real writers re-check that identity, including a
+/// known hardware serial, before writing.
 pub trait DeviceBackend {
-    /// List all block devices on the system.
+    /// Check process privileges before preparing an image, without opening a drive.
+    /// Defaults to success for backends that authorize access during `write_image`.
+    fn check_write_privileges(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// List block devices, subject to platform-specific filtering.
     async fn list_devices(&self) -> Result<Vec<BlockDevice>>;
 
     /// Write an image to the device with this id, reporting progress.
     ///
-    /// Performs no identity or removability check of its own.
+    /// Re-checks the expected identity. Platform safety checks do not replace
+    /// caller validation of removability.
     async fn write_image<P: ProgressCallback>(
         &self,
         image_path: &Path,
         device_id: &str,
+        expected: &ExpectedDevice,
         verify: bool,
         progress_callback: &P,
     ) -> Result<()>;
@@ -102,11 +122,27 @@ pub trait DeviceBackend {
 
 /// Proxmox VE provisioning.
 pub trait ProxmoxBackend {
+    /// Inspect the certificate without sending credentials. A returned fingerprint
+    /// requires explicit user confirmation; None indicates ordinary platform trust.
+    /// Backends without certificate inspection fail closed before authentication.
+    async fn certificate_fingerprint(&self, _server_url: &str) -> Result<Option<String>> {
+        Err(Error::ProxmoxApi(
+            "Certificate inspection is not supported by this backend".to_string(),
+        ))
+    }
+
     /// Authenticate and verify the server meets the minimum version.
     async fn authenticate(&self, credentials: &ProxmoxCredentials) -> Result<ProxmoxSession>;
 
     /// List cluster nodes.
     async fn list_nodes(&self, session: &ProxmoxSession) -> Result<Vec<ProxmoxNode>>;
+
+    /// List the node's bridges, including eligible SDN VNets.
+    async fn list_bridges(
+        &self,
+        session: &ProxmoxSession,
+        node: &str,
+    ) -> Result<Vec<ProxmoxBridge>>;
 
     /// List storage available on a node.
     async fn list_storage(
@@ -118,13 +154,19 @@ pub trait ProxmoxBackend {
     /// Get the next free VM id.
     async fn get_next_vm_id(&self, session: &ProxmoxSession) -> Result<u32>;
 
-    /// Get the status of a VM
+    /// Get a VM's run status and, while it runs, its IP address.
+    /// Backends without status queries report an error, so the install
+    /// never treats a VM it cannot see as ready.
     async fn vm_status(
         &self,
-        session: &ProxmoxSession,
-        node: &str,
-        vm_id: u32,
-    ) -> Result<VmStatusInfo>;
+        _session: &ProxmoxSession,
+        _node: &str,
+        _vm_id: u32,
+    ) -> Result<VmStatusInfo> {
+        Err(Error::ProxmoxApi(
+            "VM status is not supported by this backend".to_string(),
+        ))
+    }
 
     /// Create and start a Home Assistant VM.
     async fn create_vm<P: ProgressCallback>(

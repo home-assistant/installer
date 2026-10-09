@@ -2,3 +2,5 @@ dist/
 node_modules/
 target/
 *.lock
+# Deterministic ts-rs output, verified by Rust drift tests.
+src/api/types.ts

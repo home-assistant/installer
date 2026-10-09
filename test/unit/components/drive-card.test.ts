@@ -22,7 +22,7 @@ describe("drive-card", () => {
 
     const size = el.shadowRoot!.querySelector(".size");
     expect(size).to.exist;
-    expect(size!.textContent).to.equal("30 GB");
+    expect(size!.textContent).to.equal("32 GB");
   });
 
   it("formats large sizes in TB", async () => {
@@ -31,16 +31,16 @@ describe("drive-card", () => {
     `);
 
     const size = el.shadowRoot!.querySelector(".size");
-    expect(size!.textContent).to.equal("1.8 TB");
+    expect(size!.textContent).to.equal("2 TB");
   });
 
-  it("displays 0 GB for zero size", async () => {
+  it("displays 0 B for zero size", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test" driveSize="0"></drive-card>
     `);
 
     const size = el.shadowRoot!.querySelector(".size");
-    expect(size!.textContent).to.equal("0 GB");
+    expect(size!.textContent).to.equal("0 B");
   });
 
   it("shows the selected indicator when checked", async () => {

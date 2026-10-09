@@ -74,6 +74,12 @@ export interface PollOptions {
   signal: AbortSignal;
   /** Message for the `PollTimeoutError` thrown when the deadline passes. */
   timeoutMessage: string;
+  /**
+   * Errors from `check` for which this returns true end the poll right away,
+   * rethrown as is. For failures that asking again cannot fix, like an
+   * expired session, which would otherwise surface only as a timeout.
+   */
+  stopOn?: (error: unknown) => boolean;
 }
 
 /**
@@ -123,15 +129,16 @@ function raceAttempt<T>(
  * is neither `null` nor `undefined`, and return that value.
  *
  * Errors thrown by `check` mean "not ready yet" and are retried - what is being
- * polled for is usually unreachable when polling starts. Only cancellation and
- * the timeout end the loop early, and both throw, so a caller cannot mistake
- * either one for success. Both also apply while a `check` is still pending: a
- * check that hangs, or that only succeeds after the deadline, still ends in a
+ * polled for is usually unreachable when polling starts. Only cancellation,
+ * the timeout, and errors matched by `stopOn` end the loop early, and all of
+ * them throw, so a caller cannot mistake any of them for success. Cancellation
+ * and the timeout also apply while a `check` is still pending: a check that
+ * hangs, or that only succeeds after the deadline, still ends in a
  * `PollTimeoutError`.
  */
 export async function pollUntil<T>(
   check: () => Promise<T | null | undefined>,
-  { interval, timeout, signal, timeoutMessage }: PollOptions
+  { interval, timeout, signal, timeoutMessage, stopOn }: PollOptions
 ): Promise<T> {
   throwIfCancelled(signal);
 
@@ -156,7 +163,11 @@ export async function pollUntil<T>(
         return result;
       }
     } catch (error) {
-      if (isCancelled(error) || error instanceof PollTimeoutError) {
+      if (
+        isCancelled(error) ||
+        error instanceof PollTimeoutError ||
+        stopOn?.(error)
+      ) {
         throw error;
       }
       // Anything else is "not ready yet" - keep polling until the deadline.

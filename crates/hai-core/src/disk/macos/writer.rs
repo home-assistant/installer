@@ -71,10 +71,12 @@ enum Handshake {
 pub async fn write_image<P: ProgressCallback>(
     image_path: &Path,
     device_id: &str,
+    expected: &ExpectedDevice,
     verify: bool,
     progress_callback: &P,
 ) -> Result<()> {
     super::device::validate_flash_target(device_id)?;
+    check_identity(&super::device::list_devices_sync()?, device_id, expected)?;
 
     // Extract disk identifier from device path
     let disk_id = device_id.strip_prefix("/dev/").unwrap_or(device_id);
@@ -103,12 +105,14 @@ pub async fn write_image<P: ProgressCallback>(
     let image_path_clone = image_path.to_path_buf();
     let raw_device_clone = raw_device.clone();
     let disk_id_clone = disk_id.to_string();
+    let expected = expected.clone();
 
     let write_handle = tokio::task::spawn_blocking(move || {
         write_and_verify(
             &image_path_clone,
             &raw_device_clone,
             &disk_id_clone,
+            &expected,
             image_size,
             verify,
             progress_tx,
@@ -131,6 +135,7 @@ fn write_and_verify(
     image_path: &Path,
     device_path: &str,
     disk_id: &str,
+    expected: &ExpectedDevice,
     total_size: u64,
     verify: bool,
     progress_tx: mpsc::Sender<FlashProgress>,
@@ -147,6 +152,21 @@ fn write_and_verify(
     // after this point.
     let auth = request_authorization(device_path)?;
     let mut device = open_device_with_authopen(&auth, device_path)?;
+    // IOKit exposes the serial through the registry, not this raw descriptor.
+    // Re-enumerate after authorization; rdev only checks the current node.
+    check_identity(
+        &super::device::list_devices_sync()?,
+        &format!("/dev/{disk_id}"),
+        expected,
+    )?;
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+    let opened = device.metadata()?;
+    // Unplugged between the checks: report the disconnect, not a missing path
+    let current =
+        std::fs::metadata(device_path).map_err(|e| map_device_io_error(e, device_path))?;
+    if !opened.file_type().is_char_device() || opened.rdev() != current.rdev() {
+        return Err(Error::DriveDisconnected);
+    }
 
     let source_checksum = write_to_device(
         &mut device,
@@ -376,6 +396,7 @@ fn write_to_device(
                 Error::ImageTooLarge {
                     written: device_size.map_or(bytes_written, |size| size.min(total_size)),
                     image_size: total_size,
+                    drive_size: device_size,
                 }
             } else {
                 map_device_io_error(e, device_path)
@@ -566,7 +587,14 @@ mod tests {
         // Rejected by the safety gate before any unmount or authorization.
         let device_id = "/dev/nonexistent_disk999";
 
-        let result = write_image(&image_path, device_id, false, &crate::NoOpProgress).await;
+        let result = write_image(
+            &image_path,
+            device_id,
+            &ExpectedDevice::default(),
+            false,
+            &crate::NoOpProgress,
+        )
+        .await;
         assert!(matches!(result, Err(Error::PermissionDenied(_))));
     }
 
@@ -1071,6 +1099,7 @@ mod tests {
             Err(Error::ImageTooLarge {
                 written,
                 image_size,
+                ..
             }) => {
                 assert_eq!(written, RamDisk::SIZE);
                 assert_eq!(image_size, image_bytes);

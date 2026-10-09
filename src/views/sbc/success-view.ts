@@ -1,199 +1,34 @@
-import { LitElement, html, css, svg } from "lit";
+import { localize, localizeContent } from "../../localization/localize.js";
+import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { openExternalLink } from "../../utils/external-url.js";
+
+import "../../components/install-success.js";
+
+const INSTALLATION_GUIDES: Record<string, string> = {
+  "rpi3-64": "https://www.home-assistant.io/installation/raspberrypi/",
+  "rpi4-64": "https://www.home-assistant.io/installation/raspberrypi/",
+  "rpi5-64": "https://www.home-assistant.io/installation/raspberrypi/",
+  "odroid-c2": "https://www.home-assistant.io/installation/odroid/",
+  "odroid-c4": "https://www.home-assistant.io/installation/odroid/",
+  "odroid-m1": "https://www.home-assistant.io/installation/odroid/",
+  "odroid-n2":
+    "https://www.home-assistant.io/installation/odroid/#flashing-an-odroid-n2",
+  "odroid-m1s":
+    "https://www.home-assistant.io/installation/odroid/#flashing-an-odroid-m1s",
+  "generic-x86-64":
+    "https://www.home-assistant.io/installation/generic-x86-64/",
+  "generic-aarch64":
+    "https://developers.home-assistant.io/docs/operating-system/boards/generic-aarch64/",
+};
 
 @customElement("success-view")
 export class SuccessView extends LitElement {
   static styles = css`
     :host {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      display: block;
       height: 100%;
-      text-align: center;
-    }
-
-    .mascot-container {
-      width: 140px;
-      height: 140px;
-      margin-bottom: 1.5rem;
-    }
-
-    .casita-mascot {
-      width: 100%;
-      height: 100%;
-    }
-
-    h2 {
-      font-size: 2rem;
-      font-weight: 500;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 0.5rem 0;
-    }
-
-    .subtitle {
-      font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 2rem 0;
-    }
-
-    .next-steps {
-      width: 100%;
-      max-width: 500px;
-      text-align: left;
-      margin-bottom: 2rem;
-    }
-
-    .next-steps-title {
-      font-size: 0.875rem;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 1rem 0;
-    }
-
-    .steps-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-      margin: 0;
-      padding: 0;
-      list-style: none;
-    }
-
-    .step-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-    }
-
-    .step-number {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      background-color: var(--ha-primary-color, #03a9f4);
-      color: white;
-      font-size: 0.875rem;
-      font-weight: 500;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-
-    .step-text {
-      font-size: 1rem;
-      color: var(--ha-text-color, #212121);
-      line-height: 1.5;
-      padding-top: 2px;
-    }
-
-    .step-text a {
-      color: var(--ha-primary-color, #03a9f4);
-      text-decoration: none;
-      font-weight: 500;
-    }
-
-    .step-text a:hover {
-      text-decoration: underline;
-    }
-
-    .companion-section {
-      width: 100%;
-      max-width: 500px;
-      padding: 1.5rem;
-      background-color: var(--ha-card-background, #ffffff);
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-      border-radius: 12px;
-      margin-bottom: 2rem;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .companion-section {
-        background-color: var(--ha-card-background, #1e1e1e);
-        border-color: var(--ha-border-color, #333333);
-      }
-    }
-
-    .companion-title {
-      font-size: 1rem;
-      font-weight: 500;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 1rem 0;
-    }
-
-    .app-links {
-      display: flex;
-      justify-content: center;
-      gap: 1rem;
-      flex-wrap: wrap;
-    }
-
-    .app-link {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.625rem 1rem;
-      background-color: var(--ha-background-color, #f5f5f5);
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-      border-radius: 8px;
-      color: var(--ha-text-color, #212121);
-      text-decoration: none;
-      font-size: 0.875rem;
-      font-weight: 500;
-      transition: all 0.2s ease;
-    }
-
-    .app-link:hover {
-      background-color: var(--ha-primary-color, #03a9f4);
-      border-color: var(--ha-primary-color, #03a9f4);
-      color: white;
-    }
-
-    .app-link:hover svg {
-      fill: white;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .app-link {
-        background-color: var(--ha-background-color, #2d2d2d);
-        border-color: var(--ha-border-color, #444444);
-      }
-    }
-
-    .app-link svg {
-      width: 20px;
-      height: 20px;
-      fill: var(--ha-text-color, #212121);
-      transition: fill 0.2s ease;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .app-link svg {
-        fill: var(--ha-text-color, #e0e0e0);
-      }
-    }
-
-    /* Confetti animation */
-    @keyframes confetti-fall {
-      0% {
-        transform: translateY(-10px) rotate(0deg);
-        opacity: 1;
-      }
-      100% {
-        transform: translateY(20px) rotate(360deg);
-        opacity: 0;
-      }
-    }
-
-    .confetti {
-      position: absolute;
-      width: 8px;
-      height: 8px;
-      border-radius: 2px;
-      animation: confetti-fall 2s ease-out forwards;
     }
   `;
 
@@ -215,122 +50,98 @@ export class SuccessView extends LitElement {
   }
 
   render() {
-    const deviceName =
-      (this._wizardState.selections.deviceName as string) || "your device";
+    const deviceName = this._wizardState.selections.deviceName as
+      | string
+      | undefined;
+    const board = this._wizardState.selections.deviceConfig?.board ?? "";
+    const isMiniPc = this._wizardState.currentFlow === "minipc";
+    const supportsDirectUsb = board === "odroid-n2" || board === "odroid-m1s";
+    const guide = Object.prototype.hasOwnProperty.call(
+      INSTALLATION_GUIDES,
+      board
+    )
+      ? INSTALLATION_GUIDES[board]
+      : "https://www.home-assistant.io/installation/";
 
     return html`
-      <div class="mascot-container">${this._renderCasitaHappy()}</div>
-
-      <h2>You're all set!</h2>
-      <p class="subtitle">
-        Home Assistant has been installed on your ${deviceName}
-      </p>
-
-      <div class="next-steps">
-        <p class="next-steps-title">Next steps</p>
-        <ol class="steps-list">
-          <li class="step-item">
-            <span class="step-number">1</span>
-            <span class="step-text"
-              >Remove the storage device from your computer</span
-            >
-          </li>
-          <li class="step-item">
-            <span class="step-number">2</span>
-            <span class="step-text"
-              >Insert it into ${deviceName} and power it on</span
-            >
-          </li>
-          <li class="step-item">
-            <span class="step-number">3</span>
-            <span class="step-text"
-              >Wait a few minutes for the initial setup to complete</span
-            >
-          </li>
-          <li class="step-item">
-            <span class="step-number">4</span>
-            <span class="step-text"
-              >Open
-              <a
-                href="http://homeassistant.local"
+      <install-success
+        .subtitle=${localize(
+          "views.sbc.success_view.home_assistant_os_has_been_written_to_your_storage_device"
+        )}
+        .notice=${localize(
+          "views.sbc.success_view.do_not_format_or_initialize_the_written_drive"
+        )}
+        .steps=${[
+          localize(
+            "views.sbc.success_view.eject_the_drive_before_disconnecting"
+          ),
+          isMiniPc
+            ? localize(
+                "views.sbc.success_view.install_the_drive_in_your_mini_pc"
+              )
+            : supportsDirectUsb
+              ? html`${deviceName
+                  ? localize(
+                      "views.sbc.success_view.insert_the_media_or_disconnect_usb",
+                      { value0: deviceName }
+                    )
+                  : localize(
+                      "views.sbc.success_view.insert_the_media_or_disconnect_usb_unknown_device"
+                    )}
+                ${board === "odroid-m1s"
+                  ? localize(
+                      "views.sbc.success_view.remove_the_emmc2ums_sd_card"
+                    )
+                  : localize(
+                      "views.sbc.success_view.set_the_boot_mode_switch_back_to_mmc"
+                    )}`
+              : deviceName
+                ? localize(
+                    "views.sbc.success_view.insert_the_written_storage",
+                    {
+                      value0: deviceName,
+                    }
+                  )
+                : localize(
+                    "views.sbc.success_view.insert_the_written_storage_unknown_device"
+                  ),
+          localize("views.sbc.success_view.connect_ethernet_and_power"),
+          html`${localizeContent(
+            "views.sbc.success_view.open_value_in_your_browser_or_find_the_ip_address",
+            {
+              value0: html`<a
+                href="http://homeassistant.local:8123"
                 target="_blank"
                 rel="noopener noreferrer"
                 @click=${(event: Event) =>
-                  openExternalLink(event, "http://homeassistant.local")}
-                >homeassistant.local</a
-              >
-              in your browser</span
-            >
-          </li>
-        </ol>
-      </div>
-
-      <div class="companion-section">
-        <p class="companion-title">Get the Home Assistant Companion App</p>
-        <div class="app-links">
-          <a
-            class="app-link"
-            href="https://apps.apple.com/app/home-assistant/id1099568401"
-            target="_blank"
-            rel="noopener noreferrer"
-            @click=${(event: Event) =>
-              openExternalLink(
-                event,
-                "https://apps.apple.com/app/home-assistant/id1099568401"
-              )}
-          >
-            ${this._renderAppleIcon()}
-            <span>App Store</span>
-          </a>
-          <a
-            class="app-link"
-            href="https://play.google.com/store/apps/details?id=io.homeassistant.companion.android"
-            target="_blank"
-            rel="noopener noreferrer"
-            @click=${(event: Event) =>
-              openExternalLink(
-                event,
-                "https://play.google.com/store/apps/details?id=io.homeassistant.companion.android"
-              )}
-          >
-            ${this._renderGooglePlayIcon()}
-            <span>Google Play</span>
-          </a>
-        </div>
-      </div>
-    `;
-  }
-
-  private _renderCasitaHappy() {
-    return svg`
-      <svg class="casita-mascot" viewBox="0 0 120 116.88" xmlns="http://www.w3.org/2000/svg">
-        <path fill="#18bcf2" d="M120,109.38c0,4.12-3.38,7.5-7.5,7.5H7.5c-4.12,0-7.5-3.38-7.5-7.5v-45c0-4.12,2.39-9.89,5.3-12.8L54.7,2.19c2.92-2.92,7.69-2.92,10.61,0l49.39,49.39c2.92,2.92,5.3,8.68,5.3,12.8v45Z"/>
-        <!-- Big smile -->
-        <path fill="#f2f4f9" d="M80,80.88c0,11.05-8.95,20-20,20s-20-8.95-20-20h40Z"/>
-        <!-- Happy eyes with blink -->
-        <ellipse fill="#f2f4f9" cx="33" cy="65.88" rx="8" ry="8">
-          <animate attributeName="ry" values="8;1;8" dur="0.15s" begin="1s;happyBlink1.end+4s" id="happyBlink1"/>
-        </ellipse>
-        <ellipse fill="#f2f4f9" cx="87" cy="65.88" rx="8" ry="8">
-          <animate attributeName="ry" values="8;1;8" dur="0.15s" begin="1.05s;happyBlink2.end+4s" id="happyBlink2"/>
-        </ellipse>
-      </svg>
-    `;
-  }
-
-  private _renderAppleIcon() {
-    return svg`
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-      </svg>
-    `;
-  }
-
-  private _renderGooglePlayIcon() {
-    return svg`
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M3,20.5V3.5C3,2.91 3.34,2.39 3.84,2.15L13.69,12L3.84,21.85C3.34,21.6 3,21.09 3,20.5M16.81,15.12L6.05,21.34L14.54,12.85L16.81,15.12M20.16,10.81C20.5,11.08 20.75,11.5 20.75,12C20.75,12.5 20.53,12.9 20.18,13.18L17.89,14.5L15.39,12L17.89,9.5L20.16,10.81M6.05,2.66L16.81,8.88L14.54,11.15L6.05,2.66Z"/>
-      </svg>
+                  openExternalLink(event, "http://homeassistant.local:8123")}
+                >${"homeassistant.local:8123"}</a
+              >`,
+              value1: html`<code
+                >http://&lt;${localize(
+                  "views.sbc.success_view.ip_address"
+                )}&gt;:8123</code
+              >`,
+            }
+          )}`,
+          localize("views.sbc.success_view.the_preparing_home_assistant_page"),
+        ]}
+        .footer=${html`<a
+          href=${guide}
+          target="_blank"
+          rel="noopener noreferrer"
+          @click=${(event: Event) => openExternalLink(event, guide)}
+          >${guide === "https://www.home-assistant.io/installation/"
+            ? localize("views.sbc.success_view.installation_guide")
+            : deviceName
+              ? localize("views.sbc.success_view.value_installation_guide", {
+                  value0: deviceName,
+                })
+              : localize(
+                  "views.sbc.success_view.your_device_installation_guide"
+                )}</a
+        >`}
+      ></install-success>
     `;
   }
 }
