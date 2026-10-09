@@ -1,5 +1,6 @@
 import { expect, fixture, html, waitUntil } from "@open-wc/testing";
 import type { ProxmoxBridge } from "../../../../src/api/types.js";
+import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import type { ProxmoxConfigureView } from "../../../../src/views/proxmox/proxmox-configure-view.js";
 import "../../../../src/views/proxmox/proxmox-configure-view.js";
@@ -13,6 +14,7 @@ import {
 const bridge = (name: string): ProxmoxBridge => ({
   name,
   network_type: "bridge",
+  vlan_aware: true,
   comments: null,
 });
 
@@ -93,6 +95,136 @@ describe("Proxmox bridge selection", () => {
     await ready();
     expect(wizardState.getState().selections.proxmoxBridge).to.equal("vmbr2");
   });
+
+  it("keeps untagged defaults and restores a valid VLAN selection", async () => {
+    mockNetworks(() => [bridge("vmbr0")]);
+    const el = await mount();
+    await ready();
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector("wa-details")!.hasAttribute("open")).to
+      .be.false;
+    expect(wizardState.getState().selections.proxmoxVlanTag).to.be.undefined;
+    const input = el.shadowRoot!.querySelector<WaInput>("#vlan-tag")!;
+    input.value = "42";
+    input.dispatchEvent(new Event("input"));
+    expect(wizardState.getState().selections.proxmoxVlanTag).to.equal(42);
+    el.remove();
+    const restored = await mount();
+    await ready();
+    await restored.updateComplete;
+    expect(
+      restored.shadowRoot!.querySelector<WaInput>("#vlan-tag")!.value
+    ).to.equal("42");
+    expect(
+      restored.shadowRoot!.querySelector("wa-details")!.hasAttribute("open")
+    ).to.be.true;
+  });
+
+  it("validates whole-number VLAN range and permits clearing the tag", async () => {
+    mockNetworks(() => [bridge("vmbr0")]);
+    const el = await mount();
+    await ready();
+    await el.updateComplete;
+    const input = el.shadowRoot!.querySelector<WaInput>("#vlan-tag")!;
+    for (const value of ["0", "4095", "1.5", "-1", "abc", "1e2", " "]) {
+      input.value = value;
+      input.dispatchEvent(new Event("input"));
+      await el.updateComplete;
+      expect(wizardState.getState().selections.proxmoxConfigureReady, value).to
+        .be.false;
+      await input.updateComplete;
+      expect(input.validity.customError).to.be.true;
+    }
+    for (const value of ["1", "4094", ""]) {
+      input.value = value;
+      input.dispatchEvent(new Event("input"));
+      await el.updateComplete;
+      await input.updateComplete;
+      expect(input.validity.customError).to.be.false;
+      expect(wizardState.getState().selections.proxmoxConfigureReady, value).to
+        .be.true;
+      expect(wizardState.getState().selections.proxmoxVlanTag).to.equal(
+        value ? Number(value) : undefined
+      );
+    }
+  });
+
+  it("blocks a tagged selection after changing to a non-VLAN-aware bridge", async () => {
+    wizardState.setSelection("proxmoxVlanTag", 42);
+    mockNetworks(() => [
+      bridge("vmbr0"),
+      { ...bridge("vmbr1"), vlan_aware: false },
+    ]);
+    const el = await mount();
+    await ready();
+    await el.updateComplete;
+    const select =
+      el.shadowRoot!.querySelector<HTMLSelectElement>("#network-bridge")!;
+    select.value = "vmbr1";
+    select.dispatchEvent(new Event("change"));
+    await el.updateComplete;
+    expect(wizardState.getState().selections.proxmoxConfigureReady).to.be.false;
+    expect(el.shadowRoot!.textContent).to.contain("Select a VLAN-aware bridge");
+    select.value = "vmbr0";
+    select.dispatchEvent(new Event("change"));
+    expect(wizardState.getState().selections.proxmoxConfigureReady).to.be.true;
+    expect(wizardState.getState().selections.proxmoxVlanTag).to.equal(42);
+  });
+
+  for (const command of [
+    "proxmox_list_nodes",
+    "proxmox_list_bridges",
+    "proxmox_list_storage",
+  ]) {
+    it(`preserves a VLAN through ${command} expiry and reconnect`, async () => {
+      wizardState.setSelection("proxmoxVlanTag", 42);
+      mockTauriIpc((cmd) => {
+        if (cmd === command)
+          throw { code: "proxmox_session_expired", message: "Session expired" };
+        if (cmd === "proxmox_list_nodes")
+          return [{ name: "pve", status: "online" }];
+        if (cmd === "proxmox_get_next_vm_id") return 100;
+        if (cmd === "proxmox_list_storage")
+          return [
+            {
+              name: "local",
+              active: true,
+              content: ["images"],
+              available: 100,
+            },
+          ];
+        if (cmd === "proxmox_list_bridges") return [bridge("vmbr0")];
+        throw new Error(`Unexpected command: ${cmd}`);
+      });
+      const el = await mount();
+      await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
+      await settle();
+      expect(wizardState.getState().selections.proxmoxVlanTag).to.equal(42);
+      expect(wizardState.getState().selections.proxmoxConfigureReady).to.be
+        .false;
+      expect(el.shadowRoot!.textContent).not.to.contain(
+        "Select a VLAN-aware bridge"
+      );
+      el.shadowRoot!.querySelector<HTMLElement>("wa-button")!.click();
+      el.remove();
+      wizardState.setSelection("proxmoxSession", {
+        server_url: "https://pve.example:8006",
+        ticket: "new",
+        csrf_token: "new",
+      });
+      mockNetworks(() => [bridge("vmbr0")]);
+      const restored = await mount();
+      await ready();
+      await restored.updateComplete;
+      expect(
+        restored.shadowRoot!.querySelector<WaInput>("#vlan-tag")!.value
+      ).to.equal("42");
+      expect(
+        restored.shadowRoot!.querySelector("wa-details")!.hasAttribute("open")
+      ).to.be.true;
+      expect(wizardState.getState().selections.proxmoxVlanTag).to.equal(42);
+    });
+  }
 
   it("clears the old bridge immediately on a node change and ignores stale replies", async () => {
     const stale = deferred<ProxmoxBridge[]>();

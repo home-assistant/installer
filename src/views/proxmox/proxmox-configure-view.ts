@@ -34,6 +34,7 @@ import type {
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/info-dialog.js";
 import { openExternalLink } from "../../utils/external-url.js";
+import "@home-assistant/webawesome/dist/components/details/details.js";
 import {
   DEFAULT_CPU_CORES,
   DEFAULT_DISK_SIZE_GB,
@@ -100,6 +101,13 @@ export class ProxmoxConfigureView extends LitElement {
       border-radius: 12px;
       width: 100%;
       max-width: 500px;
+    }
+
+    wa-details {
+      width: 100%;
+      max-width: 542px;
+      margin-top: 1rem;
+      flex-shrink: 0;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -263,6 +271,10 @@ export class ProxmoxConfigureView extends LitElement {
   @state() private _importDialog = false;
   @state() private _importDeclined = false;
   @state() private _importError: InstallerError | null = null;
+  /** Raw text of the VLAN field; empty keeps today's untagged network. */
+  @state() private _vlanTag = "";
+  /** A restored tag opens Advanced, so it is never hidden from review. */
+  private _advancedOpen = false;
 
   connectedCallback() {
     super.connectedCallback();
@@ -285,6 +297,8 @@ export class ProxmoxConfigureView extends LitElement {
     this._selectedNode = selections.proxmoxNode ?? "";
     this._selectedStorage = selections.proxmoxStorage ?? "";
     this._selectedBridge = selections.proxmoxBridge ?? "";
+    this._vlanTag = selections.proxmoxVlanTag?.toString() ?? "";
+    this._advancedOpen = !!this._vlanTag;
     this._vmName = selections.vmName ?? DEFAULT_PROXMOX_VM_NAME;
     this._cpuCores = selections.cpuCores ?? DEFAULT_CPU_CORES;
     this._memoryMb = selections.memoryMb ?? DEFAULT_MEMORY_MB;
@@ -645,10 +659,48 @@ export class ProxmoxConfigureView extends LitElement {
     wizardState.goToStep(0);
   }
 
+  private get _parsedVlanTag(): number | undefined {
+    if (
+      !/^\d+$/.test(this._vlanTag) ||
+      Number(this._vlanTag) < 1 ||
+      Number(this._vlanTag) > 4094
+    ) {
+      return undefined;
+    }
+    return Number(this._vlanTag);
+  }
+
+  private get _vlanError(): string | undefined {
+    if (!this._vlanTag) return undefined;
+    if (this._parsedVlanTag === undefined) {
+      return localize(
+        "views.proxmox.proxmox_configure_view.vlan_tag_must_be_a_whole_number"
+      );
+    }
+    if (
+      !this._loadingNodes &&
+      !this._loadingStorage &&
+      !this._error &&
+      !this._bridges.find((bridge) => bridge.name === this._selectedBridge)
+        ?.vlan_aware
+    ) {
+      return localize(
+        "views.proxmox.proxmox_configure_view.select_a_vlan_aware_bridge_or_remove_the_vlan_tag"
+      );
+    }
+    return undefined;
+  }
+
+  private _onVlanInput(e: Event) {
+    this._vlanTag = (e.target as WaInput).value ?? "";
+    this._saveSelections();
+  }
+
   private _saveSelections() {
     wizardState.setSelection("proxmoxNode", this._selectedNode);
     wizardState.setSelection("proxmoxStorage", this._selectedStorage);
     wizardState.setSelection("proxmoxBridge", this._selectedBridge);
+    wizardState.setSelection("proxmoxVlanTag", this._parsedVlanTag);
     wizardState.setSelection(
       "proxmoxBridgeReady",
       !this._loadingNodes &&
@@ -658,7 +710,10 @@ export class ProxmoxConfigureView extends LitElement {
     );
     wizardState.setSelection(
       "proxmoxConfigureReady",
-      !this._loadingNodes && !this._loadingStorage && !this._error
+      !this._loadingNodes &&
+        !this._loadingStorage &&
+        !this._error &&
+        !this._vlanError
     );
     wizardState.setSelection(
       "proxmoxImportReady",
@@ -1381,6 +1436,34 @@ export class ProxmoxConfigureView extends LitElement {
           </div>
         </div>
       </div>
+      <wa-details
+        appearance="plain"
+        summary=${localize("views.proxmox.proxmox_configure_view.advanced")}
+        ?open=${this._advancedOpen}
+      >
+        <wa-input
+          id="vlan-tag"
+          label=${localize(
+            "views.proxmox.proxmox_configure_view.vlan_tag_optional"
+          )}
+          inputmode="numeric"
+          .value=${this._vlanTag}
+          @input=${this._onVlanInput}
+          .customError=${this._vlanError ?? null}
+        >
+          <span
+            slot="hint"
+            aria-live="polite"
+            role=${this._vlanError ? "alert" : "note"}
+            >${this._vlanError ??
+            (this._vlanTag
+              ? ""
+              : localize(
+                  "views.proxmox.proxmox_configure_view.untagged"
+                ))}</span
+          >
+        </wa-input>
+      </wa-details>
     `;
   }
 }

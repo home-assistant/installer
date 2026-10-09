@@ -6,15 +6,35 @@ for (const flow of ["sbc", "utm", "proxmox"]) {
     test(`${flow} artwork and caption fit at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 844 });
       await page.goto("/");
+      // Load the modules in one evaluate and build the fixture in a second,
+      // synchronous one. As a single async evaluate, Chromium intermittently
+      // reports its promise as collected once the view starts, which
+      // Playwright surfaces as "Execution context was destroyed".
       await page.evaluate(async (flow) => {
         document.body.replaceChildren();
         document.body.style.padding = "24px";
         const statePath = "/src/state/wizard-state.ts";
         const mockPath = "/test/unit/tauri-ipc.ts";
-        const { wizardState } = await import(statePath);
-        const { mockTauriIpc } = await import(mockPath);
+        (window as unknown as { artworkModules: unknown }).artworkModules = {
+          ...(await import(statePath)),
+          ...(await import(mockPath)),
+        };
         const tag = flow === "sbc" ? "progress-view" : `${flow}-progress-view`;
         await customElements.whenDefined(tag);
+      }, flow);
+      await page.evaluate((flow) => {
+        const { wizardState, mockTauriIpc } = (
+          window as unknown as {
+            artworkModules: {
+              wizardState: {
+                startFlow: (flow: string) => void;
+                setSelection: (key: string, value: unknown) => void;
+              };
+              mockTauriIpc: (handler: (...args: never[]) => unknown) => void;
+            };
+          }
+        ).artworkModules;
+        const tag = flow === "sbc" ? "progress-view" : `${flow}-progress-view`;
         wizardState.startFlow(flow === "utm" ? "vm" : flow);
         wizardState.setSelection("proxmoxSession", {
           server_url: "https://pve.example:8006",

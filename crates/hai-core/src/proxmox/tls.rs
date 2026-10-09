@@ -665,6 +665,7 @@ mod tests {
             node: "pve".into(),
             storage: "local".into(),
             bridge: "vmbr0".into(),
+            vlan_tag: None,
             vm_id: 100,
             name: "fixture".into(),
             cpu_cores: 2,

@@ -618,8 +618,18 @@ export async function proxmoxListBridges(
 ): Promise<ProxmoxBridge[]> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     return [
-      { name: "vmbr0", network_type: "bridge", comments: null },
-      { name: "vmbr1", network_type: "bridge", comments: "LAN" },
+      {
+        name: "vmbr0",
+        network_type: "bridge",
+        comments: null,
+        vlan_aware: true,
+      },
+      {
+        name: "vmbr1",
+        network_type: "bridge",
+        comments: "LAN",
+        vlan_aware: false,
+      },
     ];
   }
   return invoke<ProxmoxBridge[]>("proxmox_list_bridges", { session, node });

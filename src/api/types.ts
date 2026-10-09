@@ -235,7 +235,11 @@ memory_used: number | null,
  */
 memory_total: number | null, };
 
-export type ProxmoxBridge = { name: string, network_type: string, comments: string | null, };
+export type ProxmoxBridge = { name: string, network_type: string,
+/**
+ * Whether the reported bridge configuration supports guest VLAN tags.
+ */
+vlan_aware: boolean, comments: string | null, };
 
 export type ProxmoxStorage = {
 /**
@@ -276,6 +280,10 @@ storage: string,
  * Network bridge or SDN VNet selected on the target node
  */
 bridge: string,
+/**
+ * Optional guest VLAN tag (1..=4094); absent keeps the network untagged.
+ */
+vlan_tag?: number | null,
 /**
  * VM ID (e.g., 100)
  */

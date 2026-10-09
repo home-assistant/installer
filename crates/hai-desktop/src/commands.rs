@@ -723,6 +723,25 @@ mod tests {
             .contains("HTTPS"));
     }
 
+    // The configure view picks Retry or Reconnect from the code, so a failed
+    // bridge lookup must reach it as a structured error, not a bare string.
+    #[cfg(not(feature = "mock"))]
+    #[tokio::test]
+    async fn proxmox_list_bridges_returns_a_structured_lookup_error() {
+        let session = ProxmoxSession {
+            server_url: "http://127.0.0.1:1".into(),
+            ticket: "fixture".into(),
+            csrf_token: "fixture".into(),
+            certificate_sha256: None,
+        };
+        let error = proxmox_list_bridges(session, "pve".into())
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.code, "proxmox_action_required");
+        assert!(error.message.contains("HTTPS"), "{}", error.message);
+    }
+
     #[cfg(feature = "mock")]
     #[tokio::test]
     async fn test_proxmox_certificate_mock_does_not_connect() {
@@ -1662,6 +1681,7 @@ mod mock_tests {
         assert_eq!(bridges[0].name, "vmbr0");
         assert_eq!(bridges[0].network_type, "bridge");
         assert_eq!(bridges[0].comments, None);
+        assert!(bridges[0].vlan_aware);
     }
 
     #[tokio::test]

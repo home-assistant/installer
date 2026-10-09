@@ -361,6 +361,9 @@ pub struct ProxmoxStorage {
 pub struct ProxmoxBridge {
     pub name: String,
     pub network_type: String,
+    /// Whether the reported bridge configuration supports guest VLAN tags.
+    #[serde(default)]
+    pub vlan_aware: bool,
     pub comments: Option<String>,
 }
 
@@ -374,6 +377,10 @@ pub struct ProxmoxVmConfig {
     pub storage: String,
     /// Network bridge or SDN VNet selected on the target node
     pub bridge: String,
+    /// Optional guest VLAN tag (1..=4094); absent keeps the network untagged.
+    #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub vlan_tag: Option<u16>,
     /// VM ID (e.g., 100)
     pub vm_id: u32,
     /// VM name
@@ -1025,6 +1032,7 @@ mod tests {
             node: "pve".to_string(),
             storage: "local-lvm".to_string(),
             bridge: "vmbr0".to_string(),
+            vlan_tag: None,
             cpu_cores: 4,
             memory_mb: 4096,
             disk_size_gb: 32,

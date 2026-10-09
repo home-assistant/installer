@@ -81,6 +81,7 @@ impl ProxmoxBackend for BackendMock {
         _node: &str,
     ) -> Result<Vec<ProxmoxBridge>> {
         Ok(vec![ProxmoxBridge {
+            vlan_aware: true,
             name: "vmbr0".to_string(),
             network_type: "bridge".to_string(),
             comments: None,

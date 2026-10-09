@@ -214,6 +214,12 @@ export class ProxmoxConfirmView extends LitElement {
                 "views.proxmox.proxmox_confirm_view.network_bridge_value",
                 { value0: selections.proxmoxBridge }
               )}
+              ${selections.proxmoxVlanTag !== undefined
+                ? html`<br />${localize(
+                      "views.proxmox.proxmox_confirm_view.vlan_tag_value",
+                      { tag: selections.proxmoxVlanTag }
+                    )}`
+                : ""}
             </p>
           </div>
         </div>

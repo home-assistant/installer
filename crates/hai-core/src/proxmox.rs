@@ -422,6 +422,12 @@ fn valid_sdn_zone(zone: &str) -> bool {
         && zone.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
+fn api_flag(value: Option<&serde_json::Value>) -> bool {
+    matches!(value, Some(serde_json::Value::Bool(true)))
+        || value.and_then(serde_json::Value::as_u64) == Some(1)
+        || value.and_then(serde_json::Value::as_str) == Some("1")
+}
+
 /// `any_bridge` includes Linux/OVS bridges and access-filtered, node-local running SDN VNets.
 async fn list_bridges(session: &ProxmoxSession, node: &str) -> Result<Vec<ProxmoxBridge>> {
     let client = create_client(session, 30)?;
@@ -469,6 +475,12 @@ async fn list_bridges(session: &ProxmoxSession, node: &str) -> Result<Vec<Proxmo
         bridges.push(ProxmoxBridge {
             name: name.to_string(),
             network_type: network_type.to_string(),
+            vlan_aware: network_type == "OVSBridge"
+                || api_flag(item.get(if network_type == "vnet" {
+                    "vlanaware"
+                } else {
+                    "bridge_vlan_aware"
+                })),
             comments: item
                 .get("comments")
                 .and_then(|v| v.as_str())
@@ -484,6 +496,14 @@ async fn ensure_bridge_available(
     session: &ProxmoxSession,
     config: &ProxmoxVmConfig,
 ) -> Result<ProxmoxBridge> {
+    if config
+        .vlan_tag
+        .is_some_and(|tag| !(1..=4094).contains(&tag))
+    {
+        return Err(Error::ProxmoxActionRequired(
+            "VLAN tag must be between 1 and 4094.".to_string(),
+        ));
+    }
     if !valid_bridge_name(&config.bridge) {
         return Err(Error::ProxmoxApi(
             "Select a valid network bridge before continuing.".to_string(),
@@ -946,6 +966,13 @@ async fn ensure_user_can_create_vm(
 
 async fn ensure_bridge_access(session: &ProxmoxSession, config: &ProxmoxVmConfig) -> Result<()> {
     let bridge = ensure_bridge_available(session, config).await?;
+    if config.vlan_tag.is_some() && !bridge.vlan_aware {
+        // Installer-authored guidance, shown as is instead of a generic API error
+        return Err(Error::ProxmoxActionRequired(format!(
+            "Network '{}' does not report VLAN tag support. Select a VLAN-aware bridge or remove the VLAN tag.",
+            bridge.name
+        )));
+    }
     let zone = if bridge.network_type == "vnet" {
         // GuestHelpers::check_vnet_access checks the edited config, even when
         // a zone move has not been applied. Do not request running=1 here.
@@ -983,7 +1010,10 @@ async fn ensure_bridge_access(session: &ProxmoxSession, config: &ProxmoxVmConfig
     } else {
         "localnetwork".to_string()
     };
-    let bridge_path = format!("/sdn/zones/{}/{}", zone, bridge.name);
+    let mut bridge_path = format!("/sdn/zones/{}/{}", zone, bridge.name);
+    if let Some(tag) = config.vlan_tag {
+        bridge_path.push_str(&format!("/{tag}"));
+    }
     ensure_privileges(
         &fetch_privileges(session, &bridge_path).await?,
         &bridge_path,
@@ -1414,7 +1444,13 @@ async fn create_vm_with_disk(
             ("ostype", "l26".to_string()), // Linux 2.6/3.x/4.x/5.x/6.x kernel
             ("efidisk0", efidisk0_spec),  // EFI disk for UEFI
             ("scsi0", scsi0_spec),        // Main disk with import
-            ("net0", format!("virtio,bridge={}", config.bridge)), // VirtIO network
+            (
+                "net0",
+                match config.vlan_tag {
+                    Some(tag) => format!("virtio,bridge={},tag={tag}", config.bridge),
+                    None => format!("virtio,bridge={}", config.bridge),
+                },
+            ),
             ("agent", "enabled=1".to_string()), // QEMU guest agent
             ("boot", "order=scsi0".to_string()), // Boot from main disk
         ])
@@ -2914,6 +2950,7 @@ mod tests {
                 node: "pve".to_string(),
                 storage: "local-lvm".to_string(),
                 bridge: "vmbr0".to_string(),
+                vlan_tag: None,
                 cpu_cores: 2,
                 memory_mb: 4096,
                 disk_size_gb: 32,
@@ -3065,6 +3102,241 @@ mod tests {
                 .unwrap();
             network.assert_async().await;
             permissions.assert_async().await;
+        }
+
+        #[tokio::test]
+        async fn test_vlan_capabilities_and_vlan_only_permissions() {
+            for (network, supported, zone) in [
+                (
+                    serde_json::json!({"iface":"vmbr0","type":"bridge","bridge_vlan_aware":1}),
+                    true,
+                    "localnetwork",
+                ),
+                (
+                    serde_json::json!({"iface":"vmbr0","type":"bridge","bridge_vlan_aware":"1"}),
+                    true,
+                    "localnetwork",
+                ),
+                (
+                    serde_json::json!({"iface":"vmbr0","type":"bridge","bridge_vlan_aware":true}),
+                    true,
+                    "localnetwork",
+                ),
+                (
+                    serde_json::json!({"iface":"vmbr0","type":"bridge","bridge_vlan_aware":0}),
+                    false,
+                    "localnetwork",
+                ),
+                (
+                    serde_json::json!({"iface":"vmbr0","type":"bridge","bridge_vlan_aware":"0"}),
+                    false,
+                    "localnetwork",
+                ),
+                (
+                    serde_json::json!({"iface":"vmbr0","type":"bridge"}),
+                    false,
+                    "localnetwork",
+                ),
+                (
+                    serde_json::json!({"iface":"vmbr0","type":"OVSBridge"}),
+                    true,
+                    "localnetwork",
+                ),
+                (
+                    serde_json::json!({"iface":"vmbr0","type":"vnet","vlanaware":1}),
+                    true,
+                    "home",
+                ),
+                (
+                    serde_json::json!({"iface":"vmbr0","type":"vnet","bridge_vlan_aware":1}),
+                    false,
+                    "home",
+                ),
+            ] {
+                let mut server = Server::new_async().await;
+                let networks = mock_bridges(&mut server, serde_json::json!([network])).await;
+                let vnet = server
+                    .mock("GET", "/api2/json/cluster/sdn/vnets/vmbr0")
+                    .with_header("content-type", "application/json")
+                    .with_body(r#"{"data":{"zone":"home"}}"#)
+                    .expect(usize::from(supported && zone == "home"))
+                    .create_async()
+                    .await;
+                let parent = server
+                    .mock("GET", "/api2/json/access/permissions")
+                    .match_query(Matcher::UrlEncoded(
+                        "path".to_string(),
+                        format!("/sdn/zones/{zone}/vmbr0"),
+                    ))
+                    .expect(0)
+                    .create_async()
+                    .await;
+                let permissions = mock_privileges(
+                    &mut server,
+                    &format!("/sdn/zones/{zone}/vmbr0/42"),
+                    &["SDN.Use"],
+                )
+                .await;
+                let mut config = vm_config(false);
+                config.vlan_tag = Some(42);
+                let result = ensure_bridge_access(&test_session(&server), &config).await;
+                assert_eq!(result.is_ok(), supported, "{result:?}");
+                if supported {
+                    permissions.assert_async().await;
+                } else {
+                    assert!(result.unwrap_err().to_string().contains("VLAN tag support"));
+                }
+                networks.assert_async().await;
+                parent.assert_async().await;
+                vnet.assert_async().await;
+            }
+        }
+
+        #[tokio::test]
+        async fn test_invalid_vlan_and_changed_capability_never_create_vm() {
+            for tag in [0, 4095, u16::MAX] {
+                let mut server = Server::new_async().await;
+                let network = server
+                    .mock("GET", "/api2/json/nodes/pve/network")
+                    .match_query(Matcher::Any)
+                    .expect(0)
+                    .create_async()
+                    .await;
+                let create = server
+                    .mock("POST", "/api2/json/nodes/pve/qemu")
+                    .expect(0)
+                    .create_async()
+                    .await;
+                let mut config = vm_config(false);
+                config.vlan_tag = Some(tag);
+                let mut source_unused = false;
+                let error = create_vm_with_disk(
+                    &test_session(&server),
+                    &config,
+                    "image.qcow2",
+                    "local",
+                    &mut source_unused,
+                )
+                .await
+                .unwrap_err();
+                // Shown to the user as is, not replaced by generic API guidance
+                assert!(
+                    matches!(&error, Error::ProxmoxActionRequired(message) if message.contains("between 1 and 4094")),
+                    "{error}"
+                );
+                assert!(source_unused);
+                network.assert_async().await;
+                create.assert_async().await;
+            }
+            let mut server = Server::new_async().await;
+            let network = mock_default_bridge(&mut server).await;
+            let create = server
+                .mock("POST", "/api2/json/nodes/pve/qemu")
+                .expect(0)
+                .create_async()
+                .await;
+            let mut config = vm_config(false);
+            config.vlan_tag = Some(42);
+            let mut source_unused = false;
+            let error = create_vm_with_disk(
+                &test_session(&server),
+                &config,
+                "image.qcow2",
+                "local",
+                &mut source_unused,
+            )
+            .await
+            .unwrap_err();
+            assert!(error.to_string().contains("VLAN tag support"));
+            assert!(source_unused);
+            network.assert_async().await;
+            create.assert_async().await;
+        }
+
+        #[tokio::test]
+        async fn test_tagged_vm_net0_and_permission_denial() {
+            for tag in [1, 42, 4094] {
+                for allowed in [false, true] {
+                    let mut server = Server::new_async().await;
+                    let network = mock_bridges(&mut server, serde_json::json!([{"iface":"vmbr0","type":"bridge","bridge_vlan_aware":1}])).await;
+                    let permissions = mock_privileges(
+                        &mut server,
+                        &format!("/sdn/zones/localnetwork/vmbr0/{tag}"),
+                        if allowed { &["SDN.Use"] } else { &[] },
+                    )
+                    .await;
+                    let create = server
+                        .mock("POST", "/api2/json/nodes/pve/qemu")
+                        .match_body(Matcher::UrlEncoded(
+                            "net0".to_string(),
+                            format!("virtio,bridge=vmbr0,tag={tag}"),
+                        ))
+                        .with_header("content-type", "application/json")
+                        .with_body(
+                            r#"{"data":"UPID:pve:00000001:00000002:00000003:qmcreate:root@pam:"}"#,
+                        )
+                        .expect(usize::from(allowed))
+                        .create_async()
+                        .await;
+                    let task = server.mock("GET", "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Aqmcreate%3Aroot%40pam%3A/status")
+                        .with_header("content-type", "application/json")
+                        .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
+                        .expect(usize::from(allowed)).create_async().await;
+                    let resize = server
+                        .mock("PUT", "/api2/json/nodes/pve/qemu/100/resize")
+                        .with_header("content-type", "application/json")
+                        .with_body(r#"{"data":"resize-task"}"#)
+                        .expect(usize::from(allowed))
+                        .create_async()
+                        .await;
+                    let resize_task = server
+                        .mock("GET", "/api2/json/nodes/pve/tasks/resize-task/status")
+                        .with_header("content-type", "application/json")
+                        .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
+                        .expect(usize::from(allowed))
+                        .create_async()
+                        .await;
+                    let mut config = vm_config(false);
+                    config.vlan_tag = Some(tag);
+                    let result = create_vm_with_disk(
+                        &test_session(&server),
+                        &config,
+                        "image.qcow2",
+                        "local",
+                        &mut false,
+                    )
+                    .await;
+                    assert_eq!(result.is_ok(), allowed, "{result:?}");
+                    if !allowed {
+                        assert!(result.unwrap_err().to_string().contains("SDN.Use"));
+                    }
+                    network.assert_async().await;
+                    permissions.assert_async().await;
+                    create.assert_async().await;
+                    task.assert_async().await;
+                    resize.assert_async().await;
+                    resize_task.assert_async().await;
+                }
+            }
+        }
+
+        #[test]
+        fn test_vlan_deserialization_rejects_non_integer_tags() {
+            let mut config = serde_json::to_value(vm_config(false)).unwrap();
+            config.as_object_mut().unwrap().remove("vlan_tag");
+            assert!(serde_json::from_value::<ProxmoxVmConfig>(config.clone())
+                .unwrap()
+                .vlan_tag
+                .is_none());
+            for tag in [
+                serde_json::json!(-1),
+                serde_json::json!(1.5),
+                serde_json::json!("42"),
+                serde_json::json!(65536),
+            ] {
+                config["vlan_tag"] = tag;
+                assert!(serde_json::from_value::<ProxmoxVmConfig>(config.clone()).is_err());
+            }
         }
 
         #[tokio::test]
@@ -3732,6 +4004,7 @@ mod tests {
                 node: "pve".to_string(),
                 storage: "local-lvm".to_string(),
                 bridge: "vmbr0".to_string(),
+                vlan_tag: None,
                 cpu_cores: 2,
                 memory_mb: 4096,
                 disk_size_gb: 32,
@@ -3788,6 +4061,7 @@ mod tests {
                 node: "pve".to_string(),
                 storage: "local-lvm".to_string(),
                 bridge: "vmbr0".to_string(),
+                vlan_tag: None,
                 cpu_cores: 2,
                 memory_mb: 4096,
                 disk_size_gb: 32,
@@ -4439,6 +4713,7 @@ mod tests {
                 node: "pve".to_string(),
                 storage: "local-lvm".to_string(),
                 bridge: "vmbr0".to_string(),
+                vlan_tag: None,
                 cpu_cores: 2,
                 memory_mb: 2048,
                 disk_size_gb,
@@ -4481,6 +4756,7 @@ mod tests {
                 disk_size_gb,
                 auto_start: true,
                 bridge: "vmbr0".into(),
+                vlan_tag: None,
             }
         }
 
@@ -4697,6 +4973,7 @@ mod tests {
                 node: "pve".to_string(),
                 storage: "local-lvm".to_string(),
                 bridge: "vmbr0".to_string(),
+                vlan_tag: None,
                 cpu_cores: 2,
                 memory_mb: 2048,
                 disk_size_gb: 32,
@@ -4874,6 +5151,7 @@ mod tests {
                     node: "pve".into(),
                     storage: "local-lvm".into(),
                     bridge: "vmbr0".into(),
+                    vlan_tag: None,
                     cpu_cores: 2,
                     memory_mb: 2048,
                     disk_size_gb: 32,
@@ -4950,6 +5228,7 @@ mod tests {
                     node: "pve".into(),
                     storage: "local-lvm".into(),
                     bridge: "vmbr0".into(),
+                    vlan_tag: None,
                     cpu_cores: 2,
                     memory_mb: 2048,
                     disk_size_gb: 32,
