@@ -43,6 +43,7 @@ const scenarios = [
       "Unplug every USB device",
       "press and hold the red and blue buttons",
       "only works while Home Assistant OS is installed",
+      "When only the red LED is on",
       "remove the USB flash drive",
     ],
     guide: "https://support.nabucasa.com/hc/en-us/articles/25484982657309",

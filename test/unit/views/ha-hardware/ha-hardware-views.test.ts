@@ -103,7 +103,7 @@ describe("Home Assistant hardware views", () => {
       });
     }
 
-    it("only offers the Blue and the CM5 while the catalog lists their boards", async () => {
+    it("leaves out the Blue and the CM5 when the catalog lacks their boards", async () => {
       wizardState.startFlow("ha-hardware");
       const manifest = deferred<typeof MOCK_MANIFEST>();
       mockTauriIpc(() => manifest.promise);
@@ -355,7 +355,10 @@ describe("Home Assistant hardware views", () => {
           "Within 3 seconds",
           "red and blue buttons",
           "only works while Home Assistant OS is installed",
+          "blinks fast while it writes",
+          "When only the red LED is on",
           "remove the USB flash drive",
+          "connect power again",
         ],
         "https://support.nabucasa.com/hc/en-us/articles/25484982657309",
       ],
