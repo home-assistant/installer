@@ -27,22 +27,22 @@ describe("path-selection-view", () => {
     expect(subtitle!.textContent).to.include("Select how");
   });
 
-  it("renders the available installation options", async () => {
+  it("renders all installation options", async () => {
     const el = await fixture<PathSelectionView>(
       html`<path-selection-view></path-selection-view>`
     );
 
     const optionCards = el.shadowRoot!.querySelectorAll("option-card");
 
-    // Raspberry Pi, Mini PC, Proxmox, and Others are always available.
+    // Should have at least 5 options (HA Hardware, Raspberry Pi, Mini PC, Proxmox, Others)
     // VM option is conditional based on OS
-    expect(optionCards.length).to.be.at.least(4);
+    expect(optionCards.length).to.be.at.least(5);
 
     const titles = Array.from(optionCards).map((card) =>
       card.getAttribute("title")
     );
 
-    expect(titles).not.to.include("Home Assistant hardware");
+    expect(titles).to.include("Home Assistant hardware");
     expect(titles).to.include("Raspberry Pi & other boards");
     expect(titles).to.include("Generic (mini) PC");
     expect(titles).to.include("Proxmox server");
@@ -68,15 +68,15 @@ describe("path-selection-view", () => {
       html`<path-selection-view></path-selection-view>`
     );
 
-    const sbcCard = el.shadowRoot!.querySelector(
-      'option-card[icon="sbc"]'
+    const haHardwareCard = el.shadowRoot!.querySelector(
+      'option-card[icon="ha-hardware"]'
     ) as HTMLElement;
 
-    setTimeout(() => sbcCard.click());
+    setTimeout(() => haHardwareCard.click());
     const event = await oneEvent(el, "select-path");
 
     expect(event).to.exist;
-    expect((event as CustomEvent).detail.path).to.equal("sbc");
+    expect((event as CustomEvent).detail.path).to.equal("ha-hardware");
   });
 
   it("renders SBC option with correct details", async () => {

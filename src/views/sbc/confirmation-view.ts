@@ -5,6 +5,11 @@ import { logFrontendError } from "../../utils/diagnostics.js";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { formatBytes, getHaosRelease } from "../../api/commands.js";
+import {
+  findInstaller,
+  installerName,
+  type HaHardwareInstaller,
+} from "../ha-hardware/hardware.js";
 
 @customElement("confirmation-view")
 export class ConfirmationView extends LitElement {
@@ -145,6 +150,34 @@ export class ConfirmationView extends LitElement {
       overflow-wrap: anywhere;
     }
 
+    .notice {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 1rem;
+      margin-top: 1.5rem;
+      background-color: rgba(255, 152, 0, 0.1);
+      border: 1px solid rgba(255, 152, 0, 0.3);
+      border-radius: 8px;
+      max-width: 500px;
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      color: var(--ha-text-color, #212121);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .notice {
+        background-color: rgba(255, 152, 0, 0.15);
+        border-color: rgba(255, 152, 0, 0.4);
+      }
+    }
+
+    .notice p {
+      margin: 0;
+    }
+
     .divider {
       height: 1px;
       background-color: var(--ha-border-color, #e0e0e0);
@@ -175,8 +208,11 @@ export class ConfirmationView extends LitElement {
   }
 
   private async _loadHaosVersion() {
+    const board = this._wizardState.selections.deviceConfig?.board;
+    // An installer is pinned and named by date; it has no release to show.
+    if (findInstaller(board)) return;
+
     try {
-      const board = this._wizardState.selections.deviceConfig?.board;
       if (!board) throw new Error("No board selected");
       const release = await getHaosRelease(undefined, board);
       this._haosVersion = release.version;
@@ -205,6 +241,7 @@ export class ConfirmationView extends LitElement {
       .filter(Boolean)
       .join(" ");
     const deviceConfig = selections.deviceConfig;
+    const installer = findInstaller(deviceConfig?.board);
 
     return html`
       <h2>
@@ -237,7 +274,7 @@ export class ConfirmationView extends LitElement {
               ${localize("components.confirm_dialog.device")}
             </p>
             <p class="summary-value">${deviceName}</p>
-            ${deviceConfig
+            ${deviceConfig && !installer
               ? html`<p class="summary-detail">
                   ${localizeContent("views.sbc.confirmation_view.board_value", {
                     value0: deviceConfig.board,
@@ -270,34 +307,77 @@ export class ConfirmationView extends LitElement {
 
         <div class="divider"></div>
 
-        <!-- HAOS Version -->
-        <div class="summary-row">
-          <div class="icon-container">${this._renderHaIcon()}</div>
-          <div class="summary-info">
-            <p class="summary-label">
-              ${localize(
-                "views.proxmox.proxmox_confirm_view.home_assistant_operating_system"
-              )}
-            </p>
-            <p class="summary-value">
-              ${this._haosVersion === null
-                ? localize("common.version_unknown")
-                : this._haosVersion
-                  ? localize(
-                      "views.proxmox.proxmox_confirm_view.version_value",
-                      {
-                        value0: this._haosVersion,
-                      }
-                    )
-                  : localize("common.loading")}
-            </p>
-            <p class="summary-detail">
-              ${localize(
-                "views.proxmox.proxmox_confirm_view.latest_stable_release"
-              )}
-            </p>
-          </div>
+        ${installer ? this._renderInstaller(installer) : this._renderHaos()}
+      </div>
+
+      ${this._wizardState.currentFlow === "ha-hardware"
+        ? this._renderEraseNotice(deviceName, !!installer)
+        : nothing}
+    `;
+  }
+
+  private _renderHaos() {
+    return html`
+      <div class="summary-row">
+        <div class="icon-container">${this._renderHaIcon()}</div>
+        <div class="summary-info">
+          <p class="summary-label">
+            ${localize(
+              "views.proxmox.proxmox_confirm_view.home_assistant_operating_system"
+            )}
+          </p>
+          <p class="summary-value">
+            ${this._haosVersion === null
+              ? localize("common.version_unknown")
+              : this._haosVersion
+                ? localize("views.proxmox.proxmox_confirm_view.version_value", {
+                    value0: this._haosVersion,
+                  })
+                : localize("common.loading")}
+          </p>
+          <p class="summary-detail">
+            ${localize(
+              "views.proxmox.proxmox_confirm_view.latest_stable_release"
+            )}
+          </p>
         </div>
+      </div>
+    `;
+  }
+
+  private _renderInstaller(installer: HaHardwareInstaller) {
+    return html`
+      <div class="summary-row">
+        <div class="icon-container">${this._renderHaIcon()}</div>
+        <div class="summary-info">
+          <p class="summary-label">
+            ${localize("views.sbc.confirmation_view.installer")}
+          </p>
+          <p class="summary-value">${installerName(installer)}</p>
+          <p class="summary-detail">
+            ${localize(
+              "views.sbc.confirmation_view.installs_home_assistant_os_on_the_device"
+            )}
+          </p>
+        </div>
+      </div>
+    `;
+  }
+
+  /** The drive is not the only thing lost: the device's own data goes too. */
+  private _renderEraseNotice(deviceName: string, installer: boolean) {
+    return html`
+      <div class="notice" role="note">
+        <span aria-hidden="true">⚠️</span>
+        <p>
+          ${installer
+            ? localize("views.sbc.confirmation_view.installer_erase_notice", {
+                device: deviceName,
+              })
+            : localize("views.sbc.confirmation_view.emmc_erase_notice", {
+                device: deviceName,
+              })}
+        </p>
       </div>
     `;
   }

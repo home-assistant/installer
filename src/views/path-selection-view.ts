@@ -97,6 +97,15 @@ export class PathSelectionView extends LitElement {
 
         <div class="options-grid">
           <option-card
+            title=${localize("components.app_shell.home_assistant_hardware")}
+            description=${localize(
+              "views.path_selection_view.home_assistant_green_yellow_or_blue_by_nabu_casa"
+            )}
+            icon="ha-hardware"
+            @click=${() => this._onSelectPath("ha-hardware")}
+          ></option-card>
+
+          <option-card
             title=${localize("components.app_shell.raspberry_pi_other_boards")}
             description=${localize(
               "views.path_selection_view.single_board_computers_like_raspberry_pi_odroid_and_more"

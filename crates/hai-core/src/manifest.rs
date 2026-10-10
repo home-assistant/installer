@@ -183,9 +183,32 @@ pub fn bundled_manifest() -> DeviceManifest {
     }
 }
 
+/// Storage requirements for `board`: a board from the manifest, or the board
+/// of a pinned Home Assistant hardware installer.
+pub fn storage_requirements(board: &str) -> Option<HaosConfig> {
+    bundled_manifest()
+        .devices
+        .into_iter()
+        .find(|device| device.haos.board == board)
+        .map(|device| device.haos)
+        .or_else(|| crate::hardware_installer::find(board).map(|installer| installer.storage()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn storage_requirements_cover_manifest_and_installer_boards() {
+        let blue = storage_requirements("odroid-n2").unwrap();
+        assert_eq!(blue.minimum_storage_bytes, 16_000_000_000);
+        for board in ["green-installer", "yellow-installer"] {
+            let installer = storage_requirements(board).unwrap();
+            assert_eq!(installer.board, board);
+            assert_eq!(installer.minimum_storage_bytes, 1_000_000_000);
+        }
+        assert!(storage_requirements("unknown-board").is_none());
+    }
 
     #[test]
     fn test_bundled_manifest_has_devices() {

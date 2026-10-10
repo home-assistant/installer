@@ -1,5 +1,5 @@
-import { localize, localizeContent } from "../localization/localize.js";
-import { LitElement, html, css } from "lit";
+import { localize } from "../localization/localize.js";
+import { LitElement, html, css, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import "./fab-button.js";
 
@@ -13,6 +13,8 @@ import "../views/sbc/drive-selection-view.js";
 import "../views/sbc/confirmation-view.js";
 import "../views/sbc/progress-view.js";
 import "../views/sbc/success-view.js";
+import "../views/ha-hardware/device-selection-view.js";
+import "../views/ha-hardware/success-view.js";
 import "../views/minipc/setup-method-view.js";
 import "../views/minipc/architecture-selection-view.js";
 import "../views/utm/utm-check-view.js";
@@ -253,7 +255,7 @@ export class AppShell extends LitElement {
     const selections = this._wizardState.selections;
 
     // Check if required selections are made for current step
-    if (flow === "sbc") {
+    if (flow === "sbc" || flow === "ha-hardware") {
       if (stepId === "device") {
         return !selections.deviceCatalogReady || !selections.device;
       }
@@ -315,6 +317,23 @@ export class AppShell extends LitElement {
       }
     }
 
+    // Home Assistant hardware: the SBC steps, with its own device picker and
+    // device-specific next steps
+    if (flow === "ha-hardware") {
+      switch (stepId) {
+        case "device":
+          return html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`;
+        case "drive":
+          return html`<drive-selection-view></drive-selection-view>`;
+        case "confirm":
+          return html`<confirmation-view></confirmation-view>`;
+        case "flash":
+          return html`<progress-view></progress-view>`;
+        case "success":
+          return html`<ha-hardware-success-view></ha-hardware-success-view>`;
+      }
+    }
+
     // Mini PC Flow steps
     if (flow === "minipc") {
       switch (stepId) {
@@ -371,43 +390,7 @@ export class AppShell extends LitElement {
       }
     }
 
-    // Placeholder content for unimplemented steps
-    return html`
-      <div
-        style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center;"
-      >
-        <h2 style="color: var(--ha-text-color, #212121); margin: 0 0 1rem 0;">
-          ${this._getFlowTitle(flow)}
-        </h2>
-        <p style="color: var(--ha-secondary-text-color, #727272); margin: 0;">
-          ${localizeContent("components.app_shell.step_value", {
-            value0: stepId || localize("common.unknown_step"),
-          })}
-        </p>
-        <p
-          style="color: var(--ha-secondary-text-color, #9e9e9e); font-size: 0.875rem; margin-top: 2rem;"
-        >
-          ${localize("components.app_shell.step_content_coming_soon")}
-        </p>
-      </div>
-    `;
-  }
-
-  private _getFlowTitle(flow: WizardFlow | null): string {
-    switch (flow) {
-      case "sbc":
-        return localize("components.app_shell.raspberry_pi_other_boards");
-      case "minipc":
-        return localize("components.app_shell.generic_mini_pc");
-      case "ha-hardware":
-        return localize("components.app_shell.home_assistant_hardware");
-      case "proxmox":
-        return localize("components.app_shell.proxmox_server");
-      case "vm":
-        return localize("components.app_shell.virtual_machine");
-      default:
-        return localize("components.app_shell.installation");
-    }
+    return nothing;
   }
 
   private _onNavigate(e: CustomEvent<{ view: ViewName }>) {
@@ -416,11 +399,6 @@ export class AppShell extends LitElement {
 
   private _onSelectPath(e: CustomEvent<{ path: WizardFlow }>) {
     this._resetErrorState();
-    if (e.detail.path === "ha-hardware") {
-      wizardState.startFlow(e.detail.path);
-      this._currentView = "wizard";
-      return;
-    }
     this._pendingFlow = e.detail.path;
     this._currentView = "connection-check";
   }
@@ -538,10 +516,11 @@ export class AppShell extends LitElement {
       return;
     }
 
-    // Show confirmation dialog before proceeding from confirm step (only for SBC/minipc flows)
+    // Show confirmation dialog before proceeding from confirm step (only for
+    // the flows that write a drive)
     if (
       currentStep?.id === "confirm" &&
-      (flow === "sbc" || flow === "minipc")
+      (flow === "sbc" || flow === "minipc" || flow === "ha-hardware")
     ) {
       if (!(await this._verifySelectedDrive())) {
         return;

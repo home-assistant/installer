@@ -6,6 +6,7 @@ import type {
   UtmVmConfig,
 } from "../api/types.js";
 import type { InstallationPath } from "../views/path-selection-view.js";
+import type { HaHardwareId } from "../views/ha-hardware/hardware.js";
 
 export type WizardFlow = InstallationPath;
 
@@ -28,6 +29,8 @@ export interface WizardSelections {
   deviceCatalogReady?: boolean;
   /** HAOS image of the selected device; its board picks the image to flash. */
   deviceConfig?: HaosConfig;
+  /** Nabu Casa device picked in the Home Assistant hardware flow. */
+  haHardware?: HaHardwareId;
   /** Device id of the selected drive; also the path sent to the backend. */
   drive?: string;
   /** Rest of the selected drive's identity, kept so it can be re-verified. */
@@ -111,7 +114,9 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
   ],
   "ha-hardware": [
     { id: "device", title: localize("state.wizard_state.select_device") },
-    { id: "connect", title: localize("state.wizard_state.connect") },
+    { id: "drive", title: localize("state.wizard_state.select_drive") },
+    { id: "confirm", title: localize("common.confirm") },
+    { id: "flash", title: localize("common.install") },
     { id: "success", title: localize("common.done") },
   ],
   proxmox: [

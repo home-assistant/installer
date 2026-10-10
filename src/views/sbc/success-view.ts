@@ -23,6 +23,28 @@ const INSTALLATION_GUIDES: Record<string, string> = {
     "https://developers.home-assistant.io/docs/operating-system/boards/generic-aarch64/",
 };
 
+/** The last step after any write: where to find Home Assistant. */
+export function renderOpenHomeAssistantStep() {
+  return html`${localizeContent(
+    "views.sbc.success_view.open_value_in_your_browser_or_find_the_ip_address",
+    {
+      value0: html`<a
+        href="http://homeassistant.local:8123"
+        target="_blank"
+        rel="noopener noreferrer"
+        @click=${(event: Event) =>
+          openExternalLink(event, "http://homeassistant.local:8123")}
+        >${"homeassistant.local:8123"}</a
+      >`,
+      value1: html`<code
+        >http://&lt;${localize(
+          "views.sbc.success_view.ip_address"
+        )}&gt;:8123</code
+      >`,
+    }
+  )}`;
+}
+
 @customElement("success-view")
 export class SuccessView extends LitElement {
   static styles = css`
@@ -106,24 +128,7 @@ export class SuccessView extends LitElement {
                     "views.sbc.success_view.insert_the_written_storage_unknown_device"
                   ),
           localize("views.sbc.success_view.connect_ethernet_and_power"),
-          html`${localizeContent(
-            "views.sbc.success_view.open_value_in_your_browser_or_find_the_ip_address",
-            {
-              value0: html`<a
-                href="http://homeassistant.local:8123"
-                target="_blank"
-                rel="noopener noreferrer"
-                @click=${(event: Event) =>
-                  openExternalLink(event, "http://homeassistant.local:8123")}
-                >${"homeassistant.local:8123"}</a
-              >`,
-              value1: html`<code
-                >http://&lt;${localize(
-                  "views.sbc.success_view.ip_address"
-                )}&gt;:8123</code
-              >`,
-            }
-          )}`,
+          renderOpenHomeAssistantStep(),
           localize("views.sbc.success_view.the_preparing_home_assistant_page"),
         ]}
         .footer=${html`<a

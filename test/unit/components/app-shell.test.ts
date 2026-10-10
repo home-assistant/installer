@@ -178,6 +178,7 @@ describe("app-shell", () => {
 
   for (const [flow, step] of [
     ["sbc", "device"],
+    ["ha-hardware", "device"],
     ["minipc", "architecture"],
   ] as const) {
     it(`requires a refreshed catalog before leaving the ${flow} device picker`, async () => {
@@ -201,26 +202,6 @@ describe("app-shell", () => {
   }
 
   describe("connection gate", () => {
-    it("keeps Home Assistant hardware guidance available without network access", async () => {
-      let calls = 0;
-      mockTauriIpc(() => {
-        calls++;
-        return Promise.reject("offline");
-      });
-      fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
-        view: "path-selection",
-      });
-      await el.updateComplete;
-      fire(
-        el.shadowRoot!.querySelector("path-selection-view")!,
-        "select-path",
-        { path: "ha-hardware" }
-      );
-      await waitUntil(() => !!shellOf(el));
-      expect(wizardState.getState().currentFlow).to.equal("ha-hardware");
-      expect(calls).to.equal(0);
-    });
-
     it("starts the selected flow only after a successful retry", async () => {
       const retry = deferred<void>();
       let calls = 0;
@@ -263,7 +244,7 @@ describe("app-shell", () => {
       expect(calls).to.equal(2);
     });
 
-    for (const path of ["sbc", "minipc", "vm", "proxmox"]) {
+    for (const path of ["sbc", "minipc", "ha-hardware", "vm", "proxmox"]) {
       it(`checks connectivity before starting ${path} and allows Back`, async () => {
         const pending = deferred<void>();
         const calls: string[] = [];
@@ -293,6 +274,29 @@ describe("app-shell", () => {
         expect(wizardState.getState().currentFlow).to.equal(null);
       });
     }
+  });
+
+  it("asks before erasing the drive for a Home Assistant hardware installer", async () => {
+    await enterSbcFlow(el);
+    wizardState.startFlow("ha-hardware");
+    wizardState.setSelection("device", "ha-green");
+    wizardState.setSelection("haHardware", "green");
+    wizardState.setSelection("deviceConfig", {
+      board: "green-installer",
+      download_url: "unused",
+      minimum_storage_bytes: 1_000_000_000,
+      recommended_storage_bytes: 1_000_000_000,
+    });
+    storeDriveSelection(CONNECTED);
+    await goToStep(el, "confirm");
+    expect(shellOf(el).querySelector("confirmation-view")).to.exist;
+
+    fire(shellOf(el), "wizard-next");
+    await waitForDialogOpen(el);
+    fire(dialogOf(el), "dialog-confirm");
+    await finishDialogHide(el);
+    await waitUntil(() => wizardState.currentStep?.id === "flash");
+    expect(shellOf(el).querySelector("progress-view")).to.exist;
   });
 
   describe("selected drive check before erasing", () => {
