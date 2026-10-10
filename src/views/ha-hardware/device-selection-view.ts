@@ -15,7 +15,6 @@ import { getManifest, type HaosConfig } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import {
   HA_HARDWARE,
-  findHaHardware,
   haHardwareName,
   installerConfig,
   type HaHardware,
@@ -272,18 +271,17 @@ export class HaHardwareDeviceSelectionView extends LitElement {
   }
 
   private _onSelectDevice(hardware: HaHardware, config: HaosConfig) {
-    // A Yellow with a CM4 and one with a CM5 write the same image to
-    // different drives, so a switch must not keep the old drive.
-    const previous = findHaHardware(
-      wizardState.getState().selections.haHardware
-    );
+    // Each device is prepared differently and written to a different drive,
+    // so any change of device, including after a catalog refresh cleared the
+    // previous one, must not keep the old drive.
+    const previous = wizardState.getState().selections.haHardware;
     this._selectedDeviceId = hardware.deviceId;
     wizardState.setSelection("device", hardware.deviceId);
     wizardState.setSelection("haHardware", hardware.id);
     wizardState.setSelection("deviceName", haHardwareName(hardware.id));
     wizardState.setSelection("deviceImage", hardware.image);
     wizardState.setSelection("deviceConfig", config);
-    if (previous && previous.id !== hardware.id) clearDriveSelection();
+    if (previous !== hardware.id) clearDriveSelection();
 
     this.dispatchEvent(
       new CustomEvent("device-selected", {

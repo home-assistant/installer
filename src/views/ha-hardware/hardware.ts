@@ -31,15 +31,16 @@ const GREEN_INSTALLER: HaHardwareInstaller = {
   board: "green-installer",
   downloadUrl:
     "https://github.com/NabuCasa/buildroot-installer/releases/download/green-installer-20240410/green-installer-20240410.img.xz",
-  // Noon UTC, so no time zone shows it as the day before.
-  released: new Date(Date.UTC(2024, 3, 10, 12)),
+  // A calendar date, not an instant: local midnight shows this day in every
+  // time zone, where a fixed UTC time moves a day in some of them.
+  released: new Date(2024, 3, 10),
 };
 
 const YELLOW_INSTALLER: HaHardwareInstaller = {
   board: "yellow-installer",
   downloadUrl:
     "https://github.com/NabuCasa/buildroot-installer/releases/download/yellow-installer-20231025/yellow-installer-20231025.img.xz",
-  released: new Date(Date.UTC(2023, 9, 25, 12)),
+  released: new Date(2023, 9, 25),
 };
 
 /** The installers only have to fit on the drive; see hardware_installer.rs. */
@@ -59,10 +60,12 @@ export const HA_HARDWARE: readonly HaHardware[] = [
     installer: YELLOW_INSTALLER,
   },
   {
+    // The pinned Yellow installer only boots on a CM4. On a CM5, rpiboot
+    // exposes the eMMC itself, so Home Assistant OS is written to it directly.
     id: "yellow-cm5",
     deviceId: "ha-yellow-cm5",
     image: "/assets/devices/homeassistant_yellow.png",
-    installer: YELLOW_INSTALLER,
+    manifestBoard: "yellow",
   },
   {
     // The Blue is an ODROID-N2+ in a Home Assistant case.

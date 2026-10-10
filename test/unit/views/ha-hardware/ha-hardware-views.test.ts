@@ -31,13 +31,12 @@ import {
 } from "../../../../src/utils/drive-selection.js";
 import { deferred, mockTauriIpc, restoreTauriIpc } from "../../tauri-ipc.js";
 
-const BLUE_CONFIG = MOCK_MANIFEST.devices.find(
-  (device) => device.haos.board === "odroid-n2"
-)!.haos;
-
 function configFor(id: HaHardwareId) {
   const hardware = findHaHardware(id)!;
-  return hardware.installer ? installerConfig(hardware.installer) : BLUE_CONFIG;
+  if (hardware.installer) return installerConfig(hardware.installer);
+  return MOCK_MANIFEST.devices.find(
+    (device) => device.haos.board === hardware.manifestBoard
+  )!.haos;
 }
 
 /** Selections as the device step leaves them. */
@@ -83,7 +82,8 @@ describe("Home Assistant hardware views", () => {
     for (const [value, id, board] of [
       ["ha-green", "green", "green-installer"],
       ["ha-yellow-cm4", "yellow-cm4", "yellow-installer"],
-      ["ha-yellow-cm5", "yellow-cm5", "yellow-installer"],
+      // The installer only boots on a CM4; a CM5 gets Home Assistant OS
+      ["ha-yellow-cm5", "yellow-cm5", "yellow"],
       ["ha-blue", "blue", "odroid-n2"],
     ] as const) {
       it(`selecting ${value} stores the ${board} board`, async () => {
@@ -103,7 +103,7 @@ describe("Home Assistant hardware views", () => {
       });
     }
 
-    it("only offers the Blue while the catalog lists its board", async () => {
+    it("only offers the Blue and the CM5 while the catalog lists their boards", async () => {
       wizardState.startFlow("ha-hardware");
       const manifest = deferred<typeof MOCK_MANIFEST>();
       mockTauriIpc(() => manifest.promise);
@@ -115,8 +115,7 @@ describe("Home Assistant hardware views", () => {
       const values = [...el.shadowRoot!.querySelectorAll("device-card")].map(
         (card) => card.value
       );
-      expect(values).to.have.length(3);
-      expect(values).not.to.include("ha-blue");
+      expect(values).to.deep.equal(["ha-green", "ha-yellow-cm4"]);
     });
 
     it("forgets the drive when switching to another device", async () => {
@@ -135,6 +134,21 @@ describe("Home Assistant hardware views", () => {
       );
 
       group.value = "ha-yellow-cm5";
+      group.dispatchEvent(new Event("change"));
+      expect(wizardState.getState().selections.drive).to.equal(undefined);
+    });
+
+    it("forgets the drive when the previous device was cleared", async () => {
+      // A catalog refresh can drop the selected device but leave its drive
+      select("blue", "Home Assistant Blue");
+      storeDriveSelection(MOCK_BLOCK_DEVICES[2]);
+      wizardState.setSelection("haHardware", undefined);
+      const el = await fixture(
+        html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
+      );
+      await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
+      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
+      group.value = "ha-green";
       group.dispatchEvent(new Event("change"));
       expect(wizardState.getState().selections.drive).to.equal(undefined);
     });
@@ -257,15 +271,27 @@ describe("Home Assistant hardware views", () => {
       expect(calls).to.equal(0);
     });
 
-    it("shows the Yellow installer for both compute modules", async () => {
-      for (const id of ["yellow-cm4", "yellow-cm5"] as const) {
-        select(id, "Home Assistant Yellow");
-        const el = await fixture(html`<confirmation-view></confirmation-view>`);
-        expect(text(el.shadowRoot!)).to.contain(
-          "Yellow installer, October 25, 2023"
-        );
-        fixtureCleanup();
-      }
+    it("shows the Yellow installer for a CM4", async () => {
+      select("yellow-cm4", "Home Assistant Yellow with CM4");
+      const el = await fixture(html`<confirmation-view></confirmation-view>`);
+      expect(text(el.shadowRoot!)).to.contain(
+        "Yellow installer, October 25, 2023"
+      );
+    });
+
+    it("shows the HAOS release for a CM5", async () => {
+      select("yellow-cm5", "Home Assistant Yellow with CM5");
+      mockTauriIpc((command, args) => {
+        expect(command).to.equal("get_haos_release");
+        expect(args).to.have.property("board", "yellow");
+        return { version: "18.2", images: [] };
+      });
+      const el = await fixture(html`<confirmation-view></confirmation-view>`);
+      await waitUntil(() => text(el.shadowRoot!).includes("Version 18.2"));
+      expect(text(el.shadowRoot!)).not.to.contain("installer");
+      expect(el.shadowRoot!.querySelector(".notice")!.textContent).to.contain(
+        "Home Assistant included"
+      );
     });
 
     it("shows the HAOS release for the Blue", async () => {
@@ -292,7 +318,7 @@ describe("Home Assistant hardware views", () => {
   });
 
   it("flashes the installer board and says so", async () => {
-    select("yellow-cm5", "Home Assistant Yellow with CM5");
+    select("yellow-cm4", "Home Assistant Yellow with CM4");
     storeDriveSelection(MOCK_BLOCK_DEVICES[2]);
     const requests: FlashRequest[] = [];
     mockTauriIpc((command, args) => {
@@ -338,7 +364,7 @@ describe("Home Assistant hardware views", () => {
         [
           "Disconnect the USB-C cable",
           "JP1 back to UART",
-          "installer on the eMMC",
+          "starts Home Assistant OS from the eMMC",
         ],
         "https://support.nabucasa.com/hc/en-us/articles/25485061432093",
       ],
@@ -369,8 +395,13 @@ describe("Home Assistant hardware views", () => {
             ".next-steps-footer a"
           )!.href
         ).to.equal(guide);
+        // Only devices with a pinned installer get one written
+        const installer = !!findHaHardware(id)!.installer;
         expect(content.includes("The installer has been written")).to.equal(
-          id !== "blue"
+          installer
+        );
+        expect(content.includes("Home Assistant OS has been written")).to.equal(
+          !installer
         );
       });
     }

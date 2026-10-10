@@ -400,7 +400,7 @@
   "views.ha_hardware.success_view.yellow_cm4_remove_drive": "When the installer is done, remove the USB flash drive.",
   "views.ha_hardware.success_view.yellow_cm5_unplug": "Disconnect the USB-C cable and power from the Yellow.",
   "views.ha_hardware.success_view.yellow_cm5_jp1": "Set jumper JP1 back to UART and close the case.",
-  "views.ha_hardware.success_view.yellow_cm5_power_on": "Connect Ethernet and power. The installer on the eMMC installs Home Assistant OS.",
+  "views.ha_hardware.success_view.yellow_cm5_power_on": "Connect Ethernet and power. The Yellow starts Home Assistant OS from the eMMC.",
   "views.ha_hardware.success_view.blue_restore": "If you used Petitboot, disconnect power and the USB cable, then switch the boot mode toggle back to MMC. If you used an adapter, put the eMMC module back into the Blue. Then close the case.",
   "views.path_selection_view.home_assistant_green_yellow_or_blue_by_nabu_casa": "Home Assistant Green, Yellow, or Blue by Nabu Casa"
 }

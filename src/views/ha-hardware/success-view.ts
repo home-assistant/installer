@@ -4,7 +4,11 @@ import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { openExternalLink } from "../../utils/external-url.js";
 import { renderOpenHomeAssistantStep } from "../sbc/success-view.js";
-import { haHardwareName, type HaHardwareId } from "./hardware.js";
+import {
+  findHaHardware,
+  haHardwareName,
+  type HaHardwareId,
+} from "./hardware.js";
 
 import "../../components/install-success.js";
 
@@ -44,10 +48,13 @@ export class HaHardwareSuccessView extends LitElement {
   render() {
     const hardware = this._wizardState.selections.haHardware ?? "green";
     const guide = GUIDES[hardware];
+    // Without an installer, Home Assistant OS itself is on the drive and
+    // starts its first setup when the device boots from it
+    const writesHaos = !findHaHardware(hardware)?.installer;
 
     return html`
       <install-success
-        .subtitle=${hardware === "blue"
+        .subtitle=${writesHaos
           ? localize(
               "views.sbc.success_view.home_assistant_os_has_been_written_to_your_storage_device"
             )
@@ -63,7 +70,7 @@ export class HaHardwareSuccessView extends LitElement {
           ),
           ...this._steps(hardware),
           renderOpenHomeAssistantStep(),
-          ...(hardware === "blue"
+          ...(writesHaos
             ? [
                 localize(
                   "views.sbc.success_view.the_preparing_home_assistant_page"

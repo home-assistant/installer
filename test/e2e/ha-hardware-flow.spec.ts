@@ -51,9 +51,9 @@ const scenarios = [
     value: "ha-yellow-cm5",
     name: "Home Assistant Yellow with CM5",
     connect: "sudo ./rpiboot -d mass-storage-gadget64",
-    version: "Yellow installer, October 25, 2023",
-    notice: "the installer reinstalls Home Assistant OS",
-    steps: ["JP1 back to UART", "installer on the eMMC"],
+    version: "Version 16.3",
+    notice: "Home Assistant included",
+    steps: ["JP1 back to UART", "starts Home Assistant OS from the eMMC"],
     guide: "https://support.nabucasa.com/hc/en-us/articles/25485061432093",
   },
   {
