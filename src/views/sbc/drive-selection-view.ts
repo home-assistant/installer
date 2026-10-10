@@ -29,6 +29,7 @@ import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../components/drive-card.js";
 import "../../components/casita-mascot.js";
+import "../ha-hardware/connect-instructions.js";
 
 @customElement("drive-selection-view")
 export class DriveSelectionView extends LitElement {
@@ -310,19 +311,36 @@ export class DriveSelectionView extends LitElement {
     return wizardState.getState().currentFlow === "minipc";
   }
 
-  render() {
-    const isMiniPC = this._isMiniPCFlow();
-    const subtitle = isMiniPC
-      ? localize(
-          "views.sbc.drive_selection_view.choose_the_nvme_ssd_drive_to_install_home_assistant_on"
-        )
-      : localize(
-          "views.sbc.drive_selection_view.choose_the_sd_card_or_usb_drive_to_install_home_assistant_on"
-        );
+  private _isHaHardwareFlow(): boolean {
+    return wizardState.getState().currentFlow === "ha-hardware";
+  }
 
+  private _subtitle(): string {
+    if (this._isMiniPCFlow()) {
+      return localize(
+        "views.sbc.drive_selection_view.choose_the_nvme_ssd_drive_to_install_home_assistant_on"
+      );
+    }
+    if (this._isHaHardwareFlow()) {
+      return localize(
+        "views.sbc.drive_selection_view.connect_your_device_storage_then_select_it"
+      );
+    }
+    return localize(
+      "views.sbc.drive_selection_view.choose_the_sd_card_or_usb_drive_to_install_home_assistant_on"
+    );
+  }
+
+  render() {
     return html`
       <h2>${localize("views.sbc.drive_selection_view.select_your_drive")}</h2>
-      <p class="subtitle">${subtitle}</p>
+      <p class="subtitle">${this._subtitle()}</p>
+
+      ${this._isHaHardwareFlow()
+        ? html`<ha-hardware-connect-instructions
+            .hardware=${wizardState.getState().selections.haHardware}
+          ></ha-hardware-connect-instructions>`
+        : ""}
 
       <div class="warning">
         <span class="warning-icon">⚠️</span>
@@ -410,9 +428,13 @@ export class DriveSelectionView extends LitElement {
         ? localize(
             "views.sbc.drive_selection_view.connect_your_drive_using_a_usb_adapter_and_select_refresh"
           )
-        : localize(
-            "views.sbc.drive_selection_view.insert_an_sd_card_or_usb_drive_and_select_refresh"
-          );
+        : this._isHaHardwareFlow()
+          ? localize(
+              "views.sbc.drive_selection_view.connect_the_drive_as_described_above_and_select_refresh"
+            )
+          : localize(
+              "views.sbc.drive_selection_view.insert_an_sd_card_or_usb_drive_and_select_refresh"
+            );
 
       return html`
         <div class="empty-state">

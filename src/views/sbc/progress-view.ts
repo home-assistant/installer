@@ -8,6 +8,7 @@ import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { flashImage, type FlashProgress } from "../../api/index.js";
 import { readDriveSelection } from "../../utils/drive-selection.js";
+import { findInstaller } from "../ha-hardware/hardware.js";
 import "../../components/install-progress.js";
 import "../../components/progress-bar.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
@@ -203,17 +204,26 @@ export class ProgressView extends LitElement {
   }
 
   private _getStageDescription(stage: string): string {
+    const installer = !!findInstaller(
+      this._wizardState.selections.deviceConfig?.board
+    );
     switch (stage) {
       case "downloading":
-        return localize(
-          "views.sbc.progress_view.fetching_the_home_assistant_image"
-        );
+        return installer
+          ? localize("views.sbc.progress_view.fetching_the_installer_image")
+          : localize(
+              "views.sbc.progress_view.fetching_the_home_assistant_image"
+            );
       case "extracting":
         return localize("views.sbc.progress_view.extracting_the_image");
       case "writing":
-        return localize(
-          "views.sbc.progress_view.writing_home_assistant_to_your_drive"
-        );
+        return installer
+          ? localize(
+              "views.sbc.progress_view.writing_the_installer_to_your_drive"
+            )
+          : localize(
+              "views.sbc.progress_view.writing_home_assistant_to_your_drive"
+            );
       case "verifying":
         return localize("views.sbc.progress_view.verifying_the_written_data");
       case "finalizing":

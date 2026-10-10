@@ -19,14 +19,17 @@ describe("runtime device catalog selections", () => {
     wizardState.reset();
   });
 
-  for (const [tag, board] of [
-    ["device-selection-view", "rpi5-64"],
-    ["ha-hardware-device-selection-view", "green"],
-    ["minipc-architecture-selection-view", "generic-x86-64"],
+  // The Blue is the Home Assistant hardware that depends on the catalog: it
+  // is offered under its own id, with the catalog's ODROID-N2 board.
+  for (const [tag, board, deviceId] of [
+    ["device-selection-view", "rpi5-64", undefined],
+    ["ha-hardware-device-selection-view", "odroid-n2", "ha-blue"],
+    ["minipc-architecture-selection-view", "generic-x86-64", undefined],
   ]) {
-    const selected = MOCK_MANIFEST.devices.find(
+    const catalogDevice = MOCK_MANIFEST.devices.find(
       (device) => device.haos.board === board
     )!;
+    const selected = { ...catalogDevice, id: deviceId ?? catalogDevice.id };
     for (const available of [true, false]) {
       it(`${tag} ${available ? "keeps" : "clears"} the previous selection after a successful refresh`, async () => {
         wizardState.setSelection("device", selected.id);
@@ -42,7 +45,7 @@ describe("runtime device catalog selections", () => {
         expect(wizardState.getState().selections.device).to.equal(selected.id);
         pending.resolve({
           ...MOCK_MANIFEST,
-          devices: available ? [selected] : [],
+          devices: available ? [catalogDevice] : [],
         });
         await waitUntil(
           () => wizardState.getState().selections.deviceCatalogReady === true

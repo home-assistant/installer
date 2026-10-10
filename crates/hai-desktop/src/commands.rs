@@ -140,17 +140,12 @@ fn find_flash_target<'a>(
         ));
     }
 
-    let config = hai_core::manifest::bundled_manifest()
-        .devices
-        .into_iter()
-        .find(|device| device.haos.board == board)
-        .ok_or_else(|| {
-            CommandError::from(hai_core::Error::InvalidConfig(format!(
-                "No storage requirements found for board: {}",
-                board
-            )))
-        })?
-        .haos;
+    let config = hai_core::manifest::storage_requirements(board).ok_or_else(|| {
+        CommandError::from(hai_core::Error::InvalidConfig(format!(
+            "No storage requirements found for board: {}",
+            board
+        )))
+    })?;
     if device.size < config.minimum_reported_storage_bytes() {
         // A board minimum, not the image size: a bigger drive is the only fix
         return Err(CommandError::new(
@@ -211,19 +206,30 @@ where
         message: "Fetching release info...".to_string(),
     });
 
-    // Fetch the release this board is on
-    let release = backend
-        .get_latest_haos_release_for_board(&request.board)
-        .await
-        .map_err(CommandError::from)?;
+    let image = match hai_core::hardware_installer::find(&request.board) {
+        // Installer images are pinned, size and digest included, so there is
+        // no release to look up. Everything below treats them like HAOS.
+        Some(installer) => installer.image(),
+        None => {
+            // Fetch the release this board is on
+            let release = backend
+                .get_latest_haos_release_for_board(&request.board)
+                .await
+                .map_err(CommandError::from)?;
 
-    // Find the raw disk image for the requested board. Some boards also ship a
-    // qcow2 under the same board name, which must never be written to a drive.
-    let image = release
-        .image_for(&request.board, ImageFormat::Raw)
-        .ok_or_else(|| {
-            hai_core::Error::InvalidConfig("No compatible image was found for this device.".into())
-        })?;
+            // Find the raw disk image for the requested board. Some boards also
+            // ship a qcow2 under the same board name, which must never be
+            // written to a drive.
+            release
+                .image_for(&request.board, ImageFormat::Raw)
+                .cloned()
+                .ok_or_else(|| {
+                    hai_core::Error::InvalidConfig(
+                        "No compatible image was found for this device.".into(),
+                    )
+                })?
+        }
+    };
 
     callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
@@ -240,7 +246,7 @@ where
     let compressed_path = temporary_image.archive_path();
 
     backend
-        .download_image(image, &compressed_path, callback)
+        .download_image(&image, &compressed_path, callback)
         .await
         .map_err(CommandError::from)?;
 
@@ -1197,6 +1203,32 @@ mod tests {
     }
 
     #[test]
+    fn test_find_flash_target_accepts_small_drives_for_installers() {
+        for board in ["green-installer", "yellow-installer"] {
+            for (size, accepted) in [
+                (949_999_999, false),
+                (950_000_000, true),
+                (8_000_000_000, true),
+            ] {
+                let mut device = flash_target("/dev/sdb", true);
+                device.size = size;
+                let expected = ExpectedDevice {
+                    size: Some(size),
+                    ..Default::default()
+                };
+                let result = find_flash_target(&[device], "/dev/sdb", &expected, board).map(|_| ());
+                if accepted {
+                    assert!(result.is_ok(), "{board} {size}: {result:?}");
+                } else {
+                    let error = result.unwrap_err();
+                    assert_eq!(error.code, "drive_too_small");
+                    assert!(error.message.contains("1 GB"), "{error}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_find_flash_target_rejects_missing_board_requirements() {
         let devices = [flash_target("/dev/sdb", true)];
         let error =
@@ -1848,6 +1880,89 @@ mod mock_tests {
         .await
         .unwrap();
         assert!(result.duration_secs < 60);
+    }
+
+    /// Delegates to the mock, but fails any release lookup and records what
+    /// was downloaded.
+    #[derive(Default)]
+    struct PinnedInstallerBackend {
+        downloaded: std::sync::Mutex<Option<hai_core::HaosImage>>,
+    }
+
+    impl ReleaseSource for PinnedInstallerBackend {
+        async fn check_connection(&self) -> hai_core::Result<()> {
+            panic!("must not check connectivity during installation");
+        }
+        async fn get_device_manifest(&self) -> hai_core::Result<DeviceManifest> {
+            panic!("must not fetch a manifest");
+        }
+        async fn get_haos_release(&self, _: &str) -> hai_core::Result<HaosRelease> {
+            panic!("an installer must not look up a release");
+        }
+        async fn get_latest_haos_release_for_board(
+            &self,
+            _: &str,
+        ) -> hai_core::Result<HaosRelease> {
+            panic!("an installer must not look up a release");
+        }
+        async fn download_image<P: ProgressCallback>(
+            &self,
+            image: &hai_core::HaosImage,
+            dest: &std::path::Path,
+            callback: &P,
+        ) -> hai_core::Result<()> {
+            *self.downloaded.lock().unwrap() = Some(image.clone());
+            BackendMock.download_image(image, dest, callback).await
+        }
+        async fn extract_xz<P: ProgressCallback>(
+            &self,
+            archive: &std::path::Path,
+            dest: &std::path::Path,
+            callback: &P,
+        ) -> hai_core::Result<()> {
+            BackendMock.extract_xz(archive, dest, callback).await
+        }
+        fn cache_dir(&self) -> hai_core::Result<std::path::PathBuf> {
+            BackendMock.cache_dir()
+        }
+    }
+
+    impl DeviceBackend for PinnedInstallerBackend {
+        async fn list_devices(&self) -> hai_core::Result<Vec<BlockDevice>> {
+            BackendMock.list_devices().await
+        }
+        async fn write_image<P: ProgressCallback>(
+            &self,
+            path: &std::path::Path,
+            device_id: &str,
+            expected: &hai_core::ExpectedDevice,
+            verify: bool,
+            callback: &P,
+        ) -> hai_core::Result<()> {
+            BackendMock
+                .write_image(path, device_id, expected, verify, callback)
+                .await
+        }
+    }
+
+    #[tokio::test]
+    #[serial] // all share the mock cache directory
+    async fn run_flash_writes_the_pinned_installer_without_a_release_lookup() {
+        for installer in &hai_core::hardware_installer::INSTALLERS {
+            let backend = PinnedInstallerBackend::default();
+            run_flash(
+                &backend,
+                &request("mock-usb-drive-128gb", installer.board).await,
+                &NoOpProgress,
+            )
+            .await
+            .unwrap();
+            let image = backend.downloaded.lock().unwrap().take().unwrap();
+            assert_eq!(image.download_url, installer.download_url);
+            assert_eq!(image.size, installer.size);
+            assert_eq!(image.digest.as_deref(), Some(installer.digest));
+            assert_eq!(image.format, ImageFormat::Raw);
+        }
     }
 
     #[tokio::test]
