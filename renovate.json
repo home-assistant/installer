@@ -18,12 +18,6 @@
       "enabled": true
     },
     {
-      "description": "Group Tauri packages",
-      "groupName": "tauri",
-      "groupSlug": "tauri",
-      "matchPackageNames": ["/^@tauri-apps//", "/^tauri/"]
-    },
-    {
       "description": "Group Lit packages",
       "groupName": "lit",
       "groupSlug": "lit",
@@ -56,6 +50,12 @@
       "matchManagers": ["cargo"],
       "groupName": "rust-dependencies",
       "groupSlug": "rust-deps"
+    },
+    {
+      "description": "Group Tauri packages; after the Rust crates rule so the crates stay in step with their npm packages",
+      "groupName": "tauri",
+      "groupSlug": "tauri",
+      "matchPackageNames": ["/^@tauri-apps//", "/^tauri/"]
     },
     {
       "description": "Group GitHub Actions",
