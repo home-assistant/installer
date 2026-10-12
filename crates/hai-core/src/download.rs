@@ -258,6 +258,9 @@ const VERSION_URL: &str = "https://version.home-assistant.io/stable.json";
 const HAOS_RELEASES_API: &str =
     "https://api.github.com/repos/home-assistant/operating-system/releases";
 
+/// Images are only ever downloaded from the official HAOS repository.
+const HAOS_DOWNLOADS: &str = "https://github.com/home-assistant/operating-system/releases/download";
+
 /// User agent for API requests
 const USER_AGENT: &str = concat!("HomeAssistantInstaller/", env!("CARGO_PKG_VERSION"));
 
@@ -268,7 +271,9 @@ fn http_client(read_timeout: Duration) -> reqwest::Result<reqwest::Client> {
     let builder = reqwest::Client::builder()
         .user_agent(USER_AGENT)
         .connect_timeout(Duration::from_secs(10))
-        .read_timeout(read_timeout);
+        .read_timeout(read_timeout)
+        // Tests serve metadata and images from plain-HTTP mock servers.
+        .https_only(!cfg!(test));
     // Tests use independent Tokio runtimes and may reuse mock server ports.
     #[cfg(test)]
     let builder = builder.pool_max_idle_per_host(0);
@@ -446,6 +451,13 @@ async fn fetch_latest_release() -> Result<HaosRelease> {
 
 /// Fetch a specific HAOS release by version (internal version with custom base URL)
 async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<HaosRelease> {
+    // stable.json and the frontend supply the version; anything but a plain
+    // version number could steer the URL to another repository.
+    if parse_version(version).is_none() {
+        return Err(Error::DownloadFailed(format!(
+            "Invalid Home Assistant OS version: {version}"
+        )));
+    }
     let client = shared_client()?;
     let response = client
         .get(format!("{}/tags/{}", api_base_url, version))
@@ -499,7 +511,7 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
         .json()
         .await
         .map_err(|error| metadata_request_error(error, GITHUB_CONNECTION_FAILURE_MESSAGE))?;
-    parse_github_release(release)
+    parse_github_release(release, version)
 }
 
 fn rate_limit_wait(headers: &reqwest::header::HeaderMap, now: u64) -> u64 {
@@ -546,8 +558,16 @@ async fn get_haos_release(version: &str) -> Result<HaosRelease> {
 }
 
 /// Parse a GitHub release into our HaosRelease format
-fn parse_github_release(release: GitHubRelease) -> Result<HaosRelease> {
-    let version = release.tag_name;
+///
+/// Every image must download from the requested release under
+/// `HAOS_DOWNLOADS`; anything else fails the whole release.
+fn parse_github_release(release: GitHubRelease, version: &str) -> Result<HaosRelease> {
+    if release.tag_name != version {
+        return Err(Error::DownloadFailed(format!(
+            "GitHub returned release {} instead of {version}",
+            release.tag_name
+        )));
+    }
     let mut images = Vec::new();
 
     for asset in release.assets {
@@ -561,10 +581,19 @@ fn parse_github_release(release: GitHubRelease) -> Result<HaosRelease> {
         };
 
         // Parse board name from filename: haos_{board}-{version}.img.xz
-        let board = match parse_board_from_filename_with_suffix(&asset.name, &version, suffix) {
-            Ok(b) => b,
-            Err(_) => continue,
+        let board = match parse_board_from_filename_with_suffix(&asset.name, version, suffix) {
+            Ok(b) if valid_board(&b) => b,
+            _ => continue,
         };
+
+        // Exact match: a prefix check could be escaped with dot segments.
+        let expected_url = format!("{HAOS_DOWNLOADS}/{version}/{}", asset.name);
+        if asset.browser_download_url != expected_url {
+            return Err(Error::DownloadFailed(format!(
+                "GitHub listed an unexpected download location for {}",
+                asset.name
+            )));
+        }
 
         images.push(HaosImage {
             board,
@@ -575,7 +604,10 @@ fn parse_github_release(release: GitHubRelease) -> Result<HaosRelease> {
         });
     }
 
-    Ok(HaosRelease { version, images })
+    Ok(HaosRelease {
+        version: version.to_string(),
+        images,
+    })
 }
 
 /// Parse board name from HAOS image filename with a specific suffix
@@ -1522,14 +1554,14 @@ mod tests {
             Some(serde_json::Value::Null),
             Some(serde_json::json!("sha256:bad")),
         ] {
-            let mut asset = serde_json::json!({ "name": "haos_ova-18.3.qcow2.xz", "size": 100, "browser_download_url": "https://github.com/example.xz" });
+            let mut asset = serde_json::json!({ "name": "haos_ova-18.3.qcow2.xz", "size": 100, "browser_download_url": "https://github.com/home-assistant/operating-system/releases/download/18.3/haos_ova-18.3.qcow2.xz" });
             if let Some(digest) = digest {
                 asset["digest"] = digest;
             }
             let release: GitHubRelease =
                 serde_json::from_value(serde_json::json!({"tag_name": "18.3", "assets": [asset]}))
                     .unwrap();
-            let release = parse_github_release(release).unwrap();
+            let release = parse_github_release(release, "18.3").unwrap();
             assert!(
                 expected_sha256(release.image_for("ova", ImageFormat::Qcow2).unwrap()).is_err()
             );
@@ -1540,7 +1572,10 @@ mod tests {
     async fn release_digest_survives_metadata_parsing_and_controls_download() {
         let data = b"published compressed bytes";
         let mut server = mockito::Server::new_async().await;
-        let image = image_for_data(&format!("{}/image.xz", server.url()), data);
+        let image = image_for_data(
+            &format!("{HAOS_DOWNLOADS}/18.3/haos_ova-18.3.qcow2.xz"),
+            data,
+        );
         let metadata = server.mock("GET", "/tags/18.3").with_header("content-type", "application/json").with_body(serde_json::json!({
             "tag_name": "18.3", "assets": [{ "name": "haos_ova-18.3.qcow2.xz", "size": data.len(), "browser_download_url": image.download_url, "digest": image.digest }]
         }).to_string()).create_async().await;
@@ -1550,12 +1585,16 @@ mod tests {
             .create_async()
             .await;
         let release = fetch_release_from_api(&server.url(), "18.3").await.unwrap();
-        let selected = release.image_for("ova", ImageFormat::Qcow2).unwrap();
+        let mut selected = release
+            .image_for("ova", ImageFormat::Qcow2)
+            .unwrap()
+            .clone();
         assert_eq!(selected.digest, image.digest);
+        selected.download_url = format!("{}/image.xz", server.url());
         let directory = tempfile::tempdir().unwrap();
         let destination = directory.path().join("image.xz");
         std::fs::write(&destination, b"same name from a previous download").unwrap();
-        download_image(selected, &destination, &crate::NoOpProgress)
+        download_image(&selected, &destination, &crate::NoOpProgress)
             .await
             .unwrap();
         assert_eq!(std::fs::read(destination).unwrap(), data);
@@ -1826,7 +1865,7 @@ mod tests {
         failed.remove_async().await;
         for version in ["18.3", "18.4"] {
             let digest = format!("sha256:{}", "ab".repeat(32));
-            let download_url = format!("https://example.com/haos_rpi5-64-{version}.img.xz");
+            let download_url = format!("{HAOS_DOWNLOADS}/{version}/haos_rpi5-64-{version}.img.xz");
             let mock = server
                 .mock("GET", format!("/tags/{version}").as_str())
                 .with_status(200)
@@ -2195,13 +2234,13 @@ mod tests {
                     name: "haos_rpi5-64-14.2.img.xz".to_string(),
                     digest: None,
                     size: 500_000_000,
-                    browser_download_url: "https://github.com/download/rpi5.img.xz".to_string(),
+                    browser_download_url: "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz".to_string(),
                 },
                 GitHubAsset {
                     name: "haos_ova-14.2.qcow2.xz".to_string(),
                     digest: None,
                     size: 600_000_000,
-                    browser_download_url: "https://github.com/download/x86.qcow2.xz".to_string(),
+                    browser_download_url: "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_ova-14.2.qcow2.xz".to_string(),
                 },
                 // Should be ignored (wrong extension)
                 GitHubAsset {
@@ -2213,7 +2252,7 @@ mod tests {
             ],
         };
 
-        let parsed = parse_github_release(release).unwrap();
+        let parsed = parse_github_release(release, "14.2").unwrap();
         assert_eq!(parsed.version, "14.2");
         assert_eq!(parsed.images.len(), 2);
 
@@ -2226,6 +2265,85 @@ mod tests {
         let x86_image = parsed.images.iter().find(|i| i.board == "ova").unwrap();
         assert_eq!(x86_image.format, ImageFormat::Qcow2);
         assert_eq!(x86_image.size, 600_000_000);
+    }
+
+    #[test]
+    fn release_downloads_come_only_from_the_requested_official_release() {
+        let official = |name: &str| GitHubAsset {
+            name: name.to_string(),
+            digest: None,
+            size: 1,
+            browser_download_url: format!("{HAOS_DOWNLOADS}/14.2/{name}"),
+        };
+        let parse = |tag: &str, assets| {
+            parse_github_release(
+                GitHubRelease {
+                    tag_name: tag.to_string(),
+                    assets,
+                },
+                "14.2",
+            )
+        };
+
+        // Names that would put dot segments or a query into the URL are skipped.
+        let parsed = parse(
+            "14.2",
+            vec![
+                official("haos_rpi5-64-14.2.img.xz"),
+                official("haos_../../../attacker/x-14.2.img.xz"),
+                official("haos_RPI5?x=-14.2.img.xz"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(parsed.images.len(), 1);
+        assert_eq!(
+            parsed.images[0].download_url,
+            "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz"
+        );
+
+        for url in [
+            "https://github.com/attacker/haos/releases/download/14.2/haos_rpi5-64-14.2.img.xz",
+            "https://github.com/home-assistant/operating-system/releases/download/../../../attacker/haos/releases/download/14.2/haos_rpi5-64-14.2.img.xz",
+            "https://github.com/home-assistant/operating-system/releases/download/14.1/haos_rpi5-64-14.2.img.xz",
+            "http://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz",
+        ] {
+            let mut asset = official("haos_rpi5-64-14.2.img.xz");
+            asset.browser_download_url = url.to_string();
+            let assets = vec![official("haos_ova-14.2.qcow2.xz"), asset];
+            assert!(
+                matches!(parse("14.2", assets), Err(Error::DownloadFailed(_))),
+                "{url}"
+            );
+        }
+
+        assert!(matches!(
+            parse("1.0", vec![official("haos_rpi5-64-1.0.img.xz")]),
+            Err(Error::DownloadFailed(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn release_lookup_rejects_versions_that_are_not_plain_numbers() {
+        let mut server = mockito::Server::new_async().await;
+        let any_request = server
+            .mock("GET", mockito::Matcher::Any)
+            .expect(0)
+            .create_async()
+            .await;
+        for version in [
+            "../../../../attacker/haos/releases/tags/1.0",
+            "14.2/../../x",
+            "14.2?x",
+            "14",
+            "",
+            "latest",
+        ] {
+            let error = fetch_release_from_api(&server.url(), version)
+                .await
+                .unwrap_err();
+            assert!(matches!(error, Error::DownloadFailed(_)), "{version}");
+        }
+        any_request.assert_async().await;
     }
 
     #[test]
@@ -2620,7 +2738,7 @@ mod tests {
             }],
         };
 
-        let parsed = parse_github_release(release).unwrap();
+        let parsed = parse_github_release(release, "14.2").unwrap();
         assert_eq!(parsed.images.len(), 0); // Invalid filename should be skipped
     }
 
@@ -2805,13 +2923,13 @@ mod tests {
                         {
                             "name": "haos_rpi5-64-14.2.img.xz",
                             "size": 500000000,
-                            "browser_download_url": "https://github.com/download/rpi5.img.xz",
+                            "browser_download_url": "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz",
                             "digest": "sha256:abc123"
                         },
                         {
                             "name": "haos_ova-14.2.qcow2.xz",
                             "size": 600000000,
-                            "browser_download_url": "https://github.com/download/x86.qcow2.xz",
+                            "browser_download_url": "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_ova-14.2.qcow2.xz",
                             "digest": "sha256:def456"
                         }
                     ]
@@ -2935,7 +3053,7 @@ mod tests {
                         {
                             "name": "haos_rpi5-64-14.2.img.xz",
                             "size": 500000000,
-                            "browser_download_url": "https://github.com/download/rpi5.img.xz",
+                            "browser_download_url": "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz",
                             "digest": "sha256:abc123"
                         },
                         {
@@ -2989,7 +3107,7 @@ mod tests {
                     "assets": [{
                         "name": "haos_rpi4-14.2.img.xz",
                         "size": 400000000,
-                        "browser_download_url": "https://github.com/download/rpi4.img.xz",
+                        "browser_download_url": "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi4-14.2.img.xz",
                         "digest": "sha256:xyz789"
                     }]
                 }"#,
@@ -3135,7 +3253,7 @@ mod tests {
                         {
                             "name": "haos_ova-14.2.qcow2.xz",
                             "size": 600000000,
-                            "browser_download_url": "https://github.com/download/x86.qcow2.xz",
+                            "browser_download_url": "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_ova-14.2.qcow2.xz",
                             "digest": "sha256:qcow2hash"
                         }
                     ]
