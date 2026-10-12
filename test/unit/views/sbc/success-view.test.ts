@@ -10,7 +10,6 @@ async function renderSuccess(board = "rpi5-64", flow: WizardFlow = "sbc") {
   wizardState.setSelection("deviceName", "Selected device");
   wizardState.setSelection("deviceConfig", {
     board,
-    download_url: "",
     minimum_storage_bytes: 16_000_000_000,
     recommended_storage_bytes: 32_000_000_000,
   });

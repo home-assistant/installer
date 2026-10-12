@@ -52,8 +52,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "rpi5-64",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi5-64-{version}.img.xz",
       },
     },
     {
@@ -65,8 +63,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "rpi4-64",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi4-64-{version}.img.xz",
       },
     },
     {
@@ -78,8 +74,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "rpi3-64",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi3-64-{version}.img.xz",
       },
     },
     // ODROID devices
@@ -92,8 +86,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "odroid-n2",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-n2-{version}.img.xz",
       },
     },
     {
@@ -105,8 +97,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "odroid-c2",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-c2-{version}.img.xz",
       },
     },
     {
@@ -118,8 +108,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "odroid-c4",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-c4-{version}.img.xz",
       },
     },
     {
@@ -131,8 +119,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "odroid-m1",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-m1-{version}.img.xz",
       },
     },
     {
@@ -144,8 +130,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "odroid-m1s",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-m1s-{version}.img.xz",
       },
     },
     // Khadas devices
@@ -158,8 +142,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "khadas-vim3",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_khadas-vim3-{version}.img.xz",
       },
     },
     // Home Assistant Hardware
@@ -172,8 +154,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "green",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_green-{version}.img.xz",
       },
     },
     {
@@ -185,8 +165,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "yellow",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_yellow-{version}.img.xz",
       },
     },
     // Generic x86-64
@@ -199,8 +177,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "generic-x86-64",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_generic-x86-64-{version}.img.xz",
       },
     },
     // Generic ARM64
@@ -213,8 +189,6 @@ export const MOCK_MANIFEST: DeviceManifest = {
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
         board: "generic-aarch64",
-        download_url:
-          "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_generic-aarch64-{version}.img.xz",
       },
     },
   ],

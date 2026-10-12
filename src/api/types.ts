@@ -101,10 +101,6 @@ export type HaosConfig = {
  */
 board: string,
 /**
- * Download URL template
- */
-download_url: string,
-/**
  * Minimum nominal target capacity in decimal bytes, with 5% reserved-space allowance.
  */
 minimum_storage_bytes: number,

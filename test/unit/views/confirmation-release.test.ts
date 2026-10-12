@@ -22,7 +22,6 @@ describe("confirmation release selection", () => {
     it(`shows the release for selected board ${board}`, async () => {
       wizardState.setSelection("deviceConfig", {
         board,
-        download_url: "unused",
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
       });
@@ -73,7 +72,6 @@ describe("confirmation release selection", () => {
   it("keeps the existing unknown-version state when lookup fails", async () => {
     wizardState.setSelection("deviceConfig", {
       board: "rpi5-64",
-      download_url: "unused",
       minimum_storage_bytes: 16_000_000_000,
       recommended_storage_bytes: 32_000_000_000,
     });

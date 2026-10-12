@@ -143,8 +143,6 @@ pub enum DeviceCategory {
 pub struct HaosConfig {
     /// Board identifier for the HAOS image
     pub board: String,
-    /// Download URL template
-    pub download_url: String,
     /// Minimum nominal target capacity in decimal bytes, with 5% reserved-space allowance.
     pub minimum_storage_bytes: u64,
     /// Recommended nominal target capacity in decimal bytes, with the same allowance.
@@ -868,7 +866,6 @@ mod tests {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "rpi5-64".to_string(),
-                    download_url: "https://example.com/haos-{version}-rpi5.img.xz".to_string(),
                 },
             }],
         };
@@ -1012,7 +1009,6 @@ mod tests {
                 minimum_storage_bytes: 16_000_000_000,
                 recommended_storage_bytes: 32_000_000_000,
                 board: "rpi5-64".to_string(),
-                download_url: "https://github.com/.../haos_rpi5-64-{version}.img.xz".to_string(),
             },
         };
         let json = serde_json::to_string(&device).unwrap();

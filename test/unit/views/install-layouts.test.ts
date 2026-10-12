@@ -22,7 +22,6 @@ describe("shared install layouts", () => {
       wizardState.setSelection("drive", "/dev/test-only");
       wizardState.setSelection("deviceConfig", {
         board: "rpi5-64",
-        download_url: "https://example.test/image.xz",
         minimum_storage_bytes: 16_000_000_000,
         recommended_storage_bytes: 32_000_000_000,
       });

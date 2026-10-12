@@ -992,9 +992,6 @@ mod tests {
             assert!(!device.id.is_empty());
             assert!(!device.name.is_empty());
             assert!(!device.haos.board.is_empty());
-            assert!(!device.haos.download_url.is_empty());
-            // Verify URL template contains placeholder
-            assert!(device.haos.download_url.contains("{version}"));
         }
     }
 

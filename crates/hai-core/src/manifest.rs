@@ -1,6 +1,6 @@
 //! Device manifest bundled with the installer
 //!
-//! Lists the supported boards and where to download their HAOS images.
+//! Lists the supported boards.
 //!
 //! Capacity policy: minimum 16 GB / recommended 32 GB nominal drive capacity.
 //! HA recommends 32 GB (https://www.home-assistant.io/faq/); the ODROID guide
@@ -27,7 +27,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "rpi5-64".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi5-64-{version}.img.xz".to_string(),
                 },
             },
             Device {
@@ -39,7 +38,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "rpi4-64".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi4-64-{version}.img.xz".to_string(),
                 },
             },
             Device {
@@ -51,7 +49,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "rpi3-64".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_rpi3-64-{version}.img.xz".to_string(),
                 },
             },
             // ODROID devices
@@ -64,7 +61,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "odroid-n2".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-n2-{version}.img.xz".to_string(),
                 },
             },
             Device {
@@ -76,7 +72,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "odroid-c2".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-c2-{version}.img.xz".to_string(),
                 },
             },
             Device {
@@ -88,7 +83,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "odroid-c4".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-c4-{version}.img.xz".to_string(),
                 },
             },
             Device {
@@ -100,7 +94,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "odroid-m1".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-m1-{version}.img.xz".to_string(),
                 },
             },
             Device {
@@ -112,7 +105,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "odroid-m1s".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_odroid-m1s-{version}.img.xz".to_string(),
                 },
             },
             // Khadas devices
@@ -125,7 +117,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "khadas-vim3".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_khadas-vim3-{version}.img.xz".to_string(),
                 },
             },
             // Home Assistant Hardware
@@ -138,7 +129,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "green".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_green-{version}.img.xz".to_string(),
                 },
             },
             Device {
@@ -150,7 +140,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "yellow".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_yellow-{version}.img.xz".to_string(),
                 },
             },
             // Generic x86-64
@@ -163,7 +152,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "generic-x86-64".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_generic-x86-64-{version}.img.xz".to_string(),
                 },
             },
             // Generic ARM64
@@ -176,7 +164,6 @@ pub fn bundled_manifest() -> DeviceManifest {
                     minimum_storage_bytes: 16_000_000_000,
                     recommended_storage_bytes: 32_000_000_000,
                     board: "generic-aarch64".to_string(),
-                    download_url: "https://github.com/home-assistant/operating-system/releases/download/{version}/haos_generic-aarch64-{version}.img.xz".to_string(),
                 },
             },
         ],
@@ -266,16 +253,6 @@ mod tests {
             assert!(
                 !device.haos.board.is_empty(),
                 "Device {} should have HAOS board",
-                device.id
-            );
-            assert!(
-                !device.haos.download_url.is_empty(),
-                "Device {} should have HAOS download URL",
-                device.id
-            );
-            assert!(
-                device.haos.download_url.contains("{version}"),
-                "Device {} download URL should have version placeholder",
                 device.id
             );
         }

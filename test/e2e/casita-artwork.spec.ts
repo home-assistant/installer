@@ -44,7 +44,6 @@ for (const flow of ["sbc", "utm", "proxmox"]) {
         wizardState.setSelection("drive", "mock-drive");
         wizardState.setSelection("deviceConfig", {
           board: "rpi5-64",
-          download_url: "https://example.test/image.xz",
         });
         const bridge = window as unknown as {
           artworkProgress: (stage: string) => void;
