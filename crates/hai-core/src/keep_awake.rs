@@ -161,14 +161,20 @@ mod platform {
 #[cfg(target_os = "linux")]
 mod platform {
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::Duration;
 
-    use zbus::zvariant::{OwnedFd, OwnedObjectPath, Value};
+    use futures_util::StreamExt;
+    use zbus::zvariant::{OwnedFd, OwnedObjectPath, OwnedValue, Value};
     use zbus::Connection;
 
     use super::{Error, Result};
 
     /// The portal's "suspend the session" flag.
     const INHIBIT_SUSPEND: u32 = 4;
+
+    /// How long the desktop gets to confirm the inhibition before we fall back.
+    const PORTAL_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
 
     #[zbus::proxy(
         interface = "org.freedesktop.portal.Inhibit",
@@ -182,6 +188,16 @@ mod platform {
             flags: u32,
             options: HashMap<&str, Value<'_>>,
         ) -> zbus::Result<OwnedObjectPath>;
+    }
+
+    #[zbus::proxy(
+        interface = "org.freedesktop.portal.Request",
+        default_service = "org.freedesktop.portal.Desktop"
+    )]
+    trait Request {
+        #[zbus(signal)]
+        fn response(&self, response: u32, results: HashMap<String, OwnedValue>)
+            -> zbus::Result<()>;
     }
 
     #[zbus::proxy(
@@ -230,13 +246,54 @@ mod platform {
     async fn inhibit_with_portal(reason: &str) -> zbus::Result<Connection> {
         // A connection of our own, so dropping it ends exactly this inhibition
         let connection = Connection::session().await?;
-        let options = HashMap::from([("reason", Value::from(reason))]);
-        PortalProxy::new(&connection)
+
+        // `Inhibit` returns before the desktop has acted on it; the outcome
+        // comes later as a `Response` on the request object. That object's
+        // path is known up front, so subscribe before asking to not miss it.
+        static NEXT_TOKEN: AtomicU32 = AtomicU32::new(0);
+        let token = format!(
+            "hai_keep_awake_{}",
+            NEXT_TOKEN.fetch_add(1, Ordering::Relaxed)
+        );
+        let sender = connection
+            .unique_name()
+            .ok_or_else(|| zbus::Error::Failure("Not connected to the session bus".into()))?
+            .trim_start_matches(':')
+            .replace('.', "_");
+        let request_path = format!("/org/freedesktop/portal/desktop/request/{sender}/{token}");
+        let mut responses = RequestProxy::builder(&connection)
+            .path(request_path.as_str())?
+            .build()
+            .await?
+            .receive_response()
+            .await?;
+
+        let options = HashMap::from([
+            ("handle_token", Value::from(token.as_str())),
+            ("reason", Value::from(reason)),
+        ]);
+        let handle = PortalProxy::new(&connection)
             .await?
             .inhibit("", INHIBIT_SUSPEND, options)
             .await?;
+        if handle.as_str() != request_path {
+            return Err(zbus::Error::Failure(
+                "The portal answered on an unexpected request".into(),
+            ));
+        }
 
-        Ok(connection)
+        // No answer at all happens too: when the user's portal permissions
+        // don't allow inhibiting suspend, the request is silently dropped.
+        let response = tokio::time::timeout(PORTAL_RESPONSE_TIMEOUT, responses.next())
+            .await
+            .map_err(|_| zbus::Error::Failure("The portal did not answer in time".into()))?
+            .ok_or_else(|| zbus::Error::Failure("The portal went away".into()))?;
+        match response.args()?.response {
+            0 => Ok(connection),
+            code => Err(zbus::Error::Failure(format!(
+                "The portal refused to inhibit suspend ({code})"
+            ))),
+        }
     }
 
     async fn inhibit_with_logind(reason: &str) -> zbus::Result<OwnedFd> {
