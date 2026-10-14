@@ -97,6 +97,8 @@ mod tests {
             Path::new("tauri.conf.json"),
         )
         .unwrap();
+        // The download cache is filed under this identifier as well
+        assert_eq!(config.identifier, hai_core::APP_IDENTIFIER);
         assert_eq!(
             config.bundle.targets,
             BundleTarget::List(vec![

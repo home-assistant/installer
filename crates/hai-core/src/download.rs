@@ -9,7 +9,7 @@ use crate::types::{
     StableVersionInfo,
 };
 use crate::{Backend, ProgressCallback, ReleaseSource};
-use directories::ProjectDirs;
+use directories::BaseDirs;
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -309,10 +309,12 @@ const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
 
 /// Get the cache directory for downloaded images
 pub(crate) fn get_cache_dir() -> Result<PathBuf> {
-    let project_dirs = ProjectDirs::from("io", "home-assistant", "installer")
+    let base_dirs = BaseDirs::new()
         .ok_or_else(|| Error::InvalidConfig("Could not determine cache directory".to_string()))?;
 
-    let cache_dir = project_dirs.cache_dir().to_path_buf();
+    // The same place as Tauri's `app_cache_dir`, so the cache sits next to
+    // the logs and app data on every platform.
+    let cache_dir = base_dirs.cache_dir().join(crate::APP_IDENTIFIER);
     std::fs::create_dir_all(&cache_dir)?;
 
     Ok(cache_dir)
@@ -2084,8 +2086,16 @@ mod tests {
 
     #[test]
     fn test_get_cache_dir() {
-        let result = get_cache_dir();
-        assert!(result.is_ok());
+        let cache_dir = get_cache_dir().unwrap();
+
+        assert_eq!(
+            cache_dir,
+            BaseDirs::new()
+                .unwrap()
+                .cache_dir()
+                .join("io.home-assistant.installer")
+        );
+        assert!(cache_dir.is_dir());
     }
 
     #[tokio::test]

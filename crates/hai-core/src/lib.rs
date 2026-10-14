@@ -34,6 +34,10 @@ pub use error::{Error, Result};
 pub use mock::BackendMock;
 pub use types::*;
 
+/// The app's bundle identifier, as in `tauri.conf.json`. Tauri files logs and
+/// app data under it, and so does the download cache.
+pub const APP_IDENTIFIER: &str = "io.home-assistant.installer";
+
 use std::path::{Path, PathBuf};
 
 // ===========================================================================
