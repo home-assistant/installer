@@ -89,6 +89,11 @@ async function mockDesktop(page: Page, failingCommand = "") {
             return "/tmp/fake-image.qcow2";
           case "discard_utm_image":
             return;
+          // The app listens for the backend holding back a window close
+          case "plugin:event|listen":
+            return 1;
+          case "plugin:event|unlisten":
+            return;
           default:
             throw new Error(`Unexpected mock command: ${command}`);
         }

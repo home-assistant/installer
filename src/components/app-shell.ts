@@ -40,6 +40,7 @@ import {
 } from "../state/wizard-state.js";
 import { listBlockDevices, onCloseBlocked, quitAnyway } from "../api/index.js";
 import { findDrive, readDriveSelection } from "../utils/drive-selection.js";
+import { logFrontendError } from "../utils/diagnostics.js";
 import { openExternalUrl } from "../utils/external-url.js";
 
 export type ViewName =
@@ -131,6 +132,9 @@ export class AppShell extends LitElement {
       // One question at a time: quitting is the bigger one
       this._showStopDialog = false;
       this._showQuitDialog = true;
+    }).catch((error: unknown) => {
+      logFrontendError(error);
+      return () => {};
     });
   }
 

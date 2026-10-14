@@ -638,6 +638,25 @@ describe("app-shell", () => {
       expect(quitDialogOf(el).open).to.be.false;
     });
 
+    it("logs, rather than throws, when it can't listen for close requests", async () => {
+      const logged: unknown[] = [];
+      restoreTauriIpc();
+      mockTauriIpc(
+        (cmd, args) => {
+          if (cmd === "plugin:event|listen") throw new Error("no events");
+          if (cmd === "log_frontend_event") logged.push(args);
+          return undefined;
+        },
+        { includeLogs: true }
+      );
+
+      el = await fixture<AppShell>(html`<app-shell></app-shell>`);
+      await settle();
+
+      expect(logged).to.have.length(1);
+      expect(quitDialogOf(el).open).to.be.false;
+    });
+
     it("keeps installing when the user changes their mind", async () => {
       await blockClose();
 
