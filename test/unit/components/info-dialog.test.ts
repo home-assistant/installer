@@ -72,6 +72,17 @@ describe("info-dialog", () => {
     expect(primaryButton!.textContent!.trim()).to.equal("Got it");
   });
 
+  it("renders a danger primary button when asked to", async () => {
+    const el = await fixture<InfoDialog>(html`
+      <info-dialog open primaryVariant="danger"></info-dialog>
+    `);
+
+    expect(el.shadowRoot!.querySelector("wa-button[variant='brand']")).to.be
+      .null;
+    expect(el.shadowRoot!.querySelector("wa-button[variant='danger']")).to
+      .exist;
+  });
+
   it("does not render secondary button by default", async () => {
     const el = await fixture<InfoDialog>(html`
       <info-dialog open></info-dialog>

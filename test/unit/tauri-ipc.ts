@@ -19,19 +19,26 @@ export function ipcError(
  * backend call settles.
  *
  * Commands not handled by `handler` reject, so an unexpected call fails loudly.
+ * With `mockEvents`, `emit` from `@tauri-apps/api/event` reaches listeners.
  * Undo with `restoreTauriIpc()`.
  */
 export function mockTauriIpc(
   handler: IpcHandler,
-  { includeLogs = false }: { includeLogs?: boolean } = {}
+  {
+    includeLogs = false,
+    mockEvents = false,
+  }: { includeLogs?: boolean; mockEvents?: boolean } = {}
 ): void {
   // `commands.ts` only goes through IPC when it detects Tauri
   (window as unknown as { __TAURI__?: object }).__TAURI__ = {};
-  mockIPC((cmd, args) => {
-    // Diagnostics log every view's progress; only tests about logging see it
-    if (cmd === "log_frontend_event" && !includeLogs) return undefined;
-    return handler(cmd, args);
-  });
+  mockIPC(
+    (cmd, args) => {
+      // Diagnostics log every view's progress; only tests about logging see it
+      if (cmd === "log_frontend_event" && !includeLogs) return undefined;
+      return handler(cmd, args);
+    },
+    { shouldMockEvents: mockEvents }
+  );
 }
 
 export function restoreTauriIpc(): void {

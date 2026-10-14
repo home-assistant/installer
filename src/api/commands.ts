@@ -1,5 +1,6 @@
 import { formatNumber, localize } from "../localization/localize.js";
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { failMockOperation } from "./mock-failures.js";
 import type {
   BlockDevice,
@@ -40,6 +41,27 @@ export async function checkConnection(): Promise<void> {
     return;
   }
   return invoke<void>("check_connection");
+}
+
+/**
+ * Call `onBlocked` whenever the backend held back closing the app because an
+ * installation is still running. Resolves to a function that stops listening.
+ */
+export async function onCloseBlocked(
+  onBlocked: () => void
+): Promise<() => void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return () => {};
+  }
+  return listen("close-blocked", () => onBlocked());
+}
+
+/** Quit the app, even though an installation is still running. */
+export async function quitAnyway(): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return;
+  }
+  return invoke<void>("quit_anyway");
 }
 
 function isBrowserOnly(): boolean {

@@ -1,4 +1,5 @@
 import { expect, fixture, html, waitUntil } from "@open-wc/testing";
+import { emit } from "@tauri-apps/api/event";
 import "../../../src/components/app-shell.js";
 import type { AppShell } from "../../../src/components/app-shell.js";
 import type { ConfirmDialog } from "../../../src/components/confirm-dialog.js";
@@ -585,6 +586,70 @@ describe("app-shell", () => {
       expect(flags._flashError).to.be.false;
       expect(flags._utmInstallError).to.be.false;
       expect(flags._proxmoxInstallError).to.be.false;
+    });
+  });
+
+  describe("closing during an installation", () => {
+    let calls: string[];
+
+    const quitDialogOf = (el: AppShell) =>
+      el.shadowRoot!.querySelector("info-dialog") as InfoDialog;
+
+    beforeEach(async () => {
+      calls = [];
+      mockTauriIpc(
+        (cmd) => {
+          calls.push(cmd);
+          return undefined;
+        },
+        { mockEvents: true }
+      );
+      // A fresh shell, so it listens through the mocked Tauri events
+      el = await fixture<AppShell>(html`<app-shell></app-shell>`);
+      await settle();
+    });
+
+    async function blockClose() {
+      await emit("close-blocked");
+      await el.updateComplete;
+      await quitDialogOf(el).updateComplete;
+    }
+
+    it("asks before quitting", async () => {
+      expect(quitDialogOf(el).open).to.be.false;
+
+      await blockClose();
+
+      expect(quitDialogOf(el).open).to.be.true;
+      expect(calls).not.to.include("quit_anyway");
+    });
+
+    it("quits when the user says so", async () => {
+      await blockClose();
+
+      (
+        quitDialogOf(el).shadowRoot!.querySelector(
+          "wa-button[variant='danger']"
+        ) as HTMLElement
+      ).click();
+      await settle();
+
+      expect(calls).to.include("quit_anyway");
+      expect(quitDialogOf(el).open).to.be.false;
+    });
+
+    it("keeps installing when the user changes their mind", async () => {
+      await blockClose();
+
+      (
+        quitDialogOf(el).shadowRoot!.querySelector(
+          "wa-button[appearance='outlined']"
+        ) as HTMLElement
+      ).click();
+      await settle();
+
+      expect(calls).not.to.include("quit_anyway");
+      expect(quitDialogOf(el).open).to.be.false;
     });
   });
 });

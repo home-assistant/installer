@@ -4,6 +4,7 @@
 //! It uses hai-core for business logic and provides Tauri command wrappers.
 
 mod backend;
+mod close_guard;
 mod command_error;
 mod commands;
 mod diagnostics;
@@ -36,6 +37,12 @@ pub fn run() {
         }
     }));
 
+    // The stock Quit item would skip the question about a running job
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(close_guard::menu)
+        .on_menu_event(close_guard::on_menu_event);
+
     builder
         .manage(flash_state::FlashState::default())
         .manage(commands::PendingUtmImages::default())
@@ -52,6 +59,7 @@ pub fn run() {
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
+        .on_window_event(close_guard::on_window_event)
         .invoke_handler(tauri::generate_handler![
             check_connection,
             list_block_devices,
@@ -60,6 +68,7 @@ pub fn run() {
             get_manifest,
             get_haos_release,
             get_system_info,
+            close_guard::quit_anyway,
             diagnostics::get_diagnostics,
             diagnostics::log_frontend_event,
             diagnostics::open_logs_folder,
