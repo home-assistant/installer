@@ -8,6 +8,7 @@ use crate::command_error::CommandError;
 use crate::diagnostics::Operation;
 use crate::flash_state::FlashState;
 use hai_core::download::TemporaryImage;
+use hai_core::keep_awake::KeepAwake;
 use hai_core::{
     BlockDevice, DeviceBackend, DeviceManifest, ExpectedDevice, FlashProgress, FlashRequest,
     FlashResult, FlashStage, HaosRelease, HostBackend, ImageFormat, ProgressCallback,
@@ -81,6 +82,15 @@ impl<'a> ProgressCallback for TauriProgressCallback<'a> {
             .as_ref()
             .is_some_and(|cancelled| cancelled.load(Ordering::Acquire))
     }
+}
+
+/// Keep the computer awake while a long job runs. Not getting that is only
+/// logged: the job itself works fine as long as the computer stays awake.
+async fn keep_awake(reason: &str) -> Option<KeepAwake> {
+    KeepAwake::acquire(reason)
+        .await
+        .inspect_err(|_| crate::diagnostics::warning("keep_awake_unavailable"))
+        .ok()
 }
 
 // =============================================================================
@@ -192,6 +202,7 @@ pub async fn flash_image(
 ) -> Result<FlashResult, CommandError> {
     state
         .run(attempt, |cancelled| async move {
+            let _awake = keep_awake("Writing Home Assistant to a drive").await;
             let callback =
                 TauriProgressCallback::new(&progress_channel, "flash").cancellable(cancelled);
             callback
@@ -408,6 +419,7 @@ pub async fn download_utm_image(
     progress_channel: Channel<FlashProgress>,
     pending: tauri::State<'_, PendingUtmImages>,
 ) -> Result<String, CommandError> {
+    let _awake = keep_awake("Downloading Home Assistant").await;
     let callback = TauriProgressCallback::new(&progress_channel, "utm_download");
 
     // Verify UTM is available before doing any work.
@@ -504,6 +516,7 @@ pub async fn create_utm_vm(
     config: hai_core::UtmVmConfig,
     pending: tauri::State<'_, PendingUtmImages>,
 ) -> Result<String, CommandError> {
+    let _awake = keep_awake("Creating the Home Assistant virtual machine").await;
     Operation::new("utm_create").finish(run_utm_creation(&Backend, &config, &pending).await)
 }
 
@@ -680,6 +693,7 @@ pub async fn proxmox_create_vm(
     config: ProxmoxVmConfig,
     progress_channel: Channel<FlashProgress>,
 ) -> Result<ProxmoxVmResult, CommandError> {
+    let _awake = keep_awake("Installing Home Assistant on Proxmox").await;
     let callback = TauriProgressCallback::new(&progress_channel, "proxmox_install");
     // Fully qualified: `create_vm` is defined on both ProxmoxBackend and UtmBackend.
     callback.operation.finish(
