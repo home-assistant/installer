@@ -37,11 +37,22 @@ pub fn grow(path: &Path, size_bytes: u64) -> Result<()> {
         return Ok(());
     }
 
-    let l1_size = header.l1_entries_for(size_bytes)?;
+    // An L1 table may already hold more entries than its size needs. Those
+    // stay, they can point at allocated L2 tables.
+    let l1_size = header.l1_entries_for(size_bytes)?.max(header.l1_size);
     if l1_size > header.l1_capacity() {
         return Err(invalid_image(format!(
             "it can't be grown to {size_bytes} bytes without moving its L1 table"
         )));
+    }
+
+    // A truncated file would otherwise be extended with zeros and look fine.
+    let l1_table_end = header
+        .l1_table_offset
+        .checked_add(u64::from(l1_size) * 8)
+        .ok_or_else(|| invalid_image("its L1 table offset is invalid".to_string()))?;
+    if l1_table_end > file.metadata()?.len() {
+        return Err(invalid_image("its L1 table is missing".to_string()));
     }
 
     // Unused bytes behind the L1 table are not guaranteed to be zero. They
@@ -242,6 +253,32 @@ mod tests {
         assert_eq!(after[40..l1_used_end], before[40..l1_used_end]);
         assert!(after[l1_used_end..l1_new_end].iter().all(|&byte| byte == 0));
         assert_eq!(after[l1_new_end..], before[l1_new_end..]);
+    }
+
+    #[test]
+    fn keeps_an_l1_table_larger_than_needed() {
+        let mut header = haos_like_header();
+        header[36..40].copy_from_slice(&256u32.to_be_bytes());
+        let (_dir, path, _) = image_with(&header);
+
+        grow(&path, 64 * GIB).unwrap();
+
+        let header = read_header(&path);
+        assert_eq!(header.size, 64 * GIB);
+        assert_eq!(header.l1_size, 256);
+    }
+
+    #[test]
+    fn a_file_without_its_l1_table_is_refused_untouched() {
+        let header = haos_like_header();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("haos.qcow2");
+        std::fs::write(&path, &header).unwrap();
+
+        let error = grow(&path, 64 * GIB).unwrap_err();
+
+        assert!(error.to_string().contains("L1 table is missing"), "{error}");
+        assert_eq!(std::fs::read(&path).unwrap(), header);
     }
 
     #[test]
