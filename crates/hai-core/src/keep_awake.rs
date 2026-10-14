@@ -10,8 +10,9 @@
 //! - Windows: a `PowerRequestSystemRequired` power request. Unlike
 //!   `SetThreadExecutionState`, it isn't tied to a thread, so it survives an
 //!   async task moving between threads.
-//! - Linux: a logind `sleep` and `idle` inhibitor lock, held by its file
-//!   descriptor.
+//! - Linux: the desktop's `Inhibit` portal, asking it not to suspend on its
+//!   own. Without a portal, a logind `idle` inhibitor lock. Neither blocks a
+//!   suspend the user asks for, unlike a logind `sleep` lock.
 
 use crate::error::{Error, Result};
 
@@ -159,10 +160,29 @@ mod platform {
 
 #[cfg(target_os = "linux")]
 mod platform {
-    use zbus::zvariant::OwnedFd;
+    use std::collections::HashMap;
+
+    use zbus::zvariant::{OwnedFd, OwnedObjectPath, Value};
     use zbus::Connection;
 
     use super::{Error, Result};
+
+    /// The portal's "suspend the session" flag.
+    const INHIBIT_SUSPEND: u32 = 4;
+
+    #[zbus::proxy(
+        interface = "org.freedesktop.portal.Inhibit",
+        default_service = "org.freedesktop.portal.Desktop",
+        default_path = "/org/freedesktop/portal/desktop"
+    )]
+    trait Portal {
+        fn inhibit(
+            &self,
+            window: &str,
+            flags: u32,
+            options: HashMap<&str, Value<'_>>,
+        ) -> zbus::Result<OwnedObjectPath>;
+    }
 
     #[zbus::proxy(
         interface = "org.freedesktop.login1.Manager",
@@ -174,28 +194,59 @@ mod platform {
     }
 
     pub(super) struct Inner {
+        _lock: Lock,
+    }
+
+    // Never read: holding a lock is all these are for
+    #[allow(dead_code)]
+    enum Lock {
+        // The portal drops the inhibition when this connection closes.
+        Portal(Connection),
         // logind holds the lock until this file descriptor is closed.
-        _lock: OwnedFd,
+        Logind(OwnedFd),
     }
 
     impl Inner {
         pub(super) async fn acquire(reason: &str) -> Result<Self> {
-            let lock = async {
-                let connection = Connection::system().await?;
-                LoginManagerProxy::new(&connection)
-                    .await?
-                    .inhibit("sleep:idle", "Home Assistant Installer", reason, "block")
-                    .await
+            if let Ok(connection) = inhibit_with_portal(reason).await {
+                return Ok(Self {
+                    _lock: Lock::Portal(connection),
+                });
             }
-            .await
-            .map_err(|error| {
-                Error::UnsupportedPlatform(format!(
-                    "Could not take a logind inhibitor lock: {error}"
-                ))
-            })?;
 
-            Ok(Self { _lock: lock })
+            inhibit_with_logind(reason)
+                .await
+                .map(|lock| Self {
+                    _lock: Lock::Logind(lock),
+                })
+                .map_err(|error| {
+                    Error::UnsupportedPlatform(format!(
+                        "Could not ask the system to stay awake: {error}"
+                    ))
+                })
         }
+    }
+
+    async fn inhibit_with_portal(reason: &str) -> zbus::Result<Connection> {
+        // A connection of our own, so dropping it ends exactly this inhibition
+        let connection = Connection::session().await?;
+        let options = HashMap::from([("reason", Value::from(reason))]);
+        PortalProxy::new(&connection)
+            .await?
+            .inhibit("", INHIBIT_SUSPEND, options)
+            .await?;
+
+        Ok(connection)
+    }
+
+    async fn inhibit_with_logind(reason: &str) -> zbus::Result<OwnedFd> {
+        let connection = Connection::system().await?;
+        // Only `idle`: a `sleep` lock in block mode would also refuse a
+        // suspend the user asks for.
+        LoginManagerProxy::new(&connection)
+            .await?
+            .inhibit("idle", "Home Assistant Installer", reason, "block")
+            .await
     }
 }
 
