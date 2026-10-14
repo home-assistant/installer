@@ -421,18 +421,28 @@ jobs:
           fi
           xcrun stapler staple "${dmg[0]}"
 
+      # Tauri deletes the .app once it is in the DMG, as only the DMG is a
+      # bundle target. Check the app inside the DMG: that is what users get.
       - name: Verify the signature and notarization
         if: env.SIGN_MACOS == 'true'
         run: |
-          app=("$BUNDLE_DIR"/macos/*.app)
           dmg=("$BUNDLE_DIR"/dmg/*.dmg)
+          codesign --verify --strict --verbose=2 "${dmg[0]}"
+          xcrun stapler validate "${dmg[0]}"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "${dmg[0]}"
+
+          mountpoint=$(mktemp -d)
+          hdiutil attach "${dmg[0]}" -readonly -nobrowse -mountpoint "$mountpoint"
+          trap 'hdiutil detach "$mountpoint"' EXIT
+          app=("$mountpoint"/*.app)
+          if [[ ${#app[@]} -ne 1 || ! -d "${app[0]}" ]]; then
+            echo "::error::Expected exactly one app in the DMG, found: ${app[*]}"
+            exit 1
+          fi
           codesign --verify --deep --strict --verbose=2 "${app[0]}"
           codesign --display --verbose=2 "${app[0]}"
           xcrun stapler validate "${app[0]}"
           spctl --assess --type execute --verbose=2 "${app[0]}"
-          codesign --verify --strict --verbose=2 "${dmg[0]}"
-          xcrun stapler validate "${dmg[0]}"
-          spctl --assess --type open --context context:primary-signature --verbose=2 "${dmg[0]}"
 
       - name: Remove the notarization API key
         if: always() && env.SIGN_MACOS == 'true'
