@@ -54,6 +54,13 @@ pub(crate) fn on_window_event(window: &Window, event: &WindowEvent) {
     }
 
     api.prevent_close();
+
+    // Quit from the menu or the taskbar also works on a minimized or hidden
+    // window; bring it back, or the question goes unseen.
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+
     if window.emit(CLOSE_BLOCKED_EVENT, ()).is_err() {
         crate::diagnostics::warning("close_blocked_event_failed");
     }
