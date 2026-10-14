@@ -408,22 +408,6 @@ export async function startUtmVm(vmId: string): Promise<void> {
 }
 
 /**
- * Resize a UTM VM's disk before first start.
- * @param vmId The VM ID
- * @param sizeGb The target disk size in GB
- */
-export async function resizeUtmVmDisk(
-  vmId: string,
-  sizeGb: number
-): Promise<void> {
-  if (MOCK_ALLOWED && isBrowserOnly()) {
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    return;
-  }
-  return invoke<void>("resize_utm_vm_disk", { vmId, sizeGb });
-}
-
-/**
  * Get the status of a UTM VM including its IP address if available.
  * @param vmId The VM ID to check
  * @returns VM status and IP address

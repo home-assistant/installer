@@ -520,16 +520,6 @@ pub fn start_utm_vm(vm_id: String) -> Result<(), CommandError> {
     Operation::new("utm_start").finish(Backend.start_vm(&vm_id).map_err(CommandError::from))
 }
 
-/// Resize a UTM VM's disk
-#[tauri::command]
-pub fn resize_utm_vm_disk(vm_id: String, size_gb: u32) -> Result<(), CommandError> {
-    Operation::new("utm_resize").finish(
-        Backend
-            .resize_vm_disk(&vm_id, size_gb)
-            .map_err(CommandError::from),
-    )
-}
-
 /// Get the status of a UTM VM
 #[tauri::command(async)]
 pub fn get_utm_vm_status(vm_id: String) -> Result<VmStatusInfo, CommandError> {
@@ -1024,14 +1014,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_resize_utm_vm_disk_non_mock_returns_ok() {
-        let result = resize_utm_vm_disk("test-vm".to_string(), 64);
-        // Should return Ok even though not implemented
-        assert!(result.is_ok());
-    }
-
     // Off macOS the commands no longer gate themselves; hai-core has to
     // refuse them, and that refusal has to reach the frontend.
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
@@ -1039,14 +1021,6 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     fn test_start_utm_vm_unsupported_off_macos() {
         let err = start_utm_vm("test-vm".to_string()).unwrap_err();
-        assert_eq!(err.code, "unsupported_platform");
-    }
-
-    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
-    #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn test_resize_utm_vm_disk_unsupported_off_macos() {
-        let err = resize_utm_vm_disk("test-vm".to_string(), 64).unwrap_err();
         assert_eq!(err.code, "unsupported_platform");
     }
 
@@ -1559,9 +1533,6 @@ mod mock_tests {
         }
 
         fn start_vm(&self, _: &str) -> hai_core::Result<()> {
-            unreachable!()
-        }
-        fn resize_vm_disk(&self, _: &str, _: u32) -> hai_core::Result<()> {
             unreachable!()
         }
         fn vm_status(&self, _: &str) -> hai_core::Result<VmStatusInfo> {

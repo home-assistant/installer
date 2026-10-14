@@ -14,7 +14,6 @@ import {
   downloadUtmImage,
   discardUtmImage,
   createUtmVm,
-  resizeUtmVmDisk,
   startUtmVm,
   getUtmVmStatus,
   checkHaReady,
@@ -228,15 +227,6 @@ export class UtmProgressView extends LitElement {
         throwIfCancelled(signal);
       }
 
-      // Tracked separately from `vmId`: if the resize fails after the VM was
-      // created, a retry must resize it rather than start an undersized VM.
-      if (!selections.utmDiskResized) {
-        this._startStage("creating");
-        await resizeUtmVmDisk(vmId, diskSizeGb);
-        throwIfCancelled(signal);
-        wizardState.setSelection("utmDiskResized", true);
-      }
-
       this._startStage("starting");
       await this._ensureVmStarted(vmId, signal);
       throwIfCancelled(signal);
@@ -341,7 +331,7 @@ export class UtmProgressView extends LitElement {
       return pending.result;
     }
 
-    // Persist the result once, before any awaiting view can resize/start it.
+    // Persist the result once, before any awaiting view can start it.
     const result = createUtmVm(config)
       .then((vmId) => {
         const current = wizardState.getState().selections;

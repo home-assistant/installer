@@ -9,6 +9,9 @@ use crate::types::{FlashProgress, FlashStage};
 use crate::types::{UtmStatus, UtmVmConfig, UtmVmResult, VmStatusInfo};
 use crate::{Backend, ProgressCallback, UtmBackend};
 
+#[cfg(any(target_os = "macos", test))]
+mod qcow2;
+
 #[cfg(any(target_os = "macos", all(test, unix)))]
 fn applescript_output(output: std::process::Output) -> Result<String> {
     if output.status.success() {
@@ -142,24 +145,6 @@ fn start_vm(vm_id: &str) -> Result<()> {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = vm_id;
-        Err(Error::UnsupportedPlatform(
-            "UTM is only available on macOS".to_string(),
-        ))
-    }
-}
-
-/// Resize a UTM VM's disk
-fn resize_vm_disk(vm_id: &str, size_gb: u32) -> Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        // TODO: Implement via qemu-img
-        let _ = (vm_id, size_gb);
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (vm_id, size_gb);
         Err(Error::UnsupportedPlatform(
             "UTM is only available on macOS".to_string(),
         ))
@@ -457,13 +442,15 @@ end tell"#,
         let escaped_name = config.name.replace('\\', "\\\\").replace('"', "\\\"");
         let escaped_path = config.image_path.replace('\\', "\\\\").replace('"', "\\\"");
 
-        // Convert disk size from GB to MB for UTM
-        let disk_size_mb = config.disk_size_gb * 1024;
+        // UTM ignores `guest size` for an imported drive and keeps the size
+        // of the image, so the image gets the chosen size before the import.
+        let disk_size_bytes = u64::from(config.disk_size_gb) * 1024 * 1024 * 1024;
+        qcow2::grow(image_path, disk_size_bytes)?;
 
         // Build the drives configuration with VirtIO interface
         let drives_config = format!(
-            "{{interface:VirtIO, source:(POSIX file \"{}\"), guest size:{}}}",
-            escaped_path, disk_size_mb
+            "{{interface:VirtIO, source:(POSIX file \"{}\")}}",
+            escaped_path
         );
 
         // Create VM using QEMU backend with hardware virtualization
@@ -508,10 +495,6 @@ impl UtmBackend for Backend {
 
     fn start_vm(&self, vm_id: &str) -> Result<()> {
         start_vm(vm_id)
-    }
-
-    fn resize_vm_disk(&self, vm_id: &str, size_gb: u32) -> Result<()> {
-        resize_vm_disk(vm_id, size_gb)
     }
 
     fn vm_status(&self, vm_id: &str) -> Result<VmStatusInfo> {
@@ -790,17 +773,6 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     fn test_start_vm_not_available_on_non_macos() {
         match start_vm("test-vm-id") {
-            Err(Error::UnsupportedPlatform(msg)) => {
-                assert_eq!(msg, "UTM is only available on macOS");
-            }
-            _ => panic!("Expected UnsupportedPlatform error"),
-        }
-    }
-
-    #[test]
-    #[cfg(not(target_os = "macos"))]
-    fn test_resize_vm_disk_not_available_on_non_macos() {
-        match resize_vm_disk("test-vm-id", 64) {
             Err(Error::UnsupportedPlatform(msg)) => {
                 assert_eq!(msg, "UTM is only available on macOS");
             }

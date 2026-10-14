@@ -52,8 +52,6 @@ export interface WizardSelections {
   utmCreation?: { config: UtmVmConfig; result: Promise<string> };
   /** A completed VM with superseded settings must not be silently recreated. */
   utmSupersededVmId?: string;
-  /** Set once the disk of the VM in `vmId` has been resized. */
-  utmDiskResized?: boolean;
 
   /** Proxmox login, kept so going back to the connect step doesn't log in again. */
   proxmoxSession?: ProxmoxSession;

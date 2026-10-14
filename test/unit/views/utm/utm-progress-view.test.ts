@@ -79,7 +79,6 @@ describe("utm-progress-view", () => {
     // skips straight to the polling stages, and answer every check at once:
     // without cancellation it would finish well within the wait below
     wizardState.setSelection("vmId", "existing-vm");
-    wizardState.setSelection("utmDiskResized", true);
     mockTauriIpc((cmd) => {
       switch (cmd) {
         case "get_utm_vm_status":
@@ -139,7 +138,6 @@ describe("utm-progress-view", () => {
           return new Promise<string>((resolve) => {
             finishCreate = resolve;
           });
-        case "resize_utm_vm_disk":
         case "start_utm_vm":
           expect((args as { vmId: string }).vmId).to.equal("created-vm");
           return undefined;
@@ -172,7 +170,6 @@ describe("utm-progress-view", () => {
     await aTimeout(20);
 
     expect(wizardState.getState().selections.vmId).to.equal("created-vm");
-    expect(wizardState.getState().selections.utmDiskResized).to.be.undefined;
     expect(calls).to.deep.equal([
       "download_utm_image",
       "create_utm_vm",
@@ -186,7 +183,6 @@ describe("utm-progress-view", () => {
     expect(calls.filter((cmd) => cmd === "download_utm_image")).to.have.length(
       1
     );
-    expect(calls).to.include("resize_utm_vm_disk");
     expect(calls).to.include("start_utm_vm");
     expect(wizardState.getState().selections.ipAddress).to.equal(
       "192.168.1.100"
@@ -240,7 +236,7 @@ describe("utm-progress-view", () => {
   }
 
   for (const reuseElement of [false, true]) {
-    it(`awaits pending creation on ${reuseElement ? "the same element" : "a replacement view"} before resizing or starting`, async () => {
+    it(`awaits pending creation on ${reuseElement ? "the same element" : "a replacement view"} before starting`, async () => {
       const creation = deferred<string>();
       const calls: string[] = [];
       const discarded: string[] = [];
@@ -253,7 +249,7 @@ describe("utm-progress-view", () => {
         calls.push(cmd);
         if (cmd === "download_utm_image") return "/tmp/haos.qcow2";
         if (cmd === "create_utm_vm") return creation.promise;
-        if (cmd === "resize_utm_vm_disk" || cmd === "start_utm_vm") {
+        if (cmd === "start_utm_vm") {
           expect(wizardState.getState().selections.vmId).to.equal("shared-id");
           if (cmd === "start_utm_vm") started = true;
           return undefined;
@@ -281,9 +277,6 @@ describe("utm-progress-view", () => {
       await complete;
       expect(discarded).to.deep.equal(["/tmp/haos.qcow2"]);
       expect(calls.filter((cmd) => cmd === "create_utm_vm")).to.have.length(1);
-      expect(
-        calls.filter((cmd) => cmd === "resize_utm_vm_disk")
-      ).to.have.length(1);
       expect(calls.filter((cmd) => cmd === "start_utm_vm")).to.have.length(1);
       expect(wizardState.getState().selections.utmCreation).to.be.undefined;
       expect(wizardState.getState().selections.vmId).to.equal("shared-id");
@@ -298,7 +291,6 @@ describe("utm-progress-view", () => {
       if (cmd === "download_utm_image") return "/tmp/haos.qcow2";
       if (cmd === "create_utm_vm")
         return ++creates === 1 ? creation.promise : "retry-id";
-      if (cmd === "resize_utm_vm_disk") return undefined;
       if (cmd === "get_utm_vm_status")
         return { status: "started", ip_address: "192.168.1.100" };
       if (cmd === "check_ha_ready" || cmd === "check_ha_updated") return true;
@@ -341,7 +333,6 @@ describe("utm-progress-view", () => {
           return `/tmp/flow-${++downloads}.qcow2`;
         if (cmd === "create_utm_vm")
           return ++creates === 1 ? oldCreation.promise : newCreation.promise;
-        if (cmd === "resize_utm_vm_disk") return undefined;
         if (cmd === "get_utm_vm_status")
           return { status: "started", ip_address: "192.168.1.100" };
         if (cmd === "check_ha_ready" || cmd === "check_ha_updated") return true;
@@ -481,21 +472,20 @@ describe("utm-progress-view", () => {
     });
   }
 
-  it("retries a failed disk resize instead of starting an undersized VM", async () => {
-    const calls: string[] = [];
-    let resizeAttempts = 0;
-    mockTauriIpc((cmd) => {
-      if (cmd === "discard_utm_image") return undefined;
-      calls.push(cmd);
+  it("hands the chosen disk size to VM creation", async () => {
+    wizardState.setSelection("diskSizeGb", 128);
+    let diskSizeGb: number | undefined;
+    mockTauriIpc((cmd, args) => {
       switch (cmd) {
+        case "discard_utm_image":
+          return undefined;
         case "download_utm_image":
           return "/tmp/owned.qcow2";
         case "create_utm_vm":
+          diskSizeGb = (args as { config: { disk_size_gb: number } }).config
+            .disk_size_gb;
           return "new-vm";
-        case "resize_utm_vm_disk":
-          resizeAttempts++;
-          if (resizeAttempts === 1)
-            throw ipcError("utm", "resize failed", true);
+        case "start_utm_vm":
           return undefined;
         case "get_utm_vm_status":
           return { status: "started", ip_address: "192.168.1.100" };
@@ -506,26 +496,10 @@ describe("utm-progress-view", () => {
       throw new Error(`Unexpected IPC command: ${cmd}`);
     });
 
-    const el = mount();
-    await oneEvent(el, "install-error");
+    await oneEvent(mount(), "install-complete");
 
-    // The VM exists, but its disk was never resized
-    let selections = wizardState.getState().selections;
-    expect(selections.vmId).to.equal("new-vm");
-    expect(selections.utmDiskResized).to.not.be.true;
-    expect(calls, "VM started with an unresized disk").to.not.include(
-      "get_utm_vm_status"
-    );
-
-    const completed = oneEvent(el, "install-complete");
-    el.retry();
-    await completed;
-
-    selections = wizardState.getState().selections;
-    expect(selections.utmDiskResized).to.be.true;
-    // The retry resized the existing VM rather than creating another one
-    expect(calls.filter((c) => c === "create_utm_vm")).to.have.length(1);
-    expect(resizeAttempts).to.equal(2);
+    // The backend sizes the image before UTM imports it; no step follows
+    expect(diskSizeGb).to.equal(128);
   });
 
   it("shows Automation settings advice from a structured Tauri rejection", async () => {
@@ -584,7 +558,6 @@ describe("utm-progress-view", () => {
 
   it("allows a timed-out readiness check to resume the existing VM", async () => {
     wizardState.setSelection("vmId", "existing-vm");
-    wizardState.setSelection("utmDiskResized", true);
     mockTauriIpc((cmd) => {
       if (cmd === "get_utm_vm_status")
         return { status: "started", ip_address: "192.0.2.50" };
@@ -624,7 +597,6 @@ describe("utm-progress-view", () => {
   it("asks the VM for its address again on a retry", async () => {
     // A previous attempt found the VM at an address it no longer has
     wizardState.setSelection("vmId", "existing-vm");
-    wizardState.setSelection("utmDiskResized", true);
     wizardState.setSelection("ipAddress", "192.168.1.50");
 
     const checkedHosts: unknown[] = [];
@@ -651,7 +623,6 @@ describe("utm-progress-view", () => {
 
   it("reports an IP timeout instead of completing without readiness checks", async () => {
     wizardState.setSelection("vmId", "existing-vm");
-    wizardState.setSelection("utmDiskResized", true);
     wizardState.setSelection("ipAddress", "192.168.1.50");
     const realNow = Date.now;
     let statusCalls = 0;
@@ -686,7 +657,6 @@ describe("utm-progress-view", () => {
   for (const status of ["starting", "resuming"]) {
     it(`does not start a VM that is already ${status}`, async () => {
       wizardState.setSelection("vmId", "existing-vm");
-      wizardState.setSelection("utmDiskResized", true);
       const calls: string[] = [];
       mockTauriIpc((cmd) => {
         if (cmd === "discard_utm_image") return undefined;
@@ -709,8 +679,6 @@ describe("utm-progress-view", () => {
       switch (cmd) {
         case "download_utm_image":
           return "/tmp/owned.qcow2";
-        case "resize_utm_vm_disk":
-          return undefined;
         case "create_utm_vm":
           creates++;
           expect(
