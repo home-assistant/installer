@@ -44,6 +44,11 @@ pub async fn write_image<P: ProgressCallback>(
         return Err(Error::DriveDisconnected);
     }
 
+    // A stop during the polkit prompt must leave the drive untouched
+    if progress_callback.is_cancelled() {
+        return Err(Error::Cancelled);
+    }
+
     progress_callback.on_progress(FlashProgress::new(
         FlashStage::Writing,
         0,

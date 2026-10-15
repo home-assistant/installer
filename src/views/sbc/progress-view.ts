@@ -49,6 +49,9 @@ export class ProgressView extends LitElement {
   /** Whether this attempt got as far as the drive. */
   private _reachedDrive = false;
 
+  /** Names the running attempt, so a late stop can never hit a retry. */
+  private _attempt = "";
+
   private _stageStartTime: number | null = null;
   private _diagnostics?: InstallDiagnostics;
   private _stageStartBytes: number = 0;
@@ -73,10 +76,13 @@ export class ProgressView extends LitElement {
     if (!this._isFlashing || this._stopping) return;
 
     this._stopping = true;
-    cancelFlash().catch((error: unknown) => {
+    cancelFlash(this._attempt).catch((error: unknown) => {
       // The flash keeps going; show it as such again
       this._stopping = false;
       logFrontendError(error);
+      this.dispatchEvent(
+        new CustomEvent("flash-stop-failed", { bubbles: true, composed: true })
+      );
     });
   }
 
@@ -102,6 +108,7 @@ export class ProgressView extends LitElement {
 
     this._isFlashing = true;
     this._reachedDrive = false;
+    this._attempt = crypto.randomUUID();
     this._diagnostics = new InstallDiagnostics("flash");
     this._error = null;
 
@@ -152,7 +159,8 @@ export class ProgressView extends LitElement {
           if (progress.stage === "complete") {
             this._onComplete();
           }
-        }
+        },
+        this._attempt
       );
     } catch (err) {
       this._setError(err, this._stoppedMessage(err));

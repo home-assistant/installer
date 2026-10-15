@@ -186,11 +186,12 @@ fn find_flash_target<'a>(
 #[tauri::command]
 pub async fn flash_image(
     request: FlashRequest,
+    attempt: String,
     progress_channel: Channel<FlashProgress>,
     state: tauri::State<'_, FlashState>,
 ) -> Result<FlashResult, CommandError> {
     state
-        .run(|cancelled| async move {
+        .run(attempt, |cancelled| async move {
             let callback =
                 TauriProgressCallback::new(&progress_channel, "flash").cancellable(cancelled);
             callback
@@ -200,11 +201,11 @@ pub async fn flash_image(
         .await
 }
 
-/// Stop the running flash. `flash_image` then fails with `cancelled` once
-/// nothing touches the drive anymore.
+/// Stop the flash started as `attempt`. `flash_image` then fails with
+/// `cancelled` once nothing touches the drive anymore.
 #[tauri::command]
-pub fn cancel_flash(state: tauri::State<'_, FlashState>) {
-    state.cancel();
+pub fn cancel_flash(attempt: String, state: tauri::State<'_, FlashState>) {
+    state.cancel(&attempt);
 }
 
 /// Stop between steps when the user cancelled.

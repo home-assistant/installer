@@ -448,6 +448,27 @@ describe("app-shell", () => {
     });
   });
 
+  it("brings Cancel back when the stop request fails", async () => {
+    await enterSbcFlow(el);
+    selectTargets();
+    mockTauriIpc((cmd) => {
+      if (cmd === "cancel_flash")
+        return Promise.reject(new Error("IPC unavailable"));
+      // The flash keeps running
+      return new Promise(() => {});
+    });
+    await goToStep(el, "flash");
+
+    fire(shellOf(el), "wizard-cancel");
+    await el.updateComplete;
+    fire(el.shadowRoot!.querySelector("info-dialog")!, "dialog-primary");
+    await settle();
+    await el.updateComplete;
+
+    expect(shellOf(el).hideFooter).to.be.false;
+    expect(wizardState.currentStep?.id).to.equal("flash");
+  });
+
   // These flags reveal Cancel and "Try again" on the progress steps. Left
   // set, they would show over the next run's live write.
   describe("error state between runs", () => {

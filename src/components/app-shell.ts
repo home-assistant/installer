@@ -239,6 +239,7 @@ export class AppShell extends LitElement {
         @wizard-next=${this._onWizardNext}
         @flash-complete=${this._onFlashComplete}
         @flash-error=${this._onFlashError}
+        @flash-stop-failed=${this._onFlashStopFailed}
       >
         ${this._renderWizardStep(flow, currentStep?.id)}
       </wizard-shell>
@@ -692,6 +693,11 @@ export class AppShell extends LitElement {
     this._stoppingFlash = false;
     this._installRetryable = event.detail?.retryable === true;
     this._flashError = true;
+  }
+
+  /** The stop request never reached the backend: the flash keeps going. */
+  private _onFlashStopFailed() {
+    this._stoppingFlash = false;
   }
 
   private _onKeepInstalling() {

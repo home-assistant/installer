@@ -26,6 +26,11 @@ pub async fn write_image<P: ProgressCallback>(
     check_handle_serial(&device, expected)?;
     ensure_media_writable(&device)?;
 
+    // The transfer clears the disk before its first progress update
+    if progress_callback.is_cancelled() {
+        return Err(Error::Cancelled);
+    }
+
     progress_callback.on_progress(FlashProgress::new(
         FlashStage::Writing,
         0,

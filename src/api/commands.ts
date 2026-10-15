@@ -67,14 +67,16 @@ export async function listBlockDevices(): Promise<BlockDevice[]> {
  * Flash an image to a device with progress updates.
  * @param request The flash request parameters
  * @param onProgress Callback for progress updates
+ * @param attempt Names this flash, so `cancelFlash` can never stop another
  */
 export async function flashImage(
   request: FlashRequest,
-  onProgress: (progress: FlashProgress) => void
+  onProgress: (progress: FlashProgress) => void,
+  attempt: string
 ): Promise<FlashResult> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     // Simulate flash progress in browser-only mode
-    return simulateFlashProgress(onProgress);
+    return simulateFlashProgress(onProgress, attempt);
   }
 
   const channel = new Channel<FlashProgress>();
@@ -85,30 +87,33 @@ export async function flashImage(
 
   return invoke<FlashResult>("flash_image", {
     request,
+    attempt,
     progressChannel: channel,
   });
 }
 
-/** Set when the user stops the simulated flash in browser-only mode. */
+/** The simulated flash in browser-only mode, and whether it was stopped. */
+let mockFlashAttempt: string | undefined;
 let mockFlashCancelled = false;
 
 /**
- * Ask the running flash to stop. `flashImage` then rejects with `cancelled`
- * once nothing touches the drive anymore.
+ * Ask the flash started as `attempt` to stop. `flashImage` then rejects with
+ * `cancelled` once nothing touches the drive anymore.
  */
-export async function cancelFlash(): Promise<void> {
+export async function cancelFlash(attempt: string): Promise<void> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
-    mockFlashCancelled = true;
+    if (attempt === mockFlashAttempt) mockFlashCancelled = true;
     return;
   }
-  return invoke<void>("cancel_flash");
+  return invoke<void>("cancel_flash", { attempt });
 }
 
 /**
  * Simulate flash progress for browser-only mode
  */
 async function simulateFlashProgress(
-  onProgress: (progress: FlashProgress) => void
+  onProgress: (progress: FlashProgress) => void,
+  attempt: string
 ): Promise<FlashResult> {
   const compressedSize = 400 * 1024 * 1024; // 400 MB compressed
   const extractedSize = 2 * 1024 * 1024 * 1024; // 2 GB extracted
@@ -170,6 +175,7 @@ async function simulateFlashProgress(
   ];
 
   let overallProgress = 0;
+  mockFlashAttempt = attempt;
   mockFlashCancelled = false;
 
   for (const {

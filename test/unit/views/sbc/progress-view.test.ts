@@ -25,14 +25,18 @@ function mockFlash() {
   wizardState.setSelection("deviceConfig", MOCK_MANIFEST.devices[0].haos);
   const attempts: Array<{
     request: FlashRequest;
+    attempt: string;
     progressChannel: Channel<FlashProgress>;
     result: ReturnType<typeof deferred<FlashResult>>;
   }> = [];
-  const cancels: unknown[] = [];
+  const cancels: Array<{ attempt: string }> = [];
+  let rejectCancel = false;
   mockTauriIpc((cmd, args) => {
     if (cmd === "cancel_flash") {
-      cancels.push(args);
-      return Promise.resolve();
+      cancels.push(args as { attempt: string });
+      return rejectCancel
+        ? Promise.reject(new Error("IPC unavailable"))
+        : Promise.resolve();
     }
     expect(cmd).to.equal("flash_image");
     const result = deferred<FlashResult>();
@@ -40,7 +44,14 @@ function mockFlash() {
     return result.promise;
   });
   const el = fixtureSync<ProgressView>(html`<progress-view></progress-view>`);
-  return { el, attempts, cancels };
+  return {
+    el,
+    attempts,
+    cancels,
+    failCancel: () => {
+      rejectCancel = true;
+    },
+  };
 }
 
 function errorMessage(el: ProgressView) {
@@ -179,7 +190,7 @@ describe("progress-view", () => {
 
         el.stop();
         await settle();
-        expect(cancels).to.have.length(1);
+        expect(cancels).to.deep.equal([{ attempt: attempts[0].attempt }]);
         expect(
           el.shadowRoot!.querySelector("install-progress")!.stageTitle
         ).to.equal("Stopping...");
@@ -189,10 +200,12 @@ describe("progress-view", () => {
         expect(el.hasError).to.be.true;
         expect(errorMessage(el)).to.contain(message);
 
-        // Stopped is not broken: the same install can start again
+        // Stopped is not broken: the same install can start again, as a
+        // new attempt that the old stop cannot reach
         el.retry();
         await settle();
         expect(attempts).to.have.length(2);
+        expect(attempts[1].attempt).to.not.equal(attempts[0].attempt);
       });
     }
 
@@ -204,6 +217,22 @@ describe("progress-view", () => {
 
       expect(cancels).to.have.length(0);
       expect(errorMessage(el)).to.contain("Installation was cancelled.");
+    });
+
+    it("keeps flashing and says so when the stop request fails", async () => {
+      const { el, attempts, failCancel } = mockFlash();
+      let stopFailures = 0;
+      el.addEventListener("flash-stop-failed", () => stopFailures++);
+      failCancel();
+
+      el.stop();
+      await settle();
+      expect(stopFailures).to.equal(1);
+      expect(
+        el.shadowRoot!.querySelector("install-progress")!.stageTitle
+      ).to.not.equal("Stopping...");
+      expect(el.hasError).to.be.false;
+      expect(attempts).to.have.length(1);
     });
 
     it("does nothing once the flash has ended", async () => {

@@ -8,30 +8,37 @@ use std::sync::{Arc, Mutex};
 const ALREADY_FLASHING: &str =
     "A flash is already in progress. Wait for it to finish before starting another installation.";
 
+/// The running flash's attempt, as the frontend named it, and its cancel flag.
+type RunningAttempt = Arc<Mutex<Option<(String, Arc<AtomicBool>)>>>;
+
 #[derive(Default)]
 pub(crate) struct FlashState {
     active: Arc<AtomicBool>,
-    /// The running flash's cancel flag. Each flash gets a fresh one, so a
-    /// late cancel can never stop the next flash.
-    cancel: Arc<Mutex<Option<Arc<AtomicBool>>>>,
+    /// A cancel names its attempt, so one that arrives late can never stop
+    /// a retry.
+    running: RunningAttempt,
 }
 
 struct FlashGuard {
     active: Arc<AtomicBool>,
-    cancel: Arc<Mutex<Option<Arc<AtomicBool>>>>,
+    running: RunningAttempt,
 }
 
 impl Drop for FlashGuard {
     fn drop(&mut self) {
-        *self.cancel.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.running.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.active.store(false, Ordering::Release);
     }
 }
 
 impl FlashState {
     /// Run `operation` as the one active flash. It receives the flag that
-    /// `cancel` sets.
-    pub(crate) async fn run<O, F, T>(&self, operation: O) -> Result<T, CommandError>
+    /// `cancel` sets for this `attempt`.
+    pub(crate) async fn run<O, F, T>(
+        &self,
+        attempt: String,
+        operation: O,
+    ) -> Result<T, CommandError>
     where
         O: FnOnce(Arc<AtomicBool>) -> F,
         F: Future<Output = Result<T, CommandError>> + Send + 'static,
@@ -42,11 +49,12 @@ impl FlashState {
             .map_err(|_| CommandError::new("operation_in_progress", ALREADY_FLASHING, false))?;
         let guard = FlashGuard {
             active: Arc::clone(&self.active),
-            cancel: Arc::clone(&self.cancel),
+            running: Arc::clone(&self.running),
         };
 
         let cancelled = Arc::new(AtomicBool::new(false));
-        *self.cancel.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&cancelled));
+        *self.running.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((attempt, Arc::clone(&cancelled)));
         let operation = operation(cancelled);
 
         // Dropping the IPC waiter only detaches this task. It must finish awaiting
@@ -59,12 +67,15 @@ impl FlashState {
         .map_err(|_| CommandError::new("internal", "The installation task stopped unexpectedly. Check the drive before starting again.", false))?
     }
 
-    /// Ask the running flash to stop. It stops at its next progress update
-    /// and then fails with `cancelled`. Without a running flash this does
-    /// nothing.
-    pub(crate) fn cancel(&self) {
-        if let Some(cancelled) = &*self.cancel.lock().unwrap_or_else(|e| e.into_inner()) {
-            cancelled.store(true, Ordering::Release);
+    /// Ask `attempt` to stop. It stops at its next progress update and then
+    /// fails with `cancelled`. When that attempt is not running (anymore),
+    /// this does nothing.
+    pub(crate) fn cancel(&self, attempt: &str) {
+        let running = self.running.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((running_attempt, cancelled)) = &*running {
+            if running_attempt == attempt {
+                cancelled.store(true, Ordering::Release);
+            }
         }
     }
 }
@@ -78,34 +89,41 @@ mod tests {
     #[tokio::test]
     async fn releases_after_success_and_error() {
         let state = FlashState::default();
-        assert_eq!(state.run(|_| async { Ok(42) }).await.unwrap(), 42);
+        assert_eq!(
+            state.run("a".into(), |_| async { Ok(42) }).await.unwrap(),
+            42
+        );
         assert_eq!(
             state
-                .run(|_| async { Err::<(), _>(CommandError::new("io", "write failed", false)) })
+                .run("a".into(), |_| async {
+                    Err::<(), _>(CommandError::new("io", "write failed", false))
+                })
                 .await,
             Err(CommandError::new("io", "write failed", false))
         );
-        state.run(|_| async { Ok(()) }).await.unwrap();
+        state.run("a".into(), |_| async { Ok(()) }).await.unwrap();
     }
 
     #[tokio::test]
-    async fn cancel_reaches_only_the_running_flash() {
+    async fn cancel_reaches_only_its_own_attempt() {
         let state = Arc::new(FlashState::default());
 
         // Nothing runs: a cancel now must not leak into the next flash.
-        state.cancel();
+        state.cancel("first");
         let flag = state
-            .run(|cancelled| async move { Ok(cancelled) })
+            .run("first".into(), |cancelled| async move { Ok(cancelled) })
             .await
             .unwrap();
         assert!(!flag.load(Ordering::Acquire));
 
         let (started_tx, started_rx) = oneshot::channel();
+        let (checked_tx, checked_rx) = oneshot::channel::<()>();
         let running_state = Arc::clone(&state);
-        let running = tokio::spawn(async move {
+        let retry = tokio::spawn(async move {
             running_state
-                .run(|cancelled| async move {
-                    started_tx.send(()).unwrap();
+                .run("retry".into(), |cancelled| async move {
+                    started_tx.send(Arc::clone(&cancelled)).unwrap();
+                    checked_rx.await.unwrap();
                     while !cancelled.load(Ordering::Acquire) {
                         tokio::task::yield_now().await;
                     }
@@ -113,15 +131,15 @@ mod tests {
                 })
                 .await
         });
-        started_rx.await.unwrap();
-        state.cancel();
-        assert_eq!(running.await.unwrap().unwrap_err().code, "cancelled");
+        let cancelled = started_rx.await.unwrap();
 
-        let flag = state
-            .run(|cancelled| async move { Ok(cancelled) })
-            .await
-            .unwrap();
-        assert!(!flag.load(Ordering::Acquire));
+        // The first attempt's cancel arrives late, while the retry runs
+        state.cancel("first");
+        assert!(!cancelled.load(Ordering::Acquire));
+        checked_tx.send(()).unwrap();
+
+        state.cancel("retry");
+        assert_eq!(retry.await.unwrap().unwrap_err().code, "cancelled");
     }
 
     #[tokio::test]
@@ -132,7 +150,7 @@ mod tests {
         let first_state = Arc::clone(&state);
         let first = tokio::spawn(async move {
             first_state
-                .run(|_| async move {
+                .run("a".into(), |_| async move {
                     started_tx.send(()).unwrap();
                     finish_rx.await.unwrap();
                     Ok(())
@@ -142,7 +160,7 @@ mod tests {
         started_rx.await.unwrap();
         assert_eq!(
             state
-                .run(|_| async {
+                .run("a".into(), |_| async {
                     Err::<(), _>(CommandError::new(
                         "io",
                         "must not start a second download",
@@ -158,7 +176,7 @@ mod tests {
         );
         finish_tx.send(()).unwrap();
         first.await.unwrap().unwrap();
-        state.run(|_| async { Ok(()) }).await.unwrap();
+        state.run("a".into(), |_| async { Ok(()) }).await.unwrap();
     }
 
     #[tokio::test]
@@ -171,7 +189,7 @@ mod tests {
             let first_state = Arc::clone(&state);
             let first = tokio::spawn(async move {
                 first_state
-                    .run(|_| async move {
+                    .run("a".into(), |_| async move {
                         // Like the platform writers, this worker continues even
                         // if its JoinHandle is dropped. No real disk is opened.
                         let result = tokio::task::spawn_blocking(move || {
@@ -194,7 +212,7 @@ mod tests {
             first.abort();
             assert!(first.await.unwrap_err().is_cancelled());
             assert_eq!(
-                state.run(|_| async { Ok(()) }).await,
+                state.run("a".into(), |_| async { Ok(()) }).await,
                 Err(CommandError::new(
                     "operation_in_progress",
                     ALREADY_FLASHING,
@@ -212,7 +230,7 @@ mod tests {
             })
             .await
             .unwrap();
-            state.run(|_| async { Ok(()) }).await.unwrap();
+            state.run("a".into(), |_| async { Ok(()) }).await.unwrap();
         }
     }
 }
