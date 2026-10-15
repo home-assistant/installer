@@ -76,6 +76,11 @@ pub async fn write_image<P: ProgressCallback>(
 
     let _ = Command::new("sync").output();
 
+    // Best effort, like "Safely remove" in the file manager: the write and the
+    // verify passed, so the drive is done. If this fails, the success screen
+    // tells the user to eject the drive themselves.
+    let _ = eject_drive(&connection, &block_path).await;
+
     progress_callback.on_progress(FlashProgress::new(
         FlashStage::Complete,
         image_size,
@@ -222,6 +227,36 @@ fn verify_write(
     ));
 
     Ok(())
+}
+
+/// Unmount what the desktop mounted from the fresh image, then power the
+/// drive off, or eject its media when it can't be powered off.
+async fn eject_drive(conn: &Connection, block_path: &OwnedObjectPath) -> zbus::Result<()> {
+    // Desktops automount the new boot partition as soon as it appears
+    let _ = unmount_disk(conn, block_path).await;
+
+    let drive_path = UDisks2BlockProxy::builder(conn)
+        .path(block_path)?
+        .cache_properties(CacheProperties::No)
+        .build()
+        .await?
+        .drive()
+        .await?;
+    let drive = UDisks2DriveProxy::builder(conn)
+        .path(drive_path)?
+        .cache_properties(CacheProperties::No)
+        .build()
+        .await?;
+
+    // Never raise a second password prompt just to eject
+    let options = || HashMap::from([("auth.no_user_interaction", Value::from(true))]);
+    if drive.can_power_off().await? {
+        drive.power_off(options()).await
+    } else if drive.ejectable().await? {
+        drive.eject(options()).await
+    } else {
+        Ok(())
+    }
 }
 
 /// Unmount everything on the disk before writing.
@@ -423,6 +458,24 @@ trait UDisks2Manager {
 trait UDisks2Block {
     /// Open the whole device; `mode` is `"r"`, `"w"`, or `"rw"`.
     fn open_device(&self, mode: &str, options: HashMap<&str, Value<'_>>) -> zbus::Result<OwnedFd>;
+
+    #[zbus(property)]
+    fn drive(&self) -> zbus::Result<OwnedObjectPath>;
+}
+
+#[zbus::proxy(
+    interface = "org.freedesktop.UDisks2.Drive",
+    default_service = "org.freedesktop.UDisks2",
+    gen_blocking = false
+)]
+trait UDisks2Drive {
+    fn eject(&self, options: HashMap<&str, Value<'_>>) -> zbus::Result<()>;
+    fn power_off(&self, options: HashMap<&str, Value<'_>>) -> zbus::Result<()>;
+
+    #[zbus(property)]
+    fn ejectable(&self) -> zbus::Result<bool>;
+    #[zbus(property)]
+    fn can_power_off(&self) -> zbus::Result<bool>;
 }
 
 #[zbus::proxy(

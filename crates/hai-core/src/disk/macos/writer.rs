@@ -193,7 +193,13 @@ fn write_and_verify(
     // The device must be closed before diskutil can eject it.
     drop(device);
 
-    eject_disk(disk_id)
+    // Best effort: the write and the verify passed, so the drive is done.
+    // Spotlight or automount grabbing the new boot partition is enough to make
+    // the eject fail, and the success screen tells the user to eject the
+    // drive themselves if it's still listed.
+    let _ = eject_disk(disk_id);
+
+    Ok(())
 }
 
 /// Block size and capacity from `diskutil`, with a safe fallback block size
