@@ -158,8 +158,9 @@ describe("structured IPC errors in views", () => {
       const shell = app.shadowRoot!.querySelector(
         "wizard-shell"
       ) as HTMLElement & { hideNext: boolean; hideFooter: boolean };
-      await waitUntil(() => !shell.hideFooter);
-      expect(shell.hideNext).to.equal(false);
+      // A running flash shows only Cancel; the failure brings back Next
+      await waitUntil(() => !shell.hideNext);
+      expect(shell.hideFooter).to.equal(false);
       shell.dispatchEvent(
         new CustomEvent("wizard-next", { bubbles: true, composed: true })
       );

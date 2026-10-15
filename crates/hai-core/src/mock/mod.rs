@@ -47,8 +47,12 @@ pub(crate) async fn simulate<P: ProgressCallback>(
     stage: FlashStage,
     message: &str,
     step_ms: u64,
-) {
+) -> Result<()> {
     for pct in (0..=100).step_by(5) {
+        if cb.is_cancelled() {
+            return Err(crate::Error::Cancelled);
+        }
+
         cb.on_progress(FlashProgress {
             stage: stage.clone(),
             progress: pct,
@@ -58,6 +62,7 @@ pub(crate) async fn simulate<P: ProgressCallback>(
         });
         tokio::time::sleep(Duration::from_millis(step_ms)).await;
     }
+    Ok(())
 }
 
 /// Simulate a few indeterminate updates (`total_bytes` 0 while bytes grow),
@@ -67,8 +72,12 @@ pub(crate) async fn simulate_indeterminate<P: ProgressCallback>(
     stage: FlashStage,
     message: &str,
     step_ms: u64,
-) {
+) -> Result<()> {
     for step in 1..=8u64 {
+        if cb.is_cancelled() {
+            return Err(crate::Error::Cancelled);
+        }
+
         cb.on_progress(FlashProgress {
             stage: stage.clone(),
             progress: 0,
@@ -85,4 +94,5 @@ pub(crate) async fn simulate_indeterminate<P: ProgressCallback>(
         total_bytes: MOCK_IMAGE_BYTES,
         message: message.to_string(),
     });
+    Ok(())
 }

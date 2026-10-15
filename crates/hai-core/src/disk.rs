@@ -183,15 +183,35 @@ fn device_write_error(error: std::io::Error, written: u64, image_size: u64) -> E
     }
 }
 
+/// Send progress from a blocking disk worker. `run_with_progress` drops the
+/// receiver when the user cancels, so a failed send means: stop here.
+fn send_progress(
+    progress: &std::sync::mpsc::Sender<FlashProgress>,
+    update: FlashProgress,
+) -> Result<()> {
+    progress.send(update).map_err(|_| Error::Cancelled)
+}
+
 /// Drive a blocking task while forwarding its progress updates to the
 /// callback, then drain updates buffered after the task finished (e.g. the
 /// final "Write complete" / "Verification complete") so they aren't lost.
+///
+/// On cancel the receiver is dropped and the task stops at its next
+/// `send_progress`. It is still awaited: the flash only ends once nothing
+/// touches the drive anymore.
 async fn run_with_progress<P: ProgressCallback>(
     handle: tokio::task::JoinHandle<Result<()>>,
     progress_rx: std::sync::mpsc::Receiver<FlashProgress>,
     progress_callback: &P,
 ) -> Result<()> {
     loop {
+        if progress_callback.is_cancelled() {
+            drop(progress_rx);
+            return handle
+                .await
+                .map_err(|e| Error::Io(std::io::Error::other(e)))?;
+        }
+
         match progress_rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(update) => progress_callback.on_progress(update),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
@@ -258,6 +278,42 @@ impl DeviceBackend for Backend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct CancelledProgress;
+
+    impl ProgressCallback for CancelledProgress {
+        fn on_progress(&self, _progress: FlashProgress) {}
+
+        fn is_cancelled(&self) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_stops_the_worker_and_waits_for_it() {
+        let (progress_tx, progress_rx) = std::sync::mpsc::channel();
+        let (stopped_tx, stopped_rx) = std::sync::mpsc::channel();
+        let worker = tokio::task::spawn_blocking(move || {
+            // Keeps "writing" until a progress update has nowhere to go
+            let result = loop {
+                let update = FlashProgress::new(FlashStage::Writing, 0, 0, "Writing");
+                if let Err(error) = send_progress(&progress_tx, update) {
+                    break Err(error);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            };
+            stopped_tx.send(()).unwrap();
+            result
+        });
+
+        let error = run_with_progress(worker, progress_rx, &CancelledProgress)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, Error::Cancelled), "{error:?}");
+        // The worker was done before the flash reported back
+        stopped_rx.try_recv().unwrap();
+    }
 
     #[test]
     fn capacity_check_rejects_only_oversized_images() {

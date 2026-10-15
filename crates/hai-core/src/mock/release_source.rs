@@ -115,7 +115,7 @@ impl ReleaseSource for BackendMock {
             "Downloading image (mock)...",
             250,
         )
-        .await;
+        .await?;
         touch_placeholder(dest_path)
     }
 
@@ -131,7 +131,7 @@ impl ReleaseSource for BackendMock {
             "Extracting image (mock)...",
             250,
         )
-        .await;
+        .await?;
         touch_placeholder(dest_path)
     }
 

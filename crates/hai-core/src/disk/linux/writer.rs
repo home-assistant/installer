@@ -103,7 +103,7 @@ fn write_and_verify(
         })();
 
         verified.map_err(|e| match e {
-            Error::VerificationFailed(_) | Error::DriveDisconnected => e,
+            Error::VerificationFailed(_) | Error::DriveDisconnected | Error::Cancelled => e,
             other => Error::VerificationFailed(other.to_string()),
         })?;
     }
@@ -137,12 +137,15 @@ fn write_to_device(
         // Update progress periodically
         if bytes_written - last_progress_bytes >= PROGRESS_UPDATE_INTERVAL {
             last_progress_bytes = bytes_written;
-            let _ = progress_tx.send(FlashProgress::new(
-                FlashStage::Writing,
-                bytes_written,
-                total_size,
-                "Writing image to device...",
-            ));
+            send_progress(
+                progress_tx,
+                FlashProgress::new(
+                    FlashStage::Writing,
+                    bytes_written,
+                    total_size,
+                    "Writing image to device...",
+                ),
+            )?;
         }
     }
 
@@ -193,12 +196,15 @@ fn verify_write(
         // Update progress periodically
         if bytes_verified - last_progress_bytes >= PROGRESS_UPDATE_INTERVAL {
             last_progress_bytes = bytes_verified;
-            let _ = progress_tx.send(FlashProgress::new(
-                FlashStage::Verifying,
-                bytes_verified,
-                total_size,
-                "Verifying written data...",
-            ));
+            send_progress(
+                progress_tx,
+                FlashProgress::new(
+                    FlashStage::Verifying,
+                    bytes_verified,
+                    total_size,
+                    "Verifying written data...",
+                ),
+            )?;
         }
     }
 

@@ -623,10 +623,33 @@ test.describe("SBC Flashing", () => {
     await expect(progressView.locator(".stage-dot")).toHaveCount(5);
   });
 
-  test("footer is hidden during flashing", async ({ page }) => {
+  test("footer offers only Cancel during flashing", async ({ page }) => {
     const wizardShell = page.locator("wizard-shell");
-    // Footer should not be visible
-    await expect(wizardShell.locator(".footer")).not.toBeVisible();
+    await expect(wizardShell.locator(".footer-left wa-button")).toHaveText(
+      "Cancel"
+    );
+    await expect(wizardShell.locator(".footer-right wa-button")).toHaveCount(0);
+  });
+
+  test("Cancel asks first, then stops the flash", async ({ page }) => {
+    const wizardShell = page.locator("wizard-shell");
+    const stopDialog = page.locator("app-shell > info-dialog");
+
+    // Keep installing leaves the flash alone
+    await wizardShell.locator(".footer-left wa-button").click();
+    await expect(stopDialog.getByText("Stop the installation?")).toBeVisible();
+    await stopDialog.getByRole("button", { name: "Keep installing" }).click();
+    await expect(stopDialog.getByText("Stop the installation?")).toBeHidden();
+    await expect(page.locator("progress-view")).toBeVisible();
+
+    await wizardShell.locator(".footer-left wa-button").click();
+    await stopDialog.getByRole("button", { name: "Stop installation" }).click();
+    await expect(page.locator("progress-view .error-message")).toContainText(
+      "Installation stopped."
+    );
+    await expect(wizardShell.locator(".footer-right wa-button")).toHaveText(
+      "Try again"
+    );
   });
 
   test("back button is hidden during flashing", async ({ page }) => {

@@ -6,11 +6,18 @@ import {
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
-import { flashImage, type FlashProgress } from "../../api/index.js";
+import {
+  cancelFlash,
+  flashImage,
+  type FlashProgress,
+} from "../../api/index.js";
 import { readDriveSelection } from "../../utils/drive-selection.js";
 import "../../components/install-progress.js";
 import "../../components/progress-bar.js";
-import { InstallDiagnostics } from "../../utils/diagnostics.js";
+import {
+  InstallDiagnostics,
+  logFrontendError,
+} from "../../utils/diagnostics.js";
 
 @customElement("progress-view")
 export class ProgressView extends LitElement {
@@ -36,6 +43,12 @@ export class ProgressView extends LitElement {
   @state()
   private _isFlashing = false;
 
+  @state()
+  private _stopping = false;
+
+  /** Whether this attempt got as far as the drive. */
+  private _reachedDrive = false;
+
   private _stageStartTime: number | null = null;
   private _diagnostics?: InstallDiagnostics;
   private _stageStartBytes: number = 0;
@@ -53,6 +66,18 @@ export class ProgressView extends LitElement {
     this._stageStartTime = null;
     this._stageStartBytes = 0;
     void this._startFlashing();
+  }
+
+  /** Stop the running flash. It ends as a retryable `cancelled` error. */
+  stop(): void {
+    if (!this._isFlashing || this._stopping) return;
+
+    this._stopping = true;
+    cancelFlash().catch((error: unknown) => {
+      // The flash keeps going; show it as such again
+      this._stopping = false;
+      logFrontendError(error);
+    });
   }
 
   private _unsubscribe?: () => void;
@@ -76,6 +101,7 @@ export class ProgressView extends LitElement {
     if (this._isFlashing) return;
 
     this._isFlashing = true;
+    this._reachedDrive = false;
     this._diagnostics = new InstallDiagnostics("flash");
     this._error = null;
 
@@ -118,6 +144,9 @@ export class ProgressView extends LitElement {
           }
 
           this._progress = progress;
+          if (["writing", "verifying", "finalizing"].includes(progress.stage)) {
+            this._reachedDrive = true;
+          }
 
           // If we've completed, advance to next step
           if (progress.stage === "complete") {
@@ -126,15 +155,29 @@ export class ProgressView extends LitElement {
         }
       );
     } catch (err) {
-      this._setError(err);
+      this._setError(err, this._stoppedMessage(err));
     } finally {
       this._isFlashing = false;
+      this._stopping = false;
     }
   }
 
-  private _setError(error: unknown) {
+  /** Say what a stop left behind, rather than a generic "cancelled". */
+  private _stoppedMessage(error: unknown): string | undefined {
+    if (!this._stopping || installerError(error).code !== "cancelled") {
+      return undefined;
+    }
+
+    if (this._reachedDrive) {
+      return localize("views.sbc.progress_view.stopped_drive_not_ready");
+    }
+    return localize("views.sbc.progress_view.stopped_nothing_written");
+  }
+
+  private _setError(error: unknown, message?: string) {
     this._diagnostics?.fail(error);
-    this._error = installerError(error);
+    const installer = installerError(error);
+    this._error = message ? { ...installer, message } : installer;
     this.dispatchEvent(
       new CustomEvent("flash-error", {
         detail: { retryable: this._error.retryable },
@@ -166,7 +209,9 @@ export class ProgressView extends LitElement {
           "finalizing",
         ].map((id) => ({ id, label: this._getStageDescription(id) }))}
         .stage=${stage}
-        .stageTitle=${this._getStageTitle(stage)}
+        .stageTitle=${this._stopping
+          ? localize("views.sbc.progress_view.stopping")
+          : this._getStageTitle(stage)}
         .description=${this._getStageDescription(stage)}
         .progress=${this._progress?.progress || 0}
         .bytesProcessed=${this._progress?.bytes_processed || 0}

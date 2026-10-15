@@ -89,6 +89,21 @@ export async function flashImage(
   });
 }
 
+/** Set when the user stops the simulated flash in browser-only mode. */
+let mockFlashCancelled = false;
+
+/**
+ * Ask the running flash to stop. `flashImage` then rejects with `cancelled`
+ * once nothing touches the drive anymore.
+ */
+export async function cancelFlash(): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    mockFlashCancelled = true;
+    return;
+  }
+  return invoke<void>("cancel_flash");
+}
+
 /**
  * Simulate flash progress for browser-only mode
  */
@@ -155,6 +170,7 @@ async function simulateFlashProgress(
   ];
 
   let overallProgress = 0;
+  mockFlashCancelled = false;
 
   for (const {
     stage,
@@ -166,6 +182,16 @@ async function simulateFlashProgress(
     delay,
   } of stages) {
     for (let step = 0; step <= steps; step++) {
+      // Shaped like the native rejection
+      if (mockFlashCancelled) {
+        throw {
+          code: "cancelled",
+          message: "Installation was cancelled.",
+          retryable: true,
+          details: {},
+        };
+      }
+
       const stageProgress = (step * 100) / steps;
       const progress = overallProgress + (stageProgress * weight) / 100;
 

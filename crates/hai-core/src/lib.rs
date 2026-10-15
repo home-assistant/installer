@@ -257,6 +257,12 @@ pub trait ProgressCallback: Send + Sync {
     /// Implementations should handle this method being called frequently
     /// during long-running operations like downloads and disk writes.
     fn on_progress(&self, progress: FlashProgress);
+
+    /// Whether the user asked to stop. Long operations check this between
+    /// steps and at every progress update, then stop with `Error::Cancelled`.
+    fn is_cancelled(&self) -> bool {
+        false
+    }
 }
 
 /// A no-op progress callback for use when progress reporting is not needed.

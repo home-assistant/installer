@@ -78,7 +78,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
     await usbBootOption.click();
 
     // Should show info dialog
-    const infoDialog = page.locator("info-dialog");
+    const infoDialog = page.locator("minipc-setup-method-view info-dialog");
     await expect(infoDialog).toBeVisible();
     await expect(infoDialog).toContainText("USB boot installation");
     await expect(infoDialog).toContainText("not supported");
@@ -93,7 +93,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
       .filter({ hasText: "I need to boot from USB" });
     await usbBootOption.click();
 
-    const infoDialog = page.locator("info-dialog");
+    const infoDialog = page.locator("minipc-setup-method-view info-dialog");
     await expect(infoDialog).toBeVisible();
 
     // Check for primary button (View Instructions)
@@ -112,7 +112,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
       .filter({ hasText: "I need to boot from USB" });
     await usbBootOption.click();
 
-    const infoDialog = page.locator("info-dialog");
+    const infoDialog = page.locator("minipc-setup-method-view info-dialog");
     await expect(infoDialog).toBeVisible();
 
     // Click secondary button (Go Back). Target by appearance so it doesn't
@@ -136,7 +136,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
       .filter({ hasText: "I need to boot from USB" });
     await usbBootOption.click();
 
-    const infoDialog = page.locator("info-dialog");
+    const infoDialog = page.locator("minipc-setup-method-view info-dialog");
     await expect(infoDialog).toBeVisible();
 
     // Press Escape — exercises the real wa-dialog dismissal path

@@ -14,6 +14,8 @@ use hai_core::{
     ProxmoxBackend, ProxmoxBridge, ProxmoxCredentials, ProxmoxNode, ProxmoxSession, ProxmoxStorage,
     ProxmoxVmConfig, ProxmoxVmResult, ReleaseSource, SystemInfo, UtmBackend, VmStatusInfo,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::ipc::Channel;
 
 #[derive(Default)]
@@ -33,6 +35,7 @@ impl PendingUtmImages {
 struct TauriProgressCallback<'a> {
     channel: &'a Channel<FlashProgress>,
     operation: Operation,
+    cancelled: Option<Arc<AtomicBool>>,
 }
 
 impl<'a> TauriProgressCallback<'a> {
@@ -40,7 +43,14 @@ impl<'a> TauriProgressCallback<'a> {
         Self {
             channel,
             operation: Operation::new(name),
+            cancelled: None,
         }
+    }
+
+    /// Let the operation stop once `cancelled` is set.
+    fn cancellable(mut self, cancelled: Arc<AtomicBool>) -> Self {
+        self.cancelled = Some(cancelled);
+        self
     }
 }
 
@@ -64,6 +74,12 @@ impl<'a> ProgressCallback for TauriProgressCallback<'a> {
         };
         self.operation.stage(stage);
         let _ = self.channel.send(progress);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled
+            .as_ref()
+            .is_some_and(|cancelled| cancelled.load(Ordering::Acquire))
     }
 }
 
@@ -174,13 +190,29 @@ pub async fn flash_image(
     state: tauri::State<'_, FlashState>,
 ) -> Result<FlashResult, CommandError> {
     state
-        .run(async move {
-            let callback = TauriProgressCallback::new(&progress_channel, "flash");
+        .run(|cancelled| async move {
+            let callback =
+                TauriProgressCallback::new(&progress_channel, "flash").cancellable(cancelled);
             callback
                 .operation
                 .finish(run_flash(&Backend, &request, &callback).await)
         })
         .await
+}
+
+/// Stop the running flash. `flash_image` then fails with `cancelled` once
+/// nothing touches the drive anymore.
+#[tauri::command]
+pub fn cancel_flash(state: tauri::State<'_, FlashState>) {
+    state.cancel();
+}
+
+/// Stop between steps when the user cancelled.
+fn check_cancelled<P: ProgressCallback>(callback: &P) -> Result<(), CommandError> {
+    if callback.is_cancelled() {
+        return Err(hai_core::Error::Cancelled.into());
+    }
+    Ok(())
 }
 
 /// Download, extract, and write the image for `request`.
@@ -247,6 +279,7 @@ where
     // Extract the image
     let extracted_path = temporary_image.path();
 
+    check_cancelled(callback)?;
     backend
         .extract_temporary_image(&temporary_image, callback)
         .await
@@ -268,6 +301,9 @@ where
     )?;
 
     hai_core::disk::ensure_image_fits(image_size, device.size)?;
+
+    // Last point where the drive is still untouched
+    check_cancelled(callback)?;
 
     // Write to device
     backend
@@ -1816,6 +1852,47 @@ mod mock_tests {
         .await
         .unwrap();
         assert!(result.duration_secs < 60);
+    }
+
+    /// Cancels as soon as extraction starts, and records every stage seen.
+    #[derive(Default)]
+    struct CancelDuringExtraction {
+        cancelled: AtomicBool,
+        stages: std::sync::Mutex<Vec<FlashStage>>,
+    }
+
+    impl ProgressCallback for CancelDuringExtraction {
+        fn on_progress(&self, progress: FlashProgress) {
+            if progress.stage == FlashStage::Extracting {
+                self.cancelled.store(true, Ordering::Release);
+            }
+            self.stages.lock().unwrap().push(progress.stage);
+        }
+
+        fn is_cancelled(&self) -> bool {
+            self.cancelled.load(Ordering::Acquire)
+        }
+    }
+
+    #[tokio::test]
+    #[serial] // all share the mock cache directory
+    async fn run_flash_cancelled_before_writing_never_touches_the_drive() {
+        let callback = CancelDuringExtraction::default();
+
+        let error = run_flash(
+            &BackendMock,
+            &request("mock-sd-card-32gb", "rpi5-64").await,
+            &callback,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error.code, "cancelled");
+        assert!(!callback
+            .stages
+            .lock()
+            .unwrap()
+            .contains(&FlashStage::Writing));
     }
 
     #[tokio::test]

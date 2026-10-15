@@ -2,6 +2,7 @@ import { expect, fixture, html, waitUntil } from "@open-wc/testing";
 import "../../../src/components/app-shell.js";
 import type { AppShell } from "../../../src/components/app-shell.js";
 import type { ConfirmDialog } from "../../../src/components/confirm-dialog.js";
+import type { InfoDialog } from "../../../src/components/info-dialog.js";
 import {
   MOCK_BLOCK_DEVICES,
   MOCK_MANIFEST,
@@ -24,6 +25,7 @@ interface WizardShell extends HTMLElement {
   nextLabel: string;
   nextDisabled: boolean;
   hideFooter: boolean;
+  hideNext: boolean;
 }
 
 interface ErrorFlags {
@@ -404,6 +406,48 @@ describe("app-shell", () => {
     });
   });
 
+  // Browser-only mode runs the simulated flash, which honors a stop too
+  describe("cancelling a running flash", () => {
+    const stopDialogOf = (el: AppShell) =>
+      el.shadowRoot!.querySelector("info-dialog") as InfoDialog;
+
+    beforeEach(async () => {
+      await enterSbcFlow(el);
+      selectTargets();
+      await goToStep(el, "flash");
+    });
+
+    it("asks first, and Keep installing carries on", async () => {
+      expect(shellOf(el).hideFooter).to.be.false;
+      expect(shellOf(el).hideNext).to.be.true;
+
+      fire(shellOf(el), "wizard-cancel");
+      await el.updateComplete;
+      expect(stopDialogOf(el).open).to.be.true;
+
+      fire(stopDialogOf(el), "dialog-secondary");
+      await el.updateComplete;
+      expect(stopDialogOf(el).open).to.be.false;
+      expect(wizardState.currentStep?.id).to.equal("flash");
+      expect(shellOf(el).hideFooter).to.be.false;
+    });
+
+    it("stops the flash and offers to install again", async () => {
+      fire(shellOf(el), "wizard-cancel");
+      await el.updateComplete;
+      fire(stopDialogOf(el), "dialog-primary");
+      await el.updateComplete;
+      // No buttons while the flash winds down
+      expect(shellOf(el).hideFooter).to.be.true;
+
+      await waitUntil(() => shellOf(el).nextLabel === "Try again");
+      expect(shellOf(el).hideFooter).to.be.false;
+      expect(wizardState.currentStep?.id).to.equal("flash");
+      expect(el.shadowRoot!.querySelector("progress-view")!.hasError).to.be
+        .true;
+    });
+  });
+
   // These flags reveal Cancel and "Try again" on the progress steps. Left
   // set, they would show over the next run's live write.
   describe("error state between runs", () => {
@@ -428,7 +472,9 @@ describe("app-shell", () => {
       });
       await el.updateComplete;
 
-      expect(shellOf(el).hideFooter).to.be.true;
+      // The live write offers Cancel only, no stale "Try again"
+      expect(shellOf(el).hideFooter).to.be.false;
+      expect(shellOf(el).hideNext).to.be.true;
     });
 
     it("is cleared for every flow when a new path is chosen", async () => {

@@ -184,7 +184,7 @@ fn write_and_verify(
             source_checksum.expect("Checksum should have been computed when verify=true");
         verify_device(&mut device, &checksum, device_path, layout, &progress_tx).map_err(|e| {
             match e {
-                Error::VerificationFailed(_) | Error::DriveDisconnected => e,
+                Error::VerificationFailed(_) | Error::DriveDisconnected | Error::Cancelled => e,
                 other => Error::VerificationFailed(other.to_string()),
             }
         })?;
@@ -370,12 +370,10 @@ fn write_to_device(
     let mut bytes_written: u64 = 0;
     let mut last_progress_update: u64 = 0;
 
-    let _ = progress_tx.send(FlashProgress::new(
-        FlashStage::Writing,
-        0,
-        total_size,
-        "Starting write...",
-    ));
+    send_progress(
+        progress_tx,
+        FlashProgress::new(FlashStage::Writing, 0, total_size, "Starting write..."),
+    )?;
 
     loop {
         let filled = fill_buffer(&mut source, &mut buffer).map_err(Error::Io)?;
@@ -407,12 +405,15 @@ fn write_to_device(
 
         // Send progress update every PROGRESS_UPDATE_INTERVAL bytes
         if bytes_written - last_progress_update >= PROGRESS_UPDATE_INTERVAL {
-            let _ = progress_tx.send(FlashProgress::new(
-                FlashStage::Writing,
-                bytes_written,
-                total_size,
-                "Writing image to drive...",
-            ));
+            send_progress(
+                progress_tx,
+                FlashProgress::new(
+                    FlashStage::Writing,
+                    bytes_written,
+                    total_size,
+                    "Writing image to drive...",
+                ),
+            )?;
             last_progress_update = bytes_written;
         }
     }
@@ -460,12 +461,15 @@ fn verify_device(
         ..
     } = layout;
 
-    let _ = progress_tx.send(FlashProgress::new(
-        FlashStage::Verifying,
-        0,
-        total_size,
-        "Starting verification...",
-    ));
+    send_progress(
+        progress_tx,
+        FlashProgress::new(
+            FlashStage::Verifying,
+            0,
+            total_size,
+            "Starting verification...",
+        ),
+    )?;
 
     device
         .seek(SeekFrom::Start(0))
@@ -498,12 +502,15 @@ fn verify_device(
 
         // Send progress update every PROGRESS_UPDATE_INTERVAL bytes
         if bytes_hashed - last_progress_update >= PROGRESS_UPDATE_INTERVAL {
-            let _ = progress_tx.send(FlashProgress::new(
-                FlashStage::Verifying,
-                bytes_hashed,
-                total_size,
-                "Verifying written data...",
-            ));
+            send_progress(
+                progress_tx,
+                FlashProgress::new(
+                    FlashStage::Verifying,
+                    bytes_hashed,
+                    total_size,
+                    "Verifying written data...",
+                ),
+            )?;
             last_progress_update = bytes_hashed;
         }
     }

@@ -720,6 +720,10 @@ async fn download_image_with_client<P: ProgressCallback>(
     let mut hasher = Sha256::new();
 
     while let Some(chunk) = stream.next().await {
+        if progress_callback.is_cancelled() {
+            return Err(Error::Cancelled);
+        }
+
         let chunk = chunk?;
 
         if chunk.len() as u64 > image.size.saturating_sub(downloaded) {
@@ -811,26 +815,29 @@ struct ExtractionProgress<'a> {
 }
 
 impl ExtractionProgress<'_> {
-    fn report(&mut self, pass: u64, consumed: u64) {
+    /// Fails with `Error::Cancelled` once nobody listens anymore.
+    fn report(&mut self, pass: u64, consumed: u64) -> Result<()> {
         if self.archive_size == 0 {
-            return;
+            return Ok(());
         }
 
         let consumed = consumed.min(self.archive_size);
         let bytes_processed = (pass * self.archive_size + consumed) / 2;
         let percent = ((bytes_processed as f64 / self.archive_size as f64 * 100.0) as u8).min(99);
         if percent == self.last_percent {
-            return;
+            return Ok(());
         }
 
         self.last_percent = percent;
-        let _ = self.sender.send(FlashProgress {
-            stage: FlashStage::Extracting,
-            progress: percent,
-            bytes_processed,
-            total_bytes: self.archive_size,
-            message: "Extracting image...".to_string(),
-        });
+        self.sender
+            .send(FlashProgress {
+                stage: FlashStage::Extracting,
+                progress: percent,
+                bytes_processed,
+                total_bytes: self.archive_size,
+                message: "Extracting image...".to_string(),
+            })
+            .map_err(|_| Error::Cancelled)
     }
 }
 
@@ -864,7 +871,7 @@ fn extract_archive(
                 break;
             }
             expected_size += count as u64;
-            progress.report(0, decoder.total_in());
+            progress.report(0, decoder.total_in())?;
             check_space(directory, expected_size, available)?;
             if expected_size > max_extracted_size {
                 return Err(Error::ExtractionFailed(
@@ -890,7 +897,7 @@ fn extract_archive(
             ));
         }
         output.write_all(&buffer[..count])?;
-        progress.report(1, decoder.total_in());
+        progress.report(1, decoder.total_in())?;
     }
     if extracted != expected_size {
         return Err(Error::ExtractionFailed(
@@ -962,8 +969,15 @@ async fn extract_xz_owned<P: ProgressCallback>(
         result
     });
 
-    // Forward progress updates while waiting for extraction to complete
+    // Forward progress updates while waiting for extraction to complete.
+    // On cancel, dropping the receiver stops the extraction at its next
+    // update; it is still awaited so its files are closed before cleanup.
     loop {
+        if progress_callback.is_cancelled() {
+            drop(progress_rx);
+            break;
+        }
+
         match progress_rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(progress) => progress_callback.on_progress(progress),
             Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -1215,6 +1229,63 @@ mod tests {
             );
         }
         request.assert_async().await;
+    }
+
+    struct CancelledProgress;
+
+    impl ProgressCallback for CancelledProgress {
+        fn on_progress(&self, _progress: FlashProgress) {}
+
+        fn is_cancelled(&self) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_download_leaves_nothing_behind() {
+        let mut server = mockito::Server::new_async().await;
+        let request = server
+            .mock("GET", "/image.xz")
+            .with_body(b"data")
+            .create_async()
+            .await;
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("image.xz");
+        let image = image_for_data(&format!("{}/image.xz", server.url()), b"data");
+
+        let error = download_image(&image, &destination, &CancelledProgress)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, Error::Cancelled), "{error:?}");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+        request.assert_async().await;
+    }
+
+    #[test]
+    fn cancelled_extraction_keeps_the_archive_and_drops_partial_output() {
+        let directory = tempfile::tempdir().unwrap();
+        let archive = directory.path().join("image.xz");
+        let destination = directory.path().join("image.img");
+        let data = compressed(b"1234567890");
+        std::fs::write(&archive, &data).unwrap();
+        // A dropped receiver is how a cancel reaches the extraction
+        let (tx, rx) = std::sync::mpsc::channel();
+        drop(rx);
+
+        let error = extract_archive(
+            &archive,
+            &destination,
+            &tx,
+            |_| Ok(u64::MAX),
+            MAX_EXTRACTED_SIZE,
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, Error::Cancelled), "{error:?}");
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read(&archive).unwrap(), data);
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 
     #[tokio::test]

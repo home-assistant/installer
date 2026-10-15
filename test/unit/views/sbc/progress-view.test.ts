@@ -28,15 +28,33 @@ function mockFlash() {
     progressChannel: Channel<FlashProgress>;
     result: ReturnType<typeof deferred<FlashResult>>;
   }> = [];
+  const cancels: unknown[] = [];
   mockTauriIpc((cmd, args) => {
+    if (cmd === "cancel_flash") {
+      cancels.push(args);
+      return Promise.resolve();
+    }
     expect(cmd).to.equal("flash_image");
     const result = deferred<FlashResult>();
     attempts.push({ ...(args as (typeof attempts)[number]), result });
     return result.promise;
   });
   const el = fixtureSync<ProgressView>(html`<progress-view></progress-view>`);
-  return { el, attempts };
+  return { el, attempts, cancels };
 }
+
+function errorMessage(el: ProgressView) {
+  return el
+    .shadowRoot!.querySelector("install-progress")!
+    .shadowRoot!.querySelector(".error-message")!.textContent;
+}
+
+const cancelled = {
+  code: "cancelled",
+  message: "Installation was cancelled.",
+  retryable: true,
+  details: {},
+};
 
 describe("progress-view", () => {
   beforeEach(() => {
@@ -140,6 +158,63 @@ describe("progress-view", () => {
     await settle();
     expect(completed).to.equal(1);
     expect(errors).to.equal(1);
+  });
+
+  describe("stopping", () => {
+    for (const { stage, message } of [
+      { stage: "extracting", message: "Nothing was written to the drive" },
+      { stage: "writing", message: "The drive is not ready to use" },
+      { stage: "verifying", message: "The drive is not ready to use" },
+    ] as const) {
+      it(`says what a stop during ${stage} left behind`, async () => {
+        const { el, attempts, cancels } = mockFlash();
+        attempts[0].progressChannel.onmessage({
+          stage,
+          progress: 50,
+          bytes_processed: 1024,
+          total_bytes: 2048,
+          message: "Busy",
+        });
+        await settle();
+
+        el.stop();
+        await settle();
+        expect(cancels).to.have.length(1);
+        expect(
+          el.shadowRoot!.querySelector("install-progress")!.stageTitle
+        ).to.equal("Stopping...");
+
+        attempts[0].result.reject(cancelled);
+        await settle();
+        expect(el.hasError).to.be.true;
+        expect(errorMessage(el)).to.contain(message);
+
+        // Stopped is not broken: the same install can start again
+        el.retry();
+        await settle();
+        expect(attempts).to.have.length(2);
+      });
+    }
+
+    it("keeps the generic message for a cancel the user did not ask for here", async () => {
+      // Like closing the macOS password prompt
+      const { el, attempts, cancels } = mockFlash();
+      attempts[0].result.reject(cancelled);
+      await settle();
+
+      expect(cancels).to.have.length(0);
+      expect(errorMessage(el)).to.contain("Installation was cancelled.");
+    });
+
+    it("does nothing once the flash has ended", async () => {
+      const { el, attempts, cancels } = mockFlash();
+      attempts[0].result.reject(cancelled);
+      await settle();
+
+      el.stop();
+      await settle();
+      expect(cancels).to.have.length(0);
+    });
   });
 
   it("does not retry a disconnected drive in place", async () => {

@@ -123,7 +123,15 @@ for (const scenario of [
       await page.locator('confirm-dialog wa-button[variant="danger"]').click();
     }
     await expect(progress.locator(".error-message")).toHaveCount(0);
-    await expect(page.locator("wizard-shell .footer")).not.toBeVisible();
+    // A running flash offers Cancel only; the VM installs show no footer
+    if (scenario.flow === "sbc") {
+      await expect(next(page)).toHaveCount(0);
+      await expect(
+        page.locator("wizard-shell .footer-left wa-button")
+      ).toHaveText("Cancel");
+    } else {
+      await expect(page.locator("wizard-shell .footer")).not.toBeVisible();
+    }
     await expect(page.locator(`${prefix}success-view`)).toBeVisible({
       timeout: 45000,
     });

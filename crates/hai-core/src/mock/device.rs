@@ -82,7 +82,6 @@ impl DeviceBackend for BackendMock {
             "Writing to device (mock)...",
             250,
         )
-        .await;
-        Ok(())
+        .await
     }
 }

@@ -166,9 +166,9 @@ for (const width of [1100, 390]) {
           page.getByRole("button", { name: "Next", exact: true })
         ).toBeDisabled();
         await enable.click();
-        await expect(page.locator("info-dialog .dialog-message")).toContainText(
-          '"other-import"'
-        );
+        await expect(
+          page.locator("proxmox-configure-view info-dialog .dialog-message")
+        ).toContainText('"other-import"');
         await page
           .getByRole("button", { name: "Enable Import", exact: true })
           .click();
@@ -250,7 +250,9 @@ for (const width of [1100, 390]) {
       name: "Enable Import on storage?",
     });
     await expect(dialog).toBeVisible();
-    const message = page.locator("info-dialog .dialog-message");
+    const message = page.locator(
+      "proxmox-configure-view info-dialog .dialog-message"
+    );
     await expect(message).toContainText('"local"');
     await expect(message).toContainText("cluster-wide");
     await expect(message).toContainText("remains enabled after installation");

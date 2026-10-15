@@ -91,12 +91,15 @@ pub(super) fn transfer(
         written += count as u64;
         if written - last_progress >= PROGRESS_UPDATE_INTERVAL {
             last_progress = written;
-            let _ = progress.send(FlashProgress::new(
-                FlashStage::Writing,
-                written,
-                image_size,
-                "Writing image to device...",
-            ));
+            send_progress(
+                progress,
+                FlashProgress::new(
+                    FlashStage::Writing,
+                    written,
+                    image_size,
+                    "Writing image to device...",
+                ),
+            )?;
         }
     }
     device
@@ -104,12 +107,15 @@ pub(super) fn transfer(
         .map_err(|error| device_write_error(error, written, image_size))?;
 
     if verify {
-        let _ = progress.send(FlashProgress::new(
-            FlashStage::Verifying,
-            0,
-            image_size,
-            "Verifying written data...",
-        ));
+        send_progress(
+            progress,
+            FlashProgress::new(
+                FlashStage::Verifying,
+                0,
+                image_size,
+                "Verifying written data...",
+            ),
+        )?;
         verify_body(source, device, prefix_size as u64, image_size, progress)
             .map_err(verification_error)?;
     }
@@ -152,7 +158,7 @@ pub(super) fn transfer(
 
 fn verification_error(error: Error) -> Error {
     match error {
-        Error::VerificationFailed(_) | Error::DriveDisconnected => error,
+        Error::VerificationFailed(_) | Error::DriveDisconnected | Error::Cancelled => error,
         other => Error::VerificationFailed(other.to_string()),
     }
 }
@@ -186,12 +192,15 @@ fn verify_body(
         verified += count as u64;
         if verified - last_progress >= PROGRESS_UPDATE_INTERVAL {
             last_progress = verified;
-            let _ = progress.send(FlashProgress::new(
-                FlashStage::Verifying,
-                verified,
-                image_size,
-                "Verifying written data...",
-            ));
+            send_progress(
+                progress,
+                FlashProgress::new(
+                    FlashStage::Verifying,
+                    verified,
+                    image_size,
+                    "Verifying written data...",
+                ),
+            )?;
         }
     }
     Ok(())
@@ -372,7 +381,7 @@ mod tests {
                 1 => disk.fail_sync = Some(2),
                 _ => disk.corrupt_read_at = Some(METADATA_SIZE as u64),
             }
-            let (tx, _) = std::sync::mpsc::channel();
+            let (tx, _rx) = std::sync::mpsc::channel();
             let error = transfer(
                 image.as_file_mut(),
                 &mut disk,
@@ -394,6 +403,28 @@ mod tests {
     }
 
     #[test]
+    fn cancel_stops_before_the_prefix_is_published() {
+        let mut image = source(2 * METADATA_SIZE);
+        let mut disk = Disk::new();
+        // A dropped receiver is how a cancel reaches the writer
+        let (tx, rx) = std::sync::mpsc::channel();
+        drop(rx);
+        let error = transfer(
+            image.as_file_mut(),
+            &mut disk,
+            (2 * METADATA_SIZE) as u64,
+            (4 * METADATA_SIZE) as u64,
+            true,
+            &tx,
+        )
+        .unwrap_err();
+        assert!(matches!(error, Error::Cancelled), "{error:?}");
+        assert!(disk.bytes.get_ref()[..METADATA_SIZE]
+            .iter()
+            .all(|&b| b == 0));
+    }
+
+    #[test]
     fn verifies_published_prefix_and_propagates_its_flush_failure() {
         for flush_failure in [false, true] {
             let mut image = source(2 * METADATA_SIZE);
@@ -403,7 +434,7 @@ mod tests {
             } else {
                 disk.corrupt_read_at = Some(0);
             }
-            let (tx, _) = std::sync::mpsc::channel();
+            let (tx, _rx) = std::sync::mpsc::channel();
             let error = transfer(
                 image.as_file_mut(),
                 &mut disk,
@@ -427,7 +458,7 @@ mod tests {
         let mut disk = Disk::new();
         let disk_size = disk.bytes.get_ref().len() as u64;
         let image_size = disk_size + 1;
-        let (tx, _) = std::sync::mpsc::channel();
+        let (tx, _rx) = std::sync::mpsc::channel();
         let error = transfer(
             image.as_file_mut(),
             &mut disk,
@@ -455,7 +486,7 @@ mod tests {
         ] {
             let mut image = source(512);
             let mut disk = Disk::new();
-            let (tx, _) = std::sync::mpsc::channel();
+            let (tx, _rx) = std::sync::mpsc::channel();
             assert!(transfer(
                 image.as_file_mut(),
                 &mut disk,
@@ -474,7 +505,7 @@ mod tests {
         for size in [512, 2 * METADATA_SIZE + 512] {
             let mut image = source(size);
             let mut disk = Disk::new();
-            let (tx, _) = std::sync::mpsc::channel();
+            let (tx, _rx) = std::sync::mpsc::channel();
             transfer(
                 image.as_file_mut(),
                 &mut disk,
@@ -494,7 +525,7 @@ mod tests {
         for size in [4 * METADATA_SIZE - 512, 4 * METADATA_SIZE] {
             let mut image = source(size);
             let mut disk = Disk::new();
-            let (tx, _) = std::sync::mpsc::channel();
+            let (tx, _rx) = std::sync::mpsc::channel();
             transfer(
                 image.as_file_mut(),
                 &mut disk,
