@@ -76,10 +76,14 @@ export class ProgressView extends LitElement {
     if (!this._isFlashing || this._stopping) return;
 
     this._stopping = true;
-    cancelFlash(this._attempt).catch((error: unknown) => {
+    const attempt = this._attempt;
+    cancelFlash(attempt).catch((error: unknown) => {
+      logFrontendError(error);
+      // A late failure must not touch a retry that is stopping by now
+      if (attempt !== this._attempt || !this._isFlashing) return;
+
       // The flash keeps going; show it as such again
       this._stopping = false;
-      logFrontendError(error);
       this.dispatchEvent(
         new CustomEvent("flash-stop-failed", { bubbles: true, composed: true })
       );

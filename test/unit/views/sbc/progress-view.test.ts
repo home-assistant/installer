@@ -29,14 +29,19 @@ function mockFlash() {
     progressChannel: Channel<FlashProgress>;
     result: ReturnType<typeof deferred<FlashResult>>;
   }> = [];
-  const cancels: Array<{ attempt: string }> = [];
+  const cancels: Array<{
+    attempt: string;
+    result: ReturnType<typeof deferred<void>>;
+  }> = [];
   let rejectCancel = false;
+  let holdCancel = false;
   mockTauriIpc((cmd, args) => {
     if (cmd === "cancel_flash") {
-      cancels.push(args as { attempt: string });
-      return rejectCancel
-        ? Promise.reject(new Error("IPC unavailable"))
-        : Promise.resolve();
+      const result = deferred<void>();
+      cancels.push({ ...(args as { attempt: string }), result });
+      if (rejectCancel) result.reject(new Error("IPC unavailable"));
+      else if (!holdCancel) result.resolve();
+      return result.promise;
     }
     expect(cmd).to.equal("flash_image");
     const result = deferred<FlashResult>();
@@ -50,6 +55,9 @@ function mockFlash() {
     cancels,
     failCancel: () => {
       rejectCancel = true;
+    },
+    holdCancel: () => {
+      holdCancel = true;
     },
   };
 }
@@ -190,7 +198,9 @@ describe("progress-view", () => {
 
         el.stop();
         await settle();
-        expect(cancels).to.deep.equal([{ attempt: attempts[0].attempt }]);
+        expect(cancels.map(({ attempt }) => attempt)).to.deep.equal([
+          attempts[0].attempt,
+        ]);
         expect(
           el.shadowRoot!.querySelector("install-progress")!.stageTitle
         ).to.equal("Stopping...");
@@ -233,6 +243,43 @@ describe("progress-view", () => {
       ).to.not.equal("Stopping...");
       expect(el.hasError).to.be.false;
       expect(attempts).to.have.length(1);
+    });
+
+    it("ignores a late stop failure from an earlier attempt", async () => {
+      const { el, attempts, cancels, holdCancel } = mockFlash();
+      let stopFailures = 0;
+      el.addEventListener("flash-stop-failed", () => stopFailures++);
+      holdCancel();
+      const writing: FlashProgress = {
+        stage: "writing",
+        progress: 50,
+        bytes_processed: 1024,
+        total_bytes: 2048,
+        message: "Writing",
+      };
+
+      // The first stop request hangs while that flash fails on its own
+      el.stop();
+      attempts[0].result.reject({ ...cancelled, code: "device_busy" });
+      await settle();
+
+      el.retry();
+      await settle();
+      attempts[1].progressChannel.onmessage(writing);
+      el.stop();
+      await settle();
+
+      cancels[0].result.reject(new Error("IPC unavailable"));
+      await settle();
+      expect(stopFailures).to.equal(0);
+      expect(
+        el.shadowRoot!.querySelector("install-progress")!.stageTitle
+      ).to.equal("Stopping...");
+
+      cancels[1].result.resolve();
+      attempts[1].result.reject(cancelled);
+      await settle();
+      expect(errorMessage(el)).to.contain("The drive is not ready to use");
     });
 
     it("does nothing once the flash has ended", async () => {
