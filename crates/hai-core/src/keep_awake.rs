@@ -2,14 +2,16 @@
 //!
 //! A laptop that sleeps halfway through a write leaves a half-written drive,
 //! and one that sleeps during a VM upload leaves a broken install. While a
-//! [`KeepAwake`] is alive, the system doesn't go to sleep on its own. The
-//! display may still turn off, and the user can still put the computer to
-//! sleep on purpose.
+//! [`KeepAwake`] is alive, the system doesn't go to sleep on its own (with
+//! one Windows exception, below). The display may still turn off, and the
+//! user can still put the computer to sleep on purpose.
 //!
 //! - macOS: a `PreventUserIdleSystemSleep` power assertion, like `caffeinate -i`.
 //! - Windows: a `PowerRequestSystemRequired` power request. Unlike
 //!   `SetThreadExecutionState`, it isn't tied to a thread, so it survives an
-//!   async task moving between threads.
+//!   async task moving between threads. On a Modern Standby laptop running
+//!   on battery, Windows lets the request lapse five minutes after the sleep
+//!   timeout, so there it buys time, not a guarantee.
 //! - Linux: the desktop's `Inhibit` portal, asking it not to suspend on its
 //!   own. Without a portal, a logind `idle` inhibitor lock. Neither blocks a
 //!   suspend the user asks for, unlike a logind `sleep` lock.
