@@ -66,6 +66,12 @@ pub async fn write_image<P: ProgressCallback>(
         )
     });
     run_with_progress(write_handle, progress_rx, progress_callback).await?;
+
+    // Best effort, like "Safely Remove Hardware": the write and the verify
+    // passed, so the drive is done. If Windows refuses, the success screen
+    // tells the user to eject the drive themselves.
+    let _ = tokio::task::spawn_blocking(move || super::eject::eject_disk(disk_number)).await;
+
     progress_callback.on_progress(FlashProgress::new(
         FlashStage::Complete,
         image_size,

@@ -1,4 +1,5 @@
 mod device;
+mod eject;
 mod volumes;
 mod writer;
 
