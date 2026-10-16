@@ -53,7 +53,11 @@ export class ViewAccessibility implements ReactiveController {
   }
 
   private _focus(element: HTMLElement) {
+    // Focus only tells screen readers where the new view starts. A heading
+    // isn't something to act on, so it gets no focus ring (Chromium and
+    // WebView2 draw one for focus set from script).
     element.tabIndex = -1;
+    element.style.outline = "none";
     element.focus();
   }
 }

@@ -111,6 +111,15 @@ describe("view accessibility", () => {
     );
   });
 
+  it("focuses a heading without drawing a focus ring", async () => {
+    const el = await fixture<FocusTestView>(
+      html`<focus-test-view></focus-test-view>`
+    );
+    const heading = el.shadowRoot!.querySelector("h2")!;
+    expect(el.shadowRoot!.activeElement).to.equal(heading);
+    expect(getComputedStyle(heading).outlineStyle).to.equal("none");
+  });
+
   it("does not steal focus when a delayed heading arrives", async () => {
     const el = await fixture<FocusTestView>(
       html`<focus-test-view .loading=${true}></focus-test-view>`
