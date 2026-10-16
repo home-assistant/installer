@@ -6,7 +6,9 @@
 //! language. The English rendered here is for logs, and for a frontend that
 //! doesn't know the key.
 
-use std::collections::{BTreeSet, HashMap};
+#[cfg(any(debug_assertions, test))]
+use std::collections::BTreeSet;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use serde_json::Value;
@@ -31,8 +33,9 @@ macro_rules! message {
 
 impl Message {
     pub fn new(key: &'static str, params: Vec<(&'static str, Value)>) -> Self {
-        // Every message a test reaches checks itself against the catalog
-        #[cfg(debug_assertions)]
+        // Every message a test reaches checks itself against the catalog,
+        // release test runs included
+        #[cfg(any(debug_assertions, test))]
         {
             let template = catalog()
                 .get(key)
@@ -76,6 +79,7 @@ fn catalog() -> &'static HashMap<String, String> {
 }
 
 /// The `{name}` placeholders in a catalog message.
+#[cfg(any(debug_assertions, test))]
 fn placeholders(template: &str) -> BTreeSet<&str> {
     template
         .split('{')
