@@ -244,6 +244,10 @@ fn verify_write(
 struct FlashedDrive {
     path: OwnedObjectPath,
     id: String,
+    /// When the card went in, for a card reader. Its `Id` is the reader's,
+    /// and stays the same when the card is swapped. `None` for a drive that
+    /// is its own media, like a USB stick.
+    media_detected: Option<u64>,
 }
 
 /// What to clean up after a flash, bound to the flashed drive.
@@ -284,14 +288,32 @@ fn flashed_drive(objects: &ManagedObjects, block_path: &OwnedObjectPath) -> Opti
     if path.as_str() == "/" || id.is_empty() {
         return None;
     }
-    Some(FlashedDrive { path, id })
+
+    let media_detected = media_detected(objects, &path)?;
+    Some(FlashedDrive {
+        path,
+        id,
+        media_detected,
+    })
+}
+
+/// When the current media went in, for a drive with removable media. The
+/// outer `None` means udisks can't say, so the drive can't be told apart.
+fn media_detected(objects: &ManagedObjects, drive: &OwnedObjectPath) -> Option<Option<u64>> {
+    if !property::<bool>(objects, drive, DRIVE, "MediaRemovable")? {
+        return Some(None);
+    }
+
+    // udisks only sets this when media arrives, so a write doesn't move it
+    let detected: u64 = property(objects, drive, DRIVE, "TimeMediaDetected")?;
+    (detected != 0).then_some(Some(detected))
 }
 
 /// The cleanup for `flashed`, if it is still plugged in as itself. Only its
 /// own filesystems qualify, whatever device names they have by now.
 fn cleanup_for(objects: &ManagedObjects, flashed: &FlashedDrive) -> Option<Cleanup> {
     let id: String = property(objects, &flashed.path, DRIVE, "Id")?;
-    if id != flashed.id {
+    if id != flashed.id || media_detected(objects, &flashed.path)? != flashed.media_detected {
         return None;
     }
 
@@ -719,6 +741,7 @@ mod tests {
         FlashedDrive {
             path: path(SANDISK),
             id: "SanDisk-Ultra-1".into(),
+            media_detected: None,
         }
     }
 
@@ -727,7 +750,13 @@ mod tests {
         let drive = |id: &'static str| {
             inventory(vec![
                 (SDB, vec![(BLOCK, vec![("Drive", object(SANDISK).into())])]),
-                (SANDISK, vec![(DRIVE, vec![("Id", id.into())])]),
+                (
+                    SANDISK,
+                    vec![(
+                        DRIVE,
+                        vec![("Id", id.into()), ("MediaRemovable", false.into())],
+                    )],
+                ),
             ])
         };
         assert_eq!(
@@ -759,6 +788,7 @@ mod tests {
                     DRIVE,
                     vec![
                         ("Id", "SanDisk-Ultra-1".into()),
+                        ("MediaRemovable", false.into()),
                         ("CanPowerOff", true.into()),
                         ("Ejectable", true.into()),
                     ],
@@ -801,6 +831,7 @@ mod tests {
                 DRIVE,
                 vec![
                     ("Id", id.into()),
+                    ("MediaRemovable", false.into()),
                     ("SiblingId", sibling.into()),
                     ("CanPowerOff", true.into()),
                     ("Ejectable", true.into()),
@@ -838,6 +869,38 @@ mod tests {
                 .unwrap()
                 .power_off
         );
+    }
+
+    #[test]
+    fn card_reader_cleanup_needs_the_same_card() {
+        // The reader keeps its Id when the card in it is swapped
+        let reader = |detected: u64| {
+            inventory(vec![
+                (SDB, vec![(BLOCK, vec![("Drive", object(SANDISK).into())])]),
+                (
+                    SANDISK,
+                    vec![(
+                        DRIVE,
+                        vec![
+                            ("Id", "SanDisk-Ultra-1".into()),
+                            ("MediaRemovable", true.into()),
+                            ("TimeMediaDetected", detected.into()),
+                            ("Ejectable", true.into()),
+                        ],
+                    )],
+                ),
+            ])
+        };
+        let flashed = flashed_drive(&reader(1_000), &path(SDB)).unwrap();
+        assert_eq!(flashed.media_detected, Some(1_000));
+        assert!(cleanup_for(&reader(1_000), &flashed).is_some());
+
+        // Another card went in after the write
+        assert_eq!(cleanup_for(&reader(2_000), &flashed), None);
+        // No card now, or udisks can't say when it came
+        assert_eq!(cleanup_for(&reader(0), &flashed), None);
+        // Nothing to tell cards apart with to begin with
+        assert_eq!(flashed_drive(&reader(0), &path(SDB)), None);
     }
 
     #[test]
