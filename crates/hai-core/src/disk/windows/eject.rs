@@ -27,10 +27,6 @@ use windows_sys::Win32::System::IO::DeviceIoControl;
 const EJECT_ATTEMPTS: u32 = 3;
 const EJECT_RETRY_DELAY: Duration = Duration::from_millis(500);
 
-/// How far up the device tree to look for something removable. Real trees
-/// are a handful of levels deep; anything deeper is not worth guessing at.
-const MAX_TREE_DEPTH: usize = 16;
-
 /// The disk a flash went to, by its PnP device instance ID. Unlike the disk
 /// number, Windows doesn't hand that ID to the next drive that shows up.
 pub(super) struct FlashedDisk {
@@ -102,26 +98,24 @@ pub(super) fn eject_disk(flashed: &FlashedDisk) -> io::Result<()> {
     )))
 }
 
-/// The node to eject: the first one, starting at the disk itself, that says
-/// it can be removed. For a USB stick that's the USB device, for an SD card
-/// in a built-in reader it's the card. Never anything above it, like the
-/// card reader's controller or a USB hub with other devices on it.
+/// The node to eject: the disk itself when it says it can be removed, else
+/// the device it sits on. For an SD card in a built-in reader that's the
+/// card, for a USB stick or card reader the USB device. Never anything
+/// higher up: hubs and controllers carry other devices too.
 ///
-/// `None` when nothing removable turns up, or a node can't tell: then the
-/// drive is better left alone.
+/// `None` when neither is removable, or one can't tell: then the drive is
+/// better left alone.
 fn removal_target<Node: Copy>(
     disk: Node,
-    mut parent_of: impl FnMut(Node) -> Option<Node>,
-    mut is_removable: impl FnMut(Node) -> Option<bool>,
+    parent_of: impl FnOnce(Node) -> Option<Node>,
+    is_removable: impl Fn(Node) -> Option<bool>,
 ) -> Option<Node> {
-    let mut node = disk;
-    for _ in 0..MAX_TREE_DEPTH {
-        if is_removable(node)? {
-            return Some(node);
-        }
-        node = parent_of(node)?;
+    if is_removable(disk)? {
+        return Some(disk);
     }
-    None
+
+    let parent = parent_of(disk)?;
+    is_removable(parent)?.then_some(parent)
 }
 
 fn parent_of(node: u32) -> Option<u32> {
@@ -372,9 +366,18 @@ mod tests {
         // A capability Windows couldn't read is no reason to guess upwards
         let unreadable = [("disk", Some("usb"), None), ("usb", None, Some(true))];
         assert_eq!(target(&unreadable), None);
+    }
 
-        // A tree without a root never ends
-        let looping = [("disk", Some("disk"), Some(false))];
-        assert_eq!(target(&looping), None);
+    #[test]
+    fn hub_above_a_fixed_reader_stays_put() {
+        // A reader built into the laptop sits on an internal hub, which says
+        // it can be removed: ejecting that takes other devices with it
+        let tree = [
+            ("disk", Some("reader"), Some(false)),
+            ("reader", Some("hub"), Some(false)),
+            ("hub", Some("root"), Some(true)),
+            ("root", None, Some(false)),
+        ];
+        assert_eq!(target(&tree), None);
     }
 }
