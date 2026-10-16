@@ -101,12 +101,13 @@ describe("app-shell", () => {
     el = await fixture<AppShell>(html`<app-shell></app-shell>`);
   });
 
-  afterEach(() => {
-    restoreTauriIpc();
+  afterEach(async () => {
     // A mock flash keeps running after teardown. The detached tree still has
     // app-shell as an ancestor, so drop the wizard subtree: otherwise a late
     // "complete" would advance the shared wizard state under a later test.
     el.shadowRoot?.querySelector("wizard-shell")?.remove();
+    el.remove();
+    await settle();
     wizardState.reset();
     restoreTauriIpc();
   });
@@ -645,8 +646,14 @@ describe("app-shell", () => {
     });
 
     it("asks only about quitting when a stop question is open", async () => {
-      // Into the flow on the browser mock, then hold the flash
+      // Into the flow on the browser mock, then hold the flash. Detach
+      // first, so the shell stops listening while these events still exist.
+      const parent = el.parentNode!;
+      el.remove();
+      await settle();
       restoreTauriIpc();
+      parent.appendChild(el);
+      await settle();
       await enterSbcFlow(el);
       selectTargets();
       mockTauriIpc(
@@ -658,7 +665,6 @@ describe("app-shell", () => {
         { mockEvents: true }
       );
       // Reconnecting makes the shell listen through these events
-      const parent = el.parentNode!;
       el.remove();
       parent.appendChild(el);
       await settle();
@@ -678,6 +684,8 @@ describe("app-shell", () => {
 
     it("logs, rather than throws, when it can't listen for close requests", async () => {
       const logged: unknown[] = [];
+      el.remove();
+      await settle();
       restoreTauriIpc();
       mockTauriIpc(
         (cmd, args) => {
