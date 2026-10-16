@@ -51,13 +51,13 @@ pub enum Error {
     RateLimited(String),
 
     #[error("UTM error: {0}")]
-    Utm(String),
+    Utm(crate::Message),
 
     #[error("UTM operation outcome is unknown: {0}")]
-    UtmOperationUncertain(String),
+    UtmOperationUncertain(crate::Message),
 
     #[error("{0}")]
-    UtmVmCreated(String),
+    UtmVmCreated(crate::Message),
 
     #[error("Drive disconnected")]
     DriveDisconnected,
@@ -184,10 +184,9 @@ mod tests {
 
     #[test]
     fn test_display_utm() {
-        let error = Error::Utm("VM creation failed".to_string());
+        let error = Error::Utm(crate::message!("backend.utm.not_installed"));
         let msg = error.to_string();
-        assert_eq!(msg, "UTM error: VM creation failed");
-        assert!(msg.contains("VM creation failed"));
+        assert_eq!(msg, "UTM error: UTM is not installed");
     }
 
     #[test]

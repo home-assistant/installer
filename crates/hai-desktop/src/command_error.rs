@@ -1,6 +1,6 @@
 //! Public, credential-free error contract for Tauri commands.
 
-use hai_core::Error;
+use hai_core::{Error, Message};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -19,6 +19,22 @@ impl CommandError {
             message: message.into(),
             retryable,
             details: json!({}),
+        }
+    }
+
+    /// An error the frontend shows from its catalog, in the user's language.
+    /// `message` keeps the English, for logs and older frontends.
+    pub fn with_message(code: &'static str, message: &Message, retryable: bool) -> Self {
+        let params: serde_json::Map<String, Value> = message
+            .params
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.clone()))
+            .collect();
+        Self {
+            code,
+            message: message.to_string(),
+            retryable,
+            details: json!({ "message_key": message.key, "message_params": params }),
         }
     }
 
@@ -46,7 +62,10 @@ impl std::fmt::Display for CommandError {
 impl From<Error> for CommandError {
     fn from(error: Error) -> Self {
         let catalog_message = match &error {
-            Error::ProxmoxActionRequired(message) => Some(message),
+            Error::ProxmoxActionRequired(message)
+            | Error::Utm(message)
+            | Error::UtmOperationUncertain(message)
+            | Error::UtmVmCreated(message) => Some(message),
             _ => None,
         };
         let english = catalog_message.map(ToString::to_string).unwrap_or_default();
@@ -69,9 +88,9 @@ impl From<Error> for CommandError {
             Error::ProxmoxCertificateChanged => ("proxmox_certificate_changed", "The Proxmox server's certificate changed. Reconnect to check it again.", false),
             // Installer-authored guidance for the authenticator code, never a server response
             Error::ProxmoxTwoFactor(message) => ("proxmox_two_factor", message.as_str(), false),
-            Error::Utm(message) => ("utm", message.as_str(), true),
-            Error::UtmOperationUncertain(message) => ("utm_operation_uncertain", message.as_str(), false),
-            Error::UtmVmCreated(message) => ("utm_vm_created", message.as_str(), false),
+            Error::Utm(_) => ("utm", english.as_str(), true),
+            Error::UtmOperationUncertain(_) => ("utm_operation_uncertain", english.as_str(), false),
+            Error::UtmVmCreated(_) => ("utm_vm_created", english.as_str(), false),
             Error::DriveDisconnected => ("drive_disconnected", "The drive was disconnected. Reconnect it and select it again.", false),
             Error::WriteProtected => ("write_protected", "The drive is write-protected. Unlock the SD card or choose another drive.", false),
             Error::UnsupportedPlatform(_) => ("unsupported_platform", "This installation method is not available on this computer.", false),
@@ -84,16 +103,11 @@ impl From<Error> for CommandError {
             Error::VerificationFailed(_) => ("verification_failed", "The image could not be verified. Installation stopped to protect your device. See the installation help before continuing.", false),
             Error::ImageTooLarge { .. } => ("image_too_large", "The image does not fit on this drive. Choose a larger drive.", false),
         };
-        let mut result = Self::new(code, message, retryable);
         // The frontend shows these in the user's language, by key
-        if let Some(message) = catalog_message {
-            let params: serde_json::Map<String, Value> = message
-                .params
-                .iter()
-                .map(|(name, value)| (name.to_string(), value.clone()))
-                .collect();
-            result.details = json!({ "message_key": message.key, "message_params": params });
-        }
+        let mut result = match catalog_message {
+            Some(message) => Self::with_message(code, message, retryable),
+            None => Self::new(code, message, retryable),
+        };
         if let Error::ImageTooLarge {
             written,
             image_size,
@@ -178,34 +192,32 @@ mod tests {
         }
         assert!(!CommandError::from_query(Error::UnsupportedPlatform("UTM".into())).retryable);
         assert!(
-            CommandError::from(Error::Utm(
-                "Enable Automation access, then try again".into()
-            ))
+            CommandError::from(Error::Utm(hai_core::message!(
+                "backend.utm.automation_denied"
+            )))
             .retryable
         );
         assert!(
-            !CommandError::from(Error::UtmOperationUncertain(
-                "Check UTM before retrying".into()
-            ))
+            !CommandError::from(Error::UtmOperationUncertain(hai_core::message!(
+                "backend.utm.no_answer",
+                detail = "AppleEvent timed out (-1712)",
+            )))
             .retryable
         );
     }
 
     #[test]
     fn uncertain_import_and_permission_guidance_are_preserved_without_retry() {
-        for error in [
-            Error::UtmOperationUncertain("Check UTM before removing the retained source".into()),
-            Error::PermissionDenied("Run as administrator".into()),
-        ] {
-            let expected = match &error {
-                Error::UtmOperationUncertain(message) | Error::PermissionDenied(message) => {
-                    message.clone()
-                }
-                _ => unreachable!(),
-            };
-            let error = CommandError::from(error);
-            assert_eq!(error.message, expected);
-            assert!(!error.retryable);
-        }
+        let uncertain = CommandError::from(Error::UtmOperationUncertain(hai_core::message!(
+            "backend.utm.no_answer",
+            detail = "AppleEvent timed out (-1712)",
+        )));
+        assert_eq!(uncertain.message, "AppleEvent timed out (-1712)");
+        assert_eq!(uncertain.details["message_key"], "backend.utm.no_answer");
+        assert!(!uncertain.retryable);
+
+        let permission = CommandError::from(Error::PermissionDenied("Run as administrator".into()));
+        assert_eq!(permission.message, "Run as administrator");
+        assert!(!permission.retryable);
     }
 }

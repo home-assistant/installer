@@ -175,9 +175,12 @@ fn read_header_bytes(file: &mut File, bytes: &mut [u8]) -> Result<()> {
     })
 }
 
+/// `reason` stays English: it describes the image file, which only a broken
+/// download or release gets wrong.
 fn invalid_image(reason: String) -> Error {
-    Error::Utm(format!(
-        "Could not set the disk size of the virtual machine image: {reason}"
+    Error::Utm(crate::message!(
+        "backend.utm.disk_size_failed",
+        detail = reason
     ))
 }
 
