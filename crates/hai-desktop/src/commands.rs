@@ -541,19 +541,19 @@ async fn run_utm_creation<B: UtmBackend>(
     pending: &PendingUtmImages,
 ) -> Result<String, CommandError> {
     let image = pending.take(&config.image_path).ok_or_else(|| {
-        CommandError::new(
+        CommandError::with_message(
             "temporary_image_unavailable",
-            "Temporary image is no longer available; download it again",
+            &hai_core::message!("backend.utm.temporary_image_gone"),
             true,
         )
     })?;
     image.begin_utm_import().map_err(|error| {
-        CommandError::new(
+        CommandError::with_message(
             "utm",
-            format!(
-                "Could not prepare the UTM import: {error}. UTM was not contacted. \
-         Any retained source directory at {} can be removed manually.",
-                image.path().parent().unwrap().display()
+            &hai_core::message!(
+                "backend.utm.import_not_prepared",
+                detail = error.to_string(),
+                path = image.path().parent().unwrap().display().to_string(),
             ),
             false,
         )
@@ -561,13 +561,12 @@ async fn run_utm_creation<B: UtmBackend>(
     // Fully qualified: `create_vm` is defined on both UtmBackend and ProxmoxBackend.
     let result = UtmBackend::create_vm(backend, config, &hai_core::NoOpProgress).await;
     if let Err(hai_core::Error::UtmOperationUncertain(error)) = &result {
-        return Err(CommandError::new(
+        return Err(CommandError::with_message(
             "utm_operation_uncertain",
-            format!(
-                "UTM may still be importing the image: {error}. Source retained at {}. \
-             Check UTM before retrying. Remove the source directory manually only after \
-             confirming UTM has finished or stopped importing.",
-                image.path().parent().unwrap().display()
+            &hai_core::message!(
+                "backend.utm.import_uncertain",
+                detail = error.to_string(),
+                path = image.path().parent().unwrap().display().to_string(),
             ),
             false,
         ));
@@ -1631,16 +1630,23 @@ mod mock_tests {
                     name: config.name.clone(),
                     path: None,
                 }),
-                "rejected" => Err(hai_core::Error::Utm("Invalid configuration".into())),
-                "start-failed" => Err(hai_core::Error::UtmVmCreated(
-                    "The VM was created. Open UTM to start it.".into(),
-                )),
-                "timeout" => Err(hai_core::Error::UtmOperationUncertain(
-                    "AppleEvent timed out (-1712)".into(),
-                )),
-                "transport" => Err(hai_core::Error::UtmOperationUncertain(
-                    "Failed to wait for AppleScript".into(),
-                )),
+                "rejected" => Err(hai_core::Error::Utm(hai_core::message!(
+                    "backend.utm.applescript_error",
+                    detail = "Invalid configuration",
+                ))),
+                "start-failed" => Err(hai_core::Error::UtmVmCreated(hai_core::message!(
+                    "backend.utm.vm_created_not_started",
+                    name = config.name,
+                    detail = "",
+                ))),
+                "timeout" => Err(hai_core::Error::UtmOperationUncertain(hai_core::message!(
+                    "backend.utm.no_answer",
+                    detail = "AppleEvent timed out (-1712)",
+                ))),
+                "transport" => Err(hai_core::Error::UtmOperationUncertain(hai_core::message!(
+                    "backend.utm.applescript_lost",
+                    detail = "broken pipe",
+                ))),
                 "cancelled" => std::future::pending().await,
                 _ => unreachable!(),
             }
