@@ -127,7 +127,7 @@ describe("success-view next steps", () => {
     ],
     [
       "generic-aarch64",
-      "https://developers.home-assistant.io/docs/operating-system/boards/generic-aarch64/",
+      "https://contributors.home-assistant.io/os/operating-system/generic/",
     ],
     ["khadas-vim3", "https://www.home-assistant.io/installation/"],
     ["unknown", "https://www.home-assistant.io/installation/"],

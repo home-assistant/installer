@@ -20,7 +20,7 @@ const INSTALLATION_GUIDES: Record<string, string> = {
   "generic-x86-64":
     "https://www.home-assistant.io/installation/generic-x86-64/",
   "generic-aarch64":
-    "https://developers.home-assistant.io/docs/operating-system/boards/generic-aarch64/",
+    "https://contributors.home-assistant.io/os/operating-system/generic/",
 };
 
 /** The last step after any write: where to find Home Assistant. */
