@@ -100,6 +100,25 @@ function walk(directory) {
   }
 }
 walk(path.join(root, "src"));
+
+// Backend messages are named in Rust and shown through localizeBackend. Rust
+// checks their placeholders itself; here they only have to exist both ways.
+function walkRust(directory) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const filename = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      walkRust(filename);
+      continue;
+    }
+    if (!filename.endsWith(".rs")) continue;
+    const source = fs.readFileSync(filename, "utf8");
+    for (const [, key] of source.matchAll(/"(backend\.[a-z0-9_.]+)"/g)) {
+      assert(parameters.has(key), `${filename}: unknown key ${key}`);
+      used.add(key);
+    }
+  }
+}
+walkRust(path.join(root, "crates"));
 assert.deepEqual(
   [...parameters.keys()].filter((key) => !used.has(key)),
   [],

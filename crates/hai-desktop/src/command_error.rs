@@ -45,6 +45,12 @@ impl std::fmt::Display for CommandError {
 
 impl From<Error> for CommandError {
     fn from(error: Error) -> Self {
+        let catalog_message = match &error {
+            Error::ProxmoxActionRequired(message) => Some(message),
+            _ => None,
+        };
+        let english = catalog_message.map(ToString::to_string).unwrap_or_default();
+
         let (code, message, retryable) = match &error {
             // Never serialize URLs, response bodies, or authentication data from remote errors.
             Error::Network(_) => ("network", "Could not connect. Check your internet connection.", true),
@@ -56,7 +62,7 @@ impl From<Error> for CommandError {
             Error::DiskServiceUnavailable(_) => ("disk_service_unavailable", "The system disk service is unavailable. Check that udisks2 is installed and running.", false),
             Error::Cancelled => ("cancelled", "Installation was cancelled.", true),
             Error::ProxmoxApi(_) => ("proxmox_api", "Proxmox could not complete the request. Check the server, account permissions, and connection.", false),
-            Error::ProxmoxActionRequired(message) => ("proxmox_action_required", message.as_str(), false),
+            Error::ProxmoxActionRequired(_) => ("proxmox_action_required", english.as_str(), false),
             // Reconnecting is the action, not repeating the request
             Error::ProxmoxSessionExpired => ("proxmox_session_expired", "Proxmox session expired or invalid. Please reconnect to Proxmox.", false),
             // Same recovery: reconnecting shows the new certificate to confirm
@@ -79,6 +85,15 @@ impl From<Error> for CommandError {
             Error::ImageTooLarge { .. } => ("image_too_large", "The image does not fit on this drive. Choose a larger drive.", false),
         };
         let mut result = Self::new(code, message, retryable);
+        // The frontend shows these in the user's language, by key
+        if let Some(message) = catalog_message {
+            let params: serde_json::Map<String, Value> = message
+                .params
+                .iter()
+                .map(|(name, value)| (name.to_string(), value.clone()))
+                .collect();
+            result.details = json!({ "message_key": message.key, "message_params": params });
+        }
         if let Error::ImageTooLarge {
             written,
             image_size,
@@ -132,12 +147,24 @@ mod tests {
 
     #[test]
     fn installer_authored_proxmox_guidance_is_preserved() {
-        let error = CommandError::from(Error::ProxmoxActionRequired(
-            "VM ID 100 can't be used. Choose a different ID.".into(),
-        ));
+        let error = CommandError::from(Error::ProxmoxActionRequired(hai_core::message!(
+            "backend.proxmox.vm_id_unavailable",
+            vm_id = 100,
+        )));
         assert_eq!(error.code, "proxmox_action_required");
-        assert!(error.message.contains("Choose a different ID"));
+        assert_eq!(
+            error.message,
+            "VM ID 100 can't be used. Choose a different ID."
+        );
         assert!(!error.retryable);
+        // What the frontend needs to show it in the user's language
+        assert_eq!(
+            error.details,
+            json!({
+                "message_key": "backend.proxmox.vm_id_unavailable",
+                "message_params": { "vm_id": 100 }
+            })
+        );
     }
 
     #[test]

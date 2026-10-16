@@ -51,6 +51,39 @@ describe("installer errors", () => {
     expect(result.message).to.contain("Choose a different ID");
   });
 
+  it("shows backend messages from the catalog, by key", () => {
+    const result = installerError(
+      ipcError("proxmox_action_required", "English from Rust", false, {
+        message_key: "backend.proxmox.node_offline",
+        message_params: { node: "pve" },
+      })
+    );
+    expect(result.message).to.equal(
+      'Node "pve" is offline. Choose an online node or start it in Proxmox.'
+    );
+  });
+
+  it("keeps the backend's English when the catalog can't help", () => {
+    for (const details of [
+      // A key this frontend doesn't know yet
+      { message_key: "backend.proxmox.from_the_future" },
+      // Only backend keys, never the frontend's own
+      { message_key: "common.installation_help" },
+      // A parameter the message needs is missing
+      { message_key: "backend.proxmox.node_offline", message_params: {} },
+      // Values that aren't plain text or numbers are dropped
+      {
+        message_key: "backend.proxmox.node_offline",
+        message_params: { node: { name: "pve" } },
+      },
+    ]) {
+      const result = installerError(
+        ipcError("proxmox_action_required", "English from Rust", false, details)
+      );
+      expect(result.message).to.equal("English from Rust");
+    }
+  });
+
   it("does not infer a code or retryability from a string", () => {
     for (const error of [
       "drive disconnected",
