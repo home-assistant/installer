@@ -633,7 +633,7 @@ test.describe("SBC Flashing", () => {
 
   test("Cancel asks first, then stops the flash", async ({ page }) => {
     const wizardShell = page.locator("wizard-shell");
-    const stopDialog = page.locator("app-shell > info-dialog");
+    const stopDialog = page.locator("app-shell > info-dialog.stop-dialog");
 
     // Keep installing leaves the flash alone
     await wizardShell.locator(".footer-left wa-button").click();

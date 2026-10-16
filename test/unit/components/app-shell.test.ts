@@ -410,7 +410,7 @@ describe("app-shell", () => {
   // Browser-only mode runs the simulated flash, which honors a stop too
   describe("cancelling a running flash", () => {
     const stopDialogOf = (el: AppShell) =>
-      el.shadowRoot!.querySelector("info-dialog") as InfoDialog;
+      el.shadowRoot!.querySelector("info-dialog.stop-dialog") as InfoDialog;
 
     beforeEach(async () => {
       await enterSbcFlow(el);
@@ -462,7 +462,10 @@ describe("app-shell", () => {
 
     fire(shellOf(el), "wizard-cancel");
     await el.updateComplete;
-    fire(el.shadowRoot!.querySelector("info-dialog")!, "dialog-primary");
+    fire(
+      el.shadowRoot!.querySelector("info-dialog.stop-dialog")!,
+      "dialog-primary"
+    );
     await settle();
     await el.updateComplete;
 
@@ -472,7 +475,7 @@ describe("app-shell", () => {
 
   describe("cancelling a running VM install", () => {
     const stopDialogOf = (el: AppShell) =>
-      el.shadowRoot!.querySelector("info-dialog") as InfoDialog;
+      el.shadowRoot!.querySelector("info-dialog.stop-dialog") as InfoDialog;
 
     /** `mockBackend` runs once the flow is entered, before the install starts */
     async function enterProxmoxInstall(mockBackend?: () => void) {
@@ -593,7 +596,7 @@ describe("app-shell", () => {
     let calls: string[];
 
     const quitDialogOf = (el: AppShell) =>
-      el.shadowRoot!.querySelector("info-dialog") as InfoDialog;
+      el.shadowRoot!.querySelector("info-dialog.quit-dialog") as InfoDialog;
 
     beforeEach(async () => {
       calls = [];
@@ -636,6 +639,38 @@ describe("app-shell", () => {
 
       expect(calls).to.include("quit_anyway");
       expect(quitDialogOf(el).open).to.be.false;
+    });
+
+    it("asks only about quitting when a stop question is open", async () => {
+      // Into the flow on the browser mock, then hold the flash
+      restoreTauriIpc();
+      await enterSbcFlow(el);
+      selectTargets();
+      mockTauriIpc(
+        (cmd) => {
+          calls.push(cmd);
+          // The flash keeps running
+          return cmd === "flash_image" ? new Promise(() => {}) : undefined;
+        },
+        { mockEvents: true }
+      );
+      // Reconnecting makes the shell listen through these events
+      const parent = el.parentNode!;
+      el.remove();
+      parent.appendChild(el);
+      await settle();
+      await goToStep(el, "flash");
+      fire(shellOf(el), "wizard-cancel");
+      await el.updateComplete;
+      const stopDialog = el.shadowRoot!.querySelector(
+        "info-dialog.stop-dialog"
+      ) as InfoDialog;
+      expect(stopDialog.open).to.be.true;
+
+      await blockClose();
+
+      expect(stopDialog.open).to.be.false;
+      expect(quitDialogOf(el).open).to.be.true;
     });
 
     it("logs, rather than throws, when it can't listen for close requests", async () => {

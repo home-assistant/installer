@@ -421,7 +421,7 @@ test.describe("UTM Installation Flow", () => {
     await navigateToUtmStep4(page);
 
     const wizardShell = page.locator("wizard-shell");
-    const stopDialog = page.locator("app-shell > info-dialog");
+    const stopDialog = page.locator("app-shell > info-dialog.stop-dialog");
     await wizardShell.locator(".footer-left wa-button").click();
     await expect(stopDialog.getByText("nothing is left behind")).toBeVisible();
     await stopDialog.getByRole("button", { name: "Stop installation" }).click();

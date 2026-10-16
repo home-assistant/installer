@@ -165,6 +165,7 @@ export class AppShell extends LitElement {
         @dialog-confirm=${this._onDialogConfirm}
       ></confirm-dialog>
       <info-dialog
+        class="stop-dialog"
         ?open=${this._showStopDialog}
         .title=${localize("components.app_shell.stop_installation_title")}
         .message=${wizardState.currentStep?.id === "flash"
@@ -177,6 +178,7 @@ export class AppShell extends LitElement {
         @dialog-secondary=${this._onKeepInstalling}
       ></info-dialog>
       <info-dialog
+        class="quit-dialog"
         ?open=${this._showQuitDialog}
         .title=${localize("components.app_shell.quit_while_installing_title")}
         .message=${localize(
