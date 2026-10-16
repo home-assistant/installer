@@ -1,5 +1,5 @@
 import { html } from "lit";
-import { localize } from "../localization/localize.js";
+import { localize, localizeBackend } from "../localization/localize.js";
 import { formatBytes } from "../api/commands.js";
 import { openExternalLink } from "./external-url.js";
 import "../components/diagnostics-actions.js";
@@ -11,47 +11,39 @@ export interface InstallerError {
   details: Record<string, unknown>;
 }
 
-const messages: Record<string, string> = {
-  network: "Could not connect. Check your internet connection.",
-  io: "Could not read or write a file. Check available storage and access permissions.",
-  device_not_found:
-    "The selected drive is no longer available. Select your drive again.",
-  device_busy:
-    "The drive is in use. Close any applications using it, then try again.",
-  checksum_mismatch:
-    "The downloaded image failed its integrity check. Installation stopped before writing the image.",
-  disk_service_unavailable:
-    "The system disk service is unavailable. Check that udisks2 is installed and running.",
-  cancelled: "Installation was cancelled.",
-  proxmox_api:
-    "Proxmox could not complete the request. Check the server, account permissions, and connection.",
-  proxmox_certificate_changed:
-    "The Proxmox server's certificate changed. Reconnect to check it again.",
-  drive_disconnected:
-    "The storage device was disconnected. Reconnect it and select your drive again.",
-  write_protected:
-    "The drive is write-protected. Unlock the SD card or choose another drive.",
-  unsupported_platform:
-    "This installation method is not available on this computer. Choose another installation method.",
-  json: "The installer received an unexpected response. Report the problem if it continues.",
-  download_failed:
-    "The image could not be downloaded. Check your connection and available storage.",
-  extraction_failed:
-    "The image could not be unpacked. Check available storage.",
-  verification_failed:
-    "The image could not be verified. Installation stopped to protect your device. See the installation help before continuing.",
-  image_too_large:
-    "The image does not fit on this drive. Choose a larger drive.",
-  operation_in_progress:
-    "An installation is already in progress. Wait for it to finish before starting another.",
-  internal:
-    "The installation stopped unexpectedly. Check the drive or virtual machine before starting again.",
+/** Text by error code, in the user's language. Unknown codes keep the backend's text. */
+const messages: Record<string, () => string> = {
+  network: () => localize("utils.installer_error.network"),
+  io: () => localize("utils.installer_error.io"),
+  device_not_found: () => localize("utils.installer_error.device_not_found"),
+  device_busy: () => localize("utils.installer_error.device_busy"),
+  checksum_mismatch: () => localize("utils.installer_error.checksum_mismatch"),
+  disk_service_unavailable: () =>
+    localize("utils.installer_error.disk_service_unavailable"),
+  cancelled: () => localize("utils.installer_error.cancelled"),
+  proxmox_api: () => localize("utils.installer_error.proxmox_api"),
+  proxmox_certificate_changed: () =>
+    localize("utils.installer_error.proxmox_certificate_changed"),
+  drive_disconnected: () =>
+    localize("utils.installer_error.drive_disconnected"),
+  write_protected: () => localize("utils.installer_error.write_protected"),
+  unsupported_platform: () =>
+    localize("utils.installer_error.unsupported_platform"),
+  json: () => localize("utils.installer_error.json"),
+  download_failed: () => localize("utils.installer_error.download_failed"),
+  extraction_failed: () => localize("utils.installer_error.extraction_failed"),
+  verification_failed: () =>
+    localize("utils.installer_error.verification_failed"),
+  image_too_large: () => localize("utils.installer_error.image_too_large"),
+  operation_in_progress: () =>
+    localize("utils.installer_error.operation_in_progress"),
+  internal: () => localize("utils.installer_error.internal"),
 };
 
 /** Tauri rejects with JSON values, not JavaScript Error instances. */
 export function installerError(
   error: unknown,
-  fallback = "An unexpected error occurred"
+  fallback = localize("utils.installer_error.unexpected")
 ): InstallerError {
   if (
     error &&
@@ -70,24 +62,29 @@ export function installerError(
       !Array.isArray(error.details)
         ? (error.details as Record<string, unknown>)
         : {};
-    let message = Object.prototype.hasOwnProperty.call(messages, error.code)
-      ? messages[error.code]
-      : error.message || fallback;
+    let message =
+      localizeBackend(details.message_key, details.message_params) ??
+      (Object.prototype.hasOwnProperty.call(messages, error.code)
+        ? messages[error.code]()
+        : error.message || fallback);
     if (
       error.code === "image_too_large" &&
       typeof details.image_size === "number" &&
       Number.isFinite(details.image_size) &&
       details.image_size > 0
     ) {
-      message = `The image needs ${formatBytes(details.image_size)}.`;
-      if (
+      const imageSize = formatBytes(details.image_size);
+      message =
         typeof details.drive_size === "number" &&
         Number.isFinite(details.drive_size) &&
         details.drive_size >= 0
-      ) {
-        message += ` This drive holds ${formatBytes(details.drive_size)}.`;
-      }
-      message += " Choose a larger drive.";
+          ? localize("utils.installer_error.image_too_large_for_drive", {
+              image_size: imageSize,
+              drive_size: formatBytes(details.drive_size),
+            })
+          : localize("utils.installer_error.image_too_large_with_size", {
+              image_size: imageSize,
+            });
     }
     return { code: error.code, message, retryable: error.retryable, details };
   }

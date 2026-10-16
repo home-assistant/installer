@@ -47,6 +47,40 @@ export function localize(
   return formatter(key).format(values) as string;
 }
 
+/**
+ * A message the backend named by key, in the user's language. `undefined`
+ * when the key isn't a backend message this catalog knows, so the caller
+ * can fall back to the backend's English.
+ */
+export function localizeBackend(
+  key: unknown,
+  values: unknown
+): string | undefined {
+  if (
+    typeof key !== "string" ||
+    !key.startsWith("backend.") ||
+    !Object.prototype.hasOwnProperty.call(messages, key)
+  ) {
+    return undefined;
+  }
+
+  const params: Record<string, PrimitiveType> = {};
+  if (values && typeof values === "object" && !Array.isArray(values)) {
+    for (const [name, value] of Object.entries(values)) {
+      if (["string", "number", "boolean"].includes(typeof value)) {
+        params[name] = value as PrimitiveType;
+      }
+    }
+  }
+
+  try {
+    return formatter(key as MessageKey).format(params) as string;
+  } catch {
+    // A parameter the catalog expects is missing: the English is better
+    return undefined;
+  }
+}
+
 export function localizeContent(
   key: MessageKey,
   values?: Record<string, unknown>
