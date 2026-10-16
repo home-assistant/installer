@@ -25,6 +25,9 @@ pub async fn write_image<P: ProgressCallback>(
     // drive that took over this disk number is refused.
     check_handle_serial(&device, expected)?;
     ensure_media_writable(&device)?;
+    // The disk number can belong to another drive by the time the write is
+    // done, so remember which drive this is while that is certain
+    let flashed = super::eject::flashed_disk(disk_number).ok();
 
     // The transfer clears the disk before its first progress update
     if progress_callback.is_cancelled() {
@@ -68,9 +71,11 @@ pub async fn write_image<P: ProgressCallback>(
     run_with_progress(write_handle, progress_rx, progress_callback).await?;
 
     // Best effort, like "Safely Remove Hardware": the write and the verify
-    // passed, so the drive is done. If Windows refuses, the success screen
-    // tells the user to eject the drive themselves.
-    let _ = tokio::task::spawn_blocking(move || super::eject::eject_disk(disk_number)).await;
+    // passed, so the drive is done. If Windows refuses or it's skipped, the
+    // success screen tells the user to eject the drive themselves.
+    if let Some(flashed) = flashed {
+        let _ = tokio::task::spawn_blocking(move || super::eject::eject_disk(&flashed)).await;
+    }
 
     progress_callback.on_progress(FlashProgress::new(
         FlashStage::Complete,

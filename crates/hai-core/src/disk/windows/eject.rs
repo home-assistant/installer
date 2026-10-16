@@ -7,9 +7,11 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
-    CM_Get_Parent, CM_Request_Device_EjectW, PNP_VetoTypeUnknown, SetupDiDestroyDeviceInfoList,
+    CM_Get_DevNode_Registry_PropertyW, CM_Get_Device_IDW, CM_Get_Parent, CM_Locate_DevNodeW,
+    CM_Request_Device_EjectW, PNP_VetoTypeUnknown, SetupDiDestroyDeviceInfoList,
     SetupDiEnumDeviceInterfaces, SetupDiGetClassDevsW, SetupDiGetDeviceInterfaceDetailW,
-    CR_SUCCESS, DIGCF_DEVICEINTERFACE, DIGCF_PRESENT, HDEVINFO, SP_DEVICE_INTERFACE_DATA,
+    CM_DEVCAP_REMOVABLE, CM_DRP_CAPABILITIES, CM_LOCATE_DEVNODE_NORMAL, CR_SUCCESS,
+    DIGCF_DEVICEINTERFACE, DIGCF_PRESENT, HDEVINFO, MAX_DEVICE_ID_LEN, SP_DEVICE_INTERFACE_DATA,
     SP_DEVICE_INTERFACE_DETAIL_DATA_W, SP_DEVINFO_DATA,
 };
 use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE, MAX_PATH};
@@ -25,15 +27,54 @@ use windows_sys::Win32::System::IO::DeviceIoControl;
 const EJECT_ATTEMPTS: u32 = 3;
 const EJECT_RETRY_DELAY: Duration = Duration::from_millis(500);
 
-/// Ask Windows to remove the drive behind `\\.\PhysicalDrive<disk_number>`.
-pub(super) fn eject_disk(disk_number: u32) -> io::Result<()> {
+/// How far up the device tree to look for something removable. Real trees
+/// are a handful of levels deep; anything deeper is not worth guessing at.
+const MAX_TREE_DEPTH: usize = 16;
+
+/// The disk a flash went to, by its PnP device instance ID. Unlike the disk
+/// number, Windows doesn't hand that ID to the next drive that shows up.
+pub(super) struct FlashedDisk {
+    /// NUL-terminated, as the Configuration Manager takes it.
+    instance_id: Vec<u16>,
+}
+
+/// Remember which disk `\\.\PhysicalDrive<disk_number>` is. Call this while
+/// the drive's identity is verified, before the disk number can move on.
+pub(super) fn flashed_disk(disk_number: u32) -> io::Result<FlashedDisk> {
     let disk = disk_device_instance(disk_number)?;
 
-    // The disk's parent is the USB device or card reader it sits on, the one
-    // "Safely Remove Hardware" lists. Ejecting that is what removes the drive.
-    let mut parent = 0;
-    // SAFETY: `parent` is a valid out pointer and `disk` a device instance.
-    config_result(unsafe { CM_Get_Parent(&mut parent, disk, 0) })?;
+    let mut instance_id = vec![0u16; MAX_DEVICE_ID_LEN as usize + 1];
+    // SAFETY: the buffer holds MAX_DEVICE_ID_LEN characters plus the NUL
+    // that stays in place, as the length passed says.
+    config_result(unsafe {
+        CM_Get_Device_IDW(disk, instance_id.as_mut_ptr(), MAX_DEVICE_ID_LEN, 0)
+    })?;
+    let length = instance_id.iter().position(|&c| c == 0).unwrap_or(0);
+    instance_id.truncate(length + 1);
+    Ok(FlashedDisk { instance_id })
+}
+
+/// Ask Windows to remove the flashed disk, the way "Safely Remove Hardware"
+/// does. Skipped when the disk is gone, or nothing on its way up the device
+/// tree says it can be removed.
+pub(super) fn eject_disk(flashed: &FlashedDisk) -> io::Result<()> {
+    let mut disk = 0;
+    // SAFETY: `disk` is a valid out pointer and the ID is NUL-terminated.
+    // NORMAL only finds devices that are present right now.
+    let located = unsafe {
+        CM_Locate_DevNodeW(
+            &mut disk,
+            flashed.instance_id.as_ptr(),
+            CM_LOCATE_DEVNODE_NORMAL,
+        )
+    };
+    if located != CR_SUCCESS {
+        return Ok(());
+    }
+
+    let Some(target) = removal_target(disk, parent_of, is_removable) else {
+        return Ok(());
+    };
 
     let mut last_veto = PNP_VetoTypeUnknown;
     for attempt in 1..=EJECT_ATTEMPTS {
@@ -44,7 +85,7 @@ pub(super) fn eject_disk(disk_number: u32) -> io::Result<()> {
         // SAFETY: the out pointers are valid and `veto_name` holds MAX_PATH
         // characters, as passed.
         let result = unsafe {
-            CM_Request_Device_EjectW(parent, &mut veto, veto_name.as_mut_ptr(), MAX_PATH, 0)
+            CM_Request_Device_EjectW(target, &mut veto, veto_name.as_mut_ptr(), MAX_PATH, 0)
         };
         if result == CR_SUCCESS && veto == PNP_VetoTypeUnknown {
             return Ok(());
@@ -59,6 +100,51 @@ pub(super) fn eject_disk(disk_number: u32) -> io::Result<()> {
     Err(io::Error::other(format!(
         "Windows refused to eject the drive (veto {last_veto})"
     )))
+}
+
+/// The node to eject: the first one, starting at the disk itself, that says
+/// it can be removed. For a USB stick that's the USB device, for an SD card
+/// in a built-in reader it's the card. Never anything above it, like the
+/// card reader's controller or a USB hub with other devices on it.
+///
+/// `None` when nothing removable turns up, or a node can't tell: then the
+/// drive is better left alone.
+fn removal_target<Node: Copy>(
+    disk: Node,
+    mut parent_of: impl FnMut(Node) -> Option<Node>,
+    mut is_removable: impl FnMut(Node) -> Option<bool>,
+) -> Option<Node> {
+    let mut node = disk;
+    for _ in 0..MAX_TREE_DEPTH {
+        if is_removable(node)? {
+            return Some(node);
+        }
+        node = parent_of(node)?;
+    }
+    None
+}
+
+fn parent_of(node: u32) -> Option<u32> {
+    let mut parent = 0;
+    // SAFETY: `parent` is a valid out pointer and `node` a device instance.
+    (unsafe { CM_Get_Parent(&mut parent, node, 0) } == CR_SUCCESS).then_some(parent)
+}
+
+fn is_removable(node: u32) -> Option<bool> {
+    let mut capabilities = 0u32;
+    let mut length = size_of::<u32>() as u32;
+    // SAFETY: the buffer is one u32, as `length` says; no type is needed.
+    let result = unsafe {
+        CM_Get_DevNode_Registry_PropertyW(
+            node,
+            CM_DRP_CAPABILITIES,
+            null_mut(),
+            std::ptr::addr_of_mut!(capabilities).cast(),
+            &mut length,
+            0,
+        )
+    };
+    (result == CR_SUCCESS).then_some(capabilities & CM_DEVCAP_REMOVABLE != 0)
 }
 
 /// Find the device instance of the disk with this number.
@@ -225,5 +311,70 @@ impl Drop for DeviceInfoList {
     fn drop(&mut self) {
         // SAFETY: created by SetupDiGetClassDevsW and destroyed once.
         unsafe { SetupDiDestroyDeviceInfoList(self.0) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A node in a test device tree: its name, its parent, and whether it's
+    /// removable (`None` when Windows couldn't read that).
+    type Node = (&'static str, Option<&'static str>, Option<bool>);
+
+    /// What `removal_target` picks in `tree`, starting at "disk".
+    fn target(tree: &[Node]) -> Option<&'static str> {
+        let find = |name| tree.iter().find(|node| node.0 == name);
+        removal_target("disk", |name| find(name)?.1, |name| find(name)?.2)
+    }
+
+    #[test]
+    fn usb_stick_ejects_the_usb_device() {
+        let tree = [
+            ("disk", Some("usb"), Some(false)),
+            ("usb", Some("hub"), Some(true)),
+            ("hub", Some("root"), Some(false)),
+            ("root", None, Some(false)),
+        ];
+        assert_eq!(target(&tree), Some("usb"));
+    }
+
+    #[test]
+    fn external_hub_stays_put() {
+        // The hub can be removed too, but other devices hang off it
+        let tree = [
+            ("disk", Some("usb"), Some(false)),
+            ("usb", Some("hub"), Some(true)),
+            ("hub", Some("root"), Some(true)),
+            ("root", None, Some(false)),
+        ];
+        assert_eq!(target(&tree), Some("usb"));
+    }
+
+    #[test]
+    fn built_in_sd_reader_ejects_only_the_card() {
+        let tree = [
+            ("disk", Some("sd-host"), Some(true)),
+            ("sd-host", Some("pci"), Some(false)),
+            ("pci", None, Some(false)),
+        ];
+        assert_eq!(target(&tree), Some("disk"));
+    }
+
+    #[test]
+    fn nothing_removable_or_unclear_is_left_alone() {
+        let fixed = [
+            ("disk", Some("controller"), Some(false)),
+            ("controller", None, Some(false)),
+        ];
+        assert_eq!(target(&fixed), None);
+
+        // A capability Windows couldn't read is no reason to guess upwards
+        let unreadable = [("disk", Some("usb"), None), ("usb", None, Some(true))];
+        assert_eq!(target(&unreadable), None);
+
+        // A tree without a root never ends
+        let looping = [("disk", Some("disk"), Some(false))];
+        assert_eq!(target(&looping), None);
     }
 }
