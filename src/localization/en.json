@@ -465,5 +465,19 @@
   "backend.proxmox.vm_status_denied": "Access denied. Your Proxmox user may not have permission to see this VM's status.",
   "backend.proxmox.leftover_import_image": "Installation stopped, but the uploaded image could not be removed. Delete {volume} from node {node} in Proxmox.",
   "backend.proxmox.invalid_url": "Enter a valid HTTPS server URL",
-  "backend.proxmox.url_has_extras": "Use an HTTPS server URL without credentials, a path, query, or fragment"
+  "backend.proxmox.url_has_extras": "Use an HTTPS server URL without credentials, a path, query, or fragment",
+  "backend.utm.no_answer": "{detail}",
+  "backend.utm.applescript_error": "{detail}",
+  "backend.utm.automation_denied": "Home Assistant Installer is not allowed to control UTM. Open System Settings > Privacy & Security > Automation, enable UTM under Home Assistant Installer, then try again.",
+  "backend.utm.applescript_not_started": "Failed to execute AppleScript: {detail}",
+  "backend.utm.applescript_lost": "Failed to wait for AppleScript: {detail}",
+  "backend.utm.not_installed": "UTM is not installed",
+  "backend.utm.image_not_found": "Image file not found: {path}",
+  "backend.utm.rosetta_status_unknown": "Unexpected Rosetta translation status: {detail}",
+  "backend.utm.architecture_unknown": "Failed to detect the Mac's native architecture: {detail}",
+  "backend.utm.vm_created_not_started": "The virtual machine \"{name}\" was created, but the installer could not confirm it started. Open UTM to start it or remove it before installing again. {detail}",
+  "backend.utm.disk_size_failed": "Could not set the disk size of the virtual machine image: {detail}",
+  "backend.utm.temporary_image_gone": "Temporary image is no longer available; download it again",
+  "backend.utm.import_not_prepared": "Could not prepare the UTM import: {detail}. UTM was not contacted. Any retained source directory at {path} can be removed manually.",
+  "backend.utm.import_uncertain": "UTM may still be importing the image: {detail}. Source retained at {path}. Check UTM before retrying. Remove the source directory manually only after confirming UTM has finished or stopped importing."
 }

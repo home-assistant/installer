@@ -90,9 +90,9 @@ impl From<Error> for CommandError {
             Error::ProxmoxCertificateChanged => ("proxmox_certificate_changed", "The Proxmox server's certificate changed. Reconnect to check it again.", false),
             // Installer-authored guidance for the authenticator code, never a server response
             Error::ProxmoxTwoFactor(message) => ("proxmox_two_factor", message.as_str(), false),
-            Error::Utm(message) => ("utm", message.as_str(), true),
-            Error::UtmOperationUncertain(message) => ("utm_operation_uncertain", message.as_str(), false),
-            Error::UtmVmCreated(message) => ("utm_vm_created", message.as_str(), false),
+            Error::Utm(message) => return Self::with_message("utm", message, true),
+            Error::UtmOperationUncertain(message) => return Self::with_message("utm_operation_uncertain", message, false),
+            Error::UtmVmCreated(message) => return Self::with_message("utm_vm_created", message, false),
             Error::DriveDisconnected => ("drive_disconnected", "The drive was disconnected. Reconnect it and select it again.", false),
             Error::WriteProtected => ("write_protected", "The drive is write-protected. Unlock the SD card or choose another drive.", false),
             Error::UnsupportedPlatform(_) => ("unsupported_platform", "This installation method is not available on this computer.", false),
@@ -198,34 +198,32 @@ mod tests {
         }
         assert!(!CommandError::from_query(Error::UnsupportedPlatform("UTM".into())).retryable);
         assert!(
-            CommandError::from(Error::Utm(
-                "Enable Automation access, then try again".into()
-            ))
+            CommandError::from(Error::Utm(hai_core::message!(
+                "backend.utm.automation_denied"
+            )))
             .retryable
         );
         assert!(
-            !CommandError::from(Error::UtmOperationUncertain(
-                "Check UTM before retrying".into()
-            ))
+            !CommandError::from(Error::UtmOperationUncertain(hai_core::message!(
+                "backend.utm.no_answer",
+                detail = "AppleEvent timed out (-1712)",
+            )))
             .retryable
         );
     }
 
     #[test]
     fn uncertain_import_and_permission_guidance_are_preserved_without_retry() {
-        for error in [
-            Error::UtmOperationUncertain("Check UTM before removing the retained source".into()),
-            Error::PermissionDenied("Run as administrator".into()),
-        ] {
-            let expected = match &error {
-                Error::UtmOperationUncertain(message) | Error::PermissionDenied(message) => {
-                    message.clone()
-                }
-                _ => unreachable!(),
-            };
-            let error = CommandError::from(error);
-            assert_eq!(error.message, expected);
-            assert!(!error.retryable);
-        }
+        let uncertain = CommandError::from(Error::UtmOperationUncertain(hai_core::message!(
+            "backend.utm.no_answer",
+            detail = "AppleEvent timed out (-1712)",
+        )));
+        assert_eq!(uncertain.message, "AppleEvent timed out (-1712)");
+        assert_eq!(uncertain.details["message_key"], "backend.utm.no_answer");
+        assert!(!uncertain.retryable);
+
+        let permission = CommandError::from(Error::PermissionDenied("Run as administrator".into()));
+        assert_eq!(permission.message, "Run as administrator");
+        assert!(!permission.retryable);
     }
 }
