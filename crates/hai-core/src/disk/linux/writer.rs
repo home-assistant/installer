@@ -308,8 +308,25 @@ fn cleanup_for(objects: &ManagedObjects, flashed: &FlashedDrive) -> Option<Clean
 
     Some(Cleanup {
         filesystems,
-        power_off: property(objects, &flashed.path, DRIVE, "CanPowerOff").unwrap_or(false),
+        power_off: property(objects, &flashed.path, DRIVE, "CanPowerOff").unwrap_or(false)
+            && !has_siblings(objects, &flashed.path),
         eject: property(objects, &flashed.path, DRIVE, "Ejectable").unwrap_or(false),
+    })
+}
+
+/// Whether other drives share this one's hardware, like the other slots of a
+/// multi-card reader. Powering it off would disconnect those too.
+fn has_siblings(objects: &ManagedObjects, drive: &OwnedObjectPath) -> bool {
+    let Some(sibling_id) = property::<String>(objects, drive, DRIVE, "SiblingId") else {
+        return false;
+    };
+    if sibling_id.is_empty() {
+        return false;
+    }
+
+    objects.keys().any(|path| {
+        path != drive
+            && property::<String>(objects, path, DRIVE, "SiblingId").as_ref() == Some(&sibling_id)
     })
 }
 
@@ -774,6 +791,52 @@ mod tests {
                 power_off: true,
                 eject: true,
             })
+        );
+    }
+
+    #[test]
+    fn multi_slot_reader_is_ejected_not_powered_off() {
+        let slot = |id: &'static str, sibling: &'static str| {
+            vec![(
+                DRIVE,
+                vec![
+                    ("Id", id.into()),
+                    ("SiblingId", sibling.into()),
+                    ("CanPowerOff", true.into()),
+                    ("Ejectable", true.into()),
+                ],
+            )]
+        };
+        let reader = "/sys/devices/pci0000:00/usb1/1-2";
+
+        // Powering off would take the card in the other slot with it
+        let shared = inventory(vec![
+            (SANDISK, slot("SanDisk-Ultra-1", reader)),
+            (OTHER, slot("Kingston-2", reader)),
+        ]);
+        let cleanup = cleanup_for(&shared, &flashed_sandisk()).unwrap();
+        assert!(!cleanup.power_off);
+        assert!(cleanup.eject);
+
+        // Alone on its hardware, or without a SiblingId: power off as before
+        for other_reader in ["/sys/devices/pci0000:00/usb1/1-3", ""] {
+            let alone = inventory(vec![
+                (SANDISK, slot("SanDisk-Ultra-1", "")),
+                (OTHER, slot("Kingston-2", other_reader)),
+            ]);
+            assert!(cleanup_for(&alone, &flashed_sandisk()).unwrap().power_off);
+        }
+        let separate = inventory(vec![
+            (SANDISK, slot("SanDisk-Ultra-1", reader)),
+            (
+                OTHER,
+                slot("Kingston-2", "/sys/devices/pci0000:00/usb1/1-3"),
+            ),
+        ]);
+        assert!(
+            cleanup_for(&separate, &flashed_sandisk())
+                .unwrap()
+                .power_off
         );
     }
 
