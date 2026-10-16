@@ -20,6 +20,7 @@ pub mod hardware_installer;
 pub mod host;
 pub mod keep_awake;
 pub mod manifest;
+pub mod message;
 pub mod types;
 
 #[cfg(feature = "mock")]
@@ -32,6 +33,7 @@ pub mod proxmox;
 pub mod utm;
 
 pub use error::{BusyReason, Error, Result};
+pub use message::Message;
 #[cfg(feature = "mock")]
 pub use mock::BackendMock;
 pub use types::*;

@@ -45,7 +45,7 @@ pub enum Error {
     ProxmoxTwoFactor(String),
     /// Installer-authored guidance, without raw HTTP responses or request URLs.
     #[error("{0}")]
-    ProxmoxActionRequired(String),
+    ProxmoxActionRequired(crate::Message),
 
     /// GitHub's API limit was reached; installer-authored guidance with the wait time.
     #[error("{0}")]
