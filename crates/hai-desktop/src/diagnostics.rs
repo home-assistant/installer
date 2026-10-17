@@ -326,6 +326,8 @@ mod tests {
     }
 
     #[test]
+    // A UTM command test clears the shared tail, which would drop this line
+    #[serial_test::serial]
     fn busy_failures_log_their_reason_without_the_message() {
         let operation = Operation::new("busy-test");
         let error = crate::command_error::CommandError::from(hai_core::Error::DeviceBusy(
