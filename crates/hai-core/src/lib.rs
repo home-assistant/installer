@@ -31,7 +31,7 @@ pub mod proxmox;
 #[cfg(feature = "utm")]
 pub mod utm;
 
-pub use error::{Error, Result};
+pub use error::{BusyReason, Error, Result};
 #[cfg(feature = "mock")]
 pub use mock::BackendMock;
 pub use types::*;

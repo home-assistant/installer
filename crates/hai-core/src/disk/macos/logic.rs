@@ -1,7 +1,7 @@
 //! Pure helpers for the macOS `authopen` write path, kept free of platform
 //! code so they are compiled and unit-tested on every CI runner.
 
-use crate::error::Error;
+use crate::error::{BusyReason, Error};
 
 /// `O_RDWR` from `<sys/fcntl.h>`; `authopen -o` takes numeric `open(2)` flags.
 pub const O_RDWR: i32 = 0x0002;
@@ -97,7 +97,7 @@ pub fn map_device_io_error(err: std::io::Error, device_id: &str) -> Error {
     }
 
     match err.raw_os_error() {
-        Some(EBUSY) => Error::DeviceBusy(device_busy_message(device_id)),
+        Some(EBUSY) => Error::DeviceBusy(BusyReason::InUse, device_busy_message(device_id)),
         Some(EACCES) | Some(EPERM) => Error::PermissionDenied(removable_volumes_message(device_id)),
         _ => Error::Io(err),
     }
@@ -112,7 +112,7 @@ pub fn classify_authopen_failure(exit_code: Option<i32>, stderr: &str, device_id
         return Error::Cancelled;
     }
     if haystack.contains("resource busy") || haystack.contains("device busy") {
-        return Error::DeviceBusy(device_busy_message(device_id));
+        return Error::DeviceBusy(BusyReason::InUse, device_busy_message(device_id));
     }
     // A locked card fails the O_RDWR open with EROFS. Checked before the
     // permission errors, so it doesn't get the privacy settings advice.
@@ -355,7 +355,7 @@ mod tests {
         let err = map_device_io_error(std::io::Error::from_raw_os_error(EBUSY), "/dev/rdisk4");
 
         match err {
-            Error::DeviceBusy(msg) => {
+            Error::DeviceBusy(_, msg) => {
                 assert!(msg.contains("/dev/rdisk4"), "{msg}");
                 assert!(msg.contains("unmounted"), "{msg}");
             }
@@ -438,7 +438,7 @@ mod tests {
             "authopen: /dev/rdisk4: Resource busy",
             "/dev/rdisk4",
         );
-        assert!(matches!(err, Error::DeviceBusy(_)), "{err:?}");
+        assert!(matches!(err, Error::DeviceBusy(..)), "{err:?}");
     }
 
     #[test]

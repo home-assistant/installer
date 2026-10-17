@@ -96,9 +96,9 @@ impl Categorized for String {
 }
 
 impl Categorized for crate::command_error::CommandError {
-    // The code is already a fixed, credential-free category
+    // A fixed, credential-free code, finer than the public one where it helps
     fn category(&self) -> &'static str {
-        self.code
+        self.diagnostic
     }
 }
 
@@ -323,6 +323,23 @@ mod tests {
             error_category("Verification failed: secret"),
             "verification_failed"
         );
+    }
+
+    #[test]
+    fn busy_failures_log_their_reason_without_the_message() {
+        let operation = Operation::new("busy-test");
+        let error = crate::command_error::CommandError::from(hai_core::Error::DeviceBusy(
+            hai_core::BusyReason::VolumeUnreadable,
+            "Cannot inspect volume private-volume".into(),
+        ));
+        let _ = operation.finish::<(), _>(Err(error));
+
+        let tail = test_log_tail().join("\n");
+        assert!(
+            tail.contains("rust busy-test preparing device_busy_volume_unreadable"),
+            "{tail}"
+        );
+        assert!(!tail.contains("private-volume"), "{tail}");
     }
 
     #[test]
