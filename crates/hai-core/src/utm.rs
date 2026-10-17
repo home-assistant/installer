@@ -33,77 +33,63 @@ fn applescript_output(output: std::process::Output) -> Result<String> {
     }
 }
 
-/// Native host architecture used for both the HAOS image and UTM configuration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UtmArchitecture {
-    Aarch64,
-    X86_64,
+/// HAOS board whose qcow2 image boots in UTM. Intel Macs aren't supported:
+/// they would need the x86_64 `ova` image, and nobody tests that path.
+pub const HAOS_BOARD: &str = "generic-aarch64";
+
+/// Refuse an Intel Mac before any work starts. An installer running under
+/// Rosetta is still on Apple silicon, so that one is fine.
+pub fn ensure_apple_silicon() -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        check_architecture(std::env::consts::ARCH, macos::translation_status)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(Error::UnsupportedPlatform(
+            "UTM is only available on macOS".to_string(),
+        ))
+    }
 }
 
-impl UtmArchitecture {
-    /// Detect the Mac's native architecture, including a process running under Rosetta.
-    pub fn host() -> Result<Self> {
-        #[cfg(target_os = "macos")]
-        {
-            Self::from_process(std::env::consts::ARCH, macos::translation_status)
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            Err(Error::UnsupportedPlatform(
-                "UTM is only available on macOS".to_string(),
-            ))
-        }
-    }
-
-    /// HAOS board whose qcow2 image boots on this architecture.
-    pub fn haos_board(self) -> &'static str {
-        match self {
-            Self::Aarch64 => "generic-aarch64",
-            Self::X86_64 => "ova",
-        }
-    }
-
-    /// Architecture name accepted by UTM's QEMU configuration.
-    pub fn qemu_architecture(self) -> &'static str {
-        match self {
-            Self::Aarch64 => "aarch64",
-            Self::X86_64 => "x86_64",
-        }
-    }
-
-    #[cfg(any(target_os = "macos", test))]
-    fn from_process(
-        process_arch: &str,
-        translation_status: impl FnOnce() -> std::io::Result<i32>,
-    ) -> Result<Self> {
-        match process_arch {
-            "aarch64" => Ok(Self::Aarch64),
-            "x86_64" => match translation_status() {
-                Ok(0) => Ok(Self::X86_64),
-                Ok(1) => Ok(Self::Aarch64),
-                // Intel macOS versions without Rosetta do not expose this sysctl.
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Self::X86_64),
-                Ok(value) => Err(Error::Utm(format!(
-                    "Unexpected Rosetta translation status: {}",
-                    value
-                ))),
-                Err(err) => Err(Error::Utm(format!(
-                    "Failed to detect the Mac's native architecture: {}",
-                    err
-                ))),
-            },
-            arch => Err(Error::UnsupportedPlatform(format!(
-                "Unsupported Mac architecture: {}",
-                arch
+#[cfg(any(target_os = "macos", test))]
+fn check_architecture(
+    process_arch: &str,
+    translation_status: impl FnOnce() -> std::io::Result<i32>,
+) -> Result<()> {
+    match process_arch {
+        "aarch64" => Ok(()),
+        "x86_64" => match translation_status() {
+            Ok(1) => Ok(()),
+            // Intel macOS versions without Rosetta do not expose this sysctl.
+            Ok(0) => Err(intel_mac()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Err(intel_mac()),
+            Ok(value) => Err(Error::Utm(format!(
+                "Unexpected Rosetta translation status: {}",
+                value
             ))),
-        }
+            Err(err) => Err(Error::Utm(format!(
+                "Failed to detect the Mac's native architecture: {}",
+                err
+            ))),
+        },
+        arch => Err(Error::UnsupportedPlatform(format!(
+            "Unsupported Mac architecture: {}",
+            arch
+        ))),
     }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn intel_mac() -> Error {
+    Error::UnsupportedPlatform("UTM installs need a Mac with Apple silicon".to_string())
 }
 
 /// Check if UTM is installed and get its status
 async fn check_utm_status() -> Result<UtmStatus> {
     #[cfg(target_os = "macos")]
     {
+        ensure_apple_silicon()?;
         macos::check_utm_status().await
     }
 
@@ -434,8 +420,7 @@ end tell"#,
             message: "Creating virtual machine...".to_string(),
         });
 
-        // Get architecture and network interface
-        let arch = UtmArchitecture::host()?.qemu_architecture();
+        ensure_apple_silicon()?;
         let network_interface = get_primary_network_interface();
 
         // Escape the name for AppleScript
@@ -459,12 +444,11 @@ end tell"#,
         // - bridged network for direct LAN access (required for Home Assistant)
         let script = format!(
             r#"tell application "UTM"
-    set vmConfig to {{name:"{name}", notes:"Created by the Home Assistant Installer", architecture:"{arch}", cpu cores:{cores}, memory:{memory}, hypervisor:true, uefi:true, drives:{{{drives}}}, network interfaces:{{{{mode:bridged, host interface:"{interface}"}}}}}}
+    set vmConfig to {{name:"{name}", notes:"Created by the Home Assistant Installer", architecture:"aarch64", cpu cores:{cores}, memory:{memory}, hypervisor:true, uefi:true, drives:{{{drives}}}, network interfaces:{{{{mode:bridged, host interface:"{interface}"}}}}}}
     set vm to make new virtual machine with properties {{backend:qemu, configuration:vmConfig}}
     return id of vm
 end tell"#,
             name = escaped_name,
-            arch = arch,
             cores = config.cpu_cores,
             memory = config.memory_mb,
             drives = drives_config,
@@ -536,25 +520,22 @@ mod tests {
     }
 
     #[test]
-    fn native_apple_silicon_uses_arm_without_querying_rosetta() {
-        let arch = UtmArchitecture::from_process("aarch64", || panic!("not needed")).unwrap();
-        assert_eq!(arch.haos_board(), "generic-aarch64");
-        assert_eq!(arch.qemu_architecture(), "aarch64");
+    fn apple_silicon_passes_without_querying_rosetta() {
+        assert!(check_architecture("aarch64", || panic!("not needed")).is_ok());
     }
 
     #[test]
-    fn translated_intel_process_uses_native_arm_image_and_vm() {
-        let arch = UtmArchitecture::from_process("x86_64", || Ok(1)).unwrap();
-        assert_eq!(arch.haos_board(), "generic-aarch64");
-        assert_eq!(arch.qemu_architecture(), "aarch64");
+    fn translated_intel_process_on_apple_silicon_passes() {
+        assert!(check_architecture("x86_64", || Ok(1)).is_ok());
     }
 
     #[test]
-    fn native_intel_uses_ova_image_and_x86_vm() {
+    fn intel_macs_are_refused() {
         for status in [Ok(0), Err(std::io::ErrorKind::NotFound.into())] {
-            let arch = UtmArchitecture::from_process("x86_64", || status).unwrap();
-            assert_eq!(arch.haos_board(), "ova");
-            assert_eq!(arch.qemu_architecture(), "x86_64");
+            let error = check_architecture("x86_64", || status).unwrap_err();
+            assert!(
+                matches!(error, Error::UnsupportedPlatform(message) if message.contains("Apple silicon"))
+            );
         }
     }
 
@@ -728,9 +709,9 @@ mod tests {
     #[test]
     fn architecture_detection_errors_do_not_guess_an_image() {
         for status in [Ok(2), Err(std::io::ErrorKind::PermissionDenied.into())] {
-            assert!(UtmArchitecture::from_process("x86_64", || status).is_err());
+            assert!(check_architecture("x86_64", || status).is_err());
         }
-        assert!(UtmArchitecture::from_process("unknown", || panic!("not needed")).is_err());
+        assert!(check_architecture("unknown", || panic!("not needed")).is_err());
     }
 
     #[tokio::test]

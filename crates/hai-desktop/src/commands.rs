@@ -405,15 +405,14 @@ pub fn get_system_info() -> Result<SystemInfo, CommandError> {
 // UTM Commands (macOS only)
 // =============================================================================
 
-/// HAOS board for UTM, from the Mac's native architecture (also under
-/// Rosetta). The confirmation screen and the download must agree on it.
+/// HAOS board for UTM, refused on an Intel Mac. The confirmation screen and
+/// the download must agree on it.
 fn utm_board() -> Result<&'static str, CommandError> {
-    #[cfg(all(feature = "mock", not(target_os = "macos")))]
-    let arch = hai_core::utm::UtmArchitecture::X86_64;
+    // The mock also runs off macOS, where there is no Mac to check
     #[cfg(any(not(feature = "mock"), target_os = "macos"))]
-    let arch = hai_core::utm::UtmArchitecture::host().map_err(CommandError::from)?;
+    hai_core::utm::ensure_apple_silicon().map_err(CommandError::from)?;
 
-    Ok(arch.haos_board())
+    Ok(hai_core::utm::HAOS_BOARD)
 }
 
 /// Get the release for the same board used by UTM downloads.
@@ -2096,27 +2095,22 @@ mod mock_tests {
     #[tokio::test]
     #[serial] // all share the mock cache directory
     async fn run_utm_download_returns_extracted_image() {
-        use hai_core::utm::UtmArchitecture;
-
-        for arch in [UtmArchitecture::Aarch64, UtmArchitecture::X86_64] {
-            let release = BackendMock
-                .get_latest_haos_release_for_board(arch.haos_board())
-                .await
-                .unwrap();
-            let image = release
-                .image_for(arch.haos_board(), ImageFormat::Qcow2)
-                .unwrap();
-            assert!(image
-                .download_url
-                .ends_with(&format!("haos_{}-16.3.qcow2.xz", arch.haos_board())));
-            let image = run_utm_download(&BackendMock, arch.haos_board(), &NoOpProgress)
-                .await
-                .unwrap();
-            let path = image.path();
-            assert!(path.exists());
-            drop(image);
-            assert!(!path.exists());
-        }
+        let board = hai_core::utm::HAOS_BOARD;
+        let release = BackendMock
+            .get_latest_haos_release_for_board(board)
+            .await
+            .unwrap();
+        let image = release.image_for(board, ImageFormat::Qcow2).unwrap();
+        assert!(image
+            .download_url
+            .ends_with(&format!("haos_{board}-16.3.qcow2.xz")));
+        let image = run_utm_download(&BackendMock, board, &NoOpProgress)
+            .await
+            .unwrap();
+        let path = image.path();
+        assert!(path.exists());
+        drop(image);
+        assert!(!path.exists());
     }
 
     #[tokio::test]
@@ -2125,8 +2119,7 @@ mod mock_tests {
     async fn mock_utm_download_command_works_without_native_mac_architecture() {
         use tauri::Manager;
 
-        // Off macOS the mock command uses the Intel OVA board without Rosetta
-        // detection; run_utm_download_returns_extracted_image covers that board.
+        // Off macOS the mock command skips the Apple silicon check
         let app = tauri::test::mock_app();
         app.manage(PendingUtmImages::default());
         app.manage(InstallJobs::default());
