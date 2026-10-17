@@ -8,8 +8,10 @@ mod close_guard;
 mod command_error;
 mod commands;
 mod diagnostics;
+mod elevation;
 mod flash_state;
 mod install_jobs;
+mod live_usb;
 
 #[cfg(desktop)]
 use tauri::Manager;
@@ -25,6 +27,7 @@ use commands::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    elevation::wait_for_previous_instance();
     let builder = tauri::Builder::default();
 
     // Register first so a second launch exits before initializing other plugins.
@@ -58,6 +61,7 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
         .on_window_event(close_guard::on_window_event)
         .invoke_handler(tauri::generate_handler![
@@ -92,7 +96,14 @@ pub fn run() {
             proxmox_enable_storage_import,
             proxmox_get_next_vm_id,
             proxmox_get_vm_status,
-            proxmox_create_vm
+            proxmox_create_vm,
+            // Live USB commands (bootable stick or ISO for a mini PC)
+            live_usb::live_usb_status,
+            live_usb::create_live_usb,
+            live_usb::save_live_iso,
+            live_usb::check_iso_location,
+            live_usb::reveal_in_folder,
+            live_usb::relaunch_as_admin
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -316,6 +316,9 @@ export class DriveSelectionView extends LitElement {
   }
 
   private _subtitle(): string {
+    if (wizardState.getState().selections.installMethod === "usb-boot") {
+      return localize("views.live_usb.drive_view.choose_the_usb_stick");
+    }
     if (this._isMiniPCFlow()) {
       return localize(
         "views.sbc.drive_selection_view.choose_the_nvme_ssd_drive_to_install_home_assistant_on"

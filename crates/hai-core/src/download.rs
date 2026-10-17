@@ -134,7 +134,7 @@ fn valid_board(board: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-' || c == b'_')
 }
 
-fn parse_version(version: &str) -> Option<Vec<u64>> {
+pub(crate) fn parse_version(version: &str) -> Option<Vec<u64>> {
     let parts: Vec<_> = version.split('.').collect();
     if parts.len() < 2
         || parts

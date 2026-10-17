@@ -49,6 +49,19 @@ export interface WizardSelections {
   /** Address Home Assistant was reached on, if it was found. */
   ipAddress?: string;
 
+  /** Mini PC path: connect the drive here, or boot the mini PC from USB. */
+  installMethod?: "direct" | "usb-boot";
+  /** Bootable media to create for the USB boot path. */
+  liveMedia?: "usb" | "iso";
+  /** The live USB checks passed (hai-live found, admin rights where needed). */
+  liveReady?: boolean;
+  /** Where the ISO is saved: folder and file name as entered, then the saved path. */
+  liveIsoFolder?: string;
+  liveIsoName?: string;
+  /** The user agreed to replace an existing file with that name. */
+  liveIsoOverwrite?: boolean;
+  liveIsoPath?: string;
+
   /** UTM install progress, so a retry resumes instead of starting over. */
   vmId?: string;
   /** Native creation outlives its view; reentry must await the same result. */
@@ -134,6 +147,32 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
     { id: "install", title: localize("common.install") },
     { id: "success", title: localize("common.done") },
   ],
+};
+
+/** The USB path keeps the drive/confirm/flash/success ids, so the shell's drive
+ * re-checks, erase confirmation and retry handling apply to it unchanged. */
+function liveUsbSteps(target: WizardStep): WizardStep[] {
+  return [
+    { id: "method", title: localize("state.wizard_state.installation_method") },
+    { id: "media", title: localize("state.wizard_state.media_type") },
+    target,
+    { id: "confirm", title: localize("common.confirm") },
+    { id: "flash", title: localize("common.create") },
+    { id: "success", title: localize("common.done") },
+  ];
+}
+
+/** Mini PC paths share the method step, then each shows its own steps. */
+export const MINIPC_STEPS = {
+  direct: FLOW_STEPS.minipc,
+  usb: liveUsbSteps({
+    id: "drive",
+    title: localize("state.wizard_state.select_usb_stick"),
+  }),
+  iso: liveUsbSteps({
+    id: "location",
+    title: localize("state.wizard_state.save_location"),
+  }),
 };
 
 function createInitialState(): WizardState {
@@ -225,6 +264,16 @@ class WizardStateStore {
         ...this.state.selections,
         [key]: value,
       },
+    };
+    this.notify();
+  }
+
+  /** Replaces the step list when a choice splits the flow; keeps the position. */
+  setSteps(steps: WizardStep[]) {
+    this.state = {
+      ...this.state,
+      steps,
+      currentStepIndex: Math.min(this.state.currentStepIndex, steps.length - 1),
     };
     this.notify();
   }

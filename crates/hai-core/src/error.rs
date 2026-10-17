@@ -93,6 +93,19 @@ pub enum Error {
         image_size: u64,
         drive_size: Option<u64>,
     },
+
+    /// The `hai-live` program for the live USB stick is not a static x86-64 Linux build.
+    #[error("hai-live must be the Linux build (x86_64-unknown-linux-musl), not a Windows or macOS program")]
+    LiveUsbInvalidHaiLive,
+
+    /// The latest HAOS release can't go on a live USB stick: no generic x86-64 image,
+    /// no usable checksum, or an unexpected version.
+    #[error("Home Assistant OS release can't be used for the live USB stick: {0}")]
+    LiveUsbReleaseUnusable(String),
+
+    /// Building the live USB disk image or ISO failed. May name local paths.
+    #[error("Building the live USB media failed: {0}")]
+    LiveUsbBuild(String),
 }
 
 /// Result type alias for hai-core operations

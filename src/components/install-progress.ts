@@ -379,6 +379,7 @@ export class InstallProgress extends LitElement {
             : renderCasitaThinking(this.stageTitle)}
       </div>
       <h2>${this.description}</h2>
+      <slot></slot>
       <ol
         class="stages-indicator"
         aria-label=${localize(

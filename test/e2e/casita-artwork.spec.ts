@@ -6,6 +6,8 @@ for (const flow of ["sbc", "utm", "proxmox"]) {
     test(`${flow} artwork and caption fit at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 844 });
       await page.goto("/");
+      // The app shell loads after locale detection, so wait for it to render.
+      await page.locator("welcome-view").waitFor({ state: "attached" });
       // Load the modules in one evaluate and build the fixture in a second,
       // synchronous one. As a single async evaluate, Chromium intermittently
       // reports its promise as collected once the view starts, which

@@ -13,6 +13,8 @@ const mdiLaptop =
   "M4,6H20V16H4M20,18A2,2 0 0,0 22,16V6C22,4.89 21.1,4 20,4H4C2.89,4 2,4.89 2,6V16A2,2 0 0,0 4,18H0V20H24V18H20Z";
 const mdiDotsHorizontal =
   "M16,12A2,2 0 0,1 18,10A2,2 0 0,1 20,12A2,2 0 0,1 18,14A2,2 0 0,1 16,12M10,12A2,2 0 0,1 12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12M4,12A2,2 0 0,1 6,10A2,2 0 0,1 8,12A2,2 0 0,1 6,14A2,2 0 0,1 4,12Z";
+const mdiDisc =
+  "M12,14C10.89,14 10,13.1 10,12C10,10.89 10.89,10 12,10C13.11,10 14,10.89 14,12A2,2 0 0,1 12,14M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z";
 
 @customElement("option-card")
 export class OptionCard extends LitElement {
@@ -207,6 +209,7 @@ export class OptionCard extends LitElement {
       minipc: mdiDesktopTower,
       proxmox: mdiServer,
       vm: mdiLaptop,
+      disc: mdiDisc,
       others: mdiDotsHorizontal,
     };
     return html`<ha-svg-icon

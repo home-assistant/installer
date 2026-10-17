@@ -17,6 +17,12 @@ import "../views/ha-hardware/device-selection-view.js";
 import "../views/ha-hardware/success-view.js";
 import "../views/minipc/setup-method-view.js";
 import "../views/minipc/architecture-selection-view.js";
+import "../views/minipc/media-view.js";
+import "../views/live-usb/live-usb-gate.js";
+import "../views/live-usb/live-iso-location-view.js";
+import "../views/live-usb/live-usb-summary-view.js";
+import "../views/live-usb/live-usb-progress-view.js";
+import "../views/live-usb/live-usb-success-view.js";
 import "../views/utm/utm-check-view.js";
 import "../views/utm/utm-configure-view.js";
 import "../views/utm/utm-confirm-view.js";
@@ -120,6 +126,9 @@ export class AppShell extends LitElement {
   @state()
   private _showQuitDialog = false;
 
+  @state()
+  private _checkingLocation = false;
+
   private _unsubscribe?: () => void;
   private _stopCloseListener?: Promise<() => void>;
   private _pendingFlow?: WizardFlow;
@@ -170,9 +179,7 @@ export class AppShell extends LitElement {
         class="stop-dialog"
         ?open=${this._showStopDialog}
         .title=${localize("components.app_shell.stop_installation_title")}
-        .message=${wizardState.currentStep?.id === "flash"
-          ? localize("components.app_shell.stop_installation_message")
-          : localize("components.app_shell.stop_vm_installation_message")}
+        .message=${this._stopDialogMessage()}
         .primaryLabel=${localize("components.app_shell.stop_installation")}
         .secondaryLabel=${localize("components.app_shell.keep_installing")}
         primaryVariant="danger"
@@ -193,6 +200,20 @@ export class AppShell extends LitElement {
         @dialog-secondary=${this._onKeepInstallingOnQuit}
       ></info-dialog>
     `;
+  }
+
+  private _stopDialogMessage(): string {
+    if (wizardState.currentStep?.id !== "flash") {
+      return localize("components.app_shell.stop_vm_installation_message");
+    }
+    const selections = this._wizardState.selections;
+    if (
+      selections.installMethod === "usb-boot" &&
+      selections.liveMedia === "iso"
+    ) {
+      return localize("components.app_shell.stop_iso_message");
+    }
+    return localize("components.app_shell.stop_installation_message");
   }
 
   private _renderView() {
@@ -253,6 +274,7 @@ export class AppShell extends LitElement {
       flashRunning ||
       vmRunning ||
       currentStep?.id === "method" ||
+      currentStep?.id === "media" ||
       (currentStep?.id === "install" &&
         (this._flashError ||
           this._utmInstallError ||
@@ -263,12 +285,15 @@ export class AppShell extends LitElement {
       <wizard-shell
         .nextDisabled=${nextDisabled ||
         this._proxmoxConnecting ||
-        this._verifyingDrive}
+        this._verifyingDrive ||
+        this._checkingLocation}
         .nextLabel=${this._proxmoxConnecting
           ? localize("components.app_shell.connecting")
           : this._verifyingDrive
             ? localize("components.app_shell.checking_drive")
-            : nextLabel}
+            : this._checkingLocation
+              ? localize("components.app_shell.checking_location")
+              : nextLabel}
         .hideFooter=${hideFooter}
         .hideBack=${hideBack}
         .hideNext=${hideNext}
@@ -285,10 +310,14 @@ export class AppShell extends LitElement {
   }
 
   private _getNextLabel(stepId: string | undefined): string {
+    const selections = this._wizardState.selections;
+    const liveUsb = selections.installMethod === "usb-boot";
     if (stepId === "flash" && this._flashError) {
       return this._installRetryable
         ? localize("components.app_shell.try_again")
-        : localize("components.app_shell.choose_another_drive");
+        : liveUsb && selections.liveMedia === "iso"
+          ? localize("components.app_shell.choose_another_location")
+          : localize("components.app_shell.choose_another_drive");
     }
     if (
       stepId === "install" &&
@@ -297,7 +326,7 @@ export class AppShell extends LitElement {
       return localize("components.app_shell.try_again");
     }
     if (stepId === "confirm") {
-      return localize("common.install");
+      return liveUsb ? localize("common.create") : localize("common.install");
     }
     if (stepId === "success") {
       return localize("common.done");
@@ -322,11 +351,19 @@ export class AppShell extends LitElement {
     }
 
     if (flow === "minipc") {
+      const liveUsb = selections.installMethod === "usb-boot";
       if (stepId === "architecture") {
         return !selections.deviceCatalogReady || !selections.device;
       }
       if (stepId === "drive") {
-        return !selections.drive;
+        return !selections.drive || (liveUsb && !selections.liveReady);
+      }
+      if (stepId === "location") {
+        return (
+          !selections.liveReady ||
+          !selections.liveIsoFolder?.trim() ||
+          !selections.liveIsoName
+        );
       }
     }
 
@@ -392,12 +429,33 @@ export class AppShell extends LitElement {
     }
 
     // Mini PC Flow steps
+    if (
+      flow === "minipc" &&
+      this._wizardState.selections.installMethod === "usb-boot"
+    ) {
+      switch (stepId) {
+        case "drive":
+          return html`<live-usb-gate admin
+            ><drive-selection-view></drive-selection-view
+          ></live-usb-gate>`;
+        case "location":
+          return html`<live-iso-location-view></live-iso-location-view>`;
+        case "confirm":
+          return html`<live-usb-summary-view></live-usb-summary-view>`;
+        case "flash":
+          return html`<live-usb-progress-view></live-usb-progress-view>`;
+        case "success":
+          return html`<live-usb-success-view></live-usb-success-view>`;
+      }
+    }
     if (flow === "minipc") {
       switch (stepId) {
         case "method":
           return html`<minipc-setup-method-view></minipc-setup-method-view>`;
         case "architecture":
           return html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`;
+        case "media":
+          return html`<minipc-media-view></minipc-media-view>`;
         case "drive":
           return html`<drive-selection-view></drive-selection-view>`;
         case "confirm":
@@ -520,9 +578,9 @@ export class AppShell extends LitElement {
         return;
       }
       const wizardShell = this.shadowRoot?.querySelector("wizard-shell");
-      const progressView = wizardShell?.querySelector("progress-view") as
-        | (HTMLElement & { retry: () => void })
-        | null;
+      const progressView = wizardShell?.querySelector(
+        "progress-view, live-usb-progress-view"
+      ) as (HTMLElement & { retry: () => void }) | null;
       progressView?.retry();
       return;
     }
@@ -586,11 +644,41 @@ export class AppShell extends LitElement {
       return;
     }
 
+    // Check the ISO save location now, so problems can be fixed before downloading
+    if (flow === "minipc" && currentStep?.id === "location") {
+      const started = this._wizardState;
+      const locationView = this.shadowRoot
+        ?.querySelector("wizard-shell")
+        ?.querySelector("live-iso-location-view") as
+        | (HTMLElement & { check: () => Promise<boolean> })
+        | null;
+      if (locationView) {
+        this._checkingLocation = true;
+        try {
+          if (!(await locationView.check())) return;
+        } finally {
+          this._checkingLocation = false;
+        }
+      }
+      const now = this._wizardState;
+      if (
+        now.currentFlow !== started.currentFlow ||
+        now.currentStepIndex !== started.currentStepIndex ||
+        now.selections.liveIsoFolder !== started.selections.liveIsoFolder ||
+        now.selections.liveIsoName !== started.selections.liveIsoName
+      )
+        return;
+    }
+
     // Show confirmation dialog before proceeding from confirm step (only for
-    // the flows that write a drive)
+    // the flows that write a drive; saving an ISO erases nothing)
+    const savingIso =
+      this._wizardState.selections.installMethod === "usb-boot" &&
+      this._wizardState.selections.liveMedia === "iso";
     if (
       currentStep?.id === "confirm" &&
-      (flow === "sbc" || flow === "minipc" || flow === "ha-hardware")
+      (flow === "sbc" || flow === "minipc" || flow === "ha-hardware") &&
+      !savingIso
     ) {
       if (!(await this._verifySelectedDrive())) {
         return;
@@ -654,8 +742,9 @@ export class AppShell extends LitElement {
   }
 
   private _goToDriveStep() {
+    // The ISO path has a save location where the other paths have a drive.
     const index = this._wizardState.steps.findIndex(
-      (step) => step.id === "drive"
+      (step) => step.id === "drive" || step.id === "location"
     );
     if (index >= 0) {
       wizardState.goToStep(index);
@@ -746,7 +835,9 @@ export class AppShell extends LitElement {
 
     const progressView = this.shadowRoot
       ?.querySelector("wizard-shell")
-      ?.querySelector("progress-view");
+      ?.querySelector("progress-view, live-usb-progress-view") as
+      | (HTMLElement & { stop: () => void })
+      | null;
     if (!progressView) return;
 
     this._stoppingFlash = true;

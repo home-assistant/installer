@@ -77,6 +77,9 @@ impl From<Error> for CommandError {
             Error::ExtractionFailed(_) => ("extraction_failed", "The image could not be unpacked. Check available storage.", true),
             Error::VerificationFailed(_) => ("verification_failed", "The image could not be verified. Installation stopped to protect your device. See the installation help before continuing.", false),
             Error::ImageTooLarge { .. } => ("image_too_large", "The image does not fit on this drive. Choose a larger drive.", false),
+            Error::LiveUsbInvalidHaiLive => ("hai_live_invalid", "The program for the USB stick (hai-live) is not the Linux build. Rebuild it for x86_64-unknown-linux-musl, then try again.", true),
+            Error::LiveUsbReleaseUnusable(_) => ("release_unavailable", "The latest Home Assistant OS release can't be used right now. Try again later.", true),
+            Error::LiveUsbBuild(_) => ("image_build_failed", "The bootable media could not be built. Check available storage, then try again.", true),
         };
         let mut result = Self::new(code, message, retryable);
         if let Error::ImageTooLarge {
@@ -123,6 +126,7 @@ mod tests {
         for error in [
             Error::ProxmoxApi("password=secret ticket=secret".into()),
             Error::DownloadFailed("https://user:secret@example.com/?token=secret".into()),
+            Error::LiveUsbBuild(r"ISO: C:\Users\secret\x.iso".into()),
         ] {
             assert!(!serde_json::to_string(&CommandError::from(error))
                 .unwrap()

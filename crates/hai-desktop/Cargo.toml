@@ -22,11 +22,12 @@ mock = ["hai-core/mock"]
 
 [dependencies]
 # Internal crates
-hai-core = { workspace = true, features = ["proxmox", "utm"] }
+hai-core = { workspace = true, features = ["proxmox", "utm", "live-usb"] }
 
 # Tauri
 tauri = { workspace = true }
 tauri-plugin-opener = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
 tauri-plugin-log = { workspace = true }
 tauri-plugin-os = { workspace = true }
 log = { workspace = true }
@@ -39,6 +40,16 @@ serde_json = { workspace = true }
 # Async runtime
 tokio = { workspace = true }
 
+# Temporary build folders for the live USB image and ISO
+tempfile = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+# Restarting as administrator for the live USB write
+windows-sys = { workspace = true, features = [
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { workspace = true }
 
@@ -47,4 +58,3 @@ tauri = { workspace = true, features = ["test"] }
 plist = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }
 serial_test = { workspace = true }
-tempfile = { workspace = true }

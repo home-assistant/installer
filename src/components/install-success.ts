@@ -204,6 +204,7 @@ export class InstallSuccess extends LitElement {
       border-left: 3px solid var(--ha-warning-color, #f5a623);
       line-height: 1.5;
       margin: 1.25rem 0;
+      overflow-wrap: anywhere;
     }
 
     .next-steps-footer {
