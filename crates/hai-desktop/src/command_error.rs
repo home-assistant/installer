@@ -10,6 +10,10 @@ pub struct CommandError {
     pub message: String,
     pub retryable: bool,
     pub details: Value,
+    /// The local log's category: the code, or a finer fixed code where one
+    /// code covers several causes. Never sent to the frontend.
+    #[serde(skip)]
+    pub diagnostic: &'static str,
 }
 
 impl CommandError {
@@ -19,6 +23,7 @@ impl CommandError {
             message: message.into(),
             retryable,
             details: json!({}),
+            diagnostic: code,
         }
     }
 
@@ -50,7 +55,7 @@ impl From<Error> for CommandError {
             Error::Network(_) => ("network", "Could not connect. Check your internet connection.", true),
             Error::Io(_) => ("io", "Could not read or write a file. Check available storage and access permissions.", false),
             Error::DeviceNotFound(_) => ("device_not_found", "The selected drive is no longer available. Select your drive again.", false),
-            Error::DeviceBusy(_) => ("device_busy", "The drive is in use. Close any applications using it.", true),
+            Error::DeviceBusy(..) => ("device_busy", "The drive is in use. Close any applications using it.", true),
             Error::ChecksumMismatch { .. } => ("checksum_mismatch", "The downloaded image failed its integrity check. Installation stopped before writing the image.", true),
             Error::PermissionDenied(message) => ("permission_denied", message.as_str(), false),
             Error::DiskServiceUnavailable(_) => ("disk_service_unavailable", "The system disk service is unavailable. Check that udisks2 is installed and running.", false),
@@ -79,6 +84,9 @@ impl From<Error> for CommandError {
             Error::ImageTooLarge { .. } => ("image_too_large", "The image does not fit on this drive. Choose a larger drive.", false),
         };
         let mut result = Self::new(code, message, retryable);
+        if let Error::DeviceBusy(reason, _) = error {
+            result.diagnostic = reason.code();
+        }
         if let Error::ImageTooLarge {
             written,
             image_size,
@@ -116,6 +124,20 @@ mod tests {
                 "retryable": false, "details": { "written": 0, "image_size": 2048, "drive_size": 1024 }
             })
         );
+    }
+
+    #[test]
+    fn busy_reason_reaches_the_log_but_not_the_frontend() {
+        let error = CommandError::from(Error::DeviceBusy(
+            hai_core::BusyReason::VolumeUnreadable,
+            "Cannot inspect volume \\\\?\\Volume{private}: Access is denied".into(),
+        ));
+        assert_eq!(error.code, "device_busy");
+        assert_eq!(error.diagnostic, "device_busy_volume_unreadable");
+
+        let serialized = serde_json::to_string(&error).unwrap();
+        assert!(!serialized.contains("diagnostic"), "{serialized}");
+        assert!(!serialized.contains("private"), "{serialized}");
     }
 
     #[test]

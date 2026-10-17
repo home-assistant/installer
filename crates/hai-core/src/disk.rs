@@ -4,7 +4,7 @@
 //! block devices (SD cards, USB drives, etc.) and writing raw disk
 //! images to them.
 
-use crate::error::{Error, Result};
+use crate::error::{BusyReason, Error, Result};
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 use crate::types::DeviceType;
 use crate::types::{BlockDevice, ExpectedDevice, FlashProgress, FlashStage};

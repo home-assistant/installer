@@ -75,6 +75,7 @@ pub(super) fn lock_disk_volumes(disk_number: u32) -> Result<Vec<File>> {
                 // Check the actual handle we will lock, not just its path.
                 if !belongs_to_disk(&volume_disks(&volume).map_err(volume_error)?, disk_number)? {
                     return Err(Error::DeviceBusy(
+                        BusyReason::VolumeChanged,
                         "Target volume changed during preparation".into(),
                     ));
                 }
@@ -96,10 +97,10 @@ pub(super) fn lock_disk_volumes(disk_number: u32) -> Result<Vec<File>> {
 }
 
 fn query_error(path: &OsStr, error: impl std::fmt::Display) -> Error {
-    Error::DeviceBusy(format!(
-        "Cannot inspect volume {}: {error}",
-        path.to_string_lossy()
-    ))
+    Error::DeviceBusy(
+        BusyReason::VolumeUnreadable,
+        format!("Cannot inspect volume {}: {error}", path.to_string_lossy()),
+    )
 }
 
 fn belongs_to_disk(disks: &[u32], target: u32) -> Result<bool> {
@@ -111,6 +112,7 @@ fn belongs_to_disk(disks: &[u32], target: u32) -> Result<bool> {
     }
     if disks.iter().any(|&disk| disk != target) {
         return Err(Error::DeviceBusy(
+            BusyReason::VolumeSpansDisks,
             "Target volume spans multiple disks".into(),
         ));
     }
@@ -152,9 +154,10 @@ fn volume_error(error: io::Error) -> Error {
     if is_write_protected(&error) || is_drive_disconnected(&error) {
         device_io_error(error)
     } else {
-        Error::DeviceBusy(format!(
-            "Cannot lock or dismount the target volume: {error}"
-        ))
+        Error::DeviceBusy(
+            BusyReason::UnmountFailed,
+            format!("Cannot lock or dismount the target volume: {error}"),
+        )
     }
 }
 
@@ -352,7 +355,7 @@ mod tests {
                 },
                 || {},
             );
-            assert!(matches!(result, Err(Error::DeviceBusy(_))));
+            assert!(matches!(result, Err(Error::DeviceBusy(..))));
             assert_eq!(*dropped.lock().unwrap(), vec![0, 1]);
             if failed_code == FSCTL_LOCK_VOLUME {
                 assert!(calls.iter().all(|&(_, code)| code == FSCTL_LOCK_VOLUME));
@@ -388,7 +391,7 @@ mod tests {
             assert_eq!(error.raw_os_error(), Some(code));
             let native_message = error.to_string();
             let error = query_error(OsStr::new("unknown volume"), error);
-            assert!(matches!(error, Error::DeviceBusy(message)
+            assert!(matches!(error, Error::DeviceBusy(_, message)
                 if message.contains("unknown volume") && message.ends_with(&native_message)));
         }
     }
@@ -448,7 +451,7 @@ mod tests {
             },
             || pauses += 1,
         );
-        assert!(matches!(result, Err(Error::DeviceBusy(_))));
+        assert!(matches!(result, Err(Error::DeviceBusy(..))));
         assert_eq!((calls, pauses), (30, 29));
 
         let result = lock_and_dismount(

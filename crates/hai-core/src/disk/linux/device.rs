@@ -70,6 +70,7 @@ fn read_devices() -> Result<LsblkOutput> {
     for number in &btrfs {
         if !mark_in_use(&mut lsblk.blockdevices, number) {
             return Err(Error::DeviceBusy(
+                BusyReason::UnknownBacking,
                 "Cannot identify a mounted Btrfs member".into(),
             ));
         }
@@ -82,10 +83,13 @@ fn read_devices() -> Result<LsblkOutput> {
             is_btrfs(&path)?,
             !btrfs.is_empty(),
         ) {
-            return Err(Error::DeviceBusy(format!(
-                "Cannot identify the disk backing active swap file {}",
-                path.display()
-            )));
+            return Err(Error::DeviceBusy(
+                BusyReason::UnknownBacking,
+                format!(
+                    "Cannot identify the disk backing active swap file {}",
+                    path.display()
+                ),
+            ));
         }
     }
     Ok(lsblk)
@@ -234,9 +238,12 @@ fn check_target(lsblk: &LsblkOutput, device_id: &str) -> Result<()> {
         })
         .ok_or_else(|| Error::DeviceNotFound(device_id.to_string()))?;
     if backs_running_system(dev) {
-        return Err(Error::DeviceBusy(format!(
-            "{device_id} contains a system mount, active swap, or active storage; refusing to unmount or overwrite it"
-        )));
+        return Err(Error::DeviceBusy(
+            BusyReason::SystemStorage,
+            format!(
+                "{device_id} contains a system mount, active swap, or active storage; refusing to unmount or overwrite it"
+            ),
+        ));
     }
     if dev.ro == Some(true) {
         return Err(Error::WriteProtected);
@@ -369,7 +376,7 @@ mod tests {
         ] {
             let tree = disk(partition(serde_json::json!(["/media/alias", mount])));
             assert!(
-                matches!(check_target(&tree, "/dev/sdb"), Err(Error::DeviceBusy(_))),
+                matches!(check_target(&tree, "/dev/sdb"), Err(Error::DeviceBusy(..))),
                 "{mount}"
             );
         }
@@ -384,7 +391,7 @@ mod tests {
             }]);
             assert!(matches!(
                 check_target(&disk(part), "/dev/sdb"),
-                Err(Error::DeviceBusy(_))
+                Err(Error::DeviceBusy(..))
             ));
         }
     }
@@ -454,7 +461,7 @@ mod tests {
         ));
         assert!(matches!(
             check_target(&tree, "/dev/sdb"),
-            Err(Error::DeviceBusy(_))
+            Err(Error::DeviceBusy(..))
         ));
     }
 
@@ -482,7 +489,7 @@ mod tests {
         ));
         assert!(matches!(
             check_target(&tree, "/dev/sdb"),
-            Err(Error::DeviceBusy(_))
+            Err(Error::DeviceBusy(..))
         ));
     }
 

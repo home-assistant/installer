@@ -14,8 +14,9 @@ pub enum Error {
     #[error("Device not found: {0}")]
     DeviceNotFound(String),
 
-    #[error("Device is busy: {0}")]
-    DeviceBusy(String),
+    /// The reason is a fixed code for the local log; the text may hold paths.
+    #[error("Device is busy: {1}")]
+    DeviceBusy(BusyReason, String),
 
     #[error("Checksum mismatch: expected {expected}, got {actual}")]
     ChecksumMismatch { expected: String, actual: String },
@@ -95,6 +96,43 @@ pub enum Error {
     },
 }
 
+/// Why a drive counts as busy. Reports show only this code, never the
+/// message, so each path that refuses a drive gets its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BusyReason {
+    /// The operating system refused the drive because something holds it
+    InUse,
+    /// A volume on the drive could not be unmounted, locked or dismounted
+    UnmountFailed,
+    /// A volume elsewhere could not be checked for whether it sits on the drive
+    VolumeUnreadable,
+    /// A volume on the drive also spans another disk
+    VolumeSpansDisks,
+    /// A volume on the drive changed while the write was being prepared
+    VolumeChanged,
+    /// The drive holds a system mount, active swap or active storage
+    SystemStorage,
+    /// Swap or Btrfs storage is active, but not which disk backs it
+    UnknownBacking,
+    /// Ejecting the drive failed
+    EjectFailed,
+}
+
+impl BusyReason {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::InUse => "device_busy_in_use",
+            Self::UnmountFailed => "device_busy_unmount_failed",
+            Self::VolumeUnreadable => "device_busy_volume_unreadable",
+            Self::VolumeSpansDisks => "device_busy_volume_spans_disks",
+            Self::VolumeChanged => "device_busy_volume_changed",
+            Self::SystemStorage => "device_busy_system_storage",
+            Self::UnknownBacking => "device_busy_unknown_backing",
+            Self::EjectFailed => "device_busy_eject_failed",
+        }
+    }
+}
+
 /// Result type alias for hai-core operations
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -132,7 +170,7 @@ mod tests {
 
     #[test]
     fn test_display_device_busy() {
-        let error = Error::DeviceBusy("disk2".to_string());
+        let error = Error::DeviceBusy(BusyReason::InUse, "disk2".to_string());
         let msg = error.to_string();
         assert_eq!(msg, "Device is busy: disk2");
         assert!(msg.contains("disk2"));
@@ -156,6 +194,24 @@ mod tests {
         let msg = error.to_string();
         assert_eq!(msg, "Permission denied: Need root access");
         assert!(msg.contains("Need root access"));
+    }
+
+    #[test]
+    fn test_busy_reason_codes_are_distinct_busy_categories() {
+        let reasons = [
+            BusyReason::InUse,
+            BusyReason::UnmountFailed,
+            BusyReason::VolumeUnreadable,
+            BusyReason::VolumeSpansDisks,
+            BusyReason::VolumeChanged,
+            BusyReason::SystemStorage,
+            BusyReason::UnknownBacking,
+            BusyReason::EjectFailed,
+        ];
+        let codes: std::collections::HashSet<_> =
+            reasons.iter().map(|reason| reason.code()).collect();
+        assert_eq!(codes.len(), reasons.len());
+        assert!(codes.iter().all(|code| code.starts_with("device_busy_")));
     }
 
     #[test]
