@@ -1,6 +1,6 @@
 [tools]
 node = "24"
-rust = "1.99.0"
+rust = "1.99.1"
 zizmor = "latest"
 
 [env]
