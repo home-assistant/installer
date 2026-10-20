@@ -67,7 +67,8 @@ export function localizeBackend(
   const params: Record<string, PrimitiveType> = {};
   if (values && typeof values === "object" && !Array.isArray(values)) {
     for (const [name, value] of Object.entries(values)) {
-      if (["string", "number", "boolean"].includes(typeof value)) {
+      // intl-messageformat turns booleans into parts, not text
+      if (["string", "number"].includes(typeof value)) {
         params[name] = value as PrimitiveType;
       }
     }

@@ -101,8 +101,46 @@ function walk(directory) {
 }
 walk(path.join(root, "src"));
 
-// Backend messages are named in Rust and shown through localizeBackend. Rust
-// checks their placeholders itself; here they only have to exist both ways.
+// Backend messages are named in Rust with message!(key, name = value, ...).
+// Only those calls count, outside comments and test modules, and their
+// parameters have to match the catalog's placeholders.
+function messageCalls(source) {
+  const calls = [];
+  for (const match of source.matchAll(/\bmessage!\(/g)) {
+    const args = [];
+    let depth = 0;
+    let current = "";
+    let quoted = false;
+    for (
+      let index = match.index + match[0].length;
+      index < source.length;
+      index++
+    ) {
+      const char = source[index];
+      if (quoted) {
+        current += char;
+        if (char === "\\") current += source[++index];
+        else if (char === '"') quoted = false;
+        continue;
+      }
+      if (char === '"') quoted = true;
+      else if ("([{".includes(char)) depth++;
+      else if (")]}".includes(char)) {
+        if (depth === 0) break;
+        depth--;
+      } else if (char === "," && depth === 0) {
+        args.push(current.trim());
+        current = "";
+        continue;
+      }
+      current += char;
+    }
+    args.push(current.trim());
+    calls.push(args.filter(Boolean));
+  }
+  return calls;
+}
+
 function walkRust(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const filename = path.join(directory, entry.name);
@@ -111,9 +149,27 @@ function walkRust(directory) {
       continue;
     }
     if (!filename.endsWith(".rs")) continue;
-    const source = fs.readFileSync(filename, "utf8");
-    for (const [, key] of source.matchAll(/"(backend\.[a-z0-9_.]+)"/g)) {
+    const source = fs
+      .readFileSync(filename, "utf8")
+      // Test modules sit at the end of a file
+      .split(/^#\[cfg\(test\)\]\s*mod /m)[0]
+      .replace(/^\s*\/\/.*$/gm, "");
+    for (const [literal, ...params] of messageCalls(source)) {
+      const key = /^"(backend\.[a-z0-9_.]+)"$/.exec(literal)?.[1];
+      assert(key, `${filename}: message keys must be backend.* literals`);
       assert(parameters.has(key), `${filename}: unknown key ${key}`);
+      const supplied = params
+        .map((param) => {
+          const name = /^([a-z_][a-z0-9_]*)\s*=[^=]/.exec(param)?.[1];
+          assert(name, `${key}: parameters must be name = value`);
+          return name;
+        })
+        .sort();
+      assert.deepEqual(
+        supplied,
+        parameters.get(key),
+        `${filename}: ${key} placeholder mismatch`
+      );
       used.add(key);
     }
   }

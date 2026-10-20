@@ -68,6 +68,20 @@ test("catalog check ties backend messages to the Rust code", () => {
       /unknown key backend\.proxmox\.node_offline/
     );
 
+    // Rust sends a parameter the catalog doesn't use
+    const renamed = {
+      ...catalog,
+      "backend.proxmox.node_offline": catalog[
+        "backend.proxmox.node_offline"
+      ].replace("{node}", "{name}"),
+    };
+    const renamedResult = check(renamed);
+    assert.equal(renamedResult.status, 1);
+    assert.match(
+      renamedResult.stderr,
+      /backend\.proxmox\.node_offline placeholder mismatch/
+    );
+
     // A backend message no Rust code sends
     const unused = check({ ...catalog, "backend.proxmox.never_sent": "Hi" });
     assert.equal(unused.status, 1);

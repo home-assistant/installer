@@ -38,6 +38,10 @@ pub use message::Message;
 pub use mock::BackendMock;
 pub use types::*;
 
+// For the `message!` macro, so its users don't need serde_json themselves
+#[doc(hidden)]
+pub use serde_json;
+
 /// The app's bundle identifier, as in `tauri.conf.json`. Tauri files logs and
 /// app data under it, and so does the download cache.
 pub const APP_IDENTIFIER: &str = "io.home-assistant.installer";

@@ -76,6 +76,10 @@ describe("installer errors", () => {
         message_key: "backend.proxmox.node_offline",
         message_params: { node: { name: "pve" } },
       },
+      {
+        message_key: "backend.proxmox.node_offline",
+        message_params: { node: true },
+      },
     ]) {
       const result = installerError(
         ipcError("proxmox_action_required", "English from Rust", false, details)

@@ -26,7 +26,7 @@ macro_rules! message {
     ($key:literal $(, $name:ident = $value:expr)* $(,)?) => {
         $crate::message::Message::new(
             $key,
-            vec![$((stringify!($name), ::serde_json::json!($value))),*],
+            vec![$((stringify!($name), $crate::serde_json::json!($value))),*],
         )
     };
 }
@@ -58,15 +58,25 @@ impl std::fmt::Display for Message {
             return formatter.write_str(self.key);
         };
 
-        let mut text = template.clone();
-        for (name, value) in &self.params {
-            let value = match value {
-                Value::String(text) => text.clone(),
-                other => other.to_string(),
+        // One pass over the template, so a value that contains `{name}` is
+        // written as is instead of being filled in by a later parameter
+        let mut rest = template.as_str();
+        while let Some(start) = rest.find('{') {
+            let Some(length) = rest[start..].find('}') else {
+                break;
             };
-            text = text.replace(&format!("{{{name}}}"), &value);
+            let placeholder = &rest[start..=start + length];
+            let name = &placeholder[1..placeholder.len() - 1];
+
+            formatter.write_str(&rest[..start])?;
+            match self.params.iter().find(|(param, _)| *param == name) {
+                Some((_, Value::String(text))) => formatter.write_str(text)?,
+                Some((_, other)) => write!(formatter, "{other}")?,
+                None => formatter.write_str(placeholder)?,
+            }
+            rest = &rest[start + placeholder.len()..];
         }
-        formatter.write_str(&text)
+        formatter.write_str(rest)
     }
 }
 
@@ -124,6 +134,18 @@ mod tests {
             message.to_string(),
             "Node \"pve\" is offline. Choose an online node or start it in Proxmox."
         );
+    }
+
+    #[test]
+    fn values_are_not_filled_in_again() {
+        let message = crate::message!(
+            "backend.proxmox.leftover_import_image",
+            volume = "local:import/{node}.qcow2",
+            node = "pve",
+        );
+        assert!(message
+            .to_string()
+            .ends_with("Delete local:import/{node}.qcow2 from node pve in Proxmox."));
     }
 
     #[test]

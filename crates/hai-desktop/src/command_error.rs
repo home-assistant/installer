@@ -1,6 +1,6 @@
 //! Public, credential-free error contract for Tauri commands.
 
-use hai_core::Error;
+use hai_core::{Error, Message};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -23,6 +23,23 @@ impl CommandError {
             message: message.into(),
             retryable,
             details: json!({}),
+            diagnostic: code,
+        }
+    }
+
+    /// An error the frontend shows from its catalog, in the user's language.
+    /// `message` keeps the English, for logs and older frontends.
+    pub fn with_message(code: &'static str, message: &Message, retryable: bool) -> Self {
+        let params: serde_json::Map<String, Value> = message
+            .params
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.clone()))
+            .collect();
+        Self {
+            code,
+            message: message.to_string(),
+            retryable,
+            details: json!({ "message_key": message.key, "message_params": params }),
             diagnostic: code,
         }
     }
@@ -50,24 +67,23 @@ impl std::fmt::Display for CommandError {
 
 impl From<Error> for CommandError {
     fn from(error: Error) -> Self {
-        let catalog_message = match &error {
-            Error::ProxmoxActionRequired(message) => Some(message),
-            _ => None,
-        };
-        let english = catalog_message.map(ToString::to_string).unwrap_or_default();
-
         let (code, message, retryable) = match &error {
             // Never serialize URLs, response bodies, or authentication data from remote errors.
             Error::Network(_) => ("network", "Could not connect. Check your internet connection.", true),
             Error::Io(_) => ("io", "Could not read or write a file. Check available storage and access permissions.", false),
             Error::DeviceNotFound(_) => ("device_not_found", "The selected drive is no longer available. Select your drive again.", false),
-            Error::DeviceBusy(..) => ("device_busy", "The drive is in use. Close any applications using it.", true),
+            Error::DeviceBusy(reason, _) => {
+                let mut result = Self::new("device_busy", "The drive is in use. Close any applications using it.", true);
+                result.diagnostic = reason.code();
+                return result;
+            }
             Error::ChecksumMismatch { .. } => ("checksum_mismatch", "The downloaded image failed its integrity check. Installation stopped before writing the image.", true),
             Error::PermissionDenied(message) => ("permission_denied", message.as_str(), false),
             Error::DiskServiceUnavailable(_) => ("disk_service_unavailable", "The system disk service is unavailable. Check that udisks2 is installed and running.", false),
             Error::Cancelled => ("cancelled", "Installation was cancelled.", true),
             Error::ProxmoxApi(_) => ("proxmox_api", "Proxmox could not complete the request. Check the server, account permissions, and connection.", false),
-            Error::ProxmoxActionRequired(_) => ("proxmox_action_required", english.as_str(), false),
+            // The frontend shows these in the user's language, by key
+            Error::ProxmoxActionRequired(message) => return Self::with_message("proxmox_action_required", message, false),
             // Reconnecting is the action, not repeating the request
             Error::ProxmoxSessionExpired => ("proxmox_session_expired", "Proxmox session expired or invalid. Please reconnect to Proxmox.", false),
             // Same recovery: reconnecting shows the new certificate to confirm
@@ -87,31 +103,13 @@ impl From<Error> for CommandError {
             Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and available storage.", true),
             Error::ExtractionFailed(_) => ("extraction_failed", "The image could not be unpacked. Check available storage.", true),
             Error::VerificationFailed(_) => ("verification_failed", "The image could not be verified. Installation stopped to protect your device. See the installation help before continuing.", false),
-            Error::ImageTooLarge { .. } => ("image_too_large", "The image does not fit on this drive. Choose a larger drive.", false),
+            Error::ImageTooLarge { written, image_size, drive_size } => {
+                let mut result = Self::new("image_too_large", "The image does not fit on this drive. Choose a larger drive.", false);
+                result.details = json!({ "written": written, "image_size": image_size, "drive_size": drive_size });
+                return result;
+            }
         };
-        let mut result = Self::new(code, message, retryable);
-        if let Error::DeviceBusy(reason, _) = error {
-            result.diagnostic = reason.code();
-        }
-        // The frontend shows these in the user's language, by key
-        if let Some(message) = catalog_message {
-            let params: serde_json::Map<String, Value> = message
-                .params
-                .iter()
-                .map(|(name, value)| (name.to_string(), value.clone()))
-                .collect();
-            result.details = json!({ "message_key": message.key, "message_params": params });
-        }
-        if let Error::ImageTooLarge {
-            written,
-            image_size,
-            drive_size,
-        } = error
-        {
-            result.details =
-                json!({ "written": written, "image_size": image_size, "drive_size": drive_size });
-        }
-        result
+        Self::new(code, message, retryable)
     }
 }
 
