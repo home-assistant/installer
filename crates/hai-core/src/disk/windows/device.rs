@@ -35,8 +35,6 @@ pub(super) fn list_devices_sync() -> Result<Vec<BlockDevice>> {
         Get-Disk | Where-Object { $_.IsOffline -eq $false } | Select-Object Number, FriendlyName, Size, MediaType, BusType, IsSystem, IsBoot | ConvertTo-Json -Compress
     "#;
 
-    // The installer has no console of its own, so without this flag Windows
-    // opens a PowerShell window every time the drive list refreshes
     let output = Command::new("powershell")
         .args(["-NoProfile", "-Command", script])
         .creation_flags(CREATE_NO_WINDOW)
