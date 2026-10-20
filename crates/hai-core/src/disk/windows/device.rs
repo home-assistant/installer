@@ -3,8 +3,12 @@
 use super::super::*;
 use crate::error::Error;
 use serde::Deserialize;
-use std::os::windows::process::CommandExt;
+use std::ffi::OsString;
+use std::os::windows::{ffi::OsStringExt, process::CommandExt};
+use std::path::PathBuf;
 use std::process::Command;
+use windows_sys::Win32::Foundation::MAX_PATH;
+use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
 use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
 
 #[derive(Debug, Deserialize)]
@@ -29,13 +33,29 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
     list_devices_sync()
 }
 
+/// Windows PowerShell in the system directory. By name alone, Windows looks
+/// next to the installer first, in Downloads for example, and the installer
+/// runs as administrator.
+fn powershell() -> Result<PathBuf> {
+    let mut buffer = [0u16; MAX_PATH as usize];
+    // SAFETY: the pointer and length describe `buffer`
+    let length = unsafe { GetSystemDirectoryW(buffer.as_mut_ptr(), MAX_PATH) } as usize;
+    // Zero is an error, and a larger length is the size the path would need
+    if length == 0 || length > buffer.len() {
+        return Err(Error::Io(std::io::Error::last_os_error()));
+    }
+
+    let system = PathBuf::from(OsString::from_wide(&buffer[..length]));
+    Ok(system.join(r"WindowsPowerShell\v1.0\powershell.exe"))
+}
+
 pub(super) fn list_devices_sync() -> Result<Vec<BlockDevice>> {
     // Use PowerShell to get disk information in JSON format
     let script = r#"
         Get-Disk | Where-Object { $_.IsOffline -eq $false } | Select-Object Number, FriendlyName, Size, MediaType, BusType, IsSystem, IsBoot | ConvertTo-Json -Compress
     "#;
 
-    let output = Command::new("powershell")
+    let output = Command::new(powershell()?)
         .args(["-NoProfile", "-Command", script])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
@@ -199,7 +219,20 @@ pub(crate) fn parse_friendly_name(name: &str) -> (Option<String>, Option<String>
 
 #[cfg(test)]
 mod tests {
-    use super::parse_friendly_name;
+    use super::{parse_friendly_name, powershell};
+
+    #[test]
+    fn powershell_comes_from_the_system_directory() {
+        let path = powershell().unwrap();
+        assert!(path.is_absolute());
+        assert!(path.is_file(), "{}", path.display());
+
+        let system = std::env::var("SystemRoot").unwrap();
+        assert!(path
+            .to_string_lossy()
+            .to_lowercase()
+            .starts_with(&system.to_lowercase()));
+    }
 
     #[test]
     fn test_parse_friendly_name_with_vendor() {
