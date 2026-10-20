@@ -163,9 +163,7 @@ describe("shared install layouts", () => {
         appLink.click();
       await settle();
       expect(opened).to.deep.equal([
-        flow === "sbc"
-          ? "http://homeassistant.local:8123"
-          : "http://192.0.2.50",
+        flow === "sbc" ? "http://homeassistant.local" : "http://192.0.2.50",
         "https://apps.apple.com/app/home-assistant/id1099568401",
         "https://play.google.com/store/apps/details?id=io.homeassistant.companion.android",
       ]);

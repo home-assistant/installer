@@ -132,7 +132,8 @@ test.describe("Home Assistant hardware flow", () => {
       for (const step of scenario.steps) {
         await expect(steps).toContainText(step);
       }
-      await expect(steps).toContainText("homeassistant.local:8123");
+      await expect(steps).toContainText("homeassistant.local");
+      await expect(steps).not.toContainText(":8123");
       await expect(success.locator(".next-steps-footer a")).toHaveAttribute(
         "href",
         scenario.guide

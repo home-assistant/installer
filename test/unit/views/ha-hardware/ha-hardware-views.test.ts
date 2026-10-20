@@ -393,7 +393,8 @@ describe("Home Assistant hardware views", () => {
         for (const part of expected) {
           expect(content).to.contain(part);
         }
-        expect(content).to.contain("homeassistant.local:8123");
+        expect(content).to.contain("homeassistant.local");
+        expect(content).not.to.contain(":8123");
         expect(
           success.shadowRoot!.querySelector<HTMLAnchorElement>(
             ".next-steps-footer a"

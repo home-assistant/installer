@@ -29,17 +29,15 @@ export function renderOpenHomeAssistantStep() {
     "views.sbc.success_view.open_value_in_your_browser_or_find_the_ip_address",
     {
       value0: html`<a
-        href="http://homeassistant.local:8123"
+        href="http://homeassistant.local"
         target="_blank"
         rel="noopener noreferrer"
         @click=${(event: Event) =>
-          openExternalLink(event, "http://homeassistant.local:8123")}
-        >${"homeassistant.local:8123"}</a
+          openExternalLink(event, "http://homeassistant.local")}
+        >${"homeassistant.local"}</a
       >`,
       value1: html`<code
-        >http://&lt;${localize(
-          "views.sbc.success_view.ip_address"
-        )}&gt;:8123</code
+        >http://&lt;${localize("views.sbc.success_view.ip_address")}&gt;</code
       >`,
     }
   )}`;
