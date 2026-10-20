@@ -2,22 +2,56 @@ import { expect } from "@open-wc/testing";
 import { openExternalUrl } from "../../../src/utils/external-url.js";
 
 describe("utils/external-url", () => {
-  it("falls back to window.open when Tauri openUrl is unavailable", async () => {
+  async function openedWithFallback(urls: string[]) {
     const originalOpen = window.open;
-    const openedUrls: Array<{ target?: string; url?: string | URL }> = [];
-    window.open = (url?: string | URL, target?: string) => {
-      openedUrls.push({ target, url });
+    const opened: Array<{
+      features?: string;
+      target?: string;
+      url?: string | URL;
+    }> = [];
+    window.open = (url?: string | URL, target?: string, features?: string) => {
+      opened.push({ features, target, url });
       return null;
     };
 
     try {
-      await openExternalUrl("https://www.home-assistant.io/");
+      for (const url of urls) {
+        await openExternalUrl(url);
+      }
     } finally {
       window.open = originalOpen;
     }
+    return opened;
+  }
 
-    expect(openedUrls).to.deep.equal([
-      { target: "_blank", url: "https://www.home-assistant.io/" },
+  it("falls back to window.open when Tauri openUrl is unavailable", async () => {
+    expect(
+      await openedWithFallback([
+        "https://www.home-assistant.io/",
+        "http://homeassistant.local:8123",
+      ])
+    ).to.deep.equal([
+      {
+        features: "noopener,noreferrer",
+        target: "_blank",
+        url: "https://www.home-assistant.io/",
+      },
+      {
+        features: "noopener,noreferrer",
+        target: "_blank",
+        url: "http://homeassistant.local:8123",
+      },
     ]);
+  });
+
+  it("only opens web links in the fallback", async () => {
+    expect(
+      await openedWithFallback([
+        "javascript:alert(1)",
+        "file:///etc/passwd",
+        "data:text/html,hi",
+        "not a url",
+      ])
+    ).to.deep.equal([]);
   });
 });
