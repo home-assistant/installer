@@ -13,6 +13,7 @@
     "lint": "eslint src/ test/",
     "localization:check": "node scripts/check-localization.mjs",
     "test:localization": "node --test scripts/check-localization.test.mjs",
+    "test:release": "node --test scripts/next-version.test.mjs",
     "lint:fix": "eslint src/ test/ --fix",
     "format": "prettier --write \"{src,test}/**/*.{ts,css,json}\"",
     "format:check": "prettier --check \"{src,test}/**/*.{ts,css,json}\"",

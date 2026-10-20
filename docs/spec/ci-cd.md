@@ -3,219 +3,129 @@
 ## Principles
 
 - **Immutable releases**: Once a version is released, it cannot be changed
-- **Signed artifacts**: All release binaries are signed
+- **Signed artifacts**: Release binaries are signed where the platform has a
+  signing scheme we've set up (macOS today; Windows is #158)
 - **Reproducible builds**: Same commit = same output
 - **Multi-platform**: Build and test on macOS, Windows, Linux
 
 ---
 
-## Workflow: CI (on every push/PR and version tag)
+## Workflow: CI
 
-```yaml
-# .github/workflows/ci.yml
-name: CI
+Everything runs in one workflow,
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml); there is no
+separate release workflow. It runs on every pull request, on every push to
+`main`, and by hand to make a release. The workflow file is the reference for
+the jobs and their steps; in short:
 
-on:
-  push:
-    branches: [main]
-    tags: ["[0-9]+.[0-9]+.[0-9]+", "[0-9]+.[0-9]+.[0-9]+-*"]
-  pull_request:
-    branches: [main]
-
-env:
-  CARGO_TERM_COLOR: always
-
-jobs:
-  test-rust:
-    name: Rust Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run tests with coverage
-        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
-
-      - name: Upload Rust coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: lcov.info
-          flags: rust
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-  test-frontend:
-    name: Frontend Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run unit tests with coverage
-        run: npm run test:unit -- --coverage
-
-      - name: Upload frontend coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: crates/hai-desktop/frontend/coverage/lcov.info
-          flags: frontend
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-  test-e2e:
-    name: E2E Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-      
-      - name: Install Tauri dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
-      
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Run E2E tests
-        run: npm run test:e2e
-      
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint frontend
-        run: npm run lint
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - name: Rust format check
-        run: cargo fmt --all --check
-
-      - name: Rust clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-```
+- **zizmor** lints the workflow itself.
+- **Lint** jobs run ESLint, Prettier, the TypeScript type check, the
+  localization catalog check, `cargo fmt`, `cargo shear` and Clippy (on all
+  three platforms, since the disk code is split per OS).
+- **Test** jobs run the frontend unit tests, the Playwright E2E tests in
+  Chromium and WebKit, and the Rust tests on all three platforms. Frontend and
+  Linux backend coverage go to Codecov.
+- **Build** produces the installers for each platform and uploads each one as
+  an unarchived workflow artifact. On pushes to `main` and in release runs,
+  the macOS build is signed and notarized (see
+  [Required Secrets](#required-secrets)).
 
 ---
 
-## Codecov Configuration
+## Releases
 
-```yaml
-# codecov.yml
-coverage:
-  precision: 2
-  round: down
-  status:
-    project:
-      default:
-        target: auto
-        threshold: 2%
-    patch:
-      default:
-        target: 80%
+A release is made by running the CI workflow on `main` from the Actions tab
+(**Run workflow**) and choosing a channel: `alpha`, `beta` or `stable`. The
+run tests and builds everything like a push to `main`, and its `release` job
+creates the GitHub release once every other job has passed:
 
-flags:
-  rust:
-    paths:
-      - crates/hai-core/src/
-      - crates/hai-desktop/src/
-    carryforward: true
-  frontend:
-    paths:
-      - crates/hai-desktop/frontend/src/
-    carryforward: true
+- **Alpha:** published right away, as a prerelease.
+- **Beta:** a draft prerelease, which an admin reviews and publishes.
+- **Stable:** a draft, which an admin reviews and publishes.
 
-comment:
-  layout: "reach,diff,flags,files"
-  behavior: default
-  require_changes: true
-```
+### Versions
 
----
+The run picks the version itself (`scripts/next-version.mjs`) from the
+existing version tags:
 
-## Releases (on version tag)
+- **Until the first stable release**, versions are prereleases of `0.0.0`:
+  `0.0.0-alpha.1`, `0.0.0-alpha.2`, …, then `0.0.0-beta.1`, …
+- **From the first stable release on**, versions are calendar versions,
+  `YEAR.MONTH.PATCH` without zero padding: the first release in a month is
+  `2026.11.0`, the next one in the same month `2026.11.1`, and the first one in
+  the following month `2026.12.0`.
+- **Alphas and betas after that** are prereleases of the next stable version:
+  `2026.12.0-beta.1`, `2026.12.0-beta.2`, …
 
-There is no separate release workflow. Pushing a version tag, like `1.0.0` or
-`1.0.0-beta.1` (no `v` prefix), runs the whole CI workflow on the tagged
-commit, and its `release` job drafts the GitHub release once every other job
-has passed. A maintainer reviews the draft and publishes it.
+Prerelease numbers count up per channel. Once a version has a beta, the run
+refuses to make an alpha of it, since that would sort before the beta. The
+month is the month of the run, in UTC. Version tags have no `v` prefix.
 
-On a tag, the CI workflow differs from a push to `main` in these ways:
+The version only exists in the release run. The workspace `Cargo.toml` on
+`main` stays at `0.0.0`, and each build job of a release run writes the
+version there in its own checkout before building. Nothing is committed for a
+release.
 
-- **Version check:** each build job first checks that the tag is exactly the
-  version in the workspace `Cargo.toml`, and fails before anything is built or
-  signed if it isn't.
+### A release run
+
+A release run differs from a push to `main` in these ways:
+
+- **Only from `main`, and only by the right people:** the `version` job fails
+  if the run is on any other branch, or if a beta or stable run was started
+  (or re-run) by anyone but an admin. Anyone with write access may release an
+  alpha. The build and release jobs wait for the `version` job, so nothing is
+  built if a check fails. Who may publish is limited separately, by the tag
+  rulesets (see [Immutable Release Protections](#immutable-release-protections)).
 - **No caches:** no job restores the npm, cargo or Playwright cache, so the
   installers and the tests that gate them never depend on what another run
-  wrote. zizmor flags every cache in a workflow with a tag trigger and can't
-  see the `if: github.ref_type != 'tag'` conditions, hence the
-  `zizmor: ignore[cache-poisoning]` comments on those steps.
-- **Signing:** the macOS build binds to the `release` environment and signs
-  and notarizes the app and the DMG, the same as on every push to `main` (see
-  [Required Secrets](#required-secrets)). Windows installers are not signed yet
-  (#158). Linux packages are not signed; the provenance attestation covers
-  them.
-- **Release job:** downloads the installers the build jobs uploaded, creates
-  a signed [SLSA build provenance](https://slsa.dev/provenance/) attestation
-  for each installer with `actions/attest`, and creates the draft release
-  with generated notes using `softprops/action-gh-release`. There is no `SHA256SUMS` file: GitHub records the
+  wrote.
+- **Version:** the `version` job picks the version once, and each build job
+  writes it into `Cargo.toml` and checks that Cargo picked it up before it
+  builds anything.
+- **Release job:** downloads the installers the build jobs uploaded, creates a
+  signed [SLSA build provenance](https://slsa.dev/provenance/) attestation for
+  each installer with `actions/attest`, and creates the release with
+  `gh release create`. There is no `SHA256SUMS` file: GitHub records the
   SHA-256 of every release asset itself, and the attestations cover both
   integrity and origin.
 
-A version with a suffix, such as `1.0.0-beta.1`, is marked as a prerelease.
-Re-running a failed tag run is safe: the release job finds the existing draft
-and replaces its assets. The job itself doesn't check whether the release is
-already published; with immutable releases enabled, GitHub refuses uploads to a
-published release, so the job fails instead of changing it.
+The release targets the commit the run built, and GitHub creates the tag on
+that commit when the release is published. `gh` uploads the installers to a
+draft first and only publishes it once they are all there, so an alpha never
+goes out with files missing, and once it's out it is immutable.
+
+Only `github-actions[bot]` publishes alphas: it can't be on a ruleset's bypass
+list, and only alpha tags may be created without one (see
+[Immutable Release Protections](#immutable-release-protections)). That's why
+betas stay drafts for an admin to publish.
+
+A beta or stable draft has no tag until it's published. Until then, another
+release run on the same channel picks the same version and replaces the draft
+as a whole, notes and assets included, so re-running a failed release run is
+safe. The release job refuses to touch a version that is already published or
+tagged.
+
+Alphas and betas are marked as prereleases.
+
+### Release notes
+
+Each release starts with a fixed note in the workflow (that the Windows installer
+isn't signed yet), followed by GitHub's
+[generated release notes](https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes):
+the pull requests merged since the previous release, grouped by label as
+configured in [`.github/release.yml`](../../.github/release.yml). They start
+from:
+
+- for an alpha or beta, the latest version tag, whatever its channel;
+- for a stable release, the previous stable release, so its notes include
+  everything its alphas and betas had. The first stable release lets GitHub
+  pick.
+
+Edit the notes in a draft before publishing if needed. The title and notes of
+a published release, an alpha included, can still be edited; its files and
+tag can't.
+
+### Assets
 
 A release contains the following. GitHub turns the spaces in the bundle names
 into dots when they are uploaded.
@@ -223,10 +133,12 @@ into dots when they are uploaded.
 | File | Platform |
 |------|----------|
 | `Home.Assistant.Installer_<version>_universal.dmg` | macOS, signed and notarized |
-| `Home.Assistant.Installer_<version>_x64-setup.exe` | Windows (NSIS) |
+| `Home.Assistant.Installer_<version>_x64-setup.exe` | Windows (NSIS), not signed yet (#158) |
 | `Home.Assistant.Installer_<version>_amd64.deb` | Linux |
 | `Home.Assistant.Installer-<version>-1.x86_64.rpm` | Linux |
 | `Home.Assistant.Installer_<version>_amd64.AppImage` | Linux |
+
+Linux packages are not signed; the provenance attestation covers them.
 
 ---
 
@@ -236,20 +148,23 @@ GitHub shows the SHA-256 of every asset on the release page. To compare a
 download against it (on macOS, `shasum -a 256` instead of `sha256sum`):
 
 ```bash
-gh release view 1.0.0 --repo home-assistant/installer --json assets \
+gh release view 2026.11.0 --repo home-assistant/installer --json assets \
   --jq '.assets[] | "\(.digest)  \(.name)"'
-sha256sum Home.Assistant.Installer_1.0.0_universal.dmg
+sha256sum Home.Assistant.Installer_2026.11.0_universal.dmg
 ```
 
-Check that an installer was built by this repository's workflow from a release
-tag, with the [GitHub CLI](https://cli.github.com/):
+Check that an installer was built by this repository's CI workflow on `main`,
+with the [GitHub CLI](https://cli.github.com/):
 
 ```bash
-gh attestation verify Home.Assistant.Installer_1.0.0_universal.dmg \
+gh attestation verify Home.Assistant.Installer_2026.11.0_universal.dmg \
   --repo home-assistant/installer \
   --signer-workflow home-assistant/installer/.github/workflows/ci.yml \
-  --source-ref refs/tags/1.0.0
+  --source-ref refs/heads/main
 ```
+
+The output names the commit the installer was built from, which is the commit
+the release's tag points to.
 
 The attestation is signed with a short-lived Sigstore certificate tied to the
 workflow run that built the installer, and recorded in the public Sigstore
@@ -259,8 +174,14 @@ transparency log, so there are no signing keys to manage or rotate.
 
 ## Immutable Release Protections
 
-1. **Tag protection** (a tag ruleset for `[0-9]*`): only maintainers may create
-   version tags, and nobody may move or delete one.
+1. **Tag protection**: publishing a release creates its tag, so the tag
+   rulesets decide who may publish which release:
+   - "Version tags" covers every tag except alpha tags (`*-alpha.*`): only
+     admins may create one, so only admins may publish a beta or stable
+     release, and only admins may move or delete one.
+   - "Alpha tags" covers `*-alpha.*`: anyone with write access, and the
+     release job as `github-actions[bot]`, may create one, but nobody may move
+     or delete one.
 
 2. **Branch protection on main**:
    - Require PR reviews
@@ -268,8 +189,11 @@ transparency log, so there are no signing keys to manage or rotate.
    - No force pushes
 
 3. **Release process**:
-   - Releases are created as drafts
-   - Manual review before publishing
+   - Releases are only made from `main`
+   - Anyone with write access may release an alpha, which is published right
+     away
+   - Betas and stable releases are started by admins, created as drafts, and
+     reviewed and published by an admin
    - Immutable releases are enabled, so once a release is published, GitHub
      refuses any change to its assets or tag, including from the release job
 
@@ -277,7 +201,19 @@ transparency log, so there are no signing keys to manage or rotate.
    it on the release page and in the API.
 
 5. **Provenance**: every installer has a signed build provenance attestation
-   that ties it to the workflow, the commit and the tag it was built from.
+   that ties it to the workflow run and the commit it was built from.
+
+Anyone with write access can still run a changed copy of the workflow on
+their own branch, so the checks inside the workflow only guard against
+mistakes. What such a run can't do is enforced by GitHub instead: it gets no
+Apple signing secrets (the `release` environment only allows `main`), it
+can't publish a beta or stable release (the "Version tags" ruleset), and its
+installers fail `gh attestation verify --source-ref refs/heads/main`.
+
+Since anyone with write access may create alpha tags, they can also publish
+an alpha release by hand, with any files attached. Its installers would have
+no attestation from `main`, and nothing but an alpha can be released this
+way.
 
 ---
 
@@ -285,10 +221,9 @@ transparency log, so there are no signing keys to manage or rotate.
 
 The workflow uses no repository secrets.
 
-Secrets of the protected `release` environment, which only `main` and version
-tags (the tag pattern `[0-9]*.[0-9]*.[0-9]*`) may deploy to. The macOS build
-job of the CI workflow binds to this environment on pushes to `main` and on
-version tags, signs and notarizes the app and the DMG, and uploads the result.
+Secrets of the protected `release` environment, which only `main` may deploy
+to. The macOS build job binds to this environment on pushes to `main` and in
+release runs, signs and notarizes the app and the DMG, and uploads the result.
 Pull request builds don't reference the environment and stay unsigned.
 
 | Secret | Description |
@@ -315,29 +250,32 @@ deletes its own copy after packing it.
 
 ## Release Process
 
-1. Bump `version` in the `[workspace.package]` section of the root `Cargo.toml` and run `cargo check` to refresh `Cargo.lock`
-2. Create PR with version bump
-3. Merge to main after review
-4. Create and push a tag on the merged commit, without a `v` prefix: `git tag 1.0.0 && git push origin 1.0.0`
-5. CI tests, builds and signs everything, and drafts the release
-6. Review the draft release: notes, assets, and that the macOS DMG opens without warnings
-7. Publish the release (makes it immutable)
+1. Go to **Actions → CI → Run workflow**, keep the branch at `main`, choose the
+   channel and run it
+2. CI tests, builds and signs everything and creates the release; the run's
+   summary names the version. An alpha is now published, and nothing else is
+   needed
+3. For a beta or stable release, an admin reviews the draft: notes, assets,
+   and that the macOS DMG opens without warnings
+4. The admin publishes it (creates the tag and makes the release immutable)
 
-The root `Cargo.toml` is the only place the app version lives:
+The workspace `Cargo.toml` is the only place the app version lives, and a
+release run is the only thing that sets it:
 
 - The crates inherit it via `version.workspace = true`.
-- `tauri.conf.json` has no `version`, so Tauri uses the `hai-desktop` crate version for the bundles and the runtime `PackageInfo`.
-- Rust code reads it with `env!("CARGO_PKG_VERSION")` (e.g. the HTTP User-Agent).
-- `package.json` is private and never published; its version stays at `0.0.0` and is not bumped.
+- `tauri.conf.json` has no `version`, so Tauri uses the `hai-desktop` crate
+  version for the bundles and the runtime `PackageInfo`.
+- Rust code reads it with `env!("CARGO_PKG_VERSION")` (e.g. the HTTP
+  User-Agent).
+- Builds from anything but a release run, including local builds, report
+  `0.0.0`.
+- `package.json` is private and never published; its version stays at `0.0.0`.
 
 ---
 
 ## Distribution
 
-| Platform | Distribution Method |
-|----------|---------------------|
-| macOS | Direct download (.dmg), Homebrew Cask |
-| Windows | Direct download (.msi/.exe), Microsoft Store |
-| Linux | Direct download (.AppImage), Flathub, possibly .deb/.rpm |
-
-Build automation via GitHub Actions to produce all artifacts on release.
+Installers are distributed as assets of the
+[GitHub releases](https://github.com/home-assistant/installer/releases) only:
+a DMG for macOS, an NSIS installer for Windows, and `.deb`, `.rpm` and
+AppImage for Linux. There are no store or package repository listings.

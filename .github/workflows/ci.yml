@@ -3,22 +3,91 @@ name: CI
 on:
   push:
     branches: [main]
-    # A version tag, like 1.0.0 or 1.0.0-beta.1, also drafts a GitHub release.
-    tags: ["[0-9]+.[0-9]+.[0-9]+", "[0-9]+.[0-9]+.[0-9]+-*"]
   pull_request:
     branches: [main]
+  # Running the workflow by hand on main releases the next version on the
+  # chosen channel: an alpha is published right away, a beta or stable
+  # release is drafted for an admin to review. See docs/spec/ci-cd.md.
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        required: true
+        options: [alpha, beta, stable]
 
 permissions: {}
 
 env:
   CARGO_TERM_COLOR: always
 
-# Tag runs build the installers users download, so no job restores a cache
-# there that another run could have written. zizmor flags every cache in a
-# workflow with a tag trigger and can't see those conditions, hence the
-# `zizmor: ignore[cache-poisoning]` comments.
+# Release runs build the installers users download, so no job restores a
+# cache there that another run could have written.
 
 jobs:
+  # Picks the version of a release run from the existing version tags, once,
+  # so all build jobs use the same one even if the month changes meanwhile.
+  version:
+    name: Pick the release version
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      prerelease: ${{ steps.next.outputs.prerelease }}
+      previous: ${{ steps.next.outputs.previous }}
+    steps:
+      # The release targets the commit this run builds, so it has to be one
+      # that went through review on main and not one on a feature branch.
+      # Anyone with write access may release an alpha; betas and stable
+      # releases are for admins. The build and release jobs wait for this
+      # job, so nothing is built if either check fails. Publishing is limited
+      # separately, by the tag rulesets.
+      - name: Check the run is on main
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "::error::Releases are made from main, not $GITHUB_REF"
+            exit 1
+          fi
+
+      # The triggering actor, not the actor: a re-run is checked against
+      # whoever re-ran it.
+      - name: Check who may release this channel
+        if: inputs.channel != 'alpha'
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_TRIGGERING_ACTOR/permission" --jq .role_name)
+          if [[ "$role" != admin ]]; then
+            echo "::error::Only admins may release a $CHANNEL; $GITHUB_TRIGGERING_ACTOR has the $role role"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A beta or stable draft has no tag until it's published, so another
+      # run on its channel before that gets the same version again, and the
+      # release job replaces the draft.
+      - name: Pick the next version
+        id: next
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/tags" --jq '.[].name' > "$RUNNER_TEMP/tags"
+          node scripts/next-version.mjs "$CHANNEL" < "$RUNNER_TEMP/tags" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Summarize
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+          PREVIOUS: ${{ steps.next.outputs.previous }}
+        run: |
+          echo "Releasing **$VERSION** from \`$GITHUB_SHA\`, with changes since ${PREVIOUS:-the release GitHub picks}." >> "$GITHUB_STEP_SUMMARY"
+
   zizmor:
     name: Lint GitHub Actions
     runs-on: ubuntu-latest
@@ -49,7 +118,7 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
-          cache: ${{ github.ref_type != 'tag' && 'npm' || '' }} # zizmor: ignore[cache-poisoning]
+          cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
 
       - name: Install dependencies
         run: npm ci
@@ -64,6 +133,9 @@ jobs:
         run: |
           npm run localization:check
           npm run test:localization
+
+      - name: Test the release version script
+        run: npm run test:release
 
       - name: Check formatting
         run: npm run format:check
@@ -104,8 +176,8 @@ jobs:
         with:
           tool: cargo-shear
 
-      - name: Cache cargo # zizmor: ignore[cache-poisoning]
-        if: github.ref_type != 'tag'
+      - name: Cache cargo
+        if: github.event_name != 'workflow_dispatch'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install Tauri dependencies (Linux)
@@ -152,7 +224,7 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
-          cache: ${{ github.ref_type != 'tag' && 'npm' || '' }} # zizmor: ignore[cache-poisoning]
+          cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
 
       - name: Install dependencies
         run: npm ci
@@ -184,7 +256,7 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
-          cache: ${{ github.ref_type != 'tag' && 'npm' || '' }} # zizmor: ignore[cache-poisoning]
+          cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
 
       - name: Install dependencies
         run: npm ci
@@ -194,8 +266,8 @@ jobs:
         run: |
           echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Cache Playwright browser # zizmor: ignore[cache-poisoning]
-        if: github.ref_type != 'tag'
+      - name: Cache Playwright browser
+        if: github.event_name != 'workflow_dispatch'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
@@ -244,8 +316,8 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
-      - name: Cache cargo # zizmor: ignore[cache-poisoning]
-        if: github.ref_type != 'tag'
+      - name: Cache cargo
+        if: github.event_name != 'workflow_dispatch'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install Tauri dependencies (Linux)
@@ -281,19 +353,21 @@ jobs:
 
   build:
     name: Build (${{ matrix.target }})
+    # Only release runs have a version job; elsewhere it's skipped.
+    needs: version
+    if: ${{ !cancelled() && (needs.version.result == 'success' || needs.version.result == 'skipped') }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-    # The macOS builds of main and of version tags are signed and notarized,
-    # so the DMG they upload can be opened without Gatekeeper warnings. The
-    # Apple credentials live in the protected `release` environment, which
-    # only main and version tags may deploy to, so pull request builds never
-    # see them and stay unsigned.
-    environment: ${{ matrix.os == 'macos-latest' && github.event_name == 'push' && 'release' || '' }}
+    # The macOS builds of main and of releases are signed and notarized, so
+    # the DMG they upload can be opened without Gatekeeper warnings. The Apple
+    # credentials live in the protected `release` environment, which only main
+    # may deploy to, so pull request builds never see them and stay unsigned.
+    environment: ${{ matrix.os == 'macos-latest' && github.event_name != 'pull_request' && 'release' || '' }}
     env:
       BUILD_TARGET: ${{ matrix.target }}
       BUNDLE_DIR: target/${{ matrix.target }}/release/bundle
-      SIGN_MACOS: ${{ matrix.os == 'macos-latest' && github.event_name == 'push' }}
+      SIGN_MACOS: ${{ matrix.os == 'macos-latest' && github.event_name != 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
@@ -317,32 +391,39 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
-          cache: ${{ github.ref_type != 'tag' && 'npm' || '' }} # zizmor: ignore[cache-poisoning]
+          cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.rust-targets }}
 
-      # Tauri names the bundles after the version in the workspace Cargo.toml,
-      # so a release tag has to name that same version. Checked before
-      # anything is built or signed. `jq -j` writes no trailing newline, which
-      # jq on Windows would write as CRLF and leave a `\r` in the version.
-      - name: Check the tag matches the app version
-        if: github.ref_type == 'tag'
+      # Tauri names the bundles and reports the app version after the version
+      # in the workspace Cargo.toml, which stays at 0.0.0 on main. A release
+      # run writes its version there before anything is built, and checks
+      # that Cargo picked it up. Cargo updates Cargo.lock to match during the
+      # build. No pattern anchors at the line end, where a Windows checkout
+      # has a `\r`. `jq -j` writes no trailing newline, which jq on Windows
+      # would write as CRLF and leave a `\r` in the version.
+      - name: Set the release version
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          version=$(cargo metadata --no-deps --locked --format-version 1 |
+          sed -i.orig "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" Cargo.toml
+          rm Cargo.toml.orig
+          version=$(cargo metadata --no-deps --format-version 1 |
             jq -j '.packages[] | select(.name == "hai-desktop") | .version')
-          if [[ "$GITHUB_REF_NAME" != "$version" ]]; then
-            echo "::error::The tag $GITHUB_REF_NAME does not match the version $version in Cargo.toml"
+          if [[ "$version" != "$VERSION" ]]; then
+            echo "::error::Cargo.toml has the version $version instead of $VERSION"
             exit 1
           fi
 
       # Signed and release builds are what users install, so they compile
       # everything themselves instead of linking objects another run cached.
-      - name: Cache cargo # zizmor: ignore[cache-poisoning]
-        if: env.SIGN_MACOS != 'true' && github.ref_type != 'tag'
+      - name: Cache cargo
+        if: env.SIGN_MACOS != 'true' && github.event_name != 'workflow_dispatch'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install Tauri dependencies (Linux)
@@ -506,13 +587,19 @@ jobs:
               )
             }
 
-  # A version tag drafts a GitHub release with the installers the build job
-  # produced in this same run, once every other job has passed. A maintainer
-  # reviews the draft and publishes it; until then nobody else can see it.
+  # A release run releases the installers the build job produced in this
+  # same run, once every other job has passed. Alphas are published right
+  # away. Betas and stable releases are drafts that an admin reviews and
+  # publishes; until then nobody without write access can see them.
   release:
-    name: Draft release
-    if: github.ref_type == 'tag'
+    name: Release
+    if: github.event_name == 'workflow_dispatch'
+    # Two release runs at once would both find no draft and create two.
+    concurrency:
+      group: release
+      cancel-in-progress: false
     needs:
+      - version
       - zizmor
       - lint-frontend
       - lint-backend
@@ -538,8 +625,8 @@ jobs:
           pattern: Home Assistant Installer*
           merge-multiple: true
 
-      # Provenance for every installer, tying it to this workflow run, commit
-      # and tag. Users check it with `gh attestation verify`, which matches by
+      # Provenance for every installer, tying it to this workflow run and
+      # commit. Users check it with `gh attestation verify`, which matches by
       # content, so it doesn't matter that GitHub turns the spaces in the file
       # names into dots on upload. GitHub also lists each asset's SHA-256.
       - name: Attest build provenance
@@ -547,15 +634,53 @@ jobs:
         with:
           subject-path: ${{ runner.temp }}/installers/*
 
-      # Versions with a suffix, like 1.0.0-beta.1, are marked as prereleases.
-      # Re-running the job finds the existing draft and replaces its assets.
-      # The action doesn't refuse a published release; immutable releases
-      # make GitHub refuse uploads to one instead.
-      - name: Create the draft release # zizmor: ignore[superfluous-actions]
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          draft: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: ${{ runner.temp }}/installers/*
+      # The release targets the commit this run built, and GitHub creates the
+      # tag on it when the release is published: right away for an alpha, as
+      # github-actions[bot], or when an admin publishes a beta or stable
+      # draft. The tag rulesets decide who may create which tag; the bot
+      # can't be on a bypass list, so it may only create alpha tags. gh uploads
+      # the assets to a draft and only then publishes it, so an immutable
+      # release never goes out without them. A draft of the same version
+      # from an earlier run, like a re-run of this one or of a run that
+      # failed after creating its draft, is replaced as a whole, so its notes
+      # and assets always match the commit it targets. The notes are GitHub's
+      # generated notes, grouped by .github/release.yml, after the text in
+      # RELEASE_NOTES.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CHANNEL: ${{ inputs.channel }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+          PREVIOUS: ${{ needs.version.outputs.previous }}
+          INSTALLERS: ${{ runner.temp }}/installers
+          RELEASE_NOTES: >-
+            **Windows:** the installer isn't signed yet, so Microsoft Defender
+            SmartScreen may warn about an unknown publisher when you open it.
+            Choose **More info**, then **Run anyway**.
+        run: |
+          if gh api "repos/$GH_REPO/git/ref/tags/$VERSION" --silent 2>/dev/null; then
+            echo "::error::The tag $VERSION already exists"
+            exit 1
+          fi
+          if draft=$(gh release view "$VERSION" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [[ "$draft" != true ]]; then
+              echo "::error::The release $VERSION is already published"
+              exit 1
+            fi
+            echo "Replacing the existing draft of $VERSION"
+            gh release delete "$VERSION" --yes
+          fi
+
+          args=(--target "$GITHUB_SHA" --title "$VERSION" --generate-notes --notes "$RELEASE_NOTES")
+          if [[ "$PRERELEASE" == true ]]; then
+            args+=(--prerelease)
+          fi
+          if [[ "$CHANNEL" != alpha ]]; then
+            args+=(--draft)
+          fi
+          if [[ -n "$PREVIOUS" ]]; then
+            args+=(--notes-start-tag "$PREVIOUS")
+          fi
+          gh release create "$VERSION" "${args[@]}" "$INSTALLERS"/*
