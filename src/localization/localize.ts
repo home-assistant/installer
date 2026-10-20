@@ -67,8 +67,19 @@ export function localizeBackend(
   const params: Record<string, PrimitiveType> = {};
   if (values && typeof values === "object" && !Array.isArray(values)) {
     for (const [name, value] of Object.entries(values)) {
-      // intl-messageformat turns booleans into parts, not text
-      if (["string", "number"].includes(typeof value)) {
+      if (value && typeof value === "object" && "key" in value) {
+        // A message inside the message, like the reason a step failed. If
+        // that one can't be shown, neither can the sentence around it.
+        const nested = localizeBackend(
+          value.key,
+          (value as { params?: unknown }).params
+        );
+        if (nested === undefined) {
+          return undefined;
+        }
+        params[name] = nested;
+      } else if (["string", "number"].includes(typeof value)) {
+        // Not booleans: intl-messageformat turns those into parts, not text
         params[name] = value as PrimitiveType;
       }
     }

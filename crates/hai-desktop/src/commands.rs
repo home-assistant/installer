@@ -564,7 +564,7 @@ async fn run_utm_creation<B: UtmBackend>(
             "utm_operation_uncertain",
             &hai_core::message!(
                 "backend.utm.import_uncertain",
-                detail = error.to_string(),
+                detail = error,
                 path = image.path().parent().unwrap().display().to_string(),
             ),
             false,
@@ -1724,12 +1724,26 @@ mod mock_tests {
                     )));
                     assert!(!error.message.contains(&config.image_path));
                     assert!(error.message.contains("manually"));
+                    // The frontend translates the sentence and the reason inside it
+                    assert_eq!(error.details["message_key"], "backend.utm.import_uncertain");
+                    assert_eq!(
+                        error.details["message_params"]["detail"]["key"],
+                        if outcome == "timeout" {
+                            "backend.utm.no_answer"
+                        } else {
+                            "backend.utm.applescript_lost"
+                        }
+                    );
                 }
                 if outcome == "start-failed" {
                     let error = result.as_ref().unwrap_err();
                     assert_eq!(error.code, "utm_vm_created");
                     assert!(!error.retryable);
                     assert!(error.message.contains("Open UTM"));
+                    assert_eq!(
+                        error.details["message_key"],
+                        "backend.utm.vm_created_not_started"
+                    );
                 }
                 if outcome == "marker-failure" {
                     let error = result.unwrap_err();
@@ -1738,6 +1752,14 @@ mod mock_tests {
                         .message
                         .contains(path.parent().unwrap().to_str().unwrap()));
                     assert!(error.message.contains("manually"));
+                    assert_eq!(
+                        error.details["message_key"],
+                        "backend.utm.import_not_prepared"
+                    );
+                    assert_eq!(
+                        error.details["message_params"]["path"],
+                        path.parent().unwrap().display().to_string()
+                    );
                 }
             }
             // This is the same removal used by the frontend's discard command.
@@ -1750,6 +1772,32 @@ mod mock_tests {
                 "{outcome}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_missing_temporary_image_is_a_catalog_message() {
+        let backend = UtmCreationBackend {
+            outcome: "success",
+            started: tokio::sync::Notify::new(),
+        };
+        let config = hai_core::UtmVmConfig {
+            name: "Test VM".into(),
+            image_path: "/nowhere/image.qcow2".into(),
+            cpu_cores: 2,
+            memory_mb: 2048,
+            disk_size_gb: 32,
+            auto_start: false,
+        };
+
+        let error = run_utm_creation(&backend, &config, &PendingUtmImages::default())
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "temporary_image_unavailable");
+        assert!(error.retryable);
+        assert_eq!(
+            error.details["message_key"],
+            "backend.utm.temporary_image_gone"
+        );
     }
 
     #[tokio::test]

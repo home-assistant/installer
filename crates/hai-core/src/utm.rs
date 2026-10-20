@@ -161,7 +161,7 @@ fn created_vm_start_error(name: &str, error: Error) -> Error {
     Error::UtmVmCreated(crate::message!(
         "backend.utm.vm_created_not_started",
         name = name,
-        detail = error.to_string(),
+        detail = error.detail(),
     ))
 }
 
@@ -509,10 +509,17 @@ mod tests {
         let Error::UtmVmCreated(message) = error else {
             panic!("expected created-VM error")
         };
-        assert!(message.to_string().contains("My home"));
-        assert!(message.to_string().contains("Open UTM"));
-        assert!(message.to_string().contains("Enable Automation access"));
-        assert!(!message.to_string().contains("importing"));
+        let english = message.to_string();
+        assert!(english.contains("My home"));
+        assert!(english.contains("Open UTM"));
+        assert!(english.contains("Enable Automation access"));
+        assert!(!english.contains("importing"));
+        // The reason stays a catalog message, without the error's prefix
+        assert!(!english.contains("UTM error"));
+        assert_eq!(
+            message.params_json()["detail"]["key"],
+            "backend.utm.applescript_error"
+        );
     }
 
     #[test]
@@ -524,10 +531,11 @@ mod tests {
             let Error::Utm(message) = applescript_error(stderr) else {
                 panic!("Expected UTM error");
             };
-            assert!(message.to_string().contains("System Settings > Privacy & Security > Automation"));
-            assert!(message.to_string().contains("enable UTM under Home Assistant Installer"));
-            assert!(message.to_string().contains("try again"));
-            assert!(!message.to_string().contains("execution error"));
+            let english = message.to_string();
+            assert!(english.contains("System Settings > Privacy & Security > Automation"));
+            assert!(english.contains("enable UTM under Home Assistant Installer"));
+            assert!(english.contains("try again"));
+            assert!(!english.contains("execution error"));
         }
     }
 

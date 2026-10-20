@@ -133,6 +133,21 @@ impl BusyReason {
     }
 }
 
+impl Error {
+    /// This error as a parameter of another message. A catalog message stays
+    /// a message, so the frontend translates it too; anything else is its
+    /// English text.
+    pub fn detail(&self) -> serde_json::Value {
+        match self {
+            Self::ProxmoxActionRequired(message)
+            | Self::Utm(message)
+            | Self::UtmOperationUncertain(message)
+            | Self::UtmVmCreated(message) => serde_json::json!(message),
+            other => serde_json::Value::String(other.to_string()),
+        }
+    }
+}
+
 /// Result type alias for hai-core operations
 pub type Result<T> = std::result::Result<T, Error>;
 

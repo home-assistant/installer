@@ -30,16 +30,11 @@ impl CommandError {
     /// An error the frontend shows from its catalog, in the user's language.
     /// `message` keeps the English, for logs and older frontends.
     pub fn with_message(code: &'static str, message: &Message, retryable: bool) -> Self {
-        let params: serde_json::Map<String, Value> = message
-            .params
-            .iter()
-            .map(|(name, value)| (name.to_string(), value.clone()))
-            .collect();
         Self {
             code,
             message: message.to_string(),
             retryable,
-            details: json!({ "message_key": message.key, "message_params": params }),
+            details: json!({ "message_key": message.key, "message_params": message.params_json() }),
             diagnostic: code,
         }
     }
