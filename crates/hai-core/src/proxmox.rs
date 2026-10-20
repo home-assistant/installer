@@ -1465,6 +1465,7 @@ async fn create_vm_with_disk(
             ),
             ("agent", "enabled=1".to_string()), // QEMU guest agent
             ("boot", "order=scsi0".to_string()), // Boot from main disk
+            ("onboot", "1".to_string()),        // Start when the Proxmox host boots
         ])
         .send()
         .await
@@ -4704,6 +4705,8 @@ mod tests {
                         "local-lvm:0,import-from=local-import:import/test-image.qcow2".to_string(),
                     ),
                     Matcher::UrlEncoded("net0".to_string(), "virtio,bridge=vmbr1".to_string()),
+                    // The success screen promises the VM starts with the host
+                    Matcher::UrlEncoded("onboot".to_string(), "1".to_string()),
                 ]))
                 .with_status(200)
                 .with_header("content-type", "application/json")

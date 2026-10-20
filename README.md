@@ -26,6 +26,9 @@ required before declaring the beta supported.
 | Windows | x64 | NSIS `.exe` | Windows 10 or 11 with current Evergreen WebView2 |
 | Linux | x86_64 | `.deb`, `.rpm`, `.AppImage` | Ubuntu 22.04 / Debian 12 or newer, or a maintained Fedora release; see below |
 
+Installing into a UTM virtual machine needs a Mac with Apple silicon. Intel Macs can
+still flash a drive or install on Proxmox.
+
 Keep OS and web-view security updates installed. macOS 14.5 is a conservative beta
 support-policy floor with [Safari 17.5-era WebKit](https://webkit.org/blog/15383/webkit-features-in-safari-17-5/),
 not a proven technical minimum. Tauri's 10.13 default does not establish that the

@@ -36,6 +36,21 @@ test.describe("Other Options View", () => {
     await expect(subtitle).toContainText("documentation");
   });
 
+  test("fits a short window and scrolls to the last option", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 900, height: 600 });
+    await page.locator('option-card[title="Others"]').click();
+
+    const view = page.locator("other-options-view");
+    const box = await view.boundingBox();
+    expect(box!.y + box!.height).toBeLessThanOrEqual(600);
+
+    const lastOption = view.locator("option-card").last();
+    await lastOption.scrollIntoViewIfNeeded();
+    await expect(lastOption).toBeInViewport();
+  });
+
   test("has back button that returns to path selection", async ({ page }) => {
     await page.locator('option-card[title="Others"]').click();
 
