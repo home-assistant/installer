@@ -4,7 +4,6 @@ use super::super::*;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::process::Command;
 use std::sync::mpsc;
 use zbus::fdo::{ManagedObjects, ObjectManagerProxy};
 use zbus::proxy::CacheProperties;
@@ -79,8 +78,6 @@ pub async fn write_image<P: ProgressCallback>(
         0,
         "Syncing data...",
     ));
-
-    let _ = Command::new("sync").output();
 
     // Best effort, like "Safely remove" in the file manager: the write and the
     // verify passed, so the drive is done. If this fails or is skipped, the
