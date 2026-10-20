@@ -25,8 +25,17 @@ use tauri::ipc::Channel;
 pub struct PendingUtmImages(std::sync::Mutex<std::collections::HashMap<String, TemporaryImage>>);
 
 impl PendingUtmImages {
+    fn insert(&self, image_path: String, image: TemporaryImage) {
+        self.lock().insert(image_path, image);
+    }
+
     fn take(&self, image_path: &str) -> Option<TemporaryImage> {
-        self.0.lock().unwrap().remove(image_path)
+        self.lock().remove(image_path)
+    }
+
+    /// A single insert or remove can't leave the map half-changed after a panic.
+    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, TemporaryImage>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -448,7 +457,7 @@ pub async fn download_utm_image(
         .operation
         .finish(run_utm_download(&Backend, board, &callback).await)?;
     let path = image.path().to_string_lossy().into_owned();
-    pending.0.lock().unwrap().insert(path.clone(), image);
+    pending.insert(path.clone(), image);
     Ok(path)
 }
 
@@ -1586,13 +1595,36 @@ mod mock_tests {
         let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
         let path = image.path().to_string_lossy().into_owned();
         std::fs::write(&path, b"owned image").unwrap();
-        pending.0.lock().unwrap().insert(path.clone(), image);
+        pending.insert(path.clone(), image);
         let importing = pending.take(&path).unwrap();
         assert!(pending.take(&path).is_none());
         assert!(std::path::Path::new(&path).exists());
         drop(importing);
         assert!(!std::path::Path::new(&path).exists());
         assert!(user_file.exists());
+    }
+
+    #[test]
+    fn utm_registry_keeps_working_after_a_panic_while_locked() {
+        let cache = tempfile::tempdir().unwrap();
+        let pending = PendingUtmImages::default();
+        let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
+        let path = image.path().to_string_lossy().into_owned();
+        pending.insert(path.clone(), image);
+        std::thread::scope(|scope| {
+            let panicked = scope.spawn(|| {
+                let _images = pending.0.lock().unwrap();
+                panic!("panic while the registry is locked");
+            });
+            assert!(panicked.join().is_err());
+        });
+        assert!(pending.0.is_poisoned());
+
+        assert!(pending.take(&path).is_some());
+        let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
+        let path = image.path().to_string_lossy().into_owned();
+        pending.insert(path.clone(), image);
+        assert!(pending.take(&path).is_some());
     }
 
     struct UtmCreationBackend {
@@ -1673,11 +1705,7 @@ mod mock_tests {
                 std::fs::create_dir(path.parent().unwrap().join(".utm-import")).unwrap();
             }
             let pending = PendingUtmImages::default();
-            pending
-                .0
-                .lock()
-                .unwrap()
-                .insert(path.to_string_lossy().into_owned(), image);
+            pending.insert(path.to_string_lossy().into_owned(), image);
             let config = hai_core::UtmVmConfig {
                 name: "Test VM".into(),
                 image_path: path.to_string_lossy().into_owned(),
