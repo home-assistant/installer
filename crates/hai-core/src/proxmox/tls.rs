@@ -529,7 +529,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, Error::ProxmoxActionRequired(message) if message.to_string().contains("verify the URL")),
+            matches!(&error, Error::ProxmoxActionRequired(message) if message.key == "backend.proxmox.connection_failed"),
             "{error}"
         );
     }
