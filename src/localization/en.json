@@ -77,6 +77,8 @@
   "components.install_progress.byte_progress_compressed": "{completed} / {total} compressed",
   "components.install_mascot.stage_in_progress": "{stage}...",
   "components.step_indicator.installation_steps": "Installation steps",
+  "components.step_indicator.completed": "(completed)",
+  "components.step_indicator.upcoming": "(upcoming)",
   "components.diagnostics_actions.about": "About",
   "components.diagnostics_actions.about_home_assistant_installer": "About Home Assistant Installer",
   "components.diagnostics_actions.report_a_problem": "Report a problem",

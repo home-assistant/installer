@@ -2,6 +2,7 @@ import { expect, fixture, html } from "@open-wc/testing";
 import "../../../src/components/step-indicator.js";
 import type { StepIndicator } from "../../../src/components/step-indicator.js";
 import type { WizardStep } from "../../../src/state/wizard-state.js";
+import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
 
 describe("step-indicator", () => {
   const mockSteps: WizardStep[] = [
@@ -26,8 +27,34 @@ describe("step-indicator", () => {
 
     const labels = el.shadowRoot!.querySelectorAll(".step-label");
     expect(labels[0].textContent?.trim()).to.equal("First Step");
-    expect(labels[1].textContent?.trim()).to.equal("Second Step");
-    expect(labels[2].textContent?.trim()).to.equal("Third Step");
+    expect(labels[1].textContent?.trim()).to.equal("Second Step (upcoming)");
+    expect(labels[2].textContent?.trim()).to.equal("Third Step (upcoming)");
+  });
+
+  it("tells screen readers which steps are done and which are upcoming", async () => {
+    const el = await fixture<StepIndicator>(html`
+      <step-indicator .steps=${mockSteps} .currentIndex=${1}></step-indicator>
+    `);
+    // List items have no accessible name, so read their text in order.
+    const announced = async () =>
+      findByRole(await fullA11ySnapshot(), "listitem").map((item) =>
+        findByRole(item, "StaticText")
+          .map((text) => text.name)
+          .join(" ")
+      );
+
+    expect(await announced()).to.deep.equal([
+      "First Step (completed)",
+      "Second Step",
+      "Third Step (upcoming)",
+    ]);
+    el.currentIndex = 2;
+    await el.updateComplete;
+    expect(await announced()).to.deep.equal([
+      "First Step (completed)",
+      "Second Step (completed)",
+      "Third Step",
+    ]);
   });
 
   it("marks current step as active", async () => {
