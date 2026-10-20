@@ -1489,18 +1489,22 @@ async fn create_vm_with_disk(
 
     resize_vm_disk(session, config)
         .await
-        .map_err(|error| resize_error(config.vm_id, error))
+        .map_err(|error| resize_error(config, error))
 }
 
-fn resize_error(vm_id: u32, error: Error) -> Error {
-    let message = match error {
-        // Keep its own code, so the user is told to reconnect
-        Error::ProxmoxCertificateChanged => return error,
-        Error::ProxmoxApi(message) => message,
-        other => other.to_string(),
-    };
-    Error::ProxmoxApi(format!(
-        "VM {vm_id} was created but its disk could not be resized: {message}"
+fn resize_error(config: &ProxmoxVmConfig, error: Error) -> Error {
+    // Keep its own code, so the user is told to reconnect
+    if matches!(error, Error::ProxmoxCertificateChanged) {
+        return error;
+    }
+
+    // The VM exists now, so installing again with its ID fails until it's
+    // removed. Say so, instead of the generic Proxmox error and a retry that
+    // can't work.
+    Error::ProxmoxActionRequired(crate::message!(
+        "backend.proxmox.vm_created_resize_failed",
+        vm_id = config.vm_id,
+        size_gb = config.disk_size_gb,
     ))
 }
 
@@ -4849,31 +4853,36 @@ mod tests {
 
         #[test]
         fn test_disk_resize_keeps_a_certificate_change() {
+            let config = disk_test_config(32);
             assert!(matches!(
-                resize_error(100, Error::ProxmoxCertificateChanged),
+                resize_error(&config, Error::ProxmoxCertificateChanged),
                 Error::ProxmoxCertificateChanged
             ));
-            let error = resize_error(100, Error::ProxmoxApi("HTTP 500".into()));
-            assert!(
-                matches!(&error, Error::ProxmoxApi(message) if message.contains("VM 100 was created")),
-                "{error}"
-            );
+            for error in [
+                Error::ProxmoxApi("HTTP 500".into()),
+                Error::ProxmoxSessionExpired,
+            ] {
+                let error = resize_error(&config, error);
+                assert!(
+                    matches!(&error, Error::ProxmoxActionRequired(message) if message.to_string().contains("Delete VM 100 in Proxmox")),
+                    "{error}"
+                );
+            }
         }
 
         #[tokio::test]
         async fn test_disk_resize_failures_propagate_from_creation() {
-            for (status, body, task_status, expected_error) in [
-                (500, "Insufficient storage", None, "Insufficient storage"),
-                (403, "Permission denied", None, "Permission denied"),
-                (200, "invalid json", None, "parse disk resize response"),
-                (200, r#"{"data":null}"#, None, "missing task UPID"),
-                (200, r#"{"data":""}"#, None, "missing task UPID"),
-                (200, r#"{"data":12}"#, None, "missing task UPID"),
+            for (status, body, task_status) in [
+                (500, "Insufficient storage", None),
+                (403, "Permission denied", None),
+                (200, "invalid json", None),
+                (200, r#"{"data":null}"#, None),
+                (200, r#"{"data":""}"#, None),
+                (200, r#"{"data":12}"#, None),
                 (
                     200,
                     r#"{"data":"resize-task"}"#,
                     Some("shrinking disks is not supported"),
-                    "shrinking disks is not supported",
                 ),
             ] {
                 let mut server = Server::new_async().await;
@@ -4938,11 +4947,12 @@ mod tests {
                 )
                 .await
                 .unwrap_err();
-                assert!(error.to_string().contains(expected_error), "{error}");
-                assert!(error
-                    .to_string()
-                    .contains("VM 100 was created but its disk could not be resized"));
-                assert_eq!(error.to_string().matches("Proxmox API error:").count(), 1);
+                // Every resize failure leaves the VM behind, so each one tells
+                // the user to remove it, without the server's response
+                assert_eq!(
+                    error.to_string(),
+                    "VM 100 was created, but its disk couldn't be resized to 32 GB. Delete VM 100 in Proxmox, then install again."
+                );
                 create_mock.assert_async().await;
                 create_task.assert_async().await;
                 resize_mock.assert_async().await;

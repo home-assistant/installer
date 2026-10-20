@@ -465,6 +465,7 @@
   "backend.proxmox.missing_privileges": "Your Proxmox user is missing {privileges} on {path}.",
   "backend.proxmox.bridge_not_vlan_aware": "Network \"{bridge}\" does not report VLAN tag support. Select a VLAN-aware bridge or remove the VLAN tag.",
   "backend.proxmox.vm_status_denied": "Access denied. Your Proxmox user may not have permission to see this VM's status.",
+  "backend.proxmox.vm_created_resize_failed": "VM {vm_id} was created, but its disk couldn't be resized to {size_gb} GB. Delete VM {vm_id} in Proxmox, then install again.",
   "backend.proxmox.leftover_import_image": "Installation stopped, but the uploaded image could not be removed. Delete {volume} from node {node} in Proxmox.",
   "backend.proxmox.invalid_url": "Enter a valid HTTPS server URL",
   "backend.proxmox.url_has_extras": "Use an HTTPS server URL without credentials, a path, query, or fragment",
