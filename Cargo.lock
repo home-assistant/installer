@@ -1696,7 +1696,7 @@ dependencies = [
 
 [[package]]
 name = "hai-core"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "core-foundation 0.10.1",
  "directories",
@@ -1730,7 +1730,7 @@ dependencies = [
 
 [[package]]
 name = "hai-desktop"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "hai-core",
  "log",
