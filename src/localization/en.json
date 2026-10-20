@@ -473,6 +473,7 @@
   "backend.utm.automation_denied": "Home Assistant Installer is not allowed to control UTM. Open System Settings > Privacy & Security > Automation, enable UTM under Home Assistant Installer, then try again.",
   "backend.utm.applescript_not_started": "Failed to execute AppleScript: {detail}",
   "backend.utm.applescript_lost": "Failed to wait for AppleScript: {detail}",
+  "backend.utm.no_response": "UTM didn't respond within {minutes} minutes. Check whether UTM or a macOS permission prompt is waiting for you.",
   "backend.utm.not_installed": "UTM is not installed",
   "backend.utm.image_not_found": "Image file not found: {path}",
   "backend.utm.rosetta_status_unknown": "Unexpected Rosetta translation status: {detail}",

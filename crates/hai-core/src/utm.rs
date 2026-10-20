@@ -12,6 +12,64 @@ use crate::{Backend, ProgressCallback, UtmBackend};
 #[cfg(any(target_os = "macos", test))]
 mod qcow2;
 
+/// Longer than the two minutes macOS gives a single Apple Event, so UTM's own
+/// timeouts still come first. This catches what has no timeout, like a
+/// permission prompt nobody sees or a UTM that stopped responding.
+#[cfg(target_os = "macos")]
+const APPLESCRIPT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// Wait for `child`, but kill it once `deadline` passes.
+#[cfg(any(target_os = "macos", all(test, unix)))]
+fn wait_with_deadline(
+    mut child: std::process::Child,
+    deadline: std::time::Duration,
+) -> Result<std::process::Output> {
+    use std::io::Read;
+
+    // Drain the pipes while waiting, so a full pipe can't stall the script
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buffer = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut buffer);
+            }
+            buffer
+        })
+    };
+    let stdout = drain(child.stdout.take().map(|pipe| Box::new(pipe) as _));
+    let stderr = drain(child.stderr.take().map(|pipe| Box::new(pipe) as _));
+
+    let started = std::time::Instant::now();
+    let status = loop {
+        let waited = child.try_wait().map_err(|error| {
+            Error::UtmOperationUncertain(crate::message!(
+                "backend.utm.applescript_lost",
+                detail = error.to_string(),
+            ))
+        })?;
+        if let Some(status) = waited {
+            break status;
+        }
+
+        if started.elapsed() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            // Killing the script doesn't undo what UTM may already be doing
+            return Err(Error::UtmOperationUncertain(crate::message!(
+                "backend.utm.no_response",
+                minutes = deadline.as_secs() / 60,
+            )));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    };
+
+    Ok(std::process::Output {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    })
+}
+
 #[cfg(any(target_os = "macos", all(test, unix)))]
 fn applescript_output(output: std::process::Output) -> Result<String> {
     if output.status.success() {
@@ -377,13 +435,7 @@ mod macos {
                     detail = e.to_string(),
                 ))
             })?;
-        let output = child.wait_with_output().map_err(|error| {
-            Error::UtmOperationUncertain(crate::message!(
-                "backend.utm.applescript_lost",
-                detail = error.to_string(),
-            ))
-        })?;
-        applescript_output(output)
+        applescript_output(wait_with_deadline(child, APPLESCRIPT_DEADLINE)?)
     }
 
     /// Start a VM by its ID
@@ -626,6 +678,41 @@ mod tests {
             .unwrap(),
             "vm-id"
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_script_that_never_answers_is_stopped() {
+        let child = std::process::Command::new("sleep")
+            .arg("30")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let started = std::time::Instant::now();
+        let error = wait_with_deadline(child, std::time::Duration::from_millis(200)).unwrap_err();
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert!(
+            matches!(&error, Error::UtmOperationUncertain(message) if message.to_string().contains("didn't respond")),
+            "{error}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_script_that_answers_in_time_keeps_its_output() {
+        let child = std::process::Command::new("sh")
+            .args(["-c", "echo vm-id; echo warning >&2; exit 3"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let output = wait_with_deadline(child, std::time::Duration::from_secs(30)).unwrap();
+        assert_eq!(output.status.code(), Some(3));
+        assert_eq!(output.stdout, b"vm-id\n");
+        assert_eq!(output.stderr, b"warning\n");
     }
 
     #[test]
