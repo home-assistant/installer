@@ -382,9 +382,8 @@ pub(crate) async fn get_stable_version() -> Result<StableVersionInfo> {
 }
 
 async fn check_connection_from_url(url: &str, timeout: Duration) -> Result<()> {
-    let response = reqwest::Client::new()
+    let response = shared_client()?
         .get(url)
-        .header("User-Agent", USER_AGENT)
         .timeout(timeout)
         .send()
         .await
