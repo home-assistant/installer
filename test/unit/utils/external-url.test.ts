@@ -28,7 +28,7 @@ describe("utils/external-url", () => {
     expect(
       await openedWithFallback([
         "https://www.home-assistant.io/",
-        "http://homeassistant.local:8123",
+        "http://homeassistant.local",
       ])
     ).to.deep.equal([
       {
@@ -39,7 +39,7 @@ describe("utils/external-url", () => {
       {
         features: "noopener,noreferrer",
         target: "_blank",
-        url: "http://homeassistant.local:8123",
+        url: "http://homeassistant.local",
       },
     ]);
   });
