@@ -60,7 +60,7 @@ security-framework = "3"
 rustix = { version = "1", features = ["fs", "net"] }
 
 # Linux specific
-zbus = { version = "6", default-features = false, features = ["tokio"] }
+zbus = { version = "6", default-features = false, features = ["proxy", "tokio"] }
 libc = "0.2"
 
 # Windows specific

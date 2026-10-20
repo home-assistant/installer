@@ -167,8 +167,7 @@ mod platform {
     use std::time::Duration;
 
     use futures_util::StreamExt;
-    use zbus::zvariant::{OwnedFd, OwnedObjectPath, OwnedValue, Value};
-    use zbus::Connection;
+    use zbus::{Connection, OwnedFd, OwnedObjectPath, OwnedVariant, Variant};
 
     use super::{Error, Result};
 
@@ -188,7 +187,7 @@ mod platform {
             &self,
             window: &str,
             flags: u32,
-            options: HashMap<&str, Value<'_>>,
+            options: HashMap<&str, Variant<'_>>,
         ) -> zbus::Result<OwnedObjectPath>;
     }
 
@@ -198,8 +197,11 @@ mod platform {
     )]
     trait Request {
         #[zbus(signal)]
-        fn response(&self, response: u32, results: HashMap<String, OwnedValue>)
-            -> zbus::Result<()>;
+        fn response(
+            &self,
+            response: u32,
+            results: HashMap<String, OwnedVariant>,
+        ) -> zbus::Result<()>;
     }
 
     #[zbus::proxy(
@@ -264,15 +266,15 @@ mod platform {
             .replace('.', "_");
         let request_path = format!("/org/freedesktop/portal/desktop/request/{sender}/{token}");
         let mut responses = RequestProxy::builder(&connection)
-            .path(request_path.as_str())?
+            .path(request_path.as_str())
             .build()
             .await?
             .receive_response()
             .await?;
 
         let options = HashMap::from([
-            ("handle_token", Value::from(token.as_str())),
-            ("reason", Value::from(reason)),
+            ("handle_token", Variant::from(token.as_str())),
+            ("reason", Variant::from(reason)),
         ]);
         let handle = PortalProxy::new(&connection)
             .await?
