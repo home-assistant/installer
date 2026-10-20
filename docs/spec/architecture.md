@@ -241,7 +241,7 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, CommandError> {
     "frontendDist": "../dist"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [
       {
         "title": "Home Assistant Installer",

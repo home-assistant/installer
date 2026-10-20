@@ -19,11 +19,11 @@ test("holds Next until a restored bridge is verified for the current session", a
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.evaluate(() => {
     const testWindow = window as typeof window & {
-      __TAURI__: object;
+      isTauri: boolean;
       __TAURI_INTERNALS__: { invoke: (cmd: string) => Promise<unknown> };
       resolveBridges?: () => void;
     };
-    testWindow.__TAURI__ = {};
+    testWindow.isTauri = true;
     testWindow.__TAURI_INTERNALS__ = {
       invoke: async (cmd) => {
         if (cmd === "proxmox_list_nodes")
@@ -105,14 +105,14 @@ test("retains the chosen bridge and sends it to VM creation", async ({
   // Hold the native create command open; this test must never create a VM.
   await page.evaluate(() => {
     const testWindow = window as typeof window & {
-      __TAURI__: object;
+      isTauri: boolean;
       __TAURI_INTERNALS__: {
         invoke: (cmd: string, args: unknown) => Promise<unknown>;
         transformCallback: () => number;
       };
       createArgs?: unknown;
     };
-    testWindow.__TAURI__ = {};
+    testWindow.isTauri = true;
     testWindow.__TAURI_INTERNALS__ = {
       transformCallback: () => 1,
       invoke: async (cmd, args) => {

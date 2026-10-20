@@ -64,14 +64,14 @@ describe("utm-check-view artwork", () => {
   const bridge = window as unknown as Record<string, unknown>;
   beforeEach(() => wizardState.startFlow("vm"));
   afterEach(() => {
-    delete bridge.__TAURI__;
+    delete bridge.isTauri;
     delete bridge.__TAURI_INTERNALS__;
     wizardState.reset();
   });
 
   for (const installed of [false, true]) {
     it(`shows ${installed ? "happy" : "sad"} Casita after checking UTM`, async () => {
-      bridge.__TAURI__ = {};
+      bridge.isTauri = true;
       bridge.__TAURI_INTERNALS__ = {
         invoke: () => Promise.resolve({ installed, version: null }),
       };
@@ -93,7 +93,7 @@ describe("utm-check-view artwork", () => {
   }
 
   it("uses problem artwork alongside the error and retry control", async () => {
-    bridge.__TAURI__ = {};
+    bridge.isTauri = true;
     bridge.__TAURI_INTERNALS__ = {
       invoke: () =>
         Promise.reject({

@@ -11,7 +11,10 @@ for (const mode of ["native", "invalid", "rejected", "stalled"] as const) {
       Object.assign(window, {
         isTauri: true,
         __TAURI_INTERNALS__: {
+          transformCallback: () => 1,
           invoke: async (command: string) => {
+            // The app shell listens for blocked closes on startup
+            if (command === "plugin:event|listen") return 1;
             if (command !== "plugin:os|locale")
               throw new Error(`Unexpected command: ${command}`);
             if (mode === "rejected") throw new Error("Locale unavailable");

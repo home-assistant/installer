@@ -67,7 +67,7 @@ jobs:
       - name: Check the production build has no browser mock
         run: |
           npm run build
-          if grep -l -E '__TAURI__|mock-ticket|hai:mock-failure' dist/assets/*.js; then
+          if grep -l -E 'isTauri. ?in window|mock-ticket|hai:mock-failure' dist/assets/*.js; then
             echo "::error::The production bundle contains the browser mock"
             exit 1
           fi

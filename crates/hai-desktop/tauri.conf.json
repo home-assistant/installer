@@ -15,7 +15,7 @@
     "frontendDist": "../../dist"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [
       {
         "title": "Home Assistant Installer",

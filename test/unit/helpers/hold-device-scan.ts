@@ -14,14 +14,14 @@ export function holdDeviceScan() {
   });
 
   const w = window as unknown as Record<string, unknown>;
-  w.__TAURI__ = {};
+  w.isTauri = true;
   w.__TAURI_INTERNALS__ = { invoke: () => scan };
 
   return {
     resolve,
     reject,
     restore() {
-      delete w.__TAURI__;
+      delete w.isTauri;
       delete w.__TAURI_INTERNALS__;
     },
   };
