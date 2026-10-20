@@ -85,12 +85,16 @@ export function localizeBackend(
     }
   }
 
+  let text: string;
   try {
-    return formatter(key as MessageKey).format(params) as string;
+    text = formatter(key as MessageKey).format(params) as string;
   } catch {
     // A parameter the catalog expects is missing: the English is better
     return undefined;
   }
+  // A message that is only a detail, like UTM's "{detail}", can come out
+  // empty, and an empty error hides the failure
+  return text.trim() ? text : undefined;
 }
 
 export function localizeContent(

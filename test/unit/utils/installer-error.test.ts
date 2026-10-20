@@ -78,6 +78,18 @@ describe("installer errors", () => {
     expect(result.message).not.to.contain("English from Rust");
   });
 
+  it("never shows an empty backend message", () => {
+    // osascript killed without output leaves UTM's "{detail}" empty
+    const result = installerError(
+      ipcError("utm_operation_uncertain", "", false, {
+        message_key: "backend.utm.no_answer",
+        message_params: { detail: "" },
+      }),
+      "Fallback"
+    );
+    expect(result.message).to.equal("Fallback");
+  });
+
   it("keeps the backend's English when the catalog can't help", () => {
     for (const details of [
       // A key this frontend doesn't know yet
