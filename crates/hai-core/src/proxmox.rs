@@ -60,6 +60,15 @@ fn create_client(session: &ProxmoxSession, timeout_secs: u64) -> Result<reqwest:
     )
 }
 
+/// The API URL of a node, with the node name encoded as a path segment.
+fn node_url(session: &ProxmoxSession, node: &str) -> String {
+    format!(
+        "{}/api2/json/nodes/{}",
+        session.server_url.trim_end_matches('/'),
+        urlencoding::encode(node)
+    )
+}
+
 fn request_error(error: reqwest::Error, context: &str) -> Error {
     tls::certificate_error(&error)
         .unwrap_or_else(|| Error::ProxmoxApi(format!("{}: {}", context, error)))
@@ -433,9 +442,8 @@ async fn list_bridges(session: &ProxmoxSession, node: &str) -> Result<Vec<Proxmo
     let client = create_client(session, 30)?;
     let response = client
         .get(format!(
-            "{}/api2/json/nodes/{}/network?type=any_bridge",
-            session.server_url.trim_end_matches('/'),
-            urlencoding::encode(node)
+            "{}/network?type=any_bridge",
+            node_url(session, node)
         ))
         .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
         .send()
@@ -518,11 +526,7 @@ async fn ensure_bridge_available(
 async fn list_storage(session: &ProxmoxSession, node: &str) -> Result<Vec<ProxmoxStorage>> {
     let client = create_client(session, 30)?;
 
-    let url = format!(
-        "{}/api2/json/nodes/{}/storage",
-        session.server_url.trim_end_matches('/'),
-        node
-    );
+    let url = format!("{}/storage", node_url(session, node));
 
     let response = client
         .get(&url)
@@ -1144,9 +1148,8 @@ async fn wait_for_task_completion(
     stopped: &mut bool,
 ) -> Result<()> {
     let url = format!(
-        "{}/api2/json/nodes/{}/tasks/{}/status",
-        session.server_url.trim_end_matches('/'),
-        task_node(upid).unwrap_or(node),
+        "{}/tasks/{}/status",
+        node_url(session, task_node(upid).unwrap_or(node)),
         urlencoding::encode(upid)
     );
 
@@ -1269,10 +1272,9 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
 
     // Upload to Proxmox using multipart form
     let url = format!(
-        "{}/api2/json/nodes/{}/storage/{}/upload",
-        session.server_url.trim_end_matches('/'),
-        node,
-        storage_name
+        "{}/storage/{}/upload",
+        node_url(session, node),
+        urlencoding::encode(storage_name)
     );
 
     // Create client with longer timeout for large uploads
@@ -1422,11 +1424,7 @@ async fn create_vm_with_disk(
         *source_unused = true;
         return Err(error);
     }
-    let url = format!(
-        "{}/api2/json/nodes/{}/qemu",
-        session.server_url.trim_end_matches('/'),
-        config.node
-    );
+    let url = format!("{}/qemu", node_url(session, &config.node));
 
     let client = create_client(session, 300)?; // 5 minutes for VM creation with disk import
 
@@ -1518,9 +1516,8 @@ fn resize_error(vm_id: u32, error: Error) -> Error {
 /// imported volume and rejects shrinking if a future HAOS image is larger.
 async fn resize_vm_disk(session: &ProxmoxSession, config: &ProxmoxVmConfig) -> Result<()> {
     let url = format!(
-        "{}/api2/json/nodes/{}/qemu/{}/resize",
-        session.server_url.trim_end_matches('/'),
-        config.node,
+        "{}/qemu/{}/resize",
+        node_url(session, &config.node),
         config.vm_id
     );
     let client = create_client(session, 60)?;
@@ -1564,9 +1561,8 @@ async fn delete_import_image(
 ) -> Result<()> {
     let volume = format!("{storage}:import/{filename}");
     let url = format!(
-        "{}/api2/json/nodes/{}/storage/{}/content/{}",
-        session.server_url.trim_end_matches('/'),
-        urlencoding::encode(node),
+        "{}/storage/{}/content/{}",
+        node_url(session, node),
         urlencoding::encode(storage),
         urlencoding::encode(&volume)
     );
@@ -1627,12 +1623,7 @@ async fn import_and_cleanup_image(
 
 /// Start a VM.
 async fn start_vm(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<()> {
-    let url = format!(
-        "{}/api2/json/nodes/{}/qemu/{}/status/start",
-        session.server_url.trim_end_matches('/'),
-        node,
-        vm_id
-    );
+    let url = format!("{}/qemu/{}/status/start", node_url(session, node), vm_id);
 
     let client = create_client(session, 60)?;
 
@@ -1672,12 +1663,7 @@ async fn start_vm(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<()
 /// The address comes from the QEMU guest agent and stays `None` until the
 /// agent reports one.
 async fn vm_status(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<VmStatusInfo> {
-    let vm_url = format!(
-        "{}/api2/json/nodes/{}/qemu/{}",
-        session.server_url.trim_end_matches('/'),
-        node,
-        vm_id
-    );
+    let vm_url = format!("{}/qemu/{}", node_url(session, node), vm_id);
 
     let client = create_client(session, 10)?;
     let response = client
@@ -5589,6 +5575,53 @@ mod tests {
             }
 
             start_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_node_name_is_encoded_in_every_request() {
+            let mut server = Server::new_async().await;
+            let session = vm_session(&server);
+            let node = "pve/node";
+
+            let storage_mock = server
+                .mock("GET", "/api2/json/nodes/pve%2Fnode/storage")
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"data": []}"#)
+                .create_async()
+                .await;
+            let start_mock = server
+                .mock("POST", "/api2/json/nodes/pve%2Fnode/qemu/100/status/start")
+                .with_header("content-type", "application/json")
+                .with_body(
+                    r#"{"data": "UPID:pve/node:00000001:00000002:00000003:qmstart:100:root@pam:"}"#,
+                )
+                .create_async()
+                .await;
+            let task_mock = server
+                .mock(
+                    "GET",
+                    "/api2/json/nodes/pve%2Fnode/tasks/UPID%3Apve%2Fnode%3A00000001%3A00000002%3A00000003%3Aqmstart%3A100%3Aroot%40pam%3A/status",
+                )
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"data": {"status": "stopped", "exitstatus": "OK"}}"#)
+                .create_async()
+                .await;
+            let status_mock = server
+                .mock("GET", "/api2/json/nodes/pve%2Fnode/qemu/100/status/current")
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"data": {"status": "stopped"}}"#)
+                .create_async()
+                .await;
+
+            list_storage(&session, node).await.unwrap();
+            start_vm(&session, node, 100).await.unwrap();
+            vm_status(&session, node, 100).await.unwrap();
+
+            storage_mock.assert_async().await;
+            start_mock.assert_async().await;
+            task_mock.assert_async().await;
+            status_mock.assert_async().await;
         }
 
         const VM_STATUS_PATH: &str = "/api2/json/nodes/pve/qemu/100/status/current";
