@@ -9,15 +9,16 @@
 
 ---
 
-## Workflow: Test (on every push/PR)
+## Workflow: CI (on every push/PR and version tag)
 
 ```yaml
-# .github/workflows/test.yml
-name: Test
+# .github/workflows/ci.yml
+name: CI
 
 on:
   push:
     branches: [main]
+    tags: ["[0-9]+.[0-9]+.[0-9]+", "[0-9]+.[0-9]+.[0-9]+-*"]
   pull_request:
     branches: [main]
 
@@ -181,251 +182,85 @@ comment:
 
 ---
 
-## Workflow: Release (on version tag)
+## Releases (on version tag)
 
-```yaml
-# .github/workflows/release.yml
-name: Release
+There is no separate release workflow. Pushing a version tag, like `1.0.0` or
+`1.0.0-beta.1` (no `v` prefix), runs the whole CI workflow on the tagged
+commit, and its `release` job drafts the GitHub release once every other job
+has passed. A maintainer reviews the draft and publishes it.
 
-on:
-  push:
-    tags:
-      - 'v*'
+On a tag, the CI workflow differs from a push to `main` in these ways:
 
-permissions:
-  contents: write
+- **Version check:** each build job first checks that the tag is exactly the
+  version in the workspace `Cargo.toml`, and fails before anything is built or
+  signed if it isn't.
+- **No caches:** no job restores the npm, cargo or Playwright cache, so the
+  installers and the tests that gate them never depend on what another run
+  wrote. zizmor flags every cache in a workflow with a tag trigger and can't
+  see the `if: github.ref_type != 'tag'` conditions, hence the
+  `zizmor: ignore[cache-poisoning]` comments on those steps.
+- **Signing:** the macOS build binds to the `release` environment and signs
+  and notarizes the app and the DMG, the same as on every push to `main` (see
+  [Required Secrets](#required-secrets)). Windows installers are not signed yet
+  (#158). Linux packages are not signed; the provenance attestation covers
+  them.
+- **Release job:** downloads the installers the build jobs uploaded, creates
+  a signed [SLSA build provenance](https://slsa.dev/provenance/) attestation
+  for each installer with `actions/attest`, and creates the draft release
+  with generated notes using `softprops/action-gh-release`. There is no `SHA256SUMS` file: GitHub records the
+  SHA-256 of every release asset itself, and the attestations cover both
+  integrity and origin.
 
-jobs:
-  # Validate tag matches version in workspace Cargo.toml
-  validate-version:
-    name: Validate Version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+A version with a suffix, such as `1.0.0-beta.1`, is marked as a prerelease.
+Re-running a failed tag run is safe: the release job finds the existing draft
+and replaces its assets. The job itself doesn't check whether the release is
+already published; with immutable releases enabled, GitHub refuses uploads to a
+published release, so the job fails instead of changing it.
 
-      - name: Check version consistency
-        run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          # Get version from workspace Cargo.toml
-          CARGO_VERSION=$(grep -A1 '\[workspace.package\]' Cargo.toml | grep 'version' | sed 's/.*"\(.*\)".*/\1/')
+A release contains the following. GitHub turns the spaces in the bundle names
+into dots when they are uploaded.
 
-          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
-            echo "Tag version ($TAG_VERSION) doesn't match Cargo.toml ($CARGO_VERSION)"
-            exit 1
-          fi
-
-          echo "Version $TAG_VERSION validated"
-
-  # Run all tests before release
-  test:
-    name: Test
-    needs: validate-version
-    uses: ./.github/workflows/test.yml
-
-  # Build for each platform
-  build:
-    name: Build (${{ matrix.os }})
-    needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact: hai_linux-x64
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact: hai_macos-x64
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact: hai_macos-arm64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact: hai_windows-x64
-
-    runs-on: ${{ matrix.os }}
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      
-      - name: Install dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
-      
-      - name: Install frontend dependencies
-        run: npm ci
-      
-      - name: Build frontend
-        run: npm run build
-      
-      # notarytool reads the App Store Connect key from a file
-      - name: Write the notarization API key (macOS)
-        if: matrix.os == 'macos-latest'
-        env:
-          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-        run: |
-          umask 077
-          printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$RUNNER_TEMP/AuthKey.p8"
-
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS signing and notarization, see "Required Secrets" below
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
-        with:
-          tagName: v__VERSION__
-          releaseName: 'Home Assistant Installer v__VERSION__'
-          releaseBody: 'See the assets below to download and install.'
-          releaseDraft: true
-          prerelease: false
-          args: --target ${{ matrix.target }}
-      
-      - name: Generate checksums
-        shell: bash
-        run: |
-          cd target/${{ matrix.target }}/release/bundle
-          find . -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \) -exec sha256sum {} \; > checksums.txt
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: |
-            target/${{ matrix.target }}/release/bundle/**/*.dmg
-            target/${{ matrix.target }}/release/bundle/**/*.app.tar.gz
-            target/${{ matrix.target }}/release/bundle/**/*.msi
-            target/${{ matrix.target }}/release/bundle/**/*.exe
-            target/${{ matrix.target }}/release/bundle/**/*.deb
-            target/${{ matrix.target }}/release/bundle/**/*.AppImage
-            target/${{ matrix.target }}/release/bundle/**/checksums.txt
-          retention-days: 5
-      
-      - name: Determine release type
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          if [[ "$VERSION" == *"-beta"* ]] || [[ "$VERSION" == *"-rc"* ]]; then
-            echo "PRERELEASE=true" >> $GITHUB_ENV
-          else
-            echo "PRERELEASE=false" >> $GITHUB_ENV
-          fi
-
-  # Create GitHub release with all artifacts
-  publish:
-    name: Publish Release
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write  # Required for cosign keyless signing
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
-      
-      - name: Generate release checksums
-        run: |
-          cd artifacts
-          find . -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \) -exec sha256sum {} \; | sort > SHA256SUMS.txt
-      
-      - name: Sign artifacts with cosign
-        run: |
-          cd artifacts
-          # Sign each artifact with keyless signing (uses GitHub OIDC)
-          for file in $(find . -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \)); do
-            cosign sign-blob --yes --output-signature "${file}.sig" --output-certificate "${file}.pem" "${file}"
-          done
-          # Also sign the checksums file
-          cosign sign-blob --yes --output-signature SHA256SUMS.txt.sig --output-certificate SHA256SUMS.txt.pem SHA256SUMS.txt
-      
-      - name: Create release
-        uses: softprops/action-gh-release@v1
-        with:
-          draft: true
-          generate_release_notes: true
-          prerelease: ${{ env.PRERELEASE }}
-          files: |
-            artifacts/**/*.dmg
-            artifacts/**/*.app.tar.gz
-            artifacts/**/*.msi
-            artifacts/**/*.exe
-            artifacts/**/*.deb
-            artifacts/**/*.AppImage
-            artifacts/**/*.sig
-            artifacts/**/*.pem
-            artifacts/SHA256SUMS.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
+| File | Platform |
+|------|----------|
+| `Home.Assistant.Installer_<version>_universal.dmg` | macOS, signed and notarized |
+| `Home.Assistant.Installer_<version>_x64-setup.exe` | Windows (NSIS) |
+| `Home.Assistant.Installer_<version>_amd64.deb` | Linux |
+| `Home.Assistant.Installer-<version>-1.x86_64.rpm` | Linux |
+| `Home.Assistant.Installer_<version>_amd64.AppImage` | Linux |
 
 ---
 
-## Cosign Verification
+## Verifying Downloads
 
-Users can verify the authenticity of downloads using cosign:
+GitHub shows the SHA-256 of every asset on the release page. To compare a
+download against it (on macOS, `shasum -a 256` instead of `sha256sum`):
 
 ```bash
-# Install cosign
-# macOS: brew install cosign
-# Linux: See https://docs.sigstore.dev/cosign/installation/
-
-# Verify a downloaded artifact
-cosign verify-blob \
-  --signature hai_macos-arm64.dmg.sig \
-  --certificate hai_macos-arm64.dmg.pem \
-  --certificate-identity-regexp "https://github.com/home-assistant/installer/" \
-  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  hai_macos-arm64.dmg
-
-# Verify the checksums file
-cosign verify-blob \
-  --signature SHA256SUMS.txt.sig \
-  --certificate SHA256SUMS.txt.pem \
-  --certificate-identity-regexp "https://github.com/home-assistant/installer/" \
-  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  SHA256SUMS.txt
+gh release view 1.0.0 --repo home-assistant/installer --json assets \
+  --jq '.assets[] | "\(.digest)  \(.name)"'
+sha256sum Home.Assistant.Installer_1.0.0_universal.dmg
 ```
 
-Cosign keyless signing uses GitHub's OIDC identity, so signatures are tied to:
-- The specific GitHub repository
-- The GitHub Actions workflow that created them
-- The exact commit and workflow run
+Check that an installer was built by this repository's workflow from a release
+tag, with the [GitHub CLI](https://cli.github.com/):
 
-No private keys to manage or rotate.
+```bash
+gh attestation verify Home.Assistant.Installer_1.0.0_universal.dmg \
+  --repo home-assistant/installer \
+  --signer-workflow home-assistant/installer/.github/workflows/ci.yml \
+  --source-ref refs/tags/1.0.0
+```
+
+The attestation is signed with a short-lived Sigstore certificate tied to the
+workflow run that built the installer, and recorded in the public Sigstore
+transparency log, so there are no signing keys to manage or rotate.
 
 ---
 
 ## Immutable Release Protections
 
-1. **Tag protection rules** (GitHub Settings > Branches > Tag protection):
-   - Pattern: `v*`
-   - Prevents deletion or force-push of version tags
+1. **Tag protection** (a tag ruleset for `[0-9]*`): only maintainers may create
+   version tags, and nobody may move or delete one.
 
 2. **Branch protection on main**:
    - Require PR reviews
@@ -435,35 +270,26 @@ No private keys to manage or rotate.
 3. **Release process**:
    - Releases are created as drafts
    - Manual review before publishing
-   - Once published, artifacts cannot be modified
+   - Immutable releases are enabled, so once a release is published, GitHub
+     refuses any change to its assets or tag, including from the release job
 
-4. **Checksums**:
-   - SHA256 checksums for all artifacts
-   - Published with each release
-   - Users can verify download integrity
+4. **Checksums**: GitHub records the SHA-256 of every release asset and shows
+   it on the release page and in the API.
 
-5. **Cosign signatures**:
-   - All artifacts signed using Sigstore cosign
-   - Keyless signing via GitHub OIDC (no secrets to manage)
-   - Signatures prove artifacts were built by the official CI pipeline
-   - Publicly verifiable via Sigstore transparency log
+5. **Provenance**: every installer has a signed build provenance attestation
+   that ties it to the workflow, the commit and the tag it was built from.
 
 ---
 
 ## Required Secrets
 
-Repository secrets:
+The workflow uses no repository secrets.
 
-| Secret | Description |
-|--------|-------------|
-| `CODECOV_TOKEN` | Codecov upload token (from codecov.io) |
-| `TAURI_SIGNING_PRIVATE_KEY` | Key for signing Tauri updates |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for signing key |
-
-Secrets of the protected `release` environment, which only `main` may deploy
-to. The macOS build job of the test workflow binds to this environment on
-pushes to `main`, signs and notarizes the app and the DMG, and uploads the
-result. Pull request builds don't reference the environment and stay unsigned.
+Secrets of the protected `release` environment, which only `main` and version
+tags (the tag pattern `[0-9]*.[0-9]*.[0-9]*`) may deploy to. The macOS build
+job of the CI workflow binds to this environment on pushes to `main` and on
+version tags, signs and notarizes the app and the DMG, and uploads the result.
+Pull request builds don't reference the environment and stay unsigned.
 
 | Secret | Description |
 |--------|-------------|
@@ -482,7 +308,8 @@ itself: it imports the certificate into a temporary keychain, signs the app
 with the hardened runtime, notarizes and staples it, and signs the DMG. The
 workflow then notarizes and staples the DMG too, since Gatekeeper assesses the
 disk image when a download is opened, and verifies both with `codesign`,
-`stapler` and `spctl`.
+`stapler` and `spctl`, the app from inside the mounted DMG, since Tauri
+deletes its own copy after packing it.
 
 ---
 
@@ -491,10 +318,10 @@ disk image when a download is opened, and verifies both with `codesign`,
 1. Bump `version` in the `[workspace.package]` section of the root `Cargo.toml` and run `cargo check` to refresh `Cargo.lock`
 2. Create PR with version bump
 3. Merge to main after review
-4. Create and push tag: `git tag v1.0.0 && git push origin v1.0.0`
-5. CI builds and creates draft release
-6. Review draft release and artifacts
-7. Publish release (makes it immutable)
+4. Create and push a tag on the merged commit, without a `v` prefix: `git tag 1.0.0 && git push origin 1.0.0`
+5. CI tests, builds and signs everything, and drafts the release
+6. Review the draft release: notes, assets, and that the macOS DMG opens without warnings
+7. Publish the release (makes it immutable)
 
 The root `Cargo.toml` is the only place the app version lives:
 

@@ -28,7 +28,7 @@ This architecture enables future additions like a TUI installer for live USB env
 | [user-flows.md](./user-flows.md) | All installation flows (SBC, mini PC, Proxmox, UTM) |
 | [backend.md](./backend.md) | Rust commands, platform-specific code, manifest handling |
 | [testing.md](./testing.md) | Test strategy, Playwright, mock mode |
-| [ci-cd.md](./ci-cd.md) | GitHub Actions, releases, signing, cosign |
+| [ci-cd.md](./ci-cd.md) | GitHub Actions, releases, signing, provenance |
 | [contributing.md](./contributing.md) | Issue templates, renovate, AI instructions |
 
 ## Quick Links

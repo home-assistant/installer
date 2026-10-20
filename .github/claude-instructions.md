@@ -35,4 +35,4 @@ It helps users install Home Assistant OS on various hardware platforms.
 - Mock backend available for testing: `npm run tauri dev -- --features mock`
 - Manifest data comes from version.home-assistant.io
 - No auto-update or version check; installer updates are manual
-- Releases are signed with cosign
+- Release installers come with GitHub build provenance attestations; GitHub records each asset's SHA-256
