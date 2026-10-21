@@ -184,7 +184,8 @@ mod tests {
         let lock = include_str!("../../../Cargo.lock");
         let tao = lock
             .split("[[package]]")
-            .find(|package| package.contains("\nname = \"tao\"\n"))
+            // `lines()`, not `\n`: a Windows checkout may have CRLF line endings
+            .find(|package| package.lines().any(|line| line == "name = \"tao\""))
             .and_then(|package| {
                 package
                     .lines()
