@@ -53,6 +53,8 @@ test.describe("Proxmox TOTP login", () => {
           if (cmd === "check_connection") return undefined;
           // Diagnostics logging is local, not a Proxmox request either
           if (cmd === "log_frontend_event") return undefined;
+          // Neither is the path selection asking whether this Mac runs UTM
+          if (cmd === "utm_supported") return true;
 
           win.authenticatedCalls.push(cmd);
           const { session: supplied } = args as { session: ProxmoxSession };
