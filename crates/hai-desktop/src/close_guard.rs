@@ -104,17 +104,59 @@ pub fn keep_running(app: tauri::AppHandle) {
 #[cfg(target_os = "macos")]
 pub(crate) use termination::guard_app_termination;
 
+/// What to do with a `terminate:` request.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, PartialEq, Eq)]
+enum TerminateDecision {
+    /// No job runs, so let it through.
+    Now,
+    /// Hold it back and ask the user.
+    Ask,
+    /// Already asking; the answer covers this request too.
+    AlreadyAsking,
+}
+
+/// A `terminate:` held back until the user answered.
+#[cfg(any(target_os = "macos", test))]
+struct PendingTermination(std::sync::atomic::AtomicBool);
+
+#[cfg(any(target_os = "macos", test))]
+impl PendingTermination {
+    const fn new() -> Self {
+        Self(std::sync::atomic::AtomicBool::new(false))
+    }
+
+    fn request(&self, job_running: bool) -> TerminateDecision {
+        if !job_running {
+            return TerminateDecision::Now;
+        }
+        if self.0.swap(true, Ordering::AcqRel) {
+            return TerminateDecision::AlreadyAsking;
+        }
+        TerminateDecision::Ask
+    }
+
+    /// The question couldn't be asked; drop the request.
+    fn abandon(&self) {
+        self.0.store(false, Ordering::Release);
+    }
+
+    /// Take the request waiting for an answer. Returns whether one was waiting.
+    fn take(&self) -> bool {
+        self.0.swap(false, Ordering::AcqRel)
+    }
+}
+
 /// Quit from the menu or the Dock, logging out and shutting down send
 /// `terminate:` to the app, which tao lets through without a close request or
 /// any run event. `applicationShouldTerminate:` on tao's app delegate holds it
 /// back while a job runs, until the user answered.
 #[cfg(target_os = "macos")]
 mod termination {
-    use super::{ask_before_closing, RUNNING_JOBS};
+    use super::{ask_before_closing, PendingTermination, TerminateDecision, RUNNING_JOBS};
     use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
     use objc2::{ffi, sel, MainThreadMarker};
     use objc2_app_kit::{NSApplication, NSApplicationTerminateReply};
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::OnceLock;
     use tauri::Manager;
 
@@ -124,14 +166,14 @@ mod termination {
     static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
 
     /// A `terminate:` is waiting for the user's answer.
-    static PENDING: AtomicBool = AtomicBool::new(false);
+    static PENDING: PendingTermination = PendingTermination::new();
 
     /// Answer a held-back `terminate:`. Returns whether one was waiting.
     pub(super) fn reply(terminate: bool) -> bool {
         let Some(mtm) = MainThreadMarker::new() else {
             return false;
         };
-        if !PENDING.swap(false, Ordering::AcqRel) {
+        if !PENDING.take() {
             return false;
         }
         NSApplication::sharedApplication(mtm).replyToApplicationShouldTerminate(terminate);
@@ -143,16 +185,14 @@ mod termination {
         _: Sel,
         _: *mut AnyObject,
     ) -> NSApplicationTerminateReply {
-        if !RUNNING_JOBS.any() {
-            return NSApplicationTerminateReply::TerminateNow;
-        }
-        // Already asking; the answer covers this request too
-        if PENDING.swap(true, Ordering::AcqRel) {
-            return NSApplicationTerminateReply::TerminateLater;
+        match PENDING.request(RUNNING_JOBS.any()) {
+            TerminateDecision::Now => return NSApplicationTerminateReply::TerminateNow,
+            TerminateDecision::AlreadyAsking => return NSApplicationTerminateReply::TerminateLater,
+            TerminateDecision::Ask => {}
         }
         let Some(window) = APP.get().and_then(|app| app.get_webview_window("main")) else {
             // Nowhere to ask, so don't quit halfway through a job
-            PENDING.store(false, Ordering::Release);
+            PENDING.abandon();
             crate::diagnostics::warning("termination_blocked_without_window");
             return NSApplicationTerminateReply::TerminateCancel;
         };
@@ -215,5 +255,46 @@ mod tests {
 
         drop(second);
         assert!(!COUNTER.any());
+    }
+
+    #[test]
+    fn lets_termination_through_while_idle() {
+        let pending = PendingTermination::new();
+        assert_eq!(pending.request(false), TerminateDecision::Now);
+        assert_eq!(pending.request(false), TerminateDecision::Now);
+        // Nothing was held back, so quitting anyway has to exit by itself
+        assert!(!pending.take());
+    }
+
+    #[test]
+    fn asks_once_for_repeated_termination_during_a_job() {
+        let pending = PendingTermination::new();
+        assert_eq!(pending.request(true), TerminateDecision::Ask);
+        assert_eq!(pending.request(true), TerminateDecision::AlreadyAsking);
+        assert_eq!(pending.request(true), TerminateDecision::AlreadyAsking);
+    }
+
+    #[test]
+    fn an_answer_settles_the_held_back_termination_once() {
+        let pending = PendingTermination::new();
+        assert_eq!(pending.request(true), TerminateDecision::Ask);
+
+        // Quit anyway or keep running replies to the waiting request
+        assert!(pending.take());
+        // A second answer has nothing left to reply to
+        assert!(!pending.take());
+
+        // The next termination asks again
+        assert_eq!(pending.request(true), TerminateDecision::Ask);
+    }
+
+    #[test]
+    fn asks_again_after_the_question_could_not_be_shown() {
+        let pending = PendingTermination::new();
+        assert_eq!(pending.request(true), TerminateDecision::Ask);
+        pending.abandon();
+
+        assert!(!pending.take());
+        assert_eq!(pending.request(true), TerminateDecision::Ask);
     }
 }
