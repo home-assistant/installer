@@ -232,6 +232,17 @@ async fn run_with_progress<P: ProgressCallback>(
         .map_err(|e| Error::Io(std::io::Error::other(e)))?
 }
 
+/// A stop that came in while the last step finished still counts: the
+/// eject that follows can take a while, and it isn't worth waiting for.
+/// macOS ejects inside its worker, which stops there instead.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn stop_before_eject<P: ProgressCallback>(progress_callback: &P) -> Result<()> {
+    if progress_callback.is_cancelled() {
+        return Err(Error::Cancelled);
+    }
+    Ok(())
+}
+
 /// List all block devices on the system
 async fn list_devices() -> Result<Vec<BlockDevice>> {
     imp::list_devices().await

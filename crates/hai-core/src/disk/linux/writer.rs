@@ -71,6 +71,7 @@ pub async fn write_image<P: ProgressCallback>(
     });
 
     run_with_progress(write_handle, progress_rx, progress_callback).await?;
+    stop_before_eject(progress_callback)?;
 
     progress_callback.on_progress(FlashProgress::new(
         FlashStage::Finalizing,
@@ -106,6 +107,17 @@ fn write_and_verify(
     write_to_device(image_path, &mut device, total_size, &progress_tx)?;
 
     if verify {
+        // Also where a stop gets in, before the first buffer is read back
+        send_progress(
+            &progress_tx,
+            FlashProgress::new(
+                FlashStage::Verifying,
+                0,
+                total_size,
+                "Verifying written data...",
+            ),
+        )?;
+
         // Evict the pages we just wrote from the cache so the read-back
         // comes from the medium, not RAM
         drop_device_cache(&device);
@@ -1078,6 +1090,22 @@ mod tests {
         let (tx, _rx) = mpsc::channel();
         let result = verify_write(image.path(), &mut dest, 13, &tx);
         assert!(matches!(result, Err(Error::VerificationFailed(_))));
+    }
+
+    #[test]
+    fn a_stop_after_the_write_skips_verification() {
+        let data = vec![0x42; 65_536];
+        let image = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(image.path(), &data).unwrap();
+        let device = tempfile::tempfile().unwrap();
+        // A dropped receiver is how a stop reaches the writer
+        let (tx, rx) = mpsc::channel();
+        drop(rx);
+
+        let error =
+            write_and_verify(image.path(), device, data.len() as u64, true, tx).unwrap_err();
+
+        assert!(matches!(error, Error::Cancelled), "{error:?}");
     }
 
     #[test]

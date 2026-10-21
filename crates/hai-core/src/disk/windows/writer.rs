@@ -69,6 +69,7 @@ pub async fn write_image<P: ProgressCallback>(
         )
     });
     run_with_progress(write_handle, progress_rx, progress_callback).await?;
+    stop_before_eject(progress_callback)?;
 
     // Best effort, like "Safely Remove Hardware": the write and the verify
     // passed, so the drive is done. If Windows refuses or it's skipped, the
