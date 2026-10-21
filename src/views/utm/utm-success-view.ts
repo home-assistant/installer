@@ -59,7 +59,7 @@ export class UtmSuccessView extends LitElement {
                 href=${haUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                @click=${(event: Event) => openExternalLink(event, haUrl)}
+                @click=${openExternalLink}
               >
                 ${displayUrl}
               </a>`,

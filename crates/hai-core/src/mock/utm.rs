@@ -17,6 +17,10 @@ impl UtmBackend for BackendMock {
         })
     }
 
+    fn check_automation(&self) -> Result<()> {
+        Ok(())
+    }
+
     async fn create_vm<P: ProgressCallback>(
         &self,
         config: &UtmVmConfig,

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { skipWifiStep } from "./fixtures.js";
 
 test.describe("Navigation Flow", () => {
   test.beforeEach(async ({ page }) => {
@@ -38,21 +39,23 @@ test.describe("Navigation Flow", () => {
 
     // Check for all options
     await expect(
-      pathSelectionView.locator('option-card[title="Home Assistant hardware"]')
-    ).toBeVisible();
-    await expect(
       pathSelectionView.locator(
-        'option-card[title="Raspberry Pi & other boards"]'
+        'option-card[heading="Home Assistant hardware"]'
       )
     ).toBeVisible();
     await expect(
-      pathSelectionView.locator('option-card[title="Generic (mini) PC"]')
+      pathSelectionView.locator(
+        'option-card[heading="Raspberry Pi & other boards"]'
+      )
     ).toBeVisible();
     await expect(
-      pathSelectionView.locator('option-card[title="Proxmox server"]')
+      pathSelectionView.locator('option-card[heading="Generic (mini) PC"]')
     ).toBeVisible();
     await expect(
-      pathSelectionView.locator('option-card[title="Others"]')
+      pathSelectionView.locator('option-card[heading="Proxmox server"]')
+    ).toBeVisible();
+    await expect(
+      pathSelectionView.locator('option-card[heading="Others"]')
     ).toBeVisible();
   });
 
@@ -104,7 +107,7 @@ test.describe("Path Selection Options", () => {
   test("Home Assistant Hardware option has correct description", async ({
     page,
   }) => {
-    const card = page.locator('option-card[title="Home Assistant hardware"]');
+    const card = page.locator('option-card[heading="Home Assistant hardware"]');
     await expect(card).toHaveAttribute(
       "description",
       /Green.*Yellow.*Blue.*Nabu Casa/
@@ -113,18 +116,18 @@ test.describe("Path Selection Options", () => {
 
   test("Raspberry Pi option has correct description", async ({ page }) => {
     const card = page.locator(
-      'option-card[title="Raspberry Pi & other boards"]'
+      'option-card[heading="Raspberry Pi & other boards"]'
     );
     await expect(card).toHaveAttribute("description", /Raspberry Pi.*ODROID/);
   });
 
   test("Mini PC option has correct description", async ({ page }) => {
-    const card = page.locator('option-card[title="Generic (mini) PC"]');
+    const card = page.locator('option-card[heading="Generic (mini) PC"]');
     await expect(card).toHaveAttribute("description", /x86-64.*ARM64/);
   });
 
   test("Proxmox option has correct description", async ({ page }) => {
-    const card = page.locator('option-card[title="Proxmox server"]');
+    const card = page.locator('option-card[heading="Proxmox server"]');
     await expect(card).toHaveAttribute("description", /VM.*Proxmox/);
   });
 });
@@ -139,7 +142,7 @@ test.describe("Wizard Flow", () => {
   test("clicking an option starts the wizard flow", async ({ page }) => {
     // Click Raspberry Pi option
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
 
     // Should now see wizard shell
@@ -155,7 +158,7 @@ test.describe("Wizard Flow", () => {
 
   test("wizard shows correct flow title", async ({ page }) => {
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
 
     const wizardShell = page.locator("wizard-shell");
@@ -164,7 +167,7 @@ test.describe("Wizard Flow", () => {
 
   test("wizard cancel returns to welcome screen", async ({ page }) => {
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
 
     const wizardShell = page.locator("wizard-shell");
@@ -181,7 +184,7 @@ test.describe("Wizard Flow", () => {
     page,
   }) => {
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
 
     const wizardShell = page.locator("wizard-shell");
@@ -204,7 +207,7 @@ test.describe("Wizard Flow", () => {
 
   test("wizard back button goes to previous step", async ({ page }) => {
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
 
     const wizardShell = page.locator("wizard-shell");
@@ -231,7 +234,7 @@ test.describe("Wizard Flow", () => {
 
   test("back on the first step returns to path selection", async ({ page }) => {
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
 
     const wizardShell = page.locator("wizard-shell");
@@ -250,7 +253,7 @@ test.describe("SBC Device Selection", () => {
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await expect(page.locator("wizard-shell")).toBeVisible();
   });
@@ -307,7 +310,7 @@ test.describe("SBC Drive Selection", () => {
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await expect(page.locator("wizard-shell")).toBeVisible();
 
@@ -411,7 +414,7 @@ test.describe("SBC Confirmation", () => {
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await expect(page.locator("wizard-shell")).toBeVisible();
 
@@ -435,7 +438,7 @@ test.describe("SBC Confirmation", () => {
       .click();
 
     // Should now be on confirmation
-    await expect(page.locator("confirmation-view")).toBeVisible();
+    await skipWifiStep(page);
   });
 
   test("shows confirmation view on third step", async ({ page }) => {
@@ -508,7 +511,7 @@ test.describe("SBC Confirmation", () => {
     await expect(page.locator("confirm-dialog[open]")).not.toBeVisible();
 
     // Should still be on confirmation view
-    await expect(page.locator("confirmation-view")).toBeVisible();
+    await skipWifiStep(page);
   });
 
   test("confirmation dialog can be dismissed with Escape", async ({ page }) => {
@@ -526,7 +529,7 @@ test.describe("SBC Confirmation", () => {
 
     // Dialog should close and stay on the confirmation view (dismiss = cancel)
     await expect(page.locator("confirm-dialog[open]")).not.toBeVisible();
-    await expect(page.locator("confirmation-view")).toBeVisible();
+    await skipWifiStep(page);
   });
 
   test("confirmation dialog can be confirmed", async ({ page }) => {
@@ -548,17 +551,19 @@ test.describe("SBC Confirmation", () => {
     await expect(page.locator("progress-view")).toBeVisible();
   });
 
-  test("can navigate back to drive selection", async ({ page }) => {
+  test("can navigate back through Wi-Fi to drive selection", async ({
+    page,
+  }) => {
     const wizardShell = page.locator("wizard-shell");
     const backButton = wizardShell.locator(".header wa-button");
 
     // Back button should be enabled
     await expect(backButton).toHaveJSProperty("disabled", false);
 
-    // Click back
+    // The first board has Wi-Fi, so its step comes before Confirm
     await backButton.click();
-
-    // Should be back on drive selection
+    await expect(page.locator("wifi-view")).toBeVisible();
+    await backButton.click();
     await expect(page.locator("drive-selection-view")).toBeVisible();
   });
 });
@@ -570,7 +575,7 @@ test.describe("SBC Flashing", () => {
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await expect(page.locator("wizard-shell")).toBeVisible();
 
@@ -594,7 +599,7 @@ test.describe("SBC Flashing", () => {
       .click();
 
     // Should now be on confirmation
-    await expect(page.locator("confirmation-view")).toBeVisible();
+    await skipWifiStep(page);
 
     // Click Install to show dialog
     await page
@@ -673,21 +678,18 @@ test.describe("SBC Flashing", () => {
 
   test("step indicator shows Install step as active", async ({ page }) => {
     const stepIndicator = page.locator("step-indicator");
-    // The Install step should be marked as active (bold/current)
-    await expect(stepIndicator).toContainText("Install");
+    // Every step is listed; only the current one is marked
+    await expect(stepIndicator.locator('[aria-current="step"]')).toHaveText(
+      "Install"
+    );
   });
 
   test("progress updates during mock flashing", async ({ page }) => {
     const progressView = page.locator("progress-view");
     const percentage = progressView.locator(".percentage");
 
-    // Wait a bit for progress to update
-    await page.waitForTimeout(500);
-
-    // Progress should have changed from 0
-    const text = await percentage.textContent();
-    // The percentage should show some progress
-    expect(text).toBeTruthy();
+    // Progress moves past 0% while the mock flash runs
+    await expect(percentage).toHaveText(/^[1-9]\d*%$/);
   });
 
   test("advances to success after flashing completes", async ({ page }) => {
@@ -708,7 +710,7 @@ test.describe("SBC Success", () => {
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await expect(page.locator("wizard-shell")).toBeVisible();
 
@@ -733,7 +735,7 @@ test.describe("SBC Success", () => {
       .click();
 
     // Confirm installation
-    await expect(page.locator("confirmation-view")).toBeVisible();
+    await skipWifiStep(page);
     await page
       .locator("wizard-shell")
       .locator(".footer-right wa-button")

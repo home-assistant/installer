@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { skipWifiStep } from "./fixtures.js";
 
 // Browser tests mock native IPC, metadata, clipboard and folder/browser opening.
 // No disk is written and no VM or network connection is created.
@@ -85,6 +86,9 @@ async function mockDesktop(page: Page, failingCommand = "") {
               version: "4.5",
               path: "/Applications/UTM.app",
             };
+          // macOS lets the installer control UTM
+          case "check_utm_automation":
+            return;
           case "download_utm_image":
             return "/tmp/fake-image.qcow2";
           case "discard_utm_image":
@@ -181,7 +185,7 @@ test("Proxmox connection failure exports only safe diagnostics", async ({
   await page.goto("/");
   await mockDesktop(page, "proxmox_connect");
   await page.locator("welcome-view wa-button").click();
-  await page.locator('option-card[title="Proxmox server"]').click();
+  await page.locator('option-card[heading="Proxmox server"]').click();
   const view = page.locator("proxmox-connect-view");
   await view.locator("#server-url").fill("https://fake-host:8006");
   await view.locator("#username").fill("fake-user");
@@ -256,12 +260,13 @@ test("flash failure keeps the failed stage in its report", async ({
   await mockDesktop(page, "flash_image");
   await page.locator("welcome-view wa-button").click();
   await page
-    .locator('option-card[title="Raspberry Pi & other boards"]')
+    .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
   await page.locator("device-selection-view device-card").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.locator("drive-selection-view drive-card").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await skipWifiStep(page);
   await page.locator("wizard-shell .footer-right wa-button").click();
   await page.locator('confirm-dialog wa-button[variant="danger"]').click();
   await expect(page.locator("progress-view")).toContainText("Network error");
@@ -287,7 +292,7 @@ test("UTM creation failure reports its stage", async ({ page }, testInfo) => {
   await page.goto("/");
   await mockDesktop(page, "create_utm_vm");
   await page.locator("welcome-view wa-button").click();
-  await page.locator('option-card[title="Virtual machine"]').click();
+  await page.locator('option-card[heading="Virtual machine"]').click();
   await expect(page.locator("utm-check-view")).toContainText(
     "UTM is installed"
   );

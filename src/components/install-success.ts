@@ -14,208 +14,210 @@ export class InstallSuccess extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   protected readonly _svgMotion = new ReducedSvgMotion(this);
 
-  static styles = css`
-    ${reducedMotionStyles}
-    :host {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      height: 100%;
-      text-align: center;
-    }
+  static styles = [
+    reducedMotionStyles,
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        height: 100%;
+        text-align: center;
+      }
 
-    .mascot-container {
-      width: 140px;
-      height: 140px;
-      margin-bottom: 1.5rem;
-    }
+      .mascot-container {
+        width: 140px;
+        height: 140px;
+        margin-bottom: 1.5rem;
+      }
 
-    .casita-mascot {
-      width: 100%;
-      height: 100%;
-    }
+      .casita-mascot {
+        width: 100%;
+        height: 100%;
+      }
 
-    h2 {
-      font-size: 2rem;
-      font-weight: 500;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 0.5rem 0;
-    }
+      h2 {
+        font-size: 2rem;
+        font-weight: 500;
+        color: var(--ha-text-color, #212121);
+        margin: 0 0 0.5rem 0;
+      }
 
-    .subtitle {
-      font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 2rem 0;
-    }
+      .subtitle {
+        font-size: 1rem;
+        color: var(--ha-secondary-text-color, #727272);
+        margin: 0 0 2rem 0;
+      }
 
-    .next-steps {
-      width: 100%;
-      max-width: 500px;
-      text-align: left;
-      margin-bottom: 2rem;
-    }
+      .next-steps {
+        width: 100%;
+        max-width: 500px;
+        text-align: left;
+        margin-bottom: 2rem;
+      }
 
-    .next-steps-title {
-      font-size: 0.875rem;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 1rem 0;
-    }
+      .next-steps-title {
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--ha-secondary-text-color, #727272);
+        margin: 0 0 1rem 0;
+      }
 
-    .steps-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-      margin: 0;
-      padding: 0;
-      list-style: none;
-    }
+      .steps-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
 
-    .step-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-    }
+      .step-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+      }
 
-    .step-number {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      background-color: var(--ha-primary-fill, #006787);
-      color: white;
-      font-size: 0.875rem;
-      font-weight: 500;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
+      .step-number {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background-color: var(--ha-primary-fill, #006787);
+        color: white;
+        font-size: 0.875rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
 
-    .step-text {
-      font-size: 1rem;
-      color: var(--ha-text-color, #212121);
-      line-height: 1.5;
-      padding-top: 2px;
-      min-width: 0;
-      overflow-wrap: anywhere;
-    }
+      .step-text {
+        font-size: 1rem;
+        color: var(--ha-text-color, #212121);
+        line-height: 1.5;
+        padding-top: 2px;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
 
-    .next-steps a {
-      color: var(--ha-primary-color, #03a9f4);
-      text-decoration: none;
-      font-weight: 500;
-    }
+      .next-steps a {
+        color: var(--ha-primary-color, #03a9f4);
+        text-decoration: none;
+        font-weight: 500;
+      }
 
-    .next-steps a:hover {
-      text-decoration: underline;
-    }
+      .next-steps a:hover {
+        text-decoration: underline;
+      }
 
-    .companion-section {
-      width: 100%;
-      box-sizing: border-box;
-      max-width: 500px;
-      padding: 1.5rem;
-      background-color: var(--ha-card-background, #ffffff);
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-      border-radius: 12px;
-    }
-
-    @media (prefers-color-scheme: dark) {
       .companion-section {
-        background-color: var(--ha-card-background, #1e1e1e);
-        border-color: var(--ha-border-color, #333333);
+        width: 100%;
+        box-sizing: border-box;
+        max-width: 500px;
+        padding: 1.5rem;
+        background-color: var(--ha-card-background, #ffffff);
+        border: 1px solid var(--ha-border-color, #e0e0e0);
+        border-radius: 12px;
       }
-    }
 
-    .companion-title {
-      font-size: 1rem;
-      font-weight: 500;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 1rem 0;
-    }
+      @media (prefers-color-scheme: dark) {
+        .companion-section {
+          background-color: var(--ha-card-background, #1e1e1e);
+          border-color: var(--ha-border-color, #333333);
+        }
+      }
 
-    .app-links {
-      display: flex;
-      justify-content: center;
-      gap: 1rem;
-      flex-wrap: wrap;
-    }
+      .companion-title {
+        font-size: 1rem;
+        font-weight: 500;
+        color: var(--ha-text-color, #212121);
+        margin: 0 0 1rem 0;
+      }
 
-    .app-link {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.625rem 1rem;
-      background-color: var(--ha-background-color, #f5f5f5);
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-      border-radius: 8px;
-      color: var(--ha-text-color, #212121);
-      text-decoration: none;
-      font-size: 0.875rem;
-      font-weight: 500;
-      transition: all 0.2s ease;
-    }
+      .app-links {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
 
-    .app-link:hover {
-      background-color: var(--ha-primary-fill, #006787);
-      border-color: var(--ha-primary-color, #03a9f4);
-      color: white;
-    }
-
-    .app-link:hover svg {
-      fill: white;
-    }
-
-    @media (prefers-color-scheme: dark) {
       .app-link {
-        background-color: var(--ha-background-color, #2d2d2d);
-        border-color: var(--ha-border-color, #444444);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.625rem 1rem;
+        background-color: var(--ha-background-color, #f5f5f5);
+        border: 1px solid var(--ha-border-color, #e0e0e0);
+        border-radius: 8px;
+        color: var(--ha-text-color, #212121);
+        text-decoration: none;
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition: all 0.2s ease;
       }
-    }
 
-    .app-link svg {
-      width: 20px;
-      height: 20px;
-      fill: var(--ha-text-color, #212121);
-      transition: fill 0.2s ease;
-    }
+      .app-link:hover {
+        background-color: var(--ha-primary-fill, #006787);
+        border-color: var(--ha-primary-color, #03a9f4);
+        color: white;
+      }
 
-    @media (prefers-color-scheme: dark) {
+      .app-link:hover svg {
+        fill: white;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .app-link {
+          background-color: var(--ha-background-color, #2d2d2d);
+          border-color: #444444;
+        }
+      }
+
       .app-link svg {
-        fill: var(--ha-text-color, #e0e0e0);
+        width: 20px;
+        height: 20px;
+        fill: var(--ha-text-color, #212121);
+        transition: fill 0.2s ease;
       }
-    }
 
-    .tip-section {
-      width: 100%;
-      box-sizing: border-box;
-      max-width: 500px;
-      margin-bottom: 2rem;
-      padding: 1rem;
-      background-color: rgba(3, 169, 244, 0.1);
-      border-radius: 8px;
-      font-size: 0.875rem;
-      color: var(--ha-text-color, #212121);
-      text-align: left;
-    }
+      @media (prefers-color-scheme: dark) {
+        .app-link svg {
+          fill: var(--ha-text-color, #e0e0e0);
+        }
+      }
 
-    .notice {
-      padding: 0.75rem 0 0.75rem 1rem;
-      border-left: 3px solid var(--ha-warning-color, #f5a623);
-      line-height: 1.5;
-      margin: 1.25rem 0;
-    }
+      .tip-section {
+        width: 100%;
+        box-sizing: border-box;
+        max-width: 500px;
+        margin-bottom: 2rem;
+        padding: 1rem;
+        background-color: rgba(3, 169, 244, 0.1);
+        border-radius: 8px;
+        font-size: 0.875rem;
+        color: var(--ha-text-color, #212121);
+        text-align: left;
+      }
 
-    .next-steps-footer {
-      margin: 1.25rem 0 0;
-    }
+      .notice {
+        padding: 0.75rem 0 0.75rem 1rem;
+        border-left: 3px solid var(--ha-warning-color, #f5a623);
+        line-height: 1.5;
+        margin: 1.25rem 0;
+      }
 
-    .tip-section strong {
-      color: var(--ha-primary-color, #03a9f4);
-    }
-  `;
+      .next-steps-footer {
+        margin: 1.25rem 0 0;
+      }
+
+      .tip-section strong {
+        color: var(--ha-primary-color, #03a9f4);
+      }
+    `,
+  ];
   @property({ attribute: false }) subtitle: string | TemplateResult = "";
   @property({ attribute: false }) steps: (string | TemplateResult)[] = [];
   @property({ attribute: false }) tip: string | TemplateResult = "";
@@ -274,11 +276,7 @@ export class InstallSuccess extends LitElement {
             href="https://apps.apple.com/app/home-assistant/id1099568401"
             target="_blank"
             rel="noopener noreferrer"
-            @click=${(event: Event) =>
-              openExternalLink(
-                event,
-                "https://apps.apple.com/app/home-assistant/id1099568401"
-              )}
+            @click=${openExternalLink}
           >
             ${this._renderAppleIcon()}
             <span
@@ -290,11 +288,7 @@ export class InstallSuccess extends LitElement {
             href="https://play.google.com/store/apps/details?id=io.homeassistant.companion.android"
             target="_blank"
             rel="noopener noreferrer"
-            @click=${(event: Event) =>
-              openExternalLink(
-                event,
-                "https://play.google.com/store/apps/details?id=io.homeassistant.companion.android"
-              )}
+            @click=${openExternalLink}
           >
             ${this._renderGooglePlayIcon()}
             <span

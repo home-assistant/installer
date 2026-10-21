@@ -1,5 +1,5 @@
 import { LitElement, css, html } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { customElement, property, query, state } from "lit/decorators.js";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { localize } from "../localization/localize.js";
@@ -56,6 +56,7 @@ export class DiagnosticsActions extends LitElement {
   @state() private _version = "";
   @state() private _data?: Diagnostics;
   @state() private _status = "";
+  @query("textarea") private _textarea?: HTMLTextAreaElement;
 
   // Load only when opened: this button sits under every error message, and
   // showing an error should not start native calls of its own
@@ -92,7 +93,7 @@ export class DiagnosticsActions extends LitElement {
       this._status = localize(
         "components.diagnostics_actions.could_not_copy_diagnostics"
       );
-      this.renderRoot.querySelector("textarea")?.select();
+      this._textarea?.select();
     }
   }
 
@@ -107,6 +108,14 @@ export class DiagnosticsActions extends LitElement {
         "components.diagnostics_actions.could_not_open_the_logs_folder"
       );
     }
+  }
+
+  private async _report() {
+    if (this._data) await openExternalUrl(reportUrl(this._data).url);
+  }
+
+  private _onAfterHide() {
+    this._open = false;
   }
 
   render() {
@@ -126,9 +135,7 @@ export class DiagnosticsActions extends LitElement {
             )
           : localize("components.diagnostics_actions.report_a_problem")}
         .open=${this._open}
-        @wa-after-hide=${() => {
-          this._open = false;
-        }}
+        @wa-after-hide=${this._onAfterHide}
       >
         <p class="version">
           ${this._version
@@ -158,10 +165,7 @@ export class DiagnosticsActions extends LitElement {
           : ""}
         <p role="status">${this._status}</p>
         <div class="actions">
-          <wa-button
-            variant="brand"
-            ?disabled=${!report}
-            @click=${() => report && openExternalUrl(report.url)}
+          <wa-button variant="brand" ?disabled=${!report} @click=${this._report}
             >${localize(
               "components.diagnostics_actions.report_a_problem"
             )}</wa-button

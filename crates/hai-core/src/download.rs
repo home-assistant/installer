@@ -281,9 +281,12 @@ fn http_client(read_timeout: Duration) -> reqwest::Result<reqwest::Client> {
 }
 
 fn shared_client() -> Result<&'static reqwest::Client> {
-    HTTP_CLIENT.as_ref().map_err(|error| {
-        Error::DownloadFailed(format!("Could not initialize HTTP client: {error}"))
-    })
+    HTTP_CLIENT.as_ref().map_err(|_| client_unavailable())
+}
+
+/// Before any request is made, so neither a download nor a service is to blame.
+fn client_unavailable() -> Error {
+    Error::ServiceUnavailable(crate::message!("backend.download.client_unavailable"))
 }
 
 fn check_space(path: &Path, required: u64, available: u64) -> Result<()> {
@@ -297,10 +300,14 @@ fn check_space(path: &Path, required: u64, available: u64) -> Result<()> {
 }
 
 const METADATA_TIMEOUT: Duration = Duration::from_secs(15);
-const CONNECTION_FAILURE_MESSAGE: &str =
-    "Cannot reach version.home-assistant.io. Check your internet connection and try again.";
-const GITHUB_CONNECTION_FAILURE_MESSAGE: &str =
-    "Cannot reach GitHub release information. Check your internet connection and try again.";
+
+fn version_service_unreachable() -> crate::Message {
+    crate::message!("backend.download.version_service_unreachable")
+}
+
+fn github_unreachable() -> crate::Message {
+    crate::message!("backend.download.github_unreachable")
+}
 static RELEASE_CACHE: LazyLock<Mutex<HashMap<String, HaosRelease>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -326,16 +333,7 @@ async fn get_device_manifest() -> Result<DeviceManifest> {
 }
 
 async fn get_device_manifest_from_url(url: &str) -> Result<DeviceManifest> {
-    get_device_manifest_with_timeout(url, std::time::Duration::from_secs(30)).await
-}
-
-async fn get_device_manifest_with_timeout(
-    url: &str,
-    deadline: std::time::Duration,
-) -> Result<DeviceManifest> {
-    let stable = tokio::time::timeout(deadline, get_stable_version_from_url(url))
-        .await
-        .map_err(|_| Error::DownloadFailed("Timed out fetching device availability".into()))??;
+    let stable = get_stable_version_from_url(url).await?;
     let mut manifest = crate::manifest::bundled_manifest();
     manifest
         .devices
@@ -352,25 +350,29 @@ async fn get_stable_version_from_url(url: &str) -> Result<StableVersionInfo> {
         .timeout(METADATA_TIMEOUT)
         .send()
         .await
-        .map_err(|error| metadata_request_error(error, CONNECTION_FAILURE_MESSAGE))?;
+        .map_err(|error| metadata_request_error(error, version_service_unreachable))?;
 
     if !response.status().is_success() {
-        return Err(Error::DownloadFailed(format!(
-            "Failed to fetch version info: HTTP {}",
-            response.status()
+        return Err(Error::ServiceUnavailable(crate::message!(
+            "backend.download.version_service_unavailable",
+            status = response.status().as_u16(),
         )));
     }
 
-    let version_info: StableVersionInfo = response
-        .json()
-        .await
-        .map_err(|error| metadata_request_error(error, CONNECTION_FAILURE_MESSAGE))?;
+    // A sign-in page or a cut-off answer, unless the body never arrived
+    let version_info: StableVersionInfo = response.json().await.map_err(|error| {
+        Error::ServiceUnavailable(if error.is_timeout() {
+            version_service_unreachable()
+        } else {
+            crate::message!("backend.download.version_service_invalid_response")
+        })
+    })?;
     Ok(version_info)
 }
 
-fn metadata_request_error(error: reqwest::Error, message: &str) -> Error {
+fn metadata_request_error(error: reqwest::Error, unreachable: fn() -> crate::Message) -> Error {
     if error.is_timeout() || error.is_connect() {
-        Error::DownloadFailed(message.to_string())
+        Error::ServiceUnavailable(unreachable())
     } else {
         error.into()
     }
@@ -379,31 +381,6 @@ fn metadata_request_error(error: reqwest::Error, message: &str) -> Error {
 /// Fetch the stable version info from Home Assistant
 pub(crate) async fn get_stable_version() -> Result<StableVersionInfo> {
     get_stable_version_from_url(VERSION_URL).await
-}
-
-async fn check_connection_from_url(url: &str, timeout: Duration) -> Result<()> {
-    let response = shared_client()?
-        .get(url)
-        .timeout(timeout)
-        .send()
-        .await
-        .map_err(|_| Error::DownloadFailed(CONNECTION_FAILURE_MESSAGE.to_string()))?;
-    if !response.status().is_success() {
-        return Err(Error::DownloadFailed(format!(
-            "The Home Assistant version service is unavailable (HTTP {}). Try again later.",
-            response.status()
-        )));
-    }
-    response.json::<StableVersionInfo>().await.map_err(|error| {
-        if error.is_timeout() {
-            return Error::DownloadFailed(CONNECTION_FAILURE_MESSAGE.to_string());
-        }
-        Error::DownloadFailed(
-            "The Home Assistant version service returned an incomplete or invalid response. Check for a network sign-in page and try again."
-                .to_string(),
-        )
-    })?;
-    Ok(())
 }
 
 /// Get the latest stable HAOS version from the version API
@@ -467,7 +444,7 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
         .timeout(METADATA_TIMEOUT)
         .send()
         .await
-        .map_err(|error| metadata_request_error(error, GITHUB_CONNECTION_FAILURE_MESSAGE))?;
+        .map_err(|error| metadata_request_error(error, github_unreachable))?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -497,21 +474,23 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
                     "GitHub's request limit has been reached for this network. Wait at least {minutes} {unit}, then try again."
                 )));
             }
-            return Err(Error::DownloadFailed(format!(
-                "GitHub refused access to release {version} (HTTP {status}). Try again later or check your network's access to GitHub."
+            return Err(Error::ServiceUnavailable(crate::message!(
+                "backend.download.github_refused",
+                version = version,
+                status = status.as_u16(),
             )));
         }
-        return Err(Error::DownloadFailed(format!(
-            "Failed to fetch release {}: HTTP {}",
-            version,
-            response.status()
+        return Err(Error::ServiceUnavailable(crate::message!(
+            "backend.download.github_release_unavailable",
+            version = version,
+            status = response.status().as_u16(),
         )));
     }
 
     let release: GitHubRelease = response
         .json()
         .await
-        .map_err(|error| metadata_request_error(error, GITHUB_CONNECTION_FAILURE_MESSAGE))?;
+        .map_err(|error| metadata_request_error(error, github_unreachable))?;
     parse_github_release(release, version)
 }
 
@@ -1061,7 +1040,7 @@ async fn extract_xz_owned<P: ProgressCallback>(
 
 impl ReleaseSource for Backend {
     async fn check_connection(&self) -> Result<()> {
-        check_connection_from_url(VERSION_URL, METADATA_TIMEOUT).await
+        get_stable_version().await.map(drop)
     }
 
     async fn get_device_manifest(&self) -> Result<DeviceManifest> {
@@ -1193,12 +1172,14 @@ mod tests {
                 .unwrap();
             for byte in b"0123456789" {
                 stream.write_all(&[*byte]).unwrap();
-                std::thread::sleep(Duration::from_millis(40));
+                std::thread::sleep(Duration::from_millis(150));
             }
         });
         let directory = tempfile::tempdir().unwrap();
         let destination = directory.path().join("image.xz");
-        let client = http_client(Duration::from_millis(200)).unwrap();
+        let read_timeout = Duration::from_secs(1);
+        let client = http_client(read_timeout).unwrap();
+        let started = std::time::Instant::now();
         download_image_with_client(
             &image_for_data(&url, b"0123456789"),
             &destination,
@@ -1208,6 +1189,7 @@ mod tests {
         )
         .await
         .unwrap();
+        assert!(started.elapsed() > read_timeout);
         assert_eq!(std::fs::read(destination).unwrap(), b"0123456789");
         server.join().unwrap();
     }
@@ -1985,11 +1967,9 @@ mod tests {
                 .with_body(body)
                 .create_async()
                 .await;
-            let result = check_connection_from_url(
-                &format!("{}/stable.json", server.url()),
-                METADATA_TIMEOUT,
-            )
-            .await;
+            let result = get_stable_version_from_url(&format!("{}/stable.json", server.url()))
+                .await
+                .map(drop);
             if expected.is_empty() {
                 result.unwrap();
             } else {
@@ -2000,6 +1980,17 @@ mod tests {
             mock.assert_async().await;
             mock.remove_async().await;
         }
+    }
+
+    #[test]
+    fn a_client_that_fails_to_start_is_not_a_failed_download() {
+        let error = client_unavailable();
+        assert!(matches!(
+            &error,
+            Error::ServiceUnavailable(message)
+                if message.key == "backend.download.client_unavailable"
+        ));
+        assert!(!error.to_string().contains("download"), "{error}");
     }
 
     async fn stalled_metadata_server(send_headers: bool) -> (String, tokio::task::JoinHandle<()>) {
@@ -2024,25 +2015,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn connection_check_times_out_without_leaking_request_details() {
-        for send_headers in [false, true] {
-            let (url, server) = stalled_metadata_server(send_headers).await;
-            let result = check_connection_from_url(&url, Duration::from_millis(250))
-                .await
-                .unwrap_err()
-                .to_string();
-            server.abort();
-            let _ = server.await;
-            assert!(
-                result.contains("Check your internet connection"),
-                "headers sent: {send_headers}, {result}"
-            );
-            assert!(!result.contains("invalid response"));
-            assert!(!result.contains("secret"));
-        }
-    }
-
-    #[tokio::test]
     async fn metadata_timeouts_do_not_leak_request_details() {
         let mut checks = Vec::new();
         for github in [false, true] {
@@ -2057,12 +2029,12 @@ mod tests {
                     server.abort();
                     let _ = server.await;
                     let expected = if github {
-                        GITHUB_CONNECTION_FAILURE_MESSAGE
+                        "backend.download.github_unreachable"
                     } else {
-                        CONNECTION_FAILURE_MESSAGE
+                        "backend.download.version_service_unreachable"
                     };
                     assert!(
-                        matches!(&error, Error::DownloadFailed(message) if message == expected)
+                        matches!(&error, Error::ServiceUnavailable(message) if message.key == expected)
                     );
                     assert!(!error.to_string().contains("secret"));
                     assert!(!error.to_string().contains("127.0.0.1"));
@@ -2075,7 +2047,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn metadata_connect_failures_are_safe_but_parse_errors_are_unchanged() {
+    async fn metadata_connect_failures_are_safe_and_parse_errors_say_so() {
         // Nothing can listen on port 0, so the connection fails right away.
         // A freed ephemeral port could be taken by a parallel test's server.
         let url = "http://127.0.0.1:0/secret";
@@ -2086,11 +2058,13 @@ mod tests {
                 get_stable_version_from_url(url).await.unwrap_err()
             };
             let expected = if github {
-                GITHUB_CONNECTION_FAILURE_MESSAGE
+                "backend.download.github_unreachable"
             } else {
-                CONNECTION_FAILURE_MESSAGE
+                "backend.download.version_service_unreachable"
             };
-            assert!(matches!(&error, Error::DownloadFailed(message) if message == expected));
+            assert!(
+                matches!(&error, Error::ServiceUnavailable(message) if message.key == expected)
+            );
             assert!(!error.to_string().contains("secret"));
 
             let mut server = mockito::Server::new_async().await;
@@ -2109,7 +2083,17 @@ mod tests {
                     .await
                     .unwrap_err()
             };
-            assert!(matches!(error, Error::Network(error) if error.is_decode()));
+            // The version service's answer is checked as a whole; GitHub's
+            // release JSON keeps its parse error
+            if github {
+                assert!(matches!(error, Error::Network(error) if error.is_decode()));
+            } else {
+                assert!(matches!(
+                    &error,
+                    Error::ServiceUnavailable(message)
+                        if message.key == "backend.download.version_service_invalid_response"
+                ));
+            }
             response.assert_async().await;
         }
     }
@@ -2467,40 +2451,6 @@ mod tests {
             .unwrap();
         assert!(manifest.devices.is_empty());
         request.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_get_device_manifest_bounds_stalled_headers_and_body() {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        for send_headers in [false, true] {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let url = format!("http://{}/stable.json", listener.local_addr().unwrap());
-            let (started, received) = tokio::sync::oneshot::channel();
-            let server = tokio::spawn(async move {
-                let (mut stream, _) = listener.accept().await.unwrap();
-                let mut request = [0; 1];
-                stream.read_exact(&mut request).await.unwrap();
-                if send_headers {
-                    stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{").await.unwrap();
-                }
-                started.send(()).unwrap();
-                std::future::pending::<()>().await;
-            });
-            let lookup = tokio::spawn(async move {
-                get_device_manifest_with_timeout(&url, std::time::Duration::from_secs(1)).await
-            });
-            let error = tokio::time::timeout(std::time::Duration::from_secs(3), async {
-                received.await.unwrap();
-                lookup.await.unwrap().unwrap_err()
-            })
-            .await
-            .expect("catalog request must have a total deadline");
-            server.abort();
-            let _ = server.await;
-            assert!(error
-                .to_string()
-                .contains("Timed out fetching device availability"));
-        }
     }
 
     #[tokio::test]
@@ -3159,7 +3109,12 @@ mod tests {
             assert!(result.is_err());
 
             if let Err(e) = result {
-                assert!(matches!(e, crate::error::Error::DownloadFailed(_)));
+                assert!(matches!(
+                    &e,
+                    crate::error::Error::ServiceUnavailable(message)
+                        if message.key == "backend.download.version_service_unavailable"
+                ));
+                assert!(e.to_string().contains("HTTP 404"), "{e}");
             }
 
             mock.assert_async().await;
@@ -3304,9 +3259,12 @@ mod tests {
             assert!(result.is_err());
 
             if let Err(e) = result {
-                assert!(matches!(e, crate::error::Error::DownloadFailed(_)));
-                let error_msg = format!("{:?}", e);
-                assert!(error_msg.contains("404"));
+                assert!(matches!(
+                    &e,
+                    crate::error::Error::ServiceUnavailable(message)
+                        if message.key == "backend.download.github_release_unavailable"
+                ));
+                assert!(e.to_string().contains("HTTP 404"), "{e}");
             }
 
             mock.assert_async().await;

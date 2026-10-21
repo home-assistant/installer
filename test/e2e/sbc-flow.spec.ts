@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { skipWifiStep } from "./fixtures.js";
 
 // Browser-only mode serves the mock block devices from src/api/mock-data.ts.
 // Importing that module from the page returns the instance the app uses, so
@@ -11,7 +12,7 @@ async function openConfirmation(page: Page) {
   await page.goto("/");
   await page.locator("welcome-view").locator("wa-button").click();
   await page
-    .locator('option-card[title="Raspberry Pi & other boards"]')
+    .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
 
   const deviceView = page.locator("device-selection-view");
@@ -22,7 +23,7 @@ async function openConfirmation(page: Page) {
   await driveView.locator("drive-card").first().click();
   await nextButton(page).click();
 
-  await expect(page.locator("confirmation-view")).toBeVisible();
+  await skipWifiStep(page);
 }
 
 /** Simulate another drive being plugged in under the selected drive's path. */

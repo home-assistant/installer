@@ -12,96 +12,98 @@ import { pageHeaderStyles } from "../utils/page-header.js";
 
 @customElement("wizard-shell")
 export class WizardShell extends LitElement {
-  static styles = css`
-    ${pageHeaderStyles}
-    :host {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-    }
-
-    .header {
-      justify-content: space-between;
-      border-bottom: 1px solid var(--ha-border-color, #e0e0e0);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .header {
-        border-bottom-color: var(--ha-border-color, #333333);
+  static styles = [
+    pageHeaderStyles,
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
       }
-    }
 
-    .header-center {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      justify-content: center;
-    }
+      .header {
+        justify-content: space-between;
+        border-bottom: 1px solid var(--ha-border-color, #e0e0e0);
+      }
 
-    /* Its width is the room available, not its content, so it can tell when
-       the step names stop fitting */
-    step-indicator {
-      flex: 1;
-      min-width: 0;
-    }
+      @media (prefers-color-scheme: dark) {
+        .header {
+          border-bottom-color: var(--ha-border-color, #333333);
+        }
+      }
 
-    .header-right {
-      min-width: 80px;
-    }
+      .header-center {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        justify-content: center;
+      }
 
-    @media (max-width: 600px) {
-      .header-right {
+      /* Its width is the room available, not its content, so it can tell when
+         the step names stop fitting */
+      step-indicator {
+        flex: 1;
         min-width: 0;
       }
-    }
 
-    .content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 2rem;
-    }
-
-    .footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1rem 2rem;
-      border-top: 1px solid var(--ha-border-color, #e0e0e0);
-    }
-
-    .footer-left {
-      display: flex;
-      gap: 1rem;
-    }
-
-    .footer-right {
-      display: flex;
-      gap: 1rem;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .footer {
-        border-top-color: var(--ha-border-color, #333333);
+      .header-right {
+        min-width: 80px;
       }
-    }
-  `;
+
+      @media (max-width: 600px) {
+        .header-right {
+          min-width: 0;
+        }
+      }
+
+      .content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 2rem;
+      }
+
+      .footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 2rem;
+        border-top: 1px solid var(--ha-border-color, #e0e0e0);
+      }
+
+      .footer-left {
+        display: flex;
+        gap: 1rem;
+      }
+
+      .footer-right {
+        display: flex;
+        gap: 1rem;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .footer {
+          border-top-color: var(--ha-border-color, #333333);
+        }
+      }
+    `,
+  ];
 
   @state()
   private _wizardState: WizardState = wizardState.getState();
 
-  @property({ type: String })
+  @property({ type: String, attribute: "next-label" })
   nextLabel = localize("common.next");
 
-  @property({ type: Boolean })
+  @property({ type: Boolean, attribute: "next-disabled" })
   nextDisabled = false;
 
-  @property({ type: Boolean })
+  @property({ type: Boolean, attribute: "hide-back" })
   hideBack = false;
 
-  @property({ type: Boolean })
+  @property({ type: Boolean, attribute: "hide-next" })
   hideNext = false;
 
-  @property({ type: Boolean })
+  @property({ type: Boolean, attribute: "hide-footer" })
   hideFooter = false;
 
   private _unsubscribe?: () => void;

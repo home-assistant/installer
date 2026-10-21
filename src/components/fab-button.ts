@@ -14,51 +14,53 @@ import { reducedMotionStyles } from "../utils/view-accessibility.js";
  */
 @customElement("fab-button")
 export class FabButton extends LitElement {
-  static styles = css`
-    ${reducedMotionStyles}
-    :host {
-      position: fixed;
-      bottom: 1.5rem;
-      right: 1.5rem;
-      z-index: 100;
-    }
-
-    wa-button {
-      display: block;
-      transition: transform 0.2s ease;
-      --mdc-icon-size: 28px;
-    }
-
-    wa-button::part(base) {
-      width: 56px;
-      height: 56px;
-      padding: 0;
-      border-radius: 50%;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      transition: box-shadow 0.2s ease;
-    }
-
-    :host(:hover) wa-button {
-      transform: scale(1.05);
-    }
-
-    :host(:hover) wa-button::part(base) {
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
-    }
-
-    :host(:active) wa-button:active {
-      transform: scale(0.98);
-    }
-    @media (prefers-reduced-motion: reduce) {
-      :host(:hover) wa-button,
-      :host(:active) wa-button:active {
-        transform: none;
+  static styles = [
+    reducedMotionStyles,
+    css`
+      :host {
+        position: fixed;
+        bottom: 1.5rem;
+        right: 1.5rem;
+        z-index: 100;
       }
+
+      wa-button {
+        display: block;
+        transition: transform 0.2s ease;
+        --mdc-icon-size: 28px;
+      }
+
       wa-button::part(base) {
-        transition: none;
+        width: 56px;
+        height: 56px;
+        padding: 0;
+        border-radius: 50%;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        transition: box-shadow 0.2s ease;
       }
-    }
-  `;
+
+      :host(:hover) wa-button {
+        transform: scale(1.05);
+      }
+
+      :host(:hover) wa-button::part(base) {
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+      }
+
+      :host(:active) wa-button:active {
+        transform: scale(0.98);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        :host(:hover) wa-button,
+        :host(:active) wa-button:active {
+          transform: none;
+        }
+        wa-button::part(base) {
+          transition: none;
+        }
+      }
+    `,
+  ];
 
   /** MDI icon path drawn inside the button. */
   @property() path?: string;

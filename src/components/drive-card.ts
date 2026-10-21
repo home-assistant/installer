@@ -162,10 +162,10 @@ export class DriveCard extends WaRadio {
    * uses `size` for its t-shirt sizing; `diskSize` is taken by the VM flows'
    * virtual disk. Matches the `driveSize` wizard-state selection.
    */
-  @property({ type: Number })
+  @property({ type: Number, attribute: "drive-size" })
   driveSize = 0;
 
-  @property({ type: String })
+  @property({ type: String, attribute: "device-type" })
   deviceType: DeviceType = "unknown";
 
   @property({ type: String })
@@ -174,10 +174,10 @@ export class DriveCard extends WaRadio {
   @property({ type: String })
   vendor = "";
 
-  @property({ type: String })
+  @property({ type: String, attribute: "disabled-reason" })
   disabledReason = "";
 
-  @property({ type: String })
+  @property({ type: String, attribute: "capacity-warning" })
   capacityWarning = "";
 
   render() {

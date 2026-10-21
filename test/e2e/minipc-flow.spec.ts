@@ -15,7 +15,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
     page,
   }) => {
     // Click Generic (mini) PC option
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     // Should now see wizard shell
     const wizardShell = page.locator("wizard-shell");
@@ -26,7 +26,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("shows setup method view with correct title", async ({ page }) => {
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     const setupMethodView = page.locator("minipc-setup-method-view");
     await expect(setupMethodView).toBeVisible();
@@ -37,7 +37,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("shows subtitle about installation method", async ({ page }) => {
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     const subtitle = page
       .locator("minipc-setup-method-view")
@@ -46,7 +46,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("displays connect drive option", async ({ page }) => {
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const connectDriveOption = setupView
@@ -58,7 +58,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("displays USB boot option", async ({ page }) => {
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const usbBootOption = setupView
@@ -69,7 +69,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("clicking USB boot shows info dialog", async ({ page }) => {
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const usbBootOption = setupView
@@ -85,7 +85,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("USB boot dialog has View Instructions button", async ({ page }) => {
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const usbBootOption = setupView
@@ -104,7 +104,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("USB boot dialog can be closed with Go Back", async ({ page }) => {
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const usbBootOption = setupView
@@ -128,7 +128,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("USB boot dialog can be dismissed with Escape", async ({ page }) => {
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const usbBootOption = setupView
@@ -150,7 +150,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   test("clicking connect drive navigates to architecture selection", async ({
     page,
   }) => {
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const connectDriveOption = setupView
@@ -169,7 +169,7 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await page.locator("welcome-view").locator("wa-button").click();
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     // Select "connect drive" to get to architecture selection
     const setupView = page.locator("minipc-setup-method-view");
@@ -303,7 +303,7 @@ test.describe("Mini PC Flow - Navigation", () => {
     await page.locator("welcome-view").locator("wa-button").click();
 
     // Step 2: Path selection - Mini PC
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     // Step 3: Setup method - Connect drive
     const setupView = page.locator("minipc-setup-method-view");
@@ -345,7 +345,7 @@ test.describe("Mini PC Flow - Navigation", () => {
 
     // Navigate to path selection
     await page.locator("welcome-view").locator("wa-button").click();
-    await page.locator('option-card[title="Generic (mini) PC"]').click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     // Setup method - Connect drive
     const setupView = page.locator("minipc-setup-method-view");

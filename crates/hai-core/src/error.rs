@@ -51,6 +51,12 @@ pub enum Error {
     #[error("{0}")]
     RateLimited(String),
 
+    /// The version service or GitHub's release information couldn't be
+    /// reached or didn't answer usefully. Installer-authored guidance that
+    /// names the service, without request URLs or response bodies.
+    #[error("{0}")]
+    ServiceUnavailable(crate::Message),
+
     #[error("UTM error: {0}")]
     Utm(crate::Message),
 

@@ -145,72 +145,52 @@ async function simulateFlashProgress(
   const stages: Array<{
     stage: FlashProgress["stage"];
     message: string;
-    weight: number;
     totalBytes: number;
-    showBytes: boolean;
     steps: number;
     delay: number;
   }> = [
     {
       stage: "downloading",
       message: localize("api.commands.downloading_image"),
-      weight: 30,
       totalBytes: compressedSize,
-      showBytes: true,
       steps: 30,
       delay: 150,
     },
     {
       stage: "extracting",
       message: localize("api.commands.extracting_image"),
-      weight: 10,
-      totalBytes: 0,
-      showBytes: false,
+      // Measured against the compressed archive, the only size known up front
+      totalBytes: compressedSize,
       steps: 10,
       delay: 100,
     },
     {
       stage: "writing",
       message: localize("api.commands.writing_to_device"),
-      weight: 35,
       totalBytes: extractedSize,
-      showBytes: true,
       steps: 35,
       delay: 175,
     },
     {
       stage: "verifying",
       message: localize("api.commands.verifying_written_data"),
-      weight: 15,
       totalBytes: extractedSize,
-      showBytes: true,
       steps: 15,
       delay: 150,
     },
     {
       stage: "finalizing",
       message: localize("api.commands.finalizing"),
-      weight: 10,
       totalBytes: 0,
-      showBytes: false,
       steps: 10,
       delay: 100,
     },
   ];
 
-  let overallProgress = 0;
   mockFlashAttempt = attempt;
   mockFlashCancelled = false;
 
-  for (const {
-    stage,
-    message,
-    weight,
-    totalBytes,
-    showBytes,
-    steps,
-    delay,
-  } of stages) {
+  for (const { stage, message, totalBytes, steps, delay } of stages) {
     for (let step = 0; step <= steps; step++) {
       // Shaped like the native rejection
       if (mockFlashCancelled) {
@@ -222,16 +202,14 @@ async function simulateFlashProgress(
         };
       }
 
+      // Each stage counts from 0 to 100 on its own, like the backend
       const stageProgress = (step * 100) / steps;
-      const progress = overallProgress + (stageProgress * weight) / 100;
 
       onProgress({
         stage,
-        progress: Math.round(progress),
-        bytes_processed: showBytes
-          ? Math.round((totalBytes * stageProgress) / 100)
-          : 0,
-        total_bytes: showBytes ? totalBytes : 0,
+        progress: Math.round(stageProgress),
+        bytes_processed: Math.round((totalBytes * stageProgress) / 100),
+        total_bytes: totalBytes,
         message,
       });
 
@@ -239,7 +217,6 @@ async function simulateFlashProgress(
 
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
-    overallProgress += weight;
   }
 
   onProgress({
@@ -356,6 +333,15 @@ export async function checkUtmStatus(): Promise<UtmStatus> {
   return invoke<UtmStatus>("check_utm_status");
 }
 
+/**
+ * Ask macOS whether the installer may control UTM. The first time this shows
+ * the Automation prompt and opens UTM; it resolves once the user answered.
+ */
+export async function checkUtmAutomation(): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) return;
+  return invoke<void>("check_utm_automation");
+}
+
 /** Release a temporary image which was not consumed by VM creation. */
 export async function discardUtmImage(imagePath: string): Promise<void> {
   if (MOCK_ALLOWED && isBrowserOnly()) return;
@@ -445,28 +431,27 @@ async function simulateUtmDownload(
     },
   ];
 
-  let overallProgress = 0;
-  const stageWeight = 100 / stages.length;
+  const compressedSize = 400 * 1024 * 1024; // 400 MB compressed
   mockVmAttempt = attempt;
   mockVmCancelled = false;
 
   for (const { stage, message, steps, delay } of stages) {
     for (let step = 0; step <= steps; step++) {
       throwIfMockVmCancelled();
+      // Each stage counts from 0 to 100 on its own, like the backend; both
+      // measure against the compressed image, extraction included
       const stageProgress = (step * 100) / steps;
-      const progress = overallProgress + (stageProgress * stageWeight) / 100;
 
       onProgress({
         stage,
-        progress: Math.round(progress),
-        bytes_processed: 0,
-        total_bytes: 0,
+        progress: Math.round(stageProgress),
+        bytes_processed: Math.round((compressedSize * stageProgress) / 100),
+        total_bytes: compressedSize,
         message,
       });
 
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
-    overallProgress += stageWeight;
   }
 
   onProgress({
@@ -600,16 +585,12 @@ export async function proxmoxListNodes(
         status: "online",
         cpu_usage: 12.5,
         cpu_count: 16,
-        memory_used: 8 * 1024 * 1024 * 1024,
-        memory_total: 32 * 1024 * 1024 * 1024,
       },
       {
         name: "pve2",
         status: "online",
         cpu_usage: 8.2,
         cpu_count: 8,
-        memory_used: 4 * 1024 * 1024 * 1024,
-        memory_total: 16 * 1024 * 1024 * 1024,
       },
     ];
   }
@@ -647,7 +628,6 @@ export async function proxmoxListStorage(
             : []),
         ],
         available: 200 * 1024 * 1024 * 1024,
-        total: 500 * 1024 * 1024 * 1024,
         active: true,
       },
       {
@@ -655,7 +635,6 @@ export async function proxmoxListStorage(
         storage_type: "lvmthin",
         content: ["images", "rootdir"],
         available: 400 * 1024 * 1024 * 1024,
-        total: 1024 * 1024 * 1024 * 1024,
         active: true,
       },
     ];
@@ -679,9 +658,12 @@ export async function proxmoxEnableStorageImport(
       // Shaped like the native CommandError rejections
       throw {
         code: "proxmox_action_required",
-        message: `Storage '${storage}' must be an active directory storage on node '${node}'.`,
+        message: `Storage "${storage}" must be an active directory storage on node "${node}".`,
         retryable: false,
-        details: {},
+        details: {
+          message_key: "backend.proxmox.storage_not_directory",
+          message_params: { storage, node },
+        },
       };
     }
     // Storage configuration is per cluster, not per spelling of its address
@@ -811,68 +793,75 @@ async function simulateProxmoxInstall(
   onProgress: (progress: FlashProgress) => void,
   attempt: string
 ): Promise<ProxmoxVmResult> {
+  const compressedSize = 400 * 1024 * 1024; // 400 MB compressed
+  const extractedSize = 1200 * 1024 * 1024; // 1.2 GB qcow2
+
+  // Byte counts like the backend's: the download and extraction measure the
+  // compressed image, the upload the extracted one, VM steps have none
   const stages: Array<{
     stage: FlashProgress["stage"];
     message: string;
-    weight: number;
+    totalBytes: number;
     steps: number;
     delay: number;
   }> = [
     {
       stage: "downloading",
+      totalBytes: compressedSize,
       message: localize("api.commands.downloading_haos_image"),
-      weight: 40,
       steps: 40,
       delay: 100,
     },
     {
       stage: "extracting",
+      totalBytes: compressedSize,
       message: localize("api.commands.extracting_image"),
-      weight: 10,
       steps: 10,
       delay: 80,
     },
     {
       stage: "uploading",
+      totalBytes: extractedSize,
       message: localize("api.commands.uploading_to_proxmox"),
-      weight: 20,
       steps: 20,
       delay: 80,
     },
     {
       stage: "creating_vm",
+      totalBytes: 0,
       message: localize("api.commands.creating_virtual_machine"),
-      weight: 15,
       steps: 15,
       delay: 100,
     },
     {
       stage: "starting_vm",
+      totalBytes: 0,
       message: localize("api.commands.starting_home_assistant_os"),
-      weight: 15,
       steps: 10,
       delay: 150,
     },
   ];
 
-  let overallProgress = 0;
   mockVmAttempt = attempt;
   mockVmCancelled = false;
 
-  for (const { stage, message, weight, steps, delay } of stages) {
+  for (const { stage, message, totalBytes, steps, delay } of stages) {
     for (let step = 0; step <= steps; step++) {
       // Like the native install, a stop counts until the VM is being created
       if (stage !== "starting_vm" && (stage !== "creating_vm" || step === 0)) {
         throwIfMockVmCancelled();
       }
+      // Each stage counts from 0 to 100 on its own, like the backend
       const stageProgress = (step * 100) / steps;
-      const progress = overallProgress + (stageProgress * weight) / 100;
 
       onProgress({
         stage,
-        progress: Math.round(progress),
-        bytes_processed: 0,
-        total_bytes: 0,
+        // The backend spends 5-95% of the upload on sending the bytes
+        progress: Math.round(
+          stage === "uploading" ? 5 + stageProgress * 0.9 : stageProgress
+        ),
+        bytes_processed: Math.round((totalBytes * stageProgress) / 100),
+        total_bytes: totalBytes,
         message,
       });
 
@@ -880,7 +869,19 @@ async function simulateProxmoxInstall(
 
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
-    overallProgress += weight;
+    // The last step left every byte sent at 95%, while Proxmox processes
+    // the upload; only then does the backend report 100%
+    if (stage === "uploading") {
+      await new Promise((resolve) => setTimeout(resolve, delay * 5));
+      throwIfMockVmCancelled();
+      onProgress({
+        stage,
+        progress: 100,
+        bytes_processed: totalBytes,
+        total_bytes: totalBytes,
+        message,
+      });
+    }
   }
 
   return {

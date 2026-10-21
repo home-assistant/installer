@@ -3,6 +3,7 @@ import "../../../src/views/connection-check-view.js";
 import type { ConnectionCheckView } from "../../../src/views/connection-check-view.js";
 import {
   deferred,
+  ipcError,
   mockTauriIpc,
   restoreTauriIpc,
   settle,
@@ -26,8 +27,12 @@ describe("connection-check-view", () => {
     el.addEventListener("connection-ready", () => ready++);
     expect(el.shadowRoot!.textContent).to.contain("Checking connection");
     expect(ready).to.equal(0);
+    // Shaped like the native CommandError, its text from the catalog
     first.reject(
-      "Cannot reach version.home-assistant.io. Check your internet connection and try again."
+      ipcError("network", "Cannot reach version.home-assistant.io.", true, {
+        message_key: "backend.download.version_service_unreachable",
+        message_params: {},
+      })
     );
     await waitUntil(() => !!el.shadowRoot!.querySelector('[role="alert"]'));
     expect(el.shadowRoot!.textContent).to.contain(
@@ -48,7 +53,10 @@ describe("connection-check-view", () => {
   it("does not describe a service failure as offline", async () => {
     mockTauriIpc(() =>
       Promise.reject(
-        "The Home Assistant version service is unavailable (HTTP 503). Try again later."
+        ipcError("network", "unavailable", true, {
+          message_key: "backend.download.version_service_unavailable",
+          message_params: { status: 503 },
+        })
       )
     );
     const el = await fixture<ConnectionCheckView>(

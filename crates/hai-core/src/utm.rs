@@ -162,6 +162,33 @@ async fn check_utm_status() -> Result<UtmStatus> {
     }
 }
 
+/// Whether macOS lets the installer control UTM, before anything is downloaded
+fn check_automation() -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        automation_allowed(macos::run_applescript)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(Error::UnsupportedPlatform(
+            "UTM is only available on macOS".to_string(),
+        ))
+    }
+}
+
+/// Sends UTM one harmless Apple Event, which is what makes macOS ask.
+#[cfg(any(target_os = "macos", test))]
+fn automation_allowed(mut run: impl FnMut(&str, &[&str]) -> Result<String>) -> Result<()> {
+    run(AUTOMATION_SCRIPT, &[])
+        .map(drop)
+        .map_err(|error| match error {
+            // Nothing is created, so an unanswered prompt is nothing to keep
+            Error::UtmOperationUncertain(message) => Error::Utm(message),
+            error => error,
+        })
+}
+
 /// Create a Home Assistant VM using UTM
 async fn create_vm<P: ProgressCallback>(
     config: &UtmVmConfig,
@@ -238,6 +265,11 @@ fn applescript_error(stderr: &str) -> Error {
 
 // The scripts below get every value as an argument, never as part of their
 // source, so no VM name, path, interface or id can change what they do.
+
+#[cfg(any(target_os = "macos", test))]
+const AUTOMATION_SCRIPT: &str = r#"tell application "UTM"
+    count virtual machines
+end tell"#;
 
 #[cfg(any(target_os = "macos", test))]
 const STATUS_SCRIPT: &str = r#"on run {vmId}
@@ -528,6 +560,10 @@ impl UtmBackend for Backend {
         check_utm_status().await
     }
 
+    fn check_automation(&self) -> Result<()> {
+        check_automation()
+    }
+
     async fn create_vm<P: ProgressCallback>(
         &self,
         config: &UtmVmConfig,
@@ -567,6 +603,39 @@ mod tests {
             message.params_json()["detail"]["key"],
             "backend.utm.applescript_error"
         );
+    }
+
+    #[test]
+    fn automation_check_sends_one_event_and_reports_a_refusal() {
+        let mut scripts = Vec::new();
+        assert!(automation_allowed(|script, arguments| {
+            scripts.push((script.to_string(), arguments.len()));
+            Ok("0".into())
+        })
+        .is_ok());
+        assert_eq!(scripts, [(AUTOMATION_SCRIPT.to_string(), 0)]);
+
+        let refused = automation_allowed(|_, _| {
+            Err(applescript_error(
+                "0:30: execution error: Not authorized to send Apple events to UTM. (-1743)",
+            ))
+        });
+        assert!(matches!(
+            refused,
+            Err(Error::Utm(message)) if message.key == "backend.utm.automation_denied"
+        ));
+
+        // An unanswered prompt created nothing, so it is an ordinary UTM error
+        let unanswered = automation_allowed(|_, _| {
+            Err(Error::UtmOperationUncertain(crate::message!(
+                "backend.utm.no_response",
+                minutes = 5,
+            )))
+        });
+        assert!(matches!(
+            unanswered,
+            Err(Error::Utm(message)) if message.key == "backend.utm.no_response"
+        ));
     }
 
     #[test]

@@ -27,93 +27,95 @@ import "../../components/device-card.js";
 @customElement("ha-hardware-device-selection-view")
 export class HaHardwareDeviceSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
-  static styles = css`
-    ${reducedMotionStyles}
-    :host {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100%;
-    }
-
-    h2 {
-      font-size: 1.5rem;
-      font-weight: 400;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 0.5rem 0;
-      text-align: center;
-    }
-
-    .subtitle {
-      font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 2rem 0;
-      text-align: center;
-    }
-
-    .devices-grid {
-      width: 100%;
-      max-width: 700px;
-    }
-
-    /* The group's default layout is a flex column; the tiles want a grid. */
-    .devices-grid::part(form-control-input) {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 1.5rem;
-    }
-
-    .loading {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 3rem;
-      color: var(--ha-secondary-text-color, #727272);
-    }
-
-    .loading-spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid var(--ha-border-color, #e0e0e0);
-      border-top-color: var(--ha-primary-color, #03a9f4);
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: 1rem;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
+  static styles = [
+    reducedMotionStyles,
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100%;
       }
-    }
 
-    .error {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem;
-      text-align: center;
-    }
+      h2 {
+        font-size: 1.5rem;
+        font-weight: 400;
+        color: var(--ha-text-color, #212121);
+        margin: 0 0 0.5rem 0;
+        text-align: center;
+      }
 
-    .error-icon {
-      font-size: 3rem;
-      margin-bottom: 1rem;
-    }
+      .subtitle {
+        font-size: 1rem;
+        color: var(--ha-secondary-text-color, #727272);
+        margin: 0 0 2rem 0;
+        text-align: center;
+      }
 
-    .error-message {
-      color: var(--ha-error-color, #db4437);
-      margin-bottom: 1rem;
-    }
+      .devices-grid {
+        width: 100%;
+        max-width: 700px;
+      }
 
-    .hint {
-      max-width: 600px;
-      margin: 1.5rem 0 0 0;
-      font-size: 0.875rem;
-      color: var(--ha-secondary-text-color, #727272);
-      text-align: center;
-    }
-  `;
+      /* The group's default layout is a flex column; the tiles want a grid. */
+      .devices-grid::part(form-control-input) {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 1.5rem;
+      }
+
+      .loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem;
+        color: var(--ha-secondary-text-color, #727272);
+      }
+
+      .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid var(--ha-border-color, #e0e0e0);
+        border-top-color: var(--ha-primary-color, #03a9f4);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .error {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 2rem;
+        text-align: center;
+      }
+
+      .error-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+      }
+
+      .error-message {
+        color: var(--ha-error-color, #db4437);
+        margin-bottom: 1rem;
+      }
+
+      .hint {
+        max-width: 600px;
+        margin: 1.5rem 0 0 0;
+        font-size: 0.875rem;
+        color: var(--ha-secondary-text-color, #727272);
+        text-align: center;
+      }
+    `,
+  ];
 
   /** Selectable hardware, each with the storage config its write uses. */
   @state()

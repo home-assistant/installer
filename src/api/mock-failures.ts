@@ -9,7 +9,13 @@ export function failMockOperation(operation: "flash" | "proxmox" | "utm") {
   // Shaped like the native CommandError rejections, codes included
   const failures: Record<
     string,
-    { operation: string; code: string; message: string; retryable: boolean }
+    {
+      operation: string;
+      code: string;
+      message: string;
+      retryable: boolean;
+      details?: Record<string, unknown>;
+    }
   > = {
     "flash-write": {
       operation: "flash",
@@ -40,12 +46,17 @@ export function failMockOperation(operation: "flash" | "proxmox" | "utm") {
       code: "utm",
       message: "UTM error: Automation permission denied",
       retryable: true,
+      // The native UTM errors always come from the catalog
+      details: {
+        message_key: "backend.utm.automation_denied",
+        message_params: {},
+      },
     },
   };
   const failure = scenario ? failures[scenario] : undefined;
   if (failure?.operation !== operation) return;
 
   sessionStorage.removeItem(key);
-  const { code, message, retryable } = failure;
-  throw { code, message, retryable, details: {} };
+  const { code, message, retryable, details = {} } = failure;
+  throw { code, message, retryable, details };
 }

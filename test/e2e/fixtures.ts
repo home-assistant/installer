@@ -25,6 +25,20 @@ export async function approveProxmoxImport(page: Page) {
   await expect(enable).toHaveCount(0);
 }
 
+/**
+ * Boards with built-in Wi-Fi get an optional Wi-Fi step after the drive. Leave
+ * Wi-Fi off and go on to Confirm; for other boards, Confirm is already there.
+ */
+export async function skipWifiStep(page: Page) {
+  await expect(
+    page.locator("wifi-view, confirmation-view").first()
+  ).toBeVisible();
+  if ((await page.locator("wifi-view").count()) > 0) {
+    await page.locator("wizard-shell .footer-right wa-button").click();
+  }
+  await expect(page.locator("confirmation-view")).toBeVisible();
+}
+
 /** Explicit platform input to getPlatform(), independent of the browser project. */
 export const test = base.extend<{ platform: "default" | "macos" }>({
   platform: ["default", { option: true }],

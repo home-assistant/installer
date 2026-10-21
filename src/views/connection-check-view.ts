@@ -2,6 +2,7 @@ import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { checkConnection } from "../api/commands.js";
 import { localize } from "../localization/localize.js";
+import { installerError } from "../utils/installer-error.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/spinner/spinner.js";
 import "../components/casita-mascot.js";
@@ -64,7 +65,7 @@ export class ConnectionCheckView extends LitElement {
       }
     } catch (error) {
       if (this.isConnected && request === this._request) {
-        this._error = String(error);
+        this._error = installerError(error).message;
       }
     } finally {
       if (request === this._request) this._checking = false;

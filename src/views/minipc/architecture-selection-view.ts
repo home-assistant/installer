@@ -10,177 +10,181 @@ import {
   reducedMotionStyles,
 } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import { getManifest, type Device } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import { getPlatform } from "../../utils/platform.js";
+import type WaButton from "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
+import type WaRadioGroup from "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "@home-assistant/webawesome/dist/components/radio/radio.js";
 
 @customElement("minipc-architecture-selection-view")
 export class MiniPCArchitectureSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
-  static styles = css`
-    ${reducedMotionStyles}
-    :host {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100%;
-    }
-
-    h2 {
-      font-size: 1.5rem;
-      font-weight: 400;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 0.5rem 0;
-      text-align: center;
-    }
-
-    .subtitle {
-      font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 2rem 0;
-      text-align: center;
-      max-width: 500px;
-    }
-
-    .options {
-      display: block;
-      width: 100%;
-      max-width: 700px;
-    }
-
-    .options::part(form-control-label) {
-      display: none;
-    }
-
-    .options::part(form-control-input) {
-      display: flex;
-      gap: 1rem;
-    }
-
-    @media (max-width: 500px) {
-      .options::part(form-control-input) {
+  static styles = [
+    reducedMotionStyles,
+    css`
+      :host {
+        display: flex;
         flex-direction: column;
+        align-items: center;
+        min-height: 100%;
       }
-    }
 
-    .mac-note {
-      font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 1rem 0 2rem 0;
-      text-align: center;
-      max-width: 500px;
-    }
-
-    wa-radio {
-      flex: 1;
-      min-width: 0;
-      height: auto;
-      padding: 1.5rem;
-      border-radius: 12px;
-      align-items: flex-start;
-    }
-
-    wa-radio::part(label) {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      white-space: normal;
-      gap: 0.75rem;
-    }
-
-    .option-icon {
-      width: 48px;
-      height: 48px;
-    }
-
-    .option-icon svg {
-      width: 100%;
-      height: 100%;
-      fill: var(--ha-primary-color, #03a9f4);
-    }
-
-    .option-content {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .option-title {
-      font-size: 1.125rem;
-      font-weight: 500;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 0.25rem 0;
-    }
-
-    .option-description {
-      font-size: 0.875rem;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 0.75rem 0;
-      line-height: 1.4;
-    }
-
-    .option-examples {
-      font-size: 0.8125rem;
-      color: var(--ha-secondary-text-color, #9e9e9e);
-      margin: 0;
-      line-height: 1.4;
-    }
-
-    .loading {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 3rem;
-      color: var(--ha-secondary-text-color, #727272);
-    }
-
-    .loading-spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid var(--ha-border-color, #e0e0e0);
-      border-top-color: var(--ha-primary-color, #03a9f4);
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: 1rem;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
+      h2 {
+        font-size: 1.5rem;
+        font-weight: 400;
+        color: var(--ha-text-color, #212121);
+        margin: 0 0 0.5rem 0;
+        text-align: center;
       }
-    }
 
-    .error {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem;
-      text-align: center;
-    }
+      .subtitle {
+        font-size: 1rem;
+        color: var(--ha-secondary-text-color, #727272);
+        margin: 0 0 2rem 0;
+        text-align: center;
+        max-width: 500px;
+      }
 
-    .error-icon {
-      width: 48px;
-      height: 48px;
-      margin-bottom: 1rem;
-    }
+      .options {
+        display: block;
+        width: 100%;
+        max-width: 700px;
+      }
 
-    .error-icon svg {
-      width: 100%;
-      height: 100%;
-      fill: var(--ha-error-color, #db4437);
-    }
+      .options::part(form-control-label) {
+        display: none;
+      }
 
-    .error-message {
-      color: var(--ha-error-color, #db4437);
-      margin-bottom: 1rem;
-    }
-  `;
+      .options::part(form-control-input) {
+        display: flex;
+        gap: 1rem;
+      }
+
+      @media (max-width: 500px) {
+        .options::part(form-control-input) {
+          flex-direction: column;
+        }
+      }
+
+      .mac-note {
+        font-size: 1rem;
+        color: var(--ha-secondary-text-color, #727272);
+        margin: 1rem 0 2rem 0;
+        text-align: center;
+        max-width: 500px;
+      }
+
+      wa-radio {
+        flex: 1;
+        min-width: 0;
+        height: auto;
+        padding: 1.5rem;
+        border-radius: 12px;
+        align-items: flex-start;
+      }
+
+      wa-radio::part(label) {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        white-space: normal;
+        gap: 0.75rem;
+      }
+
+      .option-icon {
+        width: 48px;
+        height: 48px;
+      }
+
+      .option-icon svg {
+        width: 100%;
+        height: 100%;
+        fill: var(--ha-primary-color, #03a9f4);
+      }
+
+      .option-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .option-title {
+        font-size: 1.125rem;
+        font-weight: 500;
+        color: var(--ha-text-color, #212121);
+        margin: 0 0 0.25rem 0;
+      }
+
+      .option-description {
+        font-size: 0.875rem;
+        color: var(--ha-secondary-text-color, #727272);
+        margin: 0 0 0.75rem 0;
+        line-height: 1.4;
+      }
+
+      .option-examples {
+        font-size: 0.8125rem;
+        color: var(--ha-secondary-text-color, #9e9e9e);
+        margin: 0;
+        line-height: 1.4;
+      }
+
+      .loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem;
+        color: var(--ha-secondary-text-color, #727272);
+      }
+
+      .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid var(--ha-border-color, #e0e0e0);
+        border-top-color: var(--ha-primary-color, #03a9f4);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .error {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 2rem;
+        text-align: center;
+      }
+
+      .error-icon {
+        width: 48px;
+        height: 48px;
+        margin-bottom: 1rem;
+      }
+
+      .error-icon svg {
+        width: 100%;
+        height: 100%;
+        fill: var(--ha-error-color, #db4437);
+      }
+
+      .error-message {
+        color: var(--ha-error-color, #db4437);
+        margin-bottom: 1rem;
+      }
+    `,
+  ];
 
   @state()
   private _x86Device: Device | null = null;
@@ -196,6 +200,12 @@ export class MiniPCArchitectureSelectionView extends LitElement {
 
   @state()
   private _selectedDeviceId: string | null = null;
+
+  @query("wa-radio-group")
+  private _radioGroup?: WaRadioGroup;
+
+  @query("wa-button")
+  private _button?: WaButton;
 
   connectedCallback() {
     super.connectedCallback();
@@ -248,9 +258,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
     // The setup action is removed on navigation. Give keyboard users a new
     // focus target once the asynchronously loaded architecture choices exist.
     await this.updateComplete;
-    const focusTarget =
-      this.shadowRoot?.querySelector("wa-radio-group") ??
-      this.shadowRoot?.querySelector("wa-button");
+    const focusTarget = this._radioGroup ?? this._button;
     if (focusTarget) {
       await focusTarget.updateComplete;
       if (this.isConnected && document.activeElement === document.body) {

@@ -151,14 +151,14 @@ export class HaHardwareConnectInstructions extends LitElement {
                 href=${RPIBOOT_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                @click=${(event: Event) => openExternalLink(event, RPIBOOT_URL)}
-                >${"rpiboot"}</a
+                @click=${openExternalLink}
+                >rpiboot</a
               >`,
               command: html`<code
-                >${"sudo ./rpiboot -d mass-storage-gadget64"}</code
+                >sudo ./rpiboot -d mass-storage-gadget64</code
               >`,
               windowsCommand: html`<code
-                >${"rpiboot-CM4-CM5 - Mass Storage Gadget"}</code
+                >rpiboot-CM4-CM5 - Mass Storage Gadget</code
               >`,
             }
           )}
@@ -166,7 +166,7 @@ export class HaHardwareConnectInstructions extends LitElement {
         <li>
           ${localizeContent(
             "views.ha_hardware.connect_instructions.yellow_cm5_drive",
-            { driveName: html`<code>${"RPi-MSD"}</code>` }
+            { driveName: html`<code>RPi-MSD</code>` }
           )}
         </li>
       </ol>
@@ -196,7 +196,7 @@ export class HaHardwareConnectInstructions extends LitElement {
         </li>
         <li>
           ${localizeContent("views.ha_hardware.connect_instructions.blue_ums", {
-            command: html`<code>${"ums /dev/mmcblk0"}</code>`,
+            command: html`<code>ums /dev/mmcblk0</code>`,
           })}
         </li>
       </ol>

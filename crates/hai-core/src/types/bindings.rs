@@ -14,6 +14,7 @@ fn typescript() -> String {
         DeviceCategory::decl(&config),
         HaosConfig::decl(&config),
         FlashRequest::decl(&config),
+        WifiConfig::decl(&config),
         ExpectedDevice::decl(&config),
         HaosRelease::decl(&config),
         ImageFormat::decl(&config),
@@ -91,8 +92,6 @@ fn optional_values_serialize_as_required_nullable_fields() {
             status: "online".into(),
             cpu_usage: None,
             cpu_count: None,
-            memory_used: None,
-            memory_total: None,
         })
         .unwrap(),
         serde_json::to_value(ExpectedDevice::default()).unwrap(),
@@ -119,7 +118,7 @@ fn optional_values_serialize_as_required_nullable_fields() {
         (
             &values[1],
             ProxmoxNode::decl(&config),
-            &["cpu_usage", "cpu_count", "memory_used", "memory_total"][..],
+            &["cpu_usage", "cpu_count"][..],
         ),
         (
             &values[4],
@@ -154,20 +153,20 @@ fn optional_values_serialize_as_required_nullable_fields() {
 
 #[test]
 fn wide_integers_keep_the_existing_json_number_protocol() {
-    let value = serde_json::to_value(ProxmoxNode {
-        name: "node".into(),
-        status: "online".into(),
-        cpu_usage: Some(0.5),
-        cpu_count: Some(4),
-        memory_used: Some(1_u64 << 40),
-        memory_total: Some(u64::MAX),
+    let value = serde_json::to_value(BlockDevice {
+        id: "fixture".into(),
+        name: "Fixture drive".into(),
+        size: u64::MAX,
+        device_type: DeviceType::UsbDrive,
+        removable: true,
+        model: None,
+        vendor: None,
+        serial: None,
     })
     .unwrap();
-    assert_eq!(value["memory_used"].as_u64(), Some(1_u64 << 40));
-    assert_eq!(value["memory_total"].as_u64(), Some(u64::MAX));
-    let declaration = ProxmoxNode::decl(&Config::new().with_large_int("number"));
-    assert!(declaration.contains("memory_used: number | null"));
-    assert!(declaration.contains("memory_total: number | null"));
+    assert_eq!(value["size"].as_u64(), Some(u64::MAX));
+    let declaration = BlockDevice::decl(&Config::new().with_large_int("number"));
+    assert!(declaration.contains("size: number,"));
     // JSON numbers beyond JavaScript's safe range retain the existing precision limit.
     assert!(!typescript().contains("bigint"));
 }

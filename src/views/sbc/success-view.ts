@@ -3,6 +3,7 @@ import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { openExternalLink } from "../../utils/external-url.js";
+import { selectedWifi } from "../../utils/wifi.js";
 
 import "../../components/install-success.js";
 
@@ -32,9 +33,8 @@ export function renderOpenHomeAssistantStep() {
         href="http://homeassistant.local"
         target="_blank"
         rel="noopener noreferrer"
-        @click=${(event: Event) =>
-          openExternalLink(event, "http://homeassistant.local")}
-        >${"homeassistant.local"}</a
+        @click=${openExternalLink}
+        >homeassistant.local</a
       >`,
       value1: html`<code
         >http://&lt;${localize("views.sbc.success_view.ip_address")}&gt;</code
@@ -73,6 +73,7 @@ export class SuccessView extends LitElement {
     const deviceName = this._wizardState.selections.deviceName;
     const board = this._wizardState.selections.deviceConfig?.board ?? "";
     const isMiniPc = this._wizardState.currentFlow === "minipc";
+    const wifi = selectedWifi(this._wizardState.selections);
     const supportsDirectUsb = board === "odroid-n2" || board === "odroid-m1s";
     const guide = Object.prototype.hasOwnProperty.call(
       INSTALLATION_GUIDES,
@@ -123,15 +124,25 @@ export class SuccessView extends LitElement {
                 : localize(
                     "views.sbc.success_view.insert_the_written_storage_unknown_device"
                   ),
-          localize("views.sbc.success_view.connect_ethernet_and_power"),
+          wifi
+            ? localize("views.sbc.success_view.connect_power_wifi", {
+                network: wifi.ssid,
+              })
+            : localize("views.sbc.success_view.connect_ethernet_and_power"),
           renderOpenHomeAssistantStep(),
-          localize("views.sbc.success_view.the_preparing_home_assistant_page"),
+          wifi
+            ? localize(
+                "views.sbc.success_view.the_preparing_home_assistant_page_wifi"
+              )
+            : localize(
+                "views.sbc.success_view.the_preparing_home_assistant_page"
+              ),
         ]}
         .footer=${html`<a
           href=${guide}
           target="_blank"
           rel="noopener noreferrer"
-          @click=${(event: Event) => openExternalLink(event, guide)}
+          @click=${openExternalLink}
           >${guide === "https://www.home-assistant.io/installation/"
             ? localize("views.sbc.success_view.installation_guide")
             : deviceName

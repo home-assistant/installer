@@ -18,138 +18,140 @@ export class WelcomeView extends LitElement {
 
   private _clickResetTimer?: number;
 
-  static styles = css`
-    ${reducedMotionStyles}
-    :host {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      padding: 2rem;
-      text-align: center;
-      position: relative;
-    }
-
-    @media (max-height: 700px) {
+  static styles = [
+    reducedMotionStyles,
+    css`
       :host {
-        box-sizing: border-box;
-        min-height: 0;
-        overflow-y: auto;
-        justify-content: flex-start;
-        padding-bottom: 6rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        padding: 2rem;
+        text-align: center;
+        position: relative;
       }
 
-      :host > * {
-        flex-shrink: 0;
+      @media (max-height: 700px) {
+        :host {
+          box-sizing: border-box;
+          min-height: 0;
+          overflow-y: auto;
+          justify-content: flex-start;
+          padding-bottom: 6rem;
+        }
+
+        :host > * {
+          flex-shrink: 0;
+        }
       }
-    }
 
-    casita-mascot {
-      width: 96px;
-      height: 96px;
-      margin-bottom: 1.5rem;
-    }
-
-    @keyframes soft-pulse {
-      0%,
-      100% {
-        transform: scale(1);
-        filter: drop-shadow(0 0 0 rgba(24, 188, 242, 0));
+      casita-mascot {
+        width: 96px;
+        height: 96px;
+        margin-bottom: 1.5rem;
       }
-      50% {
-        transform: scale(1.02);
-        filter: drop-shadow(0 0 15px rgba(24, 188, 242, 0.3));
+
+      @keyframes soft-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          filter: drop-shadow(0 0 0 rgba(24, 188, 242, 0));
+        }
+        50% {
+          transform: scale(1.02);
+          filter: drop-shadow(0 0 15px rgba(24, 188, 242, 0.3));
+        }
       }
-    }
 
-    .logo-container {
-      margin: 0 0 2rem;
-      font-size: inherit;
-      line-height: 1;
-    }
-
-    .logo {
-      width: 500px;
-      max-width: 100%;
-      height: auto;
-    }
-
-    .logo-container:hover .logo {
-      animation: soft-pulse 3s ease-in-out infinite;
-    }
-
-    .logo-dark {
-      display: none;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .logo-light {
-        display: none;
+      .logo-container {
+        margin: 0 0 2rem;
+        font-size: inherit;
+        line-height: 1;
       }
+
+      .logo {
+        width: 500px;
+        max-width: 100%;
+        height: auto;
+      }
+
+      .logo-container:hover .logo {
+        animation: soft-pulse 3s ease-in-out infinite;
+      }
+
       .logo-dark {
-        display: block;
-      }
-    }
-
-    .welcome-text {
-      max-width: 520px;
-      color: var(--ha-secondary-text-color, #727272);
-      line-height: 1.6;
-      margin-bottom: 2rem;
-    }
-
-    .welcome-text p {
-      margin: 0 0 1rem 0;
-    }
-
-    .welcome-text p:last-child {
-      margin-bottom: 0;
-    }
-
-    .learn-more {
-      margin-top: 1rem;
-      font-size: 0.875rem;
-      color: var(--ha-secondary-text-color, #9e9e9e);
-      text-decoration: underline;
-    }
-
-    .ohf-link {
-      position: absolute;
-      bottom: 2rem;
-      text-decoration: none;
-    }
-
-    @media (max-height: 700px) {
-      .ohf-link {
-        position: static;
-        margin-top: 2rem;
-      }
-    }
-
-    .ohf-logo {
-      width: 180px;
-      opacity: 0.7;
-      transition: opacity 0.2s ease;
-    }
-
-    .ohf-link:hover .ohf-logo {
-      opacity: 1;
-    }
-
-    .ohf-logo-dark {
-      display: none;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .ohf-logo-light {
         display: none;
       }
-      .ohf-logo-dark {
-        display: block;
+
+      @media (prefers-color-scheme: dark) {
+        .logo-light {
+          display: none;
+        }
+        .logo-dark {
+          display: block;
+        }
       }
-    }
-  `;
+
+      .welcome-text {
+        max-width: 520px;
+        color: var(--ha-secondary-text-color, #727272);
+        line-height: 1.6;
+        margin-bottom: 2rem;
+      }
+
+      .welcome-text p {
+        margin: 0 0 1rem 0;
+      }
+
+      .welcome-text p:last-child {
+        margin-bottom: 0;
+      }
+
+      .learn-more {
+        margin-top: 1rem;
+        font-size: 0.875rem;
+        color: var(--ha-secondary-text-color, #9e9e9e);
+        text-decoration: underline;
+      }
+
+      .ohf-link {
+        position: absolute;
+        bottom: 2rem;
+        text-decoration: none;
+      }
+
+      @media (max-height: 700px) {
+        .ohf-link {
+          position: static;
+          margin-top: 2rem;
+        }
+      }
+
+      .ohf-logo {
+        width: 180px;
+        opacity: 0.7;
+        transition: opacity 0.2s ease;
+      }
+
+      .ohf-link:hover .ohf-logo {
+        opacity: 1;
+      }
+
+      .ohf-logo-dark {
+        display: none;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .ohf-logo-light {
+          display: none;
+        }
+        .ohf-logo-dark {
+          display: block;
+        }
+      }
+    `,
+  ];
 
   render() {
     return html`
@@ -195,11 +197,7 @@ export class WelcomeView extends LitElement {
         href="https://www.home-assistant.io/installation/"
         target="_blank"
         rel="noopener noreferrer"
-        @click=${(event: Event) =>
-          openExternalLink(
-            event,
-            "https://www.home-assistant.io/installation/"
-          )}
+        @click=${openExternalLink}
       >
         ${localize(
           "views.welcome_view.learn_more_about_installing_home_assistant"
@@ -211,8 +209,7 @@ export class WelcomeView extends LitElement {
         href="https://www.openhomefoundation.org/"
         target="_blank"
         rel="noopener noreferrer"
-        @click=${(event: Event) =>
-          openExternalLink(event, "https://www.openhomefoundation.org/")}
+        @click=${openExternalLink}
       >
         <img
           class="ohf-logo ohf-logo-light"

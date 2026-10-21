@@ -17,7 +17,7 @@ test.describe("Proxmox TOTP login", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await page.locator("welcome-view wa-button").click();
-    await page.locator('option-card[title="Proxmox server"]').click();
+    await page.locator('option-card[heading="Proxmox server"]').click();
     await expect(page.locator("proxmox-connect-view")).toBeVisible();
 
     // Use the actual shell and command wrapper, replacing only native IPC.
@@ -173,7 +173,7 @@ test.describe("Proxmox TOTP login", () => {
     ).toEqual([]);
 
     await page.locator("welcome-view wa-button").click();
-    await page.locator('option-card[title="Proxmox server"]').click();
+    await page.locator('option-card[heading="Proxmox server"]').click();
     await expect(code).toHaveValue("");
     await page
       .getByRole("textbox", { name: "Server URL" })

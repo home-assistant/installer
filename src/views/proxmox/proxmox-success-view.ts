@@ -88,7 +88,7 @@ export class ProxmoxSuccessView extends LitElement {
                 href=${haUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                @click=${(event: Event) => openExternalLink(event, haUrl)}
+                @click=${openExternalLink}
               >
                 ${displayUrl}
               </a>`,
@@ -151,8 +151,7 @@ export class ProxmoxSuccessView extends LitElement {
           href=${DIRECTORY_STORAGE_DOCS}
           target="_blank"
           rel="noopener noreferrer"
-          @click=${(event: Event) =>
-            openExternalLink(event, DIRECTORY_STORAGE_DOCS)}
+          @click=${openExternalLink}
           >${localize("proxmox.directory_storage_documentation")}</a
         >
       </p>

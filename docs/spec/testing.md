@@ -253,32 +253,6 @@ test.describe('Proxmox Flow', () => {
 });
 ```
 
-### Toolbox Test
-
-```typescript
-// test/e2e/toolbox.spec.ts
-import { test, expect } from '@playwright/test';
-
-test.describe('Toolbox Integration', () => {
-  test('opens toolbox iframe and returns', async ({ page }) => {
-    await page.goto('/');
-    
-    // Click toolbox button
-    await page.getByRole('button', { name: /toolbox/i }).click();
-    
-    // Should show iframe with toolbox
-    const iframe = page.frameLocator('iframe');
-    await expect(iframe.locator('body')).toBeVisible();
-    
-    // Return to installer
-    await page.getByRole('button', { name: /back to installer/i }).click();
-    
-    // Should be back on welcome
-    await expect(page.getByText('Welcome to your privacy-first')).toBeVisible();
-  });
-});
-```
-
 ### Playwright Config
 
 ```typescript

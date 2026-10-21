@@ -8,7 +8,7 @@ for (const width of [1100, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
     await page.locator("welcome-view wa-button").click();
-    await page.locator('option-card[title="Proxmox server"]').click();
+    await page.locator('option-card[heading="Proxmox server"]').click();
     const connection = page.locator("proxmox-connect-view");
     await connection.locator("#server-url").fill("https://pve.example:8006");
     await connection.locator("#username").fill("root@pam");
@@ -48,10 +48,12 @@ for (const width of [1100, 390]) {
       .getByRole("button", { name: "Advanced", exact: true })
       .click();
     const tag = configure.locator("#vlan-tag input");
+    // A polite live region, not an alert, so typing keeps focus in the field
+    const hint = configure.locator("#vlan-tag .vlan-hint");
     for (const value of ["0", "4095", "1.5", "-1", "abc", "1e2"]) {
       await tag.fill(value);
       await expect(next).toBeDisabled();
-      await expect(configure.getByRole("alert")).toContainText("whole number");
+      await expect(hint).toContainText("whole number");
     }
     for (const value of ["1", "4094", ""]) {
       await tag.fill(value);
@@ -60,9 +62,7 @@ for (const width of [1100, 390]) {
     await tag.fill("42");
     await chooseBridge("End", "vmbr1");
     await expect(next).toBeDisabled();
-    await expect(configure.getByRole("alert")).toContainText(
-      "VLAN-aware bridge"
-    );
+    await expect(hint).toContainText("VLAN-aware bridge");
     await configure.locator("wa-details").screenshot({
       path: test.info().outputPath(`vlan-validation-${width}.png`),
     });

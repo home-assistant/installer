@@ -30,150 +30,152 @@ const ICON_FILES: Record<string, string> = {
 
 @customElement("option-card")
 export class OptionCard extends LitElement {
-  static styles = css`
-    ${reducedMotionStyles}
-    @media (prefers-reduced-motion: reduce) {
-      .card:active {
-        transform: none !important;
+  static styles = [
+    reducedMotionStyles,
+    css`
+      @media (prefers-reduced-motion: reduce) {
+        .card:active {
+          transform: none !important;
+        }
       }
-    }
-    :host {
-      display: block;
-      outline: none;
-    }
+      :host {
+        display: block;
+        outline: none;
+      }
 
-    :host(:focus-visible) .card {
-      outline: var(--wa-focus-ring);
-      outline-offset: var(--wa-focus-ring-offset);
-    }
+      :host(:focus-visible) .card {
+        outline: var(--wa-focus-ring);
+        outline-offset: var(--wa-focus-ring-offset);
+      }
 
-    /* Fills a stretched grid cell, so cards in one row end level */
-    .card {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      box-sizing: border-box;
-      height: 100%;
-      padding: 1.5rem;
-      min-height: 200px;
-      background-color: var(--ha-card-background, #ffffff);
-      border: 2px solid var(--ha-border-color, #e0e0e0);
-      border-radius: 12px;
-      cursor: pointer;
-      transition:
-        border-color 0.2s ease,
-        box-shadow 0.2s ease,
-        transform 0.1s ease;
-    }
-
-    .card:hover {
-      border-color: var(--ha-primary-color, #03a9f4);
-      box-shadow: 0 4px 12px rgba(3, 169, 244, 0.15);
-    }
-
-    .card:active {
-      transform: scale(0.98);
-    }
-
-    @media (prefers-color-scheme: dark) {
+      /* Fills a stretched grid cell, so cards in one row end level */
       .card {
-        background-color: var(--ha-card-background, #1e1e1e);
-        border-color: var(--ha-border-color, #333333);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        box-sizing: border-box;
+        height: 100%;
+        padding: 1.5rem;
+        min-height: 200px;
+        background-color: var(--ha-card-background, #ffffff);
+        border: 2px solid var(--ha-border-color, #e0e0e0);
+        border-radius: 12px;
+        cursor: pointer;
+        transition:
+          border-color 0.2s ease,
+          box-shadow 0.2s ease,
+          transform 0.1s ease;
       }
 
       .card:hover {
-        box-shadow: 0 4px 12px rgba(3, 169, 244, 0.25);
+        border-color: var(--ha-primary-color, #03a9f4);
+        box-shadow: 0 4px 12px rgba(3, 169, 244, 0.15);
       }
-    }
 
-    :host([horizontal]) .card {
-      display: grid;
-      grid-template-columns: 48px minmax(0, 1fr) auto;
-      gap: 0.25rem 1rem;
-      min-height: 0;
-      align-items: center;
-    }
+      .card:active {
+        transform: scale(0.98);
+      }
 
-    :host([horizontal]) .icon-container {
-      grid-row: span 2;
-      width: 48px;
-      height: 48px;
-      margin: 0;
-    }
+      @media (prefers-color-scheme: dark) {
+        .card {
+          background-color: var(--ha-card-background, #1e1e1e);
+          border-color: var(--ha-border-color, #333333);
+        }
 
-    :host([horizontal]) .title,
-    :host([horizontal]) .description {
-      grid-column: 2;
-      text-align: left;
-      margin: 0;
-    }
+        .card:hover {
+          box-shadow: 0 4px 12px rgba(3, 169, 244, 0.25);
+        }
+      }
 
-    :host([horizontal]) slot[name="end"] {
-      display: block;
-      grid-column: 3;
-      grid-row: 1 / span 2;
-      color: var(--ha-secondary-text-color, #9e9e9e);
-      font-size: 1.25rem;
-    }
+      :host([horizontal]) .card {
+        display: grid;
+        grid-template-columns: 48px minmax(0, 1fr) auto;
+        gap: 0.25rem 1rem;
+        min-height: 0;
+        align-items: center;
+      }
 
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 1rem;
-    }
+      :host([horizontal]) .icon-container {
+        grid-row: span 2;
+        width: 48px;
+        height: 48px;
+        margin: 0;
+      }
 
-    .icon-container img {
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-    }
+      :host([horizontal]) .title,
+      :host([horizontal]) .description {
+        grid-column: 2;
+        text-align: left;
+        margin: 0;
+      }
 
-    ha-svg-icon {
-      --mdc-icon-size: 100%;
-      color: var(--ha-primary-color, #03a9f4);
-    }
+      :host([horizontal]) slot[name="end"] {
+        display: block;
+        grid-column: 3;
+        grid-row: 1 / span 2;
+        color: var(--ha-secondary-text-color, #9e9e9e);
+        font-size: 1.25rem;
+      }
 
-    .icon-file {
-      width: 100%;
-      height: 100%;
-      background-color: var(--ha-primary-color, #03a9f4);
-      -webkit-mask: var(--icon-file) center / contain no-repeat;
-      mask: var(--icon-file) center / contain no-repeat;
-    }
+      .icon-container {
+        width: 80px;
+        height: 80px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1rem;
+      }
 
-    /* Forced colors would paint the mask's background like the card */
-    @media (forced-colors: active) {
+      .icon-container img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+      }
+
+      ha-svg-icon {
+        --mdc-icon-size: 100%;
+        color: var(--ha-primary-color, #03a9f4);
+      }
+
       .icon-file {
-        forced-color-adjust: none;
-        background-color: CanvasText;
+        width: 100%;
+        height: 100%;
+        background-color: var(--ha-primary-color, #03a9f4);
+        -webkit-mask: var(--icon-file) center / contain no-repeat;
+        mask: var(--icon-file) center / contain no-repeat;
       }
-    }
 
-    .title {
-      font-size: 1rem;
-      font-weight: 500;
-      color: var(--ha-text-color, #212121);
-      text-align: center;
-      margin: 0 0 0.5rem 0;
-    }
+      /* Forced colors would paint the mask's background like the card */
+      @media (forced-colors: active) {
+        .icon-file {
+          forced-color-adjust: none;
+          background-color: CanvasText;
+        }
+      }
 
-    .description {
-      font-size: 0.8125rem;
-      color: var(--ha-secondary-text-color, #727272);
-      text-align: center;
-      line-height: 1.4;
-      margin: 0;
-    }
-  `;
+      .title {
+        font-size: 1rem;
+        font-weight: 500;
+        color: var(--ha-text-color, #212121);
+        text-align: center;
+        margin: 0 0 0.5rem 0;
+      }
+
+      .description {
+        font-size: 0.8125rem;
+        color: var(--ha-secondary-text-color, #727272);
+        text-align: center;
+        line-height: 1.4;
+        margin: 0;
+      }
+    `,
+  ];
 
   @property({ type: Boolean, reflect: true })
   horizontal = false;
 
-  @property({ type: String })
-  title = "";
+  @property({ type: String, reflect: true })
+  heading = "";
 
   @property({ type: String })
   description = "";
@@ -209,7 +211,7 @@ export class OptionCard extends LitElement {
     return html`
       <div class="card">
         <div class="icon-container">${this._renderIcon()}</div>
-        <p class="title">${this.title}</p>
+        <p class="title">${this.heading}</p>
         <p class="description">${this.description}</p>
         <slot name="end"></slot>
       </div>

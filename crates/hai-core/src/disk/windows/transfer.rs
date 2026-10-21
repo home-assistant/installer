@@ -49,7 +49,7 @@ impl DiskIo for File {
 }
 
 pub(super) fn transfer(
-    source: &mut File,
+    source: &mut (impl Read + Seek),
     device: &mut impl DiskIo,
     image_size: u64,
     disk_size: u64,
@@ -171,7 +171,7 @@ fn verification_error(error: Error) -> Error {
 }
 
 fn verify_body(
-    source: &mut File,
+    source: &mut (impl Read + Seek),
     device: &mut impl DiskIo,
     offset: u64,
     image_size: u64,

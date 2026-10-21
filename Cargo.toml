@@ -43,6 +43,7 @@ liblzma = { version = "0.4", features = ["static"] }
 # File system
 directories = "6"
 fs2 = "0.4"
+fatfs = { version = "0.3", default-features = false, features = ["std", "alloc"] }
 
 # URL encoding
 urlencoding = "2"

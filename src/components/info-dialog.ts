@@ -8,7 +8,7 @@ import "@home-assistant/webawesome/dist/components/button/button.js";
  * Informational dialog built on wa-dialog (focus trap, Escape, backdrop
  * dismiss, and role="dialog"/aria-modal come for free).
  *
- * Toggle `open`, set `title` / `message` / `primaryLabel` / `secondaryLabel` /
+ * Toggle `open`, set `heading` / `message` / `primaryLabel` / `secondaryLabel` /
  * `primaryVariant`, and listen for `dialog-primary` / `dialog-secondary`.
  * Escape, backdrop click, and the header close button all map to
  * `dialog-secondary` (dismiss).
@@ -70,19 +70,19 @@ export class InfoDialog extends LitElement {
   open = false;
 
   @property({ type: String })
-  title = "";
+  heading = "";
 
   @property({ type: String })
   message = "";
 
-  @property({ type: String })
+  @property({ type: String, attribute: "primary-label" })
   primaryLabel = localize("components.info_dialog.ok");
 
-  @property({ type: String })
+  @property({ type: String, attribute: "secondary-label" })
   secondaryLabel = "";
 
   /** "danger" when the primary button does something that can't be undone. */
-  @property({ type: String })
+  @property({ type: String, attribute: "primary-variant" })
   primaryVariant: "brand" | "danger" = "brand";
 
   render() {
@@ -100,7 +100,7 @@ export class InfoDialog extends LitElement {
               />
             </svg>
           </span>
-          ${this.title}
+          ${this.heading}
         </span>
 
         <p class="dialog-message">${this.message}</p>

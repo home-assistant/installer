@@ -13,9 +13,11 @@ export async function openExternalUrl(url: string) {
   }
 }
 
-export async function openExternalLink(event: Event, url: string) {
+// Click handler for an <a>: opens its href outside the installer
+export async function openExternalLink(event: Event) {
   event.preventDefault();
-  await openExternalUrl(url);
+  const url = (event.currentTarget as HTMLAnchorElement).getAttribute("href");
+  if (url) await openExternalUrl(url);
 }
 
 function isWebLink(url: string): boolean {

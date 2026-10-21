@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { skipWifiStep } from "./fixtures.js";
 
 const nextButton = (page: Page) =>
   page.locator("wizard-shell .footer-right wa-button");
@@ -46,7 +47,7 @@ for (const width of [1100, 390]) {
     });
     await page.locator("welcome-view wa-button").click();
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await page.locator("device-selection-view device-card").first().click();
     await nextButton(page).click();
@@ -83,6 +84,7 @@ for (const width of [1100, 390]) {
     await capture(page, `drive-disabled-${width}`);
 
     await nextButton(page).click();
+    await skipWifiStep(page);
     await expect(page.locator("confirmation-view")).toContainText("15.6 GB");
     await nextButton(page).click();
     const dialog = page.locator("confirm-dialog");

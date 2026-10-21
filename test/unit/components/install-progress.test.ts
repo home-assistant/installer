@@ -1,6 +1,7 @@
 import { expect, fixture, fixtureSync, html } from "@open-wc/testing";
 import type { InstallProgress } from "../../../src/components/install-progress.js";
 import "../../../src/components/install-progress.js";
+import { captureOpenedUrls, restoreTauriIpc, settle } from "../tauri-ipc.js";
 
 describe("install-progress", () => {
   it("keeps the thought bubble inside a short scroll container", async () => {
@@ -24,6 +25,48 @@ describe("install-progress", () => {
     expect(bubble.left).to.be.at.least(bounds.left);
     expect(bubble.right).to.be.at.most(bounds.right);
     expect(container.scrollHeight).to.be.greaterThan(container.clientHeight);
+  });
+
+  it("shows where Home Assistant is checked, as a link to open it", async () => {
+    const opened = captureOpenedUrls();
+    try {
+      const el = await fixture<InstallProgress>(
+        html`<install-progress stage="ready"></install-progress>`
+      );
+      expect(el.shadowRoot!.querySelector(".address")).to.be.null;
+
+      el.address = "http://192.0.2.50";
+      await el.updateComplete;
+      const address = el.shadowRoot!.querySelector(".address")!;
+      expect(address.textContent).to.contain(
+        "Checking Home Assistant at http://192.0.2.50."
+      );
+      const link = address.querySelector("a")!;
+      expect(link.textContent).to.equal("http://192.0.2.50");
+      link.click();
+      await settle();
+      expect(opened).to.deep.equal(["http://192.0.2.50"]);
+
+      // An error replaces the progress, address included
+      el.error = "Home Assistant did not respond";
+      await el.updateComplete;
+      expect(el.shadowRoot!.querySelector(".address")).to.be.null;
+    } finally {
+      restoreTauriIpc();
+    }
+  });
+
+  it("asks to keep the window open only while leaving would stop something", async () => {
+    const el = await fixture<InstallProgress>(
+      html`<install-progress stage="creating_vm"></install-progress>`
+    );
+    const keepOpen = () =>
+      el.shadowRoot!.querySelector(".stage-description")?.textContent ?? "";
+    expect(keepOpen()).to.contain("keep this window open");
+
+    el.leavable = true;
+    await el.updateComplete;
+    expect(keepOpen()).to.equal("");
   });
 
   it("renders the stage labels, active stage and completion", async () => {

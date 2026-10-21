@@ -12,7 +12,7 @@ type TestWindow = typeof window & {
 async function configure(page: Page, failFirst = false, changed = true) {
   await page.goto("/");
   await page.locator("welcome-view wa-button").click();
-  await page.locator('option-card[title="Proxmox server"]').click();
+  await page.locator('option-card[heading="Proxmox server"]').click();
   await expect(page.locator("proxmox-connect-view")).toBeVisible();
   await page.evaluate(
     ({ failure, changed }) => {
@@ -75,7 +75,6 @@ async function configure(page: Page, failFirst = false, changed = true) {
                     ? ["backup", "import"]
                     : ["backup"],
                   available: 1e11,
-                  total: 2e11,
                 },
                 {
                   name: "local-lvm",
@@ -83,7 +82,6 @@ async function configure(page: Page, failFirst = false, changed = true) {
                   active: true,
                   content: ["images"],
                   available: 1e11,
-                  total: 2e11,
                 },
               ];
             case "proxmox_enable_storage_import":

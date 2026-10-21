@@ -79,150 +79,152 @@ function isSessionExpired(error: unknown): boolean {
 @customElement("proxmox-configure-view")
 export class ProxmoxConfigureView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
-  static styles = css`
-    ${reducedMotionStyles}
-    :host {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100%;
-    }
-
-    h2 {
-      font-size: 1.5rem;
-      font-weight: 400;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 0.5rem 0;
-      text-align: center;
-    }
-
-    .subtitle {
-      font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 1.5rem 0;
-      text-align: center;
-    }
-
-    .config-card {
-      display: flex;
-      flex-direction: column;
-      gap: 1.75rem;
-      padding: 1rem 1.25rem;
-      background-color: var(--ha-card-background, #ffffff);
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-      border-radius: 12px;
-      width: 100%;
-      box-sizing: border-box;
-      max-width: 500px;
-    }
-
-    wa-details {
-      width: 100%;
-      max-width: 500px;
-      margin-top: 1rem;
-      flex-shrink: 0;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      .config-card {
-        background-color: var(--ha-card-background, #1e1e1e);
-        border-color: var(--ha-border-color, #333333);
+  static styles = [
+    reducedMotionStyles,
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100%;
       }
-    }
 
-    .setting-row {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-    }
+      h2 {
+        font-size: 1.5rem;
+        font-weight: 400;
+        color: var(--ha-text-color, #212121);
+        margin: 0 0 0.5rem 0;
+        text-align: center;
+      }
 
-    .setting-icon {
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      margin-top: 2px;
-    }
+      .subtitle {
+        font-size: 1rem;
+        color: var(--ha-secondary-text-color, #727272);
+        margin: 0 0 1.5rem 0;
+        text-align: center;
+      }
 
-    .setting-icon svg {
-      width: 22px;
-      height: 22px;
-      fill: var(--ha-secondary-text-color, #727272);
-    }
+      .config-card {
+        display: flex;
+        flex-direction: column;
+        gap: 1.75rem;
+        padding: 1rem 1.25rem;
+        background-color: var(--ha-card-background, #ffffff);
+        border: 1px solid var(--ha-border-color, #e0e0e0);
+        border-radius: 12px;
+        width: 100%;
+        box-sizing: border-box;
+        max-width: 500px;
+      }
 
-    .setting-content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-      min-width: 0;
-    }
+      wa-details {
+        width: 100%;
+        max-width: 500px;
+        margin-top: 1rem;
+        flex-shrink: 0;
+      }
 
-    wa-slider::part(label) {
-      display: block;
-    }
+      @media (prefers-color-scheme: dark) {
+        .config-card {
+          background-color: var(--ha-card-background, #1e1e1e);
+          border-color: var(--ha-border-color, #333333);
+        }
+      }
 
-    .setting-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-    }
+      .setting-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+      }
 
-    .setting-label {
-      font-size: 0.9375rem;
-      font-weight: 500;
-      color: var(--ha-text-color, #212121);
-    }
+      .setting-icon {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
 
-    .setting-value {
-      font-size: 0.9375rem;
-      font-weight: 600;
-      color: var(--ha-primary-color, #03a9f4);
-      min-width: 70px;
-      text-align: right;
-    }
+      .setting-icon svg {
+        width: 22px;
+        height: 22px;
+        fill: var(--ha-secondary-text-color, #727272);
+      }
 
-    .setting-description {
-      font-size: 0.75rem;
-      color: var(--ha-secondary-text-color, #9e9e9e);
-      margin: 0;
-      line-height: 1.3;
-    }
+      .setting-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        min-width: 0;
+      }
 
-    /* The slider's handle reaches below its track */
-    wa-slider + .setting-description {
-      margin-top: 0.5rem;
-    }
+      wa-slider::part(label) {
+        display: block;
+      }
 
-    .loading-text {
-      font-size: 0.875rem;
-      color: var(--ha-secondary-text-color, #9e9e9e);
-      font-style: italic;
-    }
+      .setting-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+      }
 
-    .error-text {
-      font-size: 0.875rem;
-      color: var(--ha-error-color, #db4437);
-    }
+      .setting-label {
+        font-size: 0.9375rem;
+        font-weight: 500;
+        color: var(--ha-text-color, #212121);
+      }
 
-    .import-setting {
-      gap: 0.75rem;
-      overflow-wrap: anywhere;
-    }
+      .setting-value {
+        font-size: 0.9375rem;
+        font-weight: 600;
+        color: var(--ha-primary-color, #03a9f4);
+        min-width: 70px;
+        text-align: right;
+      }
 
-    .import-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-    }
+      .setting-description {
+        font-size: 0.75rem;
+        color: var(--ha-secondary-text-color, #9e9e9e);
+        margin: 0;
+        line-height: 1.3;
+      }
 
-    .import-setting a {
-      font-size: 0.875rem;
-      color: var(--ha-primary-color, #03a9f4);
-    }
-  `;
+      /* The slider's handle reaches below its track */
+      wa-slider + .setting-description {
+        margin-top: 0.5rem;
+      }
+
+      .loading-text {
+        font-size: 0.875rem;
+        color: var(--ha-secondary-text-color, #9e9e9e);
+        font-style: italic;
+      }
+
+      .error-text {
+        font-size: 0.875rem;
+        color: var(--ha-error-color, #db4437);
+      }
+
+      .import-setting {
+        gap: 0.75rem;
+        overflow-wrap: anywhere;
+      }
+
+      .import-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      .import-setting a {
+        font-size: 0.875rem;
+        color: var(--ha-primary-color, #03a9f4);
+      }
+    `,
+  ];
 
   @state()
   private _wizardState: WizardState = wizardState.getState();
@@ -346,12 +348,12 @@ export class ProxmoxConfigureView extends LitElement {
     const isCurrentSession = () =>
       this._wizardState.selections.proxmoxSession === session;
 
+    // The connect step only moves on with a session, so this follows an
+    // expiry that cleared it, and the expiry text says what to do
     if (!session) {
       this._setError({
         code: SESSION_EXPIRED,
-        message: localize(
-          "views.proxmox.proxmox_configure_view.connect_to_proxmox_to_continue"
-        ),
+        message: localize("utils.installer_error.proxmox_session_expired"),
         retryable: false,
         details: {},
       });
@@ -590,6 +592,13 @@ export class ProxmoxConfigureView extends LitElement {
       )
     );
     if (this._sessionExpired) {
+      const session = wizardState.getState().selections.proxmoxSession;
+      if (session) {
+        wizardState.setSelection("proxmoxPreviousServer", {
+          server_url: session.server_url,
+          certificate_sha256: session.certificate_sha256,
+        });
+      }
       wizardState.setSelection("proxmoxSession", undefined);
       wizardState.setSelection("proxmoxConnected", false);
     }
@@ -895,6 +904,18 @@ export class ProxmoxConfigureView extends LitElement {
     });
   }
 
+  // The sliders step through option indexes, so they show the option there
+  private _formatCoresAt = (index: number) =>
+    localize("views.proxmox.proxmox_configure_view.value_cores", {
+      value0: this._getCoreOptions()[index],
+    });
+
+  private _formatMemoryAt = (index: number) =>
+    this._formatMemory(this._getMemoryOptions()[index]);
+
+  private _formatDiskSizeAt = (index: number) =>
+    this._formatDiskSize(this._getDiskSizeOptions()[index]);
+
   private _getCpuDescription(): string {
     if (this._cpuCores <= 2) {
       return localize(
@@ -1125,27 +1146,24 @@ export class ProxmoxConfigureView extends LitElement {
               )}
             </wa-button>
           </div>
-          <a
-            href=${DIRECTORY_STORAGE_DOCS}
-            @click=${(event: Event) =>
-              openExternalLink(event, DIRECTORY_STORAGE_DOCS)}
+          <a href=${DIRECTORY_STORAGE_DOCS} @click=${openExternalLink}
             >${localize("proxmox.directory_storage_documentation")}</a
           >
         </div>
       </div>
       <info-dialog
         .open=${this._importDialog}
-        title=${localize(
+        heading=${localize(
           "views.proxmox.proxmox_configure_view.enable_import_on_storage_title"
         )}
         .message=${localize(
           "views.proxmox.proxmox_configure_view.enable_import_on_storage_message",
           { storage: this._importStorage }
         )}
-        primaryLabel=${localize(
+        primary-label=${localize(
           "views.proxmox.proxmox_configure_view.enable_import"
         )}
-        secondaryLabel=${localize(
+        secondary-label=${localize(
           "views.proxmox.proxmox_configure_view.not_now"
         )}
         @dialog-primary=${this._enableImport}
@@ -1421,10 +1439,7 @@ export class ProxmoxConfigureView extends LitElement {
               step="1"
               .value=${coreIndex >= 0 ? coreIndex : 1}
               @input=${this._onCoresChange}
-              .valueFormatter=${(index: number) =>
-                localize("views.proxmox.proxmox_configure_view.value_cores", {
-                  value0: coreOptions[index],
-                })}
+              .valueFormatter=${this._formatCoresAt}
               ><div slot="label" class="setting-header">
                 <span class="setting-label"
                   >${localize(
@@ -1454,8 +1469,7 @@ export class ProxmoxConfigureView extends LitElement {
               step="1"
               .value=${memoryIndex >= 0 ? memoryIndex : 1}
               @input=${this._onMemoryChange}
-              .valueFormatter=${(index: number) =>
-                this._formatMemory(memoryOptions[index])}
+              .valueFormatter=${this._formatMemoryAt}
               ><div slot="label" class="setting-header">
                 <span class="setting-label"
                   >${localize(
@@ -1482,8 +1496,7 @@ export class ProxmoxConfigureView extends LitElement {
               step="1"
               .value=${diskIndex >= 0 ? diskIndex : 0}
               @input=${this._onDiskSizeChange}
-              .valueFormatter=${(index: number) =>
-                this._formatDiskSize(diskSizeOptions[index])}
+              .valueFormatter=${this._formatDiskSizeAt}
               ><div slot="label" class="setting-header">
                 <span class="setting-label"
                   >${localize(
@@ -1513,10 +1526,9 @@ export class ProxmoxConfigureView extends LitElement {
           @input=${this._onVlanInput}
           .customError=${this._vlanError ?? null}
         >
-          <span
-            slot="hint"
-            aria-live="polite"
-            role=${this._vlanError ? "alert" : "note"}
+          <!-- Not role="alert": ViewAccessibility focuses a new alert, which
+            took focus out of the field as soon as a digit made it invalid -->
+          <span slot="hint" class="vlan-hint" aria-live="polite"
             >${this._vlanError ??
             (this._vlanTag
               ? ""

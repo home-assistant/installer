@@ -13,6 +13,18 @@ describe("installer errors", () => {
     expect(result.retryable).to.be.false;
   });
 
+  it("keeps internals of a configuration error out of the message", () => {
+    const result = installerError(
+      ipcError("invalid_config", "Cannot parse board from: haos_x.img.xz")
+    );
+    expect(result.message).to.equal(
+      "The installer couldn't prepare this installation. Report the problem if it continues."
+    );
+    expect(
+      installerError(ipcError("proxmox_session_expired", "raw")).message
+    ).to.contain("Reconnect to Proxmox");
+  });
+
   it("formats structured capacity details and rejects unsafe retry", () => {
     const result = installerError(
       ipcError("image_too_large", "raw bytes", false, {

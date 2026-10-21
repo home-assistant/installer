@@ -51,6 +51,9 @@ const STOPPABLE_STAGES: InstallStage[] = [
   "uploading",
 ];
 
+/** The VM runs and only Home Assistant is awaited, so leaving loses nothing */
+const LEAVABLE_STAGES: InstallStage[] = ["waiting", "ready", "updating"];
+
 /** The backend's stages, then the waits for the VM and Home Assistant run from here */
 type InstallStage =
   | BackendStage
@@ -155,6 +158,9 @@ export class ProxmoxProgressView extends LitElement {
   /** What the shell last heard about `stoppable`. */
   private _reportedStoppable?: boolean;
 
+  /** What the shell last heard about `leavable`. */
+  private _reportedLeavable?: boolean;
+
   private _stageStartTime: number | null = null;
   private _diagnostics?: InstallDiagnostics;
   private _stageStartBytes: number = 0;
@@ -164,6 +170,11 @@ export class ProxmoxProgressView extends LitElement {
   /** Whether the install operation has failed */
   get hasError(): boolean {
     return this._error !== null;
+  }
+
+  /** Whether the user can leave with the VM running and nothing left to start */
+  get leavable(): boolean {
+    return this._error === null && LEAVABLE_STAGES.includes(this._stage);
   }
 
   /** Whether `stop` can still end the install without leaving anything behind */
@@ -220,15 +231,28 @@ export class ProxmoxProgressView extends LitElement {
     super.updated(changed);
 
     // The shell offers the stop only while it can still work
-    if (this.stoppable === this._reportedStoppable) return;
-    this._reportedStoppable = this.stoppable;
-    this.dispatchEvent(
-      new CustomEvent("install-stoppable", {
-        detail: { stoppable: this.stoppable },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    if (this.stoppable !== this._reportedStoppable) {
+      this._reportedStoppable = this.stoppable;
+      this.dispatchEvent(
+        new CustomEvent("install-stoppable", {
+          detail: { stoppable: this.stoppable },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
+    // And leaving only once the VM runs: a VM that exists but was never
+    // started would stay stopped
+    if (this.leavable !== this._reportedLeavable) {
+      this._reportedLeavable = this.leavable;
+      this.dispatchEvent(
+        new CustomEvent("install-leavable", {
+          detail: { leavable: this.leavable },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
   }
 
   disconnectedCallback() {
@@ -537,6 +561,8 @@ export class ProxmoxProgressView extends LitElement {
         .indeterminate=${this._isIndeterminate(stage)}
         .measurable=${this._hasMeasurableProgress(stage)}
         .error=${this._error?.message ?? null}
+        .address=${this._checkedAddress(stage)}
+        .leavable=${this.leavable}
       ></install-progress>
     `;
   }
@@ -555,6 +581,14 @@ export class ProxmoxProgressView extends LitElement {
       MEASURABLE_STAGES.includes(stage) &&
       (stage === "downloading" || this._totalBytes > 0)
     );
+  }
+
+  /** The address Home Assistant is checked at, to open it meanwhile */
+  private _checkedAddress(stage: string): string | null {
+    const ip = this._wizardState.selections.ipAddress;
+    return ip && (stage === "ready" || stage === "updating")
+      ? `http://${ip}`
+      : null;
   }
 
   private _getStageTitle(stage: string): string {

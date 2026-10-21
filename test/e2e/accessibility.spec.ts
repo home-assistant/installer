@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { approveProxmoxImport } from "./fixtures.js";
+import { approveProxmoxImport, skipWifiStep } from "./fixtures.js";
 
 for (const [flow, tag, flag] of [
   ["sbc", "progress-view", "_flashError"],
@@ -132,7 +132,7 @@ test("reduced motion reaches card shadow roots and the FAB button part", async (
       "fab-button",
     ]) {
       const element = document.createElement(tag);
-      element.setAttribute("title", "Test option");
+      element.setAttribute("heading", "Test option");
       element.setAttribute("name", "Test device");
       element.setAttribute("label", "Refresh devices");
       document.body.append(element);
@@ -388,6 +388,7 @@ test("disk installation keeps heading focus after the confirmation dialog closes
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("radio").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await skipWifiStep(page);
   await page.getByRole("button", { name: "Install", exact: true }).click();
   await page
     .getByRole("button", { name: "Erase and install", exact: true })

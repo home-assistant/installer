@@ -6,6 +6,7 @@ import {
   waitUntil,
 } from "@open-wc/testing";
 import { LitElement } from "lit";
+import { property } from "lit/decorators.js";
 import {
   ViewAccessibility,
   LiveStatus,
@@ -13,16 +14,10 @@ import {
 import "../../../src/views/sbc/success-view.js";
 
 class StatusTestView extends LitElement {
-  static properties = {
-    stageTitle: {},
-    progress: {},
-    bytesProcessed: {},
-    error: {},
-  };
-  stageTitle = "";
-  progress = 0;
-  bytesProcessed = 0;
-  error: string | null = null;
+  @property({ attribute: "stage-title" }) stageTitle = "";
+  @property({ type: Number }) progress = 0;
+  @property({ type: Number, attribute: "bytes-processed" }) bytesProcessed = 0;
+  @property() error: string | null = null;
   protected readonly _accessibility = new ViewAccessibility(this);
   private readonly _status = new LiveStatus(this);
   render() {
@@ -37,9 +32,8 @@ class StatusTestView extends LitElement {
 customElements.define("status-test-view", StatusTestView);
 
 class FocusTestView extends LitElement {
-  static properties = { loading: { type: Boolean }, error: { type: String } };
-  loading = false;
-  error = "";
+  @property({ type: Boolean }) loading = false;
+  @property() error = "";
   protected readonly _accessibility = new ViewAccessibility(this);
   render() {
     return html`${this.loading ? "Loading" : html`<h2>Step heading</h2>`}
@@ -52,7 +46,7 @@ customElements.define("focus-test-view", FocusTestView);
 describe("view accessibility", () => {
   it("can prime after removal before its first render", async () => {
     const el = fixtureSync<StatusTestView>(
-      html`<status-test-view stageTitle="Writing"></status-test-view>`
+      html`<status-test-view stage-title="Writing"></status-test-view>`
     );
     const parent = el.parentNode!;
     el.remove();
@@ -69,7 +63,7 @@ describe("view accessibility", () => {
   });
   it("starts with an empty status region, including after a pending mount is reconnected", async () => {
     const el = fixtureSync<StatusTestView>(
-      html`<status-test-view stageTitle="Downloading"></status-test-view>`
+      html`<status-test-view stage-title="Downloading"></status-test-view>`
     );
     await el.updateComplete;
     const status = el.shadowRoot!.querySelector('[role="status"]')!;
@@ -154,7 +148,7 @@ describe("view accessibility", () => {
 
   it("announces only the stage, preserving focus during byte updates", async () => {
     const el = await fixture<StatusTestView>(
-      html`<status-test-view stageTitle="Downloading"></status-test-view>`
+      html`<status-test-view stage-title="Downloading"></status-test-view>`
     );
     const status = el.shadowRoot!.querySelector('[role="status"]')!;
     await waitUntil(

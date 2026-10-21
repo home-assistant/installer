@@ -42,7 +42,7 @@ describe("confirm-dialog", () => {
 
   it("renders dialog with drive name in message", async () => {
     const el = await fixture<ConfirmDialog>(html`
-      <confirm-dialog open driveName="My USB Drive"></confirm-dialog>
+      <confirm-dialog open drive-name="My USB Drive"></confirm-dialog>
     `);
 
     const driveName = el.shadowRoot!.querySelector(".drive-name");
@@ -60,9 +60,9 @@ describe("confirm-dialog", () => {
       const el = await fixture<ConfirmDialog>(html`
         <confirm-dialog
           open
-          drivePath="/dev/sdb"
-          driveModel="SanDisk Ultra"
-          driveSize="32000000000"
+          drive-path="/dev/sdb"
+          drive-model="SanDisk Ultra"
+          drive-size="32000000000"
         ></confirm-dialog>
       `);
 
@@ -75,7 +75,7 @@ describe("confirm-dialog", () => {
 
     it("leaves out an unknown size", async () => {
       const el = await fixture<ConfirmDialog>(html`
-        <confirm-dialog open drivePath="/dev/sdb"></confirm-dialog>
+        <confirm-dialog open drive-path="/dev/sdb"></confirm-dialog>
       `);
 
       expect(labels(el)).to.deep.equal(["Device"]);
@@ -284,7 +284,7 @@ describe("confirm-dialog", () => {
 
   it("stores driveName property", async () => {
     const el = await fixture<ConfirmDialog>(html`
-      <confirm-dialog driveName="Test Drive"></confirm-dialog>
+      <confirm-dialog drive-name="Test Drive"></confirm-dialog>
     `);
 
     expect(el.driveName).to.equal("Test Drive");

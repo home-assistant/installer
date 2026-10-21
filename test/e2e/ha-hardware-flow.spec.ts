@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { skipWifiStep } from "./fixtures.js";
 
 // The browser mock serves the device catalog, the drives and a simulated
 // write, so each device can go all the way to its next steps.
@@ -12,7 +13,7 @@ const cancel = (page: Page) =>
 async function openHaHardware(page: Page) {
   await page.goto("/");
   await page.locator("welcome-view wa-button").click();
-  await page.locator('option-card[title="Home Assistant hardware"]').click();
+  await page.locator('option-card[heading="Home Assistant hardware"]').click();
   await expect(
     page.locator("ha-hardware-device-selection-view device-card").first()
   ).toBeVisible();
@@ -73,7 +74,7 @@ test.describe("Home Assistant hardware flow", () => {
     await page.goto("/");
     await page.locator("welcome-view wa-button").click();
 
-    const card = page.locator('option-card[title="Home Assistant hardware"]');
+    const card = page.locator('option-card[heading="Home Assistant hardware"]');
     await expect(card).toBeVisible();
     await expect(card).toHaveAttribute(
       "description",
@@ -112,6 +113,7 @@ test.describe("Home Assistant hardware flow", () => {
       await expect(instructions).toContainText(scenario.connect);
       await drive.locator("drive-card").first().click();
       await next(page).click();
+      await skipWifiStep(page);
 
       const confirmation = page.locator("confirmation-view");
       await expect(confirmation).toContainText(scenario.name);

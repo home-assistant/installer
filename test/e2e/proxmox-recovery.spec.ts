@@ -64,7 +64,6 @@ async function mockLookupFailure(
                   active: true,
                   content: ["iso", "import"],
                   available: 100 * 1024 ** 3,
-                  total: 200 * 1024 ** 3,
                 },
                 {
                   name: "local-lvm",
@@ -72,7 +71,6 @@ async function mockLookupFailure(
                   active: true,
                   content: ["images"],
                   available: 100 * 1024 ** 3,
-                  total: 200 * 1024 ** 3,
                 },
               ];
             case "proxmox_get_next_vm_id":
@@ -128,7 +126,7 @@ test.describe("Proxmox configuration recovery", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await page.locator("welcome-view wa-button").click();
-    await page.locator('option-card[title="Proxmox server"]').click();
+    await page.locator('option-card[heading="Proxmox server"]').click();
     await expect(page.locator("proxmox-connect-view")).toBeVisible();
   });
 
@@ -165,7 +163,9 @@ test.describe("Proxmox configuration recovery", () => {
       await mockLookupFailure(page, command, true);
       await connect(page);
       const view = page.locator("proxmox-configure-view");
-      await expect(view.getByRole("alert")).toHaveText("Session expired");
+      await expect(view.getByRole("alert")).toHaveText(
+        "Your Proxmox session expired. Reconnect to Proxmox to continue."
+      );
       await expect(
         page.getByRole("button", { name: "Next", exact: true })
       ).toBeDisabled();

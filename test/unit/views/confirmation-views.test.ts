@@ -61,6 +61,32 @@ describe("installation confirmation views", () => {
     }
   }
 
+  it("lists the Wi-Fi network only for a board that can use it", async () => {
+    for (const [board, listed] of [
+      ["rpi5-64", true],
+      ["odroid-n2", false],
+    ] as const) {
+      wizardState.startFlow("sbc");
+      storeDriveSelection(MOCK_BLOCK_DEVICES[0]);
+      wizardState.setSelection("deviceConfig", {
+        board,
+        minimum_storage_bytes: 1_000_000_000,
+        recommended_storage_bytes: 1_000_000_000,
+      });
+      wizardState.setSelection("wifi", {
+        ssid: "Garden-Net",
+        password: "12345678",
+      });
+      mockTauriIpc(() => MOCK_HAOS_RELEASE);
+      const el = fixtureSync(html`<confirmation-view></confirmation-view>`);
+      await settle();
+      const text = el.shadowRoot!.textContent!;
+      expect(text.includes("Wi-Fi"), board).to.equal(listed);
+      expect(text.includes("Garden-Net"), board).to.equal(listed);
+      expect(text).not.to.contain("12345678");
+    }
+  });
+
   async function confirmDrive(drive: BlockDevice) {
     wizardState.startFlow("sbc");
     storeDriveSelection(drive);

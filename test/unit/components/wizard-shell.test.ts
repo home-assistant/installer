@@ -57,7 +57,7 @@ describe("wizard-shell", () => {
 
   it("uses custom next label", async () => {
     const el = await fixture<WizardShell>(html`
-      <wizard-shell nextLabel="Continue"></wizard-shell>
+      <wizard-shell next-label="Continue"></wizard-shell>
     `);
 
     const nextButton = el.shadowRoot!.querySelector(".footer-right wa-button");
@@ -82,7 +82,7 @@ describe("wizard-shell", () => {
 
   it("keeps Back disabled while hidden", async () => {
     const el = await fixture<WizardShell>(
-      html`<wizard-shell hideBack></wizard-shell>`
+      html`<wizard-shell hide-back></wizard-shell>`
     );
 
     const backButton = el.shadowRoot!.querySelector(
@@ -161,7 +161,7 @@ describe("wizard-shell", () => {
 
   it("hides footer when hideFooter is true", async () => {
     const el = await fixture<WizardShell>(html`
-      <wizard-shell hideFooter></wizard-shell>
+      <wizard-shell hide-footer></wizard-shell>
     `);
 
     const footer = el.shadowRoot!.querySelector(".footer");
@@ -170,7 +170,7 @@ describe("wizard-shell", () => {
 
   it("hides next button when hideNext is true", async () => {
     const el = await fixture<WizardShell>(html`
-      <wizard-shell hideNext></wizard-shell>
+      <wizard-shell hide-next></wizard-shell>
     `);
 
     const nextButton = el.shadowRoot!.querySelector(".footer-right wa-button");
@@ -179,7 +179,7 @@ describe("wizard-shell", () => {
 
   it("disables next button when nextDisabled is true", async () => {
     const el = await fixture<WizardShell>(html`
-      <wizard-shell nextDisabled></wizard-shell>
+      <wizard-shell next-disabled></wizard-shell>
     `);
 
     const nextButton = el.shadowRoot!.querySelector(

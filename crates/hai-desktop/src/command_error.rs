@@ -95,6 +95,8 @@ impl From<Error> for CommandError {
             Error::InvalidConfig(message) => ("invalid_config", message.as_str(), false),
             // Installer-authored, and the wait time is what makes it actionable
             Error::RateLimited(message) => ("rate_limited", message.as_str(), true),
+            // Names the service, so the frontend doesn't say the image failed
+            Error::ServiceUnavailable(message) => return Self::with_message("network", message, true),
             Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and available storage.", true),
             Error::ExtractionFailed(_) => ("extraction_failed", "The image could not be unpacked. Check available storage.", true),
             Error::VerificationFailed(_) => ("verification_failed", "The image could not be verified. Installation stopped to protect your device. See the installation help before continuing.", false),

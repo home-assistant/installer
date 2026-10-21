@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use hai_core::{BlockDevice, DeviceBackend, ProgressCallback, Result};
 
 struct BackendAuthorizingDuringWrite;
@@ -11,7 +9,7 @@ impl DeviceBackend for BackendAuthorizingDuringWrite {
 
     async fn write_image<P: ProgressCallback>(
         &self,
-        _image_path: &Path,
+        _image: &hai_core::disk::Image,
         _device_id: &str,
         _expected: &hai_core::ExpectedDevice,
         _verify: bool,

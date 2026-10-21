@@ -70,16 +70,12 @@ describe("proxmox-configure-view", () => {
               status: "online",
               cpu_usage: 12.5,
               cpu_count: null,
-              memory_used: null,
-              memory_total: null,
             },
             {
               name: "pve2",
               status: "online",
               cpu_usage: null,
               cpu_count: null,
-              memory_used: null,
-              memory_total: null,
             },
           ];
         case "proxmox_get_next_vm_id":
@@ -283,7 +279,6 @@ describe("proxmox-configure-view", () => {
         storage_type: "dir",
         content: ["images"],
         available: 100,
-        total: 100,
         active: true,
       },
     ]);
@@ -302,7 +297,6 @@ describe("proxmox-configure-view", () => {
         storage_type: "dir",
         content: ["images"],
         available: 100,
-        total: 100,
         active: true,
       },
     ];
@@ -361,7 +355,6 @@ describe("proxmox-configure-view", () => {
         storage_type: "dir",
         content: ["images"],
         available: 100,
-        total: 100,
         active: true,
       },
     ];
@@ -437,7 +430,6 @@ describe("proxmox-configure-view", () => {
           storage_type: "dir",
           content: ["images"],
           available: 100,
-          total: 100,
           active: true,
         },
       ];
@@ -532,7 +524,9 @@ describe("proxmox-configure-view", () => {
       } else {
         expect(selections.proxmoxSession).to.be.undefined;
         expect(selections.proxmoxConnected).to.be.false;
-        expect(el.shadowRoot!.textContent).to.contain("Session expired");
+        expect(el.shadowRoot!.textContent).to.contain(
+          "Your Proxmox session expired"
+        );
         expect(el.shadowRoot!.textContent).to.not.contain("Temporary failure");
         expect(
           el.shadowRoot!.querySelector("wa-button")!.textContent
@@ -794,7 +788,9 @@ describe("proxmox-configure-view", () => {
             "proxmox_list_nodes",
             "proxmox_get_next_vm_id",
           ]);
-          expect(el.shadowRoot!.textContent).to.contain("Session expired");
+          expect(el.shadowRoot!.textContent).to.contain(
+            "Your Proxmox session expired"
+          );
           expect(el.shadowRoot!.textContent).to.not.contain(
             "Temporary failure"
           );
@@ -857,7 +853,6 @@ describe("proxmox-configure-view", () => {
       storage: "local",
       bridge: "vmbr0",
       vm_id: 100,
-      auto_start: true,
     });
     expect(
       el.shadowRoot!.querySelector("[role=alert]")!.textContent
@@ -891,6 +886,13 @@ describe("proxmox-configure-view", () => {
     expect(el.shadowRoot!.querySelector("wa-button")!.textContent).to.contain(
       "Reconnect"
     );
+    // Reconnecting starts from the same server
+    expect(
+      wizardState.getState().selections.proxmoxPreviousServer
+    ).to.deep.equal({
+      server_url: "https://192.168.1.100:8006",
+      certificate_sha256: undefined,
+    });
   });
 
   it("offers reconnect when the session is missing", async () => {

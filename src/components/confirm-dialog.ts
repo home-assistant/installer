@@ -113,18 +113,18 @@ export class ConfirmDialog extends LitElement {
   @property({ type: Boolean, reflect: true })
   open = false;
 
-  @property({ type: String })
+  @property({ type: String, attribute: "drive-name" })
   driveName = "";
 
   /** Device id/path handed to the backend, e.g. "/dev/sda" or "disk2". */
-  @property({ type: String })
+  @property({ type: String, attribute: "drive-path" })
   drivePath = "";
 
-  @property({ type: String })
+  @property({ type: String, attribute: "drive-model" })
   driveModel = "";
 
   /** Size in bytes; undefined when unknown. */
-  @property({ type: Number })
+  @property({ type: Number, attribute: "drive-size" })
   driveSize?: number;
 
   render() {

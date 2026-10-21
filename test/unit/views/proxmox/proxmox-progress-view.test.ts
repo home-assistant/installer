@@ -371,7 +371,7 @@ describe("proxmox-progress-view", () => {
         "Proxmox session expired or invalid. Please reconnect to Proxmox.",
         false
       ),
-      "reconnect",
+      "Reconnect to Proxmox",
     ],
     [
       ipcError(

@@ -17,7 +17,7 @@ describe("drive-card", () => {
 
   it("renders with formatted size", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" driveSize="32000000000"></drive-card>
+      <drive-card name="Test" drive-size="32000000000"></drive-card>
     `);
 
     const size = el.shadowRoot!.querySelector(".size");
@@ -27,7 +27,7 @@ describe("drive-card", () => {
 
   it("formats large sizes in TB", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" driveSize="2000000000000"></drive-card>
+      <drive-card name="Test" drive-size="2000000000000"></drive-card>
     `);
 
     const size = el.shadowRoot!.querySelector(".size");
@@ -36,7 +36,7 @@ describe("drive-card", () => {
 
   it("displays 0 B for zero size", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" driveSize="0"></drive-card>
+      <drive-card name="Test" drive-size="0"></drive-card>
     `);
 
     const size = el.shadowRoot!.querySelector(".size");
@@ -70,7 +70,7 @@ describe("drive-card", () => {
       <drive-card
         name="Test"
         disabled
-        disabledReason="Drive is too small"
+        disabled-reason="Drive is too small"
       ></drive-card>
     `);
 
@@ -80,7 +80,7 @@ describe("drive-card", () => {
 
   it("renders SD card icon for sd_card type", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="sd_card"></drive-card>
+      <drive-card name="Test" device-type="sd_card"></drive-card>
     `);
 
     const icon = el.shadowRoot!.querySelector(".icon-container svg");
@@ -89,7 +89,7 @@ describe("drive-card", () => {
 
   it("renders USB icon for usb_drive type", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="usb_drive"></drive-card>
+      <drive-card name="Test" device-type="usb_drive"></drive-card>
     `);
 
     const icon = el.shadowRoot!.querySelector(".icon-container svg");
@@ -98,7 +98,7 @@ describe("drive-card", () => {
 
   it("renders SSD icon for ssd type", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="ssd"></drive-card>
+      <drive-card name="Test" device-type="ssd"></drive-card>
     `);
 
     const icon = el.shadowRoot!.querySelector(".icon-container svg");
@@ -107,7 +107,7 @@ describe("drive-card", () => {
 
   it("renders HDD icon for hdd type", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="hdd"></drive-card>
+      <drive-card name="Test" device-type="hdd"></drive-card>
     `);
 
     const icon = el.shadowRoot!.querySelector(".icon-container svg");
@@ -116,7 +116,7 @@ describe("drive-card", () => {
 
   it("renders SSD icon for nvme type", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="nvme"></drive-card>
+      <drive-card name="Test" device-type="nvme"></drive-card>
     `);
 
     const icon = el.shadowRoot!.querySelector(".icon-container svg");
@@ -125,7 +125,7 @@ describe("drive-card", () => {
 
   it("renders generic icon for unknown type", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="unknown"></drive-card>
+      <drive-card name="Test" device-type="unknown"></drive-card>
     `);
 
     const icon = el.shadowRoot!.querySelector(".icon-container svg");
@@ -143,7 +143,7 @@ describe("drive-card", () => {
 
   it("displays type label when vendor/model not provided", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="usb_drive"></drive-card>
+      <drive-card name="Test" device-type="usb_drive"></drive-card>
     `);
 
     const details = el.shadowRoot!.querySelector(".details");
@@ -181,7 +181,7 @@ describe("drive-card", () => {
 
   it("stores driveSize property", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" driveSize="64000000000"></drive-card>
+      <drive-card name="Test" drive-size="64000000000"></drive-card>
     `);
 
     expect(el.driveSize).to.equal(64000000000);
@@ -189,7 +189,7 @@ describe("drive-card", () => {
 
   it("stores deviceType property", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" deviceType="usb_drive"></drive-card>
+      <drive-card name="Test" device-type="usb_drive"></drive-card>
     `);
 
     expect(el.deviceType).to.equal("usb_drive");
@@ -221,7 +221,7 @@ describe("drive-card", () => {
 
   it("stores disabledReason property", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" disabledReason="Too small"></drive-card>
+      <drive-card name="Test" disabled-reason="Too small"></drive-card>
     `);
 
     expect(el.disabledReason).to.equal("Too small");

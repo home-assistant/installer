@@ -12,6 +12,7 @@ import {
   type FlashProgress,
 } from "../../api/index.js";
 import { readDriveSelection } from "../../utils/drive-selection.js";
+import { selectedWifi } from "../../utils/wifi.js";
 import { findInstaller } from "../ha-hardware/hardware.js";
 import "../../components/install-progress.js";
 import "../../components/progress-bar.js";
@@ -159,6 +160,7 @@ export class ProgressView extends LitElement {
             vendor: drive.vendor,
             serial: drive.serial,
           },
+          wifi: selectedWifi(selections) ?? null,
         },
         (progress) => {
           this._diagnostics?.advance(progress.stage);

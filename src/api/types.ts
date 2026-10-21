@@ -125,7 +125,13 @@ verify: boolean,
 /**
  * What the device at `device_id` looked like when the user selected it
  */
-expected_device: ExpectedDevice, };
+expected_device: ExpectedDevice,
+/**
+ * Network for Home Assistant OS to join on first boot
+ */
+wifi?: WifiConfig | null, };
+
+export type WifiConfig = { ssid: string, password: string, };
 
 export type ExpectedDevice = { size?: number | null, model?: string | null, vendor?: string | null, serial?: string | null, };
 
@@ -225,15 +231,7 @@ cpu_usage: number | null,
 /**
  * Logical CPUs; Proxmox won't start a VM with more cores than this
  */
-cpu_count: number | null,
-/**
- * Memory usage in bytes
- */
-memory_used: number | null,
-/**
- * Total memory in bytes
- */
-memory_total: number | null, };
+cpu_count: number | null, };
 
 export type ProxmoxBridge = { name: string, network_type: string,
 /**
@@ -258,10 +256,6 @@ content: Array<string>,
  * Available space in bytes
  */
 available: number,
-/**
- * Total space in bytes
- */
-total: number,
 /**
  * Whether storage is active
  */
@@ -303,11 +297,7 @@ memory_mb: number,
 /**
  * Disk size in GB
  */
-disk_size_gb: number,
-/**
- * Whether to start VM after creation
- */
-auto_start: boolean, };
+disk_size_gb: number, };
 
 export type ProxmoxVmResult = {
 /**

@@ -34,191 +34,193 @@ import "../ha-hardware/connect-instructions.js";
 @customElement("drive-selection-view")
 export class DriveSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
-  static styles = css`
-    ${reducedMotionStyles}
-    :host {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100%;
-    }
+  static styles = [
+    reducedMotionStyles,
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100%;
+      }
 
-    h2 {
-      font-size: 1.5rem;
-      font-weight: 400;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 0.5rem 0;
-      text-align: center;
-    }
+      h2 {
+        font-size: 1.5rem;
+        font-weight: 400;
+        color: var(--ha-text-color, #212121);
+        margin: 0 0 0.5rem 0;
+        text-align: center;
+      }
 
-    .subtitle {
-      font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 1.5rem 0;
-      text-align: center;
-    }
+      .subtitle {
+        font-size: 1rem;
+        color: var(--ha-secondary-text-color, #727272);
+        margin: 0 0 1.5rem 0;
+        text-align: center;
+      }
 
-    .warning {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-      padding: 1rem;
-      background-color: rgba(255, 152, 0, 0.1);
-      border: 1px solid rgba(255, 152, 0, 0.3);
-      border-radius: 8px;
-      margin-bottom: 1.5rem;
-      max-width: 500px;
-      width: 100%;
-      box-sizing: border-box;
-    }
-
-    .warning-icon {
-      font-size: 1.25rem;
-      flex-shrink: 0;
-    }
-
-    .warning-text {
-      font-size: 0.875rem;
-      color: var(--ha-text-color, #212121);
-      margin: 0;
-      line-height: 1.5;
-    }
-
-    @media (prefers-color-scheme: dark) {
       .warning {
-        background-color: rgba(255, 152, 0, 0.15);
-        border-color: rgba(255, 152, 0, 0.4);
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 1rem;
+        background-color: rgba(255, 152, 0, 0.1);
+        border: 1px solid rgba(255, 152, 0, 0.3);
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+        max-width: 500px;
+        width: 100%;
+        box-sizing: border-box;
       }
-    }
 
-    .notice {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-      padding: 1rem;
-      background-color: rgba(219, 68, 55, 0.1);
-      border: 1px solid rgba(219, 68, 55, 0.3);
-      border-radius: 8px;
-      margin-bottom: 1.5rem;
-      max-width: 500px;
-      width: 100%;
-      box-sizing: border-box;
-    }
+      .warning-icon {
+        font-size: 1.25rem;
+        flex-shrink: 0;
+      }
 
-    .notice-icon {
-      font-size: 1.25rem;
-      flex-shrink: 0;
-    }
+      .warning-text {
+        font-size: 0.875rem;
+        color: var(--ha-text-color, #212121);
+        margin: 0;
+        line-height: 1.5;
+      }
 
-    .notice-text {
-      font-size: 0.875rem;
-      color: var(--ha-text-color, #212121);
-      margin: 0;
-      line-height: 1.5;
-    }
+      @media (prefers-color-scheme: dark) {
+        .warning {
+          background-color: rgba(255, 152, 0, 0.15);
+          border-color: rgba(255, 152, 0, 0.4);
+        }
+      }
 
-    @media (prefers-color-scheme: dark) {
       .notice {
-        background-color: rgba(219, 68, 55, 0.15);
-        border-color: rgba(219, 68, 55, 0.4);
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 1rem;
+        background-color: rgba(219, 68, 55, 0.1);
+        border: 1px solid rgba(219, 68, 55, 0.3);
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+        max-width: 500px;
+        width: 100%;
+        box-sizing: border-box;
       }
-    }
 
-    .drives-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      width: 100%;
-      max-width: 500px;
-      margin-bottom: 1rem;
-    }
-
-    .drives-title {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: var(--ha-secondary-text-color, #727272);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin: 0;
-    }
-
-    .drives-list {
-      width: 100%;
-      max-width: 500px;
-    }
-
-    .drives-list::part(form-control-input) {
-      gap: 0.75rem;
-    }
-
-    .loading {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 3rem;
-      color: var(--ha-secondary-text-color, #727272);
-    }
-
-    .loading-spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid var(--ha-border-color, #e0e0e0);
-      border-top-color: var(--ha-primary-color, #03a9f4);
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: 1rem;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
+      .notice-icon {
+        font-size: 1.25rem;
+        flex-shrink: 0;
       }
-    }
 
-    .error {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem;
-      text-align: center;
-    }
+      .notice-text {
+        font-size: 0.875rem;
+        color: var(--ha-text-color, #212121);
+        margin: 0;
+        line-height: 1.5;
+      }
 
-    .error-icon {
-      font-size: 3rem;
-      margin-bottom: 1rem;
-    }
+      @media (prefers-color-scheme: dark) {
+        .notice {
+          background-color: rgba(219, 68, 55, 0.15);
+          border-color: rgba(219, 68, 55, 0.4);
+        }
+      }
 
-    .error-message {
-      color: var(--ha-error-color, #db4437);
-      margin-bottom: 1rem;
-    }
+      .drives-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        max-width: 500px;
+        margin-bottom: 1rem;
+      }
 
-    .empty-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem;
-      text-align: center;
-      color: var(--ha-secondary-text-color, #727272);
-    }
+      .drives-title {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--ha-secondary-text-color, #727272);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 0;
+      }
 
-    casita-mascot {
-      margin-bottom: 1rem;
-    }
+      .drives-list {
+        width: 100%;
+        max-width: 500px;
+      }
 
-    .empty-title {
-      font-size: 1.125rem;
-      font-weight: 500;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 0.5rem 0;
-    }
+      .drives-list::part(form-control-input) {
+        gap: 0.75rem;
+      }
 
-    .empty-text {
-      font-size: 0.875rem;
-      margin: 0;
-    }
-  `;
+      .loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem;
+        color: var(--ha-secondary-text-color, #727272);
+      }
+
+      .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid var(--ha-border-color, #e0e0e0);
+        border-top-color: var(--ha-primary-color, #03a9f4);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .error {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 2rem;
+        text-align: center;
+      }
+
+      .error-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+      }
+
+      .error-message {
+        color: var(--ha-error-color, #db4437);
+        margin-bottom: 1rem;
+      }
+
+      .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 2rem;
+        text-align: center;
+        color: var(--ha-secondary-text-color, #727272);
+      }
+
+      casita-mascot {
+        margin-bottom: 1rem;
+      }
+
+      .empty-title {
+        font-size: 1.125rem;
+        font-weight: 500;
+        color: var(--ha-text-color, #212121);
+        margin: 0 0 0.5rem 0;
+      }
+
+      .empty-text {
+        font-size: 0.875rem;
+        margin: 0;
+      }
+    `,
+  ];
 
   @state()
   private _drives: BlockDevice[] = [];

@@ -1,5 +1,10 @@
 import type { Page } from "@playwright/test";
-import { approveProxmoxImport, test, expect } from "./fixtures.js";
+import {
+  approveProxmoxImport,
+  test,
+  expect,
+  skipWifiStep,
+} from "./fixtures.js";
 
 test.use({ platform: "macos" });
 
@@ -40,7 +45,8 @@ for (const scenario of [
   {
     failure: "utm-create",
     flow: "utm",
-    message: "UTM error: Automation permission denied",
+    message:
+      "Home Assistant Installer is not allowed to control UTM. Open System Settings > Privacy & Security > Automation, enable UTM under Home Assistant Installer, then try again.",
     recovery: "retry",
   },
 ] as const) {
@@ -56,19 +62,19 @@ for (const scenario of [
     await page.locator("welcome-view wa-button").click();
     if (scenario.flow === "sbc") {
       await page
-        .locator('option-card[title="Raspberry Pi & other boards"]')
+        .locator('option-card[heading="Raspberry Pi & other boards"]')
         .click();
       await page.locator("device-selection-view device-card").first().click();
       await next(page).click();
       await page.locator("drive-selection-view drive-card").first().click();
       await next(page).click();
-      await expect(page.locator("confirmation-view")).toBeVisible();
+      await skipWifiStep(page);
       await next(page).click();
       await page.locator('confirm-dialog wa-button[variant="danger"]').click();
     } else {
       await page
         .locator(
-          `option-card[title="${scenario.flow === "utm" ? "Virtual machine" : "Proxmox server"}"]`
+          `option-card[heading="${scenario.flow === "utm" ? "Virtual machine" : "Proxmox server"}"]`
         )
         .click();
       if (scenario.flow === "proxmox") {
@@ -125,7 +131,7 @@ for (const scenario of [
     if (scenario.recovery === "choose-drive") {
       await page.locator("drive-selection-view drive-card").first().click();
       await next(page).click();
-      await expect(page.locator("confirmation-view")).toBeVisible();
+      await skipWifiStep(page);
       await next(page).click();
       await page.locator('confirm-dialog wa-button[variant="danger"]').click();
     }

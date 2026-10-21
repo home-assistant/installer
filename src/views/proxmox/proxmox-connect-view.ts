@@ -7,7 +7,7 @@ import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import {
   proxmoxCertificateFingerprint,
   proxmoxConnect,
@@ -16,10 +16,20 @@ import { wizardState } from "../../state/wizard-state.js";
 import "@home-assistant/webawesome/dist/components/callout/callout.js";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import "@home-assistant/webawesome/dist/components/input/input.js";
+import type WaDialog from "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 
 const INVALID_INPUT = "invalid_input";
+
+/** A certificate belongs to a server, however its address is spelled. */
+function serverOrigin(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+}
 
 @customElement("proxmox-connect-view")
 export class ProxmoxConnectView extends LitElement {
@@ -79,6 +89,10 @@ export class ProxmoxConnectView extends LitElement {
     }
     .certificate-host {
       overflow-wrap: anywhere;
+    }
+    .certificate-changed {
+      color: var(--ha-error-color, #b30532);
+      font-weight: 500;
     }
     .fingerprint-label {
       font-size: 0.8125rem;
@@ -158,12 +172,20 @@ export class ProxmoxConnectView extends LitElement {
   private _error: InstallerError | null = null;
 
   @state()
-  private _certificate: { url: string; fingerprint: string } | null = null;
+  private _certificate: {
+    url: string;
+    fingerprint: string;
+    /** The server showed another certificate when it was last trusted */
+    changed: boolean;
+  } | null = null;
 
-  // The certificate the user already trusted for this server, so a second
-  // attempt (an authenticator code, a typo in the password) doesn't ask again
-  private _trustedCertificate: { url: string; fingerprint: string } | null =
-    null;
+  @query('[role="alert"]')
+  private _alert?: HTMLElement;
+
+  // The last certificate trusted for each server, `null` when the platform
+  // trusted it. The same one again (an authenticator code, a typo in the
+  // password) isn't asked about; a different one is worth a warning.
+  private _trustedCertificates = new Map<string, string | null>();
 
   private _resolveCertificate?: (confirmed: boolean) => void;
   private _connectionAttempt = 0;
@@ -173,19 +195,34 @@ export class ProxmoxConnectView extends LitElement {
 
     // Coming back from a later step: show who we're connected as, and keep
     // the session so Next doesn't ask for the password again.
-    const { proxmoxSession, proxmoxUsername, proxmoxConnected } =
-      wizardState.getState().selections;
+    const {
+      proxmoxSession,
+      proxmoxUsername,
+      proxmoxConnected,
+      proxmoxPreviousServer,
+    } = wizardState.getState().selections;
     if (proxmoxSession) {
       this._serverUrl = proxmoxSession.server_url;
       this._username = proxmoxUsername ?? this._username;
       this._connected = proxmoxConnected === true;
-      if (proxmoxSession.certificate_sha256) {
-        this._trustedCertificate = {
-          url: proxmoxSession.server_url,
-          fingerprint: proxmoxSession.certificate_sha256,
-        };
-      }
+      this._rememberCertificate(
+        proxmoxSession.server_url,
+        proxmoxSession.certificate_sha256
+      );
+    } else if (proxmoxPreviousServer) {
+      // The session expired or the certificate changed: reconnect to the same
+      // server as the same user, and compare the certificate it shows now
+      this._serverUrl = proxmoxPreviousServer.server_url;
+      this._username = proxmoxUsername ?? this._username;
+      this._rememberCertificate(
+        proxmoxPreviousServer.server_url,
+        proxmoxPreviousServer.certificate_sha256
+      );
     }
+  }
+
+  private _rememberCertificate(url: string, fingerprint?: string | null) {
+    this._trustedCertificates.set(serverOrigin(url), fingerprint ?? null);
   }
 
   disconnectedCallback() {
@@ -201,21 +238,34 @@ export class ProxmoxConnectView extends LitElement {
     this._certificate = null;
   }
 
+  private _rejectCertificate() {
+    this._finishCertificate(false);
+  }
+
+  private _trustCertificate() {
+    this._finishCertificate(true);
+  }
+
+  private async _onCertificateDialogAfterHide(e: Event) {
+    const dialog = e.currentTarget as WaDialog;
+    await dialog.updateComplete;
+    // Show a question asked while the previous one was closing
+    dialog.open = this._certificate !== null;
+  }
+
   /** Ask the user to trust a certificate their computer does not trust. */
   private async _confirmCertificate(
     url: string,
     fingerprint: string
   ): Promise<boolean> {
-    const trusted = this._trustedCertificate;
-    if (trusted?.url === url && trusted.fingerprint === fingerprint) {
-      return true;
-    }
+    const trusted = this._trustedCertificates.get(serverOrigin(url));
+    if (trusted === fingerprint) return true;
 
-    this._certificate = { url, fingerprint };
+    this._certificate = { url, fingerprint, changed: trusted !== undefined };
     const confirmed = await new Promise<boolean>((resolve) => {
       this._resolveCertificate = resolve;
     });
-    if (confirmed) this._trustedCertificate = { url, fingerprint };
+    if (confirmed) this._rememberCertificate(url, fingerprint);
     return confirmed;
   }
 
@@ -268,10 +318,13 @@ export class ProxmoxConnectView extends LitElement {
     try {
       const fingerprint = await proxmoxCertificateFingerprint(url);
       if (!isCurrent()) return false;
-      // No fingerprint means the platform trusts the certificate
+      // No fingerprint means the platform trusts the certificate; remembered,
+      // so an untrusted one on a retry is a change, not a first visit
       if (fingerprint) {
         const confirmed = await this._confirmCertificate(url, fingerprint);
         if (!confirmed || !isCurrent()) return false;
+      } else {
+        this._rememberCertificate(url, null);
       }
       const session = await proxmoxConnect({
         server_url: url,
@@ -289,6 +342,7 @@ export class ProxmoxConnectView extends LitElement {
       wizardState.setSelection("proxmoxSession", session);
       wizardState.setSelection("proxmoxUsername", this._username);
       wizardState.setSelection("proxmoxConnected", true);
+      wizardState.setSelection("proxmoxPreviousServer", undefined);
       return true;
     } catch (error) {
       if (!isCurrent()) return false;
@@ -331,8 +385,6 @@ export class ProxmoxConnectView extends LitElement {
   private _onServerUrlChange(e: Event) {
     const input = e.target as WaInput;
     this._serverUrl = input.value ?? "";
-    // A trusted certificate belongs to the server it was shown for
-    this._trustedCertificate = null;
     this._resetConnection();
   }
 
@@ -353,7 +405,7 @@ export class ProxmoxConnectView extends LitElement {
     await this.updateComplete;
     // An identical validation message does not trigger another Lit update.
     if (this.isConnected) {
-      this.renderRoot.querySelector<HTMLElement>('[role="alert"]')?.focus();
+      this._alert?.focus();
     }
     return false;
   }
@@ -477,7 +529,8 @@ export class ProxmoxConnectView extends LitElement {
           "views.proxmox.proxmox_connect_view.trust_server_title"
         )}
         .open=${this._certificate !== null}
-        @wa-after-hide=${() => this._finishCertificate(false)}
+        @wa-hide=${this._rejectCertificate}
+        @wa-after-hide=${this._onCertificateDialogAfterHide}
       >
         <p>
           ${localizeContent(
@@ -489,11 +542,17 @@ export class ProxmoxConnectView extends LitElement {
             }
           )}
         </p>
-        <p>
-          ${localize(
-            "views.proxmox.proxmox_connect_view.untrusted_certificate_is_normal"
-          )}
-        </p>
+        ${this._certificate?.changed
+          ? html`<p class="certificate-changed">
+              ${localize(
+                "views.proxmox.proxmox_connect_view.certificate_changed"
+              )}
+            </p>`
+          : html`<p>
+              ${localize(
+                "views.proxmox.proxmox_connect_view.untrusted_certificate_is_normal"
+              )}
+            </p>`}
         <p>
           ${localize(
             "views.proxmox.proxmox_connect_view.only_continue_for_your_server"
@@ -510,13 +569,13 @@ export class ProxmoxConnectView extends LitElement {
         <wa-button
           slot="footer"
           appearance="outlined"
-          @click=${() => this._finishCertificate(false)}
+          @click=${this._rejectCertificate}
           >${localize("common.cancel")}</wa-button
         >
         <wa-button
           slot="footer"
           variant="brand"
-          @click=${() => this._finishCertificate(true)}
+          @click=${this._trustCertificate}
           >${localize(
             "views.proxmox.proxmox_connect_view.trust_and_connect"
           )}</wa-button

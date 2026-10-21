@@ -34,6 +34,5 @@ export function proxmoxVmConfig(selections: WizardSelections): ProxmoxVmConfig {
     cpu_cores: selections.cpuCores ?? DEFAULT_CPU_CORES,
     memory_mb: selections.memoryMb ?? DEFAULT_MEMORY_MB,
     disk_size_gb: selections.diskSizeGb ?? DEFAULT_DISK_SIZE_GB,
-    auto_start: true,
   };
 }

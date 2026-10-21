@@ -109,6 +109,31 @@ describe("wizard-state", () => {
     expect(wizardState.isLastStep).to.be.true;
   });
 
+  it("offers the Wi-Fi step only for boards with Wi-Fi", () => {
+    const ids = () => wizardState.getState().steps.map((step) => step.id);
+    const board = (board: string) => ({
+      board,
+      minimum_storage_bytes: 1,
+      recommended_storage_bytes: 1,
+    });
+    for (const flow of ["sbc", "minipc", "ha-hardware"] as const) {
+      wizardState.startFlow(flow);
+      expect(ids(), flow).not.to.include("wifi");
+      wizardState.setSelection("deviceConfig", board("rpi5-64"));
+      expect(ids().indexOf("wifi"), flow).to.equal(ids().indexOf("drive") + 1);
+    }
+
+    // Changing the board on a later step keeps that step current
+    wizardState.startFlow("sbc");
+    wizardState.setSelection("deviceConfig", board("rpi5-64"));
+    wizardState.goToStep(ids().indexOf("drive"));
+    wizardState.setSelection("deviceConfig", board("odroid-n2"));
+    expect(ids()).not.to.include("wifi");
+    expect(wizardState.currentStep?.id).to.equal("drive");
+    wizardState.setSelection("deviceConfig", board("yellow-installer"));
+    expect(ids()).not.to.include("wifi");
+  });
+
   it("sets selections", () => {
     wizardState.startFlow("sbc");
     wizardState.setSelection("device", "raspberry-pi-5");

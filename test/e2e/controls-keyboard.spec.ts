@@ -60,6 +60,8 @@ test("Mini PC choices work with Tab, Space, and arrow keys", async ({
   await expect(page.locator("drive-selection-view")).toBeVisible();
   await activate(page, page.getByRole("radio").first(), "Space");
   await next(page);
+  await expect(page.locator("wifi-view")).toBeVisible();
+  await next(page);
   await activate(
     page,
     page.getByRole("button", { name: "Install", exact: true })
@@ -82,6 +84,8 @@ test("the existing board flow remains keyboard accessible", async ({
   );
   await next(page);
   await activate(page, page.getByRole("radio").first(), "Space");
+  await next(page);
+  await expect(page.locator("wifi-view")).toBeVisible();
   await next(page);
   await activate(
     page,
