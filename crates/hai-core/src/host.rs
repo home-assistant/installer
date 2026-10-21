@@ -67,21 +67,15 @@ fn system_info() -> Result<SystemInfo> {
 
 /// Whether the Home Assistant webserver at `ip` answers HTTP on port 80.
 async fn check_ha_ready(ip: &str) -> bool {
-    // Never probe an empty host: Windows resolves it to the local machine, so
-    // any local web server would pass for Home Assistant.
-    if ip.trim().is_empty() {
-        return false;
-    }
-
     // Any non-5xx reply means the webserver is up, even if `/` itself is not served.
-    get_status(&format!("http://{}", ip))
+    get_status(ip, "/")
         .await
         .is_some_and(|status| !status.is_server_error())
 }
 
 /// Whether Home Assistant at `ip` has finished starting up (serves its manifest).
 async fn check_ha_updated(ip: &str) -> bool {
-    get_status(&format!("http://{}/manifest.json", ip))
+    get_status(ip, "/manifest.json")
         .await
         .is_some_and(|status| status.is_success())
 }
@@ -96,9 +90,13 @@ static HA_CLIENT: LazyLock<Option<reqwest::Client>> = LazyLock::new(|| {
         .ok()
 });
 
-async fn get_status(url: &str) -> Option<reqwest::StatusCode> {
+async fn get_status(ip: &str, path: &str) -> Option<reqwest::StatusCode> {
+    // Never probe an empty host: in `http:///manifest.json` the path would be read as the host.
+    if ip.trim().is_empty() {
+        return None;
+    }
     let client = HA_CLIENT.as_ref()?;
-    let response = client.get(url).send().await.ok()?;
+    let response = client.get(format!("http://{ip}{path}")).send().await.ok()?;
     Some(response.status())
 }
 
@@ -205,6 +203,17 @@ mod tests {
             .await;
 
         assert!(!check_ha_updated(&server.host_with_port()).await);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_get_status_never_probes_an_empty_host() {
+        let mut server = Server::new_async().await;
+        let mock = server.mock("GET", "/").expect(0).create_async().await;
+
+        // Without a host, this path would be taken for the server's address
+        let path = format!("/{}", server.host_with_port());
+        assert_eq!(get_status("", &path).await, None);
         mock.assert_async().await;
     }
 }

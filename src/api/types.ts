@@ -223,6 +223,10 @@ status: string,
  */
 cpu_usage: number | null,
 /**
+ * Logical CPUs; Proxmox won't start a VM with more cores than this
+ */
+cpu_count: number | null,
+/**
  * Memory usage in bytes
  */
 memory_used: number | null,

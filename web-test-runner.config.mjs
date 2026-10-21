@@ -21,6 +21,9 @@ function fullA11ySnapshotPlugin() {
 
 export default {
   files: "test/unit/**/*.test.ts",
+  // Covers launching Chrome and opening the first page, not any test. Cold CI
+  // runners have taken up to 27s of the default 30s.
+  browserStartTimeout: 60000,
   // Prefer the "browser" export condition so browser-only builds of deps are
   // used (e.g. nanoid, pulled in transitively by Web Awesome, whose default
   // export targets Node's `node:crypto` and fails in the browser).
