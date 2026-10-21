@@ -64,14 +64,6 @@ export async function quitAnyway(): Promise<void> {
   return invoke<void>("quit_anyway");
 }
 
-/** Keep the app running after it held back closing it. */
-export async function keepRunning(): Promise<void> {
-  if (MOCK_ALLOWED && isBrowserOnly()) {
-    return;
-  }
-  return invoke<void>("keep_running");
-}
-
 // A string check rather than `isTauri()`, so CI can find the browser mock in a
 // production bundle.
 function isBrowserOnly(): boolean {

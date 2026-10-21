@@ -69,7 +69,6 @@ pub fn run() {
             get_haos_release,
             get_system_info,
             close_guard::quit_anyway,
-            close_guard::keep_running,
             diagnostics::get_diagnostics,
             diagnostics::log_frontend_event,
             diagnostics::open_logs_folder,

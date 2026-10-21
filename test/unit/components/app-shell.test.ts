@@ -855,7 +855,6 @@ describe("app-shell", () => {
       await settle();
 
       expect(calls).not.to.include("quit_anyway");
-      expect(calls).to.include("keep_running");
       expect(quitDialogOf(el).open).to.be.false;
     });
   });

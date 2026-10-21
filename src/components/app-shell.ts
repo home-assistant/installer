@@ -40,12 +40,7 @@ import {
   type WizardFlow,
   type WizardState,
 } from "../state/wizard-state.js";
-import {
-  keepRunning,
-  listBlockDevices,
-  onCloseBlocked,
-  quitAnyway,
-} from "../api/index.js";
+import { listBlockDevices, onCloseBlocked, quitAnyway } from "../api/index.js";
 import { findDrive, readDriveSelection } from "../utils/drive-selection.js";
 import { logFrontendError } from "../utils/diagnostics.js";
 import { openExternalUrl } from "../utils/external-url.js";
@@ -709,7 +704,6 @@ export class AppShell extends LitElement {
 
   private _onKeepInstallingOnQuit() {
     this._showQuitDialog = false;
-    void keepRunning();
   }
 
   private _onQuitAnyway() {
