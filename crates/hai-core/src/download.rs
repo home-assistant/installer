@@ -855,11 +855,11 @@ async fn download_image_with_client<P: ProgressCallback>(
 const XZ_MEMORY_LIMIT: u64 = 256 * 1024 * 1024;
 const MAX_EXTRACTED_SIZE: u64 = 64 * 1024 * 1024 * 1024;
 
-fn xz_decoder(input: &mut std::fs::File) -> Result<xz2::read::XzDecoder<&mut std::fs::File>> {
+fn xz_decoder(input: &mut std::fs::File) -> Result<liblzma::read::XzDecoder<&mut std::fs::File>> {
     let stream =
-        xz2::stream::Stream::new_stream_decoder(XZ_MEMORY_LIMIT, xz2::stream::CONCATENATED)
+        liblzma::stream::Stream::new_stream_decoder(XZ_MEMORY_LIMIT, liblzma::stream::CONCATENATED)
             .map_err(|error| Error::ExtractionFailed(error.to_string()))?;
-    Ok(xz2::read::XzDecoder::new_stream(input, stream))
+    Ok(liblzma::read::XzDecoder::new_stream(input, stream))
 }
 
 fn read_xz(decoder: &mut impl std::io::Read, buffer: &mut [u8]) -> Result<usize> {
@@ -1260,7 +1260,7 @@ mod tests {
 
     fn compressed(data: &[u8]) -> Vec<u8> {
         use std::io::Write;
-        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+        let mut encoder = liblzma::write::XzEncoder::new(Vec::new(), 1);
         encoder.write_all(data).unwrap();
         encoder.finish().unwrap()
     }
@@ -1686,7 +1686,7 @@ mod tests {
     fn compressed_in_blocks(chunks: &[&[u8]]) -> Vec<u8> {
         use std::io::Write;
 
-        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+        let mut encoder = liblzma::write::XzEncoder::new(Vec::new(), 1);
         for chunk in chunks {
             encoder.write_all(chunk).unwrap();
             // A full flush ends the current block
@@ -1772,12 +1772,14 @@ mod tests {
             0xd8, 0x6f, 0x00, 0x01, 0x1d, 0x05, 0xb8, 0x2d, 0x80, 0xaf, 0x1f, 0xb6, 0xf3, 0x7d,
             0x01, 0x00, 0x00, 0x00, 0x00, 0x04, 0x59, 0x5a,
         ];
-        let mut stream =
-            xz2::stream::Stream::new_stream_decoder(XZ_MEMORY_LIMIT, xz2::stream::CONCATENATED)
-                .unwrap();
+        let mut stream = liblzma::stream::Stream::new_stream_decoder(
+            XZ_MEMORY_LIMIT,
+            liblzma::stream::CONCATENATED,
+        )
+        .unwrap();
         assert_eq!(
-            stream.process(&data, &mut [0; 16], xz2::stream::Action::Finish),
-            Err(xz2::stream::Error::MemLimit),
+            stream.process(&data, &mut [0; 16], liblzma::stream::Action::Finish),
+            Err(liblzma::stream::Error::MemLimit),
         );
         assert_eq!(stream.total_out(), 0);
 
@@ -1937,7 +1939,7 @@ mod tests {
     #[tokio::test]
     async fn download_rejects_valid_xz_with_wrong_digest_and_keeps_existing_file() {
         use std::io::Write;
-        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+        let mut encoder = liblzma::write::XzEncoder::new(Vec::new(), 1);
         encoder
             .write_all(b"an attacker can generate a valid XZ checksum")
             .unwrap();
@@ -3036,7 +3038,7 @@ mod tests {
         // Create a real XZ compressed file
         {
             let file = std::fs::File::create(&archive_path).unwrap();
-            let mut encoder = xz2::write::XzEncoder::new(file, 6);
+            let mut encoder = liblzma::write::XzEncoder::new(file, 6);
             encoder.write_all(test_content).unwrap();
             encoder.finish().unwrap();
         }
@@ -3078,7 +3080,7 @@ mod tests {
         // integrity check fails part-way through decoding.
         {
             let file = std::fs::File::create(&archive_path).unwrap();
-            let mut encoder = xz2::write::XzEncoder::new(file, 1);
+            let mut encoder = liblzma::write::XzEncoder::new(file, 1);
             encoder.write_all(&vec![0u8; 256 * 1024]).unwrap();
             encoder.finish().unwrap();
         }
@@ -3131,7 +3133,7 @@ mod tests {
         ] {
             let directory = tempfile::tempdir().unwrap();
             let archive_path = directory.path().join("image.xz");
-            let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+            let mut encoder = liblzma::write::XzEncoder::new(Vec::new(), 1);
             encoder.write_all(&content).unwrap();
             let archive = encoder.finish().unwrap();
             std::fs::write(&archive_path, &archive).unwrap();
@@ -3182,7 +3184,7 @@ mod tests {
             let directory = tempfile::tempdir().unwrap();
             let archive_path = directory.path().join("image.xz");
             let destination = directory.path().join("image.img");
-            let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+            let mut encoder = liblzma::write::XzEncoder::new(Vec::new(), 1);
             encoder.write_all(&vec![0u8; 256 * 1024]).unwrap();
             let mut archive = encoder.finish().unwrap();
             if failure == "truncated" {
