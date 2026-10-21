@@ -46,10 +46,10 @@ pub fn run() {
         .manage(commands::PendingUtmImages::default())
         .manage(install_jobs::InstallJobs::default())
         .plugin(diagnostics::plugin())
-        .setup(|app| {
+        .setup(|_app| {
             diagnostics::init();
             #[cfg(target_os = "macos")]
-            close_guard::guard_app_termination(app.handle());
+            close_guard::guard_app_termination(_app.handle());
             if let Ok(cache) = hai_core::ReleaseSource::cache_dir(&backend::Backend) {
                 if hai_core::download::prune_cached_images(&cache).is_err() {
                     diagnostics::warning("cache_prune_failed");
