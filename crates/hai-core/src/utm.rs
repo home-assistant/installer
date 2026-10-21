@@ -236,34 +236,58 @@ fn applescript_error(stderr: &str) -> Error {
     }
 }
 
+// The scripts below get every value as an argument, never as part of their
+// source, so no VM name, path, interface or id can change what they do.
+
 #[cfg(any(target_os = "macos", test))]
-fn escaped_vm_id(vm_id: &str) -> String {
-    vm_id.replace('\\', "\\\\").replace('"', "\\\"")
-}
+const STATUS_SCRIPT: &str = r#"on run {vmId}
+    tell application "UTM"
+        return status of virtual machine id vmId
+    end tell
+end run"#;
+
+#[cfg(any(target_os = "macos", test))]
+const ADDRESS_SCRIPT: &str = r#"on run {vmId}
+    tell application "UTM"
+        set addresses to query ip virtual machine id vmId
+        set AppleScript's text item delimiters to linefeed
+        return addresses as text
+    end tell
+end run"#;
+
+#[cfg(target_os = "macos")]
+const START_SCRIPT: &str = r#"on run {vmId}
+    tell application "UTM"
+        set vm to virtual machine id vmId
+        start vm
+    end tell
+end run"#;
+
+// - hypervisor:true for hardware acceleration (uses macOS Hypervisor.framework)
+// - uefi:true for UEFI boot (required by HAOS)
+// - bridged network for direct LAN access (required for Home Assistant)
+#[cfg(target_os = "macos")]
+const CREATE_SCRIPT: &str = r#"on run {vmName, imagePath, hostInterface, cpuCores, memorySize}
+    set imageFile to POSIX file imagePath
+    tell application "UTM"
+        set vmConfig to {name:vmName, notes:"Created by the Home Assistant Installer", architecture:"aarch64", cpu cores:(cpuCores as integer), memory:(memorySize as integer), hypervisor:true, uefi:true, drives:{{interface:VirtIO, source:imageFile}}, network interfaces:{{mode:bridged, host interface:hostInterface}}}
+        set vm to make new virtual machine with properties {backend:qemu, configuration:vmConfig}
+        return id of vm
+    end tell
+end run"#;
 
 #[cfg(any(target_os = "macos", test))]
 fn query_vm_status(
     vm_id: &str,
-    mut run: impl FnMut(&str) -> Result<String>,
+    mut run: impl FnMut(&str, &[&str]) -> Result<String>,
 ) -> Result<VmStatusInfo> {
-    let vm_id = escaped_vm_id(vm_id);
-    let status = run(&format!(
-        r#"tell application "UTM"
-    return status of virtual machine id "{vm_id}"
-end tell"#
-    ))?;
+    let status = run(STATUS_SCRIPT, &[vm_id])?;
     let ip_address = if status == "started" {
         // The guest agent can be unavailable while HAOS boots. Keep the real
         // running state so a retry does not try to start an already running VM.
-        run(&format!(
-            r#"tell application "UTM"
-    set addresses to query ip virtual machine id "{vm_id}"
-    set AppleScript's text item delimiters to linefeed
-    return addresses as text
-end tell"#
-        ))
-        .ok()
-        .and_then(|output| first_usable_ipv4(&output))
+        run(ADDRESS_SCRIPT, &[vm_id])
+            .ok()
+            .and_then(|output| first_usable_ipv4(&output))
     } else {
         None
     };
@@ -420,11 +444,14 @@ mod macos {
         "en0".to_string()
     }
 
-    /// Run an AppleScript and return the output
-    pub(super) fn run_applescript(script: &str) -> Result<String> {
+    /// Run an AppleScript and return the output. `arguments` reach its run
+    /// handler as they are; after `--`, even one starting with a dash.
+    pub(super) fn run_applescript(script: &str, arguments: &[&str]) -> Result<String> {
         let child = Command::new("osascript")
             .arg("-e")
             .arg(script)
+            .arg("--")
+            .args(arguments)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -440,15 +467,7 @@ mod macos {
 
     /// Start a VM by its ID
     pub(super) fn start_vm(vm_id: &str) -> Result<()> {
-        let script = format!(
-            r#"tell application "UTM"
-    set vm to virtual machine id "{}"
-    start vm
-end tell"#,
-            escaped_vm_id(vm_id)
-        );
-
-        run_applescript(&script).map_err(|error| match error {
+        run_applescript(START_SCRIPT, &[vm_id]).map_err(|error| match error {
             // Starting never reads the import source. A lost reply here must
             // not retain an image whose creation already completed.
             Error::UtmOperationUncertain(message) => Error::Utm(message),
@@ -487,39 +506,23 @@ end tell"#,
         ensure_apple_silicon()?;
         let network_interface = get_primary_network_interface();
 
-        // Escape the name for AppleScript
-        let escaped_name = config.name.replace('\\', "\\\\").replace('"', "\\\"");
-        let escaped_path = config.image_path.replace('\\', "\\\\").replace('"', "\\\"");
-
         // UTM ignores `guest size` for an imported drive and keeps the size
         // of the image, so the image gets the chosen size before the import.
         let disk_size_bytes = u64::from(config.disk_size_gb) * 1024 * 1024 * 1024;
         qcow2::grow(image_path, disk_size_bytes)?;
 
-        // Build the drives configuration with VirtIO interface
-        let drives_config = format!(
-            "{{interface:VirtIO, source:(POSIX file \"{}\")}}",
-            escaped_path
-        );
-
-        // Create VM using QEMU backend with hardware virtualization
-        // - hypervisor:true for hardware acceleration (uses macOS Hypervisor.framework)
-        // - uefi:true for UEFI boot (required by HAOS)
-        // - bridged network for direct LAN access (required for Home Assistant)
-        let script = format!(
-            r#"tell application "UTM"
-    set vmConfig to {{name:"{name}", notes:"Created by the Home Assistant Installer", architecture:"aarch64", cpu cores:{cores}, memory:{memory}, hypervisor:true, uefi:true, drives:{{{drives}}}, network interfaces:{{{{mode:bridged, host interface:"{interface}"}}}}}}
-    set vm to make new virtual machine with properties {{backend:qemu, configuration:vmConfig}}
-    return id of vm
-end tell"#,
-            name = escaped_name,
-            cores = config.cpu_cores,
-            memory = config.memory_mb,
-            drives = drives_config,
-            interface = network_interface,
-        );
-
-        let vm_id = run_applescript(&script)?;
+        let cpu_cores = config.cpu_cores.to_string();
+        let memory_mb = config.memory_mb.to_string();
+        let vm_id = run_applescript(
+            CREATE_SCRIPT,
+            &[
+                &config.name,
+                &config.image_path,
+                &network_interface,
+                &cpu_cores,
+                &memory_mb,
+            ],
+        )?;
 
         finish_vm_creation(config, vm_id, progress_callback, |vm_id| {
             // The VM exists now, so a failed start must not invite a blind retry
@@ -716,10 +719,11 @@ mod tests {
     }
 
     #[test]
-    fn status_and_address_queries_use_the_same_escaped_id() {
+    fn status_and_address_queries_pass_the_id_as_an_argument() {
+        let id = r#"unique\" end tell"#;
         let mut calls = Vec::new();
-        let result = query_vm_status("unique\\\"id", |script| {
-            calls.push(script.to_string());
+        let result = query_vm_status(id, |script, arguments| {
+            calls.push((script.to_string(), arguments.join(",")));
             Ok(if calls.len() == 1 {
                 "started".to_string()
             } else {
@@ -730,16 +734,14 @@ mod tests {
         assert_eq!(result.status, "started");
         assert_eq!(result.ip_address.as_deref(), Some("192.168.1.20"));
         assert_eq!(calls.len(), 2);
-        for script in &calls {
-            assert!(script.contains(r#"virtual machine id "unique\\\"id""#));
-        }
-        assert!(calls[1].contains("text item delimiters to linefeed"));
+        assert_eq!(calls[0], (STATUS_SCRIPT.to_string(), id.to_string()));
+        assert_eq!(calls[1], (ADDRESS_SCRIPT.to_string(), id.to_string()));
     }
 
     #[test]
     fn status_survives_guest_agent_not_ready() {
         let mut calls = 0;
-        let result = query_vm_status("unique-id", |_| {
+        let result = query_vm_status("unique-id", |_, _| {
             calls += 1;
             if calls == 1 {
                 Ok("started".into())
@@ -759,7 +761,7 @@ mod tests {
             "stopped", "starting", "paused", "pausing", "stopping", "resuming",
         ] {
             let mut calls = 0;
-            let result = query_vm_status("unique-id", |_| {
+            let result = query_vm_status("unique-id", |_, _| {
                 calls += 1;
                 Ok(status.into())
             })
@@ -768,7 +770,9 @@ mod tests {
             assert!(result.ip_address.is_none());
             assert_eq!(calls, 1);
         }
-        assert!(query_vm_status("missing-id", |_| Err(applescript_error("VM not found"))).is_err());
+        assert!(
+            query_vm_status("missing-id", |_, _| Err(applescript_error("VM not found"))).is_err()
+        );
     }
 
     #[test]
@@ -984,7 +988,7 @@ mod tests {
         #[test]
         fn test_run_applescript_failure() {
             // Test AppleScript with invalid syntax to trigger error path
-            let result = run_applescript("this is invalid applescript syntax!");
+            let result = run_applescript("this is invalid applescript syntax!", &[]);
             assert!(result.is_err());
             if let Err(Error::Utm(msg)) = result {
                 // Error message should contain something about syntax error
@@ -1001,7 +1005,7 @@ mod tests {
         fn test_run_applescript_success() {
             // Test a simple AppleScript that should succeed
             // This just returns a simple string
-            let result = run_applescript("return \"test\"");
+            let result = run_applescript("return \"test\"", &[]);
 
             match result {
                 Ok(output) => {
@@ -1012,6 +1016,19 @@ mod tests {
                     // which is fine for the test environment
                 }
             }
+        }
+
+        #[test]
+        fn arguments_reach_the_script_as_data() {
+            let script = r#"on run argv
+    set AppleScript's text item delimiters to "|"
+    return argv as text
+end run"#;
+            let hostile = [r#"-l "x" \ end tell"#, r#"" & (do shell script "id") & ""#];
+
+            let output = run_applescript(script, &hostile).unwrap();
+
+            assert_eq!(output, hostile.join("|"));
         }
 
         #[test]
