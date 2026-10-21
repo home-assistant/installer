@@ -505,8 +505,7 @@ export class InstallProgress extends LitElement {
             ${localizeContent("components.install_progress.checking_address", {
               address: html`<a
                 href=${this.address}
-                @click=${(event: Event) =>
-                  openExternalLink(event, this.address!)}
+                @click=${openExternalLink}
                 >${this.address}</a
               >`,
             })}
