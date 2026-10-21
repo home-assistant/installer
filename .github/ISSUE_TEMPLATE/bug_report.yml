@@ -54,7 +54,7 @@ body:
     attributes:
       label: Installer Version
       description: Which version of the installer? (shown in app or filename)
-      placeholder: "v1.0.0"
+      placeholder: "0.0.0-alpha.1"
     validations:
       required: true
 
