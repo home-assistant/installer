@@ -1054,6 +1054,26 @@ async fn pre_install_checks(
     Ok(())
 }
 
+/// Everything an install checks before it downloads, and the OVA image it would download.
+async fn check_install<B: ReleaseSource>(
+    backend: &B,
+    session: &ProxmoxSession,
+    config: &ProxmoxVmConfig,
+) -> Result<HaosImage> {
+    validate_disk_size(config.disk_size_gb)?;
+
+    let release: HaosRelease = backend.get_latest_haos_release_for_board("ova").await?;
+    let image = release
+        .image_for("ova", ImageFormat::Qcow2)
+        .cloned()
+        .ok_or_else(|| {
+            Error::DownloadFailed(format!("No OVA image in HAOS release {}", release.version))
+        })?;
+
+    pre_install_checks(session, config, image.size).await?;
+    Ok(image)
+}
+
 /// Repeat the checks that may have changed during the download, now the exact upload size is known.
 async fn recheck_before_upload(
     session: &ProxmoxSession,
@@ -1405,11 +1425,6 @@ async fn create_vm_with_disk(
     storage_name: &str,
     source_unused: &mut bool,
 ) -> Result<()> {
-    if let Err(error) = validate_disk_size(config.disk_size_gb) {
-        *source_unused = true;
-        return Err(error);
-    }
-
     // Networks and ACLs can change during the download/upload.
     if let Err(error) = ensure_bridge_access(session, config).await {
         // No create request was sent, so the uploaded source is unused.
@@ -1805,8 +1820,6 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
     config: &ProxmoxVmConfig,
     progress_callback: &P,
 ) -> Result<ProxmoxVmResult> {
-    validate_disk_size(config.disk_size_gb)?;
-
     // Step 1: Get HAOS release info
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
@@ -1816,16 +1829,8 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
         message: "Fetching release info...".to_string(),
     });
 
-    let release: HaosRelease = backend.get_latest_haos_release_for_board("ova").await?;
-    let haos_version = &release.version;
-    let image: &HaosImage = release
-        .image_for("ova", ImageFormat::Qcow2)
-        .ok_or_else(|| {
-            Error::DownloadFailed(format!("No OVA image in HAOS release {}", haos_version))
-        })?;
-
     // Catch anything that would fail later before spending time on the download
-    pre_install_checks(session, config, image.size).await?;
+    let image = check_install(backend, session, config).await?;
     stop_if_cancelled(progress_callback)?;
 
     // Step 2: Download the compressed image locally
@@ -1844,7 +1849,7 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
 
     // Download the image
     backend
-        .download_image(image, &compressed_path, progress_callback)
+        .download_image(&image, &compressed_path, progress_callback)
         .await?;
 
     // Step 3: Extract the compressed image
@@ -1965,6 +1970,14 @@ impl ProxmoxBackend for Backend {
         vm_id: u32,
     ) -> Result<VmStatusInfo> {
         vm_status(session, node, vm_id).await
+    }
+
+    async fn check_vm_config(
+        &self,
+        session: &ProxmoxSession,
+        config: &ProxmoxVmConfig,
+    ) -> Result<()> {
+        check_install(self, session, config).await.map(drop)
     }
 
     async fn create_vm<P: ProgressCallback>(
@@ -4135,6 +4148,72 @@ mod tests {
             permissions_mock.assert_async().await;
         }
 
+        // The check before confirming runs the install's checks, and nothing past them.
+        #[tokio::test]
+        #[serial]
+        async fn test_check_install_runs_the_install_checks_without_downloading() {
+            struct ReleaseOnly(HaosRelease);
+            impl ReleaseSource for ReleaseOnly {
+                async fn check_connection(&self) -> Result<()> {
+                    unreachable!()
+                }
+                async fn get_device_manifest(&self) -> Result<crate::DeviceManifest> {
+                    unreachable!()
+                }
+                async fn get_haos_release(&self, _: &str) -> Result<HaosRelease> {
+                    unreachable!()
+                }
+                async fn get_latest_haos_release_for_board(&self, _: &str) -> Result<HaosRelease> {
+                    Ok(self.0.clone())
+                }
+                async fn download_image<P: ProgressCallback>(
+                    &self,
+                    _: &HaosImage,
+                    _: &std::path::Path,
+                    _: &P,
+                ) -> Result<()> {
+                    unreachable!("the check must not download")
+                }
+                async fn extract_xz<P: ProgressCallback>(
+                    &self,
+                    _: &std::path::Path,
+                    _: &std::path::Path,
+                    _: &P,
+                ) -> Result<()> {
+                    unreachable!("the check must not extract")
+                }
+                fn cache_dir(&self) -> Result<std::path::PathBuf> {
+                    unreachable!()
+                }
+            }
+
+            let mut server = Server::new_async().await;
+            let nodes_mock = server
+                .mock("GET", "/api2/json/nodes")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"data": [{"node": "pve", "status": "offline"}]}"#)
+                .create_async()
+                .await;
+            let release = ReleaseOnly(HaosRelease {
+                version: "18.2".into(),
+                images: vec![HaosImage {
+                    board: "ova".into(),
+                    format: ImageFormat::Qcow2,
+                    download_url: format!("{}/image.xz", server.url()),
+                    size: 400_000_000,
+                    digest: None,
+                }],
+            });
+
+            let result = check_install(&release, &test_session(&server), &vm_config(true)).await;
+            assert!(
+                matches!(&result, Err(Error::ProxmoxActionRequired(msg)) if msg.to_string().contains("offline")),
+                "unexpected result: {result:?}"
+            );
+            nodes_mock.assert_async().await;
+        }
+
         #[tokio::test]
         #[serial]
         async fn test_get_next_vm_id_success() {
@@ -4835,18 +4914,12 @@ mod tests {
                     .await
                     .unwrap_err();
                 assert!(error.to_string().contains("at least 32 GiB"));
-                let mut source_unused = false;
-                let error = create_vm_with_disk(
-                    &session,
-                    &config,
-                    "haos.qcow2",
-                    "local",
-                    &mut source_unused,
-                )
-                .await
-                .unwrap_err();
+                // The check before confirming rejects it the same way
+                let error = Backend
+                    .check_vm_config(&session, &config)
+                    .await
+                    .unwrap_err();
                 assert!(error.to_string().contains("cannot shrink"));
-                assert!(source_unused);
             }
         }
 

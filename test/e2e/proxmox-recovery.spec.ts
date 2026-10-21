@@ -81,6 +81,8 @@ async function mockLookupFailure(
               return [
                 { name: "vmbr0", network_type: "bridge", comments: null },
               ];
+            case "proxmox_check_vm_config":
+              return null;
             case "get_haos_release":
               return { version: "18.0", assets: [] };
             default:

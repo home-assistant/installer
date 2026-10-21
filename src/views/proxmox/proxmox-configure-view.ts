@@ -24,6 +24,7 @@ import {
   proxmoxListBridges,
   proxmoxEnableStorageImport,
   proxmoxGetNextVmId,
+  proxmoxCheckVmConfig,
   formatBytes,
 } from "../../api/commands.js";
 import type {
@@ -41,6 +42,7 @@ import {
   DEFAULT_MEMORY_MB,
   DEFAULT_PROXMOX_VM_ID,
   DEFAULT_PROXMOX_VM_NAME,
+  proxmoxVmConfig,
 } from "../../state/vm-defaults.js";
 
 /** Lookups report an expired session as its own code, answered with Reconnect */
@@ -271,6 +273,8 @@ export class ProxmoxConfigureView extends LitElement {
   @state() private _importDialog = false;
   @state() private _importDeclined = false;
   @state() private _importError: InstallerError | null = null;
+  /** Why Proxmox would reject these settings, until one of them changes */
+  @state() private _checkError: InstallerError | null = null;
   /** Raw text of the VLAN field; empty keeps today's untagged network. */
   @state() private _vlanTag = "";
   /** A restored tag opens Advanced, so it is never hidden from review. */
@@ -526,6 +530,37 @@ export class ProxmoxConfigureView extends LitElement {
     }
   }
 
+  /**
+   * Run the checks the install starts with, so a problem shows here, where
+   * it can be fixed. Resolves false if one fails, or if the settings changed
+   * or the step was left while Proxmox answered.
+   */
+  async check(): Promise<boolean> {
+    const selections = wizardState.getState().selections;
+    const session = selections.proxmoxSession;
+    if (!session) return false;
+    const isCurrent = () =>
+      this.isConnected && wizardState.getState().selections === selections;
+
+    // The previous answer stays until this one arrives: removing the alert
+    // would move focus back to the heading on every retry
+    try {
+      await proxmoxCheckVmConfig(session, proxmoxVmConfig(selections));
+      if (!isCurrent()) return false;
+      this._checkError = null;
+      return true;
+    } catch (error) {
+      if (!isCurrent()) return false;
+      if (isSessionExpired(error)) {
+        this._setError(error);
+      } else {
+        new InstallDiagnostics("proxmox").fail(error);
+        this._checkError = installerError(error);
+      }
+      return false;
+    }
+  }
+
   private _setError(error: unknown) {
     // Only reached for the current, connected lookup, so detached or
     // superseded lookups never add diagnostics
@@ -697,6 +732,7 @@ export class ProxmoxConfigureView extends LitElement {
   }
 
   private _saveSelections() {
+    this._checkError = null;
     wizardState.setSelection("proxmoxNode", this._selectedNode);
     wizardState.setSelection("proxmoxStorage", this._selectedStorage);
     wizardState.setSelection("proxmoxBridge", this._selectedBridge);
@@ -1464,6 +1500,11 @@ export class ProxmoxConfigureView extends LitElement {
           >
         </wa-input>
       </wa-details>
+      ${this._checkError
+        ? html`<p class="error-text" role="alert">
+            ${this._checkError.message}
+          </p>`
+        : ""}
     `;
   }
 }

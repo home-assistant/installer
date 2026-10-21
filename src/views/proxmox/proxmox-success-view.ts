@@ -2,11 +2,7 @@ import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
-import {
-  DEFAULT_PROXMOX_NODE,
-  DEFAULT_PROXMOX_VM_ID,
-  DEFAULT_PROXMOX_VM_NAME,
-} from "../../state/vm-defaults.js";
+import { proxmoxVmConfig } from "../../state/vm-defaults.js";
 import { openExternalLink } from "../../utils/external-url.js";
 
 import "../../components/install-success.js";
@@ -67,9 +63,7 @@ export class ProxmoxSuccessView extends LitElement {
 
   render() {
     const selections = this._wizardState.selections;
-    const vmName = selections.vmName || DEFAULT_PROXMOX_VM_NAME;
-    const vmId = selections.proxmoxVmId || DEFAULT_PROXMOX_VM_ID;
-    const node = selections.proxmoxNode || DEFAULT_PROXMOX_NODE;
+    const { name, vm_id, node } = proxmoxVmConfig(selections);
     const ipAddress = selections.ipAddress;
     const haUrl = ipAddress
       ? `http://${ipAddress}`
@@ -80,7 +74,7 @@ export class ProxmoxSuccessView extends LitElement {
       <install-success
         .subtitle=${localize(
           "views.proxmox.proxmox_success_view.home_assistant_is_now_running_on_proxmox_as_value_vm_value_on_node_value",
-          { value0: vmName, value1: vmId, value2: node }
+          { value0: name, value1: vm_id, value2: node }
         )}
         .steps=${[
           localize(

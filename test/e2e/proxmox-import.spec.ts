@@ -53,6 +53,8 @@ async function configure(page: Page, failFirst = false, changed = true) {
               ];
             case "get_haos_release":
               return { version: "18.3", assets: [] };
+            case "proxmox_check_vm_config":
+              return null;
             case "proxmox_create_vm":
               return { vm_id: 100, node: "pve" };
             case "proxmox_get_vm_status":

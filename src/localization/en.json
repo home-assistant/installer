@@ -38,6 +38,7 @@
   "common.next": "Next",
   "common.refresh": "Refresh",
   "components.app_shell.checking_drive": "Checking drive...",
+  "components.app_shell.checking_settings": "Checking settings...",
   "components.app_shell.connecting": "Connecting...",
   "components.app_shell.generic_mini_pc": "Generic (mini) PC",
   "components.app_shell.home_assistant_hardware": "Home Assistant hardware",

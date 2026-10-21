@@ -5,7 +5,11 @@ import {
   html,
   waitUntil,
 } from "@open-wc/testing";
-import type { ProxmoxStorage } from "../../../../src/api/types.js";
+import type {
+  ProxmoxStorage,
+  ProxmoxVmConfig,
+} from "../../../../src/api/types.js";
+import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 import { findByRole, fullA11ySnapshot } from "../../helpers/a11y.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
@@ -14,6 +18,7 @@ import type { ProxmoxConfigureView } from "../../../../src/views/proxmox/proxmox
 import {
   type Deferred,
   deferred,
+  ipcError,
   mockTauriIpc,
   restoreTauriIpc,
   settle,
@@ -773,6 +778,69 @@ describe("proxmox-configure-view", () => {
     });
     await settle();
     expect(wizardState.getState().selections.proxmoxSession).to.exist;
+  });
+
+  it("shows why Proxmox would reject the settings until one changes", async () => {
+    const el = await mount();
+    const configs: ProxmoxVmConfig[] = [];
+    let rejection: unknown = ipcError(
+      "proxmox_action_required",
+      "VM ID 100 can't be used. Choose a different ID.",
+      true,
+      {
+        message_key: "backend.proxmox.vm_id_unavailable",
+        message_params: { vm_id: 100 },
+      }
+    );
+    mockTauriIpc((cmd, args) => {
+      if (cmd !== "proxmox_check_vm_config") throw new Error(cmd);
+      configs.push((args as { config: ProxmoxVmConfig }).config);
+      if (rejection) throw rejection;
+      return null;
+    });
+
+    expect(await el.check()).to.be.false;
+    await el.updateComplete;
+    // The VM the install would create, so both are checked the same way
+    expect(configs[0]).to.include({
+      node: "pve",
+      storage: "local",
+      bridge: "vmbr0",
+      vm_id: 100,
+      auto_start: true,
+    });
+    expect(
+      el.shadowRoot!.querySelector("[role=alert]")!.textContent
+    ).to.contain("VM ID 100 can't be used. Choose a different ID.");
+
+    // The form stays, so the setting can be fixed right here
+    const vmId = el.shadowRoot!.querySelector<WaInput>(
+      'wa-input[type="number"]'
+    )!;
+    vmId.value = "101";
+    vmId.dispatchEvent(new Event("input"));
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector("[role=alert]")?.textContent).to.be
+      .undefined;
+
+    rejection = undefined;
+    expect(await el.check()).to.be.true;
+    expect(configs[1].vm_id).to.equal(101);
+  });
+
+  it("offers reconnect when the session expired during the settings check", async () => {
+    const el = await mount();
+    mockTauriIpc((cmd) => {
+      if (cmd !== "proxmox_check_vm_config") throw new Error(cmd);
+      throw ipcError("proxmox_session_expired", "Session expired");
+    });
+
+    expect(await el.check()).to.be.false;
+    await el.updateComplete;
+    expect(wizardState.getState().selections.proxmoxSession).to.be.undefined;
+    expect(el.shadowRoot!.querySelector("wa-button")!.textContent).to.contain(
+      "Reconnect"
+    );
   });
 
   it("offers reconnect when the session is missing", async () => {

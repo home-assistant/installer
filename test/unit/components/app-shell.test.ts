@@ -13,6 +13,7 @@ import { storeDriveSelection } from "../../../src/utils/drive-selection.js";
 import { flush, holdDeviceScan } from "../helpers/hold-device-scan.js";
 import {
   deferred,
+  ipcError,
   mockTauriIpc,
   restoreTauriIpc,
   settle,
@@ -178,6 +179,65 @@ describe("app-shell", () => {
         .shadowRoot!.querySelector("wa-button") as HTMLElement
     ).click();
     await waitUntil(() => !shellOf(el).nextDisabled);
+  });
+
+  it("stays on the Proxmox settings while Proxmox would reject them", async () => {
+    fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+      view: "path-selection",
+    });
+    await el.updateComplete;
+    fire(el.shadowRoot!.querySelector("path-selection-view")!, "select-path", {
+      path: "proxmox",
+    });
+    await el.updateComplete;
+    wizardState.setSelection("proxmoxSession", {
+      server_url: "https://pve:8006",
+      ticket: "test",
+      csrf_token: "test",
+    });
+    let check = deferred<unknown>();
+    mockTauriIpc((cmd) => {
+      if (cmd === "proxmox_list_nodes")
+        return [{ name: "pve", status: "online" }];
+      if (cmd === "proxmox_get_next_vm_id") return 100;
+      if (cmd === "proxmox_list_storage")
+        return [
+          {
+            name: "local",
+            active: true,
+            content: ["images", "import"],
+            available: 100,
+          },
+        ];
+      if (cmd === "proxmox_list_bridges")
+        return [{ name: "vmbr0", network_type: "bridge", comments: null }];
+      if (cmd === "proxmox_check_vm_config") return check.promise;
+      throw new Error(cmd);
+    });
+    await goToStep(el, "configure");
+    await waitUntil(() => !shellOf(el).nextDisabled);
+
+    fire(shellOf(el), "wizard-next");
+    await waitUntil(() => shellOf(el).nextLabel === "Checking settings...");
+    expect(shellOf(el).nextDisabled).to.be.true;
+    check.reject(
+      ipcError(
+        "proxmox_action_required",
+        "VM ID 100 can't be used. Choose a different ID."
+      )
+    );
+    await waitUntil(() => !shellOf(el).nextDisabled);
+    expect(wizardState.currentStep!.id).to.equal("configure");
+    expect(
+      shellOf(el)
+        .querySelector("proxmox-configure-view")!
+        .shadowRoot!.querySelector("[role=alert]")!.textContent
+    ).to.contain("VM ID 100 can't be used.");
+
+    check = deferred<unknown>();
+    fire(shellOf(el), "wizard-next");
+    check.resolve(null);
+    await waitUntil(() => wizardState.currentStep?.id === "confirm");
   });
 
   for (const [flow, step] of [

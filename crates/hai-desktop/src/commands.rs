@@ -721,6 +721,18 @@ pub async fn proxmox_get_next_vm_id(session: ProxmoxSession) -> Result<u32, Comm
         .map_err(CommandError::from_query)
 }
 
+/// Run the checks a Proxmox install starts with, before the user confirms it
+#[tauri::command]
+pub async fn proxmox_check_vm_config(
+    session: ProxmoxSession,
+    config: ProxmoxVmConfig,
+) -> Result<(), CommandError> {
+    Backend
+        .check_vm_config(&session, &config)
+        .await
+        .map_err(CommandError::from_query)
+}
+
 /// Create a Home Assistant VM on Proxmox
 #[tauri::command]
 pub async fn proxmox_create_vm(

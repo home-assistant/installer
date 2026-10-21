@@ -759,6 +759,17 @@ export async function proxmoxGetVmStatus(
   });
 }
 
+/** Run the checks `proxmoxCreateVm` starts with, without creating anything. */
+export async function proxmoxCheckVmConfig(
+  session: ProxmoxSession,
+  config: ProxmoxVmConfig
+): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return;
+  }
+  return invoke<void>("proxmox_check_vm_config", { session, config });
+}
+
 /**
  * Create and start a Home Assistant VM on Proxmox.
  * @param session The authentication session

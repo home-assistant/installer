@@ -8,15 +8,7 @@ import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { logFrontendError } from "../../utils/diagnostics.js";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
-import {
-  DEFAULT_CPU_CORES,
-  DEFAULT_DISK_SIZE_GB,
-  DEFAULT_MEMORY_MB,
-  DEFAULT_PROXMOX_NODE,
-  DEFAULT_PROXMOX_STORAGE,
-  DEFAULT_PROXMOX_VM_ID,
-  DEFAULT_PROXMOX_VM_NAME,
-} from "../../state/vm-defaults.js";
+import { proxmoxVmConfig } from "../../state/vm-defaults.js";
 import { getHaosRelease } from "../../api/commands.js";
 
 @customElement("proxmox-confirm-view")
@@ -170,14 +162,8 @@ export class ProxmoxConfirmView extends LitElement {
   }
 
   render() {
-    const selections = this._wizardState.selections;
-    const vmName = selections.vmName || DEFAULT_PROXMOX_VM_NAME;
-    const vmId = selections.proxmoxVmId || DEFAULT_PROXMOX_VM_ID;
-    const node = selections.proxmoxNode || DEFAULT_PROXMOX_NODE;
-    const storage = selections.proxmoxStorage || DEFAULT_PROXMOX_STORAGE;
-    const cpuCores = selections.cpuCores || DEFAULT_CPU_CORES;
-    const memoryMb = selections.memoryMb || DEFAULT_MEMORY_MB;
-    const diskSizeGb = selections.diskSizeGb || DEFAULT_DISK_SIZE_GB;
+    // What the install creates, not the raw selections
+    const config = proxmoxVmConfig(this._wizardState.selections);
 
     return html`
       <h2>
@@ -200,24 +186,24 @@ export class ProxmoxConfirmView extends LitElement {
             <p class="summary-value">
               ${localizeContent(
                 "views.proxmox.proxmox_confirm_view.node_value",
-                { value0: node }
+                { value0: config.node }
               )}
             </p>
             <p class="summary-detail">
               ${localizeContent(
                 "views.proxmox.proxmox_confirm_view.storage_value",
-                { value0: storage }
+                { value0: config.storage }
               )}
             </p>
             <p class="summary-detail">
               ${localize(
                 "views.proxmox.proxmox_confirm_view.network_bridge_value",
-                { value0: selections.proxmoxBridge }
+                { value0: config.bridge }
               )}
-              ${selections.proxmoxVlanTag !== undefined
+              ${config.vlan_tag != null
                 ? html`<br />${localize(
                       "views.proxmox.proxmox_confirm_view.vlan_tag_value",
-                      { tag: selections.proxmoxVlanTag }
+                      { tag: config.vlan_tag }
                     )}`
                 : ""}
             </p>
@@ -236,13 +222,16 @@ export class ProxmoxConfirmView extends LitElement {
             <p class="summary-value">
               ${localizeContent(
                 "views.proxmox.proxmox_confirm_view.value_id_value",
-                { value0: vmName, value1: vmId }
+                { value0: config.name, value1: config.vm_id }
               )}
             </p>
             <p class="summary-detail">
               ${localizeContent(
                 "views.proxmox.proxmox_confirm_view.value_cpu_cores_value",
-                { value0: cpuCores, value1: this._formatMemory(memoryMb) }
+                {
+                  value0: config.cpu_cores,
+                  value1: this._formatMemory(config.memory_mb),
+                }
               )}
             </p>
           </div>
@@ -255,7 +244,9 @@ export class ProxmoxConfirmView extends LitElement {
           <div class="icon-container">${this._renderDiskIcon()}</div>
           <div class="summary-info">
             <p class="summary-label">${localize("vm.disk_storage")}</p>
-            <p class="summary-value">${this._formatDiskSize(diskSizeGb)}</p>
+            <p class="summary-value">
+              ${this._formatDiskSize(config.disk_size_gb)}
+            </p>
             <p class="summary-detail">
               ${localize(
                 "views.proxmox.proxmox_confirm_view.virtual_disk_for_home_assistant_data"
