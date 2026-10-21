@@ -16,6 +16,7 @@ import { wizardState } from "../../state/wizard-state.js";
 import "@home-assistant/webawesome/dist/components/callout/callout.js";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import "@home-assistant/webawesome/dist/components/input/input.js";
+import type WaDialog from "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 
@@ -477,7 +478,13 @@ export class ProxmoxConnectView extends LitElement {
           "views.proxmox.proxmox_connect_view.trust_server_title"
         )}
         .open=${this._certificate !== null}
-        @wa-after-hide=${() => this._finishCertificate(false)}
+        @wa-hide=${() => this._finishCertificate(false)}
+        @wa-after-hide=${async ({ currentTarget }: Event) => {
+          const dialog = currentTarget as WaDialog;
+          await dialog.updateComplete;
+          // Show a question asked while the previous one was closing
+          dialog.open = this._certificate !== null;
+        }}
       >
         <p>
           ${localizeContent(

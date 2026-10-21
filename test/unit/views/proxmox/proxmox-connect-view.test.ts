@@ -378,8 +378,7 @@ describe("proxmox-connect-view", () => {
       await el.updateComplete;
       const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
       if (action === "cancel") dialog.querySelector("wa-button")!.click();
-      else if (action === "dismiss")
-        dialog.dispatchEvent(new Event("wa-after-hide"));
+      else if (action === "dismiss") dialog.dispatchEvent(new Event("wa-hide"));
       else el.remove();
       expect(await connecting).to.be.false;
       expect(calls).to.deep.equal(["proxmox_certificate_fingerprint"]);
