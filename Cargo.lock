@@ -1753,6 +1753,7 @@ version = "0.0.0"
 dependencies = [
  "hai-core",
  "log",
+ "mockito",
  "os_info",
  "plist",
  "serde",

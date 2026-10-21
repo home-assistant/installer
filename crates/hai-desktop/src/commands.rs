@@ -831,11 +831,43 @@ mod tests {
             csrf_token: "fixture".into(),
             certificate_sha256: None,
         };
-        assert!(proxmox_list_nodes(session)
-            .await
-            .unwrap_err()
-            .message
-            .contains("HTTPS"));
+        for result in [
+            proxmox_list_nodes(session.clone()).await.map(drop),
+            proxmox_list_storage(session.clone(), "pve".into())
+                .await
+                .map(drop),
+            proxmox_get_next_vm_id(session).await.map(drop),
+        ] {
+            assert!(result.unwrap_err().message.contains("HTTPS"));
+        }
+    }
+
+    // The release lookup would go to the internet and the session's plain
+    // HTTP would be refused; the disk size is checked before either.
+    #[cfg(not(feature = "mock"))]
+    #[tokio::test]
+    async fn proxmox_check_vm_config_refuses_a_too_small_disk_before_any_lookup() {
+        let session = ProxmoxSession {
+            server_url: "http://127.0.0.1:1".into(),
+            ticket: "fixture".into(),
+            csrf_token: "fixture".into(),
+            certificate_sha256: None,
+        };
+        let config = ProxmoxVmConfig {
+            node: "pve".into(),
+            storage: "local-lvm".into(),
+            bridge: "vmbr0".into(),
+            vlan_tag: None,
+            vm_id: 100,
+            name: "homeassistant".into(),
+            cpu_cores: 2,
+            memory_mb: 4096,
+            disk_size_gb: 16,
+            auto_start: true,
+        };
+        let error = proxmox_check_vm_config(session, config).await.unwrap_err();
+
+        assert_eq!(error.code, "proxmox_api");
     }
 
     // The configure view picks Retry or Reconnect from the code, so a failed
@@ -1172,6 +1204,25 @@ mod tests {
     async fn test_check_ha_ready_empty_ip() {
         let result = check_ha_ready("".to_string()).await;
         assert!(!result, "Should return false for empty IP");
+    }
+
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[tokio::test]
+    async fn ha_checks_tell_a_web_server_from_a_started_home_assistant() {
+        let mut server = mockito::Server::new_async().await;
+        let _root = server.mock("GET", "/").create_async().await;
+        let starting = server
+            .mock("GET", "/manifest.json")
+            .with_status(404)
+            .create_async()
+            .await;
+        // Any answer means the web server is up; only the manifest means Home Assistant started
+        assert!(check_ha_ready(server.host_with_port()).await);
+        assert!(!check_ha_updated(server.host_with_port()).await);
+
+        starting.remove_async().await;
+        let _started = server.mock("GET", "/manifest.json").create_async().await;
+        assert!(check_ha_updated(server.host_with_port()).await);
     }
 
     // ===== Additional Edge Cases =====
@@ -1922,6 +1973,69 @@ mod mock_tests {
         assert_eq!(error.code, "proxmox_api");
     }
 
+    #[tokio::test]
+    async fn proxmox_install_stops_only_for_its_own_attempt() {
+        use tauri::Manager;
+
+        let app = tauri::test::mock_app();
+        app.manage(InstallJobs::default());
+        let stages = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let progress = Channel::new({
+            let app = app.handle().clone();
+            let stages = Arc::clone(&stages);
+            move |body| {
+                let mut stages = stages.lock().unwrap();
+                stages.push(body.deserialize::<FlashProgress>().unwrap().stage);
+                // The stop for an earlier attempt arrives late, then this one's
+                let attempt = if stages.len() == 1 {
+                    "earlier"
+                } else {
+                    "current"
+                };
+                cancel_vm_install(attempt.into(), app.state());
+                Ok(())
+            }
+        });
+        let session = ProxmoxSession {
+            server_url: "https://proxmox.example:8006".to_string(),
+            ticket: "mock-ticket".to_string(),
+            csrf_token: "mock-csrf-token".to_string(),
+            certificate_sha256: None,
+        };
+        let config = ProxmoxVmConfig {
+            node: "pve".into(),
+            storage: "local-lvm".into(),
+            bridge: "vmbr0".into(),
+            vlan_tag: None,
+            vm_id: 100,
+            name: "homeassistant".into(),
+            cpu_cores: 2,
+            memory_mb: 4096,
+            disk_size_gb: 32,
+            auto_start: true,
+        };
+        let error = proxmox_create_vm(session, config, "current".into(), progress, app.state())
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.code, "cancelled");
+        // Unlike other failures, a stop never leaves a VM behind, so it keeps its retry
+        assert!(error.retryable);
+        assert_eq!(
+            *stages.lock().unwrap(),
+            [FlashStage::Downloading, FlashStage::Extracting]
+        );
+    }
+
+    #[tokio::test]
+    async fn list_block_devices_reports_the_device_backends_drives() {
+        let ids = |devices: Vec<BlockDevice>| devices.into_iter().map(|d| d.id).collect::<Vec<_>>();
+        assert_eq!(
+            ids(list_block_devices().await.unwrap()),
+            ids(BackendMock.list_devices().await.unwrap())
+        );
+    }
+
     /// A request for `device_id` whose `expected_device` matches what the mock
     /// backend enumerates, so the flash-target guard lets it through.
     async fn request(device_id: &str, board: &str) -> FlashRequest {
@@ -2034,6 +2148,47 @@ mod mock_tests {
             assert_eq!(error.code, "checksum_mismatch");
             assert!(error.retryable);
         }
+    }
+
+    #[tokio::test]
+    #[serial] // all share the mock cache directory
+    async fn flash_command_refuses_a_second_flash_and_stops_for_its_own_cancel() {
+        use tauri::Manager;
+
+        let app = tauri::test::mock_app();
+        app.manage(FlashState::default());
+        let started = Arc::new(tokio::sync::Notify::new());
+        let progress = Channel::new({
+            let started = Arc::clone(&started);
+            move |_| {
+                started.notify_one();
+                Ok(())
+            }
+        });
+        let first = flash_image(
+            request("mock-sd-card-32gb", "rpi5-64").await,
+            "first".into(),
+            progress,
+            app.state(),
+        );
+        tokio::pin!(first);
+        tokio::select! {
+            result = &mut first => panic!("The flash must still run: {result:?}"),
+            _ = started.notified() => {}
+        }
+
+        let error = flash_image(
+            request("mock-sd-card-64gb", "rpi5-64").await,
+            "second".into(),
+            Channel::new(|_| panic!("A second flash must not start")),
+            app.state(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "operation_in_progress");
+
+        cancel_flash("first".into(), app.state());
+        assert_eq!(first.await.unwrap_err().code, "cancelled");
     }
 
     #[tokio::test]
