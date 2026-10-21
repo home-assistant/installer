@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The merge queue tests each pull request on top of main before merging it.
+  merge_group:
   # Running the workflow by hand on main releases the next version on the
   # chosen channel: an alpha is published right away, a beta or stable
   # release is drafted for an admin to review. See docs/spec/ci-cd.md.
@@ -419,12 +421,13 @@ jobs:
     # The macOS builds of main and of releases are signed and notarized, so
     # the DMG they upload can be opened without Gatekeeper warnings. The Apple
     # credentials live in the protected `release` environment, which only main
-    # may deploy to, so pull request builds never see them and stay unsigned.
-    environment: ${{ matrix.os == 'macos-latest' && github.event_name != 'pull_request' && 'release' || '' }}
+    # may deploy to, so pull request and merge queue builds never see them and
+    # stay unsigned.
+    environment: ${{ matrix.os == 'macos-latest' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'release' || '' }}
     env:
       BUILD_TARGET: ${{ matrix.target }}
       BUNDLE_DIR: target/${{ matrix.target }}/release/bundle
-      SIGN_MACOS: ${{ matrix.os == 'macos-latest' && github.event_name != 'pull_request' }}
+      SIGN_MACOS: ${{ matrix.os == 'macos-latest' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     strategy:
       fail-fast: false
       matrix:

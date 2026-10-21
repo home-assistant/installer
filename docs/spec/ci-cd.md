@@ -14,9 +14,9 @@
 
 Everything runs in one workflow,
 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml); there is no
-separate release workflow. It runs on every pull request, on every push to
-`main`, and by hand to make a release. The workflow file is the reference for
-the jobs and their steps; in short:
+separate release workflow. It runs on every pull request, on every merge queue
+group, on every push to `main`, and by hand to make a release. The workflow
+file is the reference for the jobs and their steps; in short:
 
 - **Audit** jobs check `package-lock.json` (`npm audit`) and `Cargo.lock`
   (`cargo audit`) for known vulnerabilities.
@@ -226,7 +226,8 @@ The workflow uses no repository secrets.
 Secrets of the protected `release` environment, which only `main` may deploy
 to. The macOS build job binds to this environment on pushes to `main` and in
 release runs, signs and notarizes the app and the DMG, and uploads the result.
-Pull request builds don't reference the environment and stay unsigned.
+Pull request and merge queue builds don't reference the environment and stay
+unsigned.
 
 | Secret | Description |
 |--------|-------------|
