@@ -877,11 +877,18 @@ fn parse_xz_index(index: &[u8]) -> Option<(u64, u64)> {
     Some((blocks_size, uncompressed_size))
 }
 
+/// Whether `data` matches the little-endian CRC32 stored next to it.
+fn has_crc32(data: &[u8], stored: &[u8]) -> bool {
+    stored == crc32fast::hash(data).to_le_bytes()
+}
+
 /// The extracted size of an XZ archive, read from the index at the end of
 /// every stream instead of decompressing the whole archive to count it.
 ///
-/// Nothing here is trusted yet: the decoder checks each index against the data
-/// it describes, and the extraction stops if the output disagrees.
+/// The footer and index carry their own checksums, so a damaged size is
+/// reported as a corrupt archive instead of a wrong space check. The decoder
+/// still checks each index against the data it describes, and the extraction
+/// stops if the output disagrees.
 fn xz_uncompressed_size(input: &mut std::fs::File) -> Result<u64> {
     use std::io::{Read, Seek, SeekFrom};
 
@@ -920,7 +927,7 @@ fn xz_uncompressed_size(input: &mut std::fs::File) -> Result<u64> {
         }
         let mut footer = [0; FOOTER_SIZE as usize];
         read_at(end - FOOTER_SIZE, &mut footer)?;
-        if footer[10..] != *b"YZ" {
+        if footer[10..] != *b"YZ" || !has_crc32(&footer[4..10], &footer[..4]) {
             return Err(corrupt());
         }
 
@@ -931,7 +938,11 @@ fn xz_uncompressed_size(input: &mut std::fs::File) -> Result<u64> {
         }
         let mut index = vec![0; index_size as usize];
         read_at(end - FOOTER_SIZE - index_size, &mut index)?;
-        let (blocks_size, uncompressed_size) = parse_xz_index(&index).ok_or_else(corrupt)?;
+        let (records, checksum) = index.split_at(index.len() - 4);
+        if !has_crc32(records, checksum) {
+            return Err(corrupt());
+        }
+        let (blocks_size, uncompressed_size) = parse_xz_index(records).ok_or_else(corrupt)?;
 
         let stream_size = blocks_size
             .checked_add(HEADER_SIZE + index_size + FOOTER_SIZE)
@@ -1479,6 +1490,30 @@ mod tests {
 
         let size = xz_uncompressed_size(&mut std::fs::File::open(&archive).unwrap()).unwrap();
         assert_eq!(size, (first.len() + second.len() + third.len()) as u64);
+    }
+
+    #[test]
+    fn a_damaged_index_size_is_a_corrupt_archive_not_a_space_problem() {
+        let directory = tempfile::tempdir().unwrap();
+        let archive = directory.path().join("image.xz");
+        let destination = directory.path().join("image.img");
+        let mut data = compressed(b"1234567890");
+        // The index starts with its indicator, the record count and the
+        // block's unpadded size; the uncompressed size of 10 comes next
+        let footer = data.len() - 12;
+        let index_size =
+            (u32::from_le_bytes(data[footer + 4..footer + 8].try_into().unwrap()) as usize + 1) * 4;
+        let size_byte = footer - index_size + 3;
+        assert_eq!(data[size_byte], 10);
+        data[size_byte] = 74;
+        std::fs::write(&archive, &data).unwrap();
+        let (tx, _rx) = std::sync::mpsc::channel();
+
+        // 20 bytes fit the real image, not the 74 the damaged index claims
+        let error = extract_archive(&archive, &destination, &tx, |_| Ok(20), MAX_EXTRACTED_SIZE)
+            .unwrap_err();
+        assert!(matches!(error, Error::ExtractionFailed(_)), "{error:?}");
+        assert!(!destination.exists());
     }
 
     #[test]

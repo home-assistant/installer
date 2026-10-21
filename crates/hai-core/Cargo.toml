@@ -25,6 +25,7 @@ hex = { workspace = true }
 rustls = { workspace = true }
 rustls-platform-verifier = { workspace = true }
 xz2 = { workspace = true }
+crc32fast = { workspace = true }
 directories = { workspace = true }
 fs2 = { workspace = true }
 urlencoding = { workspace = true }

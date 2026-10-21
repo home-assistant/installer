@@ -37,6 +37,7 @@ rustls-platform-verifier = "0.7"
 
 # Compression
 xz2 = "0.1"
+crc32fast = "1"
 
 # File system
 directories = "6"
