@@ -9,7 +9,9 @@ use crate::error::{BusyReason, Error, Result};
 use crate::types::DeviceType;
 use crate::types::{BlockDevice, ExpectedDevice, FlashProgress, FlashStage};
 use crate::{Backend, DeviceBackend, ProgressCallback};
-use std::path::Path;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[cfg(target_os = "linux")]
 #[path = "disk/linux/mod.rs"]
@@ -63,6 +65,103 @@ const FAST_DRIVE_BUFFER_SIZE: usize = 64 * 1024 * 1024;
 /// How often to send progress updates (every N bytes)
 #[allow(dead_code)]
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
+
+/// What a writer copies to the drive: an image file, with one range of it
+/// replaced from memory, so settings added to it never reach the local disk.
+#[derive(Clone)]
+pub struct Image {
+    path: PathBuf,
+    patch: Option<Arc<Patch>>,
+}
+
+struct Patch {
+    offset: u64,
+    bytes: Vec<u8>,
+}
+
+impl std::fmt::Debug for Image {
+    // Never the patch bytes: they can hold a password
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Image")
+            .field("path", &self.path)
+            .field(
+                "patch",
+                &self
+                    .patch
+                    .as_ref()
+                    .map(|patch| (patch.offset, patch.bytes.len())),
+            )
+            .finish()
+    }
+}
+
+impl Image {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            patch: None,
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Read `bytes` in place of the file's bytes at `offset`. The range must
+    /// lie within the file.
+    pub fn patched(self, offset: u64, bytes: Vec<u8>) -> Self {
+        Self {
+            patch: Some(Arc::new(Patch { offset, bytes })),
+            ..self
+        }
+    }
+
+    pub fn size(&self) -> std::io::Result<u64> {
+        Ok(std::fs::metadata(&self.path)?.len())
+    }
+
+    pub fn open(&self) -> std::io::Result<ImageReader> {
+        Ok(ImageReader {
+            file: std::fs::File::open(&self.path)?,
+            patch: self.patch.clone(),
+        })
+    }
+}
+
+/// Reads an [`Image`], its patch included.
+pub struct ImageReader {
+    file: std::fs::File,
+    patch: Option<Arc<Patch>>,
+}
+
+impl Read for ImageReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let Some(patch) = &self.patch else {
+            return self.file.read(buf);
+        };
+        let position = self.file.stream_position()?;
+        let end = patch.offset + patch.bytes.len() as u64;
+        if position < patch.offset {
+            // Stop where the patch starts
+            let len = (patch.offset - position).min(buf.len() as u64) as usize;
+            return self.file.read(&mut buf[..len]);
+        }
+        if position >= end {
+            return self.file.read(buf);
+        }
+        let start = (position - patch.offset) as usize;
+        let len = buf.len().min(patch.bytes.len() - start);
+        buf[..len].copy_from_slice(&patch.bytes[start..start + len]);
+        self.file.seek(SeekFrom::Current(len as i64))?;
+        Ok(len)
+    }
+}
+
+impl Seek for ImageReader {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        self.file.seek(position)
+    }
+}
 
 pub(super) fn normalize_serial(serial: Option<&str>) -> Option<String> {
     serial
@@ -247,17 +346,17 @@ async fn list_devices() -> Result<Vec<BlockDevice>> {
     imp::list_devices().await
 }
 
-/// Write an image file to a block device with progress updates
+/// Write an image to a block device with progress updates
 async fn write_image<P: ProgressCallback>(
-    image_path: &Path,
+    image: &Image,
     device_id: &str,
     expected: &ExpectedDevice,
     verify: bool,
     progress_callback: &P,
 ) -> Result<()> {
-    std::fs::metadata(image_path)?;
+    image.size()?;
 
-    imp::write_image(image_path, device_id, expected, verify, progress_callback).await
+    imp::write_image(image, device_id, expected, verify, progress_callback).await
 }
 
 impl DeviceBackend for Backend {
@@ -275,13 +374,13 @@ impl DeviceBackend for Backend {
 
     async fn write_image<P: ProgressCallback>(
         &self,
-        image_path: &Path,
+        image: &Image,
         device_id: &str,
         expected: &ExpectedDevice,
         verify: bool,
         progress_callback: &P,
     ) -> Result<()> {
-        write_image(image_path, device_id, expected, verify, progress_callback).await
+        write_image(image, device_id, expected, verify, progress_callback).await
     }
 }
 
@@ -580,9 +679,8 @@ mod tests {
     async fn test_write_image_nonexistent_image() {
         // The image metadata check runs before any platform code, so a
         // missing image surfaces as Io and the device id is never touched.
-        let image_path = Path::new("/nonexistent/image/file.img");
         let result = write_image(
-            image_path,
+            &Image::new("/nonexistent/image/file.img"),
             "unused-device-id",
             &ExpectedDevice::default(),
             false,

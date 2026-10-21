@@ -125,7 +125,13 @@ verify: boolean,
 /**
  * What the device at `device_id` looked like when the user selected it
  */
-expected_device: ExpectedDevice, };
+expected_device: ExpectedDevice,
+/**
+ * Network for Home Assistant OS to join on first boot
+ */
+wifi?: WifiConfig | null, };
+
+export type WifiConfig = { ssid: string, password: string, };
 
 export type ExpectedDevice = { size?: number | null, model?: string | null, vendor?: string | null, serial?: string | null, };
 

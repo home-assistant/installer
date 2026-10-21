@@ -169,6 +169,27 @@ pub struct FlashRequest {
     pub verify: bool,
     /// What the device at `device_id` looked like when the user selected it
     pub expected_device: ExpectedDevice,
+    /// Network for Home Assistant OS to join on first boot
+    #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub wifi: Option<WifiConfig>,
+}
+
+/// A WPA2 network, written to the drive and never stored by the installer.
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct WifiConfig {
+    pub ssid: String,
+    pub password: String,
+}
+
+// The password must not end up in a log through `{:?}`
+impl std::fmt::Debug for WifiConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WifiConfig")
+            .field("ssid", &self.ssid)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Identity of the selected drive, re-checked right before writing.
@@ -816,6 +837,7 @@ mod tests {
             board: "rpi5-64".to_string(),
             verify: true,
             expected_device: ExpectedDevice::default(),
+            wifi: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -833,6 +855,7 @@ mod tests {
             board: "green".to_string(),
             verify: false,
             expected_device: ExpectedDevice::default(),
+            wifi: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();

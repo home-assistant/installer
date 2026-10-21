@@ -1,8 +1,6 @@
 //! `DeviceBackend` mock: a fixed list of fake block devices and a simulated
 //! write.
 
-use std::path::Path;
-
 use crate::types::{BlockDevice, DeviceType, FlashStage};
 use crate::{DeviceBackend, ProgressCallback, Result};
 
@@ -70,7 +68,7 @@ impl DeviceBackend for BackendMock {
 
     async fn write_image<P: ProgressCallback>(
         &self,
-        _image_path: &Path,
+        _image: &crate::disk::Image,
         _device_id: &str,
         _expected: &crate::types::ExpectedDevice,
         _verify: bool,

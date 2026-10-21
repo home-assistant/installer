@@ -25,7 +25,6 @@ use std::io::{IoSliceMut, Seek, SeekFrom, Write};
 use std::mem::MaybeUninit;
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
-use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 
@@ -69,7 +68,7 @@ enum Handshake {
 }
 
 pub async fn write_image<P: ProgressCallback>(
-    image_path: &Path,
+    image: &Image,
     device_id: &str,
     expected: &ExpectedDevice,
     verify: bool,
@@ -88,7 +87,7 @@ pub async fn write_image<P: ProgressCallback>(
     unmount_disk(disk_id)?;
 
     // Get image size for progress tracking
-    let image_size = std::fs::metadata(image_path)?.len();
+    let image_size = image.size()?;
 
     // Send initial progress
     progress_callback.on_progress(FlashProgress::new(
@@ -102,14 +101,14 @@ pub async fn write_image<P: ProgressCallback>(
     let (progress_tx, progress_rx) = mpsc::channel::<FlashProgress>();
 
     // Perform write and optional verify in a blocking task
-    let image_path_clone = image_path.to_path_buf();
+    let source = image.clone();
     let raw_device_clone = raw_device.clone();
     let disk_id_clone = disk_id.to_string();
     let expected = expected.clone();
 
     let write_handle = tokio::task::spawn_blocking(move || {
         write_and_verify(
-            &image_path_clone,
+            &source,
             &raw_device_clone,
             &disk_id_clone,
             &expected,
@@ -147,7 +146,7 @@ pub async fn write_image<P: ProgressCallback>(
 }
 
 fn write_and_verify(
-    image_path: &Path,
+    image: &Image,
     device_path: &str,
     disk_id: &str,
     expected: &ExpectedDevice,
@@ -185,7 +184,7 @@ fn write_and_verify(
 
     let source_checksum = write_to_device(
         &mut device,
-        image_path,
+        image,
         device_path,
         layout,
         verify,
@@ -364,7 +363,7 @@ fn receive_descriptor(socket: &UnixStream) -> std::io::Result<Handshake> {
 
 fn write_to_device(
     device: &mut File,
-    image_path: &Path,
+    image: &Image,
     device_path: &str,
     layout: Layout,
     compute_checksum: bool,
@@ -379,7 +378,7 @@ fn write_to_device(
         buffer_len,
     } = layout;
 
-    let mut source = File::open(image_path)?;
+    let mut source = image.open()?;
     let mut buffer = vec![0u8; buffer_len];
     let mut hasher = compute_checksum.then(Sha256::new);
     let mut bytes_written: u64 = 0;
@@ -607,13 +606,12 @@ mod tests {
     async fn test_write_image_with_invalid_device() {
         let temp_file = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(temp_file.path(), b"test data").unwrap();
-        let image_path = temp_file.path().to_path_buf();
 
         // Rejected by the safety gate before any unmount or authorization.
         let device_id = "/dev/nonexistent_disk999";
 
         let result = write_image(
-            &image_path,
+            &Image::new(temp_file.path()),
             device_id,
             &ExpectedDevice::default(),
             false,
@@ -767,7 +765,7 @@ mod tests {
 
         let checksum = write_to_device(
             &mut device,
-            image.path(),
+            &Image::new(image.path()),
             "/dev/rdisk-test",
             layout,
             true,
@@ -902,7 +900,7 @@ mod tests {
 
         let checksum = write_to_device(
             &mut device,
-            image.path(),
+            &Image::new(image.path()),
             "/dev/rdisk-test",
             Layout {
                 total_size: 1000,
@@ -1081,7 +1079,7 @@ mod tests {
         let mut device = ram.open();
         let checksum = write_to_device(
             &mut device,
-            image.path(),
+            &Image::new(image.path()),
             &raw_path,
             layout,
             true,
@@ -1112,7 +1110,7 @@ mod tests {
         let mut device = ram.open();
         let result = write_to_device(
             &mut device,
-            image.path(),
+            &Image::new(image.path()),
             &raw_path,
             layout,
             false,

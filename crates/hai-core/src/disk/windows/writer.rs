@@ -9,7 +9,7 @@ use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE}
 use windows_sys::Win32::System::Ioctl::IOCTL_DISK_IS_WRITABLE;
 
 pub async fn write_image<P: ProgressCallback>(
-    image_path: &Path,
+    image: &Image,
     device_id: &str,
     expected: &ExpectedDevice,
     verify: bool,
@@ -17,8 +17,8 @@ pub async fn write_image<P: ProgressCallback>(
 ) -> Result<()> {
     let disk_number = parse_disk_number(device_id)?;
     check_identity(&super::device::list_devices_sync()?, device_id, expected)?;
-    let mut source = File::open(image_path)?;
-    let image_size = source.metadata()?.len();
+    let image_size = image.size()?;
+    let mut source = image.open()?;
     // Keep this exact handle for clearing, writing, verification and refresh.
     let mut device = open_device_for_write(device_id)?;
     // The serial is read from the handle we write through, so a different
@@ -177,7 +177,7 @@ mod tests {
     async fn test_rejects_non_numeric_disk_number() {
         let image = tempfile::NamedTempFile::new().unwrap();
         let result = write_image(
-            image.path(),
+            &Image::new(image.path()),
             "\\\\.\\PhysicalDrive1; echo injected",
             &ExpectedDevice::default(),
             false,

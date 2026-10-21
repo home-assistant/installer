@@ -16,6 +16,7 @@
 pub mod disk;
 pub mod download;
 pub mod error;
+pub mod haos_config;
 pub mod hardware_installer;
 pub mod host;
 pub mod keep_awake;
@@ -124,7 +125,7 @@ pub trait DeviceBackend {
     /// caller validation of removability.
     async fn write_image<P: ProgressCallback>(
         &self,
-        image_path: &Path,
+        image: &disk::Image,
         device_id: &str,
         expected: &ExpectedDevice,
         verify: bool,

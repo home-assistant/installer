@@ -14,6 +14,7 @@ fn typescript() -> String {
         DeviceCategory::decl(&config),
         HaosConfig::decl(&config),
         FlashRequest::decl(&config),
+        WifiConfig::decl(&config),
         ExpectedDevice::decl(&config),
         HaosRelease::decl(&config),
         ImageFormat::decl(&config),
