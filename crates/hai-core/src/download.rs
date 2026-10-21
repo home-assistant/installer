@@ -662,6 +662,61 @@ pub(crate) fn expected_sha256(image: &HaosImage) -> Result<[u8; 32]> {
     Ok(expected)
 }
 
+// HAOS images extract to at most about 16 times their download. With less
+// free space than this, the extracted size could matter before the download.
+const MAX_EXPECTED_XZ_RATIO: u64 = 32;
+// Holds the index of any HAOS image; a larger one only skips the early check.
+const XZ_TAIL_SIZE: u64 = 64 * 1024;
+
+/// The extracted size of the image on the server, read from the index at the
+/// end of its `.xz`. No answer only skips the early check: the extraction
+/// checks the exact size again before it writes anything.
+async fn extracted_size_on_server(client: &reqwest::Client, image: &HaosImage) -> Option<u64> {
+    let last_byte = image.size.checked_sub(1)?;
+    let tail_size = image.size.min(XZ_TAIL_SIZE);
+    let tail_start = image.size - tail_size;
+    let response = client
+        .get(&image.download_url)
+        .header(
+            reqwest::header::RANGE,
+            format!("bytes={tail_start}-{last_byte}"),
+        )
+        .send()
+        .await
+        .ok()?;
+
+    // A server that ignores the range would send the whole image
+    let expected_range = format!("bytes {tail_start}-{last_byte}/{}", image.size);
+    let content_range = response.headers().get(reqwest::header::CONTENT_RANGE)?;
+    if response.status() != reqwest::StatusCode::PARTIAL_CONTENT
+        || content_range.to_str().ok()? != expected_range
+    {
+        return None;
+    }
+
+    let mut tail = Vec::with_capacity(tail_size as usize);
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        tail.extend_from_slice(&chunk.ok()?);
+        if tail.len() as u64 > tail_size {
+            return None;
+        }
+    }
+    if tail.len() as u64 != tail_size {
+        return None;
+    }
+
+    xz_size_from_end(image.size, |offset, buffer| {
+        let outside = || Error::DownloadFailed("The archive index is outside its tail.".into());
+        let start = usize::try_from(offset.checked_sub(tail_start).ok_or_else(outside)?)
+            .map_err(|_| outside())?;
+        let bytes = tail.get(start..start + buffer.len()).ok_or_else(outside)?;
+        buffer.copy_from_slice(bytes);
+        Ok(())
+    })
+    .ok()
+}
+
 /// Download and verify the compressed image before permitting extraction.
 pub(crate) async fn download_image<P: ProgressCallback>(
     image: &HaosImage,
@@ -689,7 +744,18 @@ async fn download_image_with_client<P: ProgressCallback>(
     let directory = dest_path.parent().ok_or_else(|| {
         Error::InvalidConfig("Image destination must have a parent directory".into())
     })?;
-    check_space(directory, image.size, available_space(directory)?)?;
+    let available = available_space(directory)?;
+    check_space(directory, image.size, available)?;
+
+    // Every download is extracted next to itself. With little room to spare,
+    // ask the archive how large it gets, instead of finding out after a
+    // download of several gigabytes.
+    if available < image.size.saturating_mul(MAX_EXPECTED_XZ_RATIO + 1) {
+        if let Some(extracted) = extracted_size_on_server(client, image).await {
+            check_space(directory, image.size.saturating_add(extracted), available)?;
+        }
+    }
+
     let url = &image.download_url;
     let response = client.get(url).send().await?;
 
@@ -892,6 +958,20 @@ fn has_crc32(data: &[u8], stored: &[u8]) -> bool {
 fn xz_uncompressed_size(input: &mut std::fs::File) -> Result<u64> {
     use std::io::{Read, Seek, SeekFrom};
 
+    let length = input.metadata()?.len();
+    xz_size_from_end(length, |offset, buffer| {
+        input.seek(SeekFrom::Start(offset))?;
+        input.read_exact(buffer)?;
+        Ok(())
+    })
+}
+
+/// Walk the streams of an XZ archive of `length` bytes from its end, reading
+/// through `read_at`, and add up their extracted sizes.
+fn xz_size_from_end(
+    length: u64,
+    mut read_at: impl FnMut(u64, &mut [u8]) -> Result<()>,
+) -> Result<u64> {
     // A stream is a 12 byte header, its blocks, the index and a 12 byte footer
     const HEADER_SIZE: u64 = 12;
     const FOOTER_SIZE: u64 = 12;
@@ -901,13 +981,7 @@ fn xz_uncompressed_size(input: &mut std::fs::File) -> Result<u64> {
             "Downloaded image is corrupt or incomplete; try downloading again.".into(),
         )
     };
-    let mut end = input.metadata()?.len();
-    let mut read_at = |offset: u64, buffer: &mut [u8]| -> Result<()> {
-        input.seek(SeekFrom::Start(offset))?;
-        input.read_exact(buffer)?;
-        Ok(())
-    };
-
+    let mut end = length;
     let mut total: u64 = 0;
     let mut streams = 0;
     while end > 0 {
@@ -1293,6 +1367,152 @@ mod tests {
         server.join().unwrap();
         assert!(error.contains("Incomplete image: expected 4 bytes, received 3"));
         assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
+    /// Data that barely compresses, like most of a real image.
+    fn noise(length: usize) -> Vec<u8> {
+        let mut state: u32 = 0x2545_f491;
+        (0..length)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                state as u8
+            })
+            .collect()
+    }
+
+    /// A server for `archive` that answers a request for its tail as GitHub
+    /// does, and expects `downloads` full requests.
+    async fn archive_server(
+        archive: &[u8],
+        downloads: usize,
+    ) -> (mockito::ServerGuard, mockito::Mock, mockito::Mock) {
+        let mut server = mockito::Server::new_async().await;
+        let tail_start = archive.len() - XZ_TAIL_SIZE as usize;
+        let last_byte = archive.len() - 1;
+        let tail = server
+            .mock("GET", "/image.xz")
+            .match_header("range", format!("bytes={tail_start}-{last_byte}").as_str())
+            .with_status(206)
+            .with_header(
+                "content-range",
+                &format!("bytes {tail_start}-{last_byte}/{}", archive.len()),
+            )
+            .with_body(&archive[tail_start..])
+            .create_async()
+            .await;
+        let download = server
+            .mock("GET", "/image.xz")
+            .match_header("range", mockito::Matcher::Missing)
+            .with_body(archive)
+            .expect(downloads)
+            .create_async()
+            .await;
+        (server, tail, download)
+    }
+
+    #[tokio::test]
+    async fn room_for_the_download_but_not_the_extracted_image_fails_up_front() {
+        let archive = compressed(&noise(100_000));
+        let (server, tail, download) = archive_server(&archive, 0).await;
+        let image = image_for_data(&format!("{}/image.xz", server.url()), &archive);
+        let directory = tempfile::tempdir().unwrap();
+        let room = archive.len() as u64 + 99_999;
+
+        let error = download_image_with_client(
+            &image,
+            &directory.path().join("image.xz"),
+            &crate::NoOpProgress,
+            shared_client().unwrap(),
+            |_| Ok(room),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+
+        let needed = archive.len() + 100_000;
+        assert!(
+            error.contains(&format!("need {needed} bytes, but only {room} bytes")),
+            "{error}"
+        );
+        tail.assert_async().await;
+        download.assert_async().await;
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn room_for_the_download_and_the_extracted_image_downloads() {
+        let archive = compressed(&noise(100_000));
+        let (server, tail, download) = archive_server(&archive, 1).await;
+        let image = image_for_data(&format!("{}/image.xz", server.url()), &archive);
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("image.xz");
+
+        download_image_with_client(
+            &image,
+            &destination,
+            &crate::NoOpProgress,
+            shared_client().unwrap(),
+            |_| Ok(archive.len() as u64 + 100_000),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(std::fs::read(destination).unwrap(), archive);
+        tail.assert_async().await;
+        download.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn a_server_ignoring_the_range_only_skips_the_early_check() {
+        let archive = compressed(&noise(100_000));
+        let mut server = mockito::Server::new_async().await;
+        // Answered with the whole image, then the actual download
+        let requests = server
+            .mock("GET", "/image.xz")
+            .with_body(&archive)
+            .expect(2)
+            .create_async()
+            .await;
+        let image = image_for_data(&format!("{}/image.xz", server.url()), &archive);
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("image.xz");
+
+        download_image_with_client(
+            &image,
+            &destination,
+            &crate::NoOpProgress,
+            shared_client().unwrap(),
+            // Too little for the extracted image, which the extraction catches
+            |_| Ok(archive.len() as u64),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(std::fs::read(destination).unwrap(), archive);
+        requests.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn plenty_of_room_skips_the_extracted_size_request() {
+        let archive = compressed(&noise(100_000));
+        let (server, tail, download) = archive_server(&archive, 1).await;
+        let image = image_for_data(&format!("{}/image.xz", server.url()), &archive);
+        let directory = tempfile::tempdir().unwrap();
+
+        download_image_with_client(
+            &image,
+            &directory.path().join("image.xz"),
+            &crate::NoOpProgress,
+            shared_client().unwrap(),
+            |_| Ok(archive.len() as u64 * (MAX_EXPECTED_XZ_RATIO + 1)),
+        )
+        .await
+        .unwrap();
+
+        tail.expect(0).assert_async().await;
+        download.assert_async().await;
     }
 
     #[tokio::test]
