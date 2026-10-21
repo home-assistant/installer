@@ -77,8 +77,10 @@ fn boot_partition(image: &mut (impl Read + Seek)) -> Result<(u64, u64)> {
     for _ in 0..count {
         image.read_exact(&mut entry).map_err(|_| missing())?;
         let name: Vec<u16> = entry[56..128]
-            .chunks_exact(2)
-            .map(|unit| u16::from_le_bytes([unit[0], unit[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&unit| u16::from_le_bytes(unit))
             .take_while(|&unit| unit != 0)
             .collect();
         if String::from_utf16_lossy(&name) != BOOT_PARTITION {
