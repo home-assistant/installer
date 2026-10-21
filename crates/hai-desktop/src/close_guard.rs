@@ -78,13 +78,7 @@ pub fn quit_anyway(app: tauri::AppHandle) {
     #[cfg(target_os = "macos")]
     {
         let handle = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            // Let a held-back quit, logout or shutdown carry on
-            if !termination::reply(true) {
-                // Ends the event loop without `terminate:`, so it isn't asked again
-                handle.exit(0);
-            }
-        });
+        let _ = app.run_on_main_thread(move || termination::answer(&handle, true));
     }
     #[cfg(not(target_os = "macos"))]
     app.exit(0);
@@ -94,9 +88,10 @@ pub fn quit_anyway(app: tauri::AppHandle) {
 #[tauri::command]
 pub fn keep_running(app: tauri::AppHandle) {
     #[cfg(target_os = "macos")]
-    let _ = app.run_on_main_thread(|| {
-        termination::reply(false);
-    });
+    {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || termination::answer(&handle, false));
+    }
     #[cfg(not(target_os = "macos"))]
     let _ = app;
 }
@@ -114,6 +109,18 @@ enum TerminateDecision {
     Ask,
     /// Already asking; the answer covers this request too.
     AlreadyAsking,
+}
+
+/// What the user's answer to the quit question does.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, PartialEq, Eq)]
+enum AnswerAction {
+    /// Reply to the held-back `terminate:`, letting it through or cancelling it.
+    Reply { terminate: bool },
+    /// Nothing was held back (a window close asked), so exit by ourselves.
+    Exit,
+    /// Nothing was held back and the user keeps the app running.
+    Stay,
 }
 
 /// A `terminate:` held back until the user answered.
@@ -141,9 +148,15 @@ impl PendingTermination {
         self.0.store(false, Ordering::Release);
     }
 
-    /// Take the request waiting for an answer. Returns whether one was waiting.
-    fn take(&self) -> bool {
-        self.0.swap(false, Ordering::AcqRel)
+    /// Settle the user's answer, taking the request waiting for it.
+    fn answer(&self, quit: bool) -> AnswerAction {
+        if self.0.swap(false, Ordering::AcqRel) {
+            AnswerAction::Reply { terminate: quit }
+        } else if quit {
+            AnswerAction::Exit
+        } else {
+            AnswerAction::Stay
+        }
     }
 }
 
@@ -153,7 +166,9 @@ impl PendingTermination {
 /// back while a job runs, until the user answered.
 #[cfg(target_os = "macos")]
 mod termination {
-    use super::{ask_before_closing, PendingTermination, TerminateDecision, RUNNING_JOBS};
+    use super::{
+        ask_before_closing, AnswerAction, PendingTermination, TerminateDecision, RUNNING_JOBS,
+    };
     use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
     use objc2::{ffi, sel, MainThreadMarker};
     use objc2_app_kit::{NSApplication, NSApplicationTerminateReply};
@@ -168,16 +183,20 @@ mod termination {
     /// A `terminate:` is waiting for the user's answer.
     static PENDING: PendingTermination = PendingTermination::new();
 
-    /// Answer a held-back `terminate:`. Returns whether one was waiting.
-    pub(super) fn reply(terminate: bool) -> bool {
-        let Some(mtm) = MainThreadMarker::new() else {
-            return false;
-        };
-        if !PENDING.take() {
-            return false;
+    /// Act on the user's answer to the quit question. Runs on the main thread.
+    pub(super) fn answer(app: &tauri::AppHandle, quit: bool) {
+        match PENDING.answer(quit) {
+            // Let a held-back quit, logout or shutdown carry on, or cancel it
+            AnswerAction::Reply { terminate } => match MainThreadMarker::new() {
+                Some(mtm) => NSApplication::sharedApplication(mtm)
+                    .replyToApplicationShouldTerminate(terminate),
+                None if terminate => app.exit(0),
+                None => {}
+            },
+            // Ends the event loop without `terminate:`, so it isn't asked again
+            AnswerAction::Exit => app.exit(0),
+            AnswerAction::Stay => {}
         }
-        NSApplication::sharedApplication(mtm).replyToApplicationShouldTerminate(terminate);
-        true
     }
 
     extern "C-unwind" fn should_terminate(
@@ -262,8 +281,6 @@ mod tests {
         let pending = PendingTermination::new();
         assert_eq!(pending.request(false), TerminateDecision::Now);
         assert_eq!(pending.request(false), TerminateDecision::Now);
-        // Nothing was held back, so quitting anyway has to exit by itself
-        assert!(!pending.take());
     }
 
     #[test]
@@ -275,17 +292,46 @@ mod tests {
     }
 
     #[test]
-    fn an_answer_settles_the_held_back_termination_once() {
+    fn quit_anyway_lets_the_held_back_termination_through() {
         let pending = PendingTermination::new();
         assert_eq!(pending.request(true), TerminateDecision::Ask);
+        assert_eq!(
+            pending.answer(true),
+            AnswerAction::Reply { terminate: true }
+        );
+    }
 
-        // Quit anyway or keep running replies to the waiting request
-        assert!(pending.take());
-        // A second answer has nothing left to reply to
-        assert!(!pending.take());
+    #[test]
+    fn keep_running_cancels_the_held_back_termination_and_asks_next_time() {
+        let pending = PendingTermination::new();
+        assert_eq!(pending.request(true), TerminateDecision::Ask);
+        assert_eq!(
+            pending.answer(false),
+            AnswerAction::Reply { terminate: false }
+        );
 
         // The next termination asks again
         assert_eq!(pending.request(true), TerminateDecision::Ask);
+    }
+
+    #[test]
+    fn answers_without_a_held_back_termination_exit_or_stay() {
+        // A window close asked, so quitting anyway has to exit by itself
+        let pending = PendingTermination::new();
+        assert_eq!(pending.answer(true), AnswerAction::Exit);
+        assert_eq!(pending.answer(false), AnswerAction::Stay);
+    }
+
+    #[test]
+    fn an_answer_settles_the_held_back_termination_once() {
+        let pending = PendingTermination::new();
+        assert_eq!(pending.request(true), TerminateDecision::Ask);
+        assert_eq!(
+            pending.answer(false),
+            AnswerAction::Reply { terminate: false }
+        );
+        // A second answer has nothing left to reply to
+        assert_eq!(pending.answer(true), AnswerAction::Exit);
     }
 
     #[test]
@@ -294,7 +340,7 @@ mod tests {
         assert_eq!(pending.request(true), TerminateDecision::Ask);
         pending.abandon();
 
-        assert!(!pending.take());
+        assert_eq!(pending.answer(true), AnswerAction::Exit);
         assert_eq!(pending.request(true), TerminateDecision::Ask);
     }
 }
