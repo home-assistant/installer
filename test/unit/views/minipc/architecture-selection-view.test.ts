@@ -5,12 +5,15 @@ import {
   html,
   waitUntil,
 } from "@open-wc/testing";
+import type WaRadio from "@home-assistant/webawesome/dist/components/radio/radio.js";
 import "../../../../src/views/minipc/architecture-selection-view.js";
 import type { MiniPCArchitectureSelectionView } from "../../../../src/views/minipc/architecture-selection-view.js";
 import { MOCK_MANIFEST } from "../../../../src/api/mock-data.js";
 import type { DeviceManifest } from "../../../../src/api/types.js";
+import { findByRole, fullA11ySnapshot } from "../../helpers/a11y.js";
 import {
   deferred,
+  ipcError,
   mockTauriIpc,
   restoreTauriIpc,
   settle,
@@ -69,5 +72,127 @@ describe("minipc-architecture-selection-view focus", () => {
     await el.updateComplete;
     expect(el.shadowRoot!.querySelectorAll("wa-radio")).to.have.length(2);
     expect(document.activeElement).to.equal(button);
+  });
+});
+
+describe("minipc-architecture-selection-view choices", () => {
+  afterEach(() => {
+    // The stub shadows the prototype getter; deleting it restores the real UA.
+    delete (window.navigator as { userAgent?: string }).userAgent;
+    restoreTauriIpc();
+    wizardState.reset();
+  });
+
+  async function renderChoices(manifest: () => unknown = () => MOCK_MANIFEST) {
+    wizardState.startFlow("minipc");
+    mockTauriIpc((cmd) => {
+      expect(cmd).to.equal("get_manifest");
+      return manifest();
+    });
+    const el = await fixture<MiniPCArchitectureSelectionView>(
+      html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`
+    );
+    await waitUntil(
+      () => !el.shadowRoot!.querySelector(".loading"),
+      "manifest load never settled"
+    );
+    return el;
+  }
+
+  function radios(el: MiniPCArchitectureSelectionView) {
+    return [...el.shadowRoot!.querySelectorAll<WaRadio>("wa-radio")];
+  }
+
+  it("offers the x86-64 and ARM64 images as a named radio group", async () => {
+    const el = await renderChoices();
+    expect(radios(el).map((radio) => radio.value)).to.deep.equal([
+      "generic-x86-64",
+      "generic-aarch64",
+    ]);
+    expect(radios(el)[0].textContent).to.contain("Intel/AMD (x86-64)");
+    expect(radios(el)[1].textContent).to.contain("ARM (aarch64)");
+    await el.shadowRoot!.querySelector("wa-radio-group")!.updateComplete;
+
+    const groups = findByRole(await fullA11ySnapshot(), "radiogroup");
+    expect(groups).to.have.length(1);
+    expect(groups[0]!.name).to.equal("CPU architecture");
+    expect(findByRole(groups[0]!, "radio")).to.have.length(2);
+  });
+
+  it("leaves out an architecture the catalog does not list", async () => {
+    const el = await renderChoices(() => ({
+      ...MOCK_MANIFEST,
+      devices: MOCK_MANIFEST.devices.filter(
+        (device) => device.category !== "generic_arm64"
+      ),
+    }));
+    expect(radios(el).map((radio) => radio.value)).to.deep.equal([
+      "generic-x86-64",
+    ]);
+  });
+
+  it("stores the chosen architecture for the following steps", async () => {
+    const el = await renderChoices();
+    const arm = radios(el).find((radio) => radio.value === "generic-aarch64")!;
+
+    arm.click();
+    await waitUntil(
+      () => wizardState.getState().selections.device === "generic-aarch64",
+      "choice never stored"
+    );
+
+    const selections = wizardState.getState().selections;
+    expect(selections.deviceName).to.equal("ARM (aarch64)");
+    expect(selections.deviceImage).to.equal("/assets/icons/chip.svg");
+    expect(selections.deviceConfig!.board).to.equal("generic-aarch64");
+  });
+
+  for (const [platform, userAgent] of [
+    [
+      "macos",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+    ],
+    [
+      "linux",
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+    ],
+  ] as const) {
+    it(`${platform === "macos" ? "points" : "does not point"} ${platform} users to the virtual machine path`, async () => {
+      Object.defineProperty(window.navigator, "userAgent", {
+        value: userAgent,
+        configurable: true,
+      });
+      const el = await renderChoices();
+      const note = el.shadowRoot!.querySelector(".mac-note");
+      if (platform === "macos") {
+        expect(note!.textContent).to.contain("on this Mac itself");
+        expect(note!.querySelector("strong")!.textContent).to.equal(
+          "Virtual machine"
+        );
+      } else {
+        expect(note).to.not.exist;
+      }
+    });
+  }
+
+  it("loads the architectures again on Try again", async () => {
+    let attempts = 0;
+    const el = await renderChoices(() =>
+      ++attempts === 1
+        ? Promise.reject(ipcError("network", "offline", true))
+        : MOCK_MANIFEST
+    );
+    expect(
+      el.shadowRoot!.querySelector('[role="alert"]')!.textContent
+    ).to.contain("Could not connect");
+
+    const retry = [...el.shadowRoot!.querySelectorAll("wa-button")].find(
+      (button) => button.textContent!.includes("Try again")
+    )!;
+    retry.click();
+    await waitUntil(() => radios(el).length === 2, "catalog never reloaded");
+
+    expect(attempts).to.equal(2);
+    expect(el.shadowRoot!.querySelector('[role="alert"]')).to.not.exist;
   });
 });

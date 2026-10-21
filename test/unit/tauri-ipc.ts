@@ -41,6 +41,18 @@ export function mockTauriIpc(
   );
 }
 
+/** Mock IPC to record the URLs handed to the system opener, and nothing else. */
+export function captureOpenedUrls(): string[] {
+  const opened: string[] = [];
+  mockTauriIpc((cmd, args) => {
+    if (cmd !== "plugin:opener|open_url") {
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    }
+    opened.push((args as { url: string }).url);
+  });
+  return opened;
+}
+
 export function restoreTauriIpc(): void {
   clearMocks();
   delete (window as unknown as { isTauri?: boolean }).isTauri;
