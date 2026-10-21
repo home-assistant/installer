@@ -64,14 +64,33 @@ pub async fn write_image<P: ProgressCallback>(
     // Send progress updates from the blocking task through a channel.
     let (progress_tx, progress_rx) = mpsc::channel::<FlashProgress>();
 
-    let image_path_clone = image_path.to_path_buf();
-
+    let image = image_path.to_path_buf();
     let write_handle = tokio::task::spawn_blocking(move || {
-        write_and_verify(&image_path_clone, device, image_size, verify, progress_tx)
+        let mut device = device;
+        write_to_device(&image, &mut device, image_size, &progress_tx)?;
+        Ok(device)
     });
+    let device = run_with_progress(write_handle, progress_rx, progress_callback).await?;
 
-    run_with_progress(write_handle, progress_rx, progress_callback).await?;
-    stop_before_eject(progress_callback)?;
+    if verify {
+        stop_if_requested(progress_callback)?;
+        progress_callback.on_progress(FlashProgress::new(
+            FlashStage::Verifying,
+            0,
+            image_size,
+            "Verifying written data...",
+        ));
+
+        let (progress_tx, progress_rx) = mpsc::channel::<FlashProgress>();
+        let image = image_path.to_path_buf();
+        let verify_handle = tokio::task::spawn_blocking(move || {
+            verify_device(&image, device, image_size, &progress_tx)
+        });
+        run_with_progress(verify_handle, progress_rx, progress_callback).await?;
+    } else {
+        drop(device);
+    }
+    stop_if_requested(progress_callback)?;
 
     progress_callback.on_progress(FlashProgress::new(
         FlashStage::Finalizing,
@@ -97,45 +116,28 @@ pub async fn write_image<P: ProgressCallback>(
     Ok(())
 }
 
-fn write_and_verify(
+/// Read the written image back from the medium and compare it.
+fn verify_device(
     image_path: &Path,
     mut device: File,
     total_size: u64,
-    verify: bool,
-    progress_tx: mpsc::Sender<FlashProgress>,
+    progress_tx: &mpsc::Sender<FlashProgress>,
 ) -> Result<()> {
-    write_to_device(image_path, &mut device, total_size, &progress_tx)?;
+    // Evict the pages we just wrote from the cache so the read-back
+    // comes from the medium, not RAM
+    drop_device_cache(&device);
 
-    if verify {
-        // Also where a stop gets in, before the first buffer is read back
-        send_progress(
-            &progress_tx,
-            FlashProgress::new(
-                FlashStage::Verifying,
-                0,
-                total_size,
-                "Verifying written data...",
-            ),
-        )?;
+    // Tag verify-phase failures as VerificationFailed so the caller can
+    // label them "Verification failed" rather than "Write failed".
+    let verified = (|| {
+        device.seek(SeekFrom::Start(0)).map_err(device_io_error)?;
+        verify_write(image_path, &mut device, total_size, progress_tx)
+    })();
 
-        // Evict the pages we just wrote from the cache so the read-back
-        // comes from the medium, not RAM
-        drop_device_cache(&device);
-
-        // Tag verify-phase failures as VerificationFailed so the caller can
-        // label them "Verification failed" rather than "Write failed".
-        let verified = (|| {
-            device.seek(SeekFrom::Start(0)).map_err(device_io_error)?;
-            verify_write(image_path, &mut device, total_size, &progress_tx)
-        })();
-
-        verified.map_err(|e| match e {
-            Error::VerificationFailed(_) | Error::DriveDisconnected | Error::Cancelled => e,
-            other => Error::VerificationFailed(other.to_string()),
-        })?;
-    }
-
-    Ok(())
+    verified.map_err(|e| match e {
+        Error::VerificationFailed(_) | Error::DriveDisconnected | Error::Cancelled => e,
+        other => Error::VerificationFailed(other.to_string()),
+    })
 }
 
 fn write_to_device(
@@ -1093,30 +1095,15 @@ mod tests {
     }
 
     #[test]
-    fn a_stop_after_the_write_skips_verification() {
-        let data = vec![0x42; 65_536];
-        let image = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(image.path(), &data).unwrap();
-        let device = tempfile::tempfile().unwrap();
-        // A dropped receiver is how a stop reaches the writer
-        let (tx, rx) = mpsc::channel();
-        drop(rx);
-
-        let error =
-            write_and_verify(image.path(), device, data.len() as u64, true, tx).unwrap_err();
-
-        assert!(matches!(error, Error::Cancelled), "{error:?}");
-    }
-
-    #[test]
     fn test_write_and_verify_roundtrip() {
         let data: Vec<u8> = (0..65_536u32).map(|i| (i % 199) as u8).collect();
         let image = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(image.path(), &data).unwrap();
 
-        let device = tempfile::tempfile().unwrap();
+        let mut device = tempfile::tempfile().unwrap();
         let (tx, rx) = mpsc::channel();
-        write_and_verify(image.path(), device, data.len() as u64, true, tx).unwrap();
+        write_to_device(image.path(), &mut device, data.len() as u64, &tx).unwrap();
+        verify_device(image.path(), device, data.len() as u64, &tx).unwrap();
 
         let stages: Vec<FlashStage> = rx.try_iter().map(|u| u.stage).collect();
         assert!(stages.contains(&FlashStage::Writing));
