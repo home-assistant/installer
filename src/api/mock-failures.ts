@@ -23,6 +23,12 @@ export function failMockOperation(operation: "flash" | "proxmox" | "utm") {
       message: "Drive disconnected",
       retryable: false,
     },
+    "flash-permission": {
+      operation: "flash",
+      code: "permission_denied",
+      message: "Administrator access was denied",
+      retryable: false,
+    },
     "proxmox-install": {
       operation: "proxmox",
       code: "proxmox_api",
