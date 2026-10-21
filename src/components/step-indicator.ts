@@ -3,10 +3,12 @@ import { customElement, property } from "lit/decorators.js";
 import type { WizardStep } from "../state/wizard-state.js";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { localize } from "../localization/localize.js";
+import { reducedMotionStyles } from "../utils/view-accessibility.js";
 
 @customElement("step-indicator")
 export class StepIndicator extends LitElement {
   static styles = css`
+    ${reducedMotionStyles}
     :host {
       display: block;
     }
@@ -51,15 +53,6 @@ export class StepIndicator extends LitElement {
     .step-label.active {
       color: var(--ha-text-color, #212121);
       font-weight: 500;
-    }
-
-    .step-status {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
     }
 
     .step-connector {
@@ -107,12 +100,6 @@ export class StepIndicator extends LitElement {
       }
       .step-connector {
         width: 8px;
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      * {
-        transition: none !important;
       }
     }
   `;
@@ -200,7 +187,7 @@ export class StepIndicator extends LitElement {
         ></span>
         <span class="step-label ${isActive ? "active" : ""}"
           >${step.title}${status
-            ? html`<span class="step-status">${` ${status}`}</span>`
+            ? html`<span class="sr-only">${` ${status}`}</span>`
             : nothing}</span
         >
       </div>
