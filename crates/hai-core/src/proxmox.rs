@@ -48,6 +48,26 @@ fn validate_disk_size(disk_size_gb: u32) -> Result<()> {
     Ok(())
 }
 
+/// Proxmox's `dns-name` format for VM names: dot-separated labels of ASCII
+/// letters, digits and dashes, each starting and ending with a letter or digit.
+/// Proxmox only checks it when the VM is created, after the download.
+fn validate_vm_name(name: &str) -> Result<()> {
+    let valid = name.split('.').all(|label| {
+        !label.is_empty()
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    });
+    if !valid {
+        return Err(Error::ProxmoxActionRequired(crate::message!(
+            "backend.proxmox.invalid_vm_name"
+        )));
+    }
+    Ok(())
+}
+
 /// How often to send progress updates (every N bytes)
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
 
@@ -395,6 +415,10 @@ async fn list_nodes(session: &ProxmoxSession) -> Result<Vec<ProxmoxNode>> {
                     .unwrap_or("unknown")
                     .to_string(),
                 cpu_usage: node.get("cpu").and_then(|v| v.as_f64()),
+                cpu_count: node
+                    .get("maxcpu")
+                    .and_then(|v| v.as_u64())
+                    .and_then(|v| u32::try_from(v).ok()),
                 memory_used: node.get("mem").and_then(|v| v.as_u64()),
                 memory_total: node.get("maxmem").and_then(|v| v.as_u64()),
             })
@@ -874,6 +898,23 @@ fn check_node_online(nodes: &[ProxmoxNode], node: &str) -> Result<()> {
     Ok(())
 }
 
+/// Proxmox creates a VM with more cores than its node has, but then refuses
+/// to start it, after the download and the import.
+fn check_node_cores(nodes: &[ProxmoxNode], node: &str, cores: u32) -> Result<()> {
+    let cpus = nodes
+        .iter()
+        .find(|n| n.name == node)
+        .and_then(|n| n.cpu_count);
+    match cpus {
+        Some(cpus) if cores > cpus => Err(Error::ProxmoxActionRequired(crate::message!(
+            "backend.proxmox.too_many_cores",
+            node = node,
+            cpus = cpus,
+        ))),
+        _ => Ok(()),
+    }
+}
+
 /// Privileges Proxmox checks on `/vms/{id}` for the options `create_vm_with_disk` sends.
 const VM_CREATE_PRIVILEGES: &[&str] = &[
     "VM.Allocate",
@@ -1032,6 +1073,7 @@ async fn pre_install_checks(
 ) -> Result<()> {
     let nodes = list_nodes(session).await?;
     check_node_online(&nodes, &config.node)?;
+    check_node_cores(&nodes, &config.node, config.cpu_cores)?;
 
     ensure_user_can_create_vm(session, config).await?;
 
@@ -1061,6 +1103,7 @@ async fn check_install<B: ReleaseSource>(
     config: &ProxmoxVmConfig,
 ) -> Result<HaosImage> {
     validate_disk_size(config.disk_size_gb)?;
+    validate_vm_name(&config.name)?;
 
     let release: HaosRelease = backend.get_latest_haos_release_for_board("ova").await?;
     let image = release
@@ -2101,6 +2144,7 @@ mod tests {
             name: "pve".to_string(),
             status: "online".to_string(),
             cpu_usage: Some(0.5),
+            cpu_count: Some(4),
             memory_used: Some(4_000_000_000),
             memory_total: Some(8_000_000_000),
         };
@@ -2300,8 +2344,53 @@ mod tests {
             name: name.to_string(),
             status: status.to_string(),
             cpu_usage: None,
+            cpu_count: None,
             memory_used: None,
             memory_total: None,
+        }
+    }
+
+    #[test]
+    fn test_check_node_cores_against_the_node_cpus() {
+        let nodes = vec![
+            ProxmoxNode {
+                cpu_count: Some(4),
+                ..node("pve", "online")
+            },
+            node("unknown", "online"),
+        ];
+        assert!(check_node_cores(&nodes, "pve", 4).is_ok());
+        match check_node_cores(&nodes, "pve", 6) {
+            Err(Error::ProxmoxActionRequired(msg)) => {
+                assert_eq!(msg.key, "backend.proxmox.too_many_cores");
+                assert!(msg.to_string().contains("CPU count (4)"), "{}", msg);
+            }
+            other => panic!("Expected too-many-cores error, got {:?}", other),
+        }
+        // Without a CPU count only Proxmox can tell
+        assert!(check_node_cores(&nodes, "unknown", 16).is_ok());
+    }
+
+    #[test]
+    fn test_vm_names_follow_the_proxmox_dns_name_format() {
+        for name in ["homeassistant", "home-assistant", "ha.lan", "HA-2", "a"] {
+            assert!(validate_vm_name(name).is_ok(), "{name}");
+        }
+        for name in [
+            "",
+            "home_assistant",
+            "home assistant",
+            "-ha",
+            "ha-",
+            "ha.",
+            ".ha",
+            "ha..lan",
+            "ha.-lan",
+        ] {
+            assert!(
+                matches!(validate_vm_name(name), Err(Error::ProxmoxActionRequired(_))),
+                "{name}"
+            );
         }
     }
 
@@ -2732,6 +2821,7 @@ mod tests {
                                 "node": "pve",
                                 "status": "online",
                                 "cpu": 0.15,
+                                "maxcpu": 4,
                                 "mem": 4000000000,
                                 "maxmem": 16000000000
                             },
@@ -2762,7 +2852,10 @@ mod tests {
             assert_eq!(nodes.len(), 2);
             assert_eq!(nodes[0].name, "pve");
             assert_eq!(nodes[0].status, "online");
+            assert_eq!(nodes[0].cpu_count, Some(4));
             assert_eq!(nodes[1].name, "pve2");
+            // Proxmox leaves out the stats for users without Sys.Audit
+            assert_eq!(nodes[1].cpu_count, None);
 
             nodes_mock.assert_async().await;
         }

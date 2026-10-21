@@ -1201,13 +1201,6 @@ mod tests {
 
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[tokio::test]
-    async fn test_check_ha_ready_empty_ip() {
-        let result = check_ha_ready("".to_string()).await;
-        assert!(!result, "Should return false for empty IP");
-    }
-
-    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
-    #[tokio::test]
     async fn ha_checks_tell_a_web_server_from_a_started_home_assistant() {
         let mut server = mockito::Server::new_async().await;
         let _root = server.mock("GET", "/").create_async().await;

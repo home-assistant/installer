@@ -149,6 +149,27 @@ describe("Proxmox bridge selection", () => {
     }
   });
 
+  it("keeps focus in the VLAN field while its error comes and goes", async () => {
+    mockNetworks(() => [bridge("vmbr0")]);
+    const el = await mount();
+    await ready();
+    await el.updateComplete;
+    const details = el.shadowRoot!.querySelector("wa-details")!;
+    details.open = true;
+    await details.updateComplete;
+    const input = el.shadowRoot!.querySelector<WaInput>("#vlan-tag")!;
+    input.focus();
+    expect(el.shadowRoot!.activeElement === input).to.be.true;
+    // One digit too many shows the range error, deleting it hides it again
+    for (const value of ["4", "40", "409", "4095", "409"]) {
+      input.value = value;
+      input.dispatchEvent(new Event("input"));
+      await el.updateComplete;
+      await input.updateComplete;
+      expect(el.shadowRoot!.activeElement === input, value).to.be.true;
+    }
+  });
+
   it("blocks a tagged selection after changing to a non-VLAN-aware bridge", async () => {
     wizardState.setSelection("proxmoxVlanTag", 42);
     mockNetworks(() => [
