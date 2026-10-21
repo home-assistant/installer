@@ -100,6 +100,31 @@ test("the existing board flow remains keyboard accessible", async ({
   await expect(page.locator("success-view")).toBeVisible({ timeout: 20000 });
 });
 
+test("the Home Assistant hardware flow works with the keyboard alone", async ({
+  page,
+}) => {
+  await start(page, "Home Assistant hardware");
+  await activate(
+    page,
+    page.getByRole("radio", { name: "Home Assistant Green", exact: true }),
+    "Space"
+  );
+  await next(page);
+  await activate(page, page.getByRole("radio").first(), "Space");
+  await next(page);
+  await activate(
+    page,
+    page.getByRole("button", { name: "Install", exact: true })
+  );
+  await activate(
+    page,
+    page.getByRole("button", { name: "Erase and install", exact: true })
+  );
+  await expect(page.locator("ha-hardware-success-view")).toBeVisible({
+    timeout: 45000,
+  });
+});
+
 test("every external installation guide can be opened with the keyboard", async ({
   page,
 }) => {

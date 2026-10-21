@@ -251,26 +251,31 @@ export class AppShell extends LitElement {
     switch (this._currentView) {
       case "connection-check":
         return html`<connection-check-view
+          role="main"
           @connection-ready=${this._onConnectionReady}
           @connection-back=${this._onConnectionBack}
         ></connection-check-view>`;
       case "welcome":
         return html`<welcome-view
+          role="main"
           @navigate=${this._onNavigate}
         ></welcome-view>`;
       case "path-selection":
         return html`<path-selection-view
+          role="main"
           @navigate=${this._onNavigate}
           @select-path=${this._onSelectPath}
         ></path-selection-view>`;
       case "other-options":
         return html`<other-options-view
+          role="main"
           @navigate=${this._onNavigate}
         ></other-options-view>`;
       case "wizard":
         return this._renderWizard();
       default:
         return html`<welcome-view
+          role="main"
           @navigate=${this._onNavigate}
         ></welcome-view>`;
     }
@@ -328,6 +333,7 @@ export class AppShell extends LitElement {
 
     return html`
       <wizard-shell
+        .flowTitle=${flow ? this._flowTitle(flow) : ""}
         .nextDisabled=${nextDisabled}
         .nextBusy=${!!busy}
         .nextLabel=${busy ?? nextLabel}
@@ -350,6 +356,17 @@ export class AppShell extends LitElement {
         ${step?.render() ?? nothing}
       </wizard-shell>
     `;
+  }
+
+  private _flowTitle(flow: WizardFlow): string {
+    const titles: Record<WizardFlow, string> = {
+      sbc: localize("common.raspberry_pi_other_boards"),
+      minipc: localize("common.generic_mini_pc"),
+      "ha-hardware": localize("common.home_assistant_hardware"),
+      proxmox: localize("common.proxmox_server"),
+      vm: localize("common.virtual_machine"),
+    };
+    return titles[flow];
   }
 
   private _getNextLabel(stepId: string | undefined): string {

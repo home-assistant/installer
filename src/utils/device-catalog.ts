@@ -162,6 +162,11 @@ export const deviceGridStyles = css`
     max-width: 700px;
   }
 
+  /* Named by its label, which the step's heading already shows */
+  .devices-grid::part(form-control-label) {
+    display: none;
+  }
+
   /* The group's default layout is a flex column. Empty columns collapse, so
      a short row of devices still spans the width. */
   .devices-grid::part(form-control-input) {

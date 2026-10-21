@@ -77,6 +77,11 @@ export class DriveSelectionView extends LitElement {
         max-width: 500px;
       }
 
+      /* Named by its label, which the heading above already shows. */
+      .drives-list::part(form-control-label) {
+        display: none;
+      }
+
       .drives-list::part(form-control-input) {
         gap: 0.75rem;
       }
@@ -354,7 +359,7 @@ export class DriveSelectionView extends LitElement {
       <wa-radio-group
         class="drives-list"
         radio-tag="drive-card"
-        aria-label=${localize("common.target_drive")}
+        label=${localize("common.target_drive")}
         .value=${this._selectedDriveId ?? ""}
         @change=${this._onDriveChange}
       >

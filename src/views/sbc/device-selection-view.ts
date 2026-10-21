@@ -61,7 +61,7 @@ export class DeviceSelectionView extends LitElement {
           <wa-radio-group
             class="devices-grid"
             radio-tag="device-card"
-            aria-label=${localize(
+            label=${localize(
               "views.sbc.device_selection_view.single_board_computer"
             )}
             .value=${this._catalog.selected ?? ""}

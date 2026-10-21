@@ -111,6 +111,16 @@ export class WizardShell extends LitElement {
   @state()
   private _wizardState: WizardState = wizardState.getState();
 
+  /** Whether the step is larger than the window, so it can be scrolled */
+  @state()
+  private _scrolls = false;
+
+  private _resizeObserver = new ResizeObserver(() => this._checkScrolling());
+
+  /** What is being installed, as the page's main heading */
+  @property({ type: String, attribute: "flow-title" })
+  flowTitle = "";
+
   @property({ type: String, attribute: "next-label" })
   nextLabel = localize("common.next");
 
@@ -146,6 +156,24 @@ export class WizardShell extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this._unsubscribe?.();
+    this._resizeObserver.disconnect();
+  }
+
+  // A keyboard can only scroll what it can focus, and some steps have
+  // nothing focusable in them. Only when they overflow, so it isn't an
+  // extra tab stop on every step.
+  private _observeContent(event: Event) {
+    const slot = event.target as HTMLSlotElement;
+    this._resizeObserver.disconnect();
+    this._resizeObserver.observe(slot.parentElement!);
+    for (const element of slot.assignedElements()) {
+      this._resizeObserver.observe(element);
+    }
+  }
+
+  private _checkScrolling() {
+    const content = this.renderRoot.querySelector(".content");
+    this._scrolls = !!content && content.scrollHeight > content.clientHeight;
   }
 
   protected willUpdate(changed: PropertyValues<this>) {
@@ -183,7 +211,7 @@ export class WizardShell extends LitElement {
 
   render() {
     return html`
-      <div class="header">
+      <header class="header">
         <wa-button
           appearance="plain"
           @click=${this._onBack}
@@ -201,13 +229,14 @@ export class WizardShell extends LitElement {
         </div>
 
         <div class="header-right"></div>
-      </div>
+      </header>
 
-      <div class="content">
-        <slot></slot>
-      </div>
+      <main class="content" tabindex=${this._scrolls ? "0" : nothing}>
+        <h1 class="sr-only">${this.flowTitle}</h1>
+        <slot @slotchange=${this._observeContent}></slot>
+      </main>
 
-      <div class="footer ${this.hideFooter ? "idle" : ""}">
+      <footer class="footer ${this.hideFooter ? "idle" : ""}">
         <div class="footer-left">
           ${this.hideCancel
             ? nothing
@@ -234,7 +263,7 @@ export class WizardShell extends LitElement {
               `
             : ""}
         </div>
-      </div>
+      </footer>
     `;
   }
 

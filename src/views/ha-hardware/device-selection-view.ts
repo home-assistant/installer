@@ -119,7 +119,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
           <wa-radio-group
             class="devices-grid"
             radio-tag="device-card"
-            aria-label=${localize("common.home_assistant_hardware")}
+            label=${localize("common.home_assistant_hardware")}
             .value=${this._catalog.selected ?? ""}
             @change=${this._catalog.onChange}
           >
