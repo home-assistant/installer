@@ -1,6 +1,6 @@
 //! Public, credential-free error contract for Tauri commands.
 
-use hai_core::Error;
+use hai_core::{Error, Message};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -10,6 +10,10 @@ pub struct CommandError {
     pub message: String,
     pub retryable: bool,
     pub details: Value,
+    /// The local log's category: the code, or a finer fixed code where one
+    /// code covers several causes. Never sent to the frontend.
+    #[serde(skip)]
+    pub diagnostic: &'static str,
 }
 
 impl CommandError {
@@ -19,6 +23,19 @@ impl CommandError {
             message: message.into(),
             retryable,
             details: json!({}),
+            diagnostic: code,
+        }
+    }
+
+    /// An error the frontend shows from its catalog, in the user's language.
+    /// `message` keeps the English, for logs and older frontends.
+    pub fn with_message(code: &'static str, message: &Message, retryable: bool) -> Self {
+        Self {
+            code,
+            message: message.to_string(),
+            retryable,
+            details: json!({ "message_key": message.key, "message_params": message.params_json() }),
+            diagnostic: code,
         }
     }
 
@@ -50,22 +67,27 @@ impl From<Error> for CommandError {
             Error::Network(_) => ("network", "Could not connect. Check your internet connection.", true),
             Error::Io(_) => ("io", "Could not read or write a file. Check available storage and access permissions.", false),
             Error::DeviceNotFound(_) => ("device_not_found", "The selected drive is no longer available. Select your drive again.", false),
-            Error::DeviceBusy(_) => ("device_busy", "The drive is in use. Close any applications using it.", true),
+            Error::DeviceBusy(reason, _) => {
+                let mut result = Self::new("device_busy", "The drive is in use. Close any applications using it.", true);
+                result.diagnostic = reason.code();
+                return result;
+            }
             Error::ChecksumMismatch { .. } => ("checksum_mismatch", "The downloaded image failed its integrity check. Installation stopped before writing the image.", true),
             Error::PermissionDenied(message) => ("permission_denied", message.as_str(), false),
             Error::DiskServiceUnavailable(_) => ("disk_service_unavailable", "The system disk service is unavailable. Check that udisks2 is installed and running.", false),
             Error::Cancelled => ("cancelled", "Installation was cancelled.", true),
             Error::ProxmoxApi(_) => ("proxmox_api", "Proxmox could not complete the request. Check the server, account permissions, and connection.", false),
-            Error::ProxmoxActionRequired(message) => ("proxmox_action_required", message.as_str(), false),
+            // The frontend shows these in the user's language, by key
+            Error::ProxmoxActionRequired(message) => return Self::with_message("proxmox_action_required", message, false),
             // Reconnecting is the action, not repeating the request
             Error::ProxmoxSessionExpired => ("proxmox_session_expired", "Proxmox session expired or invalid. Please reconnect to Proxmox.", false),
             // Same recovery: reconnecting shows the new certificate to confirm
             Error::ProxmoxCertificateChanged => ("proxmox_certificate_changed", "The Proxmox server's certificate changed. Reconnect to check it again.", false),
             // Installer-authored guidance for the authenticator code, never a server response
             Error::ProxmoxTwoFactor(message) => ("proxmox_two_factor", message.as_str(), false),
-            Error::Utm(message) => ("utm", message.as_str(), true),
-            Error::UtmOperationUncertain(message) => ("utm_operation_uncertain", message.as_str(), false),
-            Error::UtmVmCreated(message) => ("utm_vm_created", message.as_str(), false),
+            Error::Utm(message) => return Self::with_message("utm", message, true),
+            Error::UtmOperationUncertain(message) => return Self::with_message("utm_operation_uncertain", message, false),
+            Error::UtmVmCreated(message) => return Self::with_message("utm_vm_created", message, false),
             Error::DriveDisconnected => ("drive_disconnected", "The drive was disconnected. Reconnect it and select it again.", false),
             Error::WriteProtected => ("write_protected", "The drive is write-protected. Unlock the SD card or choose another drive.", false),
             Error::UnsupportedPlatform(_) => ("unsupported_platform", "This installation method is not available on this computer.", false),
@@ -76,19 +98,13 @@ impl From<Error> for CommandError {
             Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and available storage.", true),
             Error::ExtractionFailed(_) => ("extraction_failed", "The image could not be unpacked. Check available storage.", true),
             Error::VerificationFailed(_) => ("verification_failed", "The image could not be verified. Installation stopped to protect your device. See the installation help before continuing.", false),
-            Error::ImageTooLarge { .. } => ("image_too_large", "The image does not fit on this drive. Choose a larger drive.", false),
+            Error::ImageTooLarge { written, image_size, drive_size } => {
+                let mut result = Self::new("image_too_large", "The image does not fit on this drive. Choose a larger drive.", false);
+                result.details = json!({ "written": written, "image_size": image_size, "drive_size": drive_size });
+                return result;
+            }
         };
-        let mut result = Self::new(code, message, retryable);
-        if let Error::ImageTooLarge {
-            written,
-            image_size,
-            drive_size,
-        } = error
-        {
-            result.details =
-                json!({ "written": written, "image_size": image_size, "drive_size": drive_size });
-        }
-        result
+        Self::new(code, message, retryable)
     }
 }
 
@@ -119,6 +135,20 @@ mod tests {
     }
 
     #[test]
+    fn busy_reason_reaches_the_log_but_not_the_frontend() {
+        let error = CommandError::from(Error::DeviceBusy(
+            hai_core::BusyReason::VolumeUnreadable,
+            "Cannot inspect volume \\\\?\\Volume{private}: Access is denied".into(),
+        ));
+        assert_eq!(error.code, "device_busy");
+        assert_eq!(error.diagnostic, "device_busy_volume_unreadable");
+
+        let serialized = serde_json::to_string(&error).unwrap();
+        assert!(!serialized.contains("diagnostic"), "{serialized}");
+        assert!(!serialized.contains("private"), "{serialized}");
+    }
+
+    #[test]
     fn remote_messages_cannot_leak_credentials() {
         for error in [
             Error::ProxmoxApi("password=secret ticket=secret".into()),
@@ -132,12 +162,24 @@ mod tests {
 
     #[test]
     fn installer_authored_proxmox_guidance_is_preserved() {
-        let error = CommandError::from(Error::ProxmoxActionRequired(
-            "VM ID 100 can't be used. Choose a different ID.".into(),
-        ));
+        let error = CommandError::from(Error::ProxmoxActionRequired(hai_core::message!(
+            "backend.proxmox.vm_id_unavailable",
+            vm_id = 100,
+        )));
         assert_eq!(error.code, "proxmox_action_required");
-        assert!(error.message.contains("Choose a different ID"));
+        assert_eq!(
+            error.message,
+            "VM ID 100 can't be used. Choose a different ID."
+        );
         assert!(!error.retryable);
+        // What the frontend needs to show it in the user's language
+        assert_eq!(
+            error.details,
+            json!({
+                "message_key": "backend.proxmox.vm_id_unavailable",
+                "message_params": { "vm_id": 100 }
+            })
+        );
     }
 
     #[test]
@@ -151,34 +193,32 @@ mod tests {
         }
         assert!(!CommandError::from_query(Error::UnsupportedPlatform("UTM".into())).retryable);
         assert!(
-            CommandError::from(Error::Utm(
-                "Enable Automation access, then try again".into()
-            ))
+            CommandError::from(Error::Utm(hai_core::message!(
+                "backend.utm.automation_denied"
+            )))
             .retryable
         );
         assert!(
-            !CommandError::from(Error::UtmOperationUncertain(
-                "Check UTM before retrying".into()
-            ))
+            !CommandError::from(Error::UtmOperationUncertain(hai_core::message!(
+                "backend.utm.no_answer",
+                detail = "AppleEvent timed out (-1712)",
+            )))
             .retryable
         );
     }
 
     #[test]
     fn uncertain_import_and_permission_guidance_are_preserved_without_retry() {
-        for error in [
-            Error::UtmOperationUncertain("Check UTM before removing the retained source".into()),
-            Error::PermissionDenied("Run as administrator".into()),
-        ] {
-            let expected = match &error {
-                Error::UtmOperationUncertain(message) | Error::PermissionDenied(message) => {
-                    message.clone()
-                }
-                _ => unreachable!(),
-            };
-            let error = CommandError::from(error);
-            assert_eq!(error.message, expected);
-            assert!(!error.retryable);
-        }
+        let uncertain = CommandError::from(Error::UtmOperationUncertain(hai_core::message!(
+            "backend.utm.no_answer",
+            detail = "AppleEvent timed out (-1712)",
+        )));
+        assert_eq!(uncertain.message, "AppleEvent timed out (-1712)");
+        assert_eq!(uncertain.details["message_key"], "backend.utm.no_answer");
+        assert!(!uncertain.retryable);
+
+        let permission = CommandError::from(Error::PermissionDenied("Run as administrator".into()));
+        assert_eq!(permission.message, "Run as administrator");
+        assert!(!permission.retryable);
     }
 }

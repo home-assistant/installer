@@ -70,6 +70,7 @@ export class OtherOptionsView extends LitElement {
     :host {
       display: flex;
       flex-direction: column;
+      box-sizing: border-box;
       height: 100%;
       padding: 2rem;
     }

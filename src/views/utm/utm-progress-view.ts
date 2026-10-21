@@ -50,6 +50,20 @@ type InstallStage =
 /** Past these, UTM creates the VM, and the install runs to the end */
 const STOPPABLE_STAGES: InstallStage[] = ["downloading", "extracting"];
 
+/**
+ * Whether a failed VM status request cannot succeed by asking again.
+ *
+ * When UTM answers with an error, like missing Automation access or a VM
+ * that was removed, it answers the same way every time, and waiting would
+ * only hide the cause behind "no IP address". No answer at all, like a UTM
+ * that is busy starting the VM, can pass. Errors without a structured code
+ * are still treated as "not ready yet".
+ */
+function failsEveryTime(error: unknown): boolean {
+  const { code } = installerError(error);
+  return code === "utm" || code === "unsupported_platform";
+}
+
 /** Shaped like the backend's rejection after a stop. */
 const STOPPED = {
   code: "cancelled",
@@ -626,6 +640,7 @@ export class UtmProgressView extends LitElement {
       timeoutMessage: localize(
         "views.utm.utm_progress_view.the_virtual_machine_did_not_report_an_ip_address"
       ),
+      stopOn: failsEveryTime,
     });
   }
 

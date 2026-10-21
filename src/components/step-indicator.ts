@@ -1,4 +1,4 @@
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { WizardStep } from "../state/wizard-state.js";
 import { ifDefined } from "lit/directives/if-defined.js";
@@ -51,6 +51,15 @@ export class StepIndicator extends LitElement {
     .step-label.active {
       color: var(--ha-text-color, #212121);
       font-weight: 500;
+    }
+
+    .step-status {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
 
     .step-connector {
@@ -129,6 +138,11 @@ export class StepIndicator extends LitElement {
     const isActive = index === this.currentIndex;
     const isCompleted = index < this.currentIndex;
     const isLast = index === this.steps.length - 1;
+    const status = isActive
+      ? undefined
+      : isCompleted
+        ? localize("components.step_indicator.completed")
+        : localize("components.step_indicator.upcoming");
 
     return html`
       <div
@@ -142,9 +156,11 @@ export class StepIndicator extends LitElement {
             : ""}"
           aria-hidden="true"
         ></span>
-        <span class="step-label ${isActive ? "active" : ""}">
-          ${step.title}
-        </span>
+        <span class="step-label ${isActive ? "active" : ""}"
+          >${step.title}${status
+            ? html`<span class="step-status">${` ${status}`}</span>`
+            : nothing}</span
+        >
       </div>
       ${!isLast
         ? html`<span

@@ -7,7 +7,8 @@ use std::io;
 use std::mem::{offset_of, size_of};
 use std::os::windows::{ffi::OsStringExt, fs::OpenOptionsExt, io::AsRawHandle};
 use windows_sys::Win32::Foundation::{
-    ERROR_ACCESS_DENIED, ERROR_MORE_DATA, ERROR_NO_MORE_FILES, ERROR_SHARING_VIOLATION, HANDLE,
+    ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_INVALID_FUNCTION, ERROR_MORE_DATA,
+    ERROR_NO_MORE_FILES, ERROR_PATH_NOT_FOUND, ERROR_SHARING_VIOLATION, HANDLE,
     INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Storage::FileSystem::{
@@ -45,41 +46,8 @@ pub(super) fn lock_disk_volumes(disk_number: u32) -> Result<Vec<File>> {
     let search = VolumeSearch(handle);
     let mut volumes = Vec::new();
     loop {
-        // Optical and remote volumes do not have disk extents. Unknown types
-        // are still inspected, so an ownership-query failure cannot skip a disk.
-        // SAFETY: successful enumeration returned a NUL-terminated name.
-        let drive_type = unsafe { GetDriveTypeW(name.as_ptr()) };
-        if !matches!(drive_type, DRIVE_REMOTE | DRIVE_CDROM | DRIVE_RAMDISK) {
-            let length = name
-                .iter()
-                .position(|&c| c == 0)
-                .ok_or_else(invalid_extents)?;
-            if length == 0 || name[length - 1] != b'\\' as u16 {
-                return Err(invalid_extents().into());
-            }
-            let path = OsString::from_wide(&name[..length - 1]);
-            let query = OpenOptions::new()
-                .access_mode(0)
-                .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
-                .open(&path)
-                .map_err(|error| query_error(&path, error))?;
-            let disks = volume_disks(&query).map_err(|error| query_error(&path, error))?;
-            if belongs_to_disk(&disks, disk_number)? {
-                drop(query);
-                let volume = OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
-                    .open(&path)
-                    .map_err(volume_error)?;
-                // Check the actual handle we will lock, not just its path.
-                if !belongs_to_disk(&volume_disks(&volume).map_err(volume_error)?, disk_number)? {
-                    return Err(Error::DeviceBusy(
-                        "Target volume changed during preparation".into(),
-                    ));
-                }
-                volumes.push(volume);
-            }
+        if let Some(volume) = target_volume(&name, disk_number)? {
+            volumes.push(volume);
         }
         // SAFETY: search owns the handle and name is a writable UTF-16 buffer.
         if unsafe { FindNextVolumeW(search.0, name.as_mut_ptr(), name.len() as u32) } == 0 {
@@ -95,11 +63,83 @@ pub(super) fn lock_disk_volumes(disk_number: u32) -> Result<Vec<File>> {
     })
 }
 
+/// Open the enumerated volume `name` for locking when it lives on the target
+/// disk. Anything that can't be ruled out refuses the write.
+fn target_volume(name: &[u16], disk_number: u32) -> Result<Option<File>> {
+    // Optical and remote volumes do not have disk extents. Unknown types
+    // are still inspected, so an ownership-query failure cannot skip a disk.
+    // SAFETY: successful enumeration returned a NUL-terminated name.
+    let drive_type = unsafe { GetDriveTypeW(name.as_ptr()) };
+    if matches!(drive_type, DRIVE_REMOTE | DRIVE_CDROM | DRIVE_RAMDISK) {
+        return Ok(None);
+    }
+
+    let length = name
+        .iter()
+        .position(|&c| c == 0)
+        .ok_or_else(invalid_extents)?;
+    if length == 0 || name[length - 1] != b'\\' as u16 {
+        return Err(invalid_extents().into());
+    }
+    let path = OsString::from_wide(&name[..length - 1]);
+
+    let query = match OpenOptions::new()
+        .access_mode(0)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .open(&path)
+    {
+        Ok(query) => query,
+        Err(error) if is_missing_volume(&error) => return Ok(None),
+        Err(error) => return Err(query_error(&path, error)),
+    };
+    let disks = match volume_disks(&query) {
+        Ok(disks) => disks,
+        Err(error) if has_no_disk_extents(&error) => return Ok(None),
+        Err(error) => return Err(query_error(&path, error)),
+    };
+    if !belongs_to_disk(&disks, disk_number)? {
+        return Ok(None);
+    }
+    drop(query);
+
+    let volume = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .open(&path)
+        .map_err(volume_error)?;
+    // Check the actual handle we will lock, not just its path.
+    if !belongs_to_disk(&volume_disks(&volume).map_err(volume_error)?, disk_number)? {
+        return Err(Error::DeviceBusy(
+            BusyReason::VolumeChanged,
+            "Target volume changed during preparation".into(),
+        ));
+    }
+    Ok(Some(volume))
+}
+
+/// Windows can keep listing a volume that no longer exists, like one an
+/// encryption tool mounted years ago. A volume that isn't there can't hold
+/// the target disk.
+fn is_missing_volume(error: &io::Error) -> bool {
+    matches!(
+        error.raw_os_error(),
+        Some(code) if code == ERROR_FILE_NOT_FOUND as i32 || code == ERROR_PATH_NOT_FOUND as i32
+    )
+}
+
+/// A virtual volume, like a mounted VeraCrypt container, sits on a file or a
+/// partition rather than on disk extents. Whatever it sits on is a volume of
+/// its own, which this check inspects (and locks) like any other.
+fn has_no_disk_extents(error: &io::Error) -> bool {
+    error.raw_os_error() == Some(ERROR_INVALID_FUNCTION as i32)
+}
+
 fn query_error(path: &OsStr, error: impl std::fmt::Display) -> Error {
-    Error::DeviceBusy(format!(
-        "Cannot inspect volume {}: {error}",
-        path.to_string_lossy()
-    ))
+    Error::DeviceBusy(
+        BusyReason::VolumeUnreadable,
+        format!("Cannot inspect volume {}: {error}", path.to_string_lossy()),
+    )
 }
 
 fn belongs_to_disk(disks: &[u32], target: u32) -> Result<bool> {
@@ -111,6 +151,7 @@ fn belongs_to_disk(disks: &[u32], target: u32) -> Result<bool> {
     }
     if disks.iter().any(|&disk| disk != target) {
         return Err(Error::DeviceBusy(
+            BusyReason::VolumeSpansDisks,
             "Target volume spans multiple disks".into(),
         ));
     }
@@ -152,9 +193,10 @@ fn volume_error(error: io::Error) -> Error {
     if is_write_protected(&error) || is_drive_disconnected(&error) {
         device_io_error(error)
     } else {
-        Error::DeviceBusy(format!(
-            "Cannot lock or dismount the target volume: {error}"
-        ))
+        Error::DeviceBusy(
+            BusyReason::UnmountFailed,
+            format!("Cannot lock or dismount the target volume: {error}"),
+        )
     }
 }
 
@@ -352,7 +394,7 @@ mod tests {
                 },
                 || {},
             );
-            assert!(matches!(result, Err(Error::DeviceBusy(_))));
+            assert!(matches!(result, Err(Error::DeviceBusy(..))));
             assert_eq!(*dropped.lock().unwrap(), vec![0, 1]);
             if failed_code == FSCTL_LOCK_VOLUME {
                 assert!(calls.iter().all(|&(_, code)| code == FSCTL_LOCK_VOLUME));
@@ -388,9 +430,31 @@ mod tests {
             assert_eq!(error.raw_os_error(), Some(code));
             let native_message = error.to_string();
             let error = query_error(OsStr::new("unknown volume"), error);
-            assert!(matches!(error, Error::DeviceBusy(message)
+            assert!(matches!(error, Error::DeviceBusy(_, message)
                 if message.contains("unknown volume") && message.ends_with(&native_message)));
         }
+    }
+
+    #[test]
+    fn skips_only_volumes_that_cannot_be_on_a_disk() {
+        let error = io::Error::from_raw_os_error;
+        assert!(is_missing_volume(&error(ERROR_FILE_NOT_FOUND as i32)));
+        assert!(is_missing_volume(&error(ERROR_PATH_NOT_FOUND as i32)));
+        assert!(has_no_disk_extents(&error(ERROR_INVALID_FUNCTION as i32)));
+
+        // Everything else still refuses the write
+        for code in [
+            ERROR_ACCESS_DENIED as i32,
+            ERROR_SHARING_VIOLATION as i32,
+            19,
+            21,
+            1167,
+        ] {
+            assert!(!is_missing_volume(&error(code)));
+            assert!(!has_no_disk_extents(&error(code)));
+        }
+        assert!(!has_no_disk_extents(&error(ERROR_FILE_NOT_FOUND as i32)));
+        assert!(!is_missing_volume(&error(ERROR_INVALID_FUNCTION as i32)));
     }
 
     #[test]
@@ -448,7 +512,7 @@ mod tests {
             },
             || pauses += 1,
         );
-        assert!(matches!(result, Err(Error::DeviceBusy(_))));
+        assert!(matches!(result, Err(Error::DeviceBusy(..))));
         assert_eq!((calls, pauses), (30, 29));
 
         let result = lock_and_dismount(

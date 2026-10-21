@@ -51,6 +51,78 @@ describe("installer errors", () => {
     expect(result.message).to.contain("Choose a different ID");
   });
 
+  it("shows backend messages from the catalog, by key", () => {
+    const result = installerError(
+      ipcError("proxmox_action_required", "English from Rust", false, {
+        message_key: "backend.proxmox.node_offline",
+        message_params: { node: "pve" },
+      })
+    );
+    expect(result.message).to.equal(
+      'Node "pve" is offline. Choose an online node or start it in Proxmox.'
+    );
+  });
+
+  it("shows a message inside a backend message in the user's language", () => {
+    const result = installerError(
+      ipcError("utm_vm_created", "English from Rust", false, {
+        message_key: "backend.utm.vm_created_not_started",
+        message_params: {
+          name: "My home",
+          detail: { key: "backend.utm.automation_denied", params: {} },
+        },
+      })
+    );
+    expect(result.message).to.contain('"My home" was created');
+    expect(result.message).to.contain("Privacy & Security > Automation");
+    expect(result.message).not.to.contain("English from Rust");
+  });
+
+  it("never shows an empty backend message", () => {
+    // osascript killed without output leaves UTM's "{detail}" empty
+    const result = installerError(
+      ipcError("utm_operation_uncertain", "", false, {
+        message_key: "backend.utm.no_answer",
+        message_params: { detail: "" },
+      }),
+      "Fallback"
+    );
+    expect(result.message).to.equal("Fallback");
+  });
+
+  it("keeps the backend's English when the catalog can't help", () => {
+    for (const details of [
+      // A key this frontend doesn't know yet
+      { message_key: "backend.proxmox.from_the_future" },
+      // Only backend keys, never the frontend's own
+      { message_key: "common.installation_help" },
+      // A parameter the message needs is missing
+      { message_key: "backend.proxmox.node_offline", message_params: {} },
+      // Values that aren't plain text or numbers are dropped
+      {
+        message_key: "backend.proxmox.node_offline",
+        message_params: { node: { name: "pve" } },
+      },
+      {
+        message_key: "backend.proxmox.node_offline",
+        message_params: { node: true },
+      },
+      // A message inside it that this frontend doesn't know
+      {
+        message_key: "backend.utm.vm_created_not_started",
+        message_params: {
+          name: "My home",
+          detail: { key: "backend.utm.from_the_future", params: {} },
+        },
+      },
+    ]) {
+      const result = installerError(
+        ipcError("proxmox_action_required", "English from Rust", false, details)
+      );
+      expect(result.message).to.equal("English from Rust");
+    }
+  });
+
   it("does not infer a code or retryability from a string", () => {
     for (const error of [
       "drive disconnected",

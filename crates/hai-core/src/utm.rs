@@ -27,83 +27,72 @@ fn applescript_output(output: std::process::Output) -> Result<String> {
     if output.status.code().is_none()
         || matches!(code, None | Some(-1711 | -1712 | -1718 | -609 | -600))
     {
-        Err(Error::UtmOperationUncertain(message))
+        Err(Error::UtmOperationUncertain(crate::message!(
+            "backend.utm.no_answer",
+            detail = message,
+        )))
     } else {
         Err(applescript_error(&message))
     }
 }
 
-/// Native host architecture used for both the HAOS image and UTM configuration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UtmArchitecture {
-    Aarch64,
-    X86_64,
+/// HAOS board whose qcow2 image boots in UTM. Intel Macs aren't supported:
+/// they would need the x86_64 `ova` image, and nobody tests that path.
+pub const HAOS_BOARD: &str = "generic-aarch64";
+
+/// Refuse an Intel Mac before any work starts. An installer running under
+/// Rosetta is still on Apple silicon, so that one is fine.
+pub fn ensure_apple_silicon() -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        check_architecture(std::env::consts::ARCH, macos::translation_status)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(Error::UnsupportedPlatform(
+            "UTM is only available on macOS".to_string(),
+        ))
+    }
 }
 
-impl UtmArchitecture {
-    /// Detect the Mac's native architecture, including a process running under Rosetta.
-    pub fn host() -> Result<Self> {
-        #[cfg(target_os = "macos")]
-        {
-            Self::from_process(std::env::consts::ARCH, macos::translation_status)
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            Err(Error::UnsupportedPlatform(
-                "UTM is only available on macOS".to_string(),
-            ))
-        }
-    }
-
-    /// HAOS board whose qcow2 image boots on this architecture.
-    pub fn haos_board(self) -> &'static str {
-        match self {
-            Self::Aarch64 => "generic-aarch64",
-            Self::X86_64 => "ova",
-        }
-    }
-
-    /// Architecture name accepted by UTM's QEMU configuration.
-    pub fn qemu_architecture(self) -> &'static str {
-        match self {
-            Self::Aarch64 => "aarch64",
-            Self::X86_64 => "x86_64",
-        }
-    }
-
-    #[cfg(any(target_os = "macos", test))]
-    fn from_process(
-        process_arch: &str,
-        translation_status: impl FnOnce() -> std::io::Result<i32>,
-    ) -> Result<Self> {
-        match process_arch {
-            "aarch64" => Ok(Self::Aarch64),
-            "x86_64" => match translation_status() {
-                Ok(0) => Ok(Self::X86_64),
-                Ok(1) => Ok(Self::Aarch64),
-                // Intel macOS versions without Rosetta do not expose this sysctl.
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Self::X86_64),
-                Ok(value) => Err(Error::Utm(format!(
-                    "Unexpected Rosetta translation status: {}",
-                    value
-                ))),
-                Err(err) => Err(Error::Utm(format!(
-                    "Failed to detect the Mac's native architecture: {}",
-                    err
-                ))),
-            },
-            arch => Err(Error::UnsupportedPlatform(format!(
-                "Unsupported Mac architecture: {}",
-                arch
+#[cfg(any(target_os = "macos", test))]
+fn check_architecture(
+    process_arch: &str,
+    translation_status: impl FnOnce() -> std::io::Result<i32>,
+) -> Result<()> {
+    match process_arch {
+        "aarch64" => Ok(()),
+        "x86_64" => match translation_status() {
+            Ok(1) => Ok(()),
+            // Intel macOS versions without Rosetta do not expose this sysctl.
+            Ok(0) => Err(intel_mac()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Err(intel_mac()),
+            Ok(value) => Err(Error::Utm(crate::message!(
+                "backend.utm.rosetta_status_unknown",
+                detail = value,
             ))),
-        }
+            Err(err) => Err(Error::Utm(crate::message!(
+                "backend.utm.architecture_unknown",
+                detail = err.to_string(),
+            ))),
+        },
+        arch => Err(Error::UnsupportedPlatform(format!(
+            "Unsupported Mac architecture: {}",
+            arch
+        ))),
     }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn intel_mac() -> Error {
+    Error::UnsupportedPlatform("UTM installs need a Mac with Apple silicon".to_string())
 }
 
 /// Check if UTM is installed and get its status
 async fn check_utm_status() -> Result<UtmStatus> {
     #[cfg(target_os = "macos")]
     {
+        ensure_apple_silicon()?;
         macos::check_utm_status().await
     }
 
@@ -169,9 +158,10 @@ fn vm_status(vm_id: &str) -> Result<VmStatusInfo> {
 
 #[cfg(any(target_os = "macos", test))]
 fn created_vm_start_error(name: &str, error: Error) -> Error {
-    Error::UtmVmCreated(format!(
-        "The virtual machine '{name}' was created, but the installer could not confirm it started. \
-         Open UTM to start it or remove it before installing again. {error}"
+    Error::UtmVmCreated(crate::message!(
+        "backend.utm.vm_created_not_started",
+        name = name,
+        detail = error.detail(),
     ))
 }
 
@@ -179,12 +169,12 @@ fn created_vm_start_error(name: &str, error: Error) -> Error {
 fn applescript_error(stderr: &str) -> Error {
     // osascript reports the numeric Apple Event error after the localized message.
     if stderr.trim().ends_with("(-1743)") {
-        Error::Utm(
-            "Home Assistant Installer is not allowed to control UTM. Open System Settings > Privacy & Security > Automation, enable UTM under Home Assistant Installer, then try again."
-                .to_string(),
-        )
+        Error::Utm(crate::message!("backend.utm.automation_denied"))
     } else {
-        Error::Utm(stderr.trim().to_string())
+        Error::Utm(crate::message!(
+            "backend.utm.applescript_error",
+            detail = stderr.trim(),
+        ))
     }
 }
 
@@ -381,9 +371,17 @@ mod macos {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
-            .map_err(|e| Error::Utm(format!("Failed to execute AppleScript: {}", e)))?;
+            .map_err(|e| {
+                Error::Utm(crate::message!(
+                    "backend.utm.applescript_not_started",
+                    detail = e.to_string(),
+                ))
+            })?;
         let output = child.wait_with_output().map_err(|error| {
-            Error::UtmOperationUncertain(format!("Failed to wait for AppleScript: {error}"))
+            Error::UtmOperationUncertain(crate::message!(
+                "backend.utm.applescript_lost",
+                detail = error.to_string(),
+            ))
         })?;
         applescript_output(output)
     }
@@ -414,15 +412,15 @@ end tell"#,
         // Verify UTM is installed
         let status = check_utm_status().await?;
         if !status.installed {
-            return Err(Error::Utm("UTM is not installed".to_string()));
+            return Err(Error::Utm(crate::message!("backend.utm.not_installed")));
         }
 
         // Verify the image file exists
         let image_path = std::path::Path::new(&config.image_path);
         if !image_path.exists() {
-            return Err(Error::Utm(format!(
-                "Image file not found: {}",
-                config.image_path
+            return Err(Error::Utm(crate::message!(
+                "backend.utm.image_not_found",
+                path = config.image_path,
             )));
         }
 
@@ -434,8 +432,7 @@ end tell"#,
             message: "Creating virtual machine...".to_string(),
         });
 
-        // Get architecture and network interface
-        let arch = UtmArchitecture::host()?.qemu_architecture();
+        ensure_apple_silicon()?;
         let network_interface = get_primary_network_interface();
 
         // Escape the name for AppleScript
@@ -459,12 +456,11 @@ end tell"#,
         // - bridged network for direct LAN access (required for Home Assistant)
         let script = format!(
             r#"tell application "UTM"
-    set vmConfig to {{name:"{name}", notes:"Created by the Home Assistant Installer", architecture:"{arch}", cpu cores:{cores}, memory:{memory}, hypervisor:true, uefi:true, drives:{{{drives}}}, network interfaces:{{{{mode:bridged, host interface:"{interface}"}}}}}}
+    set vmConfig to {{name:"{name}", notes:"Created by the Home Assistant Installer", architecture:"aarch64", cpu cores:{cores}, memory:{memory}, hypervisor:true, uefi:true, drives:{{{drives}}}, network interfaces:{{{{mode:bridged, host interface:"{interface}"}}}}}}
     set vm to make new virtual machine with properties {{backend:qemu, configuration:vmConfig}}
     return id of vm
 end tell"#,
             name = escaped_name,
-            arch = arch,
             cores = config.cpu_cores,
             memory = config.memory_mb,
             drives = drives_config,
@@ -509,14 +505,21 @@ mod tests {
     #[test]
     fn failure_starting_a_created_vm_cannot_be_retried_as_creation() {
         let error =
-            created_vm_start_error("My home", Error::Utm("Enable Automation access".into()));
+            created_vm_start_error("My home", applescript_error("Enable Automation access"));
         let Error::UtmVmCreated(message) = error else {
             panic!("expected created-VM error")
         };
-        assert!(message.contains("My home"));
-        assert!(message.contains("Open UTM"));
-        assert!(message.contains("Enable Automation access"));
-        assert!(!message.contains("importing"));
+        let english = message.to_string();
+        assert!(english.contains("My home"));
+        assert!(english.contains("Open UTM"));
+        assert!(english.contains("Enable Automation access"));
+        assert!(!english.contains("importing"));
+        // The reason stays a catalog message, without the error's prefix
+        assert!(!english.contains("UTM error"));
+        assert_eq!(
+            message.params_json()["detail"]["key"],
+            "backend.utm.applescript_error"
+        );
     }
 
     #[test]
@@ -528,33 +531,31 @@ mod tests {
             let Error::Utm(message) = applescript_error(stderr) else {
                 panic!("Expected UTM error");
             };
-            assert!(message.contains("System Settings > Privacy & Security > Automation"));
-            assert!(message.contains("enable UTM under Home Assistant Installer"));
-            assert!(message.contains("try again"));
-            assert!(!message.contains("execution error"));
+            let english = message.to_string();
+            assert!(english.contains("System Settings > Privacy & Security > Automation"));
+            assert!(english.contains("enable UTM under Home Assistant Installer"));
+            assert!(english.contains("try again"));
+            assert!(!english.contains("execution error"));
         }
     }
 
     #[test]
-    fn native_apple_silicon_uses_arm_without_querying_rosetta() {
-        let arch = UtmArchitecture::from_process("aarch64", || panic!("not needed")).unwrap();
-        assert_eq!(arch.haos_board(), "generic-aarch64");
-        assert_eq!(arch.qemu_architecture(), "aarch64");
+    fn apple_silicon_passes_without_querying_rosetta() {
+        assert!(check_architecture("aarch64", || panic!("not needed")).is_ok());
     }
 
     #[test]
-    fn translated_intel_process_uses_native_arm_image_and_vm() {
-        let arch = UtmArchitecture::from_process("x86_64", || Ok(1)).unwrap();
-        assert_eq!(arch.haos_board(), "generic-aarch64");
-        assert_eq!(arch.qemu_architecture(), "aarch64");
+    fn translated_intel_process_on_apple_silicon_passes() {
+        assert!(check_architecture("x86_64", || Ok(1)).is_ok());
     }
 
     #[test]
-    fn native_intel_uses_ova_image_and_x86_vm() {
+    fn intel_macs_are_refused() {
         for status in [Ok(0), Err(std::io::ErrorKind::NotFound.into())] {
-            let arch = UtmArchitecture::from_process("x86_64", || status).unwrap();
-            assert_eq!(arch.haos_board(), "ova");
-            assert_eq!(arch.qemu_architecture(), "x86_64");
+            let error = check_architecture("x86_64", || status).unwrap_err();
+            assert!(
+                matches!(error, Error::UnsupportedPlatform(message) if message.contains("Apple silicon"))
+            );
         }
     }
 
@@ -570,7 +571,7 @@ mod tests {
             let Error::Utm(message) = applescript_error(stderr) else {
                 panic!("Expected UTM error");
             };
-            assert_eq!(message, stderr.trim());
+            assert_eq!(message.to_string(), stderr.trim());
         }
     }
 
@@ -656,7 +657,7 @@ mod tests {
             if calls == 1 {
                 Ok("started".into())
             } else {
-                Err(Error::Utm("Guest agent is not running".into()))
+                Err(applescript_error("Guest agent is not running"))
             }
         })
         .unwrap();
@@ -680,7 +681,7 @@ mod tests {
             assert!(result.ip_address.is_none());
             assert_eq!(calls, 1);
         }
-        assert!(query_vm_status("missing-id", |_| Err(Error::Utm("VM not found".into()))).is_err());
+        assert!(query_vm_status("missing-id", |_| Err(applescript_error("VM not found"))).is_err());
     }
 
     #[test]
@@ -728,9 +729,9 @@ mod tests {
     #[test]
     fn architecture_detection_errors_do_not_guess_an_image() {
         for status in [Ok(2), Err(std::io::ErrorKind::PermissionDenied.into())] {
-            assert!(UtmArchitecture::from_process("x86_64", || status).is_err());
+            assert!(check_architecture("x86_64", || status).is_err());
         }
-        assert!(UtmArchitecture::from_process("unknown", || panic!("not needed")).is_err());
+        assert!(check_architecture("unknown", || panic!("not needed")).is_err());
     }
 
     #[tokio::test]
@@ -900,7 +901,10 @@ mod tests {
             assert!(result.is_err());
             if let Err(Error::Utm(msg)) = result {
                 // Error message should contain something about syntax error
-                assert!(!msg.is_empty(), "Error message should not be empty");
+                assert!(
+                    !msg.to_string().is_empty(),
+                    "Error message should not be empty"
+                );
             } else {
                 panic!("Expected Utm error");
             }

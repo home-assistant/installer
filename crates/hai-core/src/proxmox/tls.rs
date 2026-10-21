@@ -31,8 +31,9 @@ pub(super) fn certificate_error(error: &reqwest::Error) -> Option<Error> {
 
 /// Only bare HTTPS origins are accepted, including normalized scheme casing.
 pub fn server_url(value: &str) -> Result<reqwest::Url> {
-    let url = reqwest::Url::parse(value)
-        .map_err(|_| Error::ProxmoxActionRequired("Enter a valid HTTPS server URL".into()))?;
+    let url = reqwest::Url::parse(value).map_err(|_| {
+        Error::ProxmoxActionRequired(crate::message!("backend.proxmox.invalid_url"))
+    })?;
     if url.scheme() != "https"
         || url.host_str().is_none()
         || !url.username().is_empty()
@@ -41,9 +42,9 @@ pub fn server_url(value: &str) -> Result<reqwest::Url> {
         || url.query().is_some()
         || url.fragment().is_some()
     {
-        return Err(Error::ProxmoxActionRequired(
-            "Use an HTTPS server URL without credentials, a path, query, or fragment".into(),
-        ));
+        return Err(Error::ProxmoxActionRequired(crate::message!(
+            "backend.proxmox.url_has_extras"
+        )));
     }
     Ok(url)
 }
@@ -257,15 +258,12 @@ async fn probe(url: reqwest::Url, normal: Arc<dyn ServerCertVerifier>) -> Result
     }
 
     // No certificate was seen: the same guidance as a failed login
-    Err(Error::ProxmoxActionRequired(
-        match error {
-            Some(error) if error.is_timeout() => {
-                "Connection timed out. Please check the server URL and network connectivity."
-            }
-            _ => "Failed to connect to Proxmox server. Please verify the URL is correct.",
+    Err(Error::ProxmoxActionRequired(match error {
+        Some(error) if error.is_timeout() => {
+            crate::message!("backend.proxmox.connection_timed_out")
         }
-        .into(),
-    ))
+        _ => crate::message!("backend.proxmox.connection_failed"),
+    }))
 }
 #[cfg(test)]
 mod tests {
@@ -531,7 +529,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, Error::ProxmoxActionRequired(message) if message.contains("verify the URL")),
+            matches!(&error, Error::ProxmoxActionRequired(message) if message.key == "backend.proxmox.connection_failed"),
             "{error}"
         );
     }

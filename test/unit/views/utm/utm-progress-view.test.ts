@@ -51,6 +51,84 @@ describe("utm-progress-view", () => {
     restoreTauriIpc();
   });
 
+  // UTM answering with an error answers the same way next time, so waiting
+  // would only hide the cause behind a timeout
+  for (const [error, guidance] of [
+    [
+      ipcError(
+        "utm",
+        "Home Assistant Installer is not allowed to control UTM. Open System Settings > Privacy & Security > Automation, enable UTM under Home Assistant Installer, then try again.",
+        true
+      ),
+      "Automation",
+    ],
+    [
+      ipcError(
+        "unsupported_platform",
+        "This installation method is not available on this computer.",
+        false
+      ),
+      "not available",
+    ],
+  ] as const) {
+    it(`stops waiting for the address on ${error.code}`, async () => {
+      wizardState.setSelection("vmId", "existing-vm");
+      let statusCalls = 0;
+      const calls: string[] = [];
+      mockTauriIpc((cmd) => {
+        calls.push(cmd);
+        if (cmd === "get_utm_vm_status") {
+          statusCalls++;
+          // The first check only decides whether to start the VM
+          if (statusCalls === 1) return { status: "started", ip_address: null };
+          return Promise.reject(error);
+        }
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+
+      const el = mount();
+      await oneEvent(el, "install-error");
+      await el.updateComplete;
+
+      expect(statusCalls).to.equal(2);
+      expect(errorText(el)).to.contain(guidance);
+      expect(calls).to.not.include("check_ha_ready");
+    });
+  }
+
+  it("keeps waiting for the address when UTM doesn't answer", async () => {
+    wizardState.setSelection("vmId", "existing-vm");
+    let statusCalls = 0;
+    mockTauriIpc((cmd) => {
+      switch (cmd) {
+        case "get_utm_vm_status":
+          statusCalls++;
+          // The first check only decides whether to start the VM
+          if (statusCalls === 1) return { status: "started", ip_address: null };
+          if (statusCalls === 2) {
+            return Promise.reject(
+              ipcError(
+                "utm_operation_uncertain",
+                "UTM operation outcome is unknown: AppleEvent timed out. (-1712)",
+                false
+              )
+            );
+          }
+          return { status: "started", ip_address: "192.168.1.100" };
+        case "check_ha_ready":
+        case "check_ha_updated":
+          return true;
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+
+    const el = mount();
+    await oneEvent(el, "install-complete");
+
+    expect(statusCalls).to.equal(3);
+    expect(el.hasError).to.be.false;
+  });
+
   it("starts the install when connected", async () => {
     const el = mount();
 

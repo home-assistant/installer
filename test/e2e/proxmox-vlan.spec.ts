@@ -88,14 +88,14 @@ for (const width of [1100, 390]) {
     await next.click();
     await page.evaluate(() => {
       const testWindow = window as typeof window & {
-        __TAURI__: object;
+        isTauri: boolean;
         __TAURI_INTERNALS__: {
           invoke: (cmd: string, args: unknown) => Promise<unknown>;
           transformCallback: () => number;
         };
         createArgs?: unknown;
       };
-      testWindow.__TAURI__ = {};
+      testWindow.isTauri = true;
       testWindow.__TAURI_INTERNALS__ = {
         transformCallback: () => 1,
         invoke: async (cmd, args) => {

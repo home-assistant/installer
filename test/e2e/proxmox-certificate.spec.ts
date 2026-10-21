@@ -11,13 +11,13 @@ for (const width of [1100, 390]) {
     await expect(page.locator("proxmox-connect-view")).toBeVisible();
     await page.evaluate(() => {
       const win = window as unknown as {
-        __TAURI__: object;
+        isTauri: boolean;
         __TAURI_INTERNALS__: {
           invoke: (cmd: string, args: unknown) => Promise<unknown>;
         };
         certificateCalls: string[];
       };
-      win.__TAURI__ = {};
+      win.isTauri = true;
       win.certificateCalls = [];
       win.__TAURI_INTERNALS__ = {
         invoke: async (cmd, args) => {

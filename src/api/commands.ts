@@ -64,8 +64,10 @@ export async function quitAnyway(): Promise<void> {
   return invoke<void>("quit_anyway");
 }
 
+// A string check rather than `isTauri()`, so CI can find the browser mock in a
+// production bundle.
 function isBrowserOnly(): boolean {
-  return typeof window !== "undefined" && !("__TAURI__" in window);
+  return typeof window !== "undefined" && !("isTauri" in window);
 }
 
 // Import mock data for browser-only mode

@@ -4,12 +4,10 @@ use super::super::*;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::process::Command;
 use std::sync::mpsc;
 use zbus::fdo::{ManagedObjects, ObjectManagerProxy};
 use zbus::proxy::CacheProperties;
-use zbus::zvariant::{OwnedFd, OwnedObjectPath, Value};
-use zbus::Connection;
+use zbus::{Connection, OwnedFd, OwnedObjectPath, Variant};
 
 pub async fn write_image<P: ProgressCallback>(
     image_path: &Path,
@@ -80,8 +78,6 @@ pub async fn write_image<P: ProgressCallback>(
         0,
         "Syncing data...",
     ));
-
-    let _ = Command::new("sync").output();
 
     // Best effort, like "Safely remove" in the file manager: the write and the
     // verify passed, so the drive is done. If this fails or is skipped, the
@@ -262,7 +258,7 @@ const BLOCK: &str = "org.freedesktop.UDisks2.Block";
 const DRIVE: &str = "org.freedesktop.UDisks2.Drive";
 const FILESYSTEM: &str = "org.freedesktop.UDisks2.Filesystem";
 
-fn property<T: TryFrom<zbus::zvariant::OwnedValue>>(
+fn property<T: TryFrom<zbus::OwnedVariant>>(
     objects: &ManagedObjects,
     path: &OwnedObjectPath,
     interface: &str,
@@ -361,7 +357,7 @@ async fn eject_drive(conn: &Connection, flashed: &FlashedDrive) -> Result<()> {
     };
 
     // Never raise a second password prompt for cleanup the user didn't ask for
-    let options = || HashMap::from([("auth.no_user_interaction", Value::from(true))]);
+    let options = || HashMap::from([("auth.no_user_interaction", Variant::from(true))]);
     let context = "cleaning up after the flash";
 
     // Desktops automount the new boot partition as soon as it appears. One
@@ -370,7 +366,6 @@ async fn eject_drive(conn: &Connection, flashed: &FlashedDrive) -> Result<()> {
     for path in cleanup.filesystems {
         let filesystem = UDisks2FilesystemProxy::builder(conn)
             .path(path)
-            .map_err(|e| map_udisks_error(e, context))?
             .cache_properties(CacheProperties::No)
             .build()
             .await
@@ -380,7 +375,6 @@ async fn eject_drive(conn: &Connection, flashed: &FlashedDrive) -> Result<()> {
 
     let drive = UDisks2DriveProxy::builder(conn)
         .path(flashed.path.clone())
-        .map_err(|e| map_udisks_error(e, context))?
         .cache_properties(CacheProperties::No)
         .build()
         .await
@@ -404,7 +398,6 @@ async fn unmount_disk(conn: &Connection, block_path: &OwnedObjectPath) -> Result
             format!("unmounting {path}; close applications using the drive and try again");
         let proxy = UDisks2FilesystemProxy::builder(conn)
             .path(path)
-            .map_err(|e| map_udisks_error(e, &context))?
             .cache_properties(CacheProperties::No)
             .build()
             .await
@@ -419,8 +412,7 @@ async fn unmount_disk(conn: &Connection, block_path: &OwnedObjectPath) -> Result
 async fn managed_objects(conn: &Connection) -> Result<ManagedObjects> {
     let manager = ObjectManagerProxy::builder(conn)
         .destination("org.freedesktop.UDisks2")
-        .and_then(|builder| builder.path("/org/freedesktop/UDisks2"))
-        .map_err(|e| map_udisks_error(e, "addressing udisks2"))?
+        .path("/org/freedesktop/UDisks2")
         .cache_properties(CacheProperties::No)
         .build()
         .await
@@ -481,7 +473,7 @@ async fn resolve_block_path(conn: &Connection, device_id: &str) -> Result<OwnedO
         .map_err(|e| map_udisks_error(e, "connecting to udisks2"))?;
 
     let mut devspec = HashMap::new();
-    devspec.insert("path", Value::from(device_id));
+    devspec.insert("path", Variant::from(device_id));
 
     let paths = manager
         .resolve_device(devspec, HashMap::new())
@@ -498,7 +490,6 @@ async fn resolve_block_path(conn: &Connection, device_id: &str) -> Result<OwnedO
 async fn open_device_rw(conn: &Connection, path: &OwnedObjectPath) -> Result<File> {
     let block = UDisks2BlockProxy::builder(conn)
         .path(path.to_string())
-        .map_err(|e| map_udisks_error(e, "addressing the device"))?
         .cache_properties(CacheProperties::No)
         .build()
         .await
@@ -508,7 +499,7 @@ async fn open_device_rw(conn: &Connection, path: &OwnedObjectPath) -> Result<Fil
     // O_SYNC: so each write reaches the card before returning to keep the
     // progress bar in sync
     let mut options = HashMap::new();
-    options.insert("flags", Value::from(libc::O_EXCL | libc::O_SYNC));
+    options.insert("flags", Variant::from(libc::O_EXCL | libc::O_SYNC));
     let fd = block
         .open_device("rw", options)
         .await
@@ -533,6 +524,15 @@ fn map_udisks_error(err: zbus::Error, context: &str) -> Error {
     // "Disk service unavailable:" prefix.
     const UNAVAILABLE: &str = "install and enable udisks2 to flash drives.";
 
+    // The bus reports its own errors, like a missing service, as fdo errors
+    if let zbus::Error::FDO(error) = &err {
+        if matches!(
+            **error,
+            zbus::fdo::Error::ServiceUnknown(_) | zbus::fdo::Error::NameHasNoOwner(_)
+        ) {
+            return Error::DiskServiceUnavailable(UNAVAILABLE.to_string());
+        }
+    }
     if let zbus::Error::MethodError(name, message, _) = &err {
         let name = name.as_str();
         // udisks2 isn't installed / not activatable on the bus.
@@ -558,7 +558,7 @@ fn map_udisks_error(err: zbus::Error, context: &str) -> Error {
                 .as_deref()
                 .is_some_and(|m| m.contains("Device or resource busy"))
         {
-            return Error::DeviceBusy(context.to_string());
+            return Error::DeviceBusy(BusyReason::InUse, context.to_string());
         }
         // A locked card fails right at the open, as EROFS in the message.
         if message
@@ -579,58 +579,53 @@ fn map_udisks_error(err: zbus::Error, context: &str) -> Error {
 #[zbus::proxy(
     interface = "org.freedesktop.UDisks2.Manager",
     default_service = "org.freedesktop.UDisks2",
-    default_path = "/org/freedesktop/UDisks2/Manager",
-    gen_blocking = false
+    default_path = "/org/freedesktop/UDisks2/Manager"
 )]
 trait UDisks2Manager {
     /// Resolve a device spec like `{"path": "/dev/sdb"}` to block-object paths.
     fn resolve_device(
         &self,
-        devspec: HashMap<&str, Value<'_>>,
-        options: HashMap<&str, Value<'_>>,
+        devspec: HashMap<&str, Variant<'_>>,
+        options: HashMap<&str, Variant<'_>>,
     ) -> zbus::Result<Vec<OwnedObjectPath>>;
 }
 
 #[zbus::proxy(
     interface = "org.freedesktop.UDisks2.Block",
-    default_service = "org.freedesktop.UDisks2",
-    gen_blocking = false
+    default_service = "org.freedesktop.UDisks2"
 )]
 trait UDisks2Block {
     /// Open the whole device; `mode` is `"r"`, `"w"`, or `"rw"`.
-    fn open_device(&self, mode: &str, options: HashMap<&str, Value<'_>>) -> zbus::Result<OwnedFd>;
+    fn open_device(&self, mode: &str, options: HashMap<&str, Variant<'_>>)
+        -> zbus::Result<OwnedFd>;
 }
 
 #[zbus::proxy(
     interface = "org.freedesktop.UDisks2.Drive",
-    default_service = "org.freedesktop.UDisks2",
-    gen_blocking = false
+    default_service = "org.freedesktop.UDisks2"
 )]
 trait UDisks2Drive {
-    fn eject(&self, options: HashMap<&str, Value<'_>>) -> zbus::Result<()>;
-    fn power_off(&self, options: HashMap<&str, Value<'_>>) -> zbus::Result<()>;
+    fn eject(&self, options: HashMap<&str, Variant<'_>>) -> zbus::Result<()>;
+    fn power_off(&self, options: HashMap<&str, Variant<'_>>) -> zbus::Result<()>;
 }
 
 #[zbus::proxy(
     interface = "org.freedesktop.UDisks2.Filesystem",
-    default_service = "org.freedesktop.UDisks2",
-    gen_blocking = false
+    default_service = "org.freedesktop.UDisks2"
 )]
 trait UDisks2Filesystem {
-    fn unmount(&self, options: HashMap<&str, Value<'_>>) -> zbus::Result<()>;
+    fn unmount(&self, options: HashMap<&str, Variant<'_>>) -> zbus::Result<()>;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use zbus::message::Message;
     use zbus::names::OwnedErrorName;
 
     fn method_error(name: &str, message: Option<&str>) -> zbus::Error {
-        let msg = Message::method_call("/", "Test")
-            .unwrap()
-            .build(&())
-            .unwrap();
+        let msg = Message::method_call("/", "Test").build(&()).unwrap();
         zbus::Error::MethodError(
             OwnedErrorName::try_from(name).unwrap(),
             message.map(String::from),
@@ -651,7 +646,7 @@ mod tests {
                 .unwrap();
         let mut objects = ManagedObjects::new();
         assert!(unmount_targets(&objects, &disk).is_err());
-        objects.insert(disk.clone(), HashMap::new());
+        objects.insert(disk.clone(), BTreeMap::new());
         assert!(unmount_targets(&objects, &disk).unwrap().is_empty());
         objects
             .get_mut(&disk)
@@ -661,16 +656,19 @@ mod tests {
             unmount_targets(&objects, &disk).unwrap(),
             vec![disk.clone()]
         );
-        objects.insert(other, HashMap::from([(filesystem.clone(), HashMap::new())]));
+        objects.insert(
+            other,
+            BTreeMap::from([(filesystem.clone(), HashMap::new())]),
+        );
         objects.get_mut(&disk).unwrap().insert(
             table.clone(),
             HashMap::from([(
                 "Partitions".into(),
-                zbus::zvariant::OwnedValue::try_from(Value::from(vec![part.clone()])).unwrap(),
+                zbus::OwnedVariant::try_from(Variant::from(vec![part.clone()])).unwrap(),
             )]),
         );
         assert!(unmount_targets(&objects, &disk).is_err());
-        objects.insert(part.clone(), HashMap::new());
+        objects.insert(part.clone(), BTreeMap::new());
         assert_eq!(
             unmount_targets(&objects, &disk).unwrap(),
             vec![disk.clone()]
@@ -692,7 +690,7 @@ mod tests {
         assert!(unmount_targets(&objects, &disk).is_err());
     }
 
-    type Properties<'a> = Vec<(&'a str, Value<'a>)>;
+    type Properties<'a> = Vec<(&'a str, Variant<'a>)>;
     type Interfaces<'a> = Vec<(&'a str, Properties<'a>)>;
 
     /// A udisks inventory: object path, then interfaces with their properties.
@@ -708,7 +706,7 @@ mod tests {
                             .map(|(name, value)| {
                                 (
                                     name.to_string(),
-                                    zbus::zvariant::OwnedValue::try_from(value).unwrap(),
+                                    zbus::OwnedVariant::try_from(value).unwrap(),
                                 )
                             })
                             .collect();
@@ -723,8 +721,8 @@ mod tests {
             .collect()
     }
 
-    fn object(path: &str) -> zbus::zvariant::ObjectPath<'_> {
-        zbus::zvariant::ObjectPath::try_from(path).unwrap()
+    fn object(path: &str) -> zbus::ObjectPath<'_> {
+        zbus::ObjectPath::try_from(path).unwrap()
     }
 
     fn path(path: &str) -> OwnedObjectPath {
@@ -978,16 +976,21 @@ mod tests {
             let result =
                 check_unmount_result(Err(method_error(name, message)), "unmounting /dev/sdb1");
             assert!(
-                matches!(result, Err(Error::DeviceBusy(context)) if context.contains("/dev/sdb1"))
+                matches!(result, Err(Error::DeviceBusy(_, context)) if context.contains("/dev/sdb1"))
             );
         }
     }
 
     #[test]
     fn test_map_udisks_error_service_unknown() {
-        let err = method_error("org.freedesktop.DBus.Error.ServiceUnknown", None);
-        let mapped = map_udisks_error(err, "resolving the device");
-        assert!(matches!(mapped, Error::DiskServiceUnavailable(_)));
+        for error in [
+            zbus::fdo::Error::ServiceUnknown("udisks2".into()),
+            zbus::fdo::Error::NameHasNoOwner("udisks2".into()),
+        ] {
+            let mapped =
+                map_udisks_error(zbus::Error::FDO(Box::new(error)), "resolving the device");
+            assert!(matches!(mapped, Error::DiskServiceUnavailable(_)));
+        }
     }
 
     #[test]
@@ -1033,7 +1036,7 @@ mod tests {
             Some("Error opening device /dev/sdb: Device or resource busy"),
         );
         let mapped = map_udisks_error(err, "opening the device");
-        assert!(matches!(mapped, Error::DeviceBusy(_)));
+        assert!(matches!(mapped, Error::DeviceBusy(..)));
     }
 
     #[test]
