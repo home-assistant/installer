@@ -35,6 +35,29 @@ describe("diagnostics-actions", () => {
     );
   });
 
+  it("lines the error launcher up with its text, but pads the dialog buttons", async () => {
+    const el = await fixture<DiagnosticsActions>(
+      // The theme that sets the button padding isn't loaded in unit tests
+      html`<diagnostics-actions
+        style="--wa-form-control-padding-inline: 1rem"
+      ></diagnostics-actions>`
+    );
+    const buttons = [...el.shadowRoot!.querySelectorAll("wa-button")];
+    await Promise.all(buttons.map((button) => button.updateComplete));
+    const padding = buttons.map(
+      (button) =>
+        getComputedStyle(button.shadowRoot!.querySelector("[part~=base]")!)
+          .paddingInlineStart
+    );
+
+    expect(buttons[0].classList.contains("launcher")).to.be.true;
+    expect(padding[0]).to.equal("0px");
+    expect(padding.slice(1)).to.have.length.greaterThan(0);
+    for (const value of padding.slice(1)) {
+      expect(value).to.equal("16px");
+    }
+  });
+
   it("keeps logs available and reports failure when diagnostics cannot load", async () => {
     let opened = false;
     mockTauriIpc((cmd) => {

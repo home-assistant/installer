@@ -144,6 +144,14 @@ export class OptionCard extends LitElement {
       mask: var(--icon-file) center / contain no-repeat;
     }
 
+    /* Forced colors would paint the mask's background like the card */
+    @media (forced-colors: active) {
+      .icon-file {
+        forced-color-adjust: none;
+        background-color: CanvasText;
+      }
+    }
+
     .title {
       font-size: 1rem;
       font-weight: 500;

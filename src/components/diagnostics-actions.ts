@@ -20,7 +20,7 @@ export class DiagnosticsActions extends LitElement {
     :host {
       display: inline-block;
     }
-    :host(:not([about])) wa-button::part(base) {
+    :host(:not([about])) .launcher::part(base) {
       padding-inline: 0;
     }
     wa-dialog {
@@ -112,7 +112,7 @@ export class DiagnosticsActions extends LitElement {
   render() {
     const report = this._data ? reportUrl(this._data) : undefined;
     return html`
-      <wa-button appearance="plain" @click=${this._show}
+      <wa-button class="launcher" appearance="plain" @click=${this._show}
         >${this.about
           ? localize("components.diagnostics_actions.about")
           : localize(
