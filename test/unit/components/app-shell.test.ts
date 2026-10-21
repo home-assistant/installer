@@ -82,6 +82,46 @@ async function goToStep(el: AppShell, id: string) {
   await el.updateComplete;
 }
 
+/** Open the Proxmox settings, with `check` answering the settings check. */
+async function enterProxmoxConfigure(
+  el: AppShell,
+  check: () => Promise<unknown>
+) {
+  fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+    view: "path-selection",
+  });
+  await el.updateComplete;
+  fire(el.shadowRoot!.querySelector("path-selection-view")!, "select-path", {
+    path: "proxmox",
+  });
+  await el.updateComplete;
+  wizardState.setSelection("proxmoxSession", {
+    server_url: "https://pve:8006",
+    ticket: "test",
+    csrf_token: "test",
+  });
+  mockTauriIpc((cmd) => {
+    if (cmd === "proxmox_list_nodes")
+      return [{ name: "pve", status: "online" }];
+    if (cmd === "proxmox_get_next_vm_id") return 100;
+    if (cmd === "proxmox_list_storage")
+      return [
+        {
+          name: "local",
+          active: true,
+          content: ["images", "import"],
+          available: 100,
+        },
+      ];
+    if (cmd === "proxmox_list_bridges")
+      return [{ name: "vmbr0", network_type: "bridge", comments: null }];
+    if (cmd === "proxmox_check_vm_config") return check();
+    throw new Error(cmd);
+  });
+  await goToStep(el, "configure");
+  await waitUntil(() => !shellOf(el).nextDisabled);
+}
+
 /** Walk in through the real welcome → path-selection → wizard route. */
 async function enterSbcFlow(el: AppShell) {
   fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
@@ -182,40 +222,8 @@ describe("app-shell", () => {
   });
 
   it("stays on the Proxmox settings while Proxmox would reject them", async () => {
-    fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
-      view: "path-selection",
-    });
-    await el.updateComplete;
-    fire(el.shadowRoot!.querySelector("path-selection-view")!, "select-path", {
-      path: "proxmox",
-    });
-    await el.updateComplete;
-    wizardState.setSelection("proxmoxSession", {
-      server_url: "https://pve:8006",
-      ticket: "test",
-      csrf_token: "test",
-    });
     let check = deferred<unknown>();
-    mockTauriIpc((cmd) => {
-      if (cmd === "proxmox_list_nodes")
-        return [{ name: "pve", status: "online" }];
-      if (cmd === "proxmox_get_next_vm_id") return 100;
-      if (cmd === "proxmox_list_storage")
-        return [
-          {
-            name: "local",
-            active: true,
-            content: ["images", "import"],
-            available: 100,
-          },
-        ];
-      if (cmd === "proxmox_list_bridges")
-        return [{ name: "vmbr0", network_type: "bridge", comments: null }];
-      if (cmd === "proxmox_check_vm_config") return check.promise;
-      throw new Error(cmd);
-    });
-    await goToStep(el, "configure");
-    await waitUntil(() => !shellOf(el).nextDisabled);
+    await enterProxmoxConfigure(el, () => check.promise);
 
     fire(shellOf(el), "wizard-next");
     await waitUntil(() => shellOf(el).nextLabel === "Checking settings...");
@@ -238,6 +246,22 @@ describe("app-shell", () => {
     fire(shellOf(el), "wizard-next");
     check.resolve(null);
     await waitUntil(() => wizardState.currentStep?.id === "confirm");
+  });
+
+  it("leaves a settings check behind when the user goes back", async () => {
+    const check = deferred<unknown>();
+    await enterProxmoxConfigure(el, () => check.promise);
+    fire(shellOf(el), "wizard-next");
+    await waitUntil(() => shellOf(el).nextLabel === "Checking settings...");
+
+    wizardState.previousStep();
+    await goToStep(el, "configure");
+    await waitUntil(() => !shellOf(el).nextDisabled);
+    expect(shellOf(el).nextLabel).not.to.equal("Checking settings...");
+
+    check.resolve(null);
+    await settle();
+    expect(wizardState.currentStep!.id).to.equal("configure");
   });
 
   for (const [flow, step] of [

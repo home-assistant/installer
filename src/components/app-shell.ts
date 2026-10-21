@@ -104,8 +104,11 @@ export class AppShell extends LitElement {
   @state()
   private _proxmoxConnecting = false;
 
+  // The selections the running Proxmox check started from. Navigating,
+  // cancelling or changing a choice replaces them, so a check left behind
+  // holds up nothing.
   @state()
-  private _checkingProxmox = false;
+  private _checkingProxmox?: WizardState["selections"];
 
   @state()
   private _verifyingDrive = false;
@@ -233,9 +236,8 @@ export class AppShell extends LitElement {
     const nextDisabled = this._isNextDisabled(flow, currentStep?.id);
     const nextLabel = this._getNextLabel(currentStep?.id);
 
-    // A check left behind by Back or Cancel must not hold another step's Next
     const checkingSettings =
-      this._checkingProxmox && currentStep?.id === "configure";
+      this._checkingProxmox === this._wizardState.selections;
 
     // A running flash keeps only Cancel, until it is stopping
     const flashRunning = currentStep?.id === "flash" && !this._flashError;
@@ -589,18 +591,24 @@ export class AppShell extends LitElement {
     if (flow === "proxmox" && currentStep?.id === "configure") {
       // Next is only clickable while enabled, but the step must never proceed
       // without import storage, whatever triggered the event
-      if (this._checkingProxmox || this._isNextDisabled(flow, currentStep.id)) {
+      const selections = wizardState.getState().selections;
+      if (
+        this._checkingProxmox === selections ||
+        this._isNextDisabled(flow, currentStep.id)
+      ) {
         return;
       }
       // A problem found now can still be fixed on this step
-      this._checkingProxmox = true;
+      this._checkingProxmox = selections;
       try {
         const view = this.shadowRoot
           ?.querySelector("wizard-shell")
           ?.querySelector("proxmox-configure-view");
         if (!(await view?.check())) return;
       } finally {
-        this._checkingProxmox = false;
+        if (this._checkingProxmox === selections) {
+          this._checkingProxmox = undefined;
+        }
       }
     }
 
