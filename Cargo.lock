@@ -1734,6 +1734,7 @@ version = "0.1.0"
 dependencies = [
  "hai-core",
  "log",
+ "objc2 0.6.4",
  "os_info",
  "plist",
  "serde",

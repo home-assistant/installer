@@ -42,6 +42,9 @@ tokio = { workspace = true }
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { workspace = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { workspace = true }
+
 [dev-dependencies]
 tauri = { workspace = true, features = ["test"] }
 plist = { workspace = true }

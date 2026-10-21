@@ -48,8 +48,10 @@ pub fn run() {
         .manage(commands::PendingUtmImages::default())
         .manage(install_jobs::InstallJobs::default())
         .plugin(diagnostics::plugin())
-        .setup(|_| {
+        .setup(|app| {
             diagnostics::init();
+            #[cfg(target_os = "macos")]
+            close_guard::guard_app_termination(app.handle());
             if let Ok(cache) = hai_core::ReleaseSource::cache_dir(&backend::Backend) {
                 if hai_core::download::prune_cached_images(&cache).is_err() {
                     diagnostics::warning("cache_prune_failed");
@@ -94,9 +96,8 @@ pub fn run() {
             proxmox_get_vm_status,
             proxmox_create_vm
         ])
-        .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(close_guard::on_run_event);
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
 
 #[cfg(test)]

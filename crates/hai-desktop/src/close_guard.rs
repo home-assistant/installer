@@ -5,18 +5,13 @@
 //! close request is held back and the frontend asks the user first. If they
 //! still want out, the frontend calls [`quit_anyway`].
 
-#[cfg(any(target_os = "macos", test))]
-use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tauri::{Emitter, Window, WindowEvent};
+use tauri::{Emitter, Runtime, Window, WindowEvent};
 
 /// Sent to the frontend when a close request was held back.
 const CLOSE_BLOCKED_EVENT: &str = "close-blocked";
 
 static RUNNING_JOBS: JobCounter = JobCounter::new();
-
-#[cfg(target_os = "macos")]
-static EXIT_ANYWAY: AtomicBool = AtomicBool::new(false);
 
 struct JobCounter(AtomicUsize);
 
@@ -59,9 +54,13 @@ pub(crate) fn on_window_event(window: &Window, event: &WindowEvent) {
     }
 
     api.prevent_close();
+    ask_before_closing(window);
+}
 
-    // Quit from the menu or the taskbar also works on a minimized or hidden
-    // window; bring it back, or the question goes unseen.
+/// Bring the window forward and have the frontend ask whether to quit.
+fn ask_before_closing<R: Runtime>(window: &Window<R>) {
+    // Quit from the menu, the taskbar or the Dock also works on a minimized or
+    // hidden window; bring it back, or the question goes unseen.
     let _ = window.show();
     let _ = window.unminimize();
     let _ = window.set_focus();
@@ -75,41 +74,64 @@ pub(crate) fn on_window_event(window: &Window, event: &WindowEvent) {
 #[tauri::command]
 pub fn quit_anyway(app: tauri::AppHandle) {
     crate::diagnostics::warning("quit_during_job");
-    #[cfg(target_os = "macos")]
-    EXIT_ANYWAY.store(true, Ordering::Release);
+    // Ends the event loop without going through `terminate:`, so the guard
+    // below doesn't ask again.
     app.exit(0);
 }
 
-/// Handle application-level quits, which do not close a window first.
-pub(crate) fn on_run_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, event: tauri::RunEvent) {
-    #[cfg(target_os = "macos")]
-    if let tauri::RunEvent::ExitRequested { api, .. } = event {
+/// Ask before macOS terminates the app while a job runs.
+///
+/// Quit from the Dock, logging out and shutting down send `terminate:` to
+/// the app, which tao lets through without a close request or any run event.
+/// Adds `applicationShouldTerminate:` to tao's app delegate to hold it back.
+#[cfg(target_os = "macos")]
+pub(crate) fn guard_app_termination(app: &tauri::AppHandle) {
+    use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
+    use objc2::{ffi, msg_send, sel};
+
+    static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+    let _ = APP.set(app.clone());
+
+    // NSApplicationTerminateReply
+    const TERMINATE_CANCEL: usize = 0;
+    const TERMINATE_NOW: usize = 1;
+
+    extern "C-unwind" fn should_terminate(_: &AnyObject, _: Sel, _: *mut AnyObject) -> usize {
         use tauri::Manager;
 
-        if !should_prevent_exit(RUNNING_JOBS.any(), &EXIT_ANYWAY) {
-            return;
+        if !RUNNING_JOBS.any() {
+            return TERMINATE_NOW;
         }
-        let Some(window) = app.get_webview_window("main") else {
-            return;
+        let Some(window) = APP.get().and_then(|app| app.get_webview_window("main")) else {
+            return TERMINATE_NOW;
         };
-
-        api.prevent_exit();
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-
-        if window.emit(CLOSE_BLOCKED_EVENT, ()).is_err() {
-            crate::diagnostics::warning("close_blocked_event_failed");
-        }
+        ask_before_closing(&window.as_ref().window());
+        TERMINATE_CANCEL
     }
 
-    #[cfg(not(target_os = "macos"))]
-    let _ = (app, event);
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn should_prevent_exit(any_running_job: bool, exit_anyway: &AtomicBool) -> bool {
-    !exit_anyway.swap(false, Ordering::AcqRel) && any_running_job
+    // SAFETY: runs on the main thread during setup, after tao installed its
+    // delegate. The method matches the signature AppKit calls it with, and
+    // `Q@:@` is its type encoding.
+    unsafe {
+        let ns_app: *mut AnyObject = msg_send![objc2::class!(NSApplication), sharedApplication];
+        let delegate: *mut AnyObject = msg_send![ns_app, delegate];
+        if delegate.is_null() {
+            crate::diagnostics::warning("termination_guard_unavailable");
+            return;
+        }
+        let class = ffi::object_getClass(delegate).cast_mut();
+        let imp: Imp = std::mem::transmute(should_terminate as extern "C-unwind" fn(_, _, _) -> _);
+        let added = ffi::class_addMethod(
+            class.cast::<AnyClass>(),
+            sel!(applicationShouldTerminate:),
+            imp,
+            c"Q@:@".as_ptr(),
+        );
+        if !added.as_bool() {
+            // tao implements it itself now; it should go through the close check.
+            crate::diagnostics::warning("termination_guard_unavailable");
+        }
+    }
 }
 
 /// The default macOS menu, with a Quit item that goes through the close
@@ -188,16 +210,5 @@ mod tests {
 
         drop(second);
         assert!(!COUNTER.any());
-    }
-
-    #[test]
-    fn exit_is_prevented_only_for_running_jobs_unless_quit_was_confirmed() {
-        let exit_anyway = AtomicBool::new(false);
-        assert!(!should_prevent_exit(false, &exit_anyway));
-        assert!(should_prevent_exit(true, &exit_anyway));
-
-        exit_anyway.store(true, Ordering::Release);
-        assert!(!should_prevent_exit(true, &exit_anyway));
-        assert!(should_prevent_exit(true, &exit_anyway));
     }
 }
