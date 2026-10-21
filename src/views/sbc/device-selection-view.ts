@@ -119,7 +119,7 @@ export class DeviceSelectionView extends LitElement {
     // Check if there's already a selection in wizard state
     const state = wizardState.getState();
     if (state.selections.device) {
-      this._selectedDeviceId = state.selections.device as string;
+      this._selectedDeviceId = state.selections.device;
     }
   }
 

@@ -105,7 +105,6 @@ export class MiniPCSetupMethodView extends LitElement {
   }
 
   private _onConnectDrive() {
-    wizardState.setSelection("installMethod", "direct");
     wizardState.nextStep();
   }
 

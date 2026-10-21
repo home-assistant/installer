@@ -230,8 +230,8 @@ export class ConfirmationView extends LitElement {
   render() {
     const selections = this._wizardState.selections;
     const deviceName =
-      (selections.deviceName as string) || localize("common.unknown_device");
-    const deviceImage = selections.deviceImage as string | undefined;
+      selections.deviceName || localize("common.unknown_device");
+    const deviceImage = selections.deviceImage;
     const driveName = selections.driveName || localize("common.unknown_drive");
     const driveSize = selections.driveSize;
     // The path is what actually gets written to, so show it alongside the

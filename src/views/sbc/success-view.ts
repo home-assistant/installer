@@ -70,9 +70,7 @@ export class SuccessView extends LitElement {
   }
 
   render() {
-    const deviceName = this._wizardState.selections.deviceName as
-      | string
-      | undefined;
+    const deviceName = this._wizardState.selections.deviceName;
     const board = this._wizardState.selections.deviceConfig?.board ?? "";
     const isMiniPc = this._wizardState.currentFlow === "minipc";
     const supportsDirectUsb = board === "odroid-n2" || board === "odroid-m1s";
