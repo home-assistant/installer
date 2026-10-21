@@ -221,7 +221,11 @@ status: string,
 /**
  * CPU usage percentage
  */
-cpu_usage: number | null, };
+cpu_usage: number | null,
+/**
+ * Logical CPUs; Proxmox won't start a VM with more cores than this
+ */
+cpu_count: number | null, };
 
 export type ProxmoxBridge = { name: string, network_type: string,
 /**

@@ -11,6 +11,7 @@ describe("browser mock failures", () => {
   for (const [scenario, operation, code, retryable] of [
     ["flash-write", "flash", "device_busy", true],
     ["flash-disconnected", "flash", "drive_disconnected", false],
+    ["flash-permission", "flash", "permission_denied", false],
     ["proxmox-install", "proxmox", "proxmox_api", false],
     ["utm-create", "utm", "utm", true],
   ] as const) {

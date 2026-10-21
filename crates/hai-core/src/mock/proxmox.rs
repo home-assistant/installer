@@ -33,11 +33,13 @@ impl ProxmoxBackend for BackendMock {
                 name: "pve".to_string(),
                 status: "online".to_string(),
                 cpu_usage: Some(0.15),
+                cpu_count: Some(16),
             },
             ProxmoxNode {
                 name: "pve2".to_string(),
                 status: "online".to_string(),
                 cpu_usage: Some(0.25),
+                cpu_count: Some(8),
             },
         ])
     }

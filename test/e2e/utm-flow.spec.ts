@@ -298,6 +298,20 @@ test.describe("UTM Installation Flow", () => {
     await expect(page.locator("utm-confirm-view")).toBeVisible();
   });
 
+  test("step 2: a double-click on Next stops at the confirmation", async ({
+    page,
+  }) => {
+    await navigateToUtmStep2(page);
+
+    await page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button")
+      .dblclick();
+
+    await expect(page.locator("utm-confirm-view")).toBeVisible();
+    await expect(page.locator("utm-progress-view")).toHaveCount(0);
+  });
+
   test("step 2: can navigate back to step 1", async ({ page }) => {
     await navigateToUtmStep2(page);
 

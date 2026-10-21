@@ -313,6 +313,31 @@ describe("progress-view", () => {
     expect(el.hasError).to.be.true;
   });
 
+  // The drive is fine: offer to write it again, not to pick another one
+  for (const code of ["permission_denied", "disk_service_unavailable"]) {
+    it(`retries the same drive once ${code} is fixed`, async () => {
+      const { el, attempts } = mockFlash();
+      let retryable: boolean | undefined;
+      el.addEventListener("flash-error", (event) => {
+        retryable = (event as CustomEvent<{ retryable: boolean }>).detail
+          .retryable;
+      });
+      attempts[0].result.reject({
+        code,
+        message: "Allow access, then try again.",
+        retryable: false,
+        details: {},
+      });
+      await settle();
+      expect(retryable).to.be.true;
+
+      el.retry();
+      await settle();
+      expect(attempts).to.have.length(2);
+      expect(attempts[1].request).to.deep.equal(attempts[0].request);
+    });
+  }
+
   it("reports a failed verification without advancing", async () => {
     const { el, attempts } = mockFlash();
     let completed = false;

@@ -90,6 +90,7 @@ fn optional_values_serialize_as_required_nullable_fields() {
             name: "node".into(),
             status: "online".into(),
             cpu_usage: None,
+            cpu_count: None,
         })
         .unwrap(),
         serde_json::to_value(ExpectedDevice::default()).unwrap(),
@@ -113,7 +114,11 @@ fn optional_values_serialize_as_required_nullable_fields() {
             BlockDevice::decl(&config),
             &["model", "vendor"][..],
         ),
-        (&values[1], ProxmoxNode::decl(&config), &["cpu_usage"][..]),
+        (
+            &values[1],
+            ProxmoxNode::decl(&config),
+            &["cpu_usage", "cpu_count"][..],
+        ),
         (
             &values[4],
             UtmStatus::decl(&config),

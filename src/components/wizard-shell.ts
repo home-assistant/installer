@@ -188,7 +188,12 @@ export class WizardShell extends LitElement {
     `;
   }
 
-  private _onBack() {
+  // Back and Next stay in place while the step under them changes, so the
+  // second click of a double-click would act on the step it just opened:
+  // a configured VM went straight past its confirmation into the install.
+  // `detail` counts the clicks; keyboard activation reports 0.
+  private _onBack(event: MouseEvent) {
+    if (event.detail > 1) return;
     // On the first step, Back leaves the flow for the screen it was picked on
     if (this.isFirstStep) {
       this.dispatchEvent(
@@ -208,7 +213,8 @@ export class WizardShell extends LitElement {
     );
   }
 
-  private _onNext() {
+  private _onNext(event: MouseEvent) {
+    if (event.detail > 1) return;
     this.dispatchEvent(
       new CustomEvent("wizard-next", {
         bubbles: true,

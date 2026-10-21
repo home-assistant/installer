@@ -599,11 +599,13 @@ export async function proxmoxListNodes(
         name: "pve",
         status: "online",
         cpu_usage: 12.5,
+        cpu_count: 16,
       },
       {
         name: "pve2",
         status: "online",
         cpu_usage: 8.2,
+        cpu_count: 8,
       },
     ];
   }

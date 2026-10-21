@@ -23,6 +23,13 @@ for (const scenario of [
       "The storage device was disconnected. Reconnect it and select your drive again.",
     recovery: "choose-drive",
   },
+  // Not retryable right away, but the drive is fine once access is allowed
+  {
+    failure: "flash-permission",
+    flow: "sbc",
+    message: "Administrator access was denied",
+    recovery: "retry",
+  },
   {
     failure: "proxmox-install",
     flow: "proxmox",

@@ -308,19 +308,21 @@ impl UtmClient {
 }
 ```
 
-### Network Checks
+### Host and Home Assistant Checks
 
 ```rust
-// crates/hai-core/src/network.rs
+// crates/hai-core/src/lib.rs (implemented for `Backend` in host.rs)
 
-/// Check if we have internet connectivity
-pub async fn check_connectivity() -> ConnectivityStatus;
+pub trait HostBackend {
+    /// Host CPU/memory info for VM sizing limits
+    fn system_info(&self) -> Result<SystemInfo>;
 
-/// Check if Home Assistant is ready (port 80 responding)
-pub async fn check_ha_ready(ip: &str) -> Result<bool>;
+    /// Whether the Home Assistant webserver at `ip` answers on port 80 (any non-5xx reply)
+    async fn check_ha_ready(&self, ip: &str) -> bool;
 
-/// Check if Home Assistant has finished updating (manifest.json)
-pub async fn check_ha_updated(ip: &str) -> Result<bool>;
+    /// Whether Home Assistant at `ip` has finished starting up (serves manifest.json)
+    async fn check_ha_updated(&self, ip: &str) -> bool;
+}
 ```
 
 ---
