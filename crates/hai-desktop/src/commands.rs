@@ -657,12 +657,14 @@ pub async fn proxmox_connect(
     credentials: ProxmoxCredentials,
     sessions: tauri::State<'_, ProxmoxSessions>,
 ) -> Result<ProxmoxSessionHandle, CommandError> {
+    // Reserved before the wait, so a slower earlier login can't replace it
+    let attempt = sessions.begin();
     Operation::new("proxmox_connect").finish(
         Backend
             .authenticate(&credentials)
             .await
-            .map(|session| sessions.keep(session))
-            .map_err(CommandError::from),
+            .map_err(CommandError::from)
+            .and_then(|session| sessions.keep(attempt, session)),
     )
 }
 
@@ -830,14 +832,15 @@ mod tests {
     pub(super) fn logged_in(server_url: &str) -> (tauri::App<tauri::test::MockRuntime>, u32) {
         let app = tauri::test::mock_app();
         app.manage(ProxmoxSessions::default());
-        let handle = app
-            .state::<ProxmoxSessions>()
-            .keep(hai_core::ProxmoxSession {
-                server_url: server_url.into(),
-                ticket: "fixture".into(),
-                csrf_token: "fixture".into(),
-                certificate_sha256: None,
-            });
+        let sessions = app.state::<ProxmoxSessions>();
+        let attempt = sessions.begin();
+        let session = hai_core::ProxmoxSession {
+            server_url: server_url.into(),
+            ticket: "fixture".into(),
+            csrf_token: "fixture".into(),
+            certificate_sha256: None,
+        };
+        let handle = sessions.keep(attempt, session).unwrap();
         (app, handle.id)
     }
 

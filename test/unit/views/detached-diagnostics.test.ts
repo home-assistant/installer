@@ -97,9 +97,9 @@ describe("view diagnostic request ownership", () => {
         );
         if (scenario.command === "proxmox_list_nodes") {
           wizardState.setSelection("proxmoxSession", {
+            id: 1,
             server_url: "https://192.0.2.1:8006",
-            ticket: "test-ticket",
-            csrf_token: "test-csrf",
+            certificate_sha256: null,
           });
         }
         const view = await fixture<LitElement>(scenario.view);
