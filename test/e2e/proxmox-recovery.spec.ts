@@ -50,9 +50,9 @@ async function mockLookupFailure(
             case "proxmox_connect":
               testWindow.connectionCount++;
               return {
+                id: testWindow.connectionCount,
                 server_url: "https://pve.example:8006",
-                ticket: `ticket-${testWindow.connectionCount}`,
-                csrf_token: "test-csrf",
+                certificate_sha256: null,
               };
             case "proxmox_list_nodes":
               return [{ name: "pve", status: "online" }];

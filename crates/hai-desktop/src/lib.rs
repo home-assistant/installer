@@ -10,6 +10,7 @@ mod commands;
 mod diagnostics;
 mod flash_state;
 mod install_jobs;
+mod proxmox_sessions;
 
 #[cfg(desktop)]
 use tauri::Manager;
@@ -51,6 +52,7 @@ pub fn run() {
         .manage(flash_state::FlashState::default())
         .manage(commands::PendingUtmImages::default())
         .manage(install_jobs::InstallJobs::default())
+        .manage(proxmox_sessions::ProxmoxSessions::default())
         .plugin(diagnostics::plugin())
         .setup(|_| {
             diagnostics::init();

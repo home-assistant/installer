@@ -17,8 +17,8 @@ describe("structured IPC errors in views", () => {
       wizardState.startFlow(flow);
       wizardState.setSelection("proxmoxSession", {
         server_url: "https://example.test",
-        ticket: "fixture",
-        csrf_token: "fixture",
+        id: 1,
+        certificate_sha256: null,
       });
       let attempts = 0;
       mockTauriIpc((cmd) => {
@@ -84,8 +84,8 @@ describe("structured IPC errors in views", () => {
         wizardState.startFlow("proxmox");
         wizardState.setSelection("proxmoxSession", {
           server_url: "https://example.test",
-          ticket: "fixture",
-          csrf_token: "fixture",
+          id: 1,
+          certificate_sha256: null,
         });
         mockTauriIpc(() =>
           Promise.reject(

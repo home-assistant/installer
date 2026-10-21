@@ -38,8 +38,8 @@ for (const flow of ["sbc", "utm", "proxmox"]) {
         wizardState.startFlow(flow === "utm" ? "vm" : flow);
         wizardState.setSelection("proxmoxSession", {
           server_url: "https://pve.example:8006",
-          ticket: "fixture",
-          csrf_token: "fixture",
+          id: 1,
+          certificate_sha256: null,
         });
         wizardState.setSelection("drive", "mock-drive");
         wizardState.setSelection("deviceConfig", {

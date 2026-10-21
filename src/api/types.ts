@@ -191,23 +191,19 @@ totp?: string | null,
  */
 certificate_sha256?: string | null, };
 
-export type ProxmoxSession = {
+export type ProxmoxSessionHandle = {
+/**
+ * Which login this is; a newer login replaces it
+ */
+id: number,
 /**
  * Server URL for the session
  */
 server_url: string,
 /**
- * Authentication ticket
+ * Certificate approved at login, shown again when reconnecting
  */
-ticket: string,
-/**
- * CSRF prevention token
- */
-csrf_token: string,
-/**
- * Certificate approved at login; enforce it for every request in this session.
- */
-certificate_sha256?: string | null, };
+certificate_sha256: string | null, };
 
 export type ProxmoxNode = {
 /**

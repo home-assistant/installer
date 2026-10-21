@@ -20,7 +20,7 @@ fn typescript() -> String {
         HaosImage::decl(&config),
         FlashResult::decl(&config),
         ProxmoxCredentials::decl(&config),
-        ProxmoxSession::decl(&config),
+        ProxmoxSessionHandle::decl(&config),
         ProxmoxNode::decl(&config),
         ProxmoxBridge::decl(&config),
         ProxmoxStorage::decl(&config),

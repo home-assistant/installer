@@ -1,7 +1,7 @@
 import { localize } from "../localization/localize.js";
 import type {
   HaosConfig,
-  ProxmoxSession,
+  ProxmoxSessionHandle,
   ProxmoxVmResult,
   UtmVmConfig,
 } from "../api/types.js";
@@ -60,7 +60,7 @@ export interface WizardSelections {
   utmSupersededVmId?: string;
 
   /** Proxmox login, kept so going back to the connect step doesn't log in again. */
-  proxmoxSession?: ProxmoxSession;
+  proxmoxSession?: ProxmoxSessionHandle;
   proxmoxUsername?: string;
   /** Cleared when a connect field changes, so the session no longer applies. */
   proxmoxConnected?: boolean;

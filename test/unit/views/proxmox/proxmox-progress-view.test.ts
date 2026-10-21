@@ -68,8 +68,8 @@ describe("proxmox-progress-view", () => {
     wizardState.startFlow("proxmox");
     wizardState.setSelection("proxmoxSession", {
       server_url: "https://192.168.1.100:8006",
-      ticket: "mock-ticket",
-      csrf_token: "mock-csrf",
+      id: 1,
+      certificate_sha256: null,
     });
   });
 

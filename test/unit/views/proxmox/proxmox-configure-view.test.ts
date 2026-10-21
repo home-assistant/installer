@@ -46,8 +46,8 @@ describe("proxmox-configure-view", () => {
     // The view needs a session to look up nodes and storage
     wizardState.setSelection("proxmoxSession", {
       server_url: "https://192.168.1.100:8006",
-      ticket: "mock-ticket",
-      csrf_token: "mock-csrf",
+      id: 1,
+      certificate_sha256: null,
     });
   });
 
@@ -440,7 +440,7 @@ describe("proxmox-configure-view", () => {
         await settle();
         expect(nodesCalls).to.equal(2);
       } else if (outcome === "replaced session") {
-        session = { ...session!, ticket: "replacement-ticket" };
+        session = { ...session!, id: 2 };
         wizardState.setSelection("proxmoxSession", session);
       } else if (outcome === "detached view") {
         el.remove();

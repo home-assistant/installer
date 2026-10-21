@@ -11,7 +11,7 @@ import type {
   HaosRelease,
   ProxmoxCredentials,
   ProxmoxNode,
-  ProxmoxSession,
+  ProxmoxSessionHandle,
   ProxmoxStorage,
   ProxmoxVmConfig,
   ProxmoxBridge,
@@ -551,7 +551,7 @@ export async function checkHaUpdated(ipAddress: string): Promise<boolean> {
 // ============================================================================
 
 /** Store for the current Proxmox session (browser-only mock) */
-let mockProxmoxSession: ProxmoxSession | null = null;
+let mockProxmoxSession: ProxmoxSessionHandle | null = null;
 
 /** Inspect TLS trust before authenticating. A fingerprint requires user approval. */
 export async function proxmoxCertificateFingerprint(
@@ -566,22 +566,22 @@ export async function proxmoxCertificateFingerprint(
 /**
  * Connect to a Proxmox VE server and authenticate.
  * @param credentials Server URL, username, and password
- * @returns Session with authentication ticket and CSRF token
+ * @returns A handle to the session, which stays on the native side
  */
 export async function proxmoxConnect(
   credentials: ProxmoxCredentials
-): Promise<ProxmoxSession> {
+): Promise<ProxmoxSessionHandle> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     // Simulate connection delay
     await new Promise((resolve) => setTimeout(resolve, 1500));
     mockProxmoxSession = {
+      id: (mockProxmoxSession?.id ?? 0) + 1,
       server_url: credentials.server_url,
-      ticket: "mock-ticket-" + Date.now(),
-      csrf_token: "mock-csrf-" + Date.now(),
+      certificate_sha256: credentials.certificate_sha256 ?? null,
     };
     return mockProxmoxSession;
   }
-  return invoke<ProxmoxSession>("proxmox_connect", { credentials });
+  return invoke<ProxmoxSessionHandle>("proxmox_connect", { credentials });
 }
 
 /**
@@ -590,7 +590,7 @@ export async function proxmoxConnect(
  * @returns List of available nodes
  */
 export async function proxmoxListNodes(
-  session: ProxmoxSession
+  session: ProxmoxSessionHandle
 ): Promise<ProxmoxNode[]> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -611,7 +611,9 @@ export async function proxmoxListNodes(
       },
     ];
   }
-  return invoke<ProxmoxNode[]>("proxmox_list_nodes", { session });
+  return invoke<ProxmoxNode[]>("proxmox_list_nodes", {
+    sessionId: session.id,
+  });
 }
 
 /** Server origins whose "local" storage accepts Import in the browser-only mock */
@@ -624,7 +626,7 @@ const mockImportServers = new Set<string>();
  * @returns List of available storage locations
  */
 export async function proxmoxListStorage(
-  session: ProxmoxSession,
+  session: ProxmoxSessionHandle,
   node: string
 ): Promise<ProxmoxStorage[]> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
@@ -658,7 +660,10 @@ export async function proxmoxListStorage(
       },
     ];
   }
-  return invoke<ProxmoxStorage[]>("proxmox_list_storage", { session, node });
+  return invoke<ProxmoxStorage[]>("proxmox_list_storage", {
+    sessionId: session.id,
+    node,
+  });
 }
 
 /**
@@ -668,7 +673,7 @@ export async function proxmoxListStorage(
  * @returns Whether this call changed the storage
  */
 export async function proxmoxEnableStorageImport(
-  session: ProxmoxSession,
+  session: ProxmoxSessionHandle,
   node: string,
   storage: string
 ): Promise<boolean> {
@@ -689,7 +694,7 @@ export async function proxmoxEnableStorageImport(
     return changed;
   }
   return invoke<boolean>("proxmox_enable_storage_import", {
-    session,
+    sessionId: session.id,
     node,
     storage,
   });
@@ -697,7 +702,7 @@ export async function proxmoxEnableStorageImport(
 
 /** List bridges and eligible SDN VNets on the selected node. */
 export async function proxmoxListBridges(
-  session: ProxmoxSession,
+  session: ProxmoxSessionHandle,
   node: string
 ): Promise<ProxmoxBridge[]> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
@@ -716,7 +721,10 @@ export async function proxmoxListBridges(
       },
     ];
   }
-  return invoke<ProxmoxBridge[]>("proxmox_list_bridges", { session, node });
+  return invoke<ProxmoxBridge[]>("proxmox_list_bridges", {
+    sessionId: session.id,
+    node,
+  });
 }
 
 /**
@@ -725,13 +733,13 @@ export async function proxmoxListBridges(
  * @returns Next available VM ID
  */
 export async function proxmoxGetNextVmId(
-  session: ProxmoxSession
+  session: ProxmoxSessionHandle
 ): Promise<number> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     await new Promise((resolve) => setTimeout(resolve, 200));
     return 100;
   }
-  return invoke<number>("proxmox_get_next_vm_id", { session });
+  return invoke<number>("proxmox_get_next_vm_id", { sessionId: session.id });
 }
 
 /**
@@ -742,7 +750,7 @@ export async function proxmoxGetNextVmId(
  * @returns VM status and IP address
  */
 export async function proxmoxGetVmStatus(
-  session: ProxmoxSession,
+  session: ProxmoxSessionHandle,
   node: string,
   vmId: number
 ): Promise<VmStatusInfo> {
@@ -753,7 +761,7 @@ export async function proxmoxGetVmStatus(
     };
   }
   return invoke<VmStatusInfo>("proxmox_get_vm_status", {
-    session,
+    sessionId: session.id,
     node,
     vmId,
   });
@@ -761,13 +769,16 @@ export async function proxmoxGetVmStatus(
 
 /** Run the checks `proxmoxCreateVm` starts with, without creating anything. */
 export async function proxmoxCheckVmConfig(
-  session: ProxmoxSession,
+  session: ProxmoxSessionHandle,
   config: ProxmoxVmConfig
 ): Promise<void> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     return;
   }
-  return invoke<void>("proxmox_check_vm_config", { session, config });
+  return invoke<void>("proxmox_check_vm_config", {
+    sessionId: session.id,
+    config,
+  });
 }
 
 /**
@@ -779,7 +790,7 @@ export async function proxmoxCheckVmConfig(
  * @returns Result with VM ID and node
  */
 export async function proxmoxCreateVm(
-  session: ProxmoxSession,
+  session: ProxmoxSessionHandle,
   config: ProxmoxVmConfig,
   onProgress: (progress: FlashProgress) => void,
   attempt: string
@@ -794,7 +805,7 @@ export async function proxmoxCreateVm(
   };
 
   return invoke<ProxmoxVmResult>("proxmox_create_vm", {
-    session,
+    sessionId: session.id,
     config,
     attempt,
     progressChannel: channel,

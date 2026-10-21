@@ -53,8 +53,8 @@ describe("Proxmox bridge selection", () => {
     wizardState.startFlow("proxmox");
     wizardState.setSelection("proxmoxSession", {
       server_url: "https://pve.example:8006",
-      ticket: "test",
-      csrf_token: "test",
+      id: 1,
+      certificate_sha256: null,
     });
   });
   afterEach(() => {
@@ -209,8 +209,8 @@ describe("Proxmox bridge selection", () => {
       el.remove();
       wizardState.setSelection("proxmoxSession", {
         server_url: "https://pve.example:8006",
-        ticket: "new",
-        csrf_token: "new",
+        id: 2,
+        certificate_sha256: null,
       });
       mockNetworks(() => [bridge("vmbr0")]);
       const restored = await mount();
@@ -448,8 +448,8 @@ describe("Proxmox bridge selection", () => {
       else
         wizardState.setSelection("proxmoxSession", {
           server_url: "https://other.example:8006",
-          ticket: "new",
-          csrf_token: "new",
+          id: 2,
+          certificate_sha256: null,
         });
       wizardState.setSelection("proxmoxBridge", "new-bridge");
       pending.resolve([bridge("old-bridge")]);

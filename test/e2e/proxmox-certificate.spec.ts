@@ -35,8 +35,7 @@ for (const width of [1100, 390]) {
               throw new Error("Missing approved pin");
             return {
               server_url: "https://pve.example:8006",
-              ticket: "fixture",
-              csrf_token: "fixture",
+              id: 1,
               certificate_sha256: credentials.certificate_sha256,
             };
           }

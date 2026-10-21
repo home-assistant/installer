@@ -96,9 +96,9 @@ async function enterProxmoxConfigure(
   });
   await el.updateComplete;
   wizardState.setSelection("proxmoxSession", {
+    id: 1,
     server_url: "https://pve:8006",
-    ticket: "test",
-    csrf_token: "test",
+    certificate_sha256: null,
   });
   mockTauriIpc((cmd) => {
     if (cmd === "proxmox_list_nodes")
@@ -164,8 +164,8 @@ describe("app-shell", () => {
     await el.updateComplete;
     wizardState.setSelection("proxmoxSession", {
       server_url: "https://pve:8006",
-      ticket: "test",
-      csrf_token: "test",
+      id: 1,
+      certificate_sha256: null,
     });
     wizardState.setSelection("proxmoxNode", "pve");
     wizardState.setSelection("proxmoxStorage", "local");
@@ -581,8 +581,8 @@ describe("app-shell", () => {
       await el.updateComplete;
       wizardState.setSelection("proxmoxSession", {
         server_url: "https://pve:8006",
-        ticket: "test",
-        csrf_token: "test",
+        id: 1,
+        certificate_sha256: null,
       });
       mockBackend?.();
       await goToStep(el, "install");

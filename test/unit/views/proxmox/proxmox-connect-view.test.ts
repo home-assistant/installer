@@ -109,8 +109,8 @@ describe("proxmox-connect-view", () => {
       }
       return {
         server_url: credentials.server_url,
-        ticket: "complete",
-        csrf_token: "csrf",
+        id: 7,
+        certificate_sha256: null,
       };
     });
     const { el, inputs } = await renderView();
@@ -131,9 +131,7 @@ describe("proxmox-connect-view", () => {
     await inputs[3].updateComplete;
     expect(submitted[1].totp).to.equal("012345");
     expect(nativeInput(inputs[3]).value).to.equal("");
-    expect(wizardState.getState().selections.proxmoxSession?.ticket).to.equal(
-      "complete"
-    );
+    expect(wizardState.getState().selections.proxmoxSession?.id).to.equal(7);
   });
 
   it("rejects a server URL that is not HTTPS", async () => {
@@ -198,8 +196,7 @@ describe("proxmox-connect-view", () => {
     beforeEach(() => {
       wizardState.setSelection("proxmoxSession", {
         server_url: "https://192.168.1.100:8006",
-        ticket: "ticket",
-        csrf_token: "csrf",
+        id: 1,
         certificate_sha256: Array(32).fill("AB").join(":"),
       });
       wizardState.setSelection("proxmoxUsername", "installer@pve");
@@ -278,8 +275,7 @@ describe("proxmox-connect-view", () => {
         expect(credentials.certificate_sha256).to.equal(fingerprint);
         return {
           server_url: "https://pve.example:8006",
-          ticket: "ticket",
-          csrf_token: "csrf",
+          id: 1,
           certificate_sha256: fingerprint,
         };
       }
@@ -447,7 +443,7 @@ describe("proxmox-connect-view", () => {
         else if (invalidate === "reset") wizardState.reset();
         else wizardState.startFlow("proxmox");
         const state = wizardState.getState();
-        if (outcome === "success") pending.resolve({ ticket: "stale" });
+        if (outcome === "success") pending.resolve({ id: 1 });
         else pending.reject("Stale authentication error");
 
         expect(await connecting).to.be.false;
@@ -480,7 +476,7 @@ describe("proxmox-connect-view", () => {
       await settle();
       expect(attempts).to.equal(2);
 
-      if (outcome === "success") pending.resolve({ ticket: "stale" });
+      if (outcome === "success") pending.resolve({ id: 1 });
       else pending.reject("Stale authentication error");
       expect(await first).to.be.false;
       await el.updateComplete;
@@ -488,11 +484,9 @@ describe("proxmox-connect-view", () => {
       expect(await el.connect()).to.be.false;
       expect(el.shadowRoot!.querySelector(".status-description")).to.be.null;
 
-      current.resolve({ ticket: "current" });
+      current.resolve({ id: 2 });
       expect(await second).to.be.true;
-      expect(wizardState.getState().selections.proxmoxSession?.ticket).to.equal(
-        "current"
-      );
+      expect(wizardState.getState().selections.proxmoxSession?.id).to.equal(2);
     });
 
     it(`preserves a newer session when old authentication reports ${outcome}`, async () => {
@@ -501,7 +495,7 @@ describe("proxmox-connect-view", () => {
       mockTauriIpc((cmd) => {
         if (cmd === "proxmox_certificate_fingerprint") return null;
         if (cmd === "proxmox_connect") {
-          return ++attempts === 1 ? pending.promise : { ticket: "current" };
+          return ++attempts === 1 ? pending.promise : { id: 2 };
         }
         throw new Error(cmd);
       });
@@ -515,12 +509,12 @@ describe("proxmox-connect-view", () => {
       parent.append(el);
       expect(await el.connect()).to.be.true;
       const state = wizardState.getState();
-      if (outcome === "success") pending.resolve({ ticket: "stale" });
+      if (outcome === "success") pending.resolve({ id: 1 });
       else pending.reject("Stale authentication error");
       expect(await first).to.be.false;
       expect(wizardState.getState()).to.equal(state);
       expect(state.selections.proxmoxConnected).to.be.true;
-      expect(state.selections.proxmoxSession?.ticket).to.equal("current");
+      expect(state.selections.proxmoxSession?.id).to.equal(2);
     });
   }
 

@@ -20,8 +20,8 @@ import {
 
 const session = {
   server_url: "https://pve.example:8006",
-  ticket: "ticket",
-  csrf_token: "csrf",
+  id: 1,
+  certificate_sha256: null,
 };
 const directory: ProxmoxStorage = {
   name: "local",
@@ -167,7 +167,9 @@ describe("Proxmox import consent", () => {
     const refresh = deferred<ProxmoxStorage[]>();
     list = () => refresh.promise;
     await approve(el);
-    expect(writes).to.deep.equal([{ session, node: "pve", storage: "local" }]);
+    expect(writes).to.deep.equal([
+      { sessionId: session.id, node: "pve", storage: "local" },
+    ]);
     expect(reads).to.equal(2);
     expect(
       wizardState.getState().selections.proxmoxImportChanges
@@ -298,7 +300,7 @@ describe("Proxmox import consent", () => {
         } else if (change === "session") {
           wizardState.setSelection("proxmoxSession", {
             ...session,
-            ticket: "new-ticket",
+            id: 2,
           });
         } else {
           el.remove();
@@ -342,7 +344,7 @@ describe("Proxmox import consent", () => {
     await waitUntil(() => reads === 1);
     wizardState.setSelection("proxmoxSession", {
       ...session,
-      ticket: "new-ticket",
+      id: 2,
     });
     old.resolve([{ ...directory, content: ["import", "images"] }]);
     await settle();
@@ -368,7 +370,7 @@ describe("Proxmox import consent", () => {
     wizardState.setSelection("proxmoxSession", {
       ...session,
       server_url: "https://PVE.EXAMPLE:8006/",
-      ticket: "renewed-ticket",
+      id: 2,
     });
     const success = await fixture(
       html`<proxmox-success-view></proxmox-success-view>`
@@ -390,7 +392,7 @@ describe("Proxmox import consent", () => {
     wizardState.setSelection("proxmoxSession", {
       ...session,
       server_url: "https://PVE.EXAMPLE:8006/",
-      ticket: "renewed-ticket",
+      id: 2,
     });
     const success = await fixture(
       html`<proxmox-success-view></proxmox-success-view>`
@@ -457,15 +459,15 @@ describe("Proxmox import consent", () => {
       .undefined;
   });
 
-  it("deduplicates a storage across renewed tickets and equivalent URL origins", async () => {
-    for (const server_url of [
+  it("deduplicates a storage across renewed logins and equivalent URL origins", async () => {
+    for (const [id, server_url] of [
       "https://PVE.EXAMPLE:443/",
       "https://pve.example",
-    ]) {
+    ].entries()) {
       wizardState.setSelection("proxmoxSession", {
         ...session,
+        id: id + 1,
         server_url,
-        ticket: `ticket-${server_url}`,
       });
       storages = [directory, disk];
       const el = await mount();
@@ -500,7 +502,7 @@ describe("Proxmox import consent", () => {
     wizardState.setSelection("proxmoxSession", {
       ...session,
       server_url: "https://different.example:8006",
-      ticket: "new-ticket",
+      id: 2,
     });
     await (el as HTMLElement & { updateComplete: Promise<unknown> })
       .updateComplete;
@@ -533,7 +535,7 @@ describe("Proxmox import consent", () => {
     const renewed = {
       ...session,
       server_url: "https://mock-origin.example",
-      ticket: "renewed",
+      id: 2,
     };
     const other = {
       ...session,

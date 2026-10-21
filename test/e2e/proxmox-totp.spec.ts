@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import type {
   ProxmoxCredentials,
-  ProxmoxSession,
+  ProxmoxSessionHandle,
 } from "../../src/api/types.js";
 
 interface TotpWindow {
@@ -23,10 +23,10 @@ test.describe("Proxmox TOTP login", () => {
     // Use the actual shell and command wrapper, replacing only native IPC.
     await page.evaluate(() => {
       const win = window as unknown as TotpWindow;
-      const session: ProxmoxSession = {
+      const session: ProxmoxSessionHandle = {
         server_url: "https://pve.example:8006",
-        ticket: "completed-fixture-ticket",
-        csrf_token: "fixture-csrf",
+        id: 1,
+        certificate_sha256: null,
       };
       win.isTauri = true;
       win.totpAttempts = [];
@@ -57,11 +57,10 @@ test.describe("Proxmox TOTP login", () => {
           if (cmd === "utm_supported") return true;
 
           win.authenticatedCalls.push(cmd);
-          const { session: supplied } = args as { session: ProxmoxSession };
+          const { sessionId } = args as { sessionId: number };
           if (
             win.totpAttempts[win.totpAttempts.length - 1]?.totp !== "012345" ||
-            supplied.ticket !== session.ticket ||
-            supplied.csrf_token !== session.csrf_token
+            sessionId !== session.id
           ) {
             throw new Error(
               "An authenticated request used an incomplete session"

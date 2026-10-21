@@ -21,10 +21,10 @@ async function configure(page: Page, failFirst = false, changed = true) {
       win.importWrites = [];
       // Import is cluster-wide, so it is tracked per server, not per login
       const enabledOrigins = new Set<string>();
+      // Like the native side: the page only names a login by its id
+      const logins = new Map<number, string>();
       const origin = (args: unknown) =>
-        new URL(
-          (args as { session: { server_url: string } }).session.server_url
-        ).origin;
+        new URL(logins.get((args as { sessionId: number }).sessionId)!).origin;
       win.__TAURI_INTERNALS__ = {
         transformCallback: () => 1,
         invoke: async (cmd, args) => {
@@ -33,13 +33,14 @@ async function configure(page: Page, failFirst = false, changed = true) {
               return undefined;
             case "proxmox_certificate_fingerprint":
               return null;
-            case "proxmox_connect":
-              return {
-                server_url: (args as { credentials: { server_url: string } })
-                  .credentials.server_url,
-                ticket: "fixture",
-                csrf_token: "fixture",
-              };
+            case "proxmox_connect": {
+              const id = logins.size + 1;
+              const server_url = (
+                args as { credentials: { server_url: string } }
+              ).credentials.server_url;
+              logins.set(id, server_url);
+              return { id, server_url, certificate_sha256: null };
+            }
             case "proxmox_list_nodes":
               return [
                 { name: "pve", status: "online" },

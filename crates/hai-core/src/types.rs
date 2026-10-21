@@ -304,9 +304,10 @@ pub struct ProxmoxCredentials {
     pub certificate_sha256: Option<String>,
 }
 
-/// Proxmox session (authentication result)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
+/// Proxmox session (authentication result). It never leaves the native side
+/// of the app, so it can't be serialized: the page gets a
+/// [`ProxmoxSessionHandle`] instead.
+#[derive(Debug, Clone)]
 pub struct ProxmoxSession {
     /// Server URL for the session
     pub server_url: String,
@@ -315,7 +316,19 @@ pub struct ProxmoxSession {
     /// CSRF prevention token
     pub csrf_token: String,
     /// Certificate approved at login; enforce it for every request in this session.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub certificate_sha256: Option<String>,
+}
+
+/// A Proxmox login as the web page sees it. The ticket, CSRF token and
+/// certificate pin stay on the native side, which looks them up by `id`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ProxmoxSessionHandle {
+    /// Which login this is; a newer login replaces it
+    pub id: u32,
+    /// Server URL for the session
+    pub server_url: String,
+    /// Certificate approved at login, shown again when reconnecting
     pub certificate_sha256: Option<String>,
 }
 

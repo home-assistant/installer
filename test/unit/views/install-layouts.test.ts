@@ -27,8 +27,8 @@ describe("shared install layouts", () => {
       });
       wizardState.setSelection("proxmoxSession", {
         server_url: "https://pve:8006",
-        ticket: "test",
-        csrf_token: "test",
+        id: 1,
+        certificate_sha256: null,
       });
       let channel!: Channel<FlashProgress>;
       let reject!: (reason: unknown) => void;

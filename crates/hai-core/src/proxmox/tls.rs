@@ -555,14 +555,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ipv6_certificate_pin_survives_credentials_and_session_serialization() {
+    async fn ipv6_certificate_pin_survives_credentials_serialization() {
         let server = TlsServer::start_at("[::1]:0", None, false).await;
         let credentials: ProxmoxCredentials =
             serde_json::from_value(serde_json::to_value(server.credentials(true)).unwrap())
                 .unwrap();
         let session = super::super::authenticate(&credentials).await.unwrap();
-        let session: ProxmoxSession =
-            serde_json::from_value(serde_json::to_value(session).unwrap()).unwrap();
         assert_eq!(session.certificate_sha256, credentials.certificate_sha256);
         assert!(super::super::list_nodes(&session).await.is_ok());
         assert_eq!(server.requests.lock().unwrap().len(), 3);
