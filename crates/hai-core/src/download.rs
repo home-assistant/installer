@@ -806,9 +806,8 @@ fn read_xz(decoder: &mut impl std::io::Read, buffer: &mut [u8]) -> Result<usize>
 
 /// Reports extraction progress from the compressed bytes the decoder consumed.
 ///
-/// Both passes of `extract_archive` read the whole archive, so each one fills
-/// half of the bar. The byte counter stays within the archive size, and 100%
-/// is left to the caller for when the output is synced and in place.
+/// The byte counter stays within the archive size, and 100% is left to the
+/// caller for when the output is synced and in place.
 struct ExtractionProgress<'a> {
     sender: &'a std::sync::mpsc::Sender<FlashProgress>,
     archive_size: u64,
@@ -817,13 +816,12 @@ struct ExtractionProgress<'a> {
 
 impl ExtractionProgress<'_> {
     /// Fails with `Error::Cancelled` once nobody listens anymore.
-    fn report(&mut self, pass: u64, consumed: u64) -> Result<()> {
+    fn report(&mut self, consumed: u64) -> Result<()> {
         if self.archive_size == 0 {
             return Ok(());
         }
 
-        let consumed = consumed.min(self.archive_size);
-        let bytes_processed = (pass * self.archive_size + consumed) / 2;
+        let bytes_processed = consumed.min(self.archive_size);
         let percent = ((bytes_processed as f64 / self.archive_size as f64 * 100.0) as u8).min(99);
         if percent == self.last_percent {
             return Ok(());
@@ -840,6 +838,114 @@ impl ExtractionProgress<'_> {
             })
             .map_err(|_| Error::Cancelled)
     }
+}
+
+// Far more than any image needs; each block takes at least two bytes of it.
+const MAX_XZ_INDEX_SIZE: u64 = 16 * 1024 * 1024;
+
+/// Read a variable-length number from an XZ index.
+fn read_xz_number(bytes: &mut impl Iterator<Item = u8>) -> Option<u64> {
+    let mut value = 0;
+    for shift in (0..63).step_by(7) {
+        let byte = bytes.next()?;
+        value |= u64::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// Sum the blocks listed in one XZ index: the space they take in the stream,
+/// and their size once decompressed.
+fn parse_xz_index(index: &[u8]) -> Option<(u64, u64)> {
+    let mut bytes = index.iter().copied();
+    if bytes.next()? != 0 {
+        return None;
+    }
+
+    let records = read_xz_number(&mut bytes)?;
+    let mut blocks_size: u64 = 0;
+    let mut uncompressed_size: u64 = 0;
+    for _ in 0..records {
+        let unpadded_size = read_xz_number(&mut bytes)?;
+        let block_uncompressed_size = read_xz_number(&mut bytes)?;
+        // Every block is padded to a multiple of four bytes
+        blocks_size = blocks_size.checked_add(unpadded_size.checked_add(3)? & !3)?;
+        uncompressed_size = uncompressed_size.checked_add(block_uncompressed_size)?;
+    }
+    Some((blocks_size, uncompressed_size))
+}
+
+/// The extracted size of an XZ archive, read from the index at the end of
+/// every stream instead of decompressing the whole archive to count it.
+///
+/// Nothing here is trusted yet: the decoder checks each index against the data
+/// it describes, and the extraction stops if the output disagrees.
+fn xz_uncompressed_size(input: &mut std::fs::File) -> Result<u64> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    // A stream is a 12 byte header, its blocks, the index and a 12 byte footer
+    const HEADER_SIZE: u64 = 12;
+    const FOOTER_SIZE: u64 = 12;
+
+    let corrupt = || {
+        Error::ExtractionFailed(
+            "Downloaded image is corrupt or incomplete; try downloading again.".into(),
+        )
+    };
+    let mut end = input.metadata()?.len();
+    let mut read_at = |offset: u64, buffer: &mut [u8]| -> Result<()> {
+        input.seek(SeekFrom::Start(offset))?;
+        input.read_exact(buffer)?;
+        Ok(())
+    };
+
+    let mut total: u64 = 0;
+    let mut streams = 0;
+    while end > 0 {
+        // Streams can be followed by zero padding, in groups of four bytes
+        if end < 4 {
+            return Err(corrupt());
+        }
+        let mut word = [0; 4];
+        read_at(end - 4, &mut word)?;
+        if word == [0; 4] {
+            end -= 4;
+            continue;
+        }
+
+        if end < HEADER_SIZE + FOOTER_SIZE {
+            return Err(corrupt());
+        }
+        let mut footer = [0; FOOTER_SIZE as usize];
+        read_at(end - FOOTER_SIZE, &mut footer)?;
+        if footer[10..] != *b"YZ" {
+            return Err(corrupt());
+        }
+
+        let backward_size = u32::from_le_bytes([footer[4], footer[5], footer[6], footer[7]]);
+        let index_size = (u64::from(backward_size) + 1) * 4;
+        if index_size > MAX_XZ_INDEX_SIZE || index_size + HEADER_SIZE + FOOTER_SIZE > end {
+            return Err(corrupt());
+        }
+        let mut index = vec![0; index_size as usize];
+        read_at(end - FOOTER_SIZE - index_size, &mut index)?;
+        let (blocks_size, uncompressed_size) = parse_xz_index(&index).ok_or_else(corrupt)?;
+
+        let stream_size = blocks_size
+            .checked_add(HEADER_SIZE + index_size + FOOTER_SIZE)
+            .filter(|size| *size <= end)
+            .ok_or_else(corrupt)?;
+        end -= stream_size;
+        total = total.checked_add(uncompressed_size).ok_or_else(corrupt)?;
+        streams += 1;
+    }
+
+    if streams == 0 {
+        return Err(corrupt());
+    }
+    Ok(total)
 }
 
 fn extract_archive(
@@ -860,30 +966,20 @@ fn extract_archive(
         archive_size: input.metadata()?.len(),
         last_percent: 0,
     };
-    let mut buffer = [0; 64 * 1024];
-    let mut expected_size = 0;
-    {
-        // Release metadata has no extracted size. Validate/count all XZ streams
-        // without writing first; the archive already occupies its compressed space.
-        let mut decoder = xz_decoder(&mut input)?;
-        loop {
-            let count = read_xz(&mut decoder, &mut buffer)?;
-            if count == 0 {
-                break;
-            }
-            expected_size += count as u64;
-            progress.report(0, decoder.total_in())?;
-            check_space(directory, expected_size, available)?;
-            if expected_size > max_extracted_size {
-                return Err(Error::ExtractionFailed(
-                    "Image exceeds the supported extracted size of 64 GiB.".into(),
-                ));
-            }
-        }
+
+    // Release metadata has no extracted size, but the archive's own index
+    // does. Checking it up front avoids decompressing everything twice.
+    let expected_size = xz_uncompressed_size(&mut input)?;
+    if expected_size > max_extracted_size {
+        return Err(Error::ExtractionFailed(
+            "Image exceeds the supported extracted size of 64 GiB.".into(),
+        ));
     }
-    check_space(directory, expected_size, available_space(directory)?)?;
+    check_space(directory, expected_size, available)?;
+
     input.rewind()?;
     let mut decoder = xz_decoder(&mut input)?;
+    let mut buffer = [0; 64 * 1024];
     let mut output = tempfile::NamedTempFile::new_in(directory)?;
     let mut extracted = 0;
     loop {
@@ -898,7 +994,7 @@ fn extract_archive(
             ));
         }
         output.write_all(&buffer[..count])?;
-        progress.report(1, decoder.total_in())?;
+        progress.report(decoder.total_in())?;
     }
     if extracted != expected_size {
         return Err(Error::ExtractionFailed(
@@ -1314,45 +1410,98 @@ mod tests {
 
     #[test]
     fn insufficient_extracted_space_preserves_destination_without_partial_output() {
-        for space_readings in [vec![9], vec![10, 9]] {
-            for existing_destination in [false, true] {
-                let directory = tempfile::tempdir().unwrap();
-                let archive = directory.path().join("image.xz");
-                let destination = directory.path().join("image.img");
-                let data = compressed(b"1234567890");
-                std::fs::write(&archive, &data).unwrap();
-                if existing_destination {
-                    std::fs::write(&destination, b"previous image").unwrap();
-                }
-                let (tx, rx) = std::sync::mpsc::channel();
-                let mut readings = space_readings.iter();
-                let error = extract_archive(
-                    &archive,
-                    &destination,
-                    &tx,
-                    |path| {
-                        assert_eq!(path, directory.path());
-                        Ok(*readings.next().expect("unexpected space lookup"))
-                    },
-                    MAX_EXTRACTED_SIZE,
-                )
-                .unwrap_err()
-                .to_string();
-                assert!(error.contains("need 10 bytes, but only 9 bytes"));
-                assert!(readings.next().is_none(), "every space guard must run");
-                // The measuring pass fills at most half the bar; writing never started.
-                assert!(rx.try_iter().all(|progress| progress.progress <= 50));
-                assert_eq!(std::fs::read(&archive).unwrap(), data);
-                if existing_destination {
-                    assert_eq!(std::fs::read(&destination).unwrap(), b"previous image");
-                } else {
-                    assert!(!destination.exists());
-                }
-                assert_eq!(
-                    std::fs::read_dir(directory.path()).unwrap().count(),
-                    1 + usize::from(existing_destination)
-                );
+        for existing_destination in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let archive = directory.path().join("image.xz");
+            let destination = directory.path().join("image.img");
+            let data = compressed(b"1234567890");
+            std::fs::write(&archive, &data).unwrap();
+            if existing_destination {
+                std::fs::write(&destination, b"previous image").unwrap();
             }
+            let (tx, rx) = std::sync::mpsc::channel();
+            let mut space_lookups = 0;
+            let error = extract_archive(
+                &archive,
+                &destination,
+                &tx,
+                |path| {
+                    assert_eq!(path, directory.path());
+                    space_lookups += 1;
+                    Ok(9)
+                },
+                MAX_EXTRACTED_SIZE,
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(error.contains("need 10 bytes, but only 9 bytes"), "{error}");
+            assert_eq!(space_lookups, 1);
+            // The size comes from the index, so nothing was decompressed
+            assert!(rx.try_iter().next().is_none());
+            assert_eq!(std::fs::read(&archive).unwrap(), data);
+            if existing_destination {
+                assert_eq!(std::fs::read(&destination).unwrap(), b"previous image");
+            } else {
+                assert!(!destination.exists());
+            }
+            assert_eq!(
+                std::fs::read_dir(directory.path()).unwrap().count(),
+                1 + usize::from(existing_destination)
+            );
+        }
+    }
+
+    /// One stream with a block per chunk, so its index lists several blocks.
+    fn compressed_in_blocks(chunks: &[&[u8]]) -> Vec<u8> {
+        use std::io::Write;
+
+        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+        for chunk in chunks {
+            encoder.write_all(chunk).unwrap();
+            // A full flush ends the current block
+            encoder.flush().unwrap();
+        }
+        encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn xz_index_gives_the_extracted_size() {
+        let first = vec![1u8; 100_000];
+        let second = vec![2u8; 3];
+        let third = b"third".to_vec();
+        let mut data = compressed_in_blocks(&[&first, &second]);
+        data.extend([0; 8]);
+        data.extend(compressed(&third));
+        data.extend([0; 4]);
+        let directory = tempfile::tempdir().unwrap();
+        let archive = directory.path().join("image.xz");
+        std::fs::write(&archive, &data).unwrap();
+
+        let size = xz_uncompressed_size(&mut std::fs::File::open(&archive).unwrap()).unwrap();
+        assert_eq!(size, (first.len() + second.len() + third.len()) as u64);
+    }
+
+    #[test]
+    fn xz_index_rejects_what_is_not_a_whole_archive() {
+        let data = compressed(b"image");
+        let mut stream_padding_not_in_fours = data.clone();
+        stream_padding_not_in_fours.extend([0; 3]);
+        let mut wrong_backward_size = data.clone();
+        let footer = wrong_backward_size.len() - 12;
+        wrong_backward_size[footer + 4] = 0xff;
+        for archive in [
+            Vec::new(),
+            vec![0; 8],
+            data[..data.len() - 1].to_vec(),
+            data[1..].to_vec(),
+            stream_padding_not_in_fours,
+            wrong_backward_size,
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("image.xz");
+            std::fs::write(&path, &archive).unwrap();
+            let error = xz_uncompressed_size(&mut std::fs::File::open(&path).unwrap()).unwrap_err();
+            assert!(matches!(error, Error::ExtractionFailed(_)), "{error:?}");
         }
     }
 
