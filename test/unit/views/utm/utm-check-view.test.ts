@@ -92,6 +92,37 @@ describe("utm-check-view artwork", () => {
     });
   }
 
+  it("explains on an Intel Mac that the option isn't available", async () => {
+    bridge.isTauri = true;
+    bridge.__TAURI_INTERNALS__ = {
+      invoke: () =>
+        Promise.reject({
+          code: "unsupported_platform",
+          message:
+            "This installation method is not available on this computer.",
+          retryable: false,
+          details: {},
+        }),
+    };
+    const el = await fixture<UtmCheckView>(
+      html`<utm-check-view></utm-check-view>`
+    );
+    await waitUntil(
+      () => el.shadowRoot!.querySelector("casita-mascot")!.mood !== "loading"
+    );
+
+    const text = el.shadowRoot!.textContent!;
+    expect(el.shadowRoot!.querySelector("casita-mascot")!.mood).to.equal("sad");
+    expect(text).to.include("Not available on this Mac");
+    expect(text).to.include("Apple silicon");
+    // None of it applies when the option can't run here at all
+    expect(el.shadowRoot!.querySelector(".warning-card")).to.equal(null);
+    expect(el.shadowRoot!.querySelector('[role="alert"]')).to.equal(null);
+    expect(text).not.to.include("Error checking UTM");
+    expect(text).not.to.include("Try again");
+    expect(wizardState.getState().selections.utmInstalled).to.be.false;
+  });
+
   it("uses problem artwork alongside the error and retry control", async () => {
     bridge.isTauri = true;
     bridge.__TAURI_INTERNALS__ = {

@@ -90,7 +90,8 @@ describe("structured IPC errors in views", () => {
         mockTauriIpc(() =>
           Promise.reject(
             ipcError(
-              retryable ? "permission_denied" : "unsupported_platform",
+              // Not unsupported_platform: the UTM check has its own screen for that
+              retryable ? "permission_denied" : "json",
               "Run as administrator",
               retryable
             )
@@ -102,9 +103,7 @@ describe("structured IPC errors in views", () => {
         fixtureSync(html`<div>${el}</div>`);
         await waitUntil(() => !!el.shadowRoot?.querySelector(".error-help"));
         expect(el.shadowRoot!.textContent).to.contain(
-          retryable
-            ? "Run as administrator"
-            : "Choose another installation method"
+          retryable ? "Run as administrator" : "unexpected response"
         );
         const retry = [...el.shadowRoot!.querySelectorAll("wa-button")].find(
           (button) => button.textContent?.includes("Try again")
