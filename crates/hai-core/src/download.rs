@@ -1193,12 +1193,14 @@ mod tests {
                 .unwrap();
             for byte in b"0123456789" {
                 stream.write_all(&[*byte]).unwrap();
-                std::thread::sleep(Duration::from_millis(40));
+                std::thread::sleep(Duration::from_millis(150));
             }
         });
         let directory = tempfile::tempdir().unwrap();
         let destination = directory.path().join("image.xz");
-        let client = http_client(Duration::from_millis(200)).unwrap();
+        let read_timeout = Duration::from_secs(1);
+        let client = http_client(read_timeout).unwrap();
+        let started = std::time::Instant::now();
         download_image_with_client(
             &image_for_data(&url, b"0123456789"),
             &destination,
@@ -1208,6 +1210,7 @@ mod tests {
         )
         .await
         .unwrap();
+        assert!(started.elapsed() > read_timeout);
         assert_eq!(std::fs::read(destination).unwrap(), b"0123456789");
         server.join().unwrap();
     }
