@@ -125,6 +125,8 @@ test.describe("UTM Installation Flow", () => {
                 }
               : { installed: false, path: null, version: null };
           if (cmd === "utm_supported") return true;
+          // macOS lets the installer control UTM
+          if (cmd === "check_utm_automation") return undefined;
           if (cmd === "check_connection" || cmd === "log_frontend_event")
             return undefined;
           // A misspelled command would otherwise pass as "no answer"
