@@ -348,7 +348,7 @@ for (const tag of [
     );
     await expect(page.locator(".cloud-text")).toHaveCSS(
       "color",
-      "rgb(0, 65, 86)"
+      "rgb(255, 255, 255)"
     );
     await expect(page.getByRole("progressbar")).toHaveAttribute(
       "aria-valuenow",
