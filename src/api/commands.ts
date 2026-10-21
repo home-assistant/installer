@@ -64,6 +64,14 @@ export async function quitAnyway(): Promise<void> {
   return invoke<void>("quit_anyway");
 }
 
+/** Keep the app running after it held back closing it. */
+export async function keepRunning(): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return;
+  }
+  return invoke<void>("keep_running");
+}
+
 function isBrowserOnly(): boolean {
   return typeof window !== "undefined" && !("__TAURI__" in window);
 }

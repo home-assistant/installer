@@ -3,7 +3,8 @@
 //! Closing the window halfway through a flash leaves a half-written drive,
 //! and halfway through a VM install leaves a broken VM. While a job runs, a
 //! close request is held back and the frontend asks the user first. If they
-//! still want out, the frontend calls [`quit_anyway`].
+//! still want out, the frontend calls [`quit_anyway`], otherwise
+//! [`keep_running`].
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{Emitter, Runtime, Window, WindowEvent};
@@ -74,121 +75,125 @@ fn ask_before_closing<R: Runtime>(window: &Window<R>) {
 #[tauri::command]
 pub fn quit_anyway(app: tauri::AppHandle) {
     crate::diagnostics::warning("quit_during_job");
-    // Ends the event loop without going through `terminate:`, so the guard
-    // below doesn't ask again.
+    #[cfg(target_os = "macos")]
+    {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            // Let a held-back quit, logout or shutdown carry on
+            if !termination::reply(true) {
+                // Ends the event loop without `terminate:`, so it isn't asked again
+                handle.exit(0);
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
     app.exit(0);
 }
 
-/// Ask before macOS terminates the app while a job runs.
-///
-/// Quit from the Dock, logging out and shutting down send `terminate:` to
-/// the app, which tao lets through without a close request or any run event.
-/// Adds `applicationShouldTerminate:` to tao's app delegate to hold it back.
+/// Keep running after all. The user chose this.
+#[tauri::command]
+pub fn keep_running(app: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    let _ = app.run_on_main_thread(|| {
+        termination::reply(false);
+    });
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+}
+
 #[cfg(target_os = "macos")]
-pub(crate) fn guard_app_termination(app: &tauri::AppHandle) {
+pub(crate) use termination::guard_app_termination;
+
+/// Quit from the menu or the Dock, logging out and shutting down send
+/// `terminate:` to the app, which tao lets through without a close request or
+/// any run event. `applicationShouldTerminate:` on tao's app delegate holds it
+/// back while a job runs, until the user answered.
+#[cfg(target_os = "macos")]
+mod termination {
+    use super::{ask_before_closing, RUNNING_JOBS};
     use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
-    use objc2::{ffi, msg_send, sel};
+    use objc2::{ffi, sel, MainThreadMarker};
+    use objc2_app_kit::{NSApplication, NSApplicationTerminateReply};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::OnceLock;
+    use tauri::Manager;
 
-    static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
-    let _ = APP.set(app.clone());
+    /// The class tao registers for its app delegate.
+    const TAO_DELEGATE_CLASS: &std::ffi::CStr = c"TaoAppDelegateParent";
 
-    // NSApplicationTerminateReply
-    const TERMINATE_CANCEL: usize = 0;
-    const TERMINATE_NOW: usize = 1;
+    static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
 
-    extern "C-unwind" fn should_terminate(_: &AnyObject, _: Sel, _: *mut AnyObject) -> usize {
-        use tauri::Manager;
+    /// A `terminate:` is waiting for the user's answer.
+    static PENDING: AtomicBool = AtomicBool::new(false);
 
-        if !RUNNING_JOBS.any() {
-            return TERMINATE_NOW;
-        }
-        let Some(window) = APP.get().and_then(|app| app.get_webview_window("main")) else {
-            return TERMINATE_NOW;
+    /// Answer a held-back `terminate:`. Returns whether one was waiting.
+    pub(super) fn reply(terminate: bool) -> bool {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return false;
         };
-        ask_before_closing(&window.as_ref().window());
-        TERMINATE_CANCEL
+        if !PENDING.swap(false, Ordering::AcqRel) {
+            return false;
+        }
+        NSApplication::sharedApplication(mtm).replyToApplicationShouldTerminate(terminate);
+        true
     }
 
-    // SAFETY: runs on the main thread during setup, after tao installed its
-    // delegate. The method matches the signature AppKit calls it with, and
-    // `Q@:@` is its type encoding.
-    unsafe {
-        let ns_app: *mut AnyObject = msg_send![objc2::class!(NSApplication), sharedApplication];
-        let delegate: *mut AnyObject = msg_send![ns_app, delegate];
-        if delegate.is_null() {
+    extern "C-unwind" fn should_terminate(
+        _: &AnyObject,
+        _: Sel,
+        _: *mut AnyObject,
+    ) -> NSApplicationTerminateReply {
+        if !RUNNING_JOBS.any() {
+            return NSApplicationTerminateReply::TerminateNow;
+        }
+        // Already asking; the answer covers this request too
+        if PENDING.swap(true, Ordering::AcqRel) {
+            return NSApplicationTerminateReply::TerminateLater;
+        }
+        let Some(window) = APP.get().and_then(|app| app.get_webview_window("main")) else {
+            // Nowhere to ask, so don't quit halfway through a job
+            PENDING.store(false, Ordering::Release);
+            crate::diagnostics::warning("termination_blocked_without_window");
+            return NSApplicationTerminateReply::TerminateCancel;
+        };
+        ask_before_closing(&window.as_ref().window());
+        NSApplicationTerminateReply::TerminateLater
+    }
+
+    /// Add `applicationShouldTerminate:` to tao's app delegate.
+    pub(crate) fn guard_app_termination(app: &tauri::AppHandle) {
+        let _ = APP.set(app.clone());
+
+        let Some(mtm) = MainThreadMarker::new() else {
+            crate::diagnostics::warning("termination_guard_unavailable");
+            return;
+        };
+        let Some(delegate) = NSApplication::sharedApplication(mtm).delegate() else {
+            crate::diagnostics::warning("termination_guard_unavailable");
+            return;
+        };
+        let class: &AnyClass = AsRef::<AnyObject>::as_ref(&*delegate).class();
+        if class.name() != TAO_DELEGATE_CLASS {
             crate::diagnostics::warning("termination_guard_unavailable");
             return;
         }
-        let class = ffi::object_getClass(delegate).cast_mut();
-        let imp: Imp = std::mem::transmute(should_terminate as extern "C-unwind" fn(_, _, _) -> _);
-        let added = ffi::class_addMethod(
-            class.cast::<AnyClass>(),
-            sel!(applicationShouldTerminate:),
-            imp,
-            c"Q@:@".as_ptr(),
-        );
+
+        // SAFETY: the function matches the signature AppKit calls
+        // `applicationShouldTerminate:` with, and `Q@:@` is its encoding.
+        let added = unsafe {
+            let imp: Imp =
+                std::mem::transmute(should_terminate as extern "C-unwind" fn(_, _, _) -> _);
+            ffi::class_addMethod(
+                std::ptr::from_ref(class).cast_mut(),
+                sel!(applicationShouldTerminate:),
+                imp,
+                c"Q@:@".as_ptr(),
+            )
+        };
         if !added.as_bool() {
             // tao implements it itself now; it should go through the close check.
             crate::diagnostics::warning("termination_guard_unavailable");
         }
-    }
-}
-
-/// The default macOS menu, with a Quit item that goes through the close
-/// check. The stock one terminates the app right away, so Cmd+Q would skip
-/// the question.
-#[cfg(target_os = "macos")]
-pub(crate) fn menu<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-) -> tauri::Result<tauri::menu::Menu<R>> {
-    use tauri::menu::{Menu, MenuItem, MenuItemKind};
-
-    let menu = Menu::default(app)?;
-    let Some(MenuItemKind::Submenu(app_menu)) = menu.items()?.into_iter().next() else {
-        return Ok(menu);
-    };
-
-    // Look the stock item up rather than trusting its position; if it's not
-    // there, leave the menu alone instead of removing the wrong item.
-    let stock_quit = app_menu.items()?.into_iter().position(|item| {
-        matches!(&item, MenuItemKind::Predefined(item)
-            if item.text().is_ok_and(|text| text.starts_with("Quit")))
-    });
-    let Some(stock_quit) = stock_quit else {
-        return Ok(menu);
-    };
-
-    app_menu.remove_at(stock_quit)?;
-    app_menu.append(&MenuItem::with_id(
-        app,
-        QUIT_MENU_ID,
-        format!("Quit {}", app.package_info().name),
-        true,
-        Some("CmdOrCtrl+Q"),
-    )?)?;
-
-    Ok(menu)
-}
-
-#[cfg(target_os = "macos")]
-const QUIT_MENU_ID: &str = "quit";
-
-/// Menu event handler: Quit closes the window, which asks first if needed.
-#[cfg(target_os = "macos")]
-pub(crate) fn on_menu_event<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    event: tauri::menu::MenuEvent,
-) {
-    use tauri::Manager;
-
-    if event.id() != QUIT_MENU_ID {
-        return;
-    }
-    match app.get_webview_window("main") {
-        Some(window) => {
-            let _ = window.close();
-        }
-        None => app.exit(0),
     }
 }
 

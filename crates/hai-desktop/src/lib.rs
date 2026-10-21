@@ -37,12 +37,6 @@ pub fn run() {
         }
     }));
 
-    // The stock Quit item would skip the question about a running job
-    #[cfg(target_os = "macos")]
-    let builder = builder
-        .menu(close_guard::menu)
-        .on_menu_event(close_guard::on_menu_event);
-
     builder
         .manage(flash_state::FlashState::default())
         .manage(commands::PendingUtmImages::default())
@@ -71,6 +65,7 @@ pub fn run() {
             get_haos_release,
             get_system_info,
             close_guard::quit_anyway,
+            close_guard::keep_running,
             diagnostics::get_diagnostics,
             diagnostics::log_frontend_event,
             diagnostics::open_logs_folder,
