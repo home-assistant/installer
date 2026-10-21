@@ -25,6 +25,9 @@ use commands::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    ignore_host_gio_modules();
+
     let builder = tauri::Builder::default();
 
     // Register first so a second launch exits before initializing other plugins.
@@ -97,6 +100,17 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Modules in the host's GIO_EXTRA_MODULES (gvfs and dconf on NixOS) are built against
+/// the host's GLib and fail to load into the bundled one, in the app and its WebKit processes.
+#[cfg(target_os = "linux")]
+fn ignore_host_gio_modules() {
+    // Runs before any thread starts, so the environment is safe to change.
+    // APPDIR is set whenever the bundled GLib runs, also from an extracted AppImage.
+    if std::env::var_os("APPDIR").is_some() {
+        std::env::remove_var("GIO_EXTRA_MODULES");
+    }
 }
 
 #[cfg(test)]
