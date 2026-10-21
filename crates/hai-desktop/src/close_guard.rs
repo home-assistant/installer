@@ -173,4 +173,27 @@ mod tests {
         drop(second);
         assert!(!COUNTER.any());
     }
+
+    /// Quit from the menu or the Dock, logging out and shutting down only ask
+    /// first while `guard_app_termination` can add its method to tao's app
+    /// delegate. A test can't run tao's event loop, so check on each tao update
+    /// that its delegate is still `TaoAppDelegateParent` and still lacks
+    /// `applicationShouldTerminate:`, then bump the version here.
+    #[test]
+    fn termination_guard_was_checked_against_the_locked_tao() {
+        let lock = include_str!("../../../Cargo.lock");
+        let tao = lock
+            .split("[[package]]")
+            .find(|package| package.contains("\nname = \"tao\"\n"))
+            .and_then(|package| {
+                package
+                    .lines()
+                    .find_map(|line| line.strip_prefix("version = "))
+            })
+            .expect("tao is in Cargo.lock");
+        assert_eq!(
+            tao, "\"0.37.1\"",
+            "check the termination guard against this tao"
+        );
+    }
 }
