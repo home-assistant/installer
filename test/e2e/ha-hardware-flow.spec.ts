@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { skipWifiStep } from "./fixtures.js";
 
 // The browser mock serves the device catalog, the drives and a simulated
 // write, so each device can go all the way to its next steps.
@@ -112,6 +113,7 @@ test.describe("Home Assistant hardware flow", () => {
       await expect(instructions).toContainText(scenario.connect);
       await drive.locator("drive-card").first().click();
       await next(page).click();
+      await skipWifiStep(page);
 
       const confirmation = page.locator("confirmation-view");
       await expect(confirmation).toContainText(scenario.name);

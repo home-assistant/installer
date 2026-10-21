@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { skipWifiStep } from "./fixtures.js";
 
 test.describe("Navigation Flow", () => {
   test.beforeEach(async ({ page }) => {
@@ -437,7 +438,7 @@ test.describe("SBC Confirmation", () => {
       .click();
 
     // Should now be on confirmation
-    await expect(page.locator("confirmation-view")).toBeVisible();
+    await skipWifiStep(page);
   });
 
   test("shows confirmation view on third step", async ({ page }) => {
@@ -510,7 +511,7 @@ test.describe("SBC Confirmation", () => {
     await expect(page.locator("confirm-dialog[open]")).not.toBeVisible();
 
     // Should still be on confirmation view
-    await expect(page.locator("confirmation-view")).toBeVisible();
+    await skipWifiStep(page);
   });
 
   test("confirmation dialog can be dismissed with Escape", async ({ page }) => {
@@ -528,7 +529,7 @@ test.describe("SBC Confirmation", () => {
 
     // Dialog should close and stay on the confirmation view (dismiss = cancel)
     await expect(page.locator("confirm-dialog[open]")).not.toBeVisible();
-    await expect(page.locator("confirmation-view")).toBeVisible();
+    await skipWifiStep(page);
   });
 
   test("confirmation dialog can be confirmed", async ({ page }) => {
@@ -550,17 +551,19 @@ test.describe("SBC Confirmation", () => {
     await expect(page.locator("progress-view")).toBeVisible();
   });
 
-  test("can navigate back to drive selection", async ({ page }) => {
+  test("can navigate back through Wi-Fi to drive selection", async ({
+    page,
+  }) => {
     const wizardShell = page.locator("wizard-shell");
     const backButton = wizardShell.locator(".header wa-button");
 
     // Back button should be enabled
     await expect(backButton).toHaveJSProperty("disabled", false);
 
-    // Click back
+    // The first board has Wi-Fi, so its step comes before Confirm
     await backButton.click();
-
-    // Should be back on drive selection
+    await expect(page.locator("wifi-view")).toBeVisible();
+    await backButton.click();
     await expect(page.locator("drive-selection-view")).toBeVisible();
   });
 });
@@ -596,7 +599,7 @@ test.describe("SBC Flashing", () => {
       .click();
 
     // Should now be on confirmation
-    await expect(page.locator("confirmation-view")).toBeVisible();
+    await skipWifiStep(page);
 
     // Click Install to show dialog
     await page
@@ -735,7 +738,7 @@ test.describe("SBC Success", () => {
       .click();
 
     // Confirm installation
-    await expect(page.locator("confirmation-view")).toBeVisible();
+    await skipWifiStep(page);
     await page
       .locator("wizard-shell")
       .locator(".footer-right wa-button")

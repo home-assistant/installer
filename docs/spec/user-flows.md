@@ -74,6 +74,25 @@ for the welcome screen.
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### Step 2b: Wi-Fi (boards with built-in Wi-Fi only)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│   Set up Wi-Fi                                              │
+│   Optional. The device joins this network on first start.   │
+│                                                             │
+│   ( ) Connect to Wi-Fi                                      │
+│       Network name  [            ]                          │
+│       Password      [            ]  8 to 63 characters      │
+│                                                             │
+│   Open, WPA3-only and hidden networks aren't supported.     │
+│                                                             │
+│                                      [ Back ] [ Next ]      │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ### Step 3: Confirm and Flash
 
 ```
@@ -84,6 +103,8 @@ for the welcome screen.
 │   Device:     Raspberry Pi 5                                │
 │   Target:     Samsung SD Card - 32 GB                       │
 │   Image:      Home Assistant OS 14.0                        │
+│                                                             │
+│   Wi-Fi:      Home         (if set up in step 2b)           │
 │                                                             │
 │   ⚠️  This will erase all data on the SD card               │
 │                                                             │

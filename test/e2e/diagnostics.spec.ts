@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { skipWifiStep } from "./fixtures.js";
 
 // Browser tests mock native IPC, metadata, clipboard and folder/browser opening.
 // No disk is written and no VM or network connection is created.
@@ -262,6 +263,7 @@ test("flash failure keeps the failed stage in its report", async ({
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.locator("drive-selection-view drive-card").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await skipWifiStep(page);
   await page.locator("wizard-shell .footer-right wa-button").click();
   await page.locator('confirm-dialog wa-button[variant="danger"]').click();
   await expect(page.locator("progress-view")).toContainText("Network error");

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { skipWifiStep } from "./fixtures.js";
 
 const next = (page: Page) =>
   page.locator("wizard-shell .footer-right wa-button");
@@ -42,7 +43,7 @@ for (const width of [1100, 390]) {
       await next(page).click();
       await page.locator("drive-selection-view drive-card").first().click();
       await next(page).click();
-      await expect(page.locator("confirmation-view")).toBeVisible();
+      await skipWifiStep(page);
       await next(page).click();
       await page.locator('confirm-dialog wa-button[variant="danger"]').click();
 
@@ -135,3 +136,40 @@ for (const width of [1100, 390]) {
     });
   }
 }
+
+test("a Wi-Fi network set on its own step replaces the cable step", async ({
+  page,
+}) => {
+  test.setTimeout(60000);
+  await page.goto("/");
+  await page.locator("welcome-view wa-button").click();
+  await page
+    .locator('option-card[heading="Raspberry Pi & other boards"]')
+    .click();
+  await page.locator('device-card[value="rpi5"]').click();
+  await next(page).click();
+  await page.locator("drive-selection-view drive-card").first().click();
+  await next(page).click();
+
+  const step = page.locator("wifi-view");
+  await expect(step).toContainText("hidden networks aren't supported");
+  await step.locator('wa-switch [part="control"]').click();
+  await expect(next(page)).toHaveJSProperty("disabled", true);
+  await step.locator("#wifi-ssid").fill("Home");
+  await step.locator("#wifi-password").fill("1234567");
+  await expect(next(page)).toHaveJSProperty("disabled", true);
+  await step.locator("#wifi-password").fill("12345678");
+  await expect(next(page)).toHaveJSProperty("disabled", false);
+  await next(page).click();
+
+  await expect(page.locator("confirmation-view")).toContainText("Wi-Fi");
+  await next(page).click();
+  await page.locator('confirm-dialog wa-button[variant="danger"]').click();
+
+  const steps = page.locator("success-view .next-steps");
+  await expect(steps).toContainText("joins the Wi-Fi network Home", {
+    timeout: 45000,
+  });
+  await expect(steps).not.toContainText("Ethernet cable to the same network");
+  await expect(steps).not.toContainText("Keep power and Ethernet connected");
+});

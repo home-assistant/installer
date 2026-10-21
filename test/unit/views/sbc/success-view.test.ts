@@ -48,6 +48,16 @@ describe("success-view next steps", () => {
     expect(text(el)).not.to.contain("Wait a few minutes");
   });
 
+  it("names the Wi-Fi network instead of asking for a cable", async () => {
+    const el = await renderSuccess();
+    wizardState.setSelection("wifi", { ssid: "Home", password: "" });
+    await el.updateComplete;
+    await el.shadowRoot!.querySelector("install-success")!.updateComplete;
+    expect(text(el)).to.contain("joins the Wi-Fi network Home");
+    expect(text(el)).not.to.contain("Ethernet cable to the same network");
+    expect(text(el)).not.to.contain("Keep power and Ethernet connected");
+  });
+
   it("offers hostname and IP access without requiring discovery", async () => {
     const el = await renderSuccess();
     const link = content(el).querySelector<HTMLAnchorElement>(".step-text a")!;

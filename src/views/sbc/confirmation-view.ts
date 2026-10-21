@@ -5,6 +5,7 @@ import { logFrontendError } from "../../utils/diagnostics.js";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { formatBytes, getHaosRelease } from "../../api/commands.js";
+import { selectedWifi } from "../../utils/wifi.js";
 import {
   findInstaller,
   installerName,
@@ -236,6 +237,7 @@ export class ConfirmationView extends LitElement {
       .join(" ");
     const deviceConfig = selections.deviceConfig;
     const installer = findInstaller(deviceConfig?.board);
+    const wifi = selectedWifi(selections);
 
     return html`
       <h2>
@@ -302,6 +304,7 @@ export class ConfirmationView extends LitElement {
         <div class="divider"></div>
 
         ${installer ? this._renderInstaller(installer) : this._renderHaos()}
+        ${wifi ? this._renderWifi(wifi.ssid) : nothing}
       </div>
 
       ${this._wizardState.currentFlow === "ha-hardware"
@@ -366,6 +369,27 @@ export class ConfirmationView extends LitElement {
               "views.sbc.confirmation_view.installs_home_assistant_os_on_the_device"
             )}
           </p>
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderWifi(network: string) {
+    return html`
+      <div class="divider"></div>
+      <div class="summary-row">
+        <div class="icon-container">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M12,21L15.6,16.2C14.6,15.45 13.35,15 12,15C10.65,15 9.4,15.45 8.4,16.2L12,21M12,3C7.95,3 4.21,4.34 1.2,6.6L3,9C5.5,7.12 8.62,6 12,6C15.38,6 18.5,7.12 21,9L22.8,6.6C19.79,4.34 16.05,3 12,3M12,9C9.3,9 6.81,9.89 4.8,11.4L6.6,13.8C8.1,12.67 9.97,12 12,12C14.03,12 15.9,12.67 17.4,13.8L19.2,11.4C17.19,9.89 14.7,9 12,9Z"
+            />
+          </svg>
+        </div>
+        <div class="summary-info">
+          <p class="summary-label">
+            ${localize("views.sbc.confirmation_view.wifi")}
+          </p>
+          <p class="summary-value">${network}</p>
         </div>
       </div>
     `;

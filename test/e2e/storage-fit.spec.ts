@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { skipWifiStep } from "./fixtures.js";
 
 const nextButton = (page: Page) =>
   page.locator("wizard-shell .footer-right wa-button");
@@ -83,6 +84,7 @@ for (const width of [1100, 390]) {
     await capture(page, `drive-disabled-${width}`);
 
     await nextButton(page).click();
+    await skipWifiStep(page);
     await expect(page.locator("confirmation-view")).toContainText("15.6 GB");
     await nextButton(page).click();
     const dialog = page.locator("confirm-dialog");

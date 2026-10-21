@@ -511,7 +511,8 @@ describe("app-shell", () => {
         await flush();
 
         expect(dialogOf(el).hasAttribute("open")).to.be.false;
-        expect(wizardState.currentStep!.id).to.equal("drive");
+        // The step before Confirm, Wi-Fi for this board
+        expect(wizardState.currentStep!.id).to.equal("wifi");
       } finally {
         scan.restore();
       }
@@ -549,6 +550,52 @@ describe("app-shell", () => {
         () => wizardState.getState().selections.drive === undefined
       );
       expect(dialogOf(el).hasAttribute("open")).to.be.false;
+    });
+  });
+
+  describe("Wi-Fi", () => {
+    beforeEach(async () => {
+      await enterSbcFlow(el);
+      selectTargets();
+    });
+
+    it("keeps Next disabled until the network is complete", async () => {
+      await goToStep(el, "wifi");
+      expect(shellOf(el).querySelector("wifi-view")).to.exist;
+      expect(shellOf(el).nextDisabled).to.be.false;
+      wizardState.setSelection("wifi", { ssid: "Home", password: "" });
+      await el.updateComplete;
+      expect(shellOf(el).nextDisabled).to.be.true;
+      wizardState.setSelection("wifi", { ssid: "Home", password: "12345678" });
+      await el.updateComplete;
+      expect(shellOf(el).nextDisabled).to.be.false;
+    });
+
+    it("ignores a network left over from a board with Wi-Fi", async () => {
+      wizardState.setSelection("wifi", { ssid: "", password: "" });
+      wizardState.setSelection(
+        "deviceConfig",
+        MOCK_MANIFEST.devices.find(
+          (device) => device.haos.board === "odroid-n2"
+        )!.haos
+      );
+      expect(
+        wizardState.getState().steps.map((step) => step.id)
+      ).not.to.include("wifi");
+      await goToStep(el, "confirm");
+      expect(shellOf(el).nextDisabled).to.be.false;
+    });
+
+    it("drops the password once it is on the drive", async () => {
+      wizardState.setSelection("wifi", { ssid: "Home", password: "12345678" });
+      await goToStep(el, "flash");
+      fire(shellOf(el), "flash-complete");
+      await el.updateComplete;
+      expect(wizardState.currentStep?.id).to.equal("success");
+      expect(wizardState.getState().selections.wifi).to.deep.equal({
+        ssid: "Home",
+        password: "",
+      });
     });
   });
 

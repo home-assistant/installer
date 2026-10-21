@@ -11,6 +11,7 @@ import "../views/other-options-view.js";
 import "../views/sbc/device-selection-view.js";
 import "../views/sbc/drive-selection-view.js";
 import "../views/sbc/confirmation-view.js";
+import "../views/sbc/wifi-view.js";
 import "../views/sbc/progress-view.js";
 import "../views/sbc/success-view.js";
 import "../views/ha-hardware/device-selection-view.js";
@@ -42,6 +43,7 @@ import {
 } from "../state/wizard-state.js";
 import { listBlockDevices, onCloseBlocked, quitAnyway } from "../api/index.js";
 import { findDrive, readDriveSelection } from "../utils/drive-selection.js";
+import { isValidWifi, selectedWifi } from "../utils/wifi.js";
 import { logFrontendError } from "../utils/diagnostics.js";
 import { openExternalUrl } from "../utils/external-url.js";
 
@@ -346,6 +348,14 @@ export class AppShell extends LitElement {
       }
     }
 
+    if (
+      (flow === "sbc" || flow === "ha-hardware" || flow === "minipc") &&
+      stepId === "wifi"
+    ) {
+      const wifi = selectedWifi(selections);
+      return wifi !== undefined && !isValidWifi(wifi);
+    }
+
     // VM (UTM) flow - require UTM to be installed on check step
     if (flow === "vm") {
       if (stepId === "check") {
@@ -381,6 +391,8 @@ export class AppShell extends LitElement {
           return html`<device-selection-view></device-selection-view>`;
         case "drive":
           return html`<drive-selection-view></drive-selection-view>`;
+        case "wifi":
+          return html`<wifi-view></wifi-view>`;
         case "confirm":
           return html`<confirmation-view></confirmation-view>`;
         case "flash":
@@ -398,6 +410,8 @@ export class AppShell extends LitElement {
           return html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`;
         case "drive":
           return html`<drive-selection-view></drive-selection-view>`;
+        case "wifi":
+          return html`<wifi-view></wifi-view>`;
         case "confirm":
           return html`<confirmation-view></confirmation-view>`;
         case "flash":
@@ -416,6 +430,8 @@ export class AppShell extends LitElement {
           return html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`;
         case "drive":
           return html`<drive-selection-view></drive-selection-view>`;
+        case "wifi":
+          return html`<wifi-view></wifi-view>`;
         case "confirm":
           return html`<confirmation-view></confirmation-view>`;
         case "flash":
@@ -754,6 +770,10 @@ export class AppShell extends LitElement {
   private _onFlashComplete() {
     this._showStopDialog = false;
     this._stoppingFlash = false;
+    // The password is on the drive now; the success step needs only the name
+    const wifi = this._wizardState.selections.wifi;
+    if (wifi)
+      wizardState.setSelection("wifi", { ssid: wifi.ssid, password: "" });
     // Advance to success/done step after flash completes
     wizardState.nextStep();
   }

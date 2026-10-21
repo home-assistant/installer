@@ -3,6 +3,7 @@ import { LitElement, html, css, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { openExternalLink } from "../../utils/external-url.js";
+import { selectedWifi } from "../../utils/wifi.js";
 import { renderOpenHomeAssistantStep } from "../sbc/success-view.js";
 import {
   findHaHardware,
@@ -72,9 +73,13 @@ export class HaHardwareSuccessView extends LitElement {
           renderOpenHomeAssistantStep(),
           ...(writesHaos
             ? [
-                localize(
-                  "views.sbc.success_view.the_preparing_home_assistant_page"
-                ),
+                selectedWifi(this._wizardState.selections)
+                  ? localize(
+                      "views.sbc.success_view.the_preparing_home_assistant_page_wifi"
+                    )
+                  : localize(
+                      "views.sbc.success_view.the_preparing_home_assistant_page"
+                    ),
               ]
             : []),
         ]}
@@ -92,6 +97,7 @@ export class HaHardwareSuccessView extends LitElement {
   }
 
   private _steps(hardware: HaHardwareId): (string | TemplateResult)[] {
+    const wifi = selectedWifi(this._wizardState.selections);
     switch (hardware) {
       case "green":
         return [
@@ -112,7 +118,12 @@ export class HaHardwareSuccessView extends LitElement {
         return [
           localize("views.ha_hardware.success_view.yellow_cm5_unplug"),
           localize("views.ha_hardware.success_view.yellow_cm5_jp1"),
-          localize("views.ha_hardware.success_view.yellow_cm5_power_on"),
+          wifi
+            ? localize(
+                "views.ha_hardware.success_view.yellow_cm5_power_on_wifi",
+                { network: wifi.ssid }
+              )
+            : localize("views.ha_hardware.success_view.yellow_cm5_power_on"),
         ];
       case "blue":
         return [
