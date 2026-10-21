@@ -64,7 +64,6 @@ async function mockLookupFailure(
                   active: true,
                   content: ["iso", "import"],
                   available: 100 * 1024 ** 3,
-                  total: 200 * 1024 ** 3,
                 },
                 {
                   name: "local-lvm",
@@ -72,7 +71,6 @@ async function mockLookupFailure(
                   active: true,
                   content: ["images"],
                   available: 100 * 1024 ** 3,
-                  total: 200 * 1024 ** 3,
                 },
               ];
             case "proxmox_get_next_vm_id":

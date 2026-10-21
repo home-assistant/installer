@@ -863,7 +863,6 @@ mod tests {
             cpu_cores: 2,
             memory_mb: 4096,
             disk_size_gb: 16,
-            auto_start: true,
         };
         let error = proxmox_check_vm_config(session, config).await.unwrap_err();
 
@@ -2012,7 +2011,6 @@ mod mock_tests {
             cpu_cores: 2,
             memory_mb: 4096,
             disk_size_gb: 32,
-            auto_start: true,
         };
         let error = proxmox_create_vm(session, config, "current".into(), progress, app.state())
             .await

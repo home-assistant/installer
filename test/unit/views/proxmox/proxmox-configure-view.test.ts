@@ -69,15 +69,11 @@ describe("proxmox-configure-view", () => {
               name: "pve",
               status: "online",
               cpu_usage: 12.5,
-              memory_used: null,
-              memory_total: null,
             },
             {
               name: "pve2",
               status: "online",
               cpu_usage: null,
-              memory_used: null,
-              memory_total: null,
             },
           ];
         case "proxmox_get_next_vm_id":
@@ -250,7 +246,6 @@ describe("proxmox-configure-view", () => {
         storage_type: "dir",
         content: ["images"],
         available: 100,
-        total: 100,
         active: true,
       },
     ]);
@@ -269,7 +264,6 @@ describe("proxmox-configure-view", () => {
         storage_type: "dir",
         content: ["images"],
         available: 100,
-        total: 100,
         active: true,
       },
     ];
@@ -328,7 +322,6 @@ describe("proxmox-configure-view", () => {
         storage_type: "dir",
         content: ["images"],
         available: 100,
-        total: 100,
         active: true,
       },
     ];
@@ -404,7 +397,6 @@ describe("proxmox-configure-view", () => {
           storage_type: "dir",
           content: ["images"],
           available: 100,
-          total: 100,
           active: true,
         },
       ];
@@ -824,7 +816,6 @@ describe("proxmox-configure-view", () => {
       storage: "local",
       bridge: "vmbr0",
       vm_id: 100,
-      auto_start: true,
     });
     expect(
       el.shadowRoot!.querySelector("[role=alert]")!.textContent

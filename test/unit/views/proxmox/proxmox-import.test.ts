@@ -29,7 +29,6 @@ const directory: ProxmoxStorage = {
   active: true,
   content: ["backup"],
   available: 1e11,
-  total: 2e11,
 };
 const disk: ProxmoxStorage = {
   ...directory,

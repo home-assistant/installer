@@ -33,15 +33,11 @@ impl ProxmoxBackend for BackendMock {
                 name: "pve".to_string(),
                 status: "online".to_string(),
                 cpu_usage: Some(0.15),
-                memory_used: Some(4_000_000_000),
-                memory_total: Some(16_000_000_000),
             },
             ProxmoxNode {
                 name: "pve2".to_string(),
                 status: "online".to_string(),
                 cpu_usage: Some(0.25),
-                memory_used: Some(8_000_000_000),
-                memory_total: Some(32_000_000_000),
             },
         ])
     }
@@ -61,7 +57,6 @@ impl ProxmoxBackend for BackendMock {
                     "import".to_string(),
                 ],
                 available: 100_000_000_000,
-                total: 500_000_000_000,
                 active: true,
             },
             ProxmoxStorage {
@@ -69,7 +64,6 @@ impl ProxmoxBackend for BackendMock {
                 storage_type: "lvmthin".to_string(),
                 content: vec!["images".to_string(), "rootdir".to_string()],
                 available: 200_000_000_000,
-                total: 1_000_000_000_000,
                 active: true,
             },
         ])

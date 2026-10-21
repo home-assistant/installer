@@ -669,7 +669,6 @@ mod tests {
             cpu_cores: 2,
             memory_mb: 2048,
             disk_size_gb: 32,
-            auto_start: false,
         };
         let mut source_unused = false;
         let error = super::super::create_vm_with_disk(
