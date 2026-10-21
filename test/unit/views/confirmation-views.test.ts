@@ -4,6 +4,7 @@ import {
   MOCK_HAOS_RELEASE,
   MOCK_MANIFEST,
 } from "../../../src/api/mock-data.js";
+import type { BlockDevice } from "../../../src/api/types.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
 import { storeDriveSelection } from "../../../src/utils/drive-selection.js";
 import "../../../src/views/sbc/confirmation-view.js";
@@ -59,4 +60,26 @@ describe("installation confirmation views", () => {
       });
     }
   }
+
+  async function confirmDrive(drive: BlockDevice) {
+    wizardState.startFlow("sbc");
+    storeDriveSelection(drive);
+    wizardState.setSelection("deviceConfig", MOCK_MANIFEST.devices[0].haos);
+    mockTauriIpc(() => MOCK_HAOS_RELEASE);
+    const el = fixtureSync(html`<confirmation-view></confirmation-view>`);
+    await settle();
+    return el.shadowRoot!.querySelector(".notice");
+  }
+
+  it("warns that a drive without a serial can't be told apart", async () => {
+    const notice = await confirmDrive({
+      ...MOCK_BLOCK_DEVICES[0],
+      serial: null,
+    });
+    expect(notice!.textContent).to.contain("doesn't report a serial number");
+  });
+
+  it("does not warn about a drive with a serial", async () => {
+    expect(await confirmDrive(MOCK_BLOCK_DEVICES[0])).to.equal(null);
+  });
 });

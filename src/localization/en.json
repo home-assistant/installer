@@ -403,6 +403,7 @@
   "views.sbc.confirmation_view.installs_home_assistant_os_on_the_device": "Reinstalls Home Assistant OS on the device",
   "views.sbc.confirmation_view.installer_erase_notice": "This erases the selected drive. When you start your {device} from it, the installer reinstalls Home Assistant OS and erases all data on the device. Create a backup first and download it to another computer.",
   "views.sbc.confirmation_view.emmc_erase_notice": "This erases the selected drive. If it is the eMMC of your {device}, all data on it is lost, Home Assistant included. Create a backup first and download it to another computer.",
+  "views.sbc.confirmation_view.no_serial_notice": "This drive doesn't report a serial number, so an identical drive could be mistaken for it. Keep it plugged in until writing is finished.",
   "views.sbc.progress_view.fetching_the_installer_image": "Fetching the installer image",
   "views.sbc.progress_view.writing_the_installer_to_your_drive": "Writing the installer to your drive",
   "views.ha_hardware.success_view.the_installer_has_been_written_to_your_drive": "The installer has been written to your drive",

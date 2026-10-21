@@ -98,12 +98,6 @@ export class ConfirmationView extends LitElement {
       }
     }
 
-    .device-image-placeholder svg {
-      width: 36px;
-      height: 36px;
-      fill: var(--ha-secondary-text-color, #727272);
-    }
-
     .icon-container svg {
       width: 36px;
       height: 36px;
@@ -311,7 +305,20 @@ export class ConfirmationView extends LitElement {
       </div>
 
       ${this._wizardState.currentFlow === "ha-hardware"
-        ? this._renderEraseNotice(deviceName, !!installer)
+        ? this._renderNotice(
+            installer
+              ? localize("views.sbc.confirmation_view.installer_erase_notice", {
+                  device: deviceName,
+                })
+              : localize("views.sbc.confirmation_view.emmc_erase_notice", {
+                  device: deviceName,
+                })
+          )
+        : nothing}
+      ${drivePath && !selections.driveSerial
+        ? this._renderNotice(
+            localize("views.sbc.confirmation_view.no_serial_notice")
+          )
         : nothing}
     `;
   }
@@ -364,20 +371,11 @@ export class ConfirmationView extends LitElement {
     `;
   }
 
-  /** The drive is not the only thing lost: the device's own data goes too. */
-  private _renderEraseNotice(deviceName: string, installer: boolean) {
+  private _renderNotice(message: string) {
     return html`
       <div class="notice" role="note">
         <span aria-hidden="true">⚠️</span>
-        <p>
-          ${installer
-            ? localize("views.sbc.confirmation_view.installer_erase_notice", {
-                device: deviceName,
-              })
-            : localize("views.sbc.confirmation_view.emmc_erase_notice", {
-                device: deviceName,
-              })}
-        </p>
+        <p>${message}</p>
       </div>
     `;
   }
