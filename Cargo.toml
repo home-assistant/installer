@@ -39,7 +39,6 @@ rustls-platform-verifier = "0.7"
 # Static, so that the build never links a liblzma that users' machines lack
 # (pkg-config finds Homebrew's on the macOS runners).
 liblzma = { version = "0.4", features = ["static"] }
-crc32fast = "1"
 
 # File system
 directories = "6"

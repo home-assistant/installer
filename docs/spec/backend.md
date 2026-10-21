@@ -140,12 +140,16 @@ overall deadline. Compressed bytes must match the release asset's size and diges
 before atomic publication.
 
 Available space is checked for the compressed size before download. GitHub does
-not supply the extracted size, so after download the verified archive is decoded
-once without writing to measure and validate all XZ streams. Extraction starts
-only when the remaining space can hold that output alongside the archive. This
-requires an extra decoding pass; memory is limited to 256 MiB and output to
-64 GiB. The extracted file is also published atomically. Space checks cannot
-reserve capacity against other applications writing concurrently.
+not supply the extracted size, so after download it is read from the XZ index of
+the verified archive, which must be a single stream. With less than 32 times the
+download free, the index is also read from the archive's last 64 KiB, fetched
+with a Range request, to refuse a download that could not be extracted; if that
+fails, only this early check is skipped. Extraction starts only when
+the remaining space can hold that output alongside the archive, and fails as
+corrupt if the decoded output disagrees with the index. Memory is limited to
+256 MiB and output to 64 GiB. The extracted file is also published atomically.
+Space checks cannot reserve capacity against other applications writing
+concurrently.
 
 Before opening an installation flow, the desktop app checks the stable version
 service with a 15-second request timeout. A failed check offers Back and Retry;

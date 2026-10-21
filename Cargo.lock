@@ -1699,7 +1699,6 @@ name = "hai-core"
 version = "0.0.0"
 dependencies = [
  "core-foundation 0.10.1",
- "crc32fast",
  "directories",
  "fs2",
  "futures-util",

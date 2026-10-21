@@ -706,15 +706,8 @@ async fn extracted_size_on_server(client: &reqwest::Client, image: &HaosImage) -
         return None;
     }
 
-    xz_size_from_end(image.size, |offset, buffer| {
-        let outside = || Error::DownloadFailed("The archive index is outside its tail.".into());
-        let start = usize::try_from(offset.checked_sub(tail_start).ok_or_else(outside)?)
-            .map_err(|_| outside())?;
-        let bytes = tail.get(start..start + buffer.len()).ok_or_else(outside)?;
-        buffer.copy_from_slice(bytes);
-        Ok(())
-    })
-    .ok()
+    // The index is found from the end, so the tail reads like the archive
+    liblzma::uncompressed_size(std::io::Cursor::new(tail)).ok()
 }
 
 /// Download and verify the compressed image before permitting extraction.
@@ -906,133 +899,6 @@ impl ExtractionProgress<'_> {
     }
 }
 
-// Far more than any image needs; each block takes at least two bytes of it.
-const MAX_XZ_INDEX_SIZE: u64 = 16 * 1024 * 1024;
-
-/// Read a variable-length number from an XZ index.
-fn read_xz_number(bytes: &mut impl Iterator<Item = u8>) -> Option<u64> {
-    let mut value = 0;
-    for shift in (0..63).step_by(7) {
-        let byte = bytes.next()?;
-        value |= u64::from(byte & 0x7f) << shift;
-        if byte & 0x80 == 0 {
-            return Some(value);
-        }
-    }
-    None
-}
-
-/// Sum the blocks listed in one XZ index: the space they take in the stream,
-/// and their size once decompressed.
-fn parse_xz_index(index: &[u8]) -> Option<(u64, u64)> {
-    let mut bytes = index.iter().copied();
-    if bytes.next()? != 0 {
-        return None;
-    }
-
-    let records = read_xz_number(&mut bytes)?;
-    let mut blocks_size: u64 = 0;
-    let mut uncompressed_size: u64 = 0;
-    for _ in 0..records {
-        let unpadded_size = read_xz_number(&mut bytes)?;
-        let block_uncompressed_size = read_xz_number(&mut bytes)?;
-        // Every block is padded to a multiple of four bytes
-        blocks_size = blocks_size.checked_add(unpadded_size.checked_add(3)? & !3)?;
-        uncompressed_size = uncompressed_size.checked_add(block_uncompressed_size)?;
-    }
-    Some((blocks_size, uncompressed_size))
-}
-
-/// Whether `data` matches the little-endian CRC32 stored next to it.
-fn has_crc32(data: &[u8], stored: &[u8]) -> bool {
-    stored == crc32fast::hash(data).to_le_bytes()
-}
-
-/// The extracted size of an XZ archive, read from the index at the end of
-/// every stream instead of decompressing the whole archive to count it.
-///
-/// The footer and index carry their own checksums, so a damaged size is
-/// reported as a corrupt archive instead of a wrong space check. The decoder
-/// still checks each index against the data it describes, and the extraction
-/// stops if the output disagrees.
-fn xz_uncompressed_size(input: &mut std::fs::File) -> Result<u64> {
-    use std::io::{Read, Seek, SeekFrom};
-
-    let length = input.metadata()?.len();
-    xz_size_from_end(length, |offset, buffer| {
-        input.seek(SeekFrom::Start(offset))?;
-        input.read_exact(buffer)?;
-        Ok(())
-    })
-}
-
-/// Walk the streams of an XZ archive of `length` bytes from its end, reading
-/// through `read_at`, and add up their extracted sizes.
-fn xz_size_from_end(
-    length: u64,
-    mut read_at: impl FnMut(u64, &mut [u8]) -> Result<()>,
-) -> Result<u64> {
-    // A stream is a 12 byte header, its blocks, the index and a 12 byte footer
-    const HEADER_SIZE: u64 = 12;
-    const FOOTER_SIZE: u64 = 12;
-
-    let corrupt = || {
-        Error::ExtractionFailed(
-            "Downloaded image is corrupt or incomplete; try downloading again.".into(),
-        )
-    };
-    let mut end = length;
-    let mut total: u64 = 0;
-    let mut streams = 0;
-    while end > 0 {
-        // Streams can be followed by zero padding, in groups of four bytes
-        if end < 4 {
-            return Err(corrupt());
-        }
-        let mut word = [0; 4];
-        read_at(end - 4, &mut word)?;
-        if word == [0; 4] {
-            end -= 4;
-            continue;
-        }
-
-        if end < HEADER_SIZE + FOOTER_SIZE {
-            return Err(corrupt());
-        }
-        let mut footer = [0; FOOTER_SIZE as usize];
-        read_at(end - FOOTER_SIZE, &mut footer)?;
-        if footer[10..] != *b"YZ" || !has_crc32(&footer[4..10], &footer[..4]) {
-            return Err(corrupt());
-        }
-
-        let backward_size = u32::from_le_bytes([footer[4], footer[5], footer[6], footer[7]]);
-        let index_size = (u64::from(backward_size) + 1) * 4;
-        if index_size > MAX_XZ_INDEX_SIZE || index_size + HEADER_SIZE + FOOTER_SIZE > end {
-            return Err(corrupt());
-        }
-        let mut index = vec![0; index_size as usize];
-        read_at(end - FOOTER_SIZE - index_size, &mut index)?;
-        let (records, checksum) = index.split_at(index.len() - 4);
-        if !has_crc32(records, checksum) {
-            return Err(corrupt());
-        }
-        let (blocks_size, uncompressed_size) = parse_xz_index(records).ok_or_else(corrupt)?;
-
-        let stream_size = blocks_size
-            .checked_add(HEADER_SIZE + index_size + FOOTER_SIZE)
-            .filter(|size| *size <= end)
-            .ok_or_else(corrupt)?;
-        end -= stream_size;
-        total = total.checked_add(uncompressed_size).ok_or_else(corrupt)?;
-        streams += 1;
-    }
-
-    if streams == 0 {
-        return Err(corrupt());
-    }
-    Ok(total)
-}
-
 fn extract_archive(
     archive: &Path,
     destination: &Path,
@@ -1052,9 +918,14 @@ fn extract_archive(
         last_percent: 0,
     };
 
-    // Release metadata has no extracted size, but the archive's own index
-    // does. Checking it up front avoids decompressing everything twice.
-    let expected_size = xz_uncompressed_size(&mut input)?;
+    // Release metadata has no extracted size, but the index of the archive's
+    // last stream does. Released images are a single stream; anything before
+    // it would outgrow this size and fail as corrupt below.
+    let expected_size = liblzma::uncompressed_size(&mut input).map_err(|_| {
+        Error::ExtractionFailed(
+            "Downloaded image is corrupt or incomplete; try downloading again.".into(),
+        )
+    })?;
     if expected_size > max_extracted_size {
         return Err(Error::ExtractionFailed(
             "Image exceeds the supported extracted size of 64 GiB.".into(),
@@ -1696,20 +1567,32 @@ mod tests {
     }
 
     #[test]
-    fn xz_index_gives_the_extracted_size() {
+    fn xz_index_gives_the_extracted_size_of_every_block() {
         let first = vec![1u8; 100_000];
         let second = vec![2u8; 3];
-        let third = b"third".to_vec();
-        let mut data = compressed_in_blocks(&[&first, &second]);
-        data.extend([0; 8]);
-        data.extend(compressed(&third));
-        data.extend([0; 4]);
         let directory = tempfile::tempdir().unwrap();
         let archive = directory.path().join("image.xz");
-        std::fs::write(&archive, &data).unwrap();
+        let destination = directory.path().join("image.img");
+        std::fs::write(&archive, compressed_in_blocks(&[&first, &second])).unwrap();
+        let (tx, _rx) = std::sync::mpsc::channel();
 
-        let size = xz_uncompressed_size(&mut std::fs::File::open(&archive).unwrap()).unwrap();
-        assert_eq!(size, (first.len() + second.len() + third.len()) as u64);
+        // Exactly enough space, so a short index sum would fail the extraction
+        let size = (first.len() + second.len()) as u64;
+        assert_eq!(
+            extract_archive(
+                &archive,
+                &destination,
+                &tx,
+                |_| Ok(size),
+                MAX_EXTRACTED_SIZE
+            )
+            .unwrap(),
+            size
+        );
+        assert_eq!(
+            std::fs::read(&destination).unwrap(),
+            [first, second].concat()
+        );
     }
 
     #[test]
@@ -1737,10 +1620,8 @@ mod tests {
     }
 
     #[test]
-    fn xz_index_rejects_what_is_not_a_whole_archive() {
+    fn extraction_rejects_what_is_not_a_single_whole_stream() {
         let data = compressed(b"image");
-        let mut stream_padding_not_in_fours = data.clone();
-        stream_padding_not_in_fours.extend([0; 3]);
         let mut wrong_backward_size = data.clone();
         let footer = wrong_backward_size.len() - 12;
         wrong_backward_size[footer + 4] = 0xff;
@@ -1749,14 +1630,26 @@ mod tests {
             vec![0; 8],
             data[..data.len() - 1].to_vec(),
             data[1..].to_vec(),
-            stream_padding_not_in_fours,
             wrong_backward_size,
+            // The index covers only the last stream, and both are the same
+            // size, so only decoding every stream exposes the first
+            [compressed(b"first"), compressed(b"other")].concat(),
         ] {
             let directory = tempfile::tempdir().unwrap();
             let path = directory.path().join("image.xz");
+            let destination = directory.path().join("image.img");
             std::fs::write(&path, &archive).unwrap();
-            let error = xz_uncompressed_size(&mut std::fs::File::open(&path).unwrap()).unwrap_err();
+            let (tx, _rx) = std::sync::mpsc::channel();
+            let error = extract_archive(
+                &path,
+                &destination,
+                &tx,
+                |_| Ok(u64::MAX),
+                MAX_EXTRACTED_SIZE,
+            )
+            .unwrap_err();
             assert!(matches!(error, Error::ExtractionFailed(_)), "{error:?}");
+            assert!(!destination.exists());
         }
     }
 
@@ -1818,10 +1711,7 @@ mod tests {
                 let archive = directory.path().join("image.xz");
                 let destination = directory.path().join("image.img");
                 let contents = vec![42; size as usize];
-                // Each stream fits separately; the limit applies to their total.
-                let mut data = compressed(&contents[..contents.len() / 2]);
-                data.extend(compressed(&contents[contents.len() / 2..]));
-                std::fs::write(&archive, data).unwrap();
+                std::fs::write(&archive, compressed(&contents)).unwrap();
                 if existing_destination {
                     std::fs::write(&destination, b"previous image").unwrap();
                 }
@@ -1850,43 +1740,6 @@ mod tests {
                     );
                 }
             }
-        }
-    }
-
-    #[tokio::test]
-    async fn extraction_counts_and_publishes_all_concatenated_streams() {
-        let directory = tempfile::tempdir().unwrap();
-        let archive = directory.path().join("image.xz");
-        let destination = directory.path().join("image.img");
-        let mut data = compressed(b"first");
-        data.extend([0; 4]);
-        data.extend(compressed(b"second"));
-        data.extend([0; 4]);
-        std::fs::write(&archive, data).unwrap();
-        std::fs::write(&destination, b"previous image").unwrap();
-        extract_xz(&archive, &destination, &crate::NoOpProgress)
-            .await
-            .unwrap();
-        assert_eq!(std::fs::read(&destination).unwrap(), b"firstsecond");
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 2);
-    }
-
-    #[tokio::test]
-    async fn extraction_rejects_truncated_second_stream_and_trailing_garbage() {
-        for trailer in [&compressed(b"second")[..20], b"garbage"] {
-            let directory = tempfile::tempdir().unwrap();
-            let archive = directory.path().join("image.xz");
-            let destination = directory.path().join("image.img");
-            let mut data = compressed(b"first");
-            data.extend(trailer);
-            std::fs::write(&archive, data).unwrap();
-            std::fs::write(&destination, b"previous image").unwrap();
-            assert!(extract_xz(&archive, &destination, &crate::NoOpProgress)
-                .await
-                .is_err());
-            assert_eq!(std::fs::read(&destination).unwrap(), b"previous image");
-            assert!(!archive.exists());
-            assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
         }
     }
 
