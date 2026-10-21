@@ -446,6 +446,19 @@ jobs:
         if: runner.os == 'macOS'
         run: lipo "target/$BUILD_TARGET/release/hai-desktop" -verify_arch arm64 x86_64
 
+      # Anything outside the OS (e.g. a Homebrew library picked up through
+      # pkg-config) is missing on users' Macs and is refused by the hardened
+      # runtime anyway, so the app would crash at launch.
+      - name: Check the macOS binary only links system libraries
+        if: runner.os == 'macOS'
+        run: |
+          libs=$(otool -L "target/$BUILD_TARGET/release/hai-desktop" | awk '/^\t/ {print $1}' | sort -u)
+          echo "$libs"
+          if bad=$(grep -vE '^(/usr/lib/|/System/Library/)' <<<"$libs"); then
+            echo "::error::hai-desktop links non-system libraries: $bad"
+            exit 1
+          fi
+
       - name: Bundle
         if: env.SIGN_MACOS != 'true'
         shell: bash
