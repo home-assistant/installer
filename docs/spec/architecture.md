@@ -253,7 +253,7 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, CommandError> {
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-src https://toolbox.openhomefoundation.org/"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' data:; frame-src 'none'"
     }
   },
   "bundle": {

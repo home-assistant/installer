@@ -171,7 +171,7 @@ export class InstallSuccess extends LitElement {
     @media (prefers-color-scheme: dark) {
       .app-link {
         background-color: var(--ha-background-color, #2d2d2d);
-        border-color: var(--ha-border-color, #444444);
+        border-color: #444444;
       }
     }
 

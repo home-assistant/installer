@@ -109,7 +109,7 @@ export class PathSelectionView extends LitElement {
 
         <div class="options-grid">
           <option-card
-            title=${localize("components.app_shell.home_assistant_hardware")}
+            heading=${localize("components.app_shell.home_assistant_hardware")}
             description=${localize(
               "views.path_selection_view.home_assistant_green_yellow_or_blue_by_nabu_casa"
             )}
@@ -118,7 +118,9 @@ export class PathSelectionView extends LitElement {
           ></option-card>
 
           <option-card
-            title=${localize("components.app_shell.raspberry_pi_other_boards")}
+            heading=${localize(
+              "components.app_shell.raspberry_pi_other_boards"
+            )}
             description=${localize(
               "views.path_selection_view.single_board_computers_like_raspberry_pi_odroid_and_more"
             )}
@@ -127,7 +129,7 @@ export class PathSelectionView extends LitElement {
           ></option-card>
 
           <option-card
-            title=${localize("components.app_shell.generic_mini_pc")}
+            heading=${localize("components.app_shell.generic_mini_pc")}
             description=${localize(
               "views.path_selection_view.x86_64_or_arm64_computers_like_beelink_intel_nuc_and_more"
             )}
@@ -136,7 +138,7 @@ export class PathSelectionView extends LitElement {
           ></option-card>
 
           <option-card
-            title=${localize("components.app_shell.proxmox_server")}
+            heading=${localize("components.app_shell.proxmox_server")}
             description=${localize(
               "views.path_selection_view.create_a_vm_on_your_proxmox_virtualization_server"
             )}
@@ -147,7 +149,7 @@ export class PathSelectionView extends LitElement {
           ${this._renderVMOption()}
 
           <option-card
-            title=${localize("views.path_selection_view.others")}
+            heading=${localize("views.path_selection_view.others")}
             description=${localize(
               "views.path_selection_view.other_options_like_docker_can_be_found_in_our_documentation"
             )}
@@ -166,7 +168,7 @@ export class PathSelectionView extends LitElement {
 
     return html`
       <option-card
-        title=${localize("components.app_shell.virtual_machine")}
+        heading=${localize("components.app_shell.virtual_machine")}
         description=${this._vmNeedsAppleSilicon
           ? localize("views.path_selection_view.needs_a_mac_with_apple_silicon")
           : localize(

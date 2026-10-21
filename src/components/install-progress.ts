@@ -161,16 +161,18 @@ export class InstallProgress extends LitElement {
     }
 
     .stage-dot {
+      /* A pending stage's color, which the current stage pulses to */
+      --stage-dot-idle: var(--ha-border-color, #e0e0e0);
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background-color: var(--ha-border-color, #e0e0e0);
+      background-color: var(--stage-dot-idle);
       transition: background-color 0.3s ease;
     }
 
     @media (prefers-color-scheme: dark) {
       .stage-dot {
-        background-color: var(--ha-border-color, #444444);
+        --stage-dot-idle: #444444;
       }
     }
 
@@ -185,7 +187,7 @@ export class InstallProgress extends LitElement {
         background-color: var(--ha-primary-color, #03a9f4);
       }
       50% {
-        background-color: var(--ha-border-color, #e0e0e0);
+        background-color: var(--stage-dot-idle);
       }
     }
 

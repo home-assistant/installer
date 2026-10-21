@@ -20,7 +20,7 @@ for (const width of [1100, 390]) {
       await page.goto("/");
       await page.locator("welcome-view wa-button").click();
       if (scenario.device.startsWith("generic-")) {
-        await page.locator('option-card[title="Generic (mini) PC"]').click();
+        await page.locator('option-card[heading="Generic (mini) PC"]').click();
         await page
           .locator("minipc-setup-method-view")
           .locator("option-card, wa-radio")
@@ -35,7 +35,7 @@ for (const width of [1100, 390]) {
           .click();
       } else {
         await page
-          .locator('option-card[title="Raspberry Pi & other boards"]')
+          .locator('option-card[heading="Raspberry Pi & other boards"]')
           .click();
         await page.locator(`device-card[value="${scenario.device}"]`).click();
       }

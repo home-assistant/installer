@@ -132,7 +132,7 @@ test("reduced motion reaches card shadow roots and the FAB button part", async (
       "fab-button",
     ]) {
       const element = document.createElement(tag);
-      element.setAttribute("title", "Test option");
+      element.setAttribute("heading", "Test option");
       element.setAttribute("name", "Test device");
       element.setAttribute("label", "Refresh devices");
       document.body.append(element);

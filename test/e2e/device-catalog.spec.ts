@@ -11,7 +11,7 @@ test("catalog navigation preserves selection without a Lit mount-update warning"
   await page.goto("/");
   await page.locator("welcome-view wa-button").click();
   await page
-    .locator('option-card[title="Raspberry Pi & other boards"]')
+    .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
   await page.locator("device-selection-view device-card").first().click();
   const next = page.locator("wizard-shell .footer-right wa-button");

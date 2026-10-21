@@ -47,7 +47,7 @@ for (const mode of ["native", "invalid", "rejected", "stalled"] as const) {
     }
     await page.locator("welcome-view wa-button").click();
     await expect(
-      page.locator('option-card[title="Proxmox server"]')
+      page.locator('option-card[heading="Proxmox server"]')
     ).toBeVisible();
     expect(errors).toEqual([]);
   });

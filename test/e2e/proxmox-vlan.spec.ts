@@ -8,7 +8,7 @@ for (const width of [1100, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
     await page.locator("welcome-view wa-button").click();
-    await page.locator('option-card[title="Proxmox server"]').click();
+    await page.locator('option-card[heading="Proxmox server"]').click();
     const connection = page.locator("proxmox-connect-view");
     await connection.locator("#server-url").fill("https://pve.example:8006");
     await connection.locator("#username").fill("root@pam");

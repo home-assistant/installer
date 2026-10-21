@@ -40,7 +40,7 @@ describe("path-selection-view", () => {
     expect(optionCards.length).to.be.at.least(5);
 
     const titles = Array.from(optionCards).map((card) =>
-      card.getAttribute("title")
+      card.getAttribute("heading")
     );
 
     expect(titles).to.include("Home Assistant hardware");
@@ -99,7 +99,7 @@ describe("path-selection-view", () => {
       'option-card[icon="minipc"]'
     );
     expect(minipcCard).to.exist;
-    expect(minipcCard!.getAttribute("title")).to.include("Generic");
+    expect(minipcCard!.getAttribute("heading")).to.include("Generic");
     expect(minipcCard!.getAttribute("description")).to.include("x86-64");
   });
 

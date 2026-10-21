@@ -172,8 +172,8 @@ export class OptionCard extends LitElement {
   @property({ type: Boolean, reflect: true })
   horizontal = false;
 
-  @property({ type: String })
-  title = "";
+  @property({ type: String, reflect: true })
+  heading = "";
 
   @property({ type: String })
   description = "";
@@ -209,7 +209,7 @@ export class OptionCard extends LitElement {
     return html`
       <div class="card">
         <div class="icon-container">${this._renderIcon()}</div>
-        <p class="title">${this.title}</p>
+        <p class="title">${this.heading}</p>
         <p class="description">${this.description}</p>
         <slot name="end"></slot>
       </div>

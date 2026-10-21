@@ -149,7 +149,7 @@ export class OtherOptionsView extends LitElement {
             (option) => html`
               <option-card
                 horizontal
-                .title=${option.title}
+                .heading=${option.title}
                 .description=${option.description}
                 .icon=${option.icon}
                 @click=${() => openExternalUrl(option.url)}

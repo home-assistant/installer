@@ -21,7 +21,7 @@ describe("info-dialog", () => {
 
   it("renders with custom title", async () => {
     const el = await fixture<InfoDialog>(html`
-      <info-dialog open title="Test Title"></info-dialog>
+      <info-dialog open heading="Test Title"></info-dialog>
     `);
 
     const title = el.shadowRoot!.querySelector(".dialog-title");
@@ -300,12 +300,14 @@ describe("info-dialog", () => {
     expect(el.shadowRoot!.querySelector("wa-button[variant='brand']")).to.exist;
   });
 
-  it("stores title property", async () => {
+  it("stores heading property", async () => {
     const el = await fixture<InfoDialog>(html`
-      <info-dialog title="Custom Title"></info-dialog>
+      <info-dialog heading="Custom Title"></info-dialog>
     `);
 
-    expect(el.title).to.equal("Custom Title");
+    expect(el.heading).to.equal("Custom Title");
+    // A native title would show a tooltip anywhere over the dialog
+    expect(el.hasAttribute("title")).to.be.false;
   });
 
   it("stores message property", async () => {

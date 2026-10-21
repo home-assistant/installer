@@ -181,7 +181,7 @@ test("Proxmox connection failure exports only safe diagnostics", async ({
   await page.goto("/");
   await mockDesktop(page, "proxmox_connect");
   await page.locator("welcome-view wa-button").click();
-  await page.locator('option-card[title="Proxmox server"]').click();
+  await page.locator('option-card[heading="Proxmox server"]').click();
   const view = page.locator("proxmox-connect-view");
   await view.locator("#server-url").fill("https://fake-host:8006");
   await view.locator("#username").fill("fake-user");
@@ -256,7 +256,7 @@ test("flash failure keeps the failed stage in its report", async ({
   await mockDesktop(page, "flash_image");
   await page.locator("welcome-view wa-button").click();
   await page
-    .locator('option-card[title="Raspberry Pi & other boards"]')
+    .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
   await page.locator("device-selection-view device-card").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
@@ -287,7 +287,7 @@ test("UTM creation failure reports its stage", async ({ page }, testInfo) => {
   await page.goto("/");
   await mockDesktop(page, "create_utm_vm");
   await page.locator("welcome-view wa-button").click();
-  await page.locator('option-card[title="Virtual machine"]').click();
+  await page.locator('option-card[heading="Virtual machine"]').click();
   await expect(page.locator("utm-check-view")).toContainText(
     "UTM is installed"
   );

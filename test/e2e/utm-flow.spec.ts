@@ -9,7 +9,7 @@ test.describe("UTM Installation Flow", () => {
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
 
-    const vmOption = page.locator('option-card[title="Virtual machine"]');
+    const vmOption = page.locator('option-card[heading="Virtual machine"]');
     await expect(vmOption).toBeVisible();
     await vmOption.click();
 
@@ -541,7 +541,7 @@ test.describe("UTM Installation Flow", () => {
 
     // Restart flow
     await page.locator("welcome-view").locator("wa-button").click();
-    const vmOption = page.locator('option-card[title="Virtual machine"]');
+    const vmOption = page.locator('option-card[heading="Virtual machine"]');
     await expect(vmOption).toBeVisible();
     await vmOption.click();
 

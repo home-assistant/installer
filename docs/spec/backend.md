@@ -308,19 +308,21 @@ impl UtmClient {
 }
 ```
 
-### Network Checks
+### Host and Home Assistant Checks
 
 ```rust
-// crates/hai-core/src/network.rs
+// crates/hai-core/src/lib.rs (implemented for `Backend` in host.rs)
 
-/// Check if we have internet connectivity
-pub async fn check_connectivity() -> ConnectivityStatus;
+pub trait HostBackend {
+    /// Host CPU/memory info for VM sizing limits
+    fn system_info(&self) -> Result<SystemInfo>;
 
-/// Check if Home Assistant is ready (port 80 responding)
-pub async fn check_ha_ready(ip: &str) -> Result<bool>;
+    /// Whether the Home Assistant webserver at `ip` answers on port 80 (any non-5xx reply)
+    async fn check_ha_ready(&self, ip: &str) -> bool;
 
-/// Check if Home Assistant has finished updating (manifest.json)
-pub async fn check_ha_updated(ip: &str) -> Result<bool>;
+    /// Whether Home Assistant at `ip` has finished starting up (serves manifest.json)
+    async fn check_ha_updated(&self, ip: &str) -> bool;
+}
 ```
 
 ---
@@ -584,50 +586,4 @@ async generateQRCodes() {
 
 ## Toolbox Integration
 
-```typescript
-@customElement('toolbox-view')
-export class ToolboxView extends LitElement {
-  static styles = css`
-    :host {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-    .toolbar {
-      padding: 8px 16px;
-      border-bottom: 1px solid var(--wa-color-neutral-200);
-    }
-    iframe {
-      width: 100%;
-      height: calc(100% - 48px);
-      border: none;
-    }
-  `;
-
-  render() {
-    return html`
-      <div class="toolbar">
-        <wa-button variant="text" @click=${this._close}>
-          ← Back to Installer
-        </wa-button>
-      </div>
-      <iframe src="https://toolbox.openhomefoundation.org/"></iframe>
-    `;
-  }
-
-  private _close() {
-    this.dispatchEvent(new CustomEvent('close-toolbox'));
-  }
-}
-```
-
-CSP Configuration (tauri.conf.json):
-```json
-{
-  "app": {
-    "security": {
-      "csp": "default-src 'self'; frame-src https://toolbox.openhomefoundation.org/"
-    }
-  }
-}
-```
+The toolbox button on the welcome screen opens `https://toolbox.openhomefoundation.org/` in the system browser through `openExternalUrl` (`src/utils/external-url.ts`). Nothing is embedded in the app, so the CSP in `tauri.conf.json` sets `frame-src 'none'`.

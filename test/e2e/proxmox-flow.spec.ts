@@ -8,7 +8,7 @@ test.describe("Proxmox Installation Flow", () => {
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     // Select Proxmox Server option
-    await page.locator('option-card[title="Proxmox server"]').click();
+    await page.locator('option-card[heading="Proxmox server"]').click();
     await expect(page.locator("wizard-shell")).toBeVisible();
   });
 
@@ -499,7 +499,7 @@ test.describe("Proxmox Installation Flow", () => {
 
     // Restart and test cancel on step 2
     await page.locator("welcome-view").locator("wa-button").click();
-    await page.locator('option-card[title="Proxmox server"]').click();
+    await page.locator('option-card[heading="Proxmox server"]').click();
     await navigateToProxmoxStep2(page);
     await wizardShell.locator(".footer-left wa-button").click();
     await expect(page.locator("welcome-view")).toBeVisible();

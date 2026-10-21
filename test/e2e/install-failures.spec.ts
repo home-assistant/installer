@@ -56,7 +56,7 @@ for (const scenario of [
     await page.locator("welcome-view wa-button").click();
     if (scenario.flow === "sbc") {
       await page
-        .locator('option-card[title="Raspberry Pi & other boards"]')
+        .locator('option-card[heading="Raspberry Pi & other boards"]')
         .click();
       await page.locator("device-selection-view device-card").first().click();
       await next(page).click();
@@ -68,7 +68,7 @@ for (const scenario of [
     } else {
       await page
         .locator(
-          `option-card[title="${scenario.flow === "utm" ? "Virtual machine" : "Proxmox server"}"]`
+          `option-card[heading="${scenario.flow === "utm" ? "Virtual machine" : "Proxmox server"}"]`
         )
         .click();
       if (scenario.flow === "proxmox") {

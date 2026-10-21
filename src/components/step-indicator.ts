@@ -69,11 +69,11 @@ export class StepIndicator extends LitElement {
 
       @media (prefers-color-scheme: dark) {
         .step-dot {
-          background-color: var(--ha-border-color, #444444);
+          background-color: #444444;
         }
 
         .step-connector {
-          background-color: var(--ha-border-color, #444444);
+          background-color: #444444;
         }
       }
 

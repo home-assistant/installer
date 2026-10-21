@@ -177,7 +177,7 @@ export class AppShell extends LitElement {
       <info-dialog
         class="stop-dialog"
         ?open=${this._showStopDialog}
-        .title=${localize("components.app_shell.stop_installation_title")}
+        .heading=${localize("components.app_shell.stop_installation_title")}
         .message=${wizardState.currentStep?.id === "flash"
           ? localize("components.app_shell.stop_installation_message")
           : localize("components.app_shell.stop_vm_installation_message")}
@@ -190,7 +190,7 @@ export class AppShell extends LitElement {
       <info-dialog
         class="quit-dialog"
         ?open=${this._showQuitDialog}
-        .title=${localize("components.app_shell.quit_while_installing_title")}
+        .heading=${localize("components.app_shell.quit_while_installing_title")}
         .message=${localize(
           "components.app_shell.quit_while_installing_message"
         )}

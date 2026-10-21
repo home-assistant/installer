@@ -12,7 +12,7 @@ const cancel = (page: Page) =>
 async function openHaHardware(page: Page) {
   await page.goto("/");
   await page.locator("welcome-view wa-button").click();
-  await page.locator('option-card[title="Home Assistant hardware"]').click();
+  await page.locator('option-card[heading="Home Assistant hardware"]').click();
   await expect(
     page.locator("ha-hardware-device-selection-view device-card").first()
   ).toBeVisible();
@@ -73,7 +73,7 @@ test.describe("Home Assistant hardware flow", () => {
     await page.goto("/");
     await page.locator("welcome-view wa-button").click();
 
-    const card = page.locator('option-card[title="Home Assistant hardware"]');
+    const card = page.locator('option-card[heading="Home Assistant hardware"]');
     await expect(card).toBeVisible();
     await expect(card).toHaveAttribute(
       "description",

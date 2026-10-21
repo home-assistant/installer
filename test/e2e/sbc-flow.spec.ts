@@ -11,7 +11,7 @@ async function openConfirmation(page: Page) {
   await page.goto("/");
   await page.locator("welcome-view").locator("wa-button").click();
   await page
-    .locator('option-card[title="Raspberry Pi & other boards"]')
+    .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
 
   const deviceView = page.locator("device-selection-view");

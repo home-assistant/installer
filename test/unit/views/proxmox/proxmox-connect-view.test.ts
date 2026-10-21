@@ -363,6 +363,61 @@ describe("proxmox-connect-view", () => {
     expect(attempts).to.equal(4);
   });
 
+  it("shows a question asked while the previous dialog is still closing", async () => {
+    const calls: string[] = [];
+    mockTauriIpc((cmd) => {
+      calls.push(cmd);
+      if (cmd === "proxmox_certificate_fingerprint")
+        return "AB:".repeat(31) + "AB";
+      return {
+        server_url: "https://pve.example:8006",
+        ticket: "ticket",
+        csrf_token: "csrf",
+      };
+    });
+    const { el, inputs } = await renderView();
+    await typeInto(el, inputs[0], "https://pve.example:8006");
+    await typeInto(el, inputs[2], "secret");
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
+    const native = dialog.shadowRoot!.querySelector("dialog")!;
+    // Keep the hide animation running until the test ends it
+    dialog.style.setProperty("--hide-duration", "1000s");
+
+    let connecting = el.connect();
+    await settle();
+    await el.updateComplete;
+    dialog.querySelector("wa-button")!.click();
+    expect(await connecting).to.be.false;
+    await el.updateComplete;
+    await dialog.updateComplete;
+    expect(native.classList.contains("hide")).to.be.true;
+
+    let answered = false;
+    connecting = el.connect();
+    void connecting.then(() => (answered = true));
+    await settle();
+    await el.updateComplete;
+    // The previous dialog finishes closing
+    native.dispatchEvent(new Event("animationend"));
+    await settle();
+    await dialog.updateComplete;
+
+    expect(dialog.open).to.be.true;
+    expect(native.open).to.be.true;
+    expect(answered).to.be.false;
+    expect(calls).to.deep.equal([
+      "proxmox_certificate_fingerprint",
+      "proxmox_certificate_fingerprint",
+    ]);
+    dialog.querySelectorAll("wa-button")[1].click();
+    expect(await connecting).to.be.true;
+    expect(calls).to.deep.equal([
+      "proxmox_certificate_fingerprint",
+      "proxmox_certificate_fingerprint",
+      "proxmox_connect",
+    ]);
+  });
+
   for (const action of ["cancel", "dismiss", "disconnect"] as const) {
     it(`sends no credentials after certificate ${action}`, async () => {
       const calls: string[] = [];
@@ -378,8 +433,7 @@ describe("proxmox-connect-view", () => {
       await el.updateComplete;
       const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
       if (action === "cancel") dialog.querySelector("wa-button")!.click();
-      else if (action === "dismiss")
-        dialog.dispatchEvent(new Event("wa-after-hide"));
+      else if (action === "dismiss") dialog.dispatchEvent(new Event("wa-hide"));
       else el.remove();
       expect(await connecting).to.be.false;
       expect(calls).to.deep.equal(["proxmox_certificate_fingerprint"]);

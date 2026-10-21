@@ -1135,7 +1135,7 @@ export class ProxmoxConfigureView extends LitElement {
       </div>
       <info-dialog
         .open=${this._importDialog}
-        title=${localize(
+        heading=${localize(
           "views.proxmox.proxmox_configure_view.enable_import_on_storage_title"
         )}
         .message=${localize(

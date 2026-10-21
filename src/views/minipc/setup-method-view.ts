@@ -64,7 +64,7 @@ export class MiniPCSetupMethodView extends LitElement {
       <div class="options">
         <option-card
           horizontal
-          title=${localize(
+          heading=${localize(
             "views.minipc.setup_method_view.i_can_connect_the_drive"
           )}
           description=${localize(
@@ -76,7 +76,7 @@ export class MiniPCSetupMethodView extends LitElement {
         >
         <option-card
           horizontal
-          title=${localize(
+          heading=${localize(
             "views.minipc.setup_method_view.i_need_to_boot_from_usb"
           )}
           description=${localize(
@@ -90,7 +90,7 @@ export class MiniPCSetupMethodView extends LitElement {
 
       <info-dialog
         ?open=${this._showUsbDialog}
-        title=${localize(
+        heading=${localize(
           "views.minipc.setup_method_view.usb_boot_installation"
         )}
         message=${localize(

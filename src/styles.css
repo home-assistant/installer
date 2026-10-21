@@ -14,6 +14,8 @@
   --ha-background-color: #ffffff;
   --ha-card-background: #ffffff;
   --ha-text-color: #212121;
+  /* Borders, dividers and empty tracks; components used to fall back to these */
+  --ha-border-color: #e0e0e0;
 
   /* Map Web Awesome color tokens onto our theme colors. wa-button reads these
    * through its variant -> generic token chain (e.g. variant="brand" resolves
@@ -34,6 +36,10 @@
 
   /* Plain/neutral buttons (Back, Cancel) */
   --wa-color-neutral-on-quiet: var(--ha-secondary-text-color);
+
+  /* Borders of the device and drive cards, wa-select's listbox and
+   * wa-details, so they match every other border */
+  --wa-color-surface-border: var(--ha-border-color);
 
   /* wa-dialog surface/text/backdrop. Web Awesome's own dark tokens are gated
    * to WA's neutral palette, so map them to our theme vars instead. */
@@ -90,5 +96,6 @@ a:hover {
     --ha-card-background: #1e1e1e;
     --ha-text-color: #e1e1e1;
     --ha-secondary-text-color: #9e9e9e;
+    --ha-border-color: #333333;
   }
 }

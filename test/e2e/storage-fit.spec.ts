@@ -46,7 +46,7 @@ for (const width of [1100, 390]) {
     });
     await page.locator("welcome-view wa-button").click();
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await page.locator("device-selection-view device-card").first().click();
     await nextButton(page).click();

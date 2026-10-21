@@ -40,6 +40,8 @@ export default [
       "lit/no-legacy-template-syntax": "error",
       "lit/binding-positions": "error",
       "lit/no-invalid-html": "error",
+      // A `title` property puts a native tooltip on the whole element
+      "lit/no-native-attributes": "error",
     },
   },
   {

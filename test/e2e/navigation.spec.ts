@@ -38,21 +38,23 @@ test.describe("Navigation Flow", () => {
 
     // Check for all options
     await expect(
-      pathSelectionView.locator('option-card[title="Home Assistant hardware"]')
-    ).toBeVisible();
-    await expect(
       pathSelectionView.locator(
-        'option-card[title="Raspberry Pi & other boards"]'
+        'option-card[heading="Home Assistant hardware"]'
       )
     ).toBeVisible();
     await expect(
-      pathSelectionView.locator('option-card[title="Generic (mini) PC"]')
+      pathSelectionView.locator(
+        'option-card[heading="Raspberry Pi & other boards"]'
+      )
     ).toBeVisible();
     await expect(
-      pathSelectionView.locator('option-card[title="Proxmox server"]')
+      pathSelectionView.locator('option-card[heading="Generic (mini) PC"]')
     ).toBeVisible();
     await expect(
-      pathSelectionView.locator('option-card[title="Others"]')
+      pathSelectionView.locator('option-card[heading="Proxmox server"]')
+    ).toBeVisible();
+    await expect(
+      pathSelectionView.locator('option-card[heading="Others"]')
     ).toBeVisible();
   });
 
@@ -104,7 +106,7 @@ test.describe("Path Selection Options", () => {
   test("Home Assistant Hardware option has correct description", async ({
     page,
   }) => {
-    const card = page.locator('option-card[title="Home Assistant hardware"]');
+    const card = page.locator('option-card[heading="Home Assistant hardware"]');
     await expect(card).toHaveAttribute(
       "description",
       /Green.*Yellow.*Blue.*Nabu Casa/
@@ -113,18 +115,18 @@ test.describe("Path Selection Options", () => {
 
   test("Raspberry Pi option has correct description", async ({ page }) => {
     const card = page.locator(
-      'option-card[title="Raspberry Pi & other boards"]'
+      'option-card[heading="Raspberry Pi & other boards"]'
     );
     await expect(card).toHaveAttribute("description", /Raspberry Pi.*ODROID/);
   });
 
   test("Mini PC option has correct description", async ({ page }) => {
-    const card = page.locator('option-card[title="Generic (mini) PC"]');
+    const card = page.locator('option-card[heading="Generic (mini) PC"]');
     await expect(card).toHaveAttribute("description", /x86-64.*ARM64/);
   });
 
   test("Proxmox option has correct description", async ({ page }) => {
-    const card = page.locator('option-card[title="Proxmox server"]');
+    const card = page.locator('option-card[heading="Proxmox server"]');
     await expect(card).toHaveAttribute("description", /VM.*Proxmox/);
   });
 });
@@ -139,7 +141,7 @@ test.describe("Wizard Flow", () => {
   test("clicking an option starts the wizard flow", async ({ page }) => {
     // Click Raspberry Pi option
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
 
     // Should now see wizard shell
@@ -155,7 +157,7 @@ test.describe("Wizard Flow", () => {
 
   test("wizard shows correct flow title", async ({ page }) => {
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
 
     const wizardShell = page.locator("wizard-shell");
@@ -164,7 +166,7 @@ test.describe("Wizard Flow", () => {
 
   test("wizard cancel returns to welcome screen", async ({ page }) => {
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
 
     const wizardShell = page.locator("wizard-shell");
@@ -181,7 +183,7 @@ test.describe("Wizard Flow", () => {
     page,
   }) => {
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
 
     const wizardShell = page.locator("wizard-shell");
@@ -204,7 +206,7 @@ test.describe("Wizard Flow", () => {
 
   test("wizard back button goes to previous step", async ({ page }) => {
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
 
     const wizardShell = page.locator("wizard-shell");
@@ -231,7 +233,7 @@ test.describe("Wizard Flow", () => {
 
   test("back on the first step returns to path selection", async ({ page }) => {
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
 
     const wizardShell = page.locator("wizard-shell");
@@ -250,7 +252,7 @@ test.describe("SBC Device Selection", () => {
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await expect(page.locator("wizard-shell")).toBeVisible();
   });
@@ -307,7 +309,7 @@ test.describe("SBC Drive Selection", () => {
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await expect(page.locator("wizard-shell")).toBeVisible();
 
@@ -411,7 +413,7 @@ test.describe("SBC Confirmation", () => {
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await expect(page.locator("wizard-shell")).toBeVisible();
 
@@ -570,7 +572,7 @@ test.describe("SBC Flashing", () => {
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await expect(page.locator("wizard-shell")).toBeVisible();
 
@@ -708,7 +710,7 @@ test.describe("SBC Success", () => {
     await page.locator("welcome-view").locator("wa-button").click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
-      .locator('option-card[title="Raspberry Pi & other boards"]')
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await expect(page.locator("wizard-shell")).toBeVisible();
 
