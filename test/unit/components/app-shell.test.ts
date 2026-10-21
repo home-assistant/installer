@@ -253,6 +253,8 @@ describe("app-shell", () => {
         const pending = deferred<void>();
         const calls: string[] = [];
         mockTauriIpc((command) => {
+          // The path selection asks on a Mac; that's not part of the gate
+          if (command === "utm_supported") return true;
           calls.push(command);
           return pending.promise;
         });

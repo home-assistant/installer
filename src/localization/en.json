@@ -139,6 +139,7 @@
   "views.other_options_view.these_options_are_not_directly_supported_by_this_installer_but_you_can_foll": "These options are not directly supported by this installer, but you can follow our documentation to set them up. {value0}.",
   "views.other_options_view.windows_virtual_machine": "Windows virtual machine",
   "views.path_selection_view.create_a_vm_on_your_proxmox_virtualization_server": "Create a VM on your Proxmox virtualization server",
+  "views.path_selection_view.needs_a_mac_with_apple_silicon": "Needs a Mac with Apple silicon. This Mac has an Intel processor.",
   "views.path_selection_view.other_options_like_docker_can_be_found_in_our_documentation": "Other options like Docker can be found in our documentation",
   "views.path_selection_view.others": "Others",
   "views.path_selection_view.run_home_assistant_in_utm_on_your_mac": "Run Home Assistant in UTM on your Mac",

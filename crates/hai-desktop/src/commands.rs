@@ -415,6 +415,17 @@ fn utm_board() -> Result<&'static str, CommandError> {
     Ok(hai_core::utm::HAOS_BOARD)
 }
 
+/// Whether this Mac can run a UTM install, so the path selection can say so
+/// on an Intel Mac before anyone picks it. Any other failure keeps the option
+/// open: the next screen reports it with its own message.
+#[tauri::command]
+pub fn utm_supported() -> bool {
+    !matches!(
+        hai_core::utm::ensure_apple_silicon(),
+        Err(hai_core::Error::UnsupportedPlatform(_))
+    )
+}
+
 /// Get the release for the same board used by UTM downloads.
 #[tauri::command]
 pub async fn get_utm_haos_release() -> Result<HaosRelease, CommandError> {
