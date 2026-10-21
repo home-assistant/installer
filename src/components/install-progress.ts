@@ -120,7 +120,7 @@ export class InstallProgress extends LitElement {
     .error-message {
       color: var(--ha-error-color, #db4437);
       font-size: 0.9375rem;
-      margin: 0 0 1.5rem 0;
+      margin: 0.5rem 0 1.5rem 0;
       max-width: 400px;
       overflow-wrap: anywhere;
     }
@@ -225,7 +225,7 @@ export class InstallProgress extends LitElement {
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      color: var(--ha-primary-color-dark, #004156);
+      color: white;
       font-size: 1.25rem;
       font-weight: 500;
       white-space: nowrap;

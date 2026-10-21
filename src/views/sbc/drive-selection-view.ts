@@ -40,7 +40,7 @@ export class DriveSelectionView extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      height: 100%;
+      min-height: 100%;
     }
 
     h2 {
@@ -69,6 +69,7 @@ export class DriveSelectionView extends LitElement {
       margin-bottom: 1.5rem;
       max-width: 500px;
       width: 100%;
+      box-sizing: border-box;
     }
 
     .warning-icon {
@@ -101,6 +102,7 @@ export class DriveSelectionView extends LitElement {
       margin-bottom: 1.5rem;
       max-width: 500px;
       width: 100%;
+      box-sizing: border-box;
     }
 
     .notice-icon {
@@ -539,14 +541,6 @@ export class DriveSelectionView extends LitElement {
     this._selectedDriveId = drive.id;
     this._selectionLost = false;
     storeDriveSelection(drive);
-
-    this.dispatchEvent(
-      new CustomEvent("drive-selected", {
-        detail: { drive },
-        bubbles: true,
-        composed: true,
-      })
-    );
   }
 }
 

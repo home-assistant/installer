@@ -24,11 +24,13 @@ import {
 export class ProgressView extends LitElement {
   static styles = css`
     :host {
-      display: block;
-      height: 100%;
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
     }
     install-progress {
       width: 100%;
+      flex: 1;
     }
   `;
 

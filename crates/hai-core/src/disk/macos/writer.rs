@@ -120,6 +120,21 @@ pub async fn write_image<P: ProgressCallback>(
     });
 
     run_with_progress(write_handle, progress_rx, progress_callback).await?;
+    stop_if_requested(progress_callback)?;
+
+    progress_callback.on_progress(FlashProgress::new(
+        FlashStage::Finalizing,
+        0,
+        0,
+        "Ejecting the drive...",
+    ));
+
+    // Best effort: the write and the verify passed, so the drive is done.
+    // Spotlight or automount grabbing the new boot partition is enough to make
+    // the eject fail, and the success screen tells the user to eject the
+    // drive themselves if it's still listed.
+    let disk = disk_id.to_string();
+    let _ = tokio::task::spawn_blocking(move || eject_disk(&disk)).await;
 
     progress_callback.on_progress(FlashProgress::new(
         FlashStage::Complete,
@@ -190,14 +205,8 @@ fn write_and_verify(
         })?;
     }
 
-    // The device must be closed before diskutil can eject it.
+    // Closed here, before the caller ejects it: diskutil can't eject an open disk
     drop(device);
-
-    // Best effort: the write and the verify passed, so the drive is done.
-    // Spotlight or automount grabbing the new boot partition is enough to make
-    // the eject fail, and the success screen tells the user to eject the
-    // drive themselves if it's still listed.
-    let _ = eject_disk(disk_id);
 
     Ok(())
 }

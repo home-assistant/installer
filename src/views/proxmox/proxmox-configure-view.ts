@@ -24,6 +24,7 @@ import {
   proxmoxListBridges,
   proxmoxEnableStorageImport,
   proxmoxGetNextVmId,
+  proxmoxCheckVmConfig,
   formatBytes,
 } from "../../api/commands.js";
 import type {
@@ -41,6 +42,7 @@ import {
   DEFAULT_MEMORY_MB,
   DEFAULT_PROXMOX_VM_ID,
   DEFAULT_PROXMOX_VM_NAME,
+  proxmoxVmConfig,
 } from "../../state/vm-defaults.js";
 
 /** Lookups report an expired session as its own code, answered with Reconnect */
@@ -54,6 +56,12 @@ const CERTIFICATE_CHANGED = "proxmox_certificate_changed";
 
 const DIRECTORY_STORAGE_DOCS =
   "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory";
+
+/**
+ * Chromium (and so WebView2) compiles `pattern` with the `v` flag, where a
+ * bare `-` in a character class is a syntax error and the pattern is ignored.
+ */
+const VM_NAME_PATTERN = String.raw`[a-zA-Z0-9._\-]+`;
 
 function isSessionExpired(error: unknown): boolean {
   return (
@@ -73,7 +81,7 @@ export class ProxmoxConfigureView extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      height: 100%;
+      min-height: 100%;
     }
 
     h2 {
@@ -87,7 +95,7 @@ export class ProxmoxConfigureView extends LitElement {
     .subtitle {
       font-size: 1rem;
       color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 0.75rem 0;
+      margin: 0 0 1.5rem 0;
       text-align: center;
     }
 
@@ -100,12 +108,13 @@ export class ProxmoxConfigureView extends LitElement {
       border: 1px solid var(--ha-border-color, #e0e0e0);
       border-radius: 12px;
       width: 100%;
+      box-sizing: border-box;
       max-width: 500px;
     }
 
     wa-details {
       width: 100%;
-      max-width: 542px;
+      max-width: 500px;
       margin-top: 1rem;
       flex-shrink: 0;
     }
@@ -143,7 +152,7 @@ export class ProxmoxConfigureView extends LitElement {
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 0.3125rem;
+      gap: 0.5rem;
       min-width: 0;
     }
 
@@ -176,6 +185,11 @@ export class ProxmoxConfigureView extends LitElement {
       color: var(--ha-secondary-text-color, #9e9e9e);
       margin: 0;
       line-height: 1.3;
+    }
+
+    /* The slider's handle reaches below its track */
+    wa-slider + .setting-description {
+      margin-top: 0.5rem;
     }
 
     .loading-text {
@@ -271,6 +285,8 @@ export class ProxmoxConfigureView extends LitElement {
   @state() private _importDialog = false;
   @state() private _importDeclined = false;
   @state() private _importError: InstallerError | null = null;
+  /** Why Proxmox would reject these settings, until one of them changes */
+  @state() private _checkError: InstallerError | null = null;
   /** Raw text of the VLAN field; empty keeps today's untagged network. */
   @state() private _vlanTag = "";
   /** A restored tag opens Advanced, so it is never hidden from review. */
@@ -526,6 +542,37 @@ export class ProxmoxConfigureView extends LitElement {
     }
   }
 
+  /**
+   * Run the checks the install starts with, so a problem shows here, where
+   * it can be fixed. Resolves false if one fails, or if the settings changed
+   * or the step was left while Proxmox answered.
+   */
+  async check(): Promise<boolean> {
+    const selections = wizardState.getState().selections;
+    const session = selections.proxmoxSession;
+    if (!session) return false;
+    const isCurrent = () =>
+      this.isConnected && wizardState.getState().selections === selections;
+
+    // The previous answer stays until this one arrives: removing the alert
+    // would move focus back to the heading on every retry
+    try {
+      await proxmoxCheckVmConfig(session, proxmoxVmConfig(selections));
+      if (!isCurrent()) return false;
+      this._checkError = null;
+      return true;
+    } catch (error) {
+      if (!isCurrent()) return false;
+      if (isSessionExpired(error)) {
+        this._setError(error);
+      } else {
+        new InstallDiagnostics("proxmox").fail(error);
+        this._checkError = installerError(error);
+      }
+      return false;
+    }
+  }
+
   private _setError(error: unknown) {
     // Only reached for the current, connected lookup, so detached or
     // superseded lookups never add diagnostics
@@ -697,6 +744,7 @@ export class ProxmoxConfigureView extends LitElement {
   }
 
   private _saveSelections() {
+    this._checkError = null;
     wizardState.setSelection("proxmoxNode", this._selectedNode);
     wizardState.setSelection("proxmoxStorage", this._selectedStorage);
     wizardState.setSelection("proxmoxBridge", this._selectedBridge);
@@ -822,13 +870,9 @@ export class ProxmoxConfigureView extends LitElement {
   }
 
   private _formatDiskSize(gb: number): string {
-    return gb >= 1024
-      ? localize("components.drive_card.value_tb", {
-          value0: formatNumber(gb / 1024, { maximumFractionDigits: 20 }),
-        })
-      : localize("components.drive_card.value_gb", {
-          value0: formatNumber(gb, { maximumFractionDigits: 20 }),
-        });
+    return localize("components.drive_card.value_gb", {
+      value0: formatNumber(gb, { maximumFractionDigits: 20 }),
+    });
   }
 
   private _getCpuDescription(): string {
@@ -1158,7 +1202,7 @@ export class ProxmoxConfigureView extends LitElement {
               @input=${this._onNameChange}
               placeholder="home-assistant"
               maxlength="63"
-              pattern="[a-zA-Z0-9._-]+"
+              pattern=${VM_NAME_PATTERN}
               title=${localize(
                 "views.proxmox.proxmox_configure_view.only_letters_numbers_dash_underscore_and_period_allowed"
               )}
@@ -1464,6 +1508,11 @@ export class ProxmoxConfigureView extends LitElement {
           >
         </wa-input>
       </wa-details>
+      ${this._checkError
+        ? html`<p class="error-text" role="alert">
+            ${this._checkError.message}
+          </p>`
+        : ""}
     `;
   }
 }

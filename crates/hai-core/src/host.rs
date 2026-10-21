@@ -6,8 +6,28 @@
 use crate::error::Result;
 use crate::types::SystemInfo;
 use crate::{Backend, HostBackend};
+use std::net::Ipv4Addr;
 use std::sync::LazyLock;
 use std::time::Duration;
+
+/// Whether a VM's guest reported `ip` for a network the host can reach.
+///
+/// Home Assistant OS also gives its own Docker networks an address: the
+/// Supervisor's `hassio` bridge (172.30.32.0/23) and `docker0`
+/// (172.30.232.0/23). Only the VM itself can reach them, and the guest lists
+/// them while its LAN interface is still waiting for a DHCP lease.
+pub(crate) fn is_reachable_vm_address(ip: Ipv4Addr) -> bool {
+    let [a, b, c, _] = ip.octets();
+    let haos_internal = a == 172 && b == 30 && matches!(c, 32 | 33 | 232 | 233);
+    !haos_internal
+        && !ip.is_unspecified()
+        && !ip.is_loopback()
+        && !ip.is_link_local()
+        && !ip.is_multicast()
+        && !ip.is_broadcast()
+        && a != 0
+        && a < 240
+}
 
 /// Query the host for CPU core count and total memory.
 fn system_info() -> Result<SystemInfo> {
@@ -100,6 +120,27 @@ impl HostBackend for Backend {
 mod tests {
     use super::*;
     use mockito::Server;
+
+    #[test]
+    fn test_haos_docker_networks_are_not_reachable_vm_addresses() {
+        for ip in [
+            "172.30.32.1",
+            "172.30.33.254",
+            "172.30.232.1",
+            "172.30.233.254",
+        ] {
+            assert!(!is_reachable_vm_address(ip.parse().unwrap()), "{ip}");
+        }
+        // The neighbouring /23s are ordinary private networks
+        for ip in [
+            "172.30.31.254",
+            "172.30.34.1",
+            "172.30.231.254",
+            "172.30.234.1",
+        ] {
+            assert!(is_reachable_vm_address(ip.parse().unwrap()), "{ip}");
+        }
+    }
 
     #[tokio::test]
     async fn test_check_ha_ready_success() {

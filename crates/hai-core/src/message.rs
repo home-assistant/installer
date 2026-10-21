@@ -11,7 +11,8 @@ use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use serde_json::Value;
+use serde::ser::{Serialize, SerializeMap, Serializer};
+use serde_json::{Map, Value};
 
 /// A catalog message with its parameters.
 #[derive(Debug, Clone, PartialEq)]
@@ -50,34 +51,78 @@ impl Message {
 
         Self { key, params }
     }
+
+    /// The parameters as a JSON object, the way the frontend receives them.
+    pub fn params_json(&self) -> Map<String, Value> {
+        self.params
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.clone()))
+            .collect()
+    }
+}
+
+/// A message can be a parameter of another one, like the reason a step
+/// failed. It then travels as `{"key": ..., "params": {...}}`, so the
+/// frontend translates both.
+impl Serialize for Message {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("key", self.key)?;
+        map.serialize_entry("params", &self.params_json())?;
+        map.end()
+    }
 }
 
 impl std::fmt::Display for Message {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Some(template) = catalog().get(self.key) else {
-            return formatter.write_str(self.key);
-        };
-
-        // One pass over the template, so a value that contains `{name}` is
-        // written as is instead of being filled in by a later parameter
-        let mut rest = template.as_str();
-        while let Some(start) = rest.find('{') {
-            let Some(length) = rest[start..].find('}') else {
-                break;
-            };
-            let placeholder = &rest[start..=start + length];
-            let name = &placeholder[1..placeholder.len() - 1];
-
-            formatter.write_str(&rest[..start])?;
-            match self.params.iter().find(|(param, _)| *param == name) {
-                Some((_, Value::String(text))) => formatter.write_str(text)?,
-                Some((_, other)) => write!(formatter, "{other}")?,
-                None => formatter.write_str(placeholder)?,
-            }
-            rest = &rest[start + placeholder.len()..];
-        }
-        formatter.write_str(rest)
+        write_message(formatter, self.key, &|name| {
+            self.params
+                .iter()
+                .find(|(param, _)| *param == name)
+                .map(|(_, value)| value)
+        })
     }
+}
+
+/// Fill in a catalog message in one pass, so a value that contains `{name}`
+/// is written as is instead of being filled in by a later parameter.
+fn write_message<'a>(
+    formatter: &mut std::fmt::Formatter<'_>,
+    key: &str,
+    param: &dyn Fn(&str) -> Option<&'a Value>,
+) -> std::fmt::Result {
+    let Some(template) = catalog().get(key) else {
+        return formatter.write_str(key);
+    };
+
+    let mut rest = template.as_str();
+    while let Some(start) = rest.find('{') {
+        let Some(length) = rest[start..].find('}') else {
+            break;
+        };
+        let placeholder = &rest[start..=start + length];
+        let name = &placeholder[1..placeholder.len() - 1];
+
+        formatter.write_str(&rest[..start])?;
+        match param(name) {
+            Some(Value::String(text)) => formatter.write_str(text)?,
+            Some(value) => match nested(value) {
+                Some((key, params)) => write_message(formatter, key, &|name| params.get(name))?,
+                None => write!(formatter, "{value}")?,
+            },
+            None => formatter.write_str(placeholder)?,
+        }
+        rest = &rest[start + placeholder.len()..];
+    }
+    formatter.write_str(rest)
+}
+
+/// The key and parameters of a message that is another message's parameter.
+fn nested(value: &Value) -> Option<(&str, &Map<String, Value>)> {
+    Some((
+        value.get("key")?.as_str()?,
+        value.get("params")?.as_object()?,
+    ))
 }
 
 fn catalog() -> &'static HashMap<String, String> {
@@ -146,6 +191,27 @@ mod tests {
         assert!(message
             .to_string()
             .ends_with("Delete local:import/{node}.qcow2 from node pve in Proxmox."));
+    }
+
+    #[test]
+    fn messages_nest_as_key_and_params() {
+        let inner = crate::message!("backend.utm.applescript_lost", detail = "broken pipe");
+        let message = crate::message!(
+            "backend.utm.import_uncertain",
+            detail = inner,
+            path = "/tmp/image",
+        );
+
+        assert_eq!(
+            message.params_json()["detail"],
+            serde_json::json!({
+                "key": "backend.utm.applescript_lost",
+                "params": { "detail": "broken pipe" }
+            })
+        );
+        assert!(message
+            .to_string()
+            .starts_with("UTM may still be importing the image: Failed to wait for AppleScript: broken pipe. Source retained at /tmp/image."));
     }
 
     #[test]

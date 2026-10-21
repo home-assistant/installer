@@ -30,7 +30,7 @@ export function mockTauriIpc(
   }: { includeLogs?: boolean; mockEvents?: boolean } = {}
 ): void {
   // `commands.ts` only goes through IPC when it detects Tauri
-  (window as unknown as { __TAURI__?: object }).__TAURI__ = {};
+  (window as unknown as { isTauri?: boolean }).isTauri = true;
   mockIPC(
     (cmd, args) => {
       // Diagnostics log every view's progress; only tests about logging see it
@@ -41,9 +41,21 @@ export function mockTauriIpc(
   );
 }
 
+/** Mock IPC to record the URLs handed to the system opener, and nothing else. */
+export function captureOpenedUrls(): string[] {
+  const opened: string[] = [];
+  mockTauriIpc((cmd, args) => {
+    if (cmd !== "plugin:opener|open_url") {
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    }
+    opened.push((args as { url: string }).url);
+  });
+  return opened;
+}
+
 export function restoreTauriIpc(): void {
   clearMocks();
-  delete (window as unknown as { __TAURI__?: object }).__TAURI__;
+  delete (window as unknown as { isTauri?: boolean }).isTauri;
 }
 
 /** A promise plus the functions that settle it, for holding a call open. */

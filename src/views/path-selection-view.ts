@@ -1,11 +1,13 @@
 import { localize } from "../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../utils/view-accessibility.js";
-import { customElement } from "lit/decorators.js";
+import { customElement, state } from "lit/decorators.js";
+import { pageHeaderStyles } from "../utils/page-header.js";
 
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../components/option-card.js";
 import { getPlatform } from "../utils/platform.js";
+import { isUtmSupported } from "../api/commands.js";
 
 export type InstallationPath =
   | "sbc"
@@ -18,17 +20,12 @@ export type InstallationPath =
 export class PathSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = css`
+    ${pageHeaderStyles}
     :host {
       display: flex;
       flex-direction: column;
+      box-sizing: border-box;
       height: 100%;
-      padding: 2rem;
-    }
-
-    .header {
-      display: flex;
-      align-items: center;
-      margin-bottom: 2rem;
     }
 
     .content {
@@ -36,14 +33,17 @@ export class PathSelectionView extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      overflow-y: auto;
+      padding: 1rem 2rem 2rem;
     }
 
+    /* The auto margins center the options while they fit; once they don't,
+       the list scrolls from the top instead of being cut off */
     h1 {
       font-size: 1.75rem;
       font-weight: 400;
       color: var(--ha-text-color, #212121);
-      margin: 0 0 0.5rem 0;
+      margin: auto 0 0.5rem 0;
       text-align: center;
     }
 
@@ -60,6 +60,7 @@ export class PathSelectionView extends LitElement {
       gap: 1.5rem;
       max-width: 900px;
       width: 100%;
+      margin-bottom: auto;
     }
 
     .other-options {
@@ -74,6 +75,17 @@ export class PathSelectionView extends LitElement {
       color: var(--ha-primary-color, #03a9f4);
     }
   `;
+
+  /** Set on an Intel Mac, which can't run the UTM install. */
+  @state()
+  private _vmNeedsAppleSilicon = false;
+
+  connectedCallback() {
+    super.connectedCallback();
+    if (getPlatform() === "macos") {
+      void this._checkVMSupport();
+    }
+  }
 
   render() {
     return html`
@@ -155,13 +167,25 @@ export class PathSelectionView extends LitElement {
     return html`
       <option-card
         title=${localize("components.app_shell.virtual_machine")}
-        description=${localize(
-          "views.path_selection_view.run_home_assistant_in_utm_on_your_mac"
-        )}
+        description=${this._vmNeedsAppleSilicon
+          ? localize("views.path_selection_view.needs_a_mac_with_apple_silicon")
+          : localize(
+              "views.path_selection_view.run_home_assistant_in_utm_on_your_mac"
+            )}
         icon="vm"
         @click=${() => this._onSelectPath("vm")}
       ></option-card>
     `;
+  }
+
+  // The option stays selectable either way. It leads to the screen that
+  // explains why, but now the card says so before anyone picks it.
+  private async _checkVMSupport() {
+    try {
+      this._vmNeedsAppleSilicon = !(await isUtmSupported());
+    } catch {
+      // Keep the plain card; the next screen reports what went wrong
+    }
   }
 
   private _onBack() {

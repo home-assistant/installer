@@ -5,7 +5,7 @@ import type {
 } from "../../src/api/types.js";
 
 interface TotpWindow {
-  __TAURI__: object;
+  isTauri: boolean;
   __TAURI_INTERNALS__: {
     invoke: (cmd: string, args: unknown) => Promise<unknown>;
   };
@@ -28,7 +28,7 @@ test.describe("Proxmox TOTP login", () => {
         ticket: "completed-fixture-ticket",
         csrf_token: "fixture-csrf",
       };
-      win.__TAURI__ = {};
+      win.isTauri = true;
       win.totpAttempts = [];
       win.authenticatedCalls = [];
       win.__TAURI_INTERNALS__ = {
@@ -53,6 +53,8 @@ test.describe("Proxmox TOTP login", () => {
           if (cmd === "check_connection") return undefined;
           // Diagnostics logging is local, not a Proxmox request either
           if (cmd === "log_frontend_event") return undefined;
+          // Neither is the path selection asking whether this Mac runs UTM
+          if (cmd === "utm_supported") return true;
 
           win.authenticatedCalls.push(cmd);
           const { session: supplied } = args as { session: ProxmoxSession };

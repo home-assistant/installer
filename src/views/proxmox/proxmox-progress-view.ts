@@ -24,15 +24,7 @@ import type {
   ProxmoxVmConfig,
   ProxmoxVmResult,
 } from "../../api/types.js";
-import {
-  DEFAULT_CPU_CORES,
-  DEFAULT_DISK_SIZE_GB,
-  DEFAULT_MEMORY_MB,
-  DEFAULT_PROXMOX_NODE,
-  DEFAULT_PROXMOX_STORAGE,
-  DEFAULT_PROXMOX_VM_ID,
-  DEFAULT_PROXMOX_VM_NAME,
-} from "../../state/vm-defaults.js";
+import { proxmoxVmConfig } from "../../state/vm-defaults.js";
 import {
   PollTimeoutError,
   isCancelled,
@@ -119,11 +111,13 @@ function needsUserAction(error: unknown): boolean {
 export class ProxmoxProgressView extends LitElement {
   static styles = css`
     :host {
-      display: block;
-      height: 100%;
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
     }
     install-progress {
       width: 100%;
+      flex: 1;
     }
   `;
 
@@ -275,18 +269,7 @@ export class ProxmoxProgressView extends LitElement {
     this._isInstalling = true;
     this._error = null;
 
-    const config: ProxmoxVmConfig = {
-      node: selections.proxmoxNode || DEFAULT_PROXMOX_NODE,
-      storage: selections.proxmoxStorage || DEFAULT_PROXMOX_STORAGE,
-      bridge: selections.proxmoxBridge ?? "",
-      vlan_tag: selections.proxmoxVlanTag,
-      vm_id: selections.proxmoxVmId ?? DEFAULT_PROXMOX_VM_ID,
-      name: selections.vmName || DEFAULT_PROXMOX_VM_NAME,
-      cpu_cores: selections.cpuCores ?? DEFAULT_CPU_CORES,
-      memory_mb: selections.memoryMb ?? DEFAULT_MEMORY_MB,
-      disk_size_gb: selections.diskSizeGb ?? DEFAULT_DISK_SIZE_GB,
-      auto_start: true,
-    };
+    const config = proxmoxVmConfig(selections);
 
     try {
       // Skipped when an earlier attempt already created the VM: running it

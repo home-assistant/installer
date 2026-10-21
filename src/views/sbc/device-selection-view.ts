@@ -26,7 +26,7 @@ export class DeviceSelectionView extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      height: 100%;
+      min-height: 100%;
     }
 
     h2 {
@@ -119,7 +119,7 @@ export class DeviceSelectionView extends LitElement {
     // Check if there's already a selection in wizard state
     const state = wizardState.getState();
     if (state.selections.device) {
-      this._selectedDeviceId = state.selections.device as string;
+      this._selectedDeviceId = state.selections.device;
     }
   }
 
@@ -245,14 +245,6 @@ export class DeviceSelectionView extends LitElement {
     wizardState.setSelection("deviceName", device.name);
     wizardState.setSelection("deviceImage", device.image_url || "");
     wizardState.setSelection("deviceConfig", device.haos);
-
-    this.dispatchEvent(
-      new CustomEvent("device-selected", {
-        detail: { device },
-        bubbles: true,
-        composed: true,
-      })
-    );
   }
 }
 

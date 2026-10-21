@@ -12,6 +12,64 @@ use crate::{Backend, ProgressCallback, UtmBackend};
 #[cfg(any(target_os = "macos", test))]
 mod qcow2;
 
+/// Longer than the two minutes macOS gives a single Apple Event, so UTM's own
+/// timeouts still come first. This catches what has no timeout, like a
+/// permission prompt nobody sees or a UTM that stopped responding.
+#[cfg(target_os = "macos")]
+const APPLESCRIPT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// Wait for `child`, but kill it once `deadline` passes.
+#[cfg(any(target_os = "macos", all(test, unix)))]
+fn wait_with_deadline(
+    mut child: std::process::Child,
+    deadline: std::time::Duration,
+) -> Result<std::process::Output> {
+    use std::io::Read;
+
+    // Drain the pipes while waiting, so a full pipe can't stall the script
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buffer = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut buffer);
+            }
+            buffer
+        })
+    };
+    let stdout = drain(child.stdout.take().map(|pipe| Box::new(pipe) as _));
+    let stderr = drain(child.stderr.take().map(|pipe| Box::new(pipe) as _));
+
+    let started = std::time::Instant::now();
+    let status = loop {
+        let waited = child.try_wait().map_err(|error| {
+            Error::UtmOperationUncertain(crate::message!(
+                "backend.utm.applescript_lost",
+                detail = error.to_string(),
+            ))
+        })?;
+        if let Some(status) = waited {
+            break status;
+        }
+
+        if started.elapsed() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            // Killing the script doesn't undo what UTM may already be doing
+            return Err(Error::UtmOperationUncertain(crate::message!(
+                "backend.utm.no_response",
+                minutes = deadline.as_secs() / 60,
+            )));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    };
+
+    Ok(std::process::Output {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    })
+}
+
 #[cfg(any(target_os = "macos", all(test, unix)))]
 fn applescript_output(output: std::process::Output) -> Result<String> {
     if output.status.success() {
@@ -27,7 +85,10 @@ fn applescript_output(output: std::process::Output) -> Result<String> {
     if output.status.code().is_none()
         || matches!(code, None | Some(-1711 | -1712 | -1718 | -609 | -600))
     {
-        Err(Error::UtmOperationUncertain(message))
+        Err(Error::UtmOperationUncertain(crate::message!(
+            "backend.utm.no_answer",
+            detail = message,
+        )))
     } else {
         Err(applescript_error(&message))
     }
@@ -64,13 +125,13 @@ fn check_architecture(
             // Intel macOS versions without Rosetta do not expose this sysctl.
             Ok(0) => Err(intel_mac()),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Err(intel_mac()),
-            Ok(value) => Err(Error::Utm(format!(
-                "Unexpected Rosetta translation status: {}",
-                value
+            Ok(value) => Err(Error::Utm(crate::message!(
+                "backend.utm.rosetta_status_unknown",
+                detail = value,
             ))),
-            Err(err) => Err(Error::Utm(format!(
-                "Failed to detect the Mac's native architecture: {}",
-                err
+            Err(err) => Err(Error::Utm(crate::message!(
+                "backend.utm.architecture_unknown",
+                detail = err.to_string(),
             ))),
         },
         arch => Err(Error::UnsupportedPlatform(format!(
@@ -155,9 +216,10 @@ fn vm_status(vm_id: &str) -> Result<VmStatusInfo> {
 
 #[cfg(any(target_os = "macos", test))]
 fn created_vm_start_error(name: &str, error: Error) -> Error {
-    Error::UtmVmCreated(format!(
-        "The virtual machine '{name}' was created, but the installer could not confirm it started. \
-         Open UTM to start it or remove it before installing again. {error}"
+    Error::UtmVmCreated(crate::message!(
+        "backend.utm.vm_created_not_started",
+        name = name,
+        detail = error.detail(),
     ))
 }
 
@@ -165,43 +227,67 @@ fn created_vm_start_error(name: &str, error: Error) -> Error {
 fn applescript_error(stderr: &str) -> Error {
     // osascript reports the numeric Apple Event error after the localized message.
     if stderr.trim().ends_with("(-1743)") {
-        Error::Utm(
-            "Home Assistant Installer is not allowed to control UTM. Open System Settings > Privacy & Security > Automation, enable UTM under Home Assistant Installer, then try again."
-                .to_string(),
-        )
+        Error::Utm(crate::message!("backend.utm.automation_denied"))
     } else {
-        Error::Utm(stderr.trim().to_string())
+        Error::Utm(crate::message!(
+            "backend.utm.applescript_error",
+            detail = stderr.trim(),
+        ))
     }
 }
 
+// The scripts below get every value as an argument, never as part of their
+// source, so no VM name, path, interface or id can change what they do.
+
 #[cfg(any(target_os = "macos", test))]
-fn escaped_vm_id(vm_id: &str) -> String {
-    vm_id.replace('\\', "\\\\").replace('"', "\\\"")
-}
+const STATUS_SCRIPT: &str = r#"on run {vmId}
+    tell application "UTM"
+        return status of virtual machine id vmId
+    end tell
+end run"#;
+
+#[cfg(any(target_os = "macos", test))]
+const ADDRESS_SCRIPT: &str = r#"on run {vmId}
+    tell application "UTM"
+        set addresses to query ip virtual machine id vmId
+        set AppleScript's text item delimiters to linefeed
+        return addresses as text
+    end tell
+end run"#;
+
+#[cfg(target_os = "macos")]
+const START_SCRIPT: &str = r#"on run {vmId}
+    tell application "UTM"
+        set vm to virtual machine id vmId
+        start vm
+    end tell
+end run"#;
+
+// - hypervisor:true for hardware acceleration (uses macOS Hypervisor.framework)
+// - uefi:true for UEFI boot (required by HAOS)
+// - bridged network for direct LAN access (required for Home Assistant)
+#[cfg(target_os = "macos")]
+const CREATE_SCRIPT: &str = r#"on run {vmName, imagePath, hostInterface, cpuCores, memorySize}
+    set imageFile to POSIX file imagePath
+    tell application "UTM"
+        set vmConfig to {name:vmName, notes:"Created by the Home Assistant Installer", architecture:"aarch64", cpu cores:(cpuCores as integer), memory:(memorySize as integer), hypervisor:true, uefi:true, drives:{{interface:VirtIO, source:imageFile}}, network interfaces:{{mode:bridged, host interface:hostInterface}}}
+        set vm to make new virtual machine with properties {backend:qemu, configuration:vmConfig}
+        return id of vm
+    end tell
+end run"#;
 
 #[cfg(any(target_os = "macos", test))]
 fn query_vm_status(
     vm_id: &str,
-    mut run: impl FnMut(&str) -> Result<String>,
+    mut run: impl FnMut(&str, &[&str]) -> Result<String>,
 ) -> Result<VmStatusInfo> {
-    let vm_id = escaped_vm_id(vm_id);
-    let status = run(&format!(
-        r#"tell application "UTM"
-    return status of virtual machine id "{vm_id}"
-end tell"#
-    ))?;
+    let status = run(STATUS_SCRIPT, &[vm_id])?;
     let ip_address = if status == "started" {
         // The guest agent can be unavailable while HAOS boots. Keep the real
         // running state so a retry does not try to start an already running VM.
-        run(&format!(
-            r#"tell application "UTM"
-    set addresses to query ip virtual machine id "{vm_id}"
-    set AppleScript's text item delimiters to linefeed
-    return addresses as text
-end tell"#
-        ))
-        .ok()
-        .and_then(|output| first_usable_ipv4(&output))
+        run(ADDRESS_SCRIPT, &[vm_id])
+            .ok()
+            .and_then(|output| first_usable_ipv4(&output))
     } else {
         None
     };
@@ -215,15 +301,7 @@ fn first_usable_ipv4(output: &str) -> Option<String> {
     output
         .lines()
         .filter_map(|line| line.trim().parse::<std::net::Ipv4Addr>().ok())
-        .find(|ip| {
-            !ip.is_unspecified()
-                && !ip.is_loopback()
-                && !ip.is_link_local()
-                && !ip.is_multicast()
-                && !ip.is_broadcast()
-                && ip.octets()[0] != 0
-                && ip.octets()[0] < 240
-        })
+        .find(|ip| crate::host::is_reachable_vm_address(*ip))
         .map(|ip| ip.to_string())
 }
 
@@ -358,33 +436,30 @@ mod macos {
         "en0".to_string()
     }
 
-    /// Run an AppleScript and return the output
-    pub(super) fn run_applescript(script: &str) -> Result<String> {
+    /// Run an AppleScript and return the output. `arguments` reach its run
+    /// handler as they are; after `--`, even one starting with a dash.
+    pub(super) fn run_applescript(script: &str, arguments: &[&str]) -> Result<String> {
         let child = Command::new("osascript")
             .arg("-e")
             .arg(script)
+            .arg("--")
+            .args(arguments)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
-            .map_err(|e| Error::Utm(format!("Failed to execute AppleScript: {}", e)))?;
-        let output = child.wait_with_output().map_err(|error| {
-            Error::UtmOperationUncertain(format!("Failed to wait for AppleScript: {error}"))
-        })?;
-        applescript_output(output)
+            .map_err(|e| {
+                Error::Utm(crate::message!(
+                    "backend.utm.applescript_not_started",
+                    detail = e.to_string(),
+                ))
+            })?;
+        applescript_output(wait_with_deadline(child, APPLESCRIPT_DEADLINE)?)
     }
 
     /// Start a VM by its ID
     pub(super) fn start_vm(vm_id: &str) -> Result<()> {
-        let script = format!(
-            r#"tell application "UTM"
-    set vm to virtual machine id "{}"
-    start vm
-end tell"#,
-            escaped_vm_id(vm_id)
-        );
-
-        run_applescript(&script).map_err(|error| match error {
+        run_applescript(START_SCRIPT, &[vm_id]).map_err(|error| match error {
             // Starting never reads the import source. A lost reply here must
             // not retain an image whose creation already completed.
             Error::UtmOperationUncertain(message) => Error::Utm(message),
@@ -400,15 +475,15 @@ end tell"#,
         // Verify UTM is installed
         let status = check_utm_status().await?;
         if !status.installed {
-            return Err(Error::Utm("UTM is not installed".to_string()));
+            return Err(Error::Utm(crate::message!("backend.utm.not_installed")));
         }
 
         // Verify the image file exists
         let image_path = std::path::Path::new(&config.image_path);
         if !image_path.exists() {
-            return Err(Error::Utm(format!(
-                "Image file not found: {}",
-                config.image_path
+            return Err(Error::Utm(crate::message!(
+                "backend.utm.image_not_found",
+                path = config.image_path,
             )));
         }
 
@@ -423,39 +498,23 @@ end tell"#,
         ensure_apple_silicon()?;
         let network_interface = get_primary_network_interface();
 
-        // Escape the name for AppleScript
-        let escaped_name = config.name.replace('\\', "\\\\").replace('"', "\\\"");
-        let escaped_path = config.image_path.replace('\\', "\\\\").replace('"', "\\\"");
-
         // UTM ignores `guest size` for an imported drive and keeps the size
         // of the image, so the image gets the chosen size before the import.
         let disk_size_bytes = u64::from(config.disk_size_gb) * 1024 * 1024 * 1024;
         qcow2::grow(image_path, disk_size_bytes)?;
 
-        // Build the drives configuration with VirtIO interface
-        let drives_config = format!(
-            "{{interface:VirtIO, source:(POSIX file \"{}\")}}",
-            escaped_path
-        );
-
-        // Create VM using QEMU backend with hardware virtualization
-        // - hypervisor:true for hardware acceleration (uses macOS Hypervisor.framework)
-        // - uefi:true for UEFI boot (required by HAOS)
-        // - bridged network for direct LAN access (required for Home Assistant)
-        let script = format!(
-            r#"tell application "UTM"
-    set vmConfig to {{name:"{name}", notes:"Created by the Home Assistant Installer", architecture:"aarch64", cpu cores:{cores}, memory:{memory}, hypervisor:true, uefi:true, drives:{{{drives}}}, network interfaces:{{{{mode:bridged, host interface:"{interface}"}}}}}}
-    set vm to make new virtual machine with properties {{backend:qemu, configuration:vmConfig}}
-    return id of vm
-end tell"#,
-            name = escaped_name,
-            cores = config.cpu_cores,
-            memory = config.memory_mb,
-            drives = drives_config,
-            interface = network_interface,
-        );
-
-        let vm_id = run_applescript(&script)?;
+        let cpu_cores = config.cpu_cores.to_string();
+        let memory_mb = config.memory_mb.to_string();
+        let vm_id = run_applescript(
+            CREATE_SCRIPT,
+            &[
+                &config.name,
+                &config.image_path,
+                &network_interface,
+                &cpu_cores,
+                &memory_mb,
+            ],
+        )?;
 
         finish_vm_creation(config, vm_id, progress_callback, |vm_id| {
             // The VM exists now, so a failed start must not invite a blind retry
@@ -493,14 +552,21 @@ mod tests {
     #[test]
     fn failure_starting_a_created_vm_cannot_be_retried_as_creation() {
         let error =
-            created_vm_start_error("My home", Error::Utm("Enable Automation access".into()));
+            created_vm_start_error("My home", applescript_error("Enable Automation access"));
         let Error::UtmVmCreated(message) = error else {
             panic!("expected created-VM error")
         };
-        assert!(message.contains("My home"));
-        assert!(message.contains("Open UTM"));
-        assert!(message.contains("Enable Automation access"));
-        assert!(!message.contains("importing"));
+        let english = message.to_string();
+        assert!(english.contains("My home"));
+        assert!(english.contains("Open UTM"));
+        assert!(english.contains("Enable Automation access"));
+        assert!(!english.contains("importing"));
+        // The reason stays a catalog message, without the error's prefix
+        assert!(!english.contains("UTM error"));
+        assert_eq!(
+            message.params_json()["detail"]["key"],
+            "backend.utm.applescript_error"
+        );
     }
 
     #[test]
@@ -512,10 +578,11 @@ mod tests {
             let Error::Utm(message) = applescript_error(stderr) else {
                 panic!("Expected UTM error");
             };
-            assert!(message.contains("System Settings > Privacy & Security > Automation"));
-            assert!(message.contains("enable UTM under Home Assistant Installer"));
-            assert!(message.contains("try again"));
-            assert!(!message.contains("execution error"));
+            let english = message.to_string();
+            assert!(english.contains("System Settings > Privacy & Security > Automation"));
+            assert!(english.contains("enable UTM under Home Assistant Installer"));
+            assert!(english.contains("try again"));
+            assert!(!english.contains("execution error"));
         }
     }
 
@@ -551,7 +618,7 @@ mod tests {
             let Error::Utm(message) = applescript_error(stderr) else {
                 panic!("Expected UTM error");
             };
-            assert_eq!(message, stderr.trim());
+            assert_eq!(message.to_string(), stderr.trim());
         }
     }
 
@@ -609,10 +676,46 @@ mod tests {
     }
 
     #[test]
-    fn status_and_address_queries_use_the_same_escaped_id() {
+    #[cfg(unix)]
+    fn a_script_that_never_answers_is_stopped() {
+        let child = std::process::Command::new("sleep")
+            .arg("30")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let started = std::time::Instant::now();
+        let error = wait_with_deadline(child, std::time::Duration::from_millis(200)).unwrap_err();
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert!(
+            matches!(&error, Error::UtmOperationUncertain(message) if message.to_string().contains("didn't respond")),
+            "{error}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_script_that_answers_in_time_keeps_its_output() {
+        let child = std::process::Command::new("sh")
+            .args(["-c", "echo vm-id; echo warning >&2; exit 3"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let output = wait_with_deadline(child, std::time::Duration::from_secs(30)).unwrap();
+        assert_eq!(output.status.code(), Some(3));
+        assert_eq!(output.stdout, b"vm-id\n");
+        assert_eq!(output.stderr, b"warning\n");
+    }
+
+    #[test]
+    fn status_and_address_queries_pass_the_id_as_an_argument() {
+        let id = r#"unique\" end tell"#;
         let mut calls = Vec::new();
-        let result = query_vm_status("unique\\\"id", |script| {
-            calls.push(script.to_string());
+        let result = query_vm_status(id, |script, arguments| {
+            calls.push((script.to_string(), arguments.join(",")));
             Ok(if calls.len() == 1 {
                 "started".to_string()
             } else {
@@ -623,21 +726,19 @@ mod tests {
         assert_eq!(result.status, "started");
         assert_eq!(result.ip_address.as_deref(), Some("192.168.1.20"));
         assert_eq!(calls.len(), 2);
-        for script in &calls {
-            assert!(script.contains(r#"virtual machine id "unique\\\"id""#));
-        }
-        assert!(calls[1].contains("text item delimiters to linefeed"));
+        assert_eq!(calls[0], (STATUS_SCRIPT.to_string(), id.to_string()));
+        assert_eq!(calls[1], (ADDRESS_SCRIPT.to_string(), id.to_string()));
     }
 
     #[test]
     fn status_survives_guest_agent_not_ready() {
         let mut calls = 0;
-        let result = query_vm_status("unique-id", |_| {
+        let result = query_vm_status("unique-id", |_, _| {
             calls += 1;
             if calls == 1 {
                 Ok("started".into())
             } else {
-                Err(Error::Utm("Guest agent is not running".into()))
+                Err(applescript_error("Guest agent is not running"))
             }
         })
         .unwrap();
@@ -652,7 +753,7 @@ mod tests {
             "stopped", "starting", "paused", "pausing", "stopping", "resuming",
         ] {
             let mut calls = 0;
-            let result = query_vm_status("unique-id", |_| {
+            let result = query_vm_status("unique-id", |_, _| {
                 calls += 1;
                 Ok(status.into())
             })
@@ -661,7 +762,9 @@ mod tests {
             assert!(result.ip_address.is_none());
             assert_eq!(calls, 1);
         }
-        assert!(query_vm_status("missing-id", |_| Err(Error::Utm("VM not found".into()))).is_err());
+        assert!(
+            query_vm_status("missing-id", |_, _| Err(applescript_error("VM not found"))).is_err()
+        );
     }
 
     #[test]
@@ -673,12 +776,25 @@ mod tests {
         ] {
             assert_eq!(first_usable_ipv4(output), None);
         }
-        for ip in ["10.1.2.3", "172.17.0.5", "172.30.32.8", "192.168.1.20"] {
+        for ip in ["10.1.2.3", "172.17.0.5", "172.30.34.8", "192.168.1.20"] {
             assert_eq!(
                 first_usable_ipv4(&format!("fe80::1\n {ip}\n192.168.2.1")),
                 Some(ip.into())
             );
         }
+    }
+
+    #[test]
+    fn address_selection_skips_the_haos_docker_networks() {
+        // Before the LAN lease only HAOS's own bridges have an IPv4 (#369)
+        assert_eq!(
+            first_usable_ipv4("172.30.232.1\n172.30.32.1\nfe80::1"),
+            None
+        );
+        assert_eq!(
+            first_usable_ipv4("172.30.232.1\n172.30.32.1\n192.168.1.20\nfe80::1"),
+            Some("192.168.1.20".into())
+        );
     }
 
     #[test]
@@ -877,11 +993,14 @@ mod tests {
         #[test]
         fn test_run_applescript_failure() {
             // Test AppleScript with invalid syntax to trigger error path
-            let result = run_applescript("this is invalid applescript syntax!");
+            let result = run_applescript("this is invalid applescript syntax!", &[]);
             assert!(result.is_err());
             if let Err(Error::Utm(msg)) = result {
                 // Error message should contain something about syntax error
-                assert!(!msg.is_empty(), "Error message should not be empty");
+                assert!(
+                    !msg.to_string().is_empty(),
+                    "Error message should not be empty"
+                );
             } else {
                 panic!("Expected Utm error");
             }
@@ -891,7 +1010,7 @@ mod tests {
         fn test_run_applescript_success() {
             // Test a simple AppleScript that should succeed
             // This just returns a simple string
-            let result = run_applescript("return \"test\"");
+            let result = run_applescript("return \"test\"", &[]);
 
             match result {
                 Ok(output) => {
@@ -902,6 +1021,19 @@ mod tests {
                     // which is fine for the test environment
                 }
             }
+        }
+
+        #[test]
+        fn arguments_reach_the_script_as_data() {
+            let script = r#"on run argv
+    set AppleScript's text item delimiters to "|"
+    return argv as text
+end run"#;
+            let hostile = [r#"-l "x" \ end tell"#, r#"" & (do shell script "id") & ""#];
+
+            let output = run_applescript(script, &hostile).unwrap();
+
+            assert_eq!(output, hostile.join("|"));
         }
 
         #[test]

@@ -18,13 +18,14 @@ export interface WizardStep {
 /**
  * Values collected while stepping through a flow.
  *
- * The index signature keeps this open for the keys that are not declared yet;
- * the declared keys are the ones the VM flows read back (a configure step that
- * re-reads what the user picked, an install step that resumes where it left
- * off) and so need to agree on name and type across views.
+ * Views write and read these independently, so every key is declared and a
+ * misspelled key or mistyped value fails the build.
  */
 export interface WizardSelections {
   device?: string;
+  /** Shown on the summary screens for the selected device. */
+  deviceName?: string;
+  deviceImage?: string;
   /** The current device picker has successfully refreshed board availability. */
   deviceCatalogReady?: boolean;
   /** HAOS image of the selected device; its board picks the image to flash. */
@@ -49,6 +50,8 @@ export interface WizardSelections {
   /** Address Home Assistant was reached on, if it was found. */
   ipAddress?: string;
 
+  /** UTM was found on the requirements step. */
+  utmInstalled?: boolean;
   /** UTM install progress, so a retry resumes instead of starting over. */
   vmId?: string;
   /** Native creation outlives its view; reentry must await the same result. */
@@ -78,8 +81,6 @@ export interface WizardSelections {
   proxmoxImportChanges?: { serverOrigin: string; storage: string }[];
   /** Set once the Proxmox VM exists, so a retry resumes instead of starting over. */
   proxmoxVmResult?: ProxmoxVmResult;
-
-  [key: string]: unknown;
 }
 
 export interface WizardState {

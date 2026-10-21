@@ -229,15 +229,17 @@ test.describe("Wizard Flow", () => {
     await expect(page.locator("device-selection-view")).toBeVisible();
   });
 
-  test("back button is disabled on first step", async ({ page }) => {
+  test("back on the first step returns to path selection", async ({ page }) => {
     await page
       .locator('option-card[title="Raspberry Pi & other boards"]')
       .click();
 
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".header wa-button");
+    await expect(page.locator("device-selection-view")).toBeVisible();
+    await wizardShell.locator(".header wa-button").click();
 
-    await expect(backButton).toHaveJSProperty("disabled", true);
+    await expect(page.locator("path-selection-view")).toBeVisible();
+    await expect(wizardShell).toHaveCount(0);
   });
 });
 

@@ -185,7 +185,7 @@ test("UTM missing artwork leaves refresh and navigation reachable on mobile", as
   await page.getByRole("button", { name: "Let's go" }).click();
   await page.evaluate(() => {
     const bridge = window as unknown as Record<string, unknown>;
-    bridge.__TAURI__ = {};
+    bridge.isTauri = true;
     bridge.__TAURI_INTERNALS__ = { invoke: async () => ({ installed: false }) };
   });
   await page

@@ -48,6 +48,7 @@ objc2-app-kit = { workspace = true }
 
 [dev-dependencies]
 tauri = { workspace = true, features = ["test"] }
+mockito = { workspace = true }
 plist = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }
 serial_test = { workspace = true }

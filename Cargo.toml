@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/hai-core", "crates/hai-desktop"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.0"
 authors = ["Open Home Foundation"]
 license = "Apache-2.0"
 edition = "2021"
@@ -36,7 +36,9 @@ rustls = "0.23"
 rustls-platform-verifier = "0.7"
 
 # Compression
-xz2 = "0.1"
+# Static, so that the build never links a liblzma that users' machines lack
+# (pkg-config finds Homebrew's on the macOS runners).
+liblzma = { version = "0.4", features = ["static"] }
 
 # File system
 directories = "6"

@@ -199,11 +199,11 @@ fn send_progress(
 /// On cancel the receiver is dropped and the task stops at its next
 /// `send_progress`. It is still awaited: the flash only ends once nothing
 /// touches the drive anymore.
-async fn run_with_progress<P: ProgressCallback>(
-    handle: tokio::task::JoinHandle<Result<()>>,
+async fn run_with_progress<T, P: ProgressCallback>(
+    handle: tokio::task::JoinHandle<Result<T>>,
     progress_rx: std::sync::mpsc::Receiver<FlashProgress>,
     progress_callback: &P,
-) -> Result<()> {
+) -> Result<T> {
     loop {
         if progress_callback.is_cancelled() {
             drop(progress_rx);
@@ -230,6 +230,16 @@ async fn run_with_progress<P: ProgressCallback>(
     handle
         .await
         .map_err(|e| Error::Io(std::io::Error::other(e)))?
+}
+
+/// Check for a stop before starting the next step. This asks the stop itself:
+/// `run_with_progress` only looks every 100 ms, so a worker's progress update
+/// can still get through right after one.
+fn stop_if_requested<P: ProgressCallback>(progress_callback: &P) -> Result<()> {
+    if progress_callback.is_cancelled() {
+        return Err(Error::Cancelled);
+    }
+    Ok(())
 }
 
 /// List all block devices on the system
@@ -295,7 +305,7 @@ mod tests {
         let (stopped_tx, stopped_rx) = std::sync::mpsc::channel();
         let worker = tokio::task::spawn_blocking(move || {
             // Keeps "writing" until a progress update has nowhere to go
-            let result = loop {
+            let result: Result<()> = loop {
                 let update = FlashProgress::new(FlashStage::Writing, 0, 0, "Writing");
                 if let Err(error) = send_progress(&progress_tx, update) {
                     break Err(error);
@@ -313,6 +323,39 @@ mod tests {
         assert!(matches!(error, Error::Cancelled), "{error:?}");
         // The worker was done before the flash reported back
         stopped_rx.try_recv().unwrap();
+    }
+
+    #[derive(Default)]
+    struct Stoppable(std::sync::atomic::AtomicBool);
+
+    impl ProgressCallback for Stoppable {
+        fn on_progress(&self, _progress: FlashProgress) {}
+
+        fn is_cancelled(&self) -> bool {
+            self.0.load(std::sync::atomic::Ordering::Acquire)
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stop_after_the_last_update_still_stops_the_next_step() {
+        let (progress_tx, progress_rx) = std::sync::mpsc::channel();
+        let worker = tokio::task::spawn_blocking(move || {
+            let update = FlashProgress::new(FlashStage::Writing, 1, 1, "Write complete");
+            send_progress(&progress_tx, update)?;
+            Ok("device")
+        });
+        let progress = Stoppable::default();
+
+        // The worker hands back what the next step needs
+        let device = run_with_progress(worker, progress_rx, &progress)
+            .await
+            .unwrap();
+        assert_eq!(device, "device");
+
+        // Its update got through, so only the stop itself can tell
+        progress.0.store(true, std::sync::atomic::Ordering::Release);
+        let error = stop_if_requested(&progress).unwrap_err();
+        assert!(matches!(error, Error::Cancelled), "{error:?}");
     }
 
     #[test]

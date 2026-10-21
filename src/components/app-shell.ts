@@ -106,8 +106,16 @@ export class AppShell extends LitElement {
   @state()
   private _installRetryable = false;
 
+  // The flow the running Proxmox connect started in. Leaving the flow
+  // replaces it, so a connect left behind holds up nothing.
   @state()
-  private _proxmoxConnecting = false;
+  private _connectingFlow?: number;
+
+  // The selections the running Proxmox check started from. Navigating,
+  // cancelling or changing a choice replaces them, so a check left behind
+  // holds up nothing.
+  @state()
+  private _checkingProxmox?: WizardState["selections"];
 
   @state()
   private _verifyingDrive = false;
@@ -235,6 +243,10 @@ export class AppShell extends LitElement {
     const nextDisabled = this._isNextDisabled(flow, currentStep?.id);
     const nextLabel = this._getNextLabel(currentStep?.id);
 
+    const checkingSettings =
+      this._checkingProxmox === this._wizardState.selections;
+    const connecting = this._connectingFlow === wizardState.flowGeneration;
+
     // A running flash keeps only Cancel, until it is stopping
     const flashRunning = currentStep?.id === "flash" && !this._flashError;
 
@@ -267,17 +279,21 @@ export class AppShell extends LitElement {
     return html`
       <wizard-shell
         .nextDisabled=${nextDisabled ||
-        this._proxmoxConnecting ||
+        connecting ||
+        checkingSettings ||
         this._verifyingDrive}
-        .nextLabel=${this._proxmoxConnecting
+        .nextLabel=${connecting
           ? localize("components.app_shell.connecting")
-          : this._verifyingDrive
-            ? localize("components.app_shell.checking_drive")
-            : nextLabel}
+          : checkingSettings
+            ? localize("components.app_shell.checking_settings")
+            : this._verifyingDrive
+              ? localize("components.app_shell.checking_drive")
+              : nextLabel}
         .hideFooter=${hideFooter}
         .hideBack=${hideBack}
         .hideNext=${hideNext}
         @wizard-cancel=${this._onWizardCancel}
+        @wizard-exit=${this._onWizardExit}
         @wizard-next=${this._onWizardNext}
         @flash-complete=${this._onFlashComplete}
         @flash-error=${this._onFlashError}
@@ -494,6 +510,13 @@ export class AppShell extends LitElement {
     this._currentView = "welcome";
   }
 
+  /** Back on the first step returns to where the flow was picked. */
+  private _onWizardExit() {
+    this._resetErrorState();
+    wizardState.reset();
+    this._currentView = "path-selection";
+  }
+
   /** A stale error flag would show Cancel/"Try again" over the next live write. */
   private _resetErrorState() {
     this._stoppingFlash = false;
@@ -569,26 +592,43 @@ export class AppShell extends LitElement {
         | (HTMLElement & { connect: () => Promise<boolean> })
         | null;
       if (connectView) {
-        this._proxmoxConnecting = true;
+        const generation = wizardState.flowGeneration;
+        this._connectingFlow = generation;
         try {
           const success = await connectView.connect();
           if (!success) {
             return; // Stay on current step, error shown in view
           }
         } finally {
-          this._proxmoxConnecting = false;
+          if (this._connectingFlow === generation) {
+            this._connectingFlow = undefined;
+          }
         }
       }
     }
 
-    // Next is only clickable while enabled, but the step must never proceed
-    // without import storage, whatever triggered the event
-    if (
-      flow === "proxmox" &&
-      currentStep?.id === "configure" &&
-      this._isNextDisabled(flow, currentStep.id)
-    ) {
-      return;
+    if (flow === "proxmox" && currentStep?.id === "configure") {
+      // Next is only clickable while enabled, but the step must never proceed
+      // without import storage, whatever triggered the event
+      const selections = wizardState.getState().selections;
+      if (
+        this._checkingProxmox === selections ||
+        this._isNextDisabled(flow, currentStep.id)
+      ) {
+        return;
+      }
+      // A problem found now can still be fixed on this step
+      this._checkingProxmox = selections;
+      try {
+        const view = this.shadowRoot
+          ?.querySelector("wizard-shell")
+          ?.querySelector("proxmox-configure-view");
+        if (!(await view?.check())) return;
+      } finally {
+        if (this._checkingProxmox === selections) {
+          this._checkingProxmox = undefined;
+        }
+      }
     }
 
     // Show confirmation dialog before proceeding from confirm step (only for

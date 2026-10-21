@@ -13,6 +13,7 @@ import { storeDriveSelection } from "../../../src/utils/drive-selection.js";
 import { flush, holdDeviceScan } from "../helpers/hold-device-scan.js";
 import {
   deferred,
+  ipcError,
   mockTauriIpc,
   restoreTauriIpc,
   settle,
@@ -79,6 +80,46 @@ async function goToStep(el: AppShell, id: string) {
     wizardState.getState().steps.findIndex((step) => step.id === id)
   );
   await el.updateComplete;
+}
+
+/** Open the Proxmox settings, with `check` answering the settings check. */
+async function enterProxmoxConfigure(
+  el: AppShell,
+  check: () => Promise<unknown>
+) {
+  fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+    view: "path-selection",
+  });
+  await el.updateComplete;
+  fire(el.shadowRoot!.querySelector("path-selection-view")!, "select-path", {
+    path: "proxmox",
+  });
+  await el.updateComplete;
+  wizardState.setSelection("proxmoxSession", {
+    server_url: "https://pve:8006",
+    ticket: "test",
+    csrf_token: "test",
+  });
+  mockTauriIpc((cmd) => {
+    if (cmd === "proxmox_list_nodes")
+      return [{ name: "pve", status: "online" }];
+    if (cmd === "proxmox_get_next_vm_id") return 100;
+    if (cmd === "proxmox_list_storage")
+      return [
+        {
+          name: "local",
+          active: true,
+          content: ["images", "import"],
+          available: 100,
+        },
+      ];
+    if (cmd === "proxmox_list_bridges")
+      return [{ name: "vmbr0", network_type: "bridge", comments: null }];
+    if (cmd === "proxmox_check_vm_config") return check();
+    throw new Error(cmd);
+  });
+  await goToStep(el, "configure");
+  await waitUntil(() => !shellOf(el).nextDisabled);
 }
 
 /** Walk in through the real welcome → path-selection → wizard route. */
@@ -180,6 +221,49 @@ describe("app-shell", () => {
     await waitUntil(() => !shellOf(el).nextDisabled);
   });
 
+  it("stays on the Proxmox settings while Proxmox would reject them", async () => {
+    let check = deferred<unknown>();
+    await enterProxmoxConfigure(el, () => check.promise);
+
+    fire(shellOf(el), "wizard-next");
+    await waitUntil(() => shellOf(el).nextLabel === "Checking settings...");
+    expect(shellOf(el).nextDisabled).to.be.true;
+    check.reject(
+      ipcError(
+        "proxmox_action_required",
+        "VM ID 100 can't be used. Choose a different ID."
+      )
+    );
+    await waitUntil(() => !shellOf(el).nextDisabled);
+    expect(wizardState.currentStep!.id).to.equal("configure");
+    expect(
+      shellOf(el)
+        .querySelector("proxmox-configure-view")!
+        .shadowRoot!.querySelector("[role=alert]")!.textContent
+    ).to.contain("VM ID 100 can't be used.");
+
+    check = deferred<unknown>();
+    fire(shellOf(el), "wizard-next");
+    check.resolve(null);
+    await waitUntil(() => wizardState.currentStep?.id === "confirm");
+  });
+
+  it("leaves a settings check behind when the user goes back", async () => {
+    const check = deferred<unknown>();
+    await enterProxmoxConfigure(el, () => check.promise);
+    fire(shellOf(el), "wizard-next");
+    await waitUntil(() => shellOf(el).nextLabel === "Checking settings...");
+
+    wizardState.previousStep();
+    await goToStep(el, "configure");
+    await waitUntil(() => !shellOf(el).nextDisabled);
+    expect(shellOf(el).nextLabel).not.to.equal("Checking settings...");
+
+    check.resolve(null);
+    await settle();
+    expect(wizardState.currentStep!.id).to.equal("configure");
+  });
+
   for (const [flow, step] of [
     ["sbc", "device"],
     ["ha-hardware", "device"],
@@ -253,6 +337,8 @@ describe("app-shell", () => {
         const pending = deferred<void>();
         const calls: string[] = [];
         mockTauriIpc((command) => {
+          // The path selection asks on a Mac; that's not part of the gate
+          if (command === "utm_supported") return true;
           calls.push(command);
           return pending.promise;
         });
@@ -278,6 +364,61 @@ describe("app-shell", () => {
         expect(wizardState.getState().currentFlow).to.equal(null);
       });
     }
+  });
+
+  it("returns to path selection when Back leaves the first step", async () => {
+    await enterSbcFlow(el);
+    wizardState.setSelection("device", "rpi5");
+
+    fire(shellOf(el), "wizard-exit");
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector("path-selection-view")).to.exist;
+    expect(shellOf(el)).to.equal(null);
+    expect(wizardState.getState().currentFlow).to.equal(null);
+    expect(wizardState.getState().selections).to.deep.equal({});
+  });
+
+  it("does not hold up a new flow with a Proxmox connect left behind", async () => {
+    const fingerprint = deferred<string | null>();
+    mockTauriIpc((cmd) => {
+      if (cmd === "check_connection") return undefined;
+      if (cmd === "proxmox_certificate_fingerprint") return fingerprint.promise;
+      throw new Error(cmd);
+    });
+    const enterProxmox = async () => {
+      fire(
+        el.shadowRoot!.querySelector("path-selection-view")!,
+        "select-path",
+        {
+          path: "proxmox",
+        }
+      );
+      await waitUntil(
+        () => !!shellOf(el)?.querySelector("proxmox-connect-view")
+      );
+    };
+    fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+      view: "path-selection",
+    });
+    await el.updateComplete;
+    await enterProxmox();
+    Object.assign(shellOf(el).querySelector("proxmox-connect-view")!, {
+      _serverUrl: "https://pve:8006",
+      _password: "test",
+    });
+
+    fire(shellOf(el), "wizard-next");
+    await waitUntil(() => shellOf(el).nextDisabled);
+    fire(shellOf(el), "wizard-exit");
+    await el.updateComplete;
+    await enterProxmox();
+
+    expect(shellOf(el).nextDisabled).to.be.false;
+    expect(shellOf(el).nextLabel).to.equal("Next");
+    fingerprint.resolve(null);
+    await settle();
+    expect(wizardState.currentStep?.id).to.equal("connection");
   });
 
   it("asks before erasing the drive for a Home Assistant hardware installer", async () => {

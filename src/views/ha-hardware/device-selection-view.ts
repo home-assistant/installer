@@ -33,7 +33,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      height: 100%;
+      min-height: 100%;
     }
 
     h2 {
@@ -282,14 +282,6 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     wizardState.setSelection("deviceImage", hardware.image);
     wizardState.setSelection("deviceConfig", config);
     if (previous !== hardware.id) clearDriveSelection();
-
-    this.dispatchEvent(
-      new CustomEvent("device-selected", {
-        detail: { hardware },
-        bubbles: true,
-        composed: true,
-      })
-    );
   }
 }
 

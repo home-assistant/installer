@@ -25,8 +25,17 @@ use tauri::ipc::Channel;
 pub struct PendingUtmImages(std::sync::Mutex<std::collections::HashMap<String, TemporaryImage>>);
 
 impl PendingUtmImages {
+    fn insert(&self, image_path: String, image: TemporaryImage) {
+        self.lock().insert(image_path, image);
+    }
+
     fn take(&self, image_path: &str) -> Option<TemporaryImage> {
-        self.0.lock().unwrap().remove(image_path)
+        self.lock().remove(image_path)
+    }
+
+    /// A single insert or remove can't leave the map half-changed after a panic.
+    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, TemporaryImage>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -415,6 +424,19 @@ fn utm_board() -> Result<&'static str, CommandError> {
     Ok(hai_core::utm::HAOS_BOARD)
 }
 
+/// Whether this Mac can run a UTM install, so the path selection can say so
+/// on an Intel Mac before anyone picks it.
+#[tauri::command]
+pub fn utm_supported() -> bool {
+    supports_utm(hai_core::utm::ensure_apple_silicon())
+}
+
+/// Only an unsupported platform marks the option. Any other failure keeps it
+/// open: the next screen reports it with its own message.
+fn supports_utm(apple_silicon: hai_core::Result<()>) -> bool {
+    !matches!(apple_silicon, Err(hai_core::Error::UnsupportedPlatform(_)))
+}
+
 /// Get the release for the same board used by UTM downloads.
 #[tauri::command]
 pub async fn get_utm_haos_release() -> Result<HaosRelease, CommandError> {
@@ -448,7 +470,7 @@ pub async fn download_utm_image(
         .operation
         .finish(run_utm_download(&Backend, board, &callback).await)?;
     let path = image.path().to_string_lossy().into_owned();
-    pending.0.lock().unwrap().insert(path.clone(), image);
+    pending.insert(path.clone(), image);
     Ok(path)
 }
 
@@ -540,19 +562,19 @@ async fn run_utm_creation<B: UtmBackend>(
     pending: &PendingUtmImages,
 ) -> Result<String, CommandError> {
     let image = pending.take(&config.image_path).ok_or_else(|| {
-        CommandError::new(
+        CommandError::with_message(
             "temporary_image_unavailable",
-            "Temporary image is no longer available; download it again",
+            &hai_core::message!("backend.utm.temporary_image_gone"),
             true,
         )
     })?;
     image.begin_utm_import().map_err(|error| {
-        CommandError::new(
+        CommandError::with_message(
             "utm",
-            format!(
-                "Could not prepare the UTM import: {error}. UTM was not contacted. \
-         Any retained source directory at {} can be removed manually.",
-                image.path().parent().unwrap().display()
+            &hai_core::message!(
+                "backend.utm.import_not_prepared",
+                detail = error.to_string(),
+                path = image.path().parent().unwrap().display().to_string(),
             ),
             false,
         )
@@ -560,13 +582,12 @@ async fn run_utm_creation<B: UtmBackend>(
     // Fully qualified: `create_vm` is defined on both UtmBackend and ProxmoxBackend.
     let result = UtmBackend::create_vm(backend, config, &hai_core::NoOpProgress).await;
     if let Err(hai_core::Error::UtmOperationUncertain(error)) = &result {
-        return Err(CommandError::new(
+        return Err(CommandError::with_message(
             "utm_operation_uncertain",
-            format!(
-                "UTM may still be importing the image: {error}. Source retained at {}. \
-             Check UTM before retrying. Remove the source directory manually only after \
-             confirming UTM has finished or stopped importing.",
-                image.path().parent().unwrap().display()
+            &hai_core::message!(
+                "backend.utm.import_uncertain",
+                detail = error,
+                path = image.path().parent().unwrap().display().to_string(),
             ),
             false,
         ));
@@ -700,6 +721,18 @@ pub async fn proxmox_get_next_vm_id(session: ProxmoxSession) -> Result<u32, Comm
         .map_err(CommandError::from_query)
 }
 
+/// Run the checks a Proxmox install starts with, before the user confirms it
+#[tauri::command]
+pub async fn proxmox_check_vm_config(
+    session: ProxmoxSession,
+    config: ProxmoxVmConfig,
+) -> Result<(), CommandError> {
+    Backend
+        .check_vm_config(&session, &config)
+        .await
+        .map_err(CommandError::from_query)
+}
+
 /// Create a Home Assistant VM on Proxmox
 #[tauri::command]
 pub async fn proxmox_create_vm(
@@ -760,6 +793,17 @@ pub async fn proxmox_get_vm_status(
 mod tests {
     use super::*;
 
+    #[test]
+    fn only_an_unsupported_platform_marks_utm_unsupported() {
+        assert!(supports_utm(Ok(())));
+        assert!(!supports_utm(Err(hai_core::Error::UnsupportedPlatform(
+            "UTM installs need a Mac with Apple silicon".into()
+        ))));
+        assert!(supports_utm(Err(hai_core::Error::InvalidConfig(
+            "Rosetta status unknown".into()
+        ))));
+    }
+
     #[tokio::test]
     async fn test_proxmox_certificate_rejects_http() {
         let result = proxmox_certificate_fingerprint("http://127.0.0.1:1".into()).await;
@@ -787,11 +831,43 @@ mod tests {
             csrf_token: "fixture".into(),
             certificate_sha256: None,
         };
-        assert!(proxmox_list_nodes(session)
-            .await
-            .unwrap_err()
-            .message
-            .contains("HTTPS"));
+        for result in [
+            proxmox_list_nodes(session.clone()).await.map(drop),
+            proxmox_list_storage(session.clone(), "pve".into())
+                .await
+                .map(drop),
+            proxmox_get_next_vm_id(session).await.map(drop),
+        ] {
+            assert!(result.unwrap_err().message.contains("HTTPS"));
+        }
+    }
+
+    // The release lookup would go to the internet and the session's plain
+    // HTTP would be refused; the disk size is checked before either.
+    #[cfg(not(feature = "mock"))]
+    #[tokio::test]
+    async fn proxmox_check_vm_config_refuses_a_too_small_disk_before_any_lookup() {
+        let session = ProxmoxSession {
+            server_url: "http://127.0.0.1:1".into(),
+            ticket: "fixture".into(),
+            csrf_token: "fixture".into(),
+            certificate_sha256: None,
+        };
+        let config = ProxmoxVmConfig {
+            node: "pve".into(),
+            storage: "local-lvm".into(),
+            bridge: "vmbr0".into(),
+            vlan_tag: None,
+            vm_id: 100,
+            name: "homeassistant".into(),
+            cpu_cores: 2,
+            memory_mb: 4096,
+            disk_size_gb: 16,
+            auto_start: true,
+        };
+        let error = proxmox_check_vm_config(session, config).await.unwrap_err();
+
+        assert_eq!(error.code, "proxmox_api");
     }
 
     // The configure view picks Retry or Reconnect from the code, so a failed
@@ -1128,6 +1204,25 @@ mod tests {
     async fn test_check_ha_ready_empty_ip() {
         let result = check_ha_ready("".to_string()).await;
         assert!(!result, "Should return false for empty IP");
+    }
+
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[tokio::test]
+    async fn ha_checks_tell_a_web_server_from_a_started_home_assistant() {
+        let mut server = mockito::Server::new_async().await;
+        let _root = server.mock("GET", "/").create_async().await;
+        let starting = server
+            .mock("GET", "/manifest.json")
+            .with_status(404)
+            .create_async()
+            .await;
+        // Any answer means the web server is up; only the manifest means Home Assistant started
+        assert!(check_ha_ready(server.host_with_port()).await);
+        assert!(!check_ha_updated(server.host_with_port()).await);
+
+        starting.remove_async().await;
+        let _started = server.mock("GET", "/manifest.json").create_async().await;
+        assert!(check_ha_updated(server.host_with_port()).await);
     }
 
     // ===== Additional Edge Cases =====
@@ -1586,13 +1681,36 @@ mod mock_tests {
         let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
         let path = image.path().to_string_lossy().into_owned();
         std::fs::write(&path, b"owned image").unwrap();
-        pending.0.lock().unwrap().insert(path.clone(), image);
+        pending.insert(path.clone(), image);
         let importing = pending.take(&path).unwrap();
         assert!(pending.take(&path).is_none());
         assert!(std::path::Path::new(&path).exists());
         drop(importing);
         assert!(!std::path::Path::new(&path).exists());
         assert!(user_file.exists());
+    }
+
+    #[test]
+    fn utm_registry_keeps_working_after_a_panic_while_locked() {
+        let cache = tempfile::tempdir().unwrap();
+        let pending = PendingUtmImages::default();
+        let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
+        let path = image.path().to_string_lossy().into_owned();
+        pending.insert(path.clone(), image);
+        std::thread::scope(|scope| {
+            let panicked = scope.spawn(|| {
+                let _images = pending.0.lock().unwrap();
+                panic!("panic while the registry is locked");
+            });
+            assert!(panicked.join().is_err());
+        });
+        assert!(pending.0.is_poisoned());
+
+        assert!(pending.take(&path).is_some());
+        let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
+        let path = image.path().to_string_lossy().into_owned();
+        pending.insert(path.clone(), image);
+        assert!(pending.take(&path).is_some());
     }
 
     struct UtmCreationBackend {
@@ -1630,16 +1748,23 @@ mod mock_tests {
                     name: config.name.clone(),
                     path: None,
                 }),
-                "rejected" => Err(hai_core::Error::Utm("Invalid configuration".into())),
-                "start-failed" => Err(hai_core::Error::UtmVmCreated(
-                    "The VM was created. Open UTM to start it.".into(),
-                )),
-                "timeout" => Err(hai_core::Error::UtmOperationUncertain(
-                    "AppleEvent timed out (-1712)".into(),
-                )),
-                "transport" => Err(hai_core::Error::UtmOperationUncertain(
-                    "Failed to wait for AppleScript".into(),
-                )),
+                "rejected" => Err(hai_core::Error::Utm(hai_core::message!(
+                    "backend.utm.applescript_error",
+                    detail = "Invalid configuration",
+                ))),
+                "start-failed" => Err(hai_core::Error::UtmVmCreated(hai_core::message!(
+                    "backend.utm.vm_created_not_started",
+                    name = config.name,
+                    detail = "",
+                ))),
+                "timeout" => Err(hai_core::Error::UtmOperationUncertain(hai_core::message!(
+                    "backend.utm.no_answer",
+                    detail = "AppleEvent timed out (-1712)",
+                ))),
+                "transport" => Err(hai_core::Error::UtmOperationUncertain(hai_core::message!(
+                    "backend.utm.applescript_lost",
+                    detail = "broken pipe",
+                ))),
                 "cancelled" => std::future::pending().await,
                 _ => unreachable!(),
             }
@@ -1673,11 +1798,7 @@ mod mock_tests {
                 std::fs::create_dir(path.parent().unwrap().join(".utm-import")).unwrap();
             }
             let pending = PendingUtmImages::default();
-            pending
-                .0
-                .lock()
-                .unwrap()
-                .insert(path.to_string_lossy().into_owned(), image);
+            pending.insert(path.to_string_lossy().into_owned(), image);
             let config = hai_core::UtmVmConfig {
                 name: "Test VM".into(),
                 image_path: path.to_string_lossy().into_owned(),
@@ -1718,12 +1839,26 @@ mod mock_tests {
                     )));
                     assert!(!error.message.contains(&config.image_path));
                     assert!(error.message.contains("manually"));
+                    // The frontend translates the sentence and the reason inside it
+                    assert_eq!(error.details["message_key"], "backend.utm.import_uncertain");
+                    assert_eq!(
+                        error.details["message_params"]["detail"]["key"],
+                        if outcome == "timeout" {
+                            "backend.utm.no_answer"
+                        } else {
+                            "backend.utm.applescript_lost"
+                        }
+                    );
                 }
                 if outcome == "start-failed" {
                     let error = result.as_ref().unwrap_err();
                     assert_eq!(error.code, "utm_vm_created");
                     assert!(!error.retryable);
                     assert!(error.message.contains("Open UTM"));
+                    assert_eq!(
+                        error.details["message_key"],
+                        "backend.utm.vm_created_not_started"
+                    );
                 }
                 if outcome == "marker-failure" {
                     let error = result.unwrap_err();
@@ -1732,6 +1867,14 @@ mod mock_tests {
                         .message
                         .contains(path.parent().unwrap().to_str().unwrap()));
                     assert!(error.message.contains("manually"));
+                    assert_eq!(
+                        error.details["message_key"],
+                        "backend.utm.import_not_prepared"
+                    );
+                    assert_eq!(
+                        error.details["message_params"]["path"],
+                        path.parent().unwrap().display().to_string()
+                    );
                 }
             }
             // This is the same removal used by the frontend's discard command.
@@ -1744,6 +1887,32 @@ mod mock_tests {
                 "{outcome}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_missing_temporary_image_is_a_catalog_message() {
+        let backend = UtmCreationBackend {
+            outcome: "success",
+            started: tokio::sync::Notify::new(),
+        };
+        let config = hai_core::UtmVmConfig {
+            name: "Test VM".into(),
+            image_path: "/nowhere/image.qcow2".into(),
+            cpu_cores: 2,
+            memory_mb: 2048,
+            disk_size_gb: 32,
+            auto_start: false,
+        };
+
+        let error = run_utm_creation(&backend, &config, &PendingUtmImages::default())
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "temporary_image_unavailable");
+        assert!(error.retryable);
+        assert_eq!(
+            error.details["message_key"],
+            "backend.utm.temporary_image_gone"
+        );
     }
 
     #[tokio::test]
@@ -1802,6 +1971,69 @@ mod mock_tests {
                 .await
                 .unwrap_err();
         assert_eq!(error.code, "proxmox_api");
+    }
+
+    #[tokio::test]
+    async fn proxmox_install_stops_only_for_its_own_attempt() {
+        use tauri::Manager;
+
+        let app = tauri::test::mock_app();
+        app.manage(InstallJobs::default());
+        let stages = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let progress = Channel::new({
+            let app = app.handle().clone();
+            let stages = Arc::clone(&stages);
+            move |body| {
+                let mut stages = stages.lock().unwrap();
+                stages.push(body.deserialize::<FlashProgress>().unwrap().stage);
+                // The stop for an earlier attempt arrives late, then this one's
+                let attempt = if stages.len() == 1 {
+                    "earlier"
+                } else {
+                    "current"
+                };
+                cancel_vm_install(attempt.into(), app.state());
+                Ok(())
+            }
+        });
+        let session = ProxmoxSession {
+            server_url: "https://proxmox.example:8006".to_string(),
+            ticket: "mock-ticket".to_string(),
+            csrf_token: "mock-csrf-token".to_string(),
+            certificate_sha256: None,
+        };
+        let config = ProxmoxVmConfig {
+            node: "pve".into(),
+            storage: "local-lvm".into(),
+            bridge: "vmbr0".into(),
+            vlan_tag: None,
+            vm_id: 100,
+            name: "homeassistant".into(),
+            cpu_cores: 2,
+            memory_mb: 4096,
+            disk_size_gb: 32,
+            auto_start: true,
+        };
+        let error = proxmox_create_vm(session, config, "current".into(), progress, app.state())
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.code, "cancelled");
+        // Unlike other failures, a stop never leaves a VM behind, so it keeps its retry
+        assert!(error.retryable);
+        assert_eq!(
+            *stages.lock().unwrap(),
+            [FlashStage::Downloading, FlashStage::Extracting]
+        );
+    }
+
+    #[tokio::test]
+    async fn list_block_devices_reports_the_device_backends_drives() {
+        let ids = |devices: Vec<BlockDevice>| devices.into_iter().map(|d| d.id).collect::<Vec<_>>();
+        assert_eq!(
+            ids(list_block_devices().await.unwrap()),
+            ids(BackendMock.list_devices().await.unwrap())
+        );
     }
 
     /// A request for `device_id` whose `expected_device` matches what the mock
@@ -1916,6 +2148,47 @@ mod mock_tests {
             assert_eq!(error.code, "checksum_mismatch");
             assert!(error.retryable);
         }
+    }
+
+    #[tokio::test]
+    #[serial] // all share the mock cache directory
+    async fn flash_command_refuses_a_second_flash_and_stops_for_its_own_cancel() {
+        use tauri::Manager;
+
+        let app = tauri::test::mock_app();
+        app.manage(FlashState::default());
+        let started = Arc::new(tokio::sync::Notify::new());
+        let progress = Channel::new({
+            let started = Arc::clone(&started);
+            move |_| {
+                started.notify_one();
+                Ok(())
+            }
+        });
+        let first = flash_image(
+            request("mock-sd-card-32gb", "rpi5-64").await,
+            "first".into(),
+            progress,
+            app.state(),
+        );
+        tokio::pin!(first);
+        tokio::select! {
+            result = &mut first => panic!("The flash must still run: {result:?}"),
+            _ = started.notified() => {}
+        }
+
+        let error = flash_image(
+            request("mock-sd-card-64gb", "rpi5-64").await,
+            "second".into(),
+            Channel::new(|_| panic!("A second flash must not start")),
+            app.state(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "operation_in_progress");
+
+        cancel_flash("first".into(), app.state());
+        assert_eq!(first.await.unwrap_err().code, "cancelled");
     }
 
     #[tokio::test]

@@ -3,429 +3,187 @@
 ## Principles
 
 - **Immutable releases**: Once a version is released, it cannot be changed
-- **Signed artifacts**: All release binaries are signed
+- **Signed artifacts**: Release binaries are signed where the platform has a
+  signing scheme we've set up (macOS today; Windows is #158)
 - **Reproducible builds**: Same commit = same output
 - **Multi-platform**: Build and test on macOS, Windows, Linux
 
 ---
 
-## Workflow: Test (on every push/PR)
+## Workflow: CI
 
-```yaml
-# .github/workflows/test.yml
-name: Test
+Everything runs in one workflow,
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml); there is no
+separate release workflow. It runs on every pull request, on every push to
+`main`, and by hand to make a release. The workflow file is the reference for
+the jobs and their steps; in short:
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-env:
-  CARGO_TERM_COLOR: always
-
-jobs:
-  test-rust:
-    name: Rust Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run tests with coverage
-        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
-
-      - name: Upload Rust coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: lcov.info
-          flags: rust
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-  test-frontend:
-    name: Frontend Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run unit tests with coverage
-        run: npm run test:unit -- --coverage
-
-      - name: Upload frontend coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: crates/hai-desktop/frontend/coverage/lcov.info
-          flags: frontend
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-  test-e2e:
-    name: E2E Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-      
-      - name: Install Tauri dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
-      
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Run E2E tests
-        run: npm run test:e2e
-      
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint frontend
-        run: npm run lint
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - name: Rust format check
-        run: cargo fmt --all --check
-
-      - name: Rust clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-```
+- **Audit** jobs check `package-lock.json` (`npm audit`) and `Cargo.lock`
+  (`cargo audit`) for known vulnerabilities.
+- **zizmor** lints the workflow itself.
+- **Lint** jobs run ESLint, Prettier, the TypeScript type check, the
+  localization catalog check, `cargo fmt`, `cargo shear` and Clippy (on all
+  three platforms, since the disk code is split per OS).
+- **Test** jobs run the frontend unit tests, the Playwright E2E tests in
+  Chromium and WebKit, and the Rust tests on all three platforms. Frontend and
+  Linux backend coverage go to Codecov.
+- **Build** produces the installers for each platform and uploads each one as
+  an unarchived workflow artifact. On pushes to `main` and in release runs,
+  the macOS build is signed and notarized (see
+  [Required Secrets](#required-secrets)).
 
 ---
 
-## Codecov Configuration
+## Releases
 
-```yaml
-# codecov.yml
-coverage:
-  precision: 2
-  round: down
-  status:
-    project:
-      default:
-        target: auto
-        threshold: 2%
-    patch:
-      default:
-        target: 80%
+A release is made by running the CI workflow on `main` from the Actions tab
+(**Run workflow**) and choosing a channel: `alpha`, `beta` or `stable`. The
+run tests and builds everything like a push to `main`, and its `release` job
+creates the GitHub release once every other job has passed:
 
-flags:
-  rust:
-    paths:
-      - crates/hai-core/src/
-      - crates/hai-desktop/src/
-    carryforward: true
-  frontend:
-    paths:
-      - crates/hai-desktop/frontend/src/
-    carryforward: true
+- **Alpha:** published right away, as a prerelease.
+- **Beta:** a draft prerelease, which an admin reviews and publishes.
+- **Stable:** a draft, which an admin reviews and publishes.
 
-comment:
-  layout: "reach,diff,flags,files"
-  behavior: default
-  require_changes: true
-```
+### Versions
 
----
+The run picks the version itself (`scripts/next-version.mjs`) from the
+existing version tags:
 
-## Workflow: Release (on version tag)
+- **Until the first stable release**, versions are prereleases of `0.0.0`:
+  `0.0.0-alpha.1`, `0.0.0-alpha.2`, …, then `0.0.0-beta.1`, …
+- **From the first stable release on**, versions are calendar versions,
+  `YEAR.MONTH.PATCH` without zero padding: the first release in a month is
+  `2026.11.0`, the next one in the same month `2026.11.1`, and the first one in
+  the following month `2026.12.0`.
+- **Alphas and betas after that** are prereleases of the next stable version:
+  `2026.12.0-beta.1`, `2026.12.0-beta.2`, …
 
-```yaml
-# .github/workflows/release.yml
-name: Release
+Prerelease numbers count up per channel. Once a version has a beta, the run
+refuses to make an alpha of it, since that would sort before the beta. The
+month is the month of the run, in UTC. Version tags have no `v` prefix.
 
-on:
-  push:
-    tags:
-      - 'v*'
+The version only exists in the release run. The workspace `Cargo.toml` on
+`main` stays at `0.0.0`, and each build job of a release run writes the
+version there in its own checkout before building. Nothing is committed for a
+release.
 
-permissions:
-  contents: write
+### A release run
 
-jobs:
-  # Validate tag matches version in workspace Cargo.toml
-  validate-version:
-    name: Validate Version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+A release run differs from a push to `main` in these ways:
 
-      - name: Check version consistency
-        run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          # Get version from workspace Cargo.toml
-          CARGO_VERSION=$(grep -A1 '\[workspace.package\]' Cargo.toml | grep 'version' | sed 's/.*"\(.*\)".*/\1/')
+- **Only from `main`, and only by the right people:** the `version` job fails
+  if the run is on any other branch, or if a beta or stable run was started
+  (or re-run) by anyone but an admin. Anyone with write access may release an
+  alpha. The build and release jobs wait for the `version` job, so nothing is
+  built if a check fails. Who may publish is limited separately, by the tag
+  rulesets (see [Immutable Release Protections](#immutable-release-protections)).
+- **No caches:** no job restores the npm, cargo or Playwright cache, so the
+  installers and the tests that gate them never depend on what another run
+  wrote.
+- **Version:** the `version` job picks the version once, and each build job
+  writes it into `Cargo.toml` and checks that Cargo picked it up before it
+  builds anything.
+- **Release job:** downloads the installers the build jobs uploaded, creates a
+  signed [SLSA build provenance](https://slsa.dev/provenance/) attestation for
+  each installer with `actions/attest`, and creates the release with
+  `gh release create`. There is no `SHA256SUMS` file: GitHub records the
+  SHA-256 of every release asset itself, and the attestations cover both
+  integrity and origin.
 
-          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
-            echo "Tag version ($TAG_VERSION) doesn't match Cargo.toml ($CARGO_VERSION)"
-            exit 1
-          fi
+The release targets the commit the run built, and GitHub creates the tag on
+that commit when the release is published. `gh` uploads the installers to a
+draft first and only publishes it once they are all there, so an alpha never
+goes out with files missing, and once it's out it is immutable.
 
-          echo "Version $TAG_VERSION validated"
+Only `github-actions[bot]` publishes alphas: it can't be on a ruleset's bypass
+list, and only alpha tags may be created without one (see
+[Immutable Release Protections](#immutable-release-protections)). That's why
+betas stay drafts for an admin to publish.
 
-  # Run all tests before release
-  test:
-    name: Test
-    needs: validate-version
-    uses: ./.github/workflows/test.yml
+A beta or stable draft has no tag until it's published. Until then, another
+release run on the same channel picks the same version and replaces the draft
+as a whole, notes and assets included, so re-running a failed release run is
+safe. The release job refuses to touch a version that is already published or
+tagged.
 
-  # Build for each platform
-  build:
-    name: Build (${{ matrix.os }})
-    needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact: hai_linux-x64
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact: hai_macos-x64
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact: hai_macos-arm64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact: hai_windows-x64
+Alphas and betas are marked as prereleases.
 
-    runs-on: ${{ matrix.os }}
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      
-      - name: Install dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
-      
-      - name: Install frontend dependencies
-        run: npm ci
-      
-      - name: Build frontend
-        run: npm run build
-      
-      # notarytool reads the App Store Connect key from a file
-      - name: Write the notarization API key (macOS)
-        if: matrix.os == 'macos-latest'
-        env:
-          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-        run: |
-          umask 077
-          printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$RUNNER_TEMP/AuthKey.p8"
+### Release notes
 
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS signing and notarization, see "Required Secrets" below
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
-        with:
-          tagName: v__VERSION__
-          releaseName: 'Home Assistant Installer v__VERSION__'
-          releaseBody: 'See the assets below to download and install.'
-          releaseDraft: true
-          prerelease: false
-          args: --target ${{ matrix.target }}
-      
-      - name: Generate checksums
-        shell: bash
-        run: |
-          cd target/${{ matrix.target }}/release/bundle
-          find . -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \) -exec sha256sum {} \; > checksums.txt
+Each release starts with a fixed note in the workflow (that the Windows installer
+isn't signed yet), followed by GitHub's
+[generated release notes](https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes):
+the pull requests merged since the previous release, grouped by label as
+configured in [`.github/release.yml`](../../.github/release.yml). They start
+from:
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: |
-            target/${{ matrix.target }}/release/bundle/**/*.dmg
-            target/${{ matrix.target }}/release/bundle/**/*.app.tar.gz
-            target/${{ matrix.target }}/release/bundle/**/*.msi
-            target/${{ matrix.target }}/release/bundle/**/*.exe
-            target/${{ matrix.target }}/release/bundle/**/*.deb
-            target/${{ matrix.target }}/release/bundle/**/*.AppImage
-            target/${{ matrix.target }}/release/bundle/**/checksums.txt
-          retention-days: 5
-      
-      - name: Determine release type
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          if [[ "$VERSION" == *"-beta"* ]] || [[ "$VERSION" == *"-rc"* ]]; then
-            echo "PRERELEASE=true" >> $GITHUB_ENV
-          else
-            echo "PRERELEASE=false" >> $GITHUB_ENV
-          fi
+- for an alpha or beta, the latest version tag, whatever its channel;
+- for a stable release, the previous stable release, so its notes include
+  everything its alphas and betas had. The first stable release lets GitHub
+  pick.
 
-  # Create GitHub release with all artifacts
-  publish:
-    name: Publish Release
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write  # Required for cosign keyless signing
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
-      
-      - name: Generate release checksums
-        run: |
-          cd artifacts
-          find . -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \) -exec sha256sum {} \; | sort > SHA256SUMS.txt
-      
-      - name: Sign artifacts with cosign
-        run: |
-          cd artifacts
-          # Sign each artifact with keyless signing (uses GitHub OIDC)
-          for file in $(find . -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \)); do
-            cosign sign-blob --yes --output-signature "${file}.sig" --output-certificate "${file}.pem" "${file}"
-          done
-          # Also sign the checksums file
-          cosign sign-blob --yes --output-signature SHA256SUMS.txt.sig --output-certificate SHA256SUMS.txt.pem SHA256SUMS.txt
-      
-      - name: Create release
-        uses: softprops/action-gh-release@v1
-        with:
-          draft: true
-          generate_release_notes: true
-          prerelease: ${{ env.PRERELEASE }}
-          files: |
-            artifacts/**/*.dmg
-            artifacts/**/*.app.tar.gz
-            artifacts/**/*.msi
-            artifacts/**/*.exe
-            artifacts/**/*.deb
-            artifacts/**/*.AppImage
-            artifacts/**/*.sig
-            artifacts/**/*.pem
-            artifacts/SHA256SUMS.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
+Edit the notes in a draft before publishing if needed. The title and notes of
+a published release, an alpha included, can still be edited; its files and
+tag can't.
+
+### Assets
+
+A release contains the following. GitHub turns the spaces in the bundle names
+into dots when they are uploaded.
+
+| File | Platform |
+|------|----------|
+| `Home.Assistant.Installer_<version>_universal.dmg` | macOS, signed and notarized |
+| `Home.Assistant.Installer_<version>_x64-setup.exe` | Windows (NSIS), not signed yet (#158) |
+| `Home.Assistant.Installer_<version>_amd64.deb` | Linux |
+| `Home.Assistant.Installer-<version>-1.x86_64.rpm` | Linux |
+| `Home.Assistant.Installer_<version>_amd64.AppImage` | Linux |
+
+Linux packages are not signed; the provenance attestation covers them.
 
 ---
 
-## Cosign Verification
+## Verifying Downloads
 
-Users can verify the authenticity of downloads using cosign:
+GitHub shows the SHA-256 of every asset on the release page. To compare a
+download against it (on macOS, `shasum -a 256` instead of `sha256sum`):
 
 ```bash
-# Install cosign
-# macOS: brew install cosign
-# Linux: See https://docs.sigstore.dev/cosign/installation/
-
-# Verify a downloaded artifact
-cosign verify-blob \
-  --signature hai_macos-arm64.dmg.sig \
-  --certificate hai_macos-arm64.dmg.pem \
-  --certificate-identity-regexp "https://github.com/home-assistant/installer/" \
-  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  hai_macos-arm64.dmg
-
-# Verify the checksums file
-cosign verify-blob \
-  --signature SHA256SUMS.txt.sig \
-  --certificate SHA256SUMS.txt.pem \
-  --certificate-identity-regexp "https://github.com/home-assistant/installer/" \
-  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  SHA256SUMS.txt
+gh release view 2026.11.0 --repo home-assistant/installer --json assets \
+  --jq '.assets[] | "\(.digest)  \(.name)"'
+sha256sum Home.Assistant.Installer_2026.11.0_universal.dmg
 ```
 
-Cosign keyless signing uses GitHub's OIDC identity, so signatures are tied to:
-- The specific GitHub repository
-- The GitHub Actions workflow that created them
-- The exact commit and workflow run
+Check that an installer was built by this repository's CI workflow on `main`,
+with the [GitHub CLI](https://cli.github.com/):
 
-No private keys to manage or rotate.
+```bash
+gh attestation verify Home.Assistant.Installer_2026.11.0_universal.dmg \
+  --repo home-assistant/installer \
+  --signer-workflow home-assistant/installer/.github/workflows/ci.yml \
+  --source-ref refs/heads/main
+```
+
+The output names the commit the installer was built from, which is the commit
+the release's tag points to.
+
+The attestation is signed with a short-lived Sigstore certificate tied to the
+workflow run that built the installer, and recorded in the public Sigstore
+transparency log, so there are no signing keys to manage or rotate.
 
 ---
 
 ## Immutable Release Protections
 
-1. **Tag protection rules** (GitHub Settings > Branches > Tag protection):
-   - Pattern: `v*`
-   - Prevents deletion or force-push of version tags
+1. **Tag protection**: publishing a release creates its tag, so the tag
+   rulesets decide who may publish which release:
+   - "Version tags" covers every tag except alpha tags (`*-alpha.*`): only
+     admins may create one, so only admins may publish a beta or stable
+     release, and only admins may move or delete one.
+   - "Alpha tags" covers `*-alpha.*`: anyone with write access, and the
+     release job as `github-actions[bot]`, may create one, but nobody may move
+     or delete one.
 
 2. **Branch protection on main**:
    - Require PR reviews
@@ -433,37 +191,42 @@ No private keys to manage or rotate.
    - No force pushes
 
 3. **Release process**:
-   - Releases are created as drafts
-   - Manual review before publishing
-   - Once published, artifacts cannot be modified
+   - Releases are only made from `main`
+   - Anyone with write access may release an alpha, which is published right
+     away
+   - Betas and stable releases are started by admins, created as drafts, and
+     reviewed and published by an admin
+   - Immutable releases are enabled, so once a release is published, GitHub
+     refuses any change to its assets or tag, including from the release job
 
-4. **Checksums**:
-   - SHA256 checksums for all artifacts
-   - Published with each release
-   - Users can verify download integrity
+4. **Checksums**: GitHub records the SHA-256 of every release asset and shows
+   it on the release page and in the API.
 
-5. **Cosign signatures**:
-   - All artifacts signed using Sigstore cosign
-   - Keyless signing via GitHub OIDC (no secrets to manage)
-   - Signatures prove artifacts were built by the official CI pipeline
-   - Publicly verifiable via Sigstore transparency log
+5. **Provenance**: every installer has a signed build provenance attestation
+   that ties it to the workflow run and the commit it was built from.
+
+Anyone with write access can still run a changed copy of the workflow on
+their own branch, so the checks inside the workflow only guard against
+mistakes. What such a run can't do is enforced by GitHub instead: it gets no
+Apple signing secrets (the `release` environment only allows `main`), it
+can't publish a beta or stable release (the "Version tags" ruleset), and its
+installers fail `gh attestation verify --source-ref refs/heads/main`.
+
+Since anyone with write access may create alpha tags, they can also publish
+an alpha release by hand, with any files attached. Its installers would have
+no attestation from `main`, and nothing but an alpha can be released this
+way.
 
 ---
 
 ## Required Secrets
 
-Repository secrets:
-
-| Secret | Description |
-|--------|-------------|
-| `CODECOV_TOKEN` | Codecov upload token (from codecov.io) |
-| `TAURI_SIGNING_PRIVATE_KEY` | Key for signing Tauri updates |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for signing key |
+The workflow uses no repository secrets.
 
 Secrets of the protected `release` environment, which only `main` may deploy
-to. The macOS build job of the test workflow binds to this environment on
-pushes to `main`, signs and notarizes the app and the DMG, and uploads the
-result. Pull request builds don't reference the environment and stay unsigned.
+to. The macOS build job binds to this environment on pushes to `main` and in
+release runs, signs and notarizes the app and the DMG, and uploads the result.
+Pull request builds don't reference the environment and stay unsigned.
 
 | Secret | Description |
 |--------|-------------|
@@ -482,35 +245,39 @@ itself: it imports the certificate into a temporary keychain, signs the app
 with the hardened runtime, notarizes and staples it, and signs the DMG. The
 workflow then notarizes and staples the DMG too, since Gatekeeper assesses the
 disk image when a download is opened, and verifies both with `codesign`,
-`stapler` and `spctl`.
+`stapler` and `spctl`, the app from inside the mounted DMG, since Tauri
+deletes its own copy after packing it.
 
 ---
 
 ## Release Process
 
-1. Bump `version` in the `[workspace.package]` section of the root `Cargo.toml` and run `cargo check` to refresh `Cargo.lock`
-2. Create PR with version bump
-3. Merge to main after review
-4. Create and push tag: `git tag v1.0.0 && git push origin v1.0.0`
-5. CI builds and creates draft release
-6. Review draft release and artifacts
-7. Publish release (makes it immutable)
+1. Go to **Actions → CI → Run workflow**, keep the branch at `main`, choose the
+   channel and run it
+2. CI tests, builds and signs everything and creates the release; the run's
+   summary names the version. An alpha is now published, and nothing else is
+   needed
+3. For a beta or stable release, an admin reviews the draft: notes, assets,
+   and that the macOS DMG opens without warnings
+4. The admin publishes it (creates the tag and makes the release immutable)
 
-The root `Cargo.toml` is the only place the app version lives:
+The workspace `Cargo.toml` is the only place the app version lives, and a
+release run is the only thing that sets it:
 
 - The crates inherit it via `version.workspace = true`.
-- `tauri.conf.json` has no `version`, so Tauri uses the `hai-desktop` crate version for the bundles and the runtime `PackageInfo`.
-- Rust code reads it with `env!("CARGO_PKG_VERSION")` (e.g. the HTTP User-Agent).
-- `package.json` is private and never published; its version stays at `0.0.0` and is not bumped.
+- `tauri.conf.json` has no `version`, so Tauri uses the `hai-desktop` crate
+  version for the bundles and the runtime `PackageInfo`.
+- Rust code reads it with `env!("CARGO_PKG_VERSION")` (e.g. the HTTP
+  User-Agent).
+- Builds from anything but a release run, including local builds, report
+  `0.0.0`.
+- `package.json` is private and never published; its version stays at `0.0.0`.
 
 ---
 
 ## Distribution
 
-| Platform | Distribution Method |
-|----------|---------------------|
-| macOS | Direct download (.dmg), Homebrew Cask |
-| Windows | Direct download (.msi/.exe), Microsoft Store |
-| Linux | Direct download (.AppImage), Flathub, possibly .deb/.rpm |
-
-Build automation via GitHub Actions to produce all artifacts on release.
+Installers are distributed as assets of the
+[GitHub releases](https://github.com/home-assistant/installer/releases) only:
+a DMG for macOS, an NSIS installer for Windows, and `.deb`, `.rpm` and
+AppImage for Linux. There are no store or package repository listings.

@@ -119,6 +119,15 @@ describe("wizard-state", () => {
     expect(state.selections.drive).to.equal("/dev/sda");
   });
 
+  it("rejects undeclared keys and mistyped values at build time", () => {
+    // @ts-expect-error: misspelled key
+    wizardState.setSelection("deviceNmae", "Raspberry Pi 5");
+    // @ts-expect-error: wrong value type
+    wizardState.setSelection("deviceName", 5);
+    // @ts-expect-error: misspelled key
+    expect(wizardState.getState().selections.utmInstaled).to.be.undefined;
+  });
+
   it("resets state", () => {
     wizardState.startFlow("sbc");
     wizardState.nextStep();

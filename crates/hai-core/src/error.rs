@@ -52,13 +52,13 @@ pub enum Error {
     RateLimited(String),
 
     #[error("UTM error: {0}")]
-    Utm(String),
+    Utm(crate::Message),
 
     #[error("UTM operation outcome is unknown: {0}")]
-    UtmOperationUncertain(String),
+    UtmOperationUncertain(crate::Message),
 
     #[error("{0}")]
-    UtmVmCreated(String),
+    UtmVmCreated(crate::Message),
 
     #[error("Drive disconnected")]
     DriveDisconnected,
@@ -129,6 +129,21 @@ impl BusyReason {
             Self::SystemStorage => "device_busy_system_storage",
             Self::UnknownBacking => "device_busy_unknown_backing",
             Self::EjectFailed => "device_busy_eject_failed",
+        }
+    }
+}
+
+impl Error {
+    /// This error as a parameter of another message. A catalog message stays
+    /// a message, so the frontend translates it too; anything else is its
+    /// English text.
+    pub fn detail(&self) -> serde_json::Value {
+        match self {
+            Self::ProxmoxActionRequired(message)
+            | Self::Utm(message)
+            | Self::UtmOperationUncertain(message)
+            | Self::UtmVmCreated(message) => serde_json::json!(message),
+            other => serde_json::Value::String(other.to_string()),
         }
     }
 }
@@ -240,10 +255,9 @@ mod tests {
 
     #[test]
     fn test_display_utm() {
-        let error = Error::Utm("VM creation failed".to_string());
+        let error = Error::Utm(crate::message!("backend.utm.not_installed"));
         let msg = error.to_string();
-        assert_eq!(msg, "UTM error: VM creation failed");
-        assert!(msg.contains("VM creation failed"));
+        assert_eq!(msg, "UTM error: UTM is not installed");
     }
 
     #[test]

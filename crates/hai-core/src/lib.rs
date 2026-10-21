@@ -195,6 +195,16 @@ pub trait ProxmoxBackend {
         ))
     }
 
+    /// Run the checks `create_vm` starts with, without changing anything.
+    /// Backends without them leave every check to `create_vm`.
+    async fn check_vm_config(
+        &self,
+        _session: &ProxmoxSession,
+        _config: &ProxmoxVmConfig,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     /// Create and start a Home Assistant VM.
     async fn create_vm<P: ProgressCallback>(
         &self,

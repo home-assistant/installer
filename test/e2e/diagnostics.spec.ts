@@ -8,14 +8,14 @@ async function mockDesktop(page: Page, failingCommand = "") {
     const { MOCK_BLOCK_DEVICES, MOCK_MANIFEST, MOCK_HAOS_RELEASE } =
       await import(path);
     const state = window as unknown as {
-      __TAURI__: object;
+      isTauri: boolean;
       __TAURI_INTERNALS__: object;
       diagnosticEvents: unknown[];
       openedReport: string;
       copiedDiagnostics: string;
       logsOpened: boolean;
     };
-    state.__TAURI__ = {};
+    state.isTauri = true;
     state.diagnosticEvents = [];
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,

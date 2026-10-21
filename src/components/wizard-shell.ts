@@ -8,10 +8,12 @@ import {
 } from "../state/wizard-state.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "./step-indicator.js";
+import { pageHeaderStyles } from "../utils/page-header.js";
 
 @customElement("wizard-shell")
 export class WizardShell extends LitElement {
   static styles = css`
+    ${pageHeaderStyles}
     :host {
       display: flex;
       flex-direction: column;
@@ -19,10 +21,7 @@ export class WizardShell extends LitElement {
     }
 
     .header {
-      display: flex;
-      align-items: center;
       justify-content: space-between;
-      padding: 1rem 2rem;
       border-bottom: 1px solid var(--ha-border-color, #e0e0e0);
     }
 
@@ -39,14 +38,18 @@ export class WizardShell extends LitElement {
       justify-content: center;
     }
 
+    /* Its width is the room available, not its content, so it can tell when
+       the step names stop fitting */
+    step-indicator {
+      flex: 1;
+      min-width: 0;
+    }
+
     .header-right {
       min-width: 80px;
     }
 
     @media (max-width: 600px) {
-      .header {
-        padding: 1rem;
-      }
       .header-right {
         min-width: 0;
       }
@@ -137,7 +140,7 @@ export class WizardShell extends LitElement {
         <wa-button
           appearance="plain"
           @click=${this._onBack}
-          ?disabled=${this.isFirstStep || this.hideBack}
+          ?disabled=${this.hideBack}
           style=${this.hideBack ? "visibility: hidden" : ""}
         >
           <span slot="start">←</span> ${localize("common.back")}
@@ -186,15 +189,23 @@ export class WizardShell extends LitElement {
   }
 
   private _onBack() {
-    if (!this.isFirstStep) {
-      wizardState.previousStep();
+    // On the first step, Back leaves the flow for the screen it was picked on
+    if (this.isFirstStep) {
       this.dispatchEvent(
-        new CustomEvent("wizard-back", {
+        new CustomEvent("wizard-exit", {
           bubbles: true,
           composed: true,
         })
       );
+      return;
     }
+    wizardState.previousStep();
+    this.dispatchEvent(
+      new CustomEvent("wizard-back", {
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private _onNext() {

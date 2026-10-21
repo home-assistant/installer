@@ -91,6 +91,13 @@ pub(super) fn transfer(
         written += count as u64;
         if written - last_progress >= PROGRESS_UPDATE_INTERVAL {
             last_progress = written;
+            // Windows buffers writes to the drive. Flushed only at the end,
+            // that can take minutes on a slow card, with no way for a stop
+            // to get in. Flushing as we go keeps every wait short, and the
+            // progress honest.
+            device
+                .sync_all()
+                .map_err(|error| device_write_error(error, written, image_size))?;
             send_progress(
                 progress,
                 FlashProgress::new(
@@ -538,6 +545,29 @@ mod tests {
             assert_eq!(&disk.bytes.get_ref()[..size], vec![0x42; size]);
             assert!(disk.bytes.get_ref()[size..].iter().all(|&byte| byte == 0));
         }
+    }
+
+    #[test]
+    fn the_body_is_flushed_as_it_is_written() {
+        let size = 24 * METADATA_SIZE;
+        let mut image = source(size);
+        let mut disk = Disk::new();
+        let (tx, _rx) = std::sync::mpsc::channel();
+        transfer(
+            image.as_file_mut(),
+            &mut disk,
+            size as u64,
+            (26 * METADATA_SIZE) as u64,
+            false,
+            &tx,
+        )
+        .unwrap();
+
+        // Not just after the last buffer: the final flush stays short
+        let during_body = disk.events.iter().filter(|(event, position)| {
+            *event == "sync" && *position > METADATA_SIZE as u64 && *position < size as u64
+        });
+        assert!(during_body.count() > 0, "{:?}", disk.events);
     }
 
     #[test]

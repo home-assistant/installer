@@ -1,0 +1,12 @@
+# Groups the pull requests in the notes GitHub generates for a release. Each
+# pull request lands in the first category it matches.
+changelog:
+  categories:
+    - title: Changes
+      labels: ["*"]
+      exclude:
+        labels: [dependencies, documentation]
+    - title: Documentation
+      labels: [documentation]
+    - title: Dependencies
+      labels: [dependencies]

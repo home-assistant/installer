@@ -16,9 +16,12 @@ import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 @customElement("diagnostics-actions")
 export class DiagnosticsActions extends LitElement {
   static styles = css`
+    /* Under an error it continues the "Installation help · " line */
     :host {
-      display: block;
-      margin-top: 1rem;
+      display: inline-block;
+    }
+    :host(:not([about])) .launcher::part(base) {
+      padding-inline: 0;
     }
     wa-dialog {
       --width: 36rem;
@@ -109,7 +112,7 @@ export class DiagnosticsActions extends LitElement {
   render() {
     const report = this._data ? reportUrl(this._data) : undefined;
     return html`
-      <wa-button appearance="plain" @click=${this._show}
+      <wa-button class="launcher" appearance="plain" @click=${this._show}
         >${this.about
           ? localize("components.diagnostics_actions.about")
           : localize(

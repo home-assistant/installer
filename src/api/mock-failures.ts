@@ -1,6 +1,8 @@
+import { isTauri } from "@tauri-apps/api/core";
+
 /** One-shot failures for browser development and E2E tests, never native IPC. */
 export function failMockOperation(operation: "flash" | "proxmox" | "utm") {
-  if (!import.meta.env.DEV || "__TAURI__" in window) return;
+  if (!import.meta.env.DEV || isTauri()) return;
 
   const key = "hai:mock-failure";
   const scenario = sessionStorage.getItem(key);

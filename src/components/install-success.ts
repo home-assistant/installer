@@ -114,12 +114,12 @@ export class InstallSuccess extends LitElement {
 
     .companion-section {
       width: 100%;
+      box-sizing: border-box;
       max-width: 500px;
       padding: 1.5rem;
       background-color: var(--ha-card-background, #ffffff);
       border: 1px solid var(--ha-border-color, #e0e0e0);
       border-radius: 12px;
-      margin-bottom: 2rem;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -190,7 +190,9 @@ export class InstallSuccess extends LitElement {
 
     .tip-section {
       width: 100%;
+      box-sizing: border-box;
       max-width: 500px;
+      margin-bottom: 2rem;
       padding: 1rem;
       background-color: rgba(3, 169, 244, 0.1);
       border-radius: 8px;

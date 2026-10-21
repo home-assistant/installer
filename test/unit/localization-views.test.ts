@@ -246,7 +246,11 @@ describe("localized view contracts", () => {
       expect(element._formatMemory(123456 * 1024)).to.equal(
         "1,23,456 GB" + (tag.includes("confirm-view") ? " RAM" : "")
       );
-      expect(element._formatDiskSize(1.5 * 1024)).to.equal("1.5 TB");
+      if (tag.startsWith("utm-")) {
+        expect(element._formatDiskSize(1.5 * 1024)).to.equal("1.5 TB");
+      } else {
+        expect(element._formatDiskSize(123456)).to.equal("1,23,456 GB");
+      }
     }
   });
 

@@ -8,16 +8,9 @@ import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { logFrontendError } from "../../utils/diagnostics.js";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
-import {
-  DEFAULT_CPU_CORES,
-  DEFAULT_DISK_SIZE_GB,
-  DEFAULT_MEMORY_MB,
-  DEFAULT_PROXMOX_NODE,
-  DEFAULT_PROXMOX_STORAGE,
-  DEFAULT_PROXMOX_VM_ID,
-  DEFAULT_PROXMOX_VM_NAME,
-} from "../../state/vm-defaults.js";
+import { proxmoxVmConfig } from "../../state/vm-defaults.js";
 import { getHaosRelease } from "../../api/commands.js";
+import { mdiServer } from "../../components/option-card.js";
 
 @customElement("proxmox-confirm-view")
 export class ProxmoxConfirmView extends LitElement {
@@ -27,7 +20,7 @@ export class ProxmoxConfirmView extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      height: 100%;
+      min-height: 100%;
     }
 
     h2 {
@@ -54,6 +47,7 @@ export class ProxmoxConfirmView extends LitElement {
       border: 1px solid var(--ha-border-color, #e0e0e0);
       border-radius: 12px;
       width: 100%;
+      box-sizing: border-box;
       max-width: 500px;
     }
 
@@ -85,14 +79,9 @@ export class ProxmoxConfirmView extends LitElement {
       fill: var(--ha-secondary-text-color, #727272);
     }
 
-    .ha-icon {
-      width: 48px;
-      height: 48px;
-    }
-
-    .proxmox-icon {
-      width: 48px;
-      height: 48px;
+    .icon-container .ha-icon,
+    .icon-container .proxmox-icon {
+      fill: var(--ha-primary-color, #03a9f4);
     }
 
     .summary-info {
@@ -170,14 +159,8 @@ export class ProxmoxConfirmView extends LitElement {
   }
 
   render() {
-    const selections = this._wizardState.selections;
-    const vmName = selections.vmName || DEFAULT_PROXMOX_VM_NAME;
-    const vmId = selections.proxmoxVmId || DEFAULT_PROXMOX_VM_ID;
-    const node = selections.proxmoxNode || DEFAULT_PROXMOX_NODE;
-    const storage = selections.proxmoxStorage || DEFAULT_PROXMOX_STORAGE;
-    const cpuCores = selections.cpuCores || DEFAULT_CPU_CORES;
-    const memoryMb = selections.memoryMb || DEFAULT_MEMORY_MB;
-    const diskSizeGb = selections.diskSizeGb || DEFAULT_DISK_SIZE_GB;
+    // What the install creates, not the raw selections
+    const config = proxmoxVmConfig(this._wizardState.selections);
 
     return html`
       <h2>
@@ -200,24 +183,24 @@ export class ProxmoxConfirmView extends LitElement {
             <p class="summary-value">
               ${localizeContent(
                 "views.proxmox.proxmox_confirm_view.node_value",
-                { value0: node }
+                { value0: config.node }
               )}
             </p>
             <p class="summary-detail">
               ${localizeContent(
                 "views.proxmox.proxmox_confirm_view.storage_value",
-                { value0: storage }
+                { value0: config.storage }
               )}
             </p>
             <p class="summary-detail">
               ${localize(
                 "views.proxmox.proxmox_confirm_view.network_bridge_value",
-                { value0: selections.proxmoxBridge }
+                { value0: config.bridge }
               )}
-              ${selections.proxmoxVlanTag !== undefined
+              ${config.vlan_tag != null
                 ? html`<br />${localize(
                       "views.proxmox.proxmox_confirm_view.vlan_tag_value",
-                      { tag: selections.proxmoxVlanTag }
+                      { tag: config.vlan_tag }
                     )}`
                 : ""}
             </p>
@@ -236,13 +219,16 @@ export class ProxmoxConfirmView extends LitElement {
             <p class="summary-value">
               ${localizeContent(
                 "views.proxmox.proxmox_confirm_view.value_id_value",
-                { value0: vmName, value1: vmId }
+                { value0: config.name, value1: config.vm_id }
               )}
             </p>
             <p class="summary-detail">
               ${localizeContent(
                 "views.proxmox.proxmox_confirm_view.value_cpu_cores_value",
-                { value0: cpuCores, value1: this._formatMemory(memoryMb) }
+                {
+                  value0: config.cpu_cores,
+                  value1: this._formatMemory(config.memory_mb),
+                }
               )}
             </p>
           </div>
@@ -255,7 +241,9 @@ export class ProxmoxConfirmView extends LitElement {
           <div class="icon-container">${this._renderDiskIcon()}</div>
           <div class="summary-info">
             <p class="summary-label">${localize("vm.disk_storage")}</p>
-            <p class="summary-value">${this._formatDiskSize(diskSizeGb)}</p>
+            <p class="summary-value">
+              ${this._formatDiskSize(config.disk_size_gb)}
+            </p>
             <p class="summary-detail">
               ${localize(
                 "views.proxmox.proxmox_confirm_view.virtual_disk_for_home_assistant_data"
@@ -299,36 +287,29 @@ export class ProxmoxConfirmView extends LitElement {
   }
 
   private _formatMemory(mb: number): string {
-    if (mb >= 1024) {
-      return localize("views.proxmox.proxmox_confirm_view.value_gb_ram", {
-        value0: formatNumber(Number((mb / 1024).toFixed(0)), {
-          maximumFractionDigits: 0,
-        }),
-      });
-    }
-    return localize("views.proxmox.proxmox_confirm_view.value_mb_ram", {
-      value0: formatNumber(mb, { maximumFractionDigits: 20 }),
+    return localize("views.proxmox.proxmox_confirm_view.value_gb_ram", {
+      value0: formatNumber(mb / 1024, { maximumFractionDigits: 0 }),
     });
   }
 
   private _formatDiskSize(gb: number): string {
-    if (gb >= 1024) {
-      return localize("components.drive_card.value_tb", {
-        value0: formatNumber(gb / 1024, { maximumFractionDigits: 20 }),
-      });
-    }
     return localize("components.drive_card.value_gb", {
       value0: formatNumber(gb, { maximumFractionDigits: 20 }),
     });
   }
 
   private _renderProxmoxIcon() {
+    // The icon the Proxmox option has on the path selection
     return html`
-      <img
+      <svg
         class="proxmox-icon"
-        src="/assets/icons/proxmox-placeholder.svg"
-        alt=${localize("views.proxmox.proxmox_confirm_view.proxmox")}
-      />
+        viewBox="0 0 24 24"
+        role="img"
+        aria-label=${localize("views.proxmox.proxmox_confirm_view.proxmox")}
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path d=${mdiServer} />
+      </svg>
     `;
   }
 
@@ -361,12 +342,7 @@ export class ProxmoxConfirmView extends LitElement {
         xmlns="http://www.w3.org/2000/svg"
       >
         <path
-          d="M240 224.813C240 233.063 233.25 239.813 225 239.813H15C6.75 239.813 0 233.063 0 224.813V134.813C0 126.563 4.77 115.043 10.61 109.203L109.39 10.423C115.22 4.59304 124.77 4.59304 130.6 10.423L229.39 109.213C235.22 115.043 240 126.573 240 134.823V224.823V224.813Z"
-          fill="#F2F4F9"
-        />
-        <path
           d="M229.39 109.203L130.61 10.423C124.78 4.59304 115.23 4.59304 109.4 10.423L10.61 109.203C4.78 115.033 0 126.563 0 134.813V224.813C0 233.063 6.75 239.813 15 239.813H107.27L66.64 199.183C64.55 199.903 62.32 200.313 60 200.313C48.7 200.313 39.5 191.113 39.5 179.813C39.5 168.513 48.7 159.313 60 159.313C71.3 159.313 80.5 168.513 80.5 179.813C80.5 182.143 80.09 184.373 79.37 186.463L111 218.093V102.213C104.2 98.873 99.5 91.893 99.5 83.823C99.5 72.523 108.7 63.323 120 63.323C131.3 63.323 140.5 72.523 140.5 83.823C140.5 91.893 135.8 98.873 129 102.213V183.483L160.46 152.023C159.84 150.063 159.5 147.983 159.5 145.823C159.5 134.523 168.7 125.323 180 125.323C191.3 125.323 200.5 134.523 200.5 145.823C200.5 157.123 191.3 166.323 180 166.323C177.5 166.323 175.12 165.853 172.91 165.033L129 208.943V239.823H225C233.25 239.823 240 233.073 240 224.823V134.823C240 126.573 235.23 115.053 229.39 109.213V109.203Z"
-          fill="#18BCF2"
         />
       </svg>
     `;

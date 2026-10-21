@@ -1054,6 +1054,26 @@ async fn pre_install_checks(
     Ok(())
 }
 
+/// Everything an install checks before it downloads, and the OVA image it would download.
+async fn check_install<B: ReleaseSource>(
+    backend: &B,
+    session: &ProxmoxSession,
+    config: &ProxmoxVmConfig,
+) -> Result<HaosImage> {
+    validate_disk_size(config.disk_size_gb)?;
+
+    let release: HaosRelease = backend.get_latest_haos_release_for_board("ova").await?;
+    let image = release
+        .image_for("ova", ImageFormat::Qcow2)
+        .cloned()
+        .ok_or_else(|| {
+            Error::DownloadFailed(format!("No OVA image in HAOS release {}", release.version))
+        })?;
+
+    pre_install_checks(session, config, image.size).await?;
+    Ok(image)
+}
+
 /// Repeat the checks that may have changed during the download, now the exact upload size is known.
 async fn recheck_before_upload(
     session: &ProxmoxSession,
@@ -1405,11 +1425,6 @@ async fn create_vm_with_disk(
     storage_name: &str,
     source_unused: &mut bool,
 ) -> Result<()> {
-    if let Err(error) = validate_disk_size(config.disk_size_gb) {
-        *source_unused = true;
-        return Err(error);
-    }
-
     // Networks and ACLs can change during the download/upload.
     if let Err(error) = ensure_bridge_access(session, config).await {
         // No create request was sent, so the uploaded source is unused.
@@ -1489,18 +1504,21 @@ async fn create_vm_with_disk(
 
     resize_vm_disk(session, config)
         .await
-        .map_err(|error| resize_error(config.vm_id, error))
+        .map_err(|error| resize_error(config, error))
 }
 
-fn resize_error(vm_id: u32, error: Error) -> Error {
-    let message = match error {
-        // Keep its own code, so the user is told to reconnect
-        Error::ProxmoxCertificateChanged => return error,
-        Error::ProxmoxApi(message) => message,
-        other => other.to_string(),
-    };
-    Error::ProxmoxApi(format!(
-        "VM {vm_id} was created but its disk could not be resized: {message}"
+fn resize_error(config: &ProxmoxVmConfig, error: Error) -> Error {
+    // Keep its own code, so the user is told to reconnect
+    if matches!(error, Error::ProxmoxCertificateChanged) {
+        return error;
+    }
+
+    // The VM exists now, so installing again with its ID fails until it's
+    // removed.
+    Error::ProxmoxActionRequired(crate::message!(
+        "backend.proxmox.vm_created_resize_failed",
+        vm_id = config.vm_id,
+        size_gb = config.disk_size_gb,
     ))
 }
 
@@ -1730,8 +1748,8 @@ async fn get_vm_ip(
     find_vm_ip(&json)
 }
 
-/// The first IPv4 address on a non-loopback interface in a guest agent
-/// `network-get-interfaces` reply.
+/// The first reachable IPv4 address on a non-loopback interface in a guest
+/// agent `network-get-interfaces` reply.
 fn find_vm_ip(json: &serde_json::Value) -> Option<String> {
     let interfaces = json.get("data")?.get("result")?.as_array()?;
 
@@ -1748,10 +1766,13 @@ fn find_vm_ip(json: &serde_json::Value) -> Option<String> {
             if addr.get("ip-address-type").and_then(|t| t.as_str()) != Some("ipv4") {
                 continue;
             }
-            if let Some(ip) = addr.get("ip-address").and_then(|i| i.as_str()) {
-                if !ip.starts_with("127.") {
-                    return Some(ip.to_string());
-                }
+            // Parsed, so only an address ever reaches the http:// links
+            let ip = addr
+                .get("ip-address")
+                .and_then(|i| i.as_str())
+                .and_then(|i| i.parse::<std::net::Ipv4Addr>().ok());
+            if let Some(ip) = ip.filter(|ip| crate::host::is_reachable_vm_address(*ip)) {
+                return Some(ip.to_string());
             }
         }
     }
@@ -1802,8 +1823,6 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
     config: &ProxmoxVmConfig,
     progress_callback: &P,
 ) -> Result<ProxmoxVmResult> {
-    validate_disk_size(config.disk_size_gb)?;
-
     // Step 1: Get HAOS release info
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
@@ -1813,16 +1832,8 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
         message: "Fetching release info...".to_string(),
     });
 
-    let release: HaosRelease = backend.get_latest_haos_release_for_board("ova").await?;
-    let haos_version = &release.version;
-    let image: &HaosImage = release
-        .image_for("ova", ImageFormat::Qcow2)
-        .ok_or_else(|| {
-            Error::DownloadFailed(format!("No OVA image in HAOS release {}", haos_version))
-        })?;
-
     // Catch anything that would fail later before spending time on the download
-    pre_install_checks(session, config, image.size).await?;
+    let image = check_install(backend, session, config).await?;
     stop_if_cancelled(progress_callback)?;
 
     // Step 2: Download the compressed image locally
@@ -1841,7 +1852,7 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
 
     // Download the image
     backend
-        .download_image(image, &compressed_path, progress_callback)
+        .download_image(&image, &compressed_path, progress_callback)
         .await?;
 
     // Step 3: Extract the compressed image
@@ -1962,6 +1973,14 @@ impl ProxmoxBackend for Backend {
         vm_id: u32,
     ) -> Result<VmStatusInfo> {
         vm_status(session, node, vm_id).await
+    }
+
+    async fn check_vm_config(
+        &self,
+        session: &ProxmoxSession,
+        config: &ProxmoxVmConfig,
+    ) -> Result<()> {
+        check_install(self, session, config).await.map(drop)
     }
 
     async fn create_vm<P: ProgressCallback>(
@@ -4132,6 +4151,72 @@ mod tests {
             permissions_mock.assert_async().await;
         }
 
+        // The check before confirming runs the install's checks, and nothing past them.
+        #[tokio::test]
+        #[serial]
+        async fn test_check_install_runs_the_install_checks_without_downloading() {
+            struct ReleaseOnly(HaosRelease);
+            impl ReleaseSource for ReleaseOnly {
+                async fn check_connection(&self) -> Result<()> {
+                    unreachable!()
+                }
+                async fn get_device_manifest(&self) -> Result<crate::DeviceManifest> {
+                    unreachable!()
+                }
+                async fn get_haos_release(&self, _: &str) -> Result<HaosRelease> {
+                    unreachable!()
+                }
+                async fn get_latest_haos_release_for_board(&self, _: &str) -> Result<HaosRelease> {
+                    Ok(self.0.clone())
+                }
+                async fn download_image<P: ProgressCallback>(
+                    &self,
+                    _: &HaosImage,
+                    _: &std::path::Path,
+                    _: &P,
+                ) -> Result<()> {
+                    unreachable!("the check must not download")
+                }
+                async fn extract_xz<P: ProgressCallback>(
+                    &self,
+                    _: &std::path::Path,
+                    _: &std::path::Path,
+                    _: &P,
+                ) -> Result<()> {
+                    unreachable!("the check must not extract")
+                }
+                fn cache_dir(&self) -> Result<std::path::PathBuf> {
+                    unreachable!()
+                }
+            }
+
+            let mut server = Server::new_async().await;
+            let nodes_mock = server
+                .mock("GET", "/api2/json/nodes")
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"data": [{"node": "pve", "status": "offline"}]}"#)
+                .create_async()
+                .await;
+            let release = ReleaseOnly(HaosRelease {
+                version: "18.2".into(),
+                images: vec![HaosImage {
+                    board: "ova".into(),
+                    format: ImageFormat::Qcow2,
+                    download_url: format!("{}/image.xz", server.url()),
+                    size: 400_000_000,
+                    digest: None,
+                }],
+            });
+
+            let result = check_install(&release, &test_session(&server), &vm_config(true)).await;
+            assert!(
+                matches!(&result, Err(Error::ProxmoxActionRequired(msg)) if msg.to_string().contains("offline")),
+                "unexpected result: {result:?}"
+            );
+            nodes_mock.assert_async().await;
+        }
+
         #[tokio::test]
         #[serial]
         async fn test_get_next_vm_id_success() {
@@ -4832,48 +4917,47 @@ mod tests {
                     .await
                     .unwrap_err();
                 assert!(error.to_string().contains("at least 32 GiB"));
-                let mut source_unused = false;
-                let error = create_vm_with_disk(
-                    &session,
-                    &config,
-                    "haos.qcow2",
-                    "local",
-                    &mut source_unused,
-                )
-                .await
-                .unwrap_err();
+                // The check before confirming rejects it the same way
+                let error = Backend
+                    .check_vm_config(&session, &config)
+                    .await
+                    .unwrap_err();
                 assert!(error.to_string().contains("cannot shrink"));
-                assert!(source_unused);
             }
         }
 
         #[test]
         fn test_disk_resize_keeps_a_certificate_change() {
+            let config = disk_test_config(32);
             assert!(matches!(
-                resize_error(100, Error::ProxmoxCertificateChanged),
+                resize_error(&config, Error::ProxmoxCertificateChanged),
                 Error::ProxmoxCertificateChanged
             ));
-            let error = resize_error(100, Error::ProxmoxApi("HTTP 500".into()));
-            assert!(
-                matches!(&error, Error::ProxmoxApi(message) if message.contains("VM 100 was created")),
-                "{error}"
-            );
+            for error in [
+                Error::ProxmoxApi("HTTP 500".into()),
+                Error::ProxmoxSessionExpired,
+            ] {
+                let error = resize_error(&config, error);
+                assert!(
+                    matches!(&error, Error::ProxmoxActionRequired(message) if message.to_string().contains("Delete VM 100 in Proxmox")),
+                    "{error}"
+                );
+            }
         }
 
         #[tokio::test]
         async fn test_disk_resize_failures_propagate_from_creation() {
-            for (status, body, task_status, expected_error) in [
-                (500, "Insufficient storage", None, "Insufficient storage"),
-                (403, "Permission denied", None, "Permission denied"),
-                (200, "invalid json", None, "parse disk resize response"),
-                (200, r#"{"data":null}"#, None, "missing task UPID"),
-                (200, r#"{"data":""}"#, None, "missing task UPID"),
-                (200, r#"{"data":12}"#, None, "missing task UPID"),
+            for (status, body, task_status) in [
+                (500, "Insufficient storage", None),
+                (403, "Permission denied", None),
+                (200, "invalid json", None),
+                (200, r#"{"data":null}"#, None),
+                (200, r#"{"data":""}"#, None),
+                (200, r#"{"data":12}"#, None),
                 (
                     200,
                     r#"{"data":"resize-task"}"#,
                     Some("shrinking disks is not supported"),
-                    "shrinking disks is not supported",
                 ),
             ] {
                 let mut server = Server::new_async().await;
@@ -4938,11 +5022,12 @@ mod tests {
                 )
                 .await
                 .unwrap_err();
-                assert!(error.to_string().contains(expected_error), "{error}");
-                assert!(error
-                    .to_string()
-                    .contains("VM 100 was created but its disk could not be resized"));
-                assert_eq!(error.to_string().matches("Proxmox API error:").count(), 1);
+                // Every resize failure leaves the VM behind, so each one tells
+                // the user to remove it, without the server's response
+                assert_eq!(
+                    error.to_string(),
+                    "VM 100 was created, but its disk couldn't be resized to 32 GB. Delete VM 100 in Proxmox, then install again."
+                );
                 create_mock.assert_async().await;
                 create_task.assert_async().await;
                 resize_mock.assert_async().await;
@@ -5808,6 +5893,43 @@ mod tests {
             ]}});
 
             assert_eq!(find_vm_ip(&json), None);
+        }
+
+        #[test]
+        fn test_find_vm_ip_skips_haos_docker_networks() {
+            // Before the LAN lease only HAOS's own bridges have an IPv4
+            let mut json = serde_json::json!({"data": {"result": [
+                {"name": "enp0s18", "ip-addresses": [
+                    {"ip-address-type": "ipv6", "ip-address": "fe80::1"}
+                ]},
+                {"name": "hassio", "ip-addresses": [
+                    {"ip-address-type": "ipv4", "ip-address": "172.30.32.1"}
+                ]},
+                {"name": "docker0", "ip-addresses": [
+                    {"ip-address-type": "ipv4", "ip-address": "172.30.232.1"}
+                ]}
+            ]}});
+            assert_eq!(find_vm_ip(&json), None);
+
+            json["data"]["result"][0]["ip-addresses"]
+                .as_array_mut()
+                .unwrap()
+                .push(
+                    serde_json::json!({"ip-address-type": "ipv4", "ip-address": "192.168.1.100"}),
+                );
+            assert_eq!(find_vm_ip(&json).as_deref(), Some("192.168.1.100"));
+        }
+
+        #[test]
+        fn test_find_vm_ip_ignores_values_that_are_not_addresses() {
+            let json = serde_json::json!({"data": {"result": [
+                {"name": "eth0", "ip-addresses": [
+                    {"ip-address-type": "ipv4", "ip-address": "10.0.0.5@example.org"},
+                    {"ip-address-type": "ipv4", "ip-address": "10.0.0.6"}
+                ]}
+            ]}});
+
+            assert_eq!(find_vm_ip(&json).as_deref(), Some("10.0.0.6"));
         }
 
         #[tokio::test]

@@ -2,6 +2,7 @@ import { expect, fixture, html } from "@open-wc/testing";
 import "../../../src/components/step-indicator.js";
 import type { StepIndicator } from "../../../src/components/step-indicator.js";
 import type { WizardStep } from "../../../src/state/wizard-state.js";
+import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
 
 describe("step-indicator", () => {
   const mockSteps: WizardStep[] = [
@@ -26,8 +27,65 @@ describe("step-indicator", () => {
 
     const labels = el.shadowRoot!.querySelectorAll(".step-label");
     expect(labels[0].textContent?.trim()).to.equal("First Step");
-    expect(labels[1].textContent?.trim()).to.equal("Second Step");
-    expect(labels[2].textContent?.trim()).to.equal("Third Step");
+    expect(labels[1].textContent?.trim()).to.equal("Second Step (upcoming)");
+    expect(labels[2].textContent?.trim()).to.equal("Third Step (upcoming)");
+  });
+
+  it("tells screen readers which steps are done and which are upcoming", async () => {
+    const el = await fixture<StepIndicator>(html`
+      <step-indicator .steps=${mockSteps} .currentIndex=${1}></step-indicator>
+    `);
+    // List items have no accessible name, so read their text in order.
+    const announced = async () =>
+      findByRole(await fullA11ySnapshot(), "listitem").map((item) =>
+        findByRole(item, "StaticText")
+          .map((text) => text.name)
+          .join(" ")
+      );
+
+    expect(await announced()).to.deep.equal([
+      "First Step (completed)",
+      "Second Step",
+      "Third Step (upcoming)",
+    ]);
+    el.currentIndex = 2;
+    await el.updateComplete;
+    expect(await announced()).to.deep.equal([
+      "First Step (completed)",
+      "Second Step (completed)",
+      "Third Step",
+    ]);
+  });
+
+  it("names only the current step when the names don't fit on one line", async () => {
+    const el = await fixture<StepIndicator>(html`
+      <step-indicator
+        style="width: 240px"
+        .steps=${mockSteps}
+        .currentIndex=${1}
+      ></step-indicator>
+    `);
+    const shown = () =>
+      [...el.shadowRoot!.querySelectorAll<HTMLElement>(".step-label")].map(
+        (label) => label.offsetWidth > 1
+      );
+    // Steps on one line share a vertical center, whatever their height
+    const rows = () =>
+      new Set(
+        [...el.shadowRoot!.querySelectorAll<HTMLElement>(".step")].map((step) =>
+          Math.round(step.offsetTop + step.offsetHeight / 2)
+        )
+      ).size;
+
+    expect(el.hasAttribute("compact")).to.be.true;
+    expect(shown()).to.deep.equal([false, true, false]);
+    expect(rows()).to.equal(1);
+
+    el.style.width = "800px";
+    el.currentIndex = 2;
+    await el.updateComplete;
+    expect(el.hasAttribute("compact")).to.be.false;
+    expect(shown()).to.deep.equal([true, true, true]);
   });
 
   it("marks current step as active", async () => {

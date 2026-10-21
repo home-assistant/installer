@@ -19,7 +19,7 @@ export class MiniPCSetupMethodView extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      height: 100%;
+      min-height: 100%;
     }
 
     h2 {
@@ -70,7 +70,7 @@ export class MiniPCSetupMethodView extends LitElement {
           description=${localize(
             "views.minipc.setup_method_view.connect_the_ssd_or_nvme_drive_from_your_mini_pc_to_this_computer_via_usb_ad"
           )}
-          image="/assets/icons/drive-connect.svg"
+          icon="drive-connect"
           @click=${this._onConnectDrive}
           ><span slot="end" aria-hidden="true">→</span></option-card
         >
@@ -82,7 +82,7 @@ export class MiniPCSetupMethodView extends LitElement {
           description=${localize(
             "views.minipc.setup_method_view.create_a_bootable_usb_drive_to_install_home_assistant_directly_on_the_mini_"
           )}
-          image="/assets/icons/usb-boot.svg"
+          icon="usb-boot"
           @click=${this._onUsbBoot}
           ><span slot="end" aria-hidden="true">→</span></option-card
         >
@@ -105,7 +105,6 @@ export class MiniPCSetupMethodView extends LitElement {
   }
 
   private _onConnectDrive() {
-    wizardState.setSelection("installMethod", "direct");
     wizardState.nextStep();
   }
 

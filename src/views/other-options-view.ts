@@ -5,6 +5,7 @@ import {
   reducedMotionStyles,
 } from "../utils/view-accessibility.js";
 import { customElement } from "lit/decorators.js";
+import { pageHeaderStyles } from "../utils/page-header.js";
 import "../components/option-card.js";
 import { openExternalLink, openExternalUrl } from "../utils/external-url.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
@@ -67,18 +68,12 @@ export class OtherOptionsView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = css`
     ${reducedMotionStyles}
+    ${pageHeaderStyles}
     :host {
       display: flex;
       flex-direction: column;
       box-sizing: border-box;
       height: 100%;
-      padding: 2rem;
-    }
-
-    .header {
-      display: flex;
-      align-items: center;
-      margin-bottom: 2rem;
     }
 
     .content {
@@ -87,6 +82,7 @@ export class OtherOptionsView extends LitElement {
       flex-direction: column;
       align-items: center;
       overflow-y: auto;
+      padding: 1rem 2rem 2rem;
     }
 
     h1 {
@@ -155,7 +151,7 @@ export class OtherOptionsView extends LitElement {
                 horizontal
                 .title=${option.title}
                 .description=${option.description}
-                .image=${"/assets/icons/" + option.icon + ".svg"}
+                .icon=${option.icon}
                 @click=${() => openExternalUrl(option.url)}
                 ><span slot="end" aria-hidden="true">↗</span></option-card
               >

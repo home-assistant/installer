@@ -201,6 +201,8 @@ pub enum Outcome {
     Failed,
 }
 
+/// Why a frontend step failed. The frontend sends a command's `CommandError`
+/// code as is, so every code a command can return has a category here.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCategory {
@@ -212,15 +214,39 @@ pub enum ErrorCategory {
     DiskServiceUnavailable,
     ImageTooLarge,
     Timeout,
+    #[serde(alias = "network")]
     NetworkError,
     DownloadFailed,
     ExtractionFailed,
     ProxmoxError,
+    #[serde(alias = "utm")]
     UtmError,
     Cancelled,
     OperationFailed,
     FrontendError,
     UnhandledRejection,
+    Io,
+    DeviceNotFound,
+    DeviceBusy,
+    ProxmoxApi,
+    ProxmoxActionRequired,
+    ProxmoxSessionExpired,
+    ProxmoxCertificateChanged,
+    ProxmoxTwoFactor,
+    UtmOperationUncertain,
+    UtmVmCreated,
+    UnsupportedPlatform,
+    Json,
+    InvalidConfig,
+    RateLimited,
+    DriveTooSmall,
+    TemporaryImageUnavailable,
+    OperationInProgress,
+    Internal,
+    /// Any other value. A code without a category is still logged, as this;
+    /// the value itself never reaches the log.
+    #[serde(other)]
+    Unrecognized,
 }
 
 #[tauri::command]
@@ -348,7 +374,51 @@ mod tests {
     fn frontend_ipc_rejects_free_form_fields() {
         assert!(serde_json::from_str::<Flow>("\"private.example\"").is_err());
         assert!(serde_json::from_str::<Stage>("\"password\"").is_err());
-        assert!(serde_json::from_str::<ErrorCategory>("\"ticket=secret\"").is_err());
+        let error = serde_json::from_str::<ErrorCategory>("\"ticket=secret\"").unwrap();
+        assert_eq!(format!("{error:?}"), "Unrecognized");
+    }
+
+    #[test]
+    fn every_command_error_code_has_a_category() {
+        // The codes in command_error.rs and the ones commands.rs creates itself
+        for code in [
+            "network",
+            "io",
+            "device_not_found",
+            "device_busy",
+            "checksum_mismatch",
+            "permission_denied",
+            "disk_service_unavailable",
+            "cancelled",
+            "proxmox_api",
+            "proxmox_action_required",
+            "proxmox_session_expired",
+            "proxmox_certificate_changed",
+            "proxmox_two_factor",
+            "utm",
+            "utm_operation_uncertain",
+            "utm_vm_created",
+            "drive_disconnected",
+            "write_protected",
+            "unsupported_platform",
+            "json",
+            "invalid_config",
+            "rate_limited",
+            "download_failed",
+            "extraction_failed",
+            "verification_failed",
+            "image_too_large",
+            "drive_too_small",
+            "temporary_image_unavailable",
+            "operation_in_progress",
+            "internal",
+        ] {
+            let category = serde_json::from_value::<ErrorCategory>(code.into()).unwrap();
+            assert!(
+                !matches!(category, ErrorCategory::Unrecognized),
+                "{code} has no category"
+            );
+        }
     }
 
     #[test]

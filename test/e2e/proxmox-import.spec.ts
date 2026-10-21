@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 type TestWindow = typeof window & {
-  __TAURI__: object;
+  isTauri: boolean;
   __TAURI_INTERNALS__: {
     invoke: (cmd: string, args: unknown) => Promise<unknown>;
     transformCallback: () => number;
@@ -17,7 +17,7 @@ async function configure(page: Page, failFirst = false, changed = true) {
   await page.evaluate(
     ({ failure, changed }) => {
       const win = window as TestWindow;
-      win.__TAURI__ = {};
+      win.isTauri = true;
       win.importWrites = [];
       // Import is cluster-wide, so it is tracked per server, not per login
       const enabledOrigins = new Set<string>();
@@ -53,6 +53,8 @@ async function configure(page: Page, failFirst = false, changed = true) {
               ];
             case "get_haos_release":
               return { version: "18.3", assets: [] };
+            case "proxmox_check_vm_config":
+              return null;
             case "proxmox_create_vm":
               return { vm_id: 100, node: "pve" };
             case "proxmox_get_vm_status":

@@ -1,4 +1,4 @@
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { WizardStep } from "../state/wizard-state.js";
 import { ifDefined } from "lit/directives/if-defined.js";
@@ -53,6 +53,15 @@ export class StepIndicator extends LitElement {
       font-weight: 500;
     }
 
+    .step-status {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
     .step-connector {
       width: 24px;
       height: 2px;
@@ -74,8 +83,9 @@ export class StepIndicator extends LitElement {
       }
     }
 
-    /* Keep the names in the accessibility tree when only dots fit. */
-    :host([compact]) .step-label {
+    /* Keep the other names in the accessibility tree when only the current
+       one fits. */
+    :host([compact]) .step-label:not(.active) {
       position: absolute;
       width: 1px;
       height: 1px;
@@ -113,6 +123,47 @@ export class StepIndicator extends LitElement {
   @property({ type: Number })
   currentIndex = 0;
 
+  private _fitFrame?: number;
+
+  // Measuring in the observer callback would resize what it observes, so the
+  // next frame does it, once however many resizes came in between
+  private _resizeObserver = new ResizeObserver(() => {
+    this._fitFrame ??= requestAnimationFrame(() => {
+      this._fitFrame = undefined;
+      this._fit();
+    });
+  });
+
+  connectedCallback() {
+    super.connectedCallback();
+    this._resizeObserver.observe(this);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._resizeObserver.disconnect();
+    if (this._fitFrame !== undefined) cancelAnimationFrame(this._fitFrame);
+    this._fitFrame = undefined;
+  }
+
+  protected updated(changed: PropertyValues) {
+    if (changed.has("steps") || changed.has("currentIndex")) this._fit();
+  }
+
+  /**
+   * Show every step name while they fit on one line. Otherwise only the
+   * current one, so the steps never wrap and push the header taller.
+   */
+  private _fit() {
+    const steps = this.renderRoot.querySelectorAll<HTMLElement>(".step");
+    if (steps.length < 2) return;
+    this.removeAttribute("compact");
+    const first = steps[0];
+    const last = steps[steps.length - 1];
+    const wraps = last.offsetTop >= first.offsetTop + first.offsetHeight;
+    this.toggleAttribute("compact", wraps);
+  }
+
   render() {
     return html`
       <div
@@ -129,6 +180,11 @@ export class StepIndicator extends LitElement {
     const isActive = index === this.currentIndex;
     const isCompleted = index < this.currentIndex;
     const isLast = index === this.steps.length - 1;
+    const status = isActive
+      ? undefined
+      : isCompleted
+        ? localize("components.step_indicator.completed")
+        : localize("components.step_indicator.upcoming");
 
     return html`
       <div
@@ -142,9 +198,11 @@ export class StepIndicator extends LitElement {
             : ""}"
           aria-hidden="true"
         ></span>
-        <span class="step-label ${isActive ? "active" : ""}">
-          ${step.title}
-        </span>
+        <span class="step-label ${isActive ? "active" : ""}"
+          >${step.title}${status
+            ? html`<span class="step-status">${` ${status}`}</span>`
+            : nothing}</span
+        >
       </div>
       ${!isLast
         ? html`<span

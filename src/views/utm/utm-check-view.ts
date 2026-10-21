@@ -34,7 +34,7 @@ export class UtmCheckView extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      height: 100%;
+      min-height: 100%;
     }
 
     h2 {
@@ -48,7 +48,7 @@ export class UtmCheckView extends LitElement {
     .subtitle {
       font-size: 1rem;
       color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 1rem 0;
+      margin: 0 0 1.5rem 0;
       text-align: center;
     }
 
@@ -62,6 +62,7 @@ export class UtmCheckView extends LitElement {
       border: 1px solid var(--ha-border-color, #e0e0e0);
       border-radius: 12px;
       width: 100%;
+      box-sizing: border-box;
       max-width: 500px;
     }
 
@@ -133,6 +134,10 @@ export class UtmCheckView extends LitElement {
       flex-direction: column;
     }
 
+    .status-text.unavailable {
+      text-align: center;
+    }
+
     .status-title {
       font-size: 1rem;
       font-weight: 500;
@@ -161,6 +166,7 @@ export class UtmCheckView extends LitElement {
       border: 1px solid rgba(255, 152, 0, 0.3);
       border-radius: 12px;
       width: 100%;
+      box-sizing: border-box;
       max-width: 500px;
       margin-bottom: 1rem;
     }
@@ -253,6 +259,11 @@ export class UtmCheckView extends LitElement {
     }
   }
 
+  /** An Intel Mac: nothing to fix or retry, this option just isn't for it. */
+  private get _unavailable() {
+    return this._error?.code === "unsupported_platform";
+  }
+
   render() {
     return html`
       <h2>${localize("views.utm.utm_check_view.virtual_machine_setup")}</h2>
@@ -262,6 +273,35 @@ export class UtmCheckView extends LitElement {
         )}
       </p>
 
+      ${this._unavailable ? "" : this._renderTestingWarning()}
+
+      <div class="status-card">
+        <casita-mascot
+          mood=${this._loading
+            ? "loading"
+            : this._unavailable
+              ? "sad"
+              : this._error
+                ? "problem"
+                : this._utmStatus?.installed
+                  ? "happy"
+                  : "sad"}
+        ></casita-mascot>
+        ${this._loading
+          ? this._renderLoading()
+          : this._unavailable
+            ? this._renderUnavailable()
+            : this._error
+              ? this._renderError()
+              : this._utmStatus?.installed
+                ? this._renderInstalled()
+                : this._renderNotInstalled()}
+      </div>
+    `;
+  }
+
+  private _renderTestingWarning() {
+    return html`
       <div class="warning-card">
         <p class="warning-title">
           ${localize("views.utm.utm_check_view.best_for_testing_evaluation")}
@@ -289,24 +329,20 @@ export class UtmCheckView extends LitElement {
           </li>
         </ul>
       </div>
+    `;
+  }
 
-      <div class="status-card">
-        <casita-mascot
-          mood=${this._loading
-            ? "loading"
-            : this._error
-              ? "problem"
-              : this._utmStatus?.installed
-                ? "happy"
-                : "sad"}
-        ></casita-mascot>
-        ${this._loading
-          ? this._renderLoading()
-          : this._error
-            ? this._renderError()
-            : this._utmStatus?.installed
-              ? this._renderInstalled()
-              : this._renderNotInstalled()}
+  private _renderUnavailable() {
+    return html`
+      <div class="status-text unavailable" role="status">
+        <p class="status-title">
+          ${localize("views.utm.utm_check_view.not_available_on_this_mac")}
+        </p>
+        <p class="status-description">
+          ${localize(
+            "views.utm.utm_check_view.utm_installs_need_apple_silicon"
+          )}
+        </p>
       </div>
     `;
   }

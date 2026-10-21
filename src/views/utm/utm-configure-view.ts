@@ -30,7 +30,7 @@ export class UtmConfigureView extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      height: 100%;
+      min-height: 100%;
     }
 
     h2 {
@@ -44,7 +44,7 @@ export class UtmConfigureView extends LitElement {
     .subtitle {
       font-size: 1rem;
       color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 0.75rem 0;
+      margin: 0 0 1.5rem 0;
       text-align: center;
     }
 
@@ -57,6 +57,7 @@ export class UtmConfigureView extends LitElement {
       border: 1px solid var(--ha-border-color, #e0e0e0);
       border-radius: 12px;
       width: 100%;
+      box-sizing: border-box;
       max-width: 500px;
     }
 
@@ -93,7 +94,7 @@ export class UtmConfigureView extends LitElement {
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 0.3125rem;
+      gap: 0.5rem;
       min-width: 0;
     }
 
@@ -126,6 +127,11 @@ export class UtmConfigureView extends LitElement {
       color: var(--ha-secondary-text-color, #9e9e9e);
       margin: 0;
       line-height: 1.3;
+    }
+
+    /* The slider's handle reaches below its track */
+    wa-slider + .setting-description {
+      margin-top: 0.5rem;
     }
   `;
 

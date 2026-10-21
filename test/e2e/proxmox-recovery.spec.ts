@@ -6,7 +6,7 @@ type LookupCommand =
   | "proxmox_get_next_vm_id";
 
 type TestWindow = typeof window & {
-  __TAURI__: object;
+  isTauri: boolean;
   __TAURI_INTERNALS__: { invoke: (command: string) => Promise<unknown> };
   resumeLookup: () => void;
   connectionCount: number;
@@ -24,7 +24,7 @@ async function mockLookupFailure(
       const testWindow = window as TestWindow;
       let lookupCount = 0;
       testWindow.connectionCount = 0;
-      testWindow.__TAURI__ = {};
+      testWindow.isTauri = true;
       testWindow.__TAURI_INTERNALS__ = {
         invoke: async (cmd) => {
           if (cmd === command) {
@@ -81,6 +81,8 @@ async function mockLookupFailure(
               return [
                 { name: "vmbr0", network_type: "bridge", comments: null },
               ];
+            case "proxmox_check_vm_config":
+              return null;
             case "get_haos_release":
               return { version: "18.0", assets: [] };
             default:

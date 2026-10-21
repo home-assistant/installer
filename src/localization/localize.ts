@@ -67,19 +67,34 @@ export function localizeBackend(
   const params: Record<string, PrimitiveType> = {};
   if (values && typeof values === "object" && !Array.isArray(values)) {
     for (const [name, value] of Object.entries(values)) {
-      // intl-messageformat turns booleans into parts, not text
-      if (["string", "number"].includes(typeof value)) {
+      if (value && typeof value === "object" && "key" in value) {
+        // A message inside the message, like the reason a step failed. If
+        // that one can't be shown, neither can the sentence around it.
+        const nested = localizeBackend(
+          value.key,
+          (value as { params?: unknown }).params
+        );
+        if (nested === undefined) {
+          return undefined;
+        }
+        params[name] = nested;
+      } else if (["string", "number"].includes(typeof value)) {
+        // Not booleans: intl-messageformat turns those into parts, not text
         params[name] = value as PrimitiveType;
       }
     }
   }
 
+  let text: string;
   try {
-    return formatter(key as MessageKey).format(params) as string;
+    text = formatter(key as MessageKey).format(params) as string;
   } catch {
     // A parameter the catalog expects is missing: the English is better
     return undefined;
   }
+  // A message that is only a detail, like UTM's "{detail}", can come out
+  // empty, and an empty error hides the failure
+  return text.trim() ? text : undefined;
 }
 
 export function localizeContent(

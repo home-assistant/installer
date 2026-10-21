@@ -23,6 +23,10 @@
 | Synology | Poor API, good community docs exist |
 | Portainer | Container-based, not HAOS |
 
+Back always goes one screen back: on a flow's first step it returns to the
+path selection, the same as Back on any other screen. Cancel leaves the flow
+for the welcome screen.
+
 ---
 
 ## Flow: Single Board Computer

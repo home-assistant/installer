@@ -63,6 +63,33 @@ describe("installer errors", () => {
     );
   });
 
+  it("shows a message inside a backend message in the user's language", () => {
+    const result = installerError(
+      ipcError("utm_vm_created", "English from Rust", false, {
+        message_key: "backend.utm.vm_created_not_started",
+        message_params: {
+          name: "My home",
+          detail: { key: "backend.utm.automation_denied", params: {} },
+        },
+      })
+    );
+    expect(result.message).to.contain('"My home" was created');
+    expect(result.message).to.contain("Privacy & Security > Automation");
+    expect(result.message).not.to.contain("English from Rust");
+  });
+
+  it("never shows an empty backend message", () => {
+    // osascript killed without output leaves UTM's "{detail}" empty
+    const result = installerError(
+      ipcError("utm_operation_uncertain", "", false, {
+        message_key: "backend.utm.no_answer",
+        message_params: { detail: "" },
+      }),
+      "Fallback"
+    );
+    expect(result.message).to.equal("Fallback");
+  });
+
   it("keeps the backend's English when the catalog can't help", () => {
     for (const details of [
       // A key this frontend doesn't know yet
@@ -79,6 +106,14 @@ describe("installer errors", () => {
       {
         message_key: "backend.proxmox.node_offline",
         message_params: { node: true },
+      },
+      // A message inside it that this frontend doesn't know
+      {
+        message_key: "backend.utm.vm_created_not_started",
+        message_params: {
+          name: "My home",
+          detail: { key: "backend.utm.from_the_future", params: {} },
+        },
       },
     ]) {
       const result = installerError(

@@ -64,8 +64,26 @@ describe("wizard-shell", () => {
     expect(nextButton!.textContent).to.include("Continue");
   });
 
-  it("disables back button on first step", async () => {
+  it("leaves the flow when Back is clicked on the first step", async () => {
     const el = await fixture<WizardShell>(html`<wizard-shell></wizard-shell>`);
+
+    const backButton = el.shadowRoot!.querySelector(
+      ".header wa-button"
+    ) as HTMLButtonElement;
+    expect(backButton.disabled).to.be.false;
+
+    let wentBack = false;
+    el.addEventListener("wizard-back", () => (wentBack = true));
+    setTimeout(() => backButton.click());
+    await oneEvent(el, "wizard-exit");
+    expect(wentBack).to.be.false;
+    expect(wizardState.getState().currentFlow).to.equal("sbc");
+  });
+
+  it("keeps Back disabled while hidden", async () => {
+    const el = await fixture<WizardShell>(
+      html`<wizard-shell hideBack></wizard-shell>`
+    );
 
     const backButton = el.shadowRoot!.querySelector(
       ".header wa-button"

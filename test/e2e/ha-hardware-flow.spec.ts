@@ -94,7 +94,9 @@ test.describe("Home Assistant hardware flow", () => {
       ).toBeVisible();
     }
     await expect(next(page)).toHaveJSProperty("disabled", true);
-    await expect(back(page)).toHaveJSProperty("disabled", true);
+    // Back leads out of the flow, to the path selection
+    await back(page).click();
+    await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
   for (const scenario of scenarios) {
@@ -132,7 +134,8 @@ test.describe("Home Assistant hardware flow", () => {
       for (const step of scenario.steps) {
         await expect(steps).toContainText(step);
       }
-      await expect(steps).toContainText("homeassistant.local:8123");
+      await expect(steps).toContainText("homeassistant.local");
+      await expect(steps).not.toContainText(":8123");
       await expect(success.locator(".next-steps-footer a")).toHaveAttribute(
         "href",
         scenario.guide

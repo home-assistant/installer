@@ -1,4 +1,5 @@
 import { expect, fixture, html } from "@open-wc/testing";
+import { render } from "lit";
 import "../../../src/components/option-card.js";
 import type { OptionCard } from "../../../src/components/option-card.js";
 
@@ -77,14 +78,57 @@ describe("option-card", () => {
     expect(card!.querySelector(".description")).to.exist;
   });
 
-  it("uses Home Assistant logo for ha-hardware icon", async () => {
-    const el = await fixture<OptionCard>(html`
+  it("draws icon files in the same color as the MDI icons", async () => {
+    const logo = await fixture<OptionCard>(html`
       <option-card title="HA Hardware" icon="ha-hardware"></option-card>
     `);
+    const docker = await fixture<OptionCard>(html`
+      <option-card title="Docker" icon="docker"></option-card>
+    `);
+    const minipc = await fixture<OptionCard>(html`
+      <option-card title="Mini PC" icon="minipc"></option-card>
+    `);
 
-    const img = el.shadowRoot!.querySelector(".icon-container img");
-    expect(img).to.exist;
-    expect(img!.getAttribute("src")).to.include("home-assistant-hardware.svg");
+    const file = logo.shadowRoot!.querySelector<HTMLElement>(".icon-file")!;
+    expect(file.style.getPropertyValue("--icon-file")).to.include(
+      "home-assistant-hardware.svg"
+    );
+    expect(
+      docker.shadowRoot!.querySelector<HTMLElement>(".icon-file")!.style.cssText
+    ).to.include("docker.svg");
+    const mdi = minipc.shadowRoot!.querySelector("ha-svg-icon")!;
+    expect(getComputedStyle(file).backgroundColor).to.equal(
+      getComputedStyle(mdi).color
+    );
+  });
+
+  it("ends level with the other cards in its row", async () => {
+    // A plain container: fixture() would wait for a frame, which a background
+    // test page never paints
+    const grid = document.createElement("div");
+    grid.style.cssText =
+      "display: grid; grid-template-columns: 1fr 1fr; width: 400px";
+    render(
+      html`<option-card title="Short" description="One line"></option-card>
+        <option-card
+          title="Long"
+          description="A description that wraps over several lines in a narrow card"
+        ></option-card>`,
+      grid
+    );
+    document.body.append(grid);
+    try {
+      const cards = [...grid.querySelectorAll("option-card")];
+      await Promise.all(cards.map((card) => card.updateComplete));
+      const [short, long] = cards.map((card) =>
+        card.shadowRoot!.querySelector(".card")!.getBoundingClientRect()
+      );
+
+      expect(long.height).to.be.greaterThan(200);
+      expect(short.bottom).to.equal(long.bottom);
+    } finally {
+      grid.remove();
+    }
   });
 
   describe("keyboard operability", () => {

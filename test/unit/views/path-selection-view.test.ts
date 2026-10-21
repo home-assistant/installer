@@ -1,6 +1,7 @@
 import { expect, fixture, html, oneEvent } from "@open-wc/testing";
 import "../../../src/views/path-selection-view.js";
 import type { PathSelectionView } from "../../../src/views/path-selection-view.js";
+import { mockTauriIpc, restoreTauriIpc, settle } from "../tauri-ipc.js";
 
 describe("path-selection-view", () => {
   it("renders the back button", async () => {
@@ -121,5 +122,56 @@ describe("path-selection-view", () => {
 
     const grid = el.shadowRoot!.querySelector(".options-grid");
     expect(grid).to.exist;
+  });
+
+  describe("virtual machine option on a Mac", () => {
+    beforeEach(() => {
+      Object.defineProperty(window.navigator, "userAgent", {
+        value:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+        configurable: true,
+      });
+    });
+
+    // The stub shadows the prototype getter; deleting it restores the real UA.
+    afterEach(() => {
+      delete (window.navigator as { userAgent?: string }).userAgent;
+      restoreTauriIpc();
+    });
+
+    const renderWith = async (supported: boolean) => {
+      mockTauriIpc((cmd) => {
+        if (cmd === "utm_supported") return supported;
+        throw new Error(`Unexpected command: ${cmd}`);
+      });
+      const el = await fixture<PathSelectionView>(
+        html`<path-selection-view></path-selection-view>`
+      );
+      await settle();
+      await el.updateComplete;
+      const vmCard = el.shadowRoot!.querySelector(
+        'option-card[icon="vm"]'
+      ) as HTMLElement;
+      return { el, vmCard };
+    };
+
+    it("says so on an Intel Mac, and stays selectable", async () => {
+      const { el, vmCard } = await renderWith(false);
+
+      expect(vmCard.getAttribute("description")).to.include("Apple silicon");
+
+      setTimeout(() => vmCard.click());
+      const event = await oneEvent(el, "select-path");
+      expect((event as CustomEvent).detail.path).to.equal("vm");
+    });
+
+    it("offers UTM on a Mac with Apple silicon", async () => {
+      const { vmCard } = await renderWith(true);
+
+      expect(vmCard.getAttribute("description")).to.include("UTM");
+      expect(vmCard.getAttribute("description")).not.to.include(
+        "Apple silicon"
+      );
+    });
   });
 });
