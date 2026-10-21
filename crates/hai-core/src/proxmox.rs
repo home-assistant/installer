@@ -1499,8 +1499,7 @@ fn resize_error(config: &ProxmoxVmConfig, error: Error) -> Error {
     }
 
     // The VM exists now, so installing again with its ID fails until it's
-    // removed. Say so, instead of the generic Proxmox error and a retry that
-    // can't work.
+    // removed.
     Error::ProxmoxActionRequired(crate::message!(
         "backend.proxmox.vm_created_resize_failed",
         vm_id = config.vm_id,
