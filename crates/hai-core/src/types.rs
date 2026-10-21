@@ -329,6 +329,8 @@ pub struct ProxmoxNode {
     pub status: String,
     /// CPU usage percentage
     pub cpu_usage: Option<f64>,
+    /// Logical CPUs; Proxmox won't start a VM with more cores than this
+    pub cpu_count: Option<u32>,
     /// Memory usage in bytes
     pub memory_used: Option<u64>,
     /// Total memory in bytes

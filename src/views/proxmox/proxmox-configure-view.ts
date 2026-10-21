@@ -58,10 +58,14 @@ const DIRECTORY_STORAGE_DOCS =
   "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory";
 
 /**
- * Chromium (and so WebView2) compiles `pattern` with the `v` flag, where a
- * bare `-` in a character class is a syntax error and the pattern is ignored.
+ * Proxmox's `dns-name` format: dot-separated labels of letters, digits and
+ * dashes, each starting and ending with a letter or digit. Proxmox only
+ * checks it when it creates the VM, after the download and the upload.
  */
-const VM_NAME_PATTERN = String.raw`[a-zA-Z0-9._\-]+`;
+const VM_NAME_LABEL = "[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?";
+const VM_NAME_PATTERN = new RegExp(`^${VM_NAME_LABEL}(\\.${VM_NAME_LABEL})*$`);
+
+const CORE_OPTIONS = [2, 4, 6, 8, 10, 12, 16];
 
 function isSessionExpired(error: unknown): boolean {
   return (
@@ -396,6 +400,7 @@ export class ProxmoxConfigureView extends LitElement {
         this._selectedBridge = "";
         this._bridges = [];
       }
+      this._fitCoresToNode();
 
       if (this._selectedNode) {
         await this._loadStorage();
@@ -761,7 +766,8 @@ export class ProxmoxConfigureView extends LitElement {
       !this._loadingNodes &&
         !this._loadingStorage &&
         !this._error &&
-        !this._vlanError
+        !this._vlanError &&
+        !this._nameError
     );
     wizardState.setSelection(
       "proxmoxImportReady",
@@ -788,6 +794,7 @@ export class ProxmoxConfigureView extends LitElement {
     this._selectedBridge = "";
     this._bridges = [];
     this._bridgesNode = "";
+    this._fitCoresToNode();
     this._saveSelections();
     await this._loadStorage();
   }
@@ -811,18 +818,17 @@ export class ProxmoxConfigureView extends LitElement {
     this._saveSelections();
   }
 
+  private get _nameError(): string | undefined {
+    return VM_NAME_PATTERN.test(this._vmName)
+      ? undefined
+      : localize("views.proxmox.proxmox_configure_view.vm_name_invalid");
+  }
+
   private _onNameChange(e: Event) {
-    const input = e.target as WaInput;
-    // Proxmox VM names: alphanumeric, dash, underscore, period only
-    // Replace spaces with dashes and remove invalid characters
-    let name = (input.value ?? "")
-      .replace(/\s+/g, "-")
-      .replace(/[^a-zA-Z0-9._-]/g, "");
-    // Max 63 characters
-    name = name.slice(0, 63);
-    this._vmName = name || DEFAULT_PROXMOX_VM_NAME;
-    // Update input to show sanitized value
-    input.value = this._vmName;
+    // Kept as typed: rewriting the field while typing didn't always reach
+    // it, so it could show another name than the one used. _nameError says
+    // what Proxmox would reject, and "home-" stays typeable on the way.
+    this._vmName = (e.target as WaInput).value ?? "";
     this._saveSelections();
   }
 
@@ -850,8 +856,22 @@ export class ProxmoxConfigureView extends LitElement {
     this._saveSelections();
   }
 
+  /** Proxmox creates a VM with more cores than its node has, then won't start it. */
   private _getCoreOptions(): number[] {
-    return [2, 4, 6, 8, 10, 12, 16];
+    const cpus = this._nodes.find(
+      (node) => node.name === this._selectedNode
+    )?.cpu_count;
+    if (!cpus) return CORE_OPTIONS;
+    const fitting = CORE_OPTIONS.filter((cores) => cores <= cpus);
+    return fitting.length ? fitting : [cpus];
+  }
+
+  /** Lower a chosen or restored core count to what the selected node has. */
+  private _fitCoresToNode() {
+    const options = this._getCoreOptions();
+    if (options.includes(this._cpuCores)) return;
+    this._cpuCores =
+      options.filter((cores) => cores <= this._cpuCores).pop() ?? options[0];
   }
 
   private _getMemoryOptions(): number[] {
@@ -1202,15 +1222,13 @@ export class ProxmoxConfigureView extends LitElement {
               @input=${this._onNameChange}
               placeholder="home-assistant"
               maxlength="63"
-              pattern=${VM_NAME_PATTERN}
-              title=${localize(
-                "views.proxmox.proxmox_configure_view.only_letters_numbers_dash_underscore_and_period_allowed"
-              )}
+              .customError=${this._nameError ?? null}
             ></wa-input>
-            <p class="setting-description">
-              ${localize(
-                "views.proxmox.proxmox_configure_view.name_shown_in_proxmox_letters_numbers_dash_underscore_only"
-              )}
+            <!-- Not role="alert": ViewAccessibility focuses a new alert, which
+              would pull focus out of the field halfway through typing -->
+            <p class="setting-description name-hint" aria-live="polite">
+              ${this._nameError ??
+              localize("views.proxmox.proxmox_configure_view.vm_name_hint")}
             </p>
           </div>
         </div>

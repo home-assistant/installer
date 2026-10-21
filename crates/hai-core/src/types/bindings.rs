@@ -90,6 +90,7 @@ fn optional_values_serialize_as_required_nullable_fields() {
             name: "node".into(),
             status: "online".into(),
             cpu_usage: None,
+            cpu_count: None,
             memory_used: None,
             memory_total: None,
         })
@@ -118,7 +119,7 @@ fn optional_values_serialize_as_required_nullable_fields() {
         (
             &values[1],
             ProxmoxNode::decl(&config),
-            &["cpu_usage", "memory_used", "memory_total"][..],
+            &["cpu_usage", "cpu_count", "memory_used", "memory_total"][..],
         ),
         (
             &values[4],
@@ -157,6 +158,7 @@ fn wide_integers_keep_the_existing_json_number_protocol() {
         name: "node".into(),
         status: "online".into(),
         cpu_usage: Some(0.5),
+        cpu_count: Some(4),
         memory_used: Some(1_u64 << 40),
         memory_total: Some(u64::MAX),
     })

@@ -69,6 +69,7 @@ describe("proxmox-configure-view", () => {
               name: "pve",
               status: "online",
               cpu_usage: 12.5,
+              cpu_count: null,
               memory_used: null,
               memory_total: null,
             },
@@ -76,6 +77,7 @@ describe("proxmox-configure-view", () => {
               name: "pve2",
               status: "online",
               cpu_usage: null,
+              cpu_count: null,
               memory_used: null,
               memory_total: null,
             },
@@ -131,21 +133,52 @@ describe("proxmox-configure-view", () => {
     ).to.include("VM ID");
   });
 
-  // Chromium ignores a pattern that is invalid under the `v` flag, which
-  // would leave every name valid
-  it("validates the display name against the allowed characters", async () => {
+  // Proxmox only rejects a name when it creates the VM, after the download
+  it("only accepts display names Proxmox accepts", async () => {
     const el = await mount();
-    const name = el.shadowRoot!.querySelector<WaInput>("wa-input[pattern]")!;
+    const name = el.shadowRoot!.querySelector<WaInput>(
+      'wa-input[label="Display name"]'
+    )!;
+    const type = async (value: string) => {
+      name.value = value;
+      name.dispatchEvent(new Event("input"));
+      await el.updateComplete;
+      await name.updateComplete;
+    };
 
-    // Set directly, as typing would sanitize the name before it is checked
-    name.value = "bad name!";
-    await name.updateComplete;
-    expect(name.checkValidity()).to.be.false;
-    expect(name.validity.patternMismatch).to.be.true;
+    // "home-" is typed on the way to "home-assistant", so it stays, as does
+    // what Proxmox rejects: the field always shows the name that is used
+    name.focus();
+    for (const rejected of ["home_assistant", "home assistant", "home-", ""]) {
+      await type(rejected);
+      expect(name.value).to.equal(rejected);
+      expect(wizardState.getState().selections.vmName).to.equal(rejected);
+      expect(name.checkValidity(), rejected).to.be.false;
+      expect(wizardState.getState().selections.proxmoxConfigureReady).to.be
+        .false;
+      expect(
+        el.shadowRoot!.querySelector(".name-hint")!.textContent
+      ).to.contain("Start and end with a letter or number");
+      // The error must not take focus from someone still typing
+      expect(el.shadowRoot!.activeElement).to.equal(name);
+    }
 
-    name.value = "home-assistant_1.0";
-    await name.updateComplete;
+    await type("home-assistant.lan");
     expect(name.checkValidity()).to.be.true;
+    expect(wizardState.getState().selections.proxmoxConfigureReady).to.be.true;
+  });
+
+  it("offers no more cores than the selected node has", async () => {
+    // The mocked pve2 has 8 CPUs
+    wizardState.setSelection("proxmoxNode", "pve2");
+    wizardState.setSelection("cpuCores", 16);
+
+    const el = await mount();
+
+    expect(wizardState.getState().selections.cpuCores).to.equal(8);
+    const cores = el.shadowRoot!.querySelector("wa-slider")!;
+    expect(cores.max).to.equal(3); // 2, 4, 6 and 8 cores
+    expect(cores.value).to.equal(3);
   });
 
   it("shows storage labels without template indentation", async () => {
