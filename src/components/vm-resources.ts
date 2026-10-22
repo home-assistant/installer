@@ -220,9 +220,12 @@ export class VmResources extends LitElement {
           ><div slot="label" class="setting-header">
             <span class="setting-label">${label}</span
             ><span class="setting-value" aria-hidden="true">${text}</span>
-          </div></wa-slider
+          </div>
+          <!-- The hint describes the slider, so its advice is read out with it -->
+          <p slot="hint" class="setting-description">
+            ${description}
+          </p></wa-slider
         >
-        <p class="setting-description">${description}</p>
       </div>
     </div>`;
   }
