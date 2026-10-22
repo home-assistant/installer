@@ -43,6 +43,21 @@ class FocusTestView extends LitElement {
 }
 customElements.define("focus-test-view", FocusTestView);
 
+/** An error with its own retry, which a successful retry replaces with a list. */
+class RetryTestView extends LitElement {
+  @property() error = "";
+  readonly accessibility = new ViewAccessibility(this);
+  render() {
+    return html`<h2>Step heading</h2>
+      ${this.error
+        ? html`<p role="alert">${this.error}</p>
+            <button class="retry">Try again</button>`
+        : html`<button class="refresh">Refresh</button>`}
+      <input aria-label="Name" />`;
+  }
+}
+customElements.define("retry-test-view", RetryTestView);
+
 describe("view accessibility", () => {
   it("can prime after removal before its first render", async () => {
     const el = fixtureSync<StatusTestView>(
@@ -103,6 +118,32 @@ describe("view accessibility", () => {
     expect(el.shadowRoot!.activeElement).to.equal(
       el.shadowRoot!.querySelector('[role="alert"]')
     );
+  });
+
+  it("lets a view continue from its own control after an error left with the focus", async () => {
+    const el = await fixture<RetryTestView>(
+      html`<retry-test-view error="Failed"></retry-test-view>`
+    );
+    const root = el.shadowRoot!;
+    (root.querySelector(".retry") as HTMLElement).focus();
+    el.error = "";
+    await el.updateComplete;
+    // Standing in, as the focused button went with the error
+    expect(root.activeElement === root.querySelector("h2")).to.be.true;
+
+    el.accessibility.restoreFocus(root.querySelector<HTMLElement>(".refresh"));
+    expect(root.activeElement === root.querySelector(".refresh")).to.be.true;
+  });
+
+  it("leaves focus the user moved", async () => {
+    const el = await fixture<RetryTestView>(
+      html`<retry-test-view></retry-test-view>`
+    );
+    const root = el.shadowRoot!;
+    const input = root.querySelector("input")!;
+    input.focus();
+    el.accessibility.restoreFocus(root.querySelector<HTMLElement>(".refresh"));
+    expect(root.activeElement === input).to.be.true;
   });
 
   it("focuses a heading without drawing a focus ring", async () => {

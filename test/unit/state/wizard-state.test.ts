@@ -144,11 +144,92 @@ describe("wizard-state", () => {
     expect(state.selections.drive).to.equal("/dev/sda");
   });
 
+  it("sets several selections with one notification", () => {
+    wizardState.startFlow("sbc");
+    let notifyCount = 0;
+    const unsubscribe = wizardState.subscribe(() => {
+      notifyCount++;
+    });
+
+    wizardState.setSelections({
+      drive: "/dev/sda",
+      driveName: "USB drive",
+      driveSize: 32_000_000_000,
+    });
+    unsubscribe();
+
+    expect(notifyCount).to.equal(1);
+    expect(wizardState.getState().selections).to.include({
+      drive: "/dev/sda",
+      driveName: "USB drive",
+      driveSize: 32_000_000_000,
+    });
+  });
+
+  it("keeps the selections and notifies no one when nothing changes", () => {
+    wizardState.startFlow("proxmox");
+    const session = {
+      server_url: "https://pve:8006",
+      ticket: "ticket",
+      csrf_token: "token",
+    };
+    wizardState.setSelections({ proxmoxSession: session, cpuCores: 2 });
+    const state = wizardState.getState();
+    let notifyCount = 0;
+    const unsubscribe = wizardState.subscribe(() => {
+      notifyCount++;
+    });
+
+    wizardState.setSelection("cpuCores", 2);
+    wizardState.setSelections({
+      proxmoxSession: session,
+      cpuCores: 2,
+      // Already unset
+      proxmoxVlanTag: undefined,
+    });
+    wizardState.setSelections({});
+    expect(notifyCount).to.equal(0);
+    expect(wizardState.getState() === state).to.be.true;
+
+    // State is replaced, never changed in place, so a copy is a change
+    wizardState.setSelection("proxmoxSession", { ...session });
+    unsubscribe();
+    expect(notifyCount).to.equal(1);
+    expect(wizardState.getState().selections === state.selections).to.be.false;
+  });
+
+  it("offers the Wi-Fi step for a board set along with other selections", () => {
+    const ids = () => wizardState.getState().steps.map((step) => step.id);
+    const board = (board: string) => ({
+      board,
+      minimum_storage_bytes: 1,
+      recommended_storage_bytes: 1,
+    });
+    wizardState.startFlow("sbc");
+    wizardState.goToStep(ids().indexOf("drive"));
+
+    wizardState.setSelections({
+      device: "rpi5",
+      deviceConfig: board("rpi5-64"),
+    });
+    expect(ids()).to.include("wifi");
+    expect(wizardState.currentStep?.id).to.equal("drive");
+
+    wizardState.setSelections({
+      device: "odroid-n2",
+      deviceConfig: board("odroid-n2"),
+    });
+    expect(ids()).not.to.include("wifi");
+    expect(wizardState.currentStep?.id).to.equal("drive");
+  });
+
   it("rejects undeclared keys and mistyped values at build time", () => {
     // @ts-expect-error: misspelled key
     wizardState.setSelection("deviceNmae", "Raspberry Pi 5");
     // @ts-expect-error: wrong value type
     wizardState.setSelection("deviceName", 5);
+    // @ts-expect-error: misspelled key
+    wizardState.setSelections({ deviceNmae: "Raspberry Pi 5" });
     // @ts-expect-error: misspelled key
     expect(wizardState.getState().selections.utmInstaled).to.be.undefined;
   });

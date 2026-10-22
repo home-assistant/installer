@@ -4,7 +4,8 @@ import "../../src/components/app-shell.js";
 import {
   formatDiskSize,
   formatMemory,
-} from "../../src/components/vm-resources.js";
+  formatRam,
+} from "../../src/utils/format.js";
 import messages from "../../src/localization/en.json";
 import {
   setLanguage,
@@ -12,7 +13,7 @@ import {
 } from "../../src/localization/localize.js";
 import { DEFAULT_UTM_VM_NAME } from "../../src/state/vm-defaults.js";
 import { wizardState } from "../../src/state/wizard-state.js";
-import { mockTauriIpc, restoreTauriIpc } from "./tauri-ipc.js";
+import { mockTauriIpc, restoreTauriIpc, settle } from "./tauri-ipc.js";
 
 interface RenderView extends HTMLElement {
   render(): unknown;
@@ -103,8 +104,7 @@ describe("localized view contracts", () => {
   ]) {
     it(`${tag} localizes version failure separately from loading and a known version`, async () => {
       const element = view(tag) as RenderView & {
-        _loadInfo(): Promise<void>;
-        _loadHaosVersion(): Promise<void>;
+        _haosVersion: { hostConnected(): void };
       };
       // The board release lookup needs a selected board to ask for.
       Object.assign(element, {
@@ -118,10 +118,11 @@ describe("localized view contracts", () => {
         expect(command).to.equal("get_haos_release");
         throw new Error("Release lookup fixture failure");
       });
-      const load = () =>
-        tag === "confirmation-view"
-          ? element._loadHaosVersion()
-          : element._loadInfo();
+      // What showing the view does, without rendering it
+      const load = () => {
+        element._haosVersion.hostConnected();
+        return settle();
+      };
       await load();
       expect(output(element).textContent).to.contain("Version Unknown");
       expect(output(element).textContent).not.to.contain("Loading...");
@@ -243,18 +244,8 @@ describe("localized view contracts", () => {
     expect(formatMemory(123456 * 1024)).to.equal("1,23,456 GB");
     expect(formatDiskSize(1.5 * 1024)).to.equal("1.5 TB");
     expect(formatDiskSize(1234 * 1024)).to.equal("1,234 TB");
-    for (const tag of ["utm-confirm-view", "proxmox-confirm-view"]) {
-      const element = view(tag) as unknown as {
-        _formatMemory(mb: number): string;
-        _formatDiskSize(gb: number): string;
-      };
-      expect(element._formatMemory(123456 * 1024)).to.equal("1,23,456 GB RAM");
-      if (tag.startsWith("utm-")) {
-        expect(element._formatDiskSize(1.5 * 1024)).to.equal("1.5 TB");
-      } else {
-        expect(element._formatDiskSize(123456)).to.equal("1,23,456 GB");
-      }
-    }
+    expect(formatDiskSize(1000)).to.equal("1,000 GB");
+    expect(formatRam(123456 * 1024)).to.equal("1,23,456 GB RAM");
   });
 
   it("install-progress formats the actual rendered percentage", () => {

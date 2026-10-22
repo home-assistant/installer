@@ -178,6 +178,63 @@ describe("utm-check-view", () => {
     expect(wizardState.getState().selections.utmInstalled).to.be.true;
   });
 
+  it("keeps focus through a check started from the page, and announces its result", async () => {
+    const second = deferred<unknown>();
+    // The macOS prompt stays up until the user answers it
+    const automation = deferred<void>();
+    let checks = 0;
+    mockTauriIpc((cmd) => {
+      if (cmd === "check_utm_automation") return automation.promise;
+      expect(cmd).to.equal("check_utm_status");
+      return ++checks === 1
+        ? { installed: false, path: null, version: null }
+        : second.promise;
+    });
+    const el = await fixture<UtmCheckView>(
+      html`<utm-check-view></utm-check-view>`
+    );
+    await waitUntil(() =>
+      el.shadowRoot!.textContent!.includes("not installed")
+    );
+    const status = el.shadowRoot!.querySelector('[role="status"]')!;
+
+    const installedIt = [...el.shadowRoot!.querySelectorAll("wa-button")].find(
+      (button) => button.textContent!.includes("installed UTM")
+    ) as HTMLElement & { loading: boolean };
+    installedIt.focus();
+    installedIt.click();
+    await el.updateComplete;
+
+    // Still there, busy, rather than swapped for the spinner
+    expect(installedIt.isConnected).to.be.true;
+    expect(installedIt.loading).to.be.true;
+    expect(el.shadowRoot!.activeElement).to.equal(installedIt);
+    // The same region reports the check
+    expect(el.shadowRoot!.querySelector('[role="status"]')).to.equal(status);
+    expect(status.textContent).to.contain("Checking");
+
+    second.resolve({
+      installed: true,
+      path: "/Applications/UTM.app",
+      version: "4.5.0",
+    });
+    await waitUntil(() => status.textContent!.includes("control UTM"));
+
+    // Found, but still asking for Automation: the button stays, busy
+    expect(installedIt.isConnected).to.be.true;
+    expect(installedIt.loading).to.be.true;
+    expect(el.shadowRoot!.activeElement === installedIt).to.be.true;
+
+    automation.resolve();
+    await waitUntil(() => !installedIt.isConnected);
+    await el.updateComplete;
+
+    // Found: the buttons are gone, so focus continues from the result
+    const title = status.querySelector(".status-title")!;
+    expect(title.textContent).to.contain("installed");
+    expect(el.shadowRoot!.activeElement).to.equal(title);
+  });
+
   it("keeps a missing UTM installation gated and offers its download", async () => {
     mockTauriIpc((cmd) => {
       expect(cmd).to.equal("check_utm_status");

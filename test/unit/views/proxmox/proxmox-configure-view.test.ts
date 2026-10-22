@@ -423,12 +423,22 @@ describe("proxmox-configure-view", () => {
       const el = await mount();
       await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
 
-      storages = [local, { ...inactiveLvm, active: true }];
+      const lookup = deferred<ProxmoxStorage[]>();
+      storages = lookup.promise;
       calls.length = 0;
       const retry = [...el.shadowRoot!.querySelectorAll("wa-button")].find(
         (button) => button.textContent!.trim() === "Try again"
-      )!;
+      )! as HTMLElement & { loading: boolean };
+      retry.focus();
       retry.click();
+      await el.updateComplete;
+
+      // Still there, busy, so the focus stays with it while storage is read
+      expect(retry.isConnected).to.be.true;
+      expect(retry.loading).to.be.true;
+      expect(el.shadowRoot!.activeElement === retry).to.be.true;
+
+      lookup.resolve([local, { ...inactiveLvm, active: true }]);
       await waitUntil(
         () => wizardState.getState().selections.proxmoxStorage === "local-lvm",
         "the retry never chose the storage it found"
@@ -444,6 +454,10 @@ describe("proxmox-configure-view", () => {
       const storageSelect = el.shadowRoot!.querySelectorAll("wa-select")[1];
       expect(storageSelect.disabled).to.be.false;
       expect(storageSelect.value).to.equal("local-lvm");
+      // Try again went with the alert: focus goes on to the storage found
+      await settle();
+      await el.updateComplete;
+      expect(el.shadowRoot!.activeElement === storageSelect).to.be.true;
     });
 
     it("only says so after reading the selected node's storage", async () => {
