@@ -296,7 +296,7 @@
   "views.sbc.progress_view.writing_home_assistant_to_your_drive": "Writing Home Assistant to your drive",
   "views.sbc.progress_view.stopped_drive_not_ready": "Installation stopped. The drive is not ready to use: install again before you put it in your device.",
   "views.sbc.progress_view.stopped_nothing_written": "Installation stopped. Nothing was written to the drive.",
-  "views.sbc.progress_view.stopping": "Stopping...",
+  "views.sbc.progress_view.stopping": "Stopping",
   "views.sbc.success_view.home_assistant_os_has_been_written_to_your_storage_device": "Home Assistant OS has been written to your storage device",
   "views.sbc.success_view.do_not_format_or_initialize_the_written_drive": "Do not format or initialize the written drive. Choose Cancel if offered, or Ignore or Eject on macOS. Your computer may not recognize its Home Assistant partitions.",
   "views.sbc.success_view.eject_the_drive_before_disconnecting": "If the drive is still listed on your computer, use your operating system's eject option before disconnecting it.",
