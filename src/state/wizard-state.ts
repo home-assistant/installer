@@ -8,10 +8,9 @@ import type {
   WifiConfig,
 } from "../api/types.js";
 import type { InstallationPath } from "../views/path-selection-view.js";
-import {
-  YELLOW_DEVICE_ID,
-  type HaHardwareId,
-  type YellowModuleId,
+import type {
+  HaHardwareId,
+  YellowModuleId,
 } from "../views/ha-hardware/hardware.js";
 import { supportsWifi } from "../utils/wifi.js";
 
@@ -20,6 +19,8 @@ export type WizardFlow = InstallationPath;
 export interface WizardStep {
   id: string;
   title: string;
+  /** Whether the flow has this step for these selections; always, without it */
+  when?(selections: WizardSelections): boolean;
 }
 
 /**
@@ -113,11 +114,18 @@ export interface WizardState {
 
 type WizardStateListener = (state: WizardState) => void;
 
+/** Wi-Fi is offered only for boards that have it. */
+const wifiStep: WizardStep = {
+  id: "wifi",
+  title: localize("state.wizard_state.wifi"),
+  when: (selections) => supportsWifi(selections.deviceConfig?.board),
+};
+
 const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
   sbc: [
     { id: "device", title: localize("state.wizard_state.select_device") },
     { id: "drive", title: localize("state.wizard_state.select_drive") },
-    { id: "wifi", title: localize("state.wizard_state.wifi") },
+    wifiStep,
     { id: "confirm", title: localize("common.confirm") },
     { id: "flash", title: localize("common.install") },
     { id: "success", title: localize("common.done") },
@@ -129,16 +137,21 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
       title: localize("state.wizard_state.select_architecture"),
     },
     { id: "drive", title: localize("state.wizard_state.select_drive") },
-    { id: "wifi", title: localize("state.wizard_state.wifi") },
+    wifiStep,
     { id: "confirm", title: localize("common.confirm") },
     { id: "flash", title: localize("common.install") },
     { id: "success", title: localize("common.done") },
   ],
   "ha-hardware": [
     { id: "device", title: localize("state.wizard_state.select_device") },
-    { id: "module", title: localize("state.wizard_state.select_module") },
+    // Only for the Yellow, whose compute modules the device step hands on
+    {
+      id: "module",
+      title: localize("state.wizard_state.select_module"),
+      when: (selections) => !!selections.yellowModules?.length,
+    },
     { id: "drive", title: localize("state.wizard_state.select_drive") },
-    { id: "wifi", title: localize("state.wizard_state.wifi") },
+    wifiStep,
     { id: "confirm", title: localize("common.confirm") },
     { id: "flash", title: localize("common.install") },
     { id: "success", title: localize("common.done") },
@@ -162,19 +175,12 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
   ],
 };
 
-/**
- * The steps of `flow`. Wi-Fi is offered only for boards that have it, and the
- * compute module only for the Yellow.
- */
+/** The steps of `flow` that apply to `selections`. */
 function stepsFor(
   flow: WizardFlow,
   selections: WizardSelections
 ): WizardStep[] {
-  return FLOW_STEPS[flow].filter((step) => {
-    if (step.id === "wifi") return supportsWifi(selections.deviceConfig?.board);
-    if (step.id === "module") return selections.device === YELLOW_DEVICE_ID;
-    return true;
-  });
+  return FLOW_STEPS[flow].filter((step) => step.when?.(selections) ?? true);
 }
 
 function createInitialState(): WizardState {
@@ -276,22 +282,22 @@ class WizardStateStore {
     const keys = Object.keys(changes) as (keyof WizardSelections)[];
     if (keys.every((key) => Object.is(previous[key], changes[key]))) return;
     const selections = { ...previous, ...changes };
-    const { currentFlow, currentStepIndex } = this.state;
-    if (("deviceConfig" in changes || "device" in changes) && currentFlow) {
-      // The board decides whether there is a Wi-Fi step, and the device whether
-      // there is a compute module step; stay on the same step
-      const current = this.state.steps[currentStepIndex]?.id;
-      const steps = stepsFor(currentFlow, selections);
-      const index = steps.findIndex((step) => step.id === current);
-      this.state = {
-        ...this.state,
-        steps,
-        currentStepIndex: index >= 0 ? index : currentStepIndex,
-        selections,
-      };
-    } else {
-      this.state = { ...this.state, selections };
-    }
+    const { currentFlow, currentStepIndex, steps } = this.state;
+    // Selections decide which steps the flow has; stay on the same step. The
+    // same steps stay the same array, so the step indicator keeps them.
+    const next = currentFlow ? stepsFor(currentFlow, selections) : steps;
+    const changed =
+      next.length !== steps.length ||
+      next.some((step, index) => step !== steps[index]);
+    const index = next.findIndex(
+      (step) => step.id === steps[currentStepIndex]?.id
+    );
+    this.state = {
+      ...this.state,
+      steps: changed ? next : steps,
+      currentStepIndex: index >= 0 ? index : currentStepIndex,
+      selections,
+    };
     this.notify();
   }
 

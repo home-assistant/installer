@@ -134,6 +134,28 @@ describe("wizard-state", () => {
     expect(ids()).not.to.include("wifi");
   });
 
+  it("offers the compute module step only with the Yellow's modules", () => {
+    const ids = () => wizardState.getState().steps.map((step) => step.id);
+    const config = {
+      board: "yellow-installer",
+      minimum_storage_bytes: 1,
+      recommended_storage_bytes: 1,
+    };
+    wizardState.startFlow("ha-hardware");
+    expect(ids()).not.to.include("module");
+    wizardState.setSelection("yellowModules", [{ id: "yellow-cm4", config }]);
+    expect(ids().slice(0, 3)).to.deep.equal(["device", "module", "drive"]);
+    wizardState.setSelection("yellowModules", undefined);
+    expect(ids()).not.to.include("module");
+  });
+
+  it("keeps the steps when a selection leaves them as they were", () => {
+    wizardState.startFlow("sbc");
+    const { steps } = wizardState.getState();
+    wizardState.setSelection("drive", "/dev/sda");
+    expect(wizardState.getState().steps === steps).to.be.true;
+  });
+
   it("sets selections", () => {
     wizardState.startFlow("sbc");
     wizardState.setSelection("device", "raspberry-pi-5");

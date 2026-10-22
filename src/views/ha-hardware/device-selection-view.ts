@@ -188,6 +188,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
           device: undefined,
           deviceConfig: undefined,
           haHardware: undefined,
+          yellowModules: undefined,
         });
       } else if (this._selectedDeviceId === YELLOW_DEVICE_ID) {
         wizardState.setSelection("yellowModules", this._yellowModules());
@@ -370,35 +371,22 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     // so any change of device, including after a catalog refresh cleared the
     // previous one, must not keep the old drive.
     const previous = wizardState.getState().selections.haHardware;
+    const yellow = hardware.deviceId === YELLOW_DEVICE_ID;
+    // A compute module picked before still names the Yellow and its board
+    const keepModule = yellow && isYellow(previous);
     this._selectedDeviceId = hardware.deviceId;
-    if (hardware.deviceId === YELLOW_DEVICE_ID) {
-      const yellow = {
-        device: hardware.deviceId,
-        deviceImage: hardware.image,
-        yellowModules: this._yellowModules(),
-      };
-      // A compute module picked before still names the device and its board
-      if (isYellow(previous)) {
-        wizardState.setSelections(yellow);
-        return;
-      }
-      wizardState.setSelections({
-        ...yellow,
-        haHardware: undefined,
-        deviceName: haDeviceName(hardware),
-        deviceConfig: undefined,
-      });
-      clearDriveSelection();
-      return;
-    }
     wizardState.setSelections({
       device: hardware.deviceId,
-      haHardware: hardware.id,
-      deviceName: haHardwareName(hardware.id),
       deviceImage: hardware.image,
-      deviceConfig: config,
+      // The Yellow's compute module is picked on a step of its own
+      yellowModules: yellow ? this._yellowModules() : undefined,
+      ...(!keepModule && {
+        haHardware: yellow ? undefined : hardware.id,
+        deviceName: haDeviceName(hardware),
+        deviceConfig: yellow ? undefined : config,
+      }),
     });
-    if (previous !== hardware.id) clearDriveSelection();
+    if (!keepModule && previous !== hardware.id) clearDriveSelection();
   }
 
   /** The Yellow's compute modules, for the step that picks one. */

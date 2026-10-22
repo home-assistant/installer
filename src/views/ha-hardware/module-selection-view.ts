@@ -4,6 +4,7 @@ import {
   ViewAccessibility,
   reducedMotionStyles,
 } from "../../utils/view-accessibility.js";
+import { optionCardStyles } from "../../utils/option-card-styles.js";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState } from "../../state/wizard-state.js";
 import { clearDriveSelection } from "../../utils/drive-selection.js";
@@ -20,6 +21,7 @@ export class HaHardwareModuleSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     reducedMotionStyles,
+    optionCardStyles,
     css`
       :host {
         display: flex;
@@ -43,70 +45,6 @@ export class HaHardwareModuleSelectionView extends LitElement {
         text-align: center;
         max-width: 500px;
       }
-
-      .options {
-        display: block;
-        width: 100%;
-        max-width: 700px;
-      }
-
-      .options::part(form-control-label) {
-        display: none;
-      }
-
-      .options::part(form-control-input) {
-        display: flex;
-        gap: 1rem;
-      }
-
-      @media (max-width: 500px) {
-        .options::part(form-control-input) {
-          flex-direction: column;
-        }
-      }
-
-      wa-radio {
-        flex: 1;
-        min-width: 0;
-        height: auto;
-        padding: 1.5rem;
-        border-radius: 12px;
-        align-items: flex-start;
-      }
-
-      wa-radio::part(label) {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        white-space: normal;
-        gap: 0.75rem;
-      }
-
-      .option-icon {
-        width: 48px;
-        height: 48px;
-      }
-
-      .option-icon svg {
-        width: 100%;
-        height: 100%;
-        fill: var(--ha-primary-color, #03a9f4);
-      }
-
-      .option-title {
-        font-size: 1.125rem;
-        font-weight: 500;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.25rem 0;
-      }
-
-      .option-description {
-        font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0;
-        line-height: 1.4;
-      }
     `,
   ];
 
@@ -119,6 +57,8 @@ export class HaHardwareModuleSelectionView extends LitElement {
     const module = this._modules().find(({ id }) => id === haHardware);
     if (module) {
       this._selected = module.id;
+      // The device step reloads the catalog, which may have changed its storage
+      wizardState.setSelection("deviceConfig", module.config);
     } else if (haHardware) {
       // The catalog no longer offers the module picked before
       wizardState.setSelections({

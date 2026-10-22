@@ -27,6 +27,7 @@ import {
 } from "../../../../src/api/mock-data.js";
 import type { FlashRequest } from "../../../../src/api/types.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
+import { wizardStep } from "../../../../src/components/wizard-steps.js";
 import {
   isEligibleFlashTarget,
   storeDriveSelection,
@@ -207,6 +208,31 @@ describe("Home Assistant hardware views", () => {
       expect(selections.drive).to.equal(MOCK_BLOCK_DEVICES[2].id);
     });
 
+    it("asks for the compute module again after another device", async () => {
+      select("yellow-cm5", "Home Assistant Yellow with CM5");
+      const el = await fixture(
+        html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
+      );
+      await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
+      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
+      group.value = "ha-green";
+      group.dispatchEvent(new Event("change"));
+      expect(
+        wizardState.getState().steps.map((step) => step.id)
+      ).not.to.include("module");
+
+      group.value = "ha-yellow";
+      group.dispatchEvent(new Event("change"));
+      const { selections, steps } = wizardState.getState();
+      expect(selections.haHardware).to.equal(undefined);
+      expect(selections.deviceName).to.equal("Home Assistant Yellow");
+      expect(selections.deviceConfig).to.equal(undefined);
+      expect(steps.map((step) => step.id)).to.include("module");
+      expect(wizardStep("ha-hardware", "module")!.ready!(selections)).to.equal(
+        false
+      );
+    });
+
     it("hands on the compute modules again when the catalog reloads", async () => {
       // Back from the module step reloads the catalog, which may have changed
       select("yellow-cm4", "Home Assistant Yellow with CM4");
@@ -344,6 +370,28 @@ describe("Home Assistant hardware views", () => {
       group.value = "yellow-cm5";
       group.dispatchEvent(new Event("change"));
       expect(wizardState.getState().selections.drive).to.equal(undefined);
+    });
+
+    it("takes the compute module's storage from the reloaded catalog", async () => {
+      // Back on the device step, the catalog reloaded and changed the CM5's
+      pickYellow();
+      wizardState.setSelection("haHardware", "yellow-cm5");
+      wizardState.setSelection("deviceConfig", configFor("yellow-cm5"));
+      const reloaded = {
+        ...configFor("yellow-cm5"),
+        minimum_storage_bytes: 64_000_000_000,
+      };
+      wizardState.setSelection("yellowModules", [
+        { id: "yellow-cm4", config: configFor("yellow-cm4") },
+        { id: "yellow-cm5", config: reloaded },
+      ]);
+      const el = await fixture(
+        html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
+      );
+      expect(el.shadowRoot!.querySelector("wa-radio-group")!.value).to.equal(
+        "yellow-cm5"
+      );
+      expect(wizardState.getState().selections.deviceConfig).to.equal(reloaded);
     });
 
     it("drops a compute module the catalog no longer offers", async () => {

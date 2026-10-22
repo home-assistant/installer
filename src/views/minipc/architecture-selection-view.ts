@@ -10,6 +10,7 @@ import {
   ViewAccessibility,
   reducedMotionStyles,
 } from "../../utils/view-accessibility.js";
+import { optionCardStyles } from "../../utils/option-card-styles.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
 import { customElement, query, state } from "lit/decorators.js";
 import { getManifest, type Device } from "../../api/index.js";
@@ -27,6 +28,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
   static styles = [
     reducedMotionStyles,
     linkStyles,
+    optionCardStyles,
     css`
       :host {
         display: flex;
@@ -51,27 +53,6 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         max-width: 500px;
       }
 
-      .options {
-        display: block;
-        width: 100%;
-        max-width: 700px;
-      }
-
-      .options::part(form-control-label) {
-        display: none;
-      }
-
-      .options::part(form-control-input) {
-        display: flex;
-        gap: 1rem;
-      }
-
-      @media (max-width: 500px) {
-        .options::part(form-control-input) {
-          flex-direction: column;
-        }
-      }
-
       .mac-note {
         font-size: 1rem;
         color: var(--ha-secondary-text-color, #727272);
@@ -80,55 +61,14 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         max-width: 500px;
       }
 
-      wa-radio {
-        flex: 1;
-        min-width: 0;
-        height: auto;
-        padding: 1.5rem;
-        border-radius: 12px;
-        align-items: flex-start;
-      }
-
-      wa-radio::part(label) {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        white-space: normal;
-        gap: 0.75rem;
-      }
-
-      .option-icon {
-        width: 48px;
-        height: 48px;
-      }
-
-      .option-icon svg {
-        width: 100%;
-        height: 100%;
-        fill: var(--ha-primary-color, #03a9f4);
-      }
-
       .option-content {
         display: flex;
         flex-direction: column;
         align-items: center;
       }
 
-      .option-title {
-        font-size: 1.125rem;
-        font-weight: 500;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.25rem 0;
-      }
-
-      /* The control shade of secondary text stays readable on the selected
-       * card's tinted fill */
       .option-description {
-        font-size: 0.875rem;
-        color: var(--ha-control-secondary-text-color, #686868);
         margin: 0 0 0.75rem 0;
-        line-height: 1.4;
       }
 
       .option-examples {

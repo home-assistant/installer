@@ -23,9 +23,11 @@ const WIFI_BOARD = {
 /** Every step `flow` can show */
 function stepsOf(flow: WizardFlow): string[] {
   wizardState.startFlow(flow);
-  // The Yellow adds the compute module step to the hardware flow
-  wizardState.setSelection("device", "ha-yellow");
-  wizardState.setSelection("deviceConfig", WIFI_BOARD);
+  // The Yellow's compute modules add their step to the hardware flow
+  wizardState.setSelections({
+    yellowModules: [{ id: "yellow-cm4", config: WIFI_BOARD }],
+    deviceConfig: WIFI_BOARD,
+  });
   return wizardState.getState().steps.map(({ id }) => id);
 }
 
