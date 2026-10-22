@@ -82,8 +82,9 @@ export class ProgressBar extends LitElement {
   protected updated() {
     // Web Awesome sets aria-valuenow="0" on an indeterminate bar, so screen
     // readers announce 0% through a stage that has no value. ARIA leaves it
-    // off instead. Its template only writes it again for a new value, which
-    // is once the bar is determinate again.
+    // off instead. Its template binds the string "0" while indeterminate and
+    // the number after, so Lit writes it again as soon as the bar is
+    // determinate, even at 0.
     void this._bar.updateComplete.then(() => {
       if (this.indeterminate) {
         this._bar

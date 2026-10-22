@@ -110,6 +110,28 @@ describe("progress-bar", () => {
     expect((await progressbar(el)).hasAttribute("aria-valuenow")).to.be.false;
   });
 
+  it("brings aria-valuenow back at 0%", async () => {
+    // A wait that ends before the next stage reports any progress
+    const el = await fixture<ProgressBar>(html`
+      <progress-bar indeterminate></progress-bar>
+    `);
+    expect((await progressbar(el)).hasAttribute("aria-valuenow")).to.be.false;
+
+    el.indeterminate = false;
+    expect((await progressbar(el)).getAttribute("aria-valuenow")).to.equal(
+      "0"
+    );
+
+    // And after a wait that ends where the last stage left off
+    el.progress = 30;
+    el.indeterminate = true;
+    expect((await progressbar(el)).hasAttribute("aria-valuenow")).to.be.false;
+    el.indeterminate = false;
+    expect((await progressbar(el)).getAttribute("aria-valuenow")).to.equal(
+      "30"
+    );
+  });
+
   it("renders with error state", async () => {
     const el = await fixture<ProgressBar>(html`
       <progress-bar error progress="30"></progress-bar>
