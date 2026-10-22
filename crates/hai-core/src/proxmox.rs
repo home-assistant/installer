@@ -836,6 +836,11 @@ async fn ensure_vm_id_free(session: &ProxmoxSession, vm_id: u32) -> Result<()> {
         return Ok(());
     }
 
+    // Also runs right before the upload, after a download that can outlast the ticket
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(Error::ProxmoxSessionExpired);
+    }
+
     if status != reqwest::StatusCode::BAD_REQUEST {
         return Err(Error::ProxmoxApi(format!(
             "Failed to check VM ID: {}",
@@ -936,6 +941,10 @@ async fn fetch_privileges(session: &ProxmoxSession, path: &str) -> Result<HashSe
         .await
         .map_err(|e| request_error(e, "Failed to check permissions"))?;
 
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(Error::ProxmoxSessionExpired);
+    }
+
     if !response.status().is_success() {
         return Err(Error::ProxmoxApi(format!(
             "Failed to check permissions: {}",
@@ -1013,6 +1022,9 @@ async fn ensure_bridge_access(session: &ProxmoxSession, config: &ProxmoxVmConfig
             .send()
             .await
             .map_err(|e| request_error(e, "Failed to check SDN VNet configuration"))?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(Error::ProxmoxSessionExpired);
+        }
         if response.status() == reqwest::StatusCode::FORBIDDEN {
             return Err(Error::ProxmoxApi(format!("Cannot read SDN VNet '{}'. Grant SDN.Audit on this VNet so its network permissions can be checked.", bridge.name)));
         }
@@ -1408,6 +1420,10 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     let status = response.status();
     let response_text = response.text().await.unwrap_or_default();
 
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(Error::ProxmoxSessionExpired);
+    }
+
     if !status.is_success() {
         return Err(Error::ProxmoxApi(format!(
             "Failed to upload image to Proxmox ({}): {}",
@@ -1515,6 +1531,10 @@ async fn create_vm_with_disk(
         // A client rejection cannot have started an import. Server errors or
         // a timeout can hide a task which is still running, so retain those.
         *source_unused = status.is_client_error() && status != reqwest::StatusCode::REQUEST_TIMEOUT;
+        // Still a client rejection, so the flag above stays set
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(Error::ProxmoxSessionExpired);
+        }
         return Err(Error::ProxmoxApi(format!(
             "Failed to create VM ({}): {}",
             status, response_text
@@ -1577,6 +1597,9 @@ async fn resize_vm_disk(session: &ProxmoxSession, config: &ProxmoxVmConfig) -> R
 
     let status = response.status();
     let response_text = response.text().await.unwrap_or_default();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(Error::ProxmoxSessionExpired);
+    }
     if !status.is_success() {
         return Err(Error::ProxmoxApi(format!(
             "Failed to resize VM disk ({}): {}",
@@ -1615,6 +1638,9 @@ async fn delete_import_image(
         .send()
         .await
         .map_err(|e| request_error(e, "Could not delete import volume"))?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(Error::ProxmoxSessionExpired);
+    }
     if !response.status().is_success() {
         return Err(Error::ProxmoxApi(format!(
             "Could not delete import volume {volume}: HTTP {}",
@@ -1679,6 +1705,10 @@ async fn start_vm(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<()
 
     let status = response.status();
     let response_text = response.text().await.unwrap_or_default();
+
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(Error::ProxmoxSessionExpired);
+    }
 
     if !status.is_success() {
         return Err(Error::ProxmoxApi(format!(
@@ -2900,6 +2930,39 @@ mod tests {
 
         #[tokio::test]
         #[serial]
+        async fn test_vm_id_and_privilege_checks_auth_expired() {
+            let mut server = Server::new_async().await;
+            let vm_id_mock = server
+                .mock("GET", "/api2/json/cluster/nextid")
+                .match_query(Matcher::UrlEncoded("vmid".to_string(), "100".to_string()))
+                .with_status(401)
+                .create_async()
+                .await;
+            let permissions_mock = server
+                .mock("GET", "/api2/json/access/permissions")
+                .match_query(Matcher::UrlEncoded(
+                    "path".to_string(),
+                    "/vms/100".to_string(),
+                ))
+                .with_status(401)
+                .create_async()
+                .await;
+            let session = test_session(&server);
+
+            assert!(matches!(
+                ensure_vm_id_free(&session, 100).await,
+                Err(Error::ProxmoxSessionExpired)
+            ));
+            assert!(matches!(
+                fetch_privileges(&session, "/vms/100").await,
+                Err(Error::ProxmoxSessionExpired)
+            ));
+            vm_id_mock.assert_async().await;
+            permissions_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
         async fn test_list_storage_success() {
             let mut server = Server::new_async().await;
 
@@ -3535,7 +3598,11 @@ mod tests {
                 let error = ensure_bridge_access(&test_session(&server), &config)
                     .await
                     .unwrap_err();
-                assert!(matches!(error, Error::ProxmoxApi(_)));
+                if status == 401 {
+                    assert!(matches!(error, Error::ProxmoxSessionExpired));
+                } else {
+                    assert!(matches!(error, Error::ProxmoxApi(_)));
+                }
                 network.assert_async().await;
                 vnet.assert_async().await;
             }
@@ -5178,6 +5245,35 @@ mod tests {
         }
 
         #[tokio::test]
+        #[serial]
+        async fn test_create_vm_with_disk_auth_expired_marks_source_unused() {
+            let mut server = Server::new_async().await;
+            let _network = mock_default_bridge(&mut server).await;
+            let _permissions =
+                mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"]).await;
+            let vm_create_mock = server
+                .mock("POST", "/api2/json/nodes/pve/qemu")
+                .with_status(401)
+                .create_async()
+                .await;
+
+            let mut source_unused = false;
+            let result = create_vm_with_disk(
+                &test_session(&server),
+                &vm_config(),
+                "test-image.qcow2",
+                "local",
+                &mut source_unused,
+            )
+            .await;
+
+            assert!(matches!(result, Err(Error::ProxmoxSessionExpired)));
+            // Rejected before any import started, so the uploaded image can go
+            assert!(source_unused);
+            vm_create_mock.assert_async().await;
+        }
+
+        #[tokio::test]
         async fn delete_import_image_requires_a_task_upid() {
             for response in ["{}", r#"{"data":null}"#, r#"{"data":""}"#, r#"{"data":42}"#] {
                 let mut server = Server::new_async().await;
@@ -6764,6 +6860,40 @@ mod tests {
             }
 
             upload_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_upload_and_start_auth_expired() {
+            let mut server = Server::new_async().await;
+
+            let temp_dir = tempfile::tempdir().unwrap();
+            let temp_file = temp_dir.path().join("test-image.qcow2");
+            std::fs::write(&temp_file, b"test image content").unwrap();
+
+            let upload_mock = server
+                .mock("POST", "/api2/json/nodes/pve/storage/local/upload")
+                .with_status(401)
+                .create_async()
+                .await;
+            let start_mock = server
+                .mock("POST", "/api2/json/nodes/pve/qemu/100/status/start")
+                .with_status(401)
+                .create_async()
+                .await;
+            let session = test_session(&server);
+
+            let callback = TestProgressCallback::new();
+            assert!(matches!(
+                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local").await,
+                Err(Error::ProxmoxSessionExpired)
+            ));
+            assert!(matches!(
+                start_vm(&session, "pve", 100).await,
+                Err(Error::ProxmoxSessionExpired)
+            ));
+            upload_mock.assert_async().await;
+            start_mock.assert_async().await;
         }
 
         #[tokio::test]
