@@ -234,13 +234,15 @@ export class ProxmoxConfigureView extends LitElement {
    * Where the running storage lookup was started from, if from a button
    * that would otherwise vanish while it runs. That part stays, busy.
    */
-  @state() private _reloadFrom?: "import" | "bridges";
+  @state() private _reloadFrom?: "import" | "bridges" | "storage";
 
   // Where focus continues after a lookup hid the button that started it
   @query(".enable-import") private _enableImportButton?: HTMLElement;
   @query(".refresh-storage") private _refreshStorageButton?: HTMLElement;
   @query(".bridge-retry") private _bridgeRetryButton?: HTMLElement;
   @query("#network-bridge") private _bridgeSelect?: HTMLElement;
+  @query(".storage-retry") private _storageRetryButton?: HTMLElement;
+  @query("#storage") private _storageSelect?: HTMLElement;
   /** Why Proxmox would reject these settings, until one of them changes */
   @state() private _checkError: InstallerError | null = null;
   /** Raw text of the VLAN field; empty keeps today's untagged network. */
@@ -366,7 +368,7 @@ export class ProxmoxConfigureView extends LitElement {
     }
   }
 
-  private async _loadStorage(from?: "import" | "bridges") {
+  private async _loadStorage(from?: "import" | "bridges" | "storage") {
     if (!this._selectedNode) return;
 
     const session = this._wizardState.selections.proxmoxSession;
@@ -685,6 +687,13 @@ export class ProxmoxConfigureView extends LitElement {
     await this._loadStorage("import");
     await this._restoreFocus(
       () => this._refreshStorageButton ?? this._bridgeSelect
+    );
+  }
+
+  private async _retryStorage() {
+    await this._loadStorage("storage");
+    await this._restoreFocus(
+      () => this._storageRetryButton ?? this._storageSelect
     );
   }
 
@@ -1187,7 +1196,7 @@ export class ProxmoxConfigureView extends LitElement {
         <div class="setting-row">
           <div class="setting-icon">${this._renderDatabaseIcon()}</div>
           <div class="setting-content">
-            ${this._loadingStorage
+            ${this._loadingStorage && this._reloadFrom !== "storage"
               ? html`<span class="loading-text"
                   >${localize(
                     "views.proxmox.proxmox_configure_view.loading_storage"
@@ -1195,6 +1204,7 @@ export class ProxmoxConfigureView extends LitElement {
                 >`
               : html`
                   <wa-select
+                    id="storage"
                     label=${localize("proxmox.storage_pool")}
                     size="s"
                     .value=${this._selectedStorage}
@@ -1221,20 +1231,27 @@ export class ProxmoxConfigureView extends LitElement {
                 "views.proxmox.proxmox_configure_view.storage_location_for_the_vm_disk_image"
               )}
             </p>
-            ${this._loaded &&
-            this._selectedNode &&
-            this._storagesNode === this._selectedNode &&
-            this._storages.length === 0
+            ${this._reloadFrom === "storage" ||
+            (this._loaded &&
+              this._selectedNode &&
+              this._storagesNode === this._selectedNode &&
+              this._storages.length === 0)
               ? // Next needs storage for the VM disk, so say how to get one.
                 // Like Refresh storage, retrying waits while Import is enabled.
+                // Try again stays, busy, while it reads; the alert is empty
+                // meanwhile, so the same result is read out again.
                 html`<p class="error-text" role="alert">
-                    ${localize(
-                      "views.proxmox.proxmox_configure_view.no_disk_image_storage_on_this_node"
-                    )}
+                    ${this._reloadFrom === "storage"
+                      ? ""
+                      : localize(
+                          "views.proxmox.proxmox_configure_view.no_disk_image_storage_on_this_node"
+                        )}
                   </p>
                   <wa-button
+                    class="storage-retry"
                     ?disabled=${this._importBusy}
-                    @click=${this._loadStorage}
+                    ?loading=${this._reloadFrom === "storage"}
+                    @click=${this._retryStorage}
                     >${localize("components.app_shell.try_again")}</wa-button
                   >`
               : ""}
