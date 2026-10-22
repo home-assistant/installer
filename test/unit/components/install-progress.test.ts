@@ -226,6 +226,28 @@ describe("install-progress", () => {
     expect(el.shadowRoot!.querySelector("button")).to.not.exist;
   });
 
+  it("names the progress bar after the current stage", async () => {
+    const el = await fixture<InstallProgress>(
+      html`<install-progress stage-title="Writing"></install-progress>`
+    );
+    const bar = el.shadowRoot!.querySelector("progress-bar")!;
+    const progressbar = async () => {
+      await bar.updateComplete;
+      const inner = bar.shadowRoot!.querySelector("wa-progress-bar")!;
+      await inner.updateComplete;
+      return inner.shadowRoot!.querySelector('[role="progressbar"]')!;
+    };
+    expect((await progressbar()).getAttribute("aria-label")).to.equal(
+      "Writing"
+    );
+
+    el.stageTitle = "Waiting for Home Assistant";
+    await el.updateComplete;
+    expect((await progressbar()).getAttribute("aria-label")).to.equal(
+      "Waiting for Home Assistant"
+    );
+  });
+
   it("places the keep-window-open notice after the progress bar", async () => {
     const el = await fixture<InstallProgress>(
       html`<install-progress></install-progress>`

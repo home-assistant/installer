@@ -156,6 +156,85 @@ test("reduced motion reaches card shadow roots and the FAB button part", async (
   await page.mouse.up();
 });
 
+test("indeterminate progress and the spinner hold still with reduced motion", async ({
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await page.locator("welcome-view").waitFor({ state: "attached" });
+  await page.evaluate(() => {
+    document.querySelector("app-shell")!.remove();
+    const bar = Object.assign(document.createElement("progress-bar"), {
+      indeterminate: true,
+      label: "Waiting for Home Assistant",
+    });
+    document.body.append(bar, document.createElement("loading-spinner"));
+  });
+  const progressbar = page.getByRole("progressbar", {
+    name: "Waiting for Home Assistant",
+  });
+  // Its value is unknown, not 0%
+  await expect(progressbar).not.toHaveAttribute("aria-valuenow");
+  const indicator = page.locator("progress-bar .indicator");
+  await expect(indicator).toHaveCSS("animation-name", "none");
+  // It fills the track: half of it, standing still, would read as 50%
+  const track = (await progressbar.boundingBox())!;
+  const fill = (await indicator.boundingBox())!;
+  expect([fill.x, fill.width]).toEqual([track.x, track.width]);
+  await page.locator("progress-bar").screenshot({
+    path: testInfo.outputPath("indeterminate-reduced-motion.png"),
+  });
+  const spinner = page.locator("loading-spinner");
+  await expect(spinner.locator("svg")).toHaveCSS("animation-name", "none");
+  await expect(spinner.locator(".indicator")).toHaveCSS(
+    "animation-name",
+    "none"
+  );
+
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(indicator).toHaveCSS(
+    "animation-name",
+    "wa-progress-indeterminate"
+  );
+  await expect(spinner.locator(".indicator")).toHaveCSS(
+    "animation-name",
+    "dash"
+  );
+});
+
+test("Proxmox advanced settings expand without animating with reduced motion", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Let's go" }).click();
+  await page.getByRole("button", { name: "Proxmox server" }).click();
+  await page
+    .getByRole("textbox", { name: "Server URL" })
+    .fill("https://pve.test:8006");
+  await page
+    .getByRole("textbox", { name: "Password", exact: true })
+    .fill("mock-password");
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  const details = page.locator("proxmox-configure-view wa-details");
+  // Web Awesome reads these off its body to time the expand and collapse
+  expect(
+    await details
+      .locator(".body")
+      .evaluate((body) =>
+        ["--show-duration", "--hide-duration"].map((name) =>
+          getComputedStyle(body).getPropertyValue(name).trim()
+        )
+      )
+  ).toEqual(["0s", "0s"]);
+  await expect(details.locator('[part~="icon"]')).toHaveCSS(
+    "transition-duration",
+    "0s"
+  );
+  await details.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(page.locator("#vlan-tag")).toBeVisible();
+});
+
 test("navigation focuses headings without stealing focus on input", async ({
   page,
 }, testInfo) => {

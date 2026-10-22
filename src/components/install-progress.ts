@@ -453,6 +453,7 @@ export class InstallProgress extends LitElement {
         <progress-bar
           .progress=${this.progress}
           ?indeterminate=${this.indeterminate}
+          .label=${this.stageTitle}
         ></progress-bar>
         ${this.measurable || !this.hideEmptyDetails
           ? html`

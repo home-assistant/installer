@@ -128,6 +128,19 @@ export class ProxmoxConfigureView extends LitElement {
         flex-shrink: 0;
       }
 
+      /* Web Awesome animates the expand from script for these durations,
+         which the reduced-motion sheet can't reach */
+      @media (prefers-reduced-motion: reduce) {
+        wa-details {
+          --show-duration: 0s;
+          --hide-duration: 0s;
+        }
+
+        wa-details::part(icon) {
+          transition: none;
+        }
+      }
+
       .loading-text {
         font-size: 0.875rem;
         color: var(--ha-secondary-text-color, #9e9e9e);

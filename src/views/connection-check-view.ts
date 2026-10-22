@@ -4,8 +4,8 @@ import { checkConnection } from "../api/commands.js";
 import { localize } from "../localization/localize.js";
 import { installerError } from "../utils/installer-error.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
-import "@home-assistant/webawesome/dist/components/spinner/spinner.js";
 import "../components/casita-mascot.js";
+import "../components/loading-spinner.js";
 
 @customElement("connection-check-view")
 export class ConnectionCheckView extends LitElement {
@@ -75,11 +75,11 @@ export class ConnectionCheckView extends LitElement {
   render() {
     return html`
       ${this._checking
-        ? html`<wa-spinner
+        ? html`<loading-spinner
             aria-label=${localize(
               "views.connection_check_view.checking_connection"
             )}
-          ></wa-spinner>`
+          ></loading-spinner>`
         : html`<casita-mascot mood="sad"></casita-mascot>`}
       <h2>
         ${this._checking

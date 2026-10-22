@@ -4,11 +4,14 @@ import type { ProgressBar } from "../../../src/components/progress-bar.js";
 
 /** The `<wa-progress-bar>` this component wraps. */
 const bar = (el: ProgressBar) =>
-  el.shadowRoot!.querySelector("wa-progress-bar") as HTMLElement & {
-    value: number;
-    indeterminate: boolean;
-    label: string;
-  };
+  el.shadowRoot!.querySelector("wa-progress-bar")!;
+
+/** The ARIA progressbar inside it, once both have rendered. */
+async function progressbar(el: ProgressBar) {
+  await el.updateComplete;
+  await bar(el).updateComplete;
+  return bar(el).shadowRoot!.querySelector('[role="progressbar"]')!;
+}
 
 describe("progress-bar", () => {
   it("renders with default progress (0)", async () => {
@@ -81,6 +84,30 @@ describe("progress-bar", () => {
     `);
 
     expect(bar(el).indeterminate).to.be.true;
+  });
+
+  it("leaves out aria-valuenow while indeterminate", async () => {
+    const el = await fixture<ProgressBar>(html`
+      <progress-bar indeterminate progress="42"></progress-bar>
+    `);
+
+    // Web Awesome sets "0", which screen readers announce as 0%
+    expect((await progressbar(el)).hasAttribute("aria-valuenow")).to.be.false;
+
+    el.indeterminate = false;
+    expect((await progressbar(el)).getAttribute("aria-valuenow")).to.equal(
+      "42"
+    );
+
+    el.indeterminate = true;
+    expect((await progressbar(el)).hasAttribute("aria-valuenow")).to.be.false;
+
+    // A new value while still waiting doesn't bring it back, nor does Web
+    // Awesome rendering again on its own
+    el.progress = 60;
+    expect((await progressbar(el)).hasAttribute("aria-valuenow")).to.be.false;
+    bar(el).requestUpdate();
+    expect((await progressbar(el)).hasAttribute("aria-valuenow")).to.be.false;
   });
 
   it("renders with error state", async () => {

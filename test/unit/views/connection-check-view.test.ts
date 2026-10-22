@@ -26,6 +26,8 @@ describe("connection-check-view", () => {
     let ready = 0;
     el.addEventListener("connection-ready", () => ready++);
     expect(el.shadowRoot!.textContent).to.contain("Checking connection");
+    // The spinner that holds still with reduced motion
+    expect(el.shadowRoot!.querySelector("loading-spinner")).to.exist;
     expect(ready).to.equal(0);
     // Shaped like the native CommandError, its text from the catalog
     first.reject(
