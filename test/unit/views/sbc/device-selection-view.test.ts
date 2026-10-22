@@ -6,7 +6,12 @@ import type { Device } from "../../../../src/api/index.js";
 import { MOCK_MANIFEST } from "../../../../src/api/mock-data.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import { findByRole, fullA11ySnapshot } from "../../helpers/a11y.js";
-import { ipcError, mockTauriIpc, restoreTauriIpc } from "../../tauri-ipc.js";
+import {
+  deferred,
+  ipcError,
+  mockTauriIpc,
+  restoreTauriIpc,
+} from "../../tauri-ipc.js";
 
 describe("device-selection-view", () => {
   afterEach(() => {
@@ -110,10 +115,11 @@ describe("device-selection-view", () => {
 
   it("loads the catalog again on Try again", async () => {
     let attempts = 0;
+    const reload = deferred<typeof MOCK_MANIFEST>();
     const el = await renderCatalog(() =>
       ++attempts === 1
         ? Promise.reject(ipcError("network", "offline", true))
-        : MOCK_MANIFEST
+        : reload.promise
     );
     const alert = el.shadowRoot!.querySelector('[role="alert"]')!;
     expect(alert.textContent).to.contain("Could not connect");
@@ -122,11 +128,25 @@ describe("device-selection-view", () => {
     const retry = [...el.shadowRoot!.querySelectorAll("wa-button")].find(
       (button) => button.textContent!.includes("Try again")
     )!;
+    retry.focus();
     retry.click();
-    await waitUntil(() => cards(el).length > 0, "catalog never reloaded");
+    await el.updateComplete;
+    // Try again stays, busy, with the focus, rather than giving way to a
+    // spinner; the alert empties so the same failure would be read out again
+    expect(el.shadowRoot!.querySelector(".error wa-button") === retry).to.be
+      .true;
+    expect(retry.hasAttribute("loading")).to.be.true;
+    expect(alert.textContent!.trim()).to.equal("");
+    expect(el.shadowRoot!.activeElement === retry).to.be.true;
 
+    reload.resolve(MOCK_MANIFEST);
+    await waitUntil(() => cards(el).length > 0, "catalog never reloaded");
     expect(attempts).to.equal(2);
     expect(el.shadowRoot!.querySelector('[role="alert"]')).to.not.exist;
     expect(wizardState.getState().selections.deviceCatalogReady).to.equal(true);
+    // The list took its place, so the focus goes on from its heading
+    await waitUntil(
+      () => el.shadowRoot!.activeElement === el.shadowRoot!.querySelector("h2")
+    );
   });
 });
