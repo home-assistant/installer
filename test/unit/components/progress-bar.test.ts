@@ -118,9 +118,7 @@ describe("progress-bar", () => {
     expect((await progressbar(el)).hasAttribute("aria-valuenow")).to.be.false;
 
     el.indeterminate = false;
-    expect((await progressbar(el)).getAttribute("aria-valuenow")).to.equal(
-      "0"
-    );
+    expect((await progressbar(el)).getAttribute("aria-valuenow")).to.equal("0");
 
     // And after a wait that ends where the last stage left off
     el.progress = 30;
