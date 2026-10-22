@@ -27,6 +27,8 @@
   --ha-warning-heading-color: var(--ha-text-color);
   --ha-error-background: rgba(219, 68, 55, 0.1);
   --ha-error-border: rgba(219, 68, 55, 0.3);
+  /* Behind a plain or outlined button that is hovered or pressed */
+  --ha-hover-fill: rgba(0, 0, 0, 0.06);
 
   /* Map Web Awesome color tokens onto our theme colors. wa-button reads these
    * through its variant -> generic token chain (e.g. variant="brand" resolves
@@ -47,6 +49,9 @@
 
   /* Plain/neutral buttons (Back, Cancel) */
   --wa-color-neutral-on-quiet: var(--ha-secondary-text-color);
+  /* Their hover and pressed background. Web Awesome's own is a dark navy in
+   * dark mode, which barely shows against the page. */
+  --wa-color-neutral-fill-quiet: var(--ha-hover-fill);
 
   /* Borders of the device and drive cards, wa-select's listbox and
    * wa-details, so they match every other border */
@@ -116,5 +121,6 @@ a:hover {
     --ha-warning-heading-color: #ffb74d;
     --ha-error-background: rgba(219, 68, 55, 0.15);
     --ha-error-border: rgba(219, 68, 55, 0.4);
+    --ha-hover-fill: rgba(255, 255, 255, 0.1);
   }
 }

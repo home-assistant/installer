@@ -75,7 +75,7 @@ describe("proxmox-configure-view", () => {
             {
               name: "pve",
               status: "online",
-              cpu_usage: 12.5,
+              cpu_usage: 0.125,
               cpu_count: null,
             },
             {
@@ -108,6 +108,49 @@ describe("proxmox-configure-view", () => {
     const select = el.shadowRoot!.querySelector("wa-select")!;
     await waitUntil(() => select.displayLabel === "pve (CPU: 12.5%)");
     expect(select.displayInput.value).to.equal("pve (CPU: 12.5%)");
+  });
+
+  // Proxmox reports CPU usage as a fraction, so 0.153 is 15.3%
+  it("shows each node's CPU usage as a percentage", async () => {
+    mockTauriIpc((cmd) => {
+      switch (cmd) {
+        case "proxmox_list_bridges":
+          return [{ name: "vmbr0", network_type: "bridge", comments: null }];
+        case "proxmox_list_nodes":
+          return [
+            {
+              name: "pve",
+              status: "online",
+              cpu_usage: 0.153,
+              cpu_count: null,
+            },
+            {
+              name: "pve2",
+              status: "online",
+              cpu_usage: 0.5,
+              cpu_count: null,
+            },
+          ];
+        case "proxmox_get_next_vm_id":
+          return 100;
+        case "proxmox_list_storage":
+          return [];
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+
+    const el = fixtureSync<ProxmoxConfigureView>(html`
+      <proxmox-configure-view></proxmox-configure-view>
+    `);
+    await waitUntil(
+      () => el.shadowRoot!.querySelectorAll("wa-select wa-option").length,
+      "the node dropdown never rendered"
+    );
+
+    const options = [
+      ...el.shadowRoot!.querySelectorAll("wa-select wa-option"),
+    ].map((option) => option.textContent!.trim());
+    expect(options).to.include.members(["pve (CPU: 15.3%)", "pve2 (CPU: 50%)"]);
   });
 
   it("exposes named controls and announces actual slider sizes", async () => {
