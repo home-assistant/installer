@@ -22,7 +22,7 @@ export class InlineNotice extends LitElement {
       padding: 1rem;
       background-color: var(--ha-warning-background, rgba(255, 152, 0, 0.1));
       border: 1px solid var(--ha-warning-border, rgba(255, 152, 0, 0.3));
-      border-radius: 8px;
+      border-radius: var(--ha-small-border-radius, 8px);
       font-size: 0.875rem;
       line-height: 1.5;
       color: var(--ha-text-color, #212121);

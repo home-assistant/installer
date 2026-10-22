@@ -1,5 +1,5 @@
 import { localize } from "../localization/localize.js";
-import { LitElement, html, css, nothing } from "lit";
+import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import {
   wizardState,
@@ -9,11 +9,23 @@ import {
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "./step-indicator.js";
 import { pageHeaderStyles } from "../utils/page-header.js";
+import { srOnlyStyles } from "../utils/view-accessibility.js";
+
+/** The first heading in `root`, also in the shadow roots of its parts. */
+function findHeading(root: ParentNode): HTMLElement | null {
+  for (const element of root.querySelectorAll<HTMLElement>("*")) {
+    if (element.matches("h1, h2")) return element;
+    const heading = element.shadowRoot && findHeading(element.shadowRoot);
+    if (heading) return heading;
+  }
+  return null;
+}
 
 @customElement("wizard-shell")
 export class WizardShell extends LitElement {
   static styles = [
     pageHeaderStyles,
+    srOnlyStyles,
     css`
       :host {
         display: flex;
@@ -73,6 +85,22 @@ export class WizardShell extends LitElement {
         display: flex;
         gap: 1rem;
       }
+
+      /* Out of use, the buttons keep their place, so the step doesn't move */
+      .footer.idle wa-button {
+        visibility: hidden;
+      }
+
+      /* Busy, Next still says what it waits for, beside the spinner */
+      wa-button[loading]::part(label) {
+        opacity: 1;
+      }
+
+      wa-button[loading]::part(spinner) {
+        position: static;
+        order: -1;
+        margin-inline-end: 0.5em;
+      }
     `,
   ];
 
@@ -85,6 +113,10 @@ export class WizardShell extends LitElement {
   @property({ type: Boolean, attribute: "next-disabled" })
   nextDisabled = false;
 
+  /** Next waits for its step: it keeps the focus, but takes no clicks */
+  @property({ type: Boolean, attribute: "next-busy" })
+  nextBusy = false;
+
   @property({ type: Boolean, attribute: "hide-back" })
   hideBack = false;
 
@@ -94,6 +126,7 @@ export class WizardShell extends LitElement {
   @property({ type: Boolean, attribute: "hide-cancel" })
   hideCancel = false;
 
+  /** Hides the footer's buttons; the footer itself stays */
   @property({ type: Boolean, attribute: "hide-footer" })
   hideFooter = false;
 
@@ -109,6 +142,26 @@ export class WizardShell extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this._unsubscribe?.();
+  }
+
+  protected willUpdate(changed: PropertyValues<this>) {
+    // A button that hides with the focus in it drops the focus to the page,
+    // and a screen reader starts over from the top. Continue from the
+    // heading of the step instead, as when it opened.
+    if (
+      changed.has("hideFooter") &&
+      this.hideFooter &&
+      this.shadowRoot?.activeElement?.closest(".footer")
+    ) {
+      const step = this.firstElementChild;
+      const heading = step && findHeading(step.shadowRoot ?? step);
+      if (heading) {
+        // A heading isn't something to act on: no focus ring
+        heading.tabIndex = -1;
+        heading.style.outline = "none";
+        heading.focus();
+      }
+    }
   }
 
   get steps(): WizardStep[] {
@@ -153,42 +206,38 @@ export class WizardShell extends LitElement {
         <slot></slot>
       </div>
 
-      ${!this.hideFooter
-        ? html`
-            <div class="footer">
-              <div class="footer-left">
-                ${this.hideCancel
-                  ? nothing
-                  : html`<wa-button appearance="plain" @click=${this._onCancel}>
-                      ${localize("common.cancel")}
-                    </wa-button>`}
-              </div>
-              <div class="footer-right">
-                ${!this.hideNext
-                  ? html`
-                      <wa-button
-                        variant="brand"
-                        appearance="accent"
-                        @click=${this._onNext}
-                        ?disabled=${this.nextDisabled}
-                      >
-                        ${this.nextLabel}
-                      </wa-button>
-                    `
-                  : ""}
-              </div>
-            </div>
-          `
-        : ""}
+      <div class="footer ${this.hideFooter ? "idle" : ""}">
+        <div class="footer-left">
+          ${this.hideCancel
+            ? nothing
+            : html`<wa-button appearance="plain" @click=${this._onCancel}>
+                ${localize("common.cancel")}
+              </wa-button>`}
+        </div>
+        <div class="footer-right">
+          <!-- A new label on the focused button isn't always read out -->
+          <span class="sr-only" aria-live="polite"
+            >${this.nextBusy ? this.nextLabel : ""}</span
+          >
+          ${!this.hideNext
+            ? html`
+                <wa-button
+                  variant="brand"
+                  appearance="accent"
+                  @click=${this._onNext}
+                  ?disabled=${this.nextDisabled}
+                  ?loading=${this.nextBusy}
+                >
+                  ${this.nextLabel}
+                </wa-button>
+              `
+            : ""}
+        </div>
+      </div>
     `;
   }
 
-  // Back and Next stay in place while the step under them changes, so the
-  // second click of a double-click would act on the step it just opened:
-  // a configured VM went straight past its confirmation into the install.
-  // `detail` counts the clicks; keyboard activation reports 0.
-  private _onBack(event: MouseEvent) {
-    if (event.detail > 1) return;
+  private _onBack() {
     // On the first step, Back leaves the flow for the screen it was picked on
     if (this.isFirstStep) {
       this.dispatchEvent(
@@ -208,8 +257,7 @@ export class WizardShell extends LitElement {
     );
   }
 
-  private _onNext(event: MouseEvent) {
-    if (event.detail > 1) return;
+  private _onNext() {
     this.dispatchEvent(
       new CustomEvent("wizard-next", {
         bubbles: true,

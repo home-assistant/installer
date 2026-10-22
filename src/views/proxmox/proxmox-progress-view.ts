@@ -113,13 +113,12 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
         stopOn: needsUserAction,
         messages: {
           noAddress: localize(
-            "views.proxmox.proxmox_progress_view.the_virtual_machine_did_not_report_an_ip_address"
+            "views.proxmox.proxmox_progress_view.no_ip_address"
           ),
           notResponding: (ipAddress) =>
-            localize(
-              "views.proxmox.proxmox_progress_view.home_assistant_did_not_respond_at_value_within_5_minutes",
-              { value0: ipAddress }
-            ),
+            localize("views.proxmox.proxmox_progress_view.not_responding", {
+              address: ipAddress,
+            }),
           notUpdated: (address) =>
             localize("views.proxmox.proxmox_progress_view.update_timeout", {
               address,
@@ -189,38 +188,32 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
   protected _stageTitle(stage: BackendStage): string {
     switch (stage) {
       case "downloading":
-        return localize("views.proxmox.proxmox_progress_view.downloading");
+        return localize("common.install.downloading");
       case "extracting":
-        return localize("views.sbc.progress_view.extracting");
+        return localize("common.install.extracting");
       case "uploading":
         return localize("views.proxmox.proxmox_progress_view.uploading");
       case "creating_vm":
-        return localize("views.proxmox.proxmox_progress_view.creating");
+        return localize("common.vm.creating");
       case "starting_vm":
-        return localize("views.proxmox.proxmox_progress_view.starting");
+        return localize("common.vm.starting");
     }
   }
 
   protected _stageDescription(stage: BackendStage): string {
     switch (stage) {
       case "downloading":
-        return localize(
-          "views.proxmox.proxmox_progress_view.downloading_home_assistant_os"
-        );
+        return localize("common.vm.downloading_home_assistant_os");
       case "extracting":
-        return localize("views.sbc.progress_view.extracting_the_image");
+        return localize("common.install.extracting_the_image");
       case "uploading":
         return localize(
           "views.proxmox.proxmox_progress_view.uploading_image_to_proxmox"
         );
       case "creating_vm":
-        return localize(
-          "views.proxmox.proxmox_progress_view.creating_virtual_machine"
-        );
+        return localize("common.vm.creating_virtual_machine");
       case "starting_vm":
-        return localize(
-          "views.proxmox.proxmox_progress_view.starting_home_assistant_os"
-        );
+        return localize("common.vm.starting_home_assistant_os");
     }
   }
 }

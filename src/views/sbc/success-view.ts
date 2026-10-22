@@ -26,21 +26,18 @@ const INSTALLATION_GUIDES: Record<string, string> = {
 
 /** The last step after any write: where to find Home Assistant. */
 export function renderOpenHomeAssistantStep() {
-  return html`${localizeContent(
-    "views.sbc.success_view.open_value_in_your_browser_or_find_the_ip_address",
-    {
-      value0: html`<a
-        href="http://homeassistant.local"
-        target="_blank"
-        rel="noopener noreferrer"
-        @click=${openExternalLink}
-        >homeassistant.local</a
-      >`,
-      value1: html`<code
-        >http://&lt;${localize("views.sbc.success_view.ip_address")}&gt;</code
-      >`,
-    }
-  )}`;
+  return html`${localizeContent("views.sbc.success_view.step_open", {
+    url: html`<a
+      href="http://homeassistant.local"
+      target="_blank"
+      rel="noopener noreferrer"
+      @click=${openExternalLink}
+      >homeassistant.local</a
+    >`,
+    ip_url: html`<code
+      >http://&lt;${localize("views.sbc.success_view.ip_address")}&gt;</code
+    >`,
+  })}`;
 }
 
 @customElement("success-view")
@@ -84,59 +81,42 @@ export class SuccessView extends LitElement {
 
     return html`
       <install-success
-        .subtitle=${localize(
-          "views.sbc.success_view.home_assistant_os_has_been_written_to_your_storage_device"
-        )}
-        .notice=${localize(
-          "views.sbc.success_view.do_not_format_or_initialize_the_written_drive"
-        )}
+        .subtitle=${localize("common.success.subtitle")}
+        .notice=${localize("common.success.do_not_format")}
         .steps=${[
-          localize(
-            "views.sbc.success_view.eject_the_drive_before_disconnecting"
-          ),
+          localize("common.success.step_eject"),
           isMiniPc
-            ? localize(
-                "views.sbc.success_view.install_the_drive_in_your_mini_pc"
-              )
+            ? localize("views.sbc.success_view.step_minipc_install_drive")
             : supportsDirectUsb
               ? html`${deviceName
                   ? localize(
-                      "views.sbc.success_view.insert_the_media_or_disconnect_usb",
-                      { value0: deviceName }
+                      "views.sbc.success_view.step_insert_or_disconnect",
+                      { device: deviceName }
                     )
                   : localize(
-                      "views.sbc.success_view.insert_the_media_or_disconnect_usb_unknown_device"
+                      "views.sbc.success_view.step_insert_or_disconnect_generic"
                     )}
                 ${board === "odroid-m1s"
                   ? localize(
                       "views.sbc.success_view.remove_the_emmc2ums_sd_card"
                     )
-                  : localize(
-                      "views.sbc.success_view.set_the_boot_mode_switch_back_to_mmc"
-                    )}`
+                  : localize("views.sbc.success_view.step_boot_switch_to_mmc")}`
               : deviceName
-                ? localize(
-                    "views.sbc.success_view.insert_the_written_storage",
-                    {
-                      value0: deviceName,
-                    }
-                  )
+                ? localize("views.sbc.success_view.step_insert_storage", {
+                    device: deviceName,
+                  })
                 : localize(
-                    "views.sbc.success_view.insert_the_written_storage_unknown_device"
+                    "views.sbc.success_view.step_insert_storage_generic"
                   ),
           wifi
-            ? localize("views.sbc.success_view.connect_power_wifi", {
+            ? localize("views.sbc.success_view.step_connect_power_wifi", {
                 network: wifi.ssid,
               })
-            : localize("views.sbc.success_view.connect_ethernet_and_power"),
+            : localize("common.success.step_connect_ethernet_and_power"),
           renderOpenHomeAssistantStep(),
           wifi
-            ? localize(
-                "views.sbc.success_view.the_preparing_home_assistant_page_wifi"
-              )
-            : localize(
-                "views.sbc.success_view.the_preparing_home_assistant_page"
-              ),
+            ? localize("common.success.step_preparing_page_wifi")
+            : localize("common.success.step_preparing_page"),
         ]}
         .footer=${html`<a
           href=${guide}
@@ -146,8 +126,8 @@ export class SuccessView extends LitElement {
           >${guide === "https://www.home-assistant.io/installation/"
             ? localize("views.sbc.success_view.installation_guide")
             : deviceName
-              ? localize("views.sbc.success_view.value_installation_guide", {
-                  value0: deviceName,
+              ? localize("views.sbc.success_view.device_installation_guide", {
+                  device: deviceName,
                 })
               : localize(
                   "views.sbc.success_view.your_device_installation_guide"

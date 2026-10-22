@@ -3,7 +3,8 @@ import { customElement, property } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import type WaSlider from "@home-assistant/webawesome/dist/components/slider/slider.js";
 import "@home-assistant/webawesome/dist/components/slider/slider.js";
-import { formatNumber, localize } from "../localization/localize.js";
+import { localize } from "../localization/localize.js";
+import { formatDiskSize, formatMemory } from "../utils/format.js";
 import { settingStyles } from "../utils/setting-styles.js";
 
 /** What a VM gets, as `resources-change` reports it */
@@ -14,83 +15,43 @@ export interface VmResourceValues {
 }
 
 export function formatCores(cores: number): string {
-  return localize("views.proxmox.proxmox_configure_view.value_cores", {
-    value0: cores,
+  return localize("components.vm_resources.cores", {
+    count: cores,
   });
-}
-
-export function formatMemory(mb: number): string {
-  return localize("components.drive_card.value_gb", {
-    value0: formatNumber(mb / 1024, { maximumFractionDigits: 20 }),
-  });
-}
-
-export function formatDiskSize(gb: number): string {
-  return gb >= 1024
-    ? localize("components.drive_card.value_tb", {
-        value0: formatNumber(gb / 1024, { maximumFractionDigits: 20 }),
-      })
-    : localize("components.drive_card.value_gb", {
-        value0: formatNumber(gb, { maximumFractionDigits: 20 }),
-      });
 }
 
 function cpuDescription(cores: number): string {
   if (cores <= 2) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.minimum_for_basic_operation"
-    );
+    return localize("components.vm_resources.cpu_minimum");
   } else if (cores <= 4) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.recommended_for_most_users"
-    );
+    return localize("components.vm_resources.cpu_recommended");
   } else if (cores <= 8) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.better_performance_with_many_integrations"
-    );
+    return localize("components.vm_resources.cpu_more");
   }
-  return localize(
-    "views.proxmox.proxmox_configure_view.maximum_performance_for_power_users"
-  );
+  return localize("components.vm_resources.cpu_maximum");
 }
 
 function memoryDescription(mb: number): string {
   const gb = mb / 1024;
   if (gb <= 2) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.minimum_for_basic_operation"
-    );
+    return localize("components.vm_resources.memory_minimum");
   } else if (gb <= 4) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.recommended_for_most_users"
-    );
+    return localize("components.vm_resources.memory_recommended");
   } else if (gb <= 8) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.better_for_add_ons_and_many_integrations"
-    );
+    return localize("components.vm_resources.memory_more");
   }
-  return localize(
-    "views.proxmox.proxmox_configure_view.maximum_performance_for_power_users"
-  );
+  return localize("components.vm_resources.memory_maximum");
 }
 
 function diskDescription(gb: number): string {
   if (gb <= 32) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.good_for_getting_started"
-    );
+    return localize("components.vm_resources.disk_starter");
   } else if (gb <= 64) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.room_for_add_ons_and_history"
-    );
+    return localize("components.vm_resources.disk_room");
   } else if (gb <= 128) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.plenty_of_space_for_long_term_use"
-    );
+    return localize("components.vm_resources.disk_long_term");
   }
-  return localize(
-    "views.proxmox.proxmox_configure_view.extended_storage_for_recordings_and_backups"
-  );
+  return localize("components.vm_resources.disk_extended");
 }
 
 /**
@@ -220,9 +181,12 @@ export class VmResources extends LitElement {
           ><div slot="label" class="setting-header">
             <span class="setting-label">${label}</span
             ><span class="setting-value" aria-hidden="true">${text}</span>
-          </div></wa-slider
+          </div>
+          <!-- The hint describes the slider, so its advice is read out with it -->
+          <p slot="hint" class="setting-description">
+            ${description}
+          </p></wa-slider
         >
-        <p class="setting-description">${description}</p>
       </div>
     </div>`;
   }
@@ -231,7 +195,7 @@ export class VmResources extends LitElement {
     return html`
       ${this._renderSlider(
         cpuIcon,
-        localize("views.proxmox.proxmox_configure_view.cpu_cores"),
+        localize("components.vm_resources.cpu_cores"),
         this.coreOptions,
         this.cpuCores,
         formatCores(this.cpuCores),
@@ -241,7 +205,7 @@ export class VmResources extends LitElement {
       )}
       ${this._renderSlider(
         memoryIcon,
-        localize("views.proxmox.proxmox_configure_view.memory"),
+        localize("components.vm_resources.memory"),
         this.memoryOptions,
         this.memoryMb,
         formatMemory(this.memoryMb),
@@ -251,7 +215,7 @@ export class VmResources extends LitElement {
       )}
       ${this._renderSlider(
         diskIcon,
-        localize("views.proxmox.proxmox_configure_view.disk_size"),
+        localize("components.vm_resources.disk_size"),
         this.diskOptions,
         this.diskSizeGb,
         formatDiskSize(this.diskSizeGb),

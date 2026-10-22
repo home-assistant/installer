@@ -4,6 +4,7 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
+import { linkStyles } from "../../utils/link-styles.js";
 import { LitElement, html, css, nothing } from "lit";
 import {
   ViewAccessibility,
@@ -30,6 +31,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     reducedMotionStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -184,18 +186,18 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         )
       ) {
         this._selectedDeviceId = null;
-        wizardState.setSelection("device", undefined);
-        wizardState.setSelection("deviceConfig", undefined);
-        wizardState.setSelection("haHardware", undefined);
+        wizardState.setSelections({
+          device: undefined,
+          deviceConfig: undefined,
+          haHardware: undefined,
+        });
       }
       wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
       if (this.isConnected) new InstallDiagnostics("flash").fail(err);
       this._error = installerError(
         err,
-        localize(
-          "views.ha_hardware.device_selection_view.failed_to_load_devices"
-        )
+        localize("common.failed_to_load_devices")
       );
     } finally {
       this._loading = false;
@@ -207,11 +209,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
       return html`
         <div class="loading">
           <div class="loading-spinner"></div>
-          <span
-            >${localize(
-              "views.ha_hardware.device_selection_view.loading_devices"
-            )}</span
-          >
+          <span>${localize("common.loading_devices")}</span>
         </div>
       `;
     }
@@ -234,7 +232,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
                 appearance="outlined"
                 @click=${this._loadDevices}
               >
-                ${localize("components.app_shell.try_again")}
+                ${localize("common.try_again")}
               </wa-button>`
             : ""}
         </div>
@@ -248,15 +246,13 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         )}
       </h2>
       <p class="subtitle">
-        ${localize(
-          "views.ha_hardware.device_selection_view.choose_your_official_home_assistant_hardware_by_nabu_casa"
-        )}
+        ${localize("views.ha_hardware.device_selection_view.subtitle")}
       </p>
 
       <wa-radio-group
         class="devices-grid"
         radio-tag="device-card"
-        aria-label=${localize("components.app_shell.home_assistant_hardware")}
+        aria-label=${localize("common.home_assistant_hardware")}
         .value=${this._selectedDeviceId ?? ""}
         @change=${this._onDeviceChange}
       >
@@ -362,11 +358,13 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     // previous one, must not keep the old drive.
     const previous = wizardState.getState().selections.haHardware;
     this._selectedDeviceId = hardware.deviceId;
-    wizardState.setSelection("device", hardware.deviceId);
-    wizardState.setSelection("haHardware", hardware.id);
-    wizardState.setSelection("deviceName", haHardwareName(hardware.id));
-    wizardState.setSelection("deviceImage", hardware.image);
-    wizardState.setSelection("deviceConfig", config);
+    wizardState.setSelections({
+      device: hardware.deviceId,
+      haHardware: hardware.id,
+      deviceName: haHardwareName(hardware.id),
+      deviceImage: hardware.image,
+      deviceConfig: config,
+    });
     if (previous !== hardware.id) clearDriveSelection();
   }
 }

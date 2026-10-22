@@ -64,7 +64,7 @@ export const settingStyles = css`
   }
 
   /* The slider's handle reaches below its track */
-  wa-slider + .setting-description {
-    margin-top: 0.5rem;
+  wa-slider::part(hint) {
+    margin-block-start: 1rem;
   }
 `;

@@ -5,6 +5,7 @@ import type {
   VmResourceValues,
   VmResources,
 } from "../../../src/components/vm-resources.js";
+import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
 
 async function render(
   values: Partial<VmResourceValues> = {},
@@ -91,5 +92,28 @@ describe("vm-resources", () => {
     expect(await descriptions(4)).to.contain("Recommended");
     expect(await descriptions(8)).to.contain("Better performance");
     expect(await descriptions(10)).to.contain("Maximum performance");
+  });
+
+  it("reads the advice out with each slider, as it changes", async () => {
+    const el = await render();
+    const descriptions = async () =>
+      findByRole(await fullA11ySnapshot(), "slider").map(
+        (node) => node.description
+      );
+    expect(await descriptions()).to.deep.equal([
+      "Recommended for most users",
+      "Recommended for most users",
+      "Good for getting started",
+    ]);
+
+    // As the view does when it hears the change
+    el.cpuCores = 8;
+    el.diskSizeGb = 128;
+    await el.updateComplete;
+    expect(await descriptions()).to.deep.equal([
+      "Better performance with many integrations",
+      "Recommended for most users",
+      "Plenty of space for long-term use",
+    ]);
   });
 });

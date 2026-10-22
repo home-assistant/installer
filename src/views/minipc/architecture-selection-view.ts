@@ -4,6 +4,7 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
+import { linkStyles } from "../../utils/link-styles.js";
 import { LitElement, html, css } from "lit";
 import {
   ViewAccessibility,
@@ -25,6 +26,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     reducedMotionStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -83,7 +85,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         min-width: 0;
         height: auto;
         padding: 1.5rem;
-        border-radius: 12px;
+        border-radius: var(--ha-card-border-radius, 12px);
         align-items: flex-start;
       }
 
@@ -120,16 +122,18 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         margin: 0 0 0.25rem 0;
       }
 
+      /* The control shade of secondary text stays readable on the selected
+       * card's tinted fill */
       .option-description {
         font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-control-secondary-text-color, #686868);
         margin: 0 0 0.75rem 0;
         line-height: 1.4;
       }
 
       .option-examples {
         font-size: 0.8125rem;
-        color: var(--ha-secondary-text-color, #9e9e9e);
+        color: var(--ha-control-secondary-text-color, #686868);
         margin: 0;
         line-height: 1.4;
       }
@@ -239,8 +243,10 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         )
       ) {
         this._selectedDeviceId = null;
-        wizardState.setSelection("device", undefined);
-        wizardState.setSelection("deviceConfig", undefined);
+        wizardState.setSelections({
+          device: undefined,
+          deviceConfig: undefined,
+        });
       }
       wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
@@ -299,7 +305,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                 appearance="outlined"
                 @click=${this._loadDevices}
               >
-                ${localize("components.app_shell.try_again")}
+                ${localize("common.try_again")}
               </wa-button>`
             : ""}
         </div>
@@ -313,9 +319,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         )}
       </h2>
       <p class="subtitle">
-        ${localize(
-          "views.minipc.architecture_selection_view.choose_the_cpu_architecture_of_your_mini_pc"
-        )}
+        ${localize("views.minipc.architecture_selection_view.subtitle")}
       </p>
 
       <wa-radio-group
@@ -345,12 +349,12 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                   </p>
                   <p class="option-description">
                     ${localize(
-                      "views.minipc.architecture_selection_view.standard_pc_architecture_used_by_most_mini_pcs_nucs_and_desktops"
+                      "views.minipc.architecture_selection_view.x86_64_description"
                     )}
                   </p>
                   <p class="option-examples">
                     ${localize(
-                      "views.minipc.architecture_selection_view.examples_intel_nuc_asus_nuc_beelink_gmktec_minisforum_dell_hp"
+                      "views.minipc.architecture_selection_view.x86_64_examples"
                     )}
                   </p>
                 </div>
@@ -375,12 +379,12 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                   </p>
                   <p class="option-description">
                     ${localize(
-                      "views.minipc.architecture_selection_view.arm64_systems_with_uefi_firmware_supported_by_home_assistant_os"
+                      "views.minipc.architecture_selection_view.arm64_description"
                     )}
                   </p>
                   <p class="option-examples">
                     ${localize(
-                      "views.minipc.architecture_selection_view.examples_ampere_based_servers_and_other_uefi_arm64_machines_a_raspberry_pi_"
+                      "views.minipc.architecture_selection_view.arm64_examples"
                     )}
                   </p>
                 </div>
@@ -391,10 +395,10 @@ export class MiniPCArchitectureSelectionView extends LitElement {
       ${getPlatform() === "macos"
         ? html`<p class="mac-note">
             ${localizeContent(
-              "views.minipc.architecture_selection_view.want_home_assistant_on_this_mac_itself_start_over_and_choose_value_to_run_i",
+              "views.minipc.architecture_selection_view.this_mac_note",
               {
-                value0: html`<strong
-                  >${localize("components.app_shell.virtual_machine")}</strong
+                option: html`<strong
+                  >${localize("common.virtual_machine")}</strong
                 >`,
               }
             )}
@@ -413,10 +417,12 @@ export class MiniPCArchitectureSelectionView extends LitElement {
 
   private _onSelectDevice(device: Device) {
     this._selectedDeviceId = device.id;
-    wizardState.setSelection("device", device.id);
-    wizardState.setSelection("deviceName", device.name);
-    wizardState.setSelection("deviceImage", device.image_url || "");
-    wizardState.setSelection("deviceConfig", device.haos);
+    wizardState.setSelections({
+      device: device.id,
+      deviceName: device.name,
+      deviceImage: device.image_url || "",
+      deviceConfig: device.haos,
+    });
   }
 }
 

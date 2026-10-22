@@ -8,6 +8,7 @@ import {
 import type { InstallProgress } from "../../../src/components/install-progress.js";
 import "../../../src/components/install-progress.js";
 import { captureOpenedUrls, restoreTauriIpc, settle } from "../tauri-ipc.js";
+import { expectThemeLink } from "../helpers/link-style.js";
 
 describe("install-progress", () => {
   it("keeps the thought bubble inside a short scroll container", async () => {
@@ -49,6 +50,7 @@ describe("install-progress", () => {
       );
       const link = address.querySelector("a")!;
       expect(link.textContent).to.equal("http://192.0.2.50");
+      expectThemeLink(link);
       link.click();
       await settle();
       expect(opened).to.deep.equal(["http://192.0.2.50"]);
@@ -57,6 +59,7 @@ describe("install-progress", () => {
       el.error = "Home Assistant did not respond";
       await el.updateComplete;
       expect(el.shadowRoot!.querySelector(".address")).to.be.null;
+      expectThemeLink(el.shadowRoot!.querySelector(".error-help a")!);
     } finally {
       restoreTauriIpc();
     }

@@ -25,11 +25,11 @@ export function isWaitStage(stage: string): stage is WaitStage {
 export function waitStageTitle(stage: WaitStage): string {
   switch (stage) {
     case "waiting":
-      return localize("views.proxmox.proxmox_progress_view.connecting");
+      return localize("common.vm.connecting");
     case "ready":
-      return localize("views.proxmox.proxmox_progress_view.waiting");
+      return localize("common.vm.waiting");
     case "updating":
-      return localize("views.proxmox.proxmox_progress_view.updating");
+      return localize("common.vm.updating");
   }
 }
 
@@ -37,17 +37,11 @@ export function waitStageTitle(stage: WaitStage): string {
 export function waitStageDescription(stage: WaitStage): string {
   switch (stage) {
     case "waiting":
-      return localize(
-        "views.proxmox.proxmox_progress_view.waiting_for_network_connection"
-      );
+      return localize("common.vm.waiting_for_network_connection");
     case "ready":
-      return localize(
-        "views.proxmox.proxmox_progress_view.waiting_for_home_assistant"
-      );
+      return localize("common.vm.waiting_for_home_assistant");
     case "updating":
-      return localize(
-        "views.proxmox.proxmox_progress_view.installing_latest_home_assistant_this_can_take_up_to_20_minutes"
-      );
+      return localize("common.vm.updating_description");
   }
 }
 

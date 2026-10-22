@@ -163,6 +163,25 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
       page.locator("minipc-architecture-selection-view")
     ).toBeVisible();
   });
+
+  test("a double-click on connect drive picks no architecture", async ({
+    page,
+  }) => {
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    // On the heading: the middle of the card falls between the architectures
+    // that open under it
+    await page
+      .locator('option-card[heading="I can connect the drive"]')
+      .dblclick({ position: { x: 100, y: 40 } });
+
+    const radios = page
+      .locator("minipc-architecture-selection-view")
+      .locator("wa-radio");
+    await expect(radios).toHaveCount(2);
+    for (const radio of await radios.all()) {
+      await expect(radio).toHaveJSProperty("checked", false);
+    }
+  });
 });
 
 test.describe("Mini PC Flow - Architecture Selection", () => {

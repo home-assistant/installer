@@ -18,8 +18,12 @@ export interface WizardStepView extends HTMLElement {
 /** Work that has to succeed before Next leaves the step, like logging in. */
 interface BeforeNext {
   run(view: WizardStepView): Promise<boolean>;
-  /** Shown on Next meanwhile */
-  label(): string;
+  /**
+   * Shown and announced on Next meanwhile, which waits with a spinner.
+   * Without one, Next stays as it is: a question the step asks in a dialog
+   * says enough.
+   */
+  label?(): string;
   /**
    * What makes a result stale, so a run left behind holds up nothing:
    * leaving the flow, or also changing any selection.
@@ -41,7 +45,8 @@ const deviceChosen = (selections: WizardSelections) =>
 
 const drive: WizardStepDefinition = {
   render: () => html`<drive-selection-view></drive-selection-view>`,
-  ready: (selections) => !!selections.drive,
+  // A drive picked earlier may be gone by now, so wait for the scan
+  ready: (selections) => !!selections.driveScanReady && !!selections.drive,
 };
 
 const wifi: WizardStepDefinition = {
@@ -86,7 +91,6 @@ export const WIZARD_STEPS: Record<
       beforeNext: {
         run: (view) =>
           (view as HaHardwareDeviceSelectionView).confirmReinstall(),
-        label: () => localize("common.next"),
         until: "flow",
       },
     },
@@ -134,7 +138,7 @@ export const WIZARD_STEPS: Record<
       render: () => html`<proxmox-connect-view></proxmox-connect-view>`,
       beforeNext: {
         run: (view) => (view as ProxmoxConnectView).connect(),
-        label: () => localize("components.app_shell.connecting"),
+        label: () => localize("components.wizard_steps.connecting"),
         // Connecting stores the session, which changes the selections
         until: "flow",
       },
@@ -156,7 +160,7 @@ export const WIZARD_STEPS: Record<
       // A problem Proxmox finds now can still be fixed on this step
       beforeNext: {
         run: (view) => (view as ProxmoxConfigureView).check(),
-        label: () => localize("components.app_shell.checking_settings"),
+        label: () => localize("components.wizard_steps.checking_settings"),
         until: "selections",
       },
     },

@@ -58,7 +58,7 @@ export class UtmConfigureView extends LitElement {
         padding: 1rem 1.25rem;
         background-color: var(--ha-card-background, #ffffff);
         border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: 12px;
+        border-radius: var(--ha-card-border-radius, 12px);
         width: 100%;
         box-sizing: border-box;
         max-width: 500px;
@@ -133,10 +133,12 @@ export class UtmConfigureView extends LitElement {
   }
 
   private _saveSelections() {
-    wizardState.setSelection("vmName", this._vmName);
-    wizardState.setSelection("cpuCores", this._cpuCores);
-    wizardState.setSelection("memoryMb", this._memoryMb);
-    wizardState.setSelection("diskSizeGb", this._diskSizeGb);
+    wizardState.setSelections({
+      vmName: this._vmName,
+      cpuCores: this._cpuCores,
+      memoryMb: this._memoryMb,
+      diskSizeGb: this._diskSizeGb,
+    });
   }
 
   private get _nameError(): string | undefined {
@@ -202,15 +204,9 @@ export class UtmConfigureView extends LitElement {
 
   render() {
     return html`
-      <h2>
-        ${localize(
-          "views.proxmox.proxmox_configure_view.configure_virtual_machine"
-        )}
-      </h2>
+      <h2>${localize("common.vm.configure_virtual_machine")}</h2>
       <p class="subtitle">
-        ${localize(
-          "views.utm.utm_configure_view.customize_your_home_assistant_vm_settings"
-        )}
+        ${localize("views.utm.utm_configure_view.subtitle")}
       </p>
 
       <div class="config-card">
@@ -219,9 +215,7 @@ export class UtmConfigureView extends LitElement {
           <div class="setting-icon">${this._renderLabelIcon()}</div>
           <div class="setting-content">
             <wa-input
-              label=${localize(
-                "views.proxmox.proxmox_configure_view.display_name"
-              )}
+              label=${localize("common.vm.display_name")}
               type="text"
               size="s"
               .value=${this._vmName}
@@ -234,9 +228,7 @@ export class UtmConfigureView extends LitElement {
                 would pull focus out of the field halfway through typing -->
               <span slot="hint" class="name-hint" aria-live="polite"
                 >${this._nameError ??
-                localize(
-                  "views.utm.utm_configure_view.shown_in_utm_s_virtual_machine_list"
-                )}</span
+                localize("views.utm.utm_configure_view.vm_name_hint")}</span
               >
             </wa-input>
           </div>

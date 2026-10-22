@@ -75,7 +75,7 @@ export class ConfirmDialog extends LitElement {
       margin: 0 0 1rem 0;
       background-color: var(--ha-card-background, #ffffff);
       border: 1px solid var(--ha-border-color, #e0e0e0);
-      border-radius: 8px;
+      border-radius: var(--ha-small-border-radius, 8px);
       font-size: 0.875rem;
     }
 
@@ -144,9 +144,7 @@ export class ConfirmDialog extends LitElement {
         ${this._renderDriveDetails()}
         ${this._promptsForPassword()
           ? html`<p class="password-note">
-              ${localize(
-                "components.confirm_dialog.you_may_be_prompted_for_your_password_to_allow_writing_to_the_drive_this_is"
-              )}
+              ${localize("components.confirm_dialog.password_notice")}
             </p>`
           : ""}
 
@@ -174,9 +172,7 @@ export class ConfirmDialog extends LitElement {
       <dl class="drive-details">
         ${this.drivePath
           ? html`
-              <dt class="detail-label">
-                ${localize("components.confirm_dialog.device")}
-              </dt>
+              <dt class="detail-label">${localize("common.device")}</dt>
               <dd class="detail-value path">${this.drivePath}</dd>
             `
           : nothing}

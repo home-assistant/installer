@@ -386,9 +386,7 @@ export abstract class VmProgressView<Stage extends string> extends LitElement {
     this._stage = "error";
     const installer = installerError(
       error,
-      localize(
-        "views.proxmox.proxmox_progress_view.failed_to_create_virtual_machine"
-      )
+      localize("common.vm.failed_to_create_virtual_machine")
     );
     this._error = message ? { ...installer, message } : installer;
     this.dispatchEvent(
@@ -408,14 +406,12 @@ export abstract class VmProgressView<Stage extends string> extends LitElement {
           id,
           label:
             id === "updating"
-              ? localize(
-                  "views.proxmox.proxmox_progress_view.installing_latest_home_assistant"
-                )
+              ? localize("common.vm.installing_latest_home_assistant")
               : this._getStageDescription(id),
         }))}
         .stage=${stage}
         .stageTitle=${this._stopping
-          ? localize("views.sbc.progress_view.stopping")
+          ? localize("common.install.stopping")
           : this._getStageTitle(stage)}
         .description=${this._getStageDescription(stage)}
         .progress=${this._progress}
@@ -461,7 +457,7 @@ export abstract class VmProgressView<Stage extends string> extends LitElement {
 
   private _getStageTitle(stage: VmInstallStage<Stage>): string {
     if (stage === "complete") {
-      return localize("views.proxmox.proxmox_progress_view.complete");
+      return localize("common.install.complete");
     }
     if (stage === "error") return localize("common.error");
     return isWaitStage(stage) ? waitStageTitle(stage) : this._stageTitle(stage);
@@ -469,13 +465,11 @@ export abstract class VmProgressView<Stage extends string> extends LitElement {
 
   private _getStageDescription(stage: VmInstallStage<Stage>): string {
     if (stage === "complete") {
-      return localize("api.commands.installation_complete");
+      return localize("common.install.installation_complete");
     }
     // The layout shows the error instead
     if (stage === "error") {
-      return localize(
-        "views.proxmox.proxmox_progress_view.installing_home_assistant"
-      );
+      return localize("common.install.installing_home_assistant");
     }
     return isWaitStage(stage)
       ? waitStageDescription(stage)

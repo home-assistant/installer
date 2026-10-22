@@ -72,9 +72,7 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
 
     return {
       error: new Error(
-        localize(
-          "views.utm.utm_progress_view.a_virtual_machine_was_already_created_with_earlier_settings"
-        )
+        localize("views.utm.utm_progress_view.vm_already_created")
       ),
     };
   }
@@ -116,14 +114,11 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
           vmAddress: async () => (await getUtmVmStatus(startedVmId)).ip_address,
           stopOn: failsEveryTime,
           messages: {
-            noAddress: localize(
-              "views.utm.utm_progress_view.the_virtual_machine_did_not_report_an_ip_address"
-            ),
+            noAddress: localize("views.utm.utm_progress_view.no_ip_address"),
             notResponding: (ipAddress) =>
-              localize(
-                "views.utm.utm_progress_view.home_assistant_did_not_respond_at_value_within_5_minutes",
-                { value0: ipAddress }
-              ),
+              localize("views.utm.utm_progress_view.not_responding", {
+                address: ipAddress,
+              }),
             notUpdated: (address) =>
               localize("utm.update_timeout", { address }),
           },
@@ -140,11 +135,7 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
 
   private _createVm(config: UtmVmConfig, generation: number): Promise<string> {
     const changed = () =>
-      new Error(
-        localize(
-          "views.utm.utm_progress_view.the_installation_changed_while_the_virtual_machine_was_being_created"
-        )
-      );
+      new Error(localize("views.utm.utm_progress_view.installation_changed"));
     const pending = wizardState.getState().selections.utmCreation;
     if (pending) {
       if (
@@ -233,32 +224,26 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
   protected _stageTitle(stage: UtmStage): string {
     switch (stage) {
       case "downloading":
-        return localize("views.proxmox.proxmox_progress_view.downloading");
+        return localize("common.install.downloading");
       case "extracting":
-        return localize("views.sbc.progress_view.extracting");
+        return localize("common.install.extracting");
       case "creating":
-        return localize("views.proxmox.proxmox_progress_view.creating");
+        return localize("common.vm.creating");
       case "starting":
-        return localize("views.proxmox.proxmox_progress_view.starting");
+        return localize("common.vm.starting");
     }
   }
 
   protected _stageDescription(stage: UtmStage): string {
     switch (stage) {
       case "downloading":
-        return localize(
-          "views.proxmox.proxmox_progress_view.downloading_home_assistant_os"
-        );
+        return localize("common.vm.downloading_home_assistant_os");
       case "extracting":
-        return localize("views.sbc.progress_view.extracting_the_image");
+        return localize("common.install.extracting_the_image");
       case "creating":
-        return localize(
-          "views.proxmox.proxmox_progress_view.creating_virtual_machine"
-        );
+        return localize("common.vm.creating_virtual_machine");
       case "starting":
-        return localize(
-          "views.proxmox.proxmox_progress_view.starting_home_assistant_os"
-        );
+        return localize("common.vm.starting_home_assistant_os");
     }
   }
 }

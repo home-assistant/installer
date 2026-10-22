@@ -13,7 +13,7 @@ import {
 } from "../../../../src/utils/drive-selection.js";
 import type { BlockDevice } from "../../../../src/api/index.js";
 import { flush, holdDeviceScan } from "../../helpers/hold-device-scan.js";
-import { mockTauriIpc, restoreTauriIpc } from "../../tauri-ipc.js";
+import { ipcError, mockTauriIpc, restoreTauriIpc } from "../../tauri-ipc.js";
 import {
   diagnosticText,
   getDiagnostics,
@@ -72,6 +72,102 @@ describe("drive-selection-view", () => {
     }
   });
 
+  it("keeps focus on Refresh while it scans, and announces what it found", async () => {
+    let scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve([]);
+      await flush();
+      const status = el.shadowRoot!.querySelector(".sr-only[role=status]")!;
+      expect(status.textContent).to.contain("No drives found");
+      // Read out, not shown: the empty state says it on screen
+      expect(status.getBoundingClientRect().width).to.be.at.most(1);
+
+      scan.restore();
+      scan = holdDeviceScan();
+      const refresh = el.shadowRoot!.querySelector(
+        ".empty-state wa-button"
+      ) as HTMLElement & { loading: boolean };
+      refresh.focus();
+      refresh.click();
+      await el.updateComplete;
+
+      // Not swapped for the full-page spinner, which took focus with it
+      expect(refresh.isConnected).to.be.true;
+      expect(refresh.loading).to.be.true;
+      expect(el.shadowRoot!.activeElement).to.equal(refresh);
+      expect(status.textContent).to.contain("Scanning for drives");
+
+      // The list replaces the empty state: its own Refresh takes over
+      scan.resolve([CONNECTED]);
+      await waitUntil(() => !!el.shadowRoot!.querySelector("drive-card"));
+      await el.updateComplete;
+      expect(el.shadowRoot!.activeElement).to.equal(
+        el.shadowRoot!.querySelector(".drives-header wa-button")
+      );
+      expect(status.textContent).to.contain("1 drive found");
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("keeps focus through retries after a failed scan, and reads out each failure", async () => {
+    const failure = ipcError("io", "The drive scan failed.", true);
+    const root = (el: DriveSelectionView) => el.shadowRoot!;
+    const alertText = (el: DriveSelectionView) =>
+      root(el).querySelector("[role=alert]")?.textContent?.trim() ?? "";
+    let scan = holdDeviceScan();
+    const rescan = async (el: DriveSelectionView, selector: string) => {
+      const button = root(el).querySelector(selector) as HTMLElement;
+      button.focus();
+      scan.restore();
+      scan = holdDeviceScan();
+      button.click();
+      await el.updateComplete;
+      expect(root(el).activeElement === button).to.be.true;
+      return button;
+    };
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.reject(failure as unknown as Error);
+      await waitUntil(() => !!alertText(el));
+
+      // The same failure again: emptied meanwhile, so it is new to read out
+      await rescan(el, ".error wa-button");
+      expect(alertText(el)).to.equal("");
+      scan.reject(failure as unknown as Error);
+      await waitUntil(() => !!alertText(el));
+      expect(root(el).activeElement === root(el).querySelector("[role=alert]"))
+        .to.be.true;
+
+      // Then nothing found: the empty state's Refresh takes over
+      await rescan(el, ".error wa-button");
+      scan.resolve([]);
+      await waitUntil(() => !!root(el).querySelector(".empty-state"));
+      await el.updateComplete;
+      expect(
+        root(el).activeElement ===
+          root(el).querySelector(".empty-state wa-button")
+      ).to.be.true;
+
+      // Then a drive: the list's Refresh takes over
+      await rescan(el, ".empty-state wa-button");
+      scan.resolve([CONNECTED]);
+      await waitUntil(() => !!root(el).querySelector("drive-card"));
+      await el.updateComplete;
+      expect(
+        root(el).activeElement ===
+          root(el).querySelector(".drives-header wa-button")
+      ).to.be.true;
+    } finally {
+      scan.restore();
+    }
+  });
+
   it("keeps a selection whose drive is still connected", async () => {
     storeDriveSelection(CONNECTED);
 
@@ -81,6 +177,63 @@ describe("drive-selection-view", () => {
     expect(selectedIds(el)).to.deep.equal([CONNECTED.id]);
     expect(el.shadowRoot!.querySelector('inline-notice[variant="error"]')).to
       .not.exist;
+  });
+
+  it("holds Next until a scan has checked the selection", async () => {
+    storeDriveSelection(CONNECTED);
+    const scanReady = () => wizardState.getState().selections.driveScanReady;
+    let scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      expect(scanReady()).to.not.be.true;
+      scan.resolve([CONNECTED]);
+      await waitUntil(() => scanReady() === true, "scan never finished");
+      expect(wizardState.getState().selections.drive).to.equal(CONNECTED.id);
+
+      // A refresh can drop the drive just the same
+      scan.restore();
+      scan = holdDeviceScan();
+      (
+        el.shadowRoot!.querySelector(".drives-header wa-button") as HTMLElement
+      ).click();
+      expect(scanReady()).to.equal(false);
+      scan.resolve([CONNECTED]);
+      await waitUntil(() => scanReady() === true, "refresh never finished");
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("explains a drive the install could not confirm", async () => {
+    wizardState.setSelection("driveSelectionLost", true);
+    const scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      // Inserted only after the region is in place, so it is announced
+      const region = el.shadowRoot!.querySelector('[role="status"]')!;
+      expect(region.querySelector("inline-notice")).to.not.exist;
+
+      scan.resolve([CONNECTED]);
+      await waitUntil(
+        () => region.querySelector('inline-notice[variant="error"]'),
+        "the notice never showed"
+      );
+      expect(wizardState.getState().selections.driveSelectionLost).to.be
+        .undefined;
+
+      el.shadowRoot!.querySelector("drive-card")!.click();
+      await waitUntil(
+        () => wizardState.getState().selections.drive === CONNECTED.id
+      );
+      await el.updateComplete;
+      expect(region.querySelector("inline-notice")).to.not.exist;
+    } finally {
+      scan.restore();
+    }
   });
 
   it("clears a selection whose path now names a different disk", async () => {
