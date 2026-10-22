@@ -66,10 +66,10 @@ export class WifiView extends LitElement {
   // Fields left at least once. Until then an empty or short value may still
   // be on its way; one filled in on an earlier visit to this step is done.
   @state()
-  private _ssidLeft = !!this._wizardState.selections.wifi?.ssid;
+  private _ssidLeft = this._wizardState.selections.wifi !== undefined;
 
   @state()
-  private _passwordLeft = !!this._wizardState.selections.wifi?.password;
+  private _passwordLeft = this._wizardState.selections.wifi !== undefined;
 
   private _unsubscribe?: () => void;
 
