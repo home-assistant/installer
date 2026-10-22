@@ -32,21 +32,26 @@ export class StepIndicator extends LitElement {
         gap: 0.5rem;
       }
 
+      /* Each state has its own shape, not only its own color: upcoming is an
+         empty ring, completed a filled dot, current a filled dot in a ring */
       .step-dot {
+        box-sizing: border-box;
         width: 10px;
         height: 10px;
         border-radius: 50%;
-        background-color: var(--ha-inactive-color, #e0e0e0);
+        border: 2px solid var(--ha-inactive-color, #8c8c8c);
         transition: all 0.2s ease;
       }
 
-      .step-dot.active {
+      .step-dot.active,
+      .step-dot.completed {
+        border-color: var(--ha-primary-color, #03a9f4);
         background-color: var(--ha-primary-color, #03a9f4);
-        transform: scale(1.2);
       }
 
-      .step-dot.completed {
-        background-color: var(--ha-primary-color, #03a9f4);
+      .step-dot.active {
+        outline: 2px solid var(--ha-primary-color, #03a9f4);
+        outline-offset: 2px;
       }
 
       .step-label {
@@ -63,12 +68,39 @@ export class StepIndicator extends LitElement {
       .step-connector {
         width: 24px;
         height: 2px;
-        background-color: var(--ha-inactive-color, #e0e0e0);
+        background-color: var(--ha-inactive-color, #8c8c8c);
         transition: background-color 0.2s ease;
       }
 
       .step-connector.completed {
         background-color: var(--ha-primary-color, #03a9f4);
+      }
+
+      /* Forced colors would paint the fills like the page, leaving the
+         completed dots as empty as the upcoming ones */
+      @media (forced-colors: active) {
+        .step-dot {
+          border-color: GrayText;
+        }
+
+        .step-dot.completed {
+          border-color: CanvasText;
+          background-color: CanvasText;
+        }
+
+        .step-dot.active {
+          border-color: Highlight;
+          background-color: Highlight;
+          outline-color: Highlight;
+        }
+
+        .step-connector {
+          background-color: GrayText;
+        }
+
+        .step-connector.completed {
+          background-color: CanvasText;
+        }
       }
 
       /* Keep the other names in the accessibility tree when only the current

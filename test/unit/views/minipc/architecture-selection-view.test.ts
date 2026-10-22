@@ -147,6 +147,29 @@ describe("minipc-architecture-selection-view choices", () => {
     expect(selections.deviceConfig!.board).to.equal("generic-aarch64");
   });
 
+  it("marks the chosen architecture with a check, not only a color", async () => {
+    const el = await renderChoices();
+    const checks = () =>
+      radios(el).map((radio) => !!radio.querySelector(".selected-indicator"));
+    expect(checks()).to.deep.equal([false, false]);
+
+    radios(el)[1].click();
+    await waitUntil(() => checks()[1], "choice never marked");
+    expect(checks()).to.deep.equal([false, true]);
+    const check = radios(el)[1].querySelector(".selected-indicator")!;
+    expect(check.getAttribute("aria-hidden")).to.equal("true");
+    // The check sits in the radio's corner, out of the centered content
+    const radioBox = radios(el)[1].getBoundingClientRect();
+    const checkBox = check.getBoundingClientRect();
+    expect(checkBox.width).to.be.greaterThan(0);
+    expect(radioBox.right - checkBox.right).to.be.within(8, 10);
+    expect(checkBox.top - radioBox.top).to.be.within(8, 10);
+
+    radios(el)[0].click();
+    await waitUntil(() => checks()[0], "new choice never marked");
+    expect(checks()).to.deep.equal([true, false]);
+  });
+
   for (const [platform, userAgent] of [
     [
       "macos",

@@ -160,33 +160,53 @@ export class InstallProgress extends LitElement {
         font-weight: 600;
       }
 
+      /* Shaped like the step indicator's dots: pending is an empty ring,
+         complete a filled dot, the current stage a filled dot in a ring */
       .stage-dot {
-        /* A pending stage's color, which the current stage pulses to */
-        --stage-dot-idle: var(--ha-inactive-color, #e0e0e0);
+        box-sizing: border-box;
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background-color: var(--stage-dot-idle);
+        border: 2px solid var(--ha-inactive-color, #8c8c8c);
         transition: background-color 0.3s ease;
       }
 
-      .stage-dot.active {
+      .stage-dot.active,
+      .stage-dot.complete {
+        border-color: var(--ha-primary-color, #03a9f4);
         background-color: var(--ha-primary-color, #03a9f4);
+      }
+
+      /* The ring stays while the dot pulses empty and back */
+      .stage-dot.active {
+        outline: 2px solid var(--ha-primary-color, #03a9f4);
+        outline-offset: 2px;
         animation: pulse-dot 1s ease-in-out infinite;
       }
 
       @keyframes pulse-dot {
-        0%,
-        100% {
-          background-color: var(--ha-primary-color, #03a9f4);
-        }
         50% {
-          background-color: var(--stage-dot-idle);
+          background-color: transparent;
         }
       }
 
-      .stage-dot.complete {
-        background-color: var(--ha-primary-color, #03a9f4);
+      /* Forced colors would paint the fills like the page, and the pulse too */
+      @media (forced-colors: active) {
+        .stage-dot {
+          border-color: GrayText;
+        }
+
+        .stage-dot.complete {
+          border-color: CanvasText;
+          background-color: CanvasText;
+        }
+
+        .stage-dot.active {
+          border-color: Highlight;
+          background-color: Highlight;
+          outline-color: Highlight;
+          animation: none;
+        }
       }
 
       .thinking-cloud {

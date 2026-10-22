@@ -118,6 +118,29 @@ describe("step-indicator", () => {
     expect(dots[2].classList.contains("active")).to.be.true;
   });
 
+  it("draws each state as its own shape, not only its own color", async () => {
+    const el = await fixture<StepIndicator>(html`
+      <step-indicator .steps=${mockSteps} .currentIndex=${1}></step-indicator>
+    `);
+    const [completed, current, upcoming] = [
+      ...el.shadowRoot!.querySelectorAll(".step-dot"),
+    ].map((dot) => getComputedStyle(dot));
+    const empty = "rgba(0, 0, 0, 0)";
+
+    // Upcoming: an empty ring
+    expect(upcoming.backgroundColor).to.equal(empty);
+    expect(upcoming.borderTopStyle).to.equal("solid");
+    expect(upcoming.borderTopWidth).to.equal("2px");
+    expect(upcoming.outlineStyle).to.equal("none");
+    // Completed: a filled dot
+    expect(completed.backgroundColor).to.not.equal(empty);
+    expect(completed.outlineStyle).to.equal("none");
+    // Current: a filled dot in a ring
+    expect(current.backgroundColor).to.not.equal(empty);
+    expect(current.outlineStyle).to.equal("solid");
+    expect(current.outlineWidth).to.equal("2px");
+  });
+
   it("renders connectors between steps", async () => {
     const el = await fixture<StepIndicator>(html`
       <step-indicator .steps=${mockSteps} .currentIndex=${0}></step-indicator>

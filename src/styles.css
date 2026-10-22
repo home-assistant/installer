@@ -16,8 +16,8 @@
   --ha-text-color: #212121;
   /* Borders, dividers and empty tracks; components used to fall back to these */
   --ha-border-color: #e0e0e0;
-  /* Steps and stages not reached yet */
-  --ha-inactive-color: #e0e0e0;
+  /* Steps and stages not reached yet. Their rings need 3:1 to the page. */
+  --ha-inactive-color: #8c8c8c;
   /* Borders of buttons drawn on a card, like the app store links */
   --ha-control-border-color: #e0e0e0;
   --ha-card-hover-shadow: 0 4px 12px rgba(3, 169, 244, 0.15);
@@ -113,7 +113,7 @@ a:hover {
     --ha-text-color: #e1e1e1;
     --ha-secondary-text-color: #9e9e9e;
     --ha-border-color: #333333;
-    --ha-inactive-color: #444444;
+    --ha-inactive-color: #707070;
     --ha-control-border-color: #444444;
     --ha-card-hover-shadow: 0 4px 12px rgba(3, 169, 244, 0.25);
     --ha-warning-background: rgba(255, 152, 0, 0.15);

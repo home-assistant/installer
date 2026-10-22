@@ -4,7 +4,7 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import {
   ViewAccessibility,
   reducedMotionStyles,
@@ -79,12 +79,44 @@ export class MiniPCArchitectureSelectionView extends LitElement {
       }
 
       wa-radio {
+        position: relative;
         flex: 1;
         min-width: 0;
         height: auto;
         padding: 1.5rem;
         border-radius: 12px;
         align-items: flex-start;
+      }
+
+      /* The chosen one gets a check like the device and drive cards, as its
+         border and tint are only a change of color */
+      .selected-indicator {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 24px;
+        height: 24px;
+        background-color: var(--ha-primary-fill, #006787);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--wa-color-brand-on-loud, white);
+        font-size: 14px;
+      }
+
+      /* Forced colors would draw both choices with the same border, and hide
+         the check behind a backplate */
+      @media (forced-colors: active) {
+        wa-radio[aria-checked="true"] {
+          border-color: Highlight;
+        }
+
+        .selected-indicator {
+          forced-color-adjust: none;
+          background-color: Highlight;
+          color: HighlightText;
+        }
       }
 
       wa-radio::part(label) {
@@ -354,6 +386,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                     )}
                   </p>
                 </div>
+                ${this._renderCheck(this._x86Device)}
               </wa-radio>
             `
           : ""}
@@ -384,6 +417,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                     )}
                   </p>
                 </div>
+                ${this._renderCheck(this._arm64Device)}
               </wa-radio>
             `
           : ""}
@@ -401,6 +435,13 @@ export class MiniPCArchitectureSelectionView extends LitElement {
           </p>`
         : ""}
     `;
+  }
+
+  // Screen readers already hear which radio is checked
+  private _renderCheck(device: Device) {
+    return device.id === this._selectedDeviceId
+      ? html`<span class="selected-indicator" aria-hidden="true">✓</span>`
+      : nothing;
   }
 
   private _onDeviceChange(e: Event) {

@@ -223,7 +223,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       "animation-name",
       "none"
     );
-    const ratios = await page.evaluate(() => {
+    const { ratios, ringRatio } = await page.evaluate(() => {
       const styles = getComputedStyle(document.documentElement);
       function luminance(hex: string) {
         const values = hex
@@ -241,15 +241,23 @@ for (const colorScheme of ["light", "dark"] as const) {
         return (values[0] + 0.05) / (values[1] + 0.05);
       }
       const token = (name: string) => styles.getPropertyValue(name);
-      return [
-        contrast(token("--ha-primary-fill"), "#ffffff"),
-        contrast(token("--ha-primary-color"), token("--ha-background-color")),
-        contrast(token("--ha-error-color"), token("--ha-background-color")),
-        contrast(token("--ha-error-color"), token("--ha-card-background")),
-        contrast(token("--ha-primary-color-dark"), "#18bcf2"),
-      ];
+      return {
+        ratios: [
+          contrast(token("--ha-primary-fill"), "#ffffff"),
+          contrast(token("--ha-primary-color"), token("--ha-background-color")),
+          contrast(token("--ha-error-color"), token("--ha-background-color")),
+          contrast(token("--ha-error-color"), token("--ha-card-background")),
+          contrast(token("--ha-primary-color-dark"), "#18bcf2"),
+        ],
+        // The rings of steps not reached yet are graphics, which need 3:1
+        ringRatio: contrast(
+          token("--ha-inactive-color"),
+          token("--ha-background-color")
+        ),
+      };
     });
     for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(4.5);
+    expect(ringRatio).toBeGreaterThanOrEqual(3);
     await page.getByRole("button", { name: "Let's go" }).click();
     await page.getByRole("button", { name: "Proxmox server" }).click();
     const indicator = page.locator("step-indicator");
@@ -268,6 +276,96 @@ for (const colorScheme of ["light", "dark"] as const) {
     });
   });
 }
+
+test("forced colors keep step states and the chosen architecture apart", async ({
+  page,
+}, testInfo) => {
+  // Forced colors paint backgrounds like the page and give every border the
+  // same color, unless a rule asks for system colors
+  await page.emulateMedia({ forcedColors: "active" });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Let's go" }).click();
+  await page.getByRole("button", { name: "Generic (mini) PC" }).click();
+  await page.getByRole("button", { name: "I can connect the drive" }).click();
+  const system = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    document.body.append(probe);
+    const resolve = (color: string) => {
+      probe.style.color = color;
+      return getComputedStyle(probe).color;
+    };
+    const colors = {
+      canvasText: resolve("CanvasText"),
+      grayText: resolve("GrayText"),
+      highlight: resolve("Highlight"),
+      highlightText: resolve("HighlightText"),
+    };
+    probe.remove();
+    return colors;
+  });
+  const transparent = /^rgba\(.*, 0\)$/;
+
+  const dots = page.locator("step-indicator .step-dot");
+  // Completed: a filled dot
+  await expect(dots.nth(0)).toHaveCSS("background-color", system.canvasText);
+  await expect(dots.nth(0)).toHaveCSS("outline-style", "none");
+  // Current: a filled dot in a ring
+  await expect(dots.nth(1)).toHaveCSS("background-color", system.highlight);
+  await expect(dots.nth(1)).toHaveCSS("outline-style", "solid");
+  await expect(dots.nth(1)).toHaveCSS("outline-color", system.highlight);
+  // Upcoming: an empty ring
+  await expect(dots.nth(2)).toHaveCSS("background-color", transparent);
+  await expect(dots.nth(2)).toHaveCSS("border-top-style", "solid");
+  await expect(dots.nth(2)).toHaveCSS("border-top-width", "2px");
+  await expect(dots.nth(2)).toHaveCSS("border-top-color", system.grayText);
+
+  const choices = page.locator("minipc-architecture-selection-view wa-radio");
+  const x86 = choices.filter({ hasText: "Intel/AMD (x86-64)" });
+  const arm = choices.filter({ hasText: "ARM (aarch64)" });
+  await x86.click();
+  await expect(x86).toHaveCSS("border-top-color", system.highlight);
+  await expect(arm).not.toHaveCSS("border-top-color", system.highlight);
+  const check = x86.locator(".selected-indicator");
+  await expect(check).toBeVisible();
+  await expect(check).toHaveCSS("background-color", system.highlight);
+  await expect(check).toHaveCSS("color", system.highlightText);
+  await expect(arm.locator(".selected-indicator")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("forced-colors.png") });
+
+  // The install's stage list draws its dots the same way
+  await page.evaluate(async () => {
+    document.querySelector("app-shell")!.remove();
+    const progress = document.createElement(
+      "install-progress"
+    ) as HTMLElement & {
+      stages: { id: string; label: string }[];
+      stage: string;
+      updateComplete: Promise<unknown>;
+    };
+    progress.stages = [
+      { id: "downloading", label: "Download" },
+      { id: "writing", label: "Write" },
+      { id: "verifying", label: "Verify" },
+    ];
+    progress.stage = "writing";
+    document.body.append(progress);
+    await progress.updateComplete;
+  });
+  const stageDots = page.locator("install-progress .stage-dot");
+  await expect(stageDots.nth(0)).toHaveCSS(
+    "background-color",
+    system.canvasText
+  );
+  // The pulse would be painted like the page, so the dot holds still
+  await expect(stageDots.nth(1)).toHaveCSS("animation-name", "none");
+  await expect(stageDots.nth(1)).toHaveCSS(
+    "background-color",
+    system.highlight
+  );
+  await expect(stageDots.nth(1)).toHaveCSS("outline-color", system.highlight);
+  await expect(stageDots.nth(2)).toHaveCSS("background-color", transparent);
+  await expect(stageDots.nth(2)).toHaveCSS("border-top-color", system.grayText);
+});
 
 for (const tag of [
   "progress-view",

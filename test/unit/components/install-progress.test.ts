@@ -169,6 +169,35 @@ describe("install-progress", () => {
     expect(el.shadowRoot!.querySelector(".thinking-cloud")).to.not.exist;
   });
 
+  it("draws each stage state as its own shape, not only its own color", async () => {
+    const el = await fixture<InstallProgress>(
+      html`<install-progress
+        .stages=${[
+          { id: "downloading", label: "Download image" },
+          { id: "writing", label: "Write image" },
+          { id: "verifying", label: "Verify image" },
+        ]}
+        stage="writing"
+      ></install-progress>`
+    );
+    const [complete, current, pending] = [
+      ...el.shadowRoot!.querySelectorAll(".stage-dot"),
+    ].map((dot) => getComputedStyle(dot));
+    const empty = "rgba(0, 0, 0, 0)";
+
+    // Pending: an empty ring
+    expect(pending.backgroundColor).to.equal(empty);
+    expect(pending.borderTopStyle).to.equal("solid");
+    expect(pending.borderTopWidth).to.equal("2px");
+    expect(pending.outlineStyle).to.equal("none");
+    // Complete: a filled dot
+    expect(complete.backgroundColor).to.not.equal(empty);
+    expect(complete.outlineStyle).to.equal("none");
+    // Current: a dot in a ring, which stays while the dot pulses
+    expect(current.outlineStyle).to.equal("solid");
+    expect(current.outlineWidth).to.equal("2px");
+  });
+
   it("calculates speed and ETA from the owning view's stage baseline", async () => {
     const el = await fixture<InstallProgress>(
       html`<install-progress
