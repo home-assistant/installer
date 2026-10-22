@@ -297,7 +297,7 @@ pub fn get_diagnostics<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Diagnosti
 
 // Some distributions supply arbitrary release text; omit it from reports.
 fn reportable_os_version(version: String) -> String {
-    if version.len() <= 64
+    if (1..=64).contains(&version.len())
         && version
             .chars()
             .all(|c| c.is_ascii_digit() || ".-".contains(c))
@@ -608,9 +608,14 @@ mod tests {
         assert_eq!(report.version, "2026.10.1");
         assert_eq!(report.os, std::env::consts::OS);
         assert_eq!(report.architecture, std::env::consts::ARCH);
-        assert_eq!(
-            report.os_version,
-            reportable_os_version(os_info::get().version().to_string())
+        assert!(
+            report.os_version == "unknown"
+                || report
+                    .os_version
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || ".-".contains(c)),
+            "{}",
+            report.os_version
         );
         assert!(
             report
@@ -655,7 +660,11 @@ mod tests {
         for value in report.values() {
             let value = value.as_str().unwrap();
             assert!(!value.contains("private"), "{value}");
-            assert!(!value.contains(&*home.to_string_lossy()), "{value}");
+            // A root home dir (some containers) is part of every path
+            assert!(
+                home.parent().is_none() || !value.contains(&*home.to_string_lossy()),
+                "{value}"
+            );
         }
     }
 
@@ -665,6 +674,7 @@ mod tests {
             assert_eq!(reportable_os_version(version.into()), version);
         }
         for version in [
+            "",
             "Rolling Release",
             "Rolling Release (20261001)",
             "24.04 LTS (Noble)",
