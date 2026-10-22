@@ -177,6 +177,7 @@
   "proxmox.storage_pool": "Storage",
   "vm.disk_storage": "Storage",
   "views.proxmox.proxmox_configure_view.storage_location_for_the_vm_disk_image": "Storage location for the VM disk image",
+  "views.proxmox.proxmox_configure_view.no_disk_image_storage_on_this_node": "No active storage on this node can hold the VM disk. Enable the \"Disk image\" content type on a storage in Proxmox, or choose another node.",
   "views.proxmox.proxmox_configure_view.unique_identifier_for_the_virtual_machine": "Unique identifier for the virtual machine",
   "views.proxmox.proxmox_configure_view.value_cores": "{value0, number} cores",
   "views.proxmox.proxmox_configure_view.value_value_free": "{value0} ({value1} free)",

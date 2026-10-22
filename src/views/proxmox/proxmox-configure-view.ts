@@ -223,6 +223,8 @@ export class ProxmoxConfigureView extends LitElement {
 
   /** Bumped per storage lookup, so only the latest one applies its result */
   private _storageLookup = 0;
+  /** Node whose storage lookup last completed, so an empty list is real. */
+  @state() private _storagesNode = "";
   @state() private _bridges: ProxmoxBridge[] = [];
   @state() private _selectedBridge = "";
   /** Node whose bridge lookup last completed, so an empty list is real. */
@@ -435,6 +437,7 @@ export class ProxmoxConfigureView extends LitElement {
         this._storages = storageResult.value.filter(
           (s) => s.active && s.content.includes("images")
         );
+        this._storagesNode = node;
 
         // Keep the selected storage if this node still offers it, otherwise
         // fall back to the first one available
@@ -735,6 +738,7 @@ export class ProxmoxConfigureView extends LitElement {
     const select = e.target as WaSelect;
     this._selectedNode = select.value as string;
     this._selectedStorage = "";
+    this._storagesNode = "";
     this._selectedBridge = "";
     this._bridges = [];
     this._bridgesNode = "";
@@ -1153,6 +1157,23 @@ export class ProxmoxConfigureView extends LitElement {
                 "views.proxmox.proxmox_configure_view.storage_location_for_the_vm_disk_image"
               )}
             </p>
+            ${this._loaded &&
+            this._selectedNode &&
+            this._storagesNode === this._selectedNode &&
+            this._storages.length === 0
+              ? // Next needs storage for the VM disk, so say how to get one.
+                // Like Refresh storage, retrying waits while Import is enabled.
+                html`<p class="error-text" role="alert">
+                    ${localize(
+                      "views.proxmox.proxmox_configure_view.no_disk_image_storage_on_this_node"
+                    )}
+                  </p>
+                  <wa-button
+                    ?disabled=${this._importBusy}
+                    @click=${this._loadStorage}
+                    >${localize("components.app_shell.try_again")}</wa-button
+                  >`
+              : ""}
           </div>
         </div>
 
