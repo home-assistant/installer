@@ -41,6 +41,8 @@ pub(super) struct LsblkDevice {
     pub(super) children: Vec<LsblkDevice>,
     #[serde(skip)]
     in_use: bool,
+    #[serde(skip)]
+    sd_card: bool,
 }
 
 fn read_devices() -> Result<LsblkOutput> {
@@ -64,6 +66,7 @@ fn read_devices() -> Result<LsblkOutput> {
     }
 
     let mut lsblk: LsblkOutput = serde_json::from_slice(&output.stdout)?;
+    mark_sd_cards(&mut lsblk.blockdevices, Path::new("/sys/block"));
     // Btrfs can span disks without block-layer holders or a mountpoint on
     // every member. Refuse all members of mounted Btrfs filesystems.
     let btrfs = mounted_btrfs_devices(Path::new("/sys/fs/btrfs"))?;
@@ -93,6 +96,23 @@ fn read_devices() -> Result<LsblkOutput> {
         }
     }
     Ok(lsblk)
+}
+
+/// lsblk reports HOTPLUG for every MMC disk, soldered eMMC included. Only
+/// the kernel's card type tells a card in a slot apart from internal storage.
+fn mark_sd_cards(devices: &mut [LsblkDevice], sys_block: &Path) {
+    for dev in devices
+        .iter_mut()
+        .filter(|dev| dev.name.starts_with("mmcblk"))
+    {
+        // An unreadable type counts as eMMC. lsblk just read this disk from
+        // sysfs, so failing here means the card is gone or sysfs is broken.
+        // Hiding a card is a nuisance; offering internal storage to wipe is
+        // not recoverable.
+        let card_type = std::fs::read_to_string(sys_block.join(&dev.name).join("device/type"))
+            .unwrap_or_default();
+        dev.sd_card = matches!(card_type.trim(), "SD" | "SDcombo");
+    }
 }
 
 fn is_btrfs(path: &Path) -> Result<bool> {
@@ -267,7 +287,7 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
             continue;
         }
 
-        let is_removable = dev.rm == Some(true) || dev.hotplug == Some(true);
+        let is_removable = is_removable(&dev);
         let size = dev.size.unwrap_or(0);
 
         // Determine device type
@@ -301,13 +321,23 @@ pub async fn list_devices() -> Result<Vec<BlockDevice>> {
     Ok(devices)
 }
 
+fn is_removable(dev: &LsblkDevice) -> bool {
+    // HOTPLUG is set for eMMC too, so trust the card type instead.
+    if dev.name.starts_with("mmcblk") {
+        return dev.sd_card;
+    }
+    dev.rm == Some(true) || dev.hotplug == Some(true)
+}
+
 pub(super) fn determine_device_type(dev: &LsblkDevice) -> DeviceType {
     let transport = dev.tran.as_deref().unwrap_or("");
     let model = dev.model.as_deref().unwrap_or("").to_lowercase();
 
-    // Check for SD card
     if dev.name.starts_with("mmcblk") {
-        return DeviceType::SdCard;
+        if dev.sd_card {
+            return DeviceType::SdCard;
+        }
+        return DeviceType::Unknown;
     }
 
     if mentions_sd_card(&model) {
@@ -578,9 +608,64 @@ mod tests {
             model: None,
             vendor: None,
             hotplug: Some(false),
+            sd_card: true,
             ..Default::default()
         };
         assert_eq!(determine_device_type(&dev), DeviceType::SdCard);
+    }
+
+    fn mmc_disks(types: &[(&str, Option<&str>)]) -> (tempfile::TempDir, Vec<LsblkDevice>) {
+        let sys_block = tempfile::tempdir().unwrap();
+        let mut devices = Vec::new();
+        for (name, card_type) in types {
+            if let Some(card_type) = card_type {
+                let device = sys_block.path().join(name).join("device");
+                std::fs::create_dir_all(&device).unwrap();
+                std::fs::write(device.join("type"), format!("{card_type}\n")).unwrap();
+            }
+            devices.push(LsblkDevice {
+                name: name.to_string(),
+                device_type: Some("disk".to_string()),
+                rm: Some(false),
+                hotplug: Some(true),
+                ..Default::default()
+            });
+        }
+        mark_sd_cards(&mut devices, sys_block.path());
+        (sys_block, devices)
+    }
+
+    #[test]
+    fn emmc_is_not_a_removable_sd_card() {
+        let (_sys_block, devices) =
+            mmc_disks(&[("mmcblk0", Some("MMC")), ("mmcblk2", Some("SDIO"))]);
+        for dev in &devices {
+            assert!(!is_removable(dev), "{}", dev.name);
+            assert_eq!(determine_device_type(dev), DeviceType::Unknown);
+        }
+    }
+
+    #[test]
+    fn sd_card_in_mmc_slot_stays_removable_sd_card() {
+        let (_sys_block, devices) =
+            mmc_disks(&[("mmcblk1", Some("SD")), ("mmcblk2", Some("SDcombo"))]);
+        for dev in &devices {
+            assert!(is_removable(dev), "{}", dev.name);
+            assert_eq!(determine_device_type(dev), DeviceType::SdCard);
+        }
+    }
+
+    #[test]
+    fn unreadable_mmc_type_is_treated_as_emmc() {
+        let (_sys_block, devices) = mmc_disks(&[("mmcblk0", None)]);
+        assert!(!is_removable(&devices[0]));
+        assert_eq!(determine_device_type(&devices[0]), DeviceType::Unknown);
+    }
+
+    #[test]
+    fn non_mmc_disks_ignore_card_type() {
+        let (_sys_block, devices) = mmc_disks(&[("sdb", Some("MMC"))]);
+        assert!(is_removable(&devices[0]));
     }
 
     #[test]
