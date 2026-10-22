@@ -371,12 +371,13 @@ export class DriveSelectionView extends LitElement {
       return html`
         <div class="error">
           <span class="error-icon">⚠️</span>
+          <!-- Empty while trying again, so the same failure is read out again -->
           <p
             class="error-message"
             role="alert"
             style="overflow-wrap: anywhere;"
           >
-            ${this._error?.message}
+            ${this._loading ? "" : this._error?.message}
           </p>
           ${renderErrorHelp()}
           ${this._error.retryable

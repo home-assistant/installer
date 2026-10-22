@@ -16,6 +16,8 @@ export class ViewAccessibility implements ReactiveController {
   private _headingFocused = false;
   private _initialFocus: Element | null = null;
   private _alert = "";
+  /** The heading focused because an error went away with the focus in it */
+  private _recovered: HTMLElement | null = null;
 
   constructor(private readonly host: LitElement) {
     host.addController(this);
@@ -25,6 +27,7 @@ export class ViewAccessibility implements ReactiveController {
     this._headingFocused = false;
     this._initialFocus = activeElement();
     this._alert = "";
+    this._recovered = null;
   }
 
   hostUpdated() {
@@ -32,7 +35,9 @@ export class ViewAccessibility implements ReactiveController {
     const alert =
       this.host.renderRoot.querySelector<HTMLElement>('[role="alert"]');
     const text = alert?.textContent?.trim() ?? "";
-    if (this._alert && !text && !this.host.matches(":focus-within")) {
+    const recovering =
+      !!this._alert && !text && !this.host.matches(":focus-within");
+    if (recovering) {
       // Retry can remove a focused footer button outside this view. Remember
       // it so a delayed heading still won't interrupt subsequent navigation.
       this._headingFocused = false;
@@ -48,6 +53,8 @@ export class ViewAccessibility implements ReactiveController {
         // A delayed load must not interrupt someone who already moved on.
         if (active === this._initialFocus || active === document.body) {
           this._focus(heading);
+          // Only a stand-in: the view may know a better place to continue
+          if (recovering) this._recovered = heading;
         }
         this._headingFocused = true;
       }
@@ -59,11 +66,15 @@ export class ViewAccessibility implements ReactiveController {
    * Continue from `target` when an update removed the control that had
    * focus, as when a button gives way to what it loaded. Focus would
    * otherwise fall to the page, and a screen reader start over from the top.
-   * Focus anywhere else is left alone. Text is focused like a heading.
+   * Also replaces the heading this controller stood in with when an error
+   * went away together with the focus. Focus anywhere else is left alone.
+   * Text is focused like a heading.
    */
   restoreFocus(target: HTMLElement | null | undefined) {
     const active = activeElement();
-    if (!target || (active && active !== document.body)) return;
+    const recovered = active !== null && active === this._recovered;
+    this._recovered = null;
+    if (!target || (active && active !== document.body && !recovered)) return;
     if (target.matches(CONTROLS)) {
       target.focus();
     } else {

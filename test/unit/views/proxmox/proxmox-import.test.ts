@@ -200,23 +200,40 @@ describe("Proxmox import consent", () => {
     );
   });
 
-  it("keeps focus on Refresh storage when Import is still missing", async () => {
+  it("keeps Refresh storage in place, busy, while storage is read again", async () => {
     const el = await mount();
     const refresh = el.shadowRoot!.querySelector(
       ".refresh-storage"
-    ) as HTMLElement;
+    ) as HTMLElement & { loading: boolean };
+    const lookup = deferred<ProxmoxStorage[]>();
+    list = () => lookup.promise;
     refresh.focus();
     refresh.click();
     await el.updateComplete;
-    // Reading storage hides the section, and the button with it
-    expect(refresh.isConnected).to.be.false;
-    await waitUntil(() => reads === 2);
-    await settle();
-    await el.updateComplete;
 
-    expect(el.shadowRoot!.activeElement).to.equal(
-      el.shadowRoot!.querySelector(".refresh-storage")
+    // The section stays while the lookup runs, so focus doesn't fall away
+    expect(refresh.isConnected).to.be.true;
+    expect(refresh.loading).to.be.true;
+    expect(el.shadowRoot!.activeElement).to.equal(refresh);
+    expect(wizardState.getState().selections.proxmoxImportReady).to.be.false;
+
+    lookup.resolve(storages);
+    await waitUntil(() => !refresh.loading);
+    expect(el.shadowRoot!.activeElement).to.equal(refresh);
+  });
+
+  it("hands focus back to Enable Import once its dialog closes", async () => {
+    const el = await mount();
+    // Without opening it for real: a test page in the background never
+    // finishes the dialog's closing animation, which keeps the page inert
+    (document.activeElement as HTMLElement | null)?.blur();
+    el.shadowRoot!.querySelector("info-dialog")!.dispatchEvent(
+      new Event("wa-after-hide")
     );
+
+    const enable = el.shadowRoot!.querySelector(".enable-import");
+    expect(enable).to.exist;
+    expect(el.shadowRoot!.activeElement === enable).to.be.true;
   });
 
   it("does not prompt when active import storage exists, including a non-directory backend", async () => {

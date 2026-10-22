@@ -13,7 +13,7 @@ import {
 } from "../../../../src/utils/drive-selection.js";
 import type { BlockDevice } from "../../../../src/api/index.js";
 import { flush, holdDeviceScan } from "../../helpers/hold-device-scan.js";
-import { mockTauriIpc, restoreTauriIpc } from "../../tauri-ipc.js";
+import { ipcError, mockTauriIpc, restoreTauriIpc } from "../../tauri-ipc.js";
 import {
   diagnosticText,
   getDiagnostics,
@@ -108,6 +108,61 @@ describe("drive-selection-view", () => {
         el.shadowRoot!.querySelector(".drives-header wa-button")
       );
       expect(status.textContent).to.contain("1 drive found");
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("keeps focus through retries after a failed scan, and reads out each failure", async () => {
+    const failure = ipcError("io", "The drive scan failed.", true);
+    const root = (el: DriveSelectionView) => el.shadowRoot!;
+    const alertText = (el: DriveSelectionView) =>
+      root(el).querySelector("[role=alert]")?.textContent?.trim() ?? "";
+    let scan = holdDeviceScan();
+    const rescan = async (el: DriveSelectionView, selector: string) => {
+      const button = root(el).querySelector(selector) as HTMLElement;
+      button.focus();
+      scan.restore();
+      scan = holdDeviceScan();
+      button.click();
+      await el.updateComplete;
+      expect(root(el).activeElement === button).to.be.true;
+      return button;
+    };
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.reject(failure as unknown as Error);
+      await waitUntil(() => !!alertText(el));
+
+      // The same failure again: emptied meanwhile, so it is new to read out
+      await rescan(el, ".error wa-button");
+      expect(alertText(el)).to.equal("");
+      scan.reject(failure as unknown as Error);
+      await waitUntil(() => !!alertText(el));
+      expect(root(el).activeElement === root(el).querySelector("[role=alert]"))
+        .to.be.true;
+
+      // Then nothing found: the empty state's Refresh takes over
+      await rescan(el, ".error wa-button");
+      scan.resolve([]);
+      await waitUntil(() => !!root(el).querySelector(".empty-state"));
+      await el.updateComplete;
+      expect(
+        root(el).activeElement ===
+          root(el).querySelector(".empty-state wa-button")
+      ).to.be.true;
+
+      // Then a drive: the list's Refresh takes over
+      await rescan(el, ".empty-state wa-button");
+      scan.resolve([CONNECTED]);
+      await waitUntil(() => !!root(el).querySelector("drive-card"));
+      await el.updateComplete;
+      expect(
+        root(el).activeElement ===
+          root(el).querySelector(".drives-header wa-button")
+      ).to.be.true;
     } finally {
       scan.restore();
     }

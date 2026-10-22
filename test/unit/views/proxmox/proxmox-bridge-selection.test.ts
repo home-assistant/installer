@@ -295,6 +295,38 @@ describe("Proxmox bridge selection", () => {
     expect(wizardState.getState().selections.proxmoxBridge).to.equal("vmbr1");
   });
 
+  it("keeps Try again in place, busy, and moves on to the bridges it finds", async () => {
+    let lookup = deferred<ProxmoxBridge[]>();
+    lookup.resolve([]);
+    mockNetworks(() => lookup.promise);
+    const el = await mount();
+    await waitUntil(() => !!el.shadowRoot!.querySelector(".bridge-retry"));
+    const retry = el.shadowRoot!.querySelector(
+      ".bridge-retry"
+    ) as HTMLElement & {
+      loading: boolean;
+    };
+    const alert = el.shadowRoot!.querySelector("[role=alert]")!;
+
+    lookup = deferred<ProxmoxBridge[]>();
+    retry.focus();
+    retry.click();
+    await el.updateComplete;
+    expect(retry.isConnected).to.be.true;
+    expect(retry.loading).to.be.true;
+    expect(el.shadowRoot!.activeElement).to.equal(retry);
+    // Empty meanwhile, so the same result is read out again
+    expect(alert.textContent!.trim()).to.equal("");
+
+    lookup.resolve([bridge("vmbr0")]);
+    await ready();
+    await settle();
+    await el.updateComplete;
+    expect(el.shadowRoot!.activeElement).to.equal(
+      el.shadowRoot!.querySelector("#network-bridge")
+    );
+  });
+
   it("does not trust a restored bridge while its lookup is pending", async () => {
     wizardState.setSelection("proxmoxBridge", "vmbr1");
     wizardState.setSelection("proxmoxBridgeReady", true);

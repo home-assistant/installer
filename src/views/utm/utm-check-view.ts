@@ -245,10 +245,13 @@ export class UtmCheckView extends LitElement {
     // Coming back from a later step left this set: Next waits for the check
     wizardState.setSelection("utmInstalled", false);
 
+    // Shown only once the check is done, Automation included: the macOS
+    // prompt can take a while, and the buttons of the result being checked
+    // again stay meanwhile
+    let status: UtmStatus | undefined;
     try {
-      const status = await checkUtmStatus();
+      status = await checkUtmStatus();
       if (!isCurrent()) return;
-      this._utmStatus = status;
 
       // Ask for Automation now, not after the download: a refusal then
       // costs nothing, and an unnoticed prompt can't stall the install
@@ -259,10 +262,12 @@ export class UtmCheckView extends LitElement {
       }
 
       // Store UTM installed status in wizard state
+      this._utmStatus = status;
       this._error = null;
       wizardState.setSelection("utmInstalled", status.installed);
     } catch (error) {
       if (!isCurrent()) return;
+      if (status) this._utmStatus = status;
       new InstallDiagnostics("utm").fail(error);
       this._error = installerError(
         error,

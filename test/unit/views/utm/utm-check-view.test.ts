@@ -180,9 +180,11 @@ describe("utm-check-view", () => {
 
   it("keeps focus through a check started from the page, and announces its result", async () => {
     const second = deferred<unknown>();
+    // The macOS prompt stays up until the user answers it
+    const automation = deferred<void>();
     let checks = 0;
     mockTauriIpc((cmd) => {
-      if (cmd === "check_utm_automation") return undefined;
+      if (cmd === "check_utm_automation") return automation.promise;
       expect(cmd).to.equal("check_utm_status");
       return ++checks === 1
         ? { installed: false, path: null, version: null }
@@ -216,6 +218,14 @@ describe("utm-check-view", () => {
       path: "/Applications/UTM.app",
       version: "4.5.0",
     });
+    await waitUntil(() => status.textContent!.includes("control UTM"));
+
+    // Found, but still asking for Automation: the button stays, busy
+    expect(installedIt.isConnected).to.be.true;
+    expect(installedIt.loading).to.be.true;
+    expect(el.shadowRoot!.activeElement === installedIt).to.be.true;
+
+    automation.resolve();
     await waitUntil(() => !installedIt.isConnected);
     await el.updateComplete;
 

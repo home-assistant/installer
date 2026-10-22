@@ -240,6 +240,11 @@ export class ProxmoxConfigureView extends LitElement {
   @state() private _importError: InstallerError | null = null;
   /** Said once Import is enabled, as its section then goes away */
   @state() private _importStatus = "";
+  /**
+   * Where the running storage lookup was started from, if from a button
+   * that would otherwise vanish while it runs. That part stays, busy.
+   */
+  @state() private _reloadFrom?: "import" | "bridges";
 
   // Where focus continues after a lookup hid the button that started it
   @query(".enable-import") private _enableImportButton?: HTMLElement;
@@ -373,7 +378,7 @@ export class ProxmoxConfigureView extends LitElement {
     }
   }
 
-  private async _loadStorage() {
+  private async _loadStorage(from?: "import" | "bridges") {
     if (!this._selectedNode) return;
 
     const session = this._wizardState.selections.proxmoxSession;
@@ -389,13 +394,14 @@ export class ProxmoxConfigureView extends LitElement {
       this._wizardState.selections.proxmoxSession === session;
 
     this._loadingStorage = true;
+    this._reloadFrom = from;
     // A new lookup replaces the previous one's error; an expired session
     // never gets here, since it clears the session first
     this._error = null;
     this._sessionExpired = false;
     wizardState.setSelection("proxmoxConfigureReady", false);
     wizardState.setSelection("proxmoxBridgeReady", false);
-    this._resetImport();
+    this._resetImport(from === "import");
     try {
       const [storageResult, bridgeResult] = await Promise.allSettled([
         proxmoxListStorage(session, node),
@@ -498,6 +504,8 @@ export class ProxmoxConfigureView extends LitElement {
       // A newer lookup is still running and owns the loading state
       if (isLatest()) {
         this._loadingStorage = false;
+        this._reloadFrom = undefined;
+        this._importBusy = false;
         if (this.isConnected && isCurrentSession()) this._saveSelections();
       }
     }
@@ -560,17 +568,22 @@ export class ProxmoxConfigureView extends LitElement {
     wizardState.setSelection("proxmoxImportReady", false);
   }
 
-  /** Forget the previous lookup's Import state until storage is read again. */
-  private _resetImport() {
+  /**
+   * Forget the previous lookup's Import state until storage is read again.
+   * With `keepShown`, the section stays on screen meanwhile, busy, so the
+   * button that started the lookup keeps focus. It is never ready meanwhile.
+   */
+  private _resetImport(keepShown = false) {
     this._importStatus = "";
     this._importReady = false;
-    this._importCandidates = [];
-    this._importStorage = "";
-    this._importBusy = false;
     this._importDialog = false;
     this._importDeclined = false;
     this._importError = null;
     wizardState.setSelection("proxmoxImportReady", false);
+    if (keepShown) return;
+    this._importCandidates = [];
+    this._importStorage = "";
+    this._importBusy = false;
   }
 
   /**
@@ -612,7 +625,7 @@ export class ProxmoxConfigureView extends LitElement {
       if (!isCurrent()) return;
       // Only a fresh read decides readiness, so the step never trusts its
       // own assumption about what the server now has
-      const reload = this._loadStorage();
+      const reload = this._loadStorage("import");
       const reloadLookup = this._storageLookup;
       await reload;
       if (
@@ -689,15 +702,24 @@ export class ProxmoxConfigureView extends LitElement {
     void this._loadNodes();
   }
 
+  /** The dialog hands focus back to nothing: continue from its button. */
+  private _onImportDialogHidden() {
+    this._accessibility.restoreFocus(
+      this._enableImportButton ?? this._bridgeSelect
+    );
+  }
+
   private async _refreshStorage() {
-    await this._loadStorage();
+    await this._loadStorage("import");
     await this._restoreFocus(
       () => this._refreshStorageButton ?? this._bridgeSelect
     );
   }
 
   private async _retryBridges() {
-    await (this._selectedNode ? this._loadStorage() : this._loadNodes());
+    await (this._selectedNode
+      ? this._loadStorage("bridges")
+      : this._loadNodes());
     await this._restoreFocus(
       () => this._bridgeRetryButton ?? this._bridgeSelect
     );
@@ -919,11 +941,12 @@ export class ProxmoxConfigureView extends LitElement {
     if (
       !this._selectedNode ||
       this._loadingNodes ||
-      this._loadingStorage ||
+      (this._loadingStorage && this._reloadFrom !== "import") ||
       this._importReady ||
       this._error
     )
       return "";
+    const reloading = this._loadingStorage && !this._importBusy;
 
     const candidates = this._importCandidates;
     const selected = candidates.find((s) => s.name === this._importStorage);
@@ -957,7 +980,7 @@ export class ProxmoxConfigureView extends LitElement {
                 )}
                 size="s"
                 .value=${this._importStorage}
-                ?disabled=${this._importBusy}
+                ?disabled=${this._importBusy || reloading}
                 @change=${this._onImportStorageChange}
               >
                 ${candidates.map(
@@ -1006,6 +1029,7 @@ export class ProxmoxConfigureView extends LitElement {
                   variant="brand"
                   size="s"
                   ?loading=${this._importBusy}
+                  ?disabled=${reloading}
                   @click=${this._askToEnableImport}
                 >
                   ${this._importBusy
@@ -1022,6 +1046,7 @@ export class ProxmoxConfigureView extends LitElement {
               appearance="outlined"
               size="s"
               ?disabled=${this._importBusy}
+              ?loading=${reloading}
               @click=${this._refreshStorage}
             >
               ${localize(
@@ -1036,6 +1061,7 @@ export class ProxmoxConfigureView extends LitElement {
       </div>
       <info-dialog
         .open=${this._importDialog}
+        @wa-after-hide=${this._onImportDialogHidden}
         heading=${localize(
           "views.proxmox.proxmox_configure_view.enable_import_on_storage_title"
         )}
@@ -1227,7 +1253,8 @@ export class ProxmoxConfigureView extends LitElement {
         <div class="setting-row">
           <div class="setting-icon">${this._renderServerIcon()}</div>
           <div class="setting-content">
-            ${this._loadingStorage || this._loadingNodes
+            ${(this._loadingStorage || this._loadingNodes) &&
+            this._reloadFrom !== "bridges"
               ? html`<span class="loading-text"
                   >${localize(
                     "views.proxmox.proxmox_configure_view.loading_network_bridges"
@@ -1261,18 +1288,23 @@ export class ProxmoxConfigureView extends LitElement {
                   ${this._bridges.length === 0 &&
                   this._bridgesNode === this._selectedNode &&
                   !this._error
-                    ? // A lookup error already offers its own retry above
+                    ? // A lookup error already offers its own retry above.
+                      // Empty while trying again, so the same result is read
+                      // out again.
                       html`<p class="error-text" role="alert">
-                          ${this._selectedNode
-                            ? localize(
-                                "views.proxmox.proxmox_configure_view.no_network_bridges_available_on_this_node"
-                              )
-                            : localize(
-                                "views.proxmox.proxmox_configure_view.no_online_proxmox_nodes_found"
-                              )}
+                          ${this._reloadFrom === "bridges"
+                            ? ""
+                            : this._selectedNode
+                              ? localize(
+                                  "views.proxmox.proxmox_configure_view.no_network_bridges_available_on_this_node"
+                                )
+                              : localize(
+                                  "views.proxmox.proxmox_configure_view.no_online_proxmox_nodes_found"
+                                )}
                         </p>
                         <wa-button
                           class="bridge-retry"
+                          ?loading=${this._reloadFrom === "bridges"}
                           @click=${this._retryBridges}
                           >${localize(
                             "components.app_shell.try_again"
