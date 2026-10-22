@@ -122,7 +122,14 @@ pub async fn check_connection() -> Result<(), CommandError> {
 /// List all block devices
 #[tauri::command]
 pub async fn list_block_devices() -> Result<Vec<BlockDevice>, CommandError> {
-    Backend
+    list_drives(&Backend).await
+}
+
+/// Refuses without write privileges, so the drive step says how to get them
+/// before anyone picks a drive. Not retryable: they last until a restart.
+async fn list_drives(backend: &impl DeviceBackend) -> Result<Vec<BlockDevice>, CommandError> {
+    backend.check_write_privileges()?;
+    backend
         .list_devices()
         .await
         .map_err(CommandError::from_query)
@@ -246,10 +253,6 @@ where
     P: ProgressCallback,
 {
     let start_time = std::time::Instant::now();
-
-    backend
-        .check_write_privileges()
-        .map_err(CommandError::from)?;
 
     if let Some(wifi) = &request.wifi {
         // An installer would leave the network behind on the drive it runs from
@@ -1600,12 +1603,12 @@ mod tests {
 
     impl ProgressCallback for NoProgressExpected {
         fn on_progress(&self, _: FlashProgress) {
-            panic!("must not report progress before privilege preflight succeeds");
+            panic!("must not report progress");
         }
     }
 
     #[tokio::test]
-    async fn privilege_failures_abort_before_progress_or_release_lookup() {
+    async fn drives_are_not_listed_without_write_privileges() {
         fn not_elevated() -> hai_core::Result<()> {
             Err(hai_core::Error::PermissionDenied(hai_core::message!(
                 "backend.disk.run_as_administrator"
@@ -1616,30 +1619,13 @@ mod tests {
                 "token query failed",
             )))
         }
-        async fn attempt(
-            check: fn() -> hai_core::Result<()>,
-            callback: &impl ProgressCallback,
-        ) -> Result<FlashResult, CommandError> {
-            let request = FlashRequest {
-                device_id: "unused-device".into(),
-                board: "rpi5-64".into(),
-                verify: true,
-                expected_device: ExpectedDevice::default(),
-                wifi: None,
-            };
-            run_flash(&PreflightBackend { check }, &request, callback).await
-        }
 
         for check in [not_elevated, query_failed] {
-            let err = attempt(check, &NoProgressExpected).await.unwrap_err();
-            assert_eq!(err, CommandError::from(check().unwrap_err()));
+            let error = list_drives(&PreflightBackend { check }).await.unwrap_err();
+            assert_eq!(error, CommandError::from(check().unwrap_err()));
+            // Only restarting the app helps
+            assert!(!error.retryable);
         }
-
-        // An authorized attempt reaches release lookup without real network I/O.
-        let retry = attempt(|| Ok(()), &hai_core::NoOpProgress)
-            .await
-            .unwrap_err();
-        assert!(retry.message.contains("release lookup reached"), "{retry}");
     }
 
     #[tokio::test]

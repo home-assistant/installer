@@ -1,4 +1,4 @@
-//! Read the process token before downloading an image; never open a drive here.
+//! Read the process token before listing drives; never open a drive here.
 
 use crate::{Error, Result};
 

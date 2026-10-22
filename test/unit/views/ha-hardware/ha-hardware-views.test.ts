@@ -448,6 +448,11 @@ describe("Home Assistant hardware views", () => {
   });
 
   describe("connect instructions", () => {
+    // The stub shadows the prototype getter; deleting it restores the real UA.
+    afterEach(() => {
+      delete (window.navigator as { userAgent?: string }).userAgent;
+    });
+
     for (const [id, expected] of [
       ["green", ["Connect a microSD card", "card reader"]],
       ["yellow-cm4", ["Connect a USB flash drive"]],
@@ -459,11 +464,7 @@ describe("Home Assistant hardware views", () => {
           "bridge JP2",
           "Only the red LED",
           "remove the JP2 bridge",
-          "sudo ./rpiboot -d mass-storage-gadget64",
-          "rpiboot-CM4-CM5 - Mass Storage Gadget",
-          "Rosetta",
           "RPi-MSD",
-          "format the disk",
         ],
       ],
       [
@@ -490,16 +491,58 @@ describe("Home Assistant hardware views", () => {
       });
     }
 
-    it("puts commands in code and links rpiboot", async () => {
+    for (const [platform, userAgent, code, shown, hidden] of [
+      [
+        "macos",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+        "sudo ./rpiboot -d mass-storage-gadget64",
+        ["In Terminal", "Rosetta", "choose Ignore"],
+        ["Start menu", "format"],
+      ],
+      [
+        "linux",
+        "Mozilla/5.0 (X11; Linux x86_64)",
+        "sudo ./rpiboot -d mass-storage-gadget64",
+        ["In a terminal"],
+        ["Rosetta", "Start menu", "Ignore", "format"],
+      ],
+      [
+        "windows",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "rpiboot-CM4-CM5 - Mass Storage Gadget",
+        ["Install rpiboot", "Start menu", "choose Cancel"],
+        ["sudo", "Rosetta", "Ignore"],
+      ],
+    ] as const) {
+      it(`tells ${platform} users how to run rpiboot`, async () => {
+        Object.defineProperty(window.navigator, "userAgent", {
+          value: userAgent,
+          configurable: true,
+        });
+        const el = await fixture<HaHardwareConnectInstructions>(
+          html`<ha-hardware-connect-instructions
+            .hardware=${"yellow-cm5"}
+          ></ha-hardware-connect-instructions>`
+        );
+        const codes = [...el.shadowRoot!.querySelectorAll("code")].map(
+          (node) => node.textContent
+        );
+        expect(codes).to.include(code);
+        for (const part of shown) {
+          expect(text(el.shadowRoot!)).to.contain(part);
+        }
+        for (const part of hidden) {
+          expect(text(el.shadowRoot!)).not.to.contain(part);
+        }
+      });
+    }
+
+    it("links rpiboot", async () => {
       const el = await fixture<HaHardwareConnectInstructions>(
         html`<ha-hardware-connect-instructions
           .hardware=${"yellow-cm5"}
         ></ha-hardware-connect-instructions>`
       );
-      const code = [...el.shadowRoot!.querySelectorAll("code")].map(
-        (node) => node.textContent
-      );
-      expect(code).to.include("sudo ./rpiboot -d mass-storage-gadget64");
       expect(el.shadowRoot!.querySelector("a")!.href).to.equal(
         "https://github.com/raspberrypi/usbboot"
       );

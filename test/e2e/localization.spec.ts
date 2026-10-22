@@ -30,9 +30,7 @@ for (const mode of ["native", "invalid", "rejected", "stalled"] as const) {
       });
     }, mode);
     await page.goto("/");
-    await expect(page.locator("welcome-view wa-button")).toContainText(
-      "Let's go"
-    );
+    await expect(page.getByRole("button", { name: "Let's go" })).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute(
       "lang",
       mode === "native" ? "en-IN" : "en-GB"
@@ -45,7 +43,7 @@ for (const mode of ["native", "invalid", "rejected", "stalled"] as const) {
         )
       ).toBe(false);
     }
-    await page.locator("welcome-view wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(
       page.locator('option-card[heading="Proxmox server"]')
     ).toBeVisible();

@@ -17,36 +17,16 @@ import { wizardState } from "../../state/wizard-state.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../components/device-card.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 @customElement("device-selection-view")
 export class DeviceSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
     reducedMotionStyles,
     linkStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 2rem 0;
-        text-align: center;
-      }
-
       .devices-grid {
         width: 100%;
         max-width: 700px;
@@ -202,10 +182,10 @@ export class DeviceSelectionView extends LitElement {
     }
 
     return html`
-      <h2>${localize("views.sbc.device_selection_view.select_your_device")}</h2>
-      <p class="subtitle">
-        ${localize("views.sbc.device_selection_view.subtitle")}
-      </p>
+      ${renderStepHeading(
+        localize("views.sbc.device_selection_view.select_your_device"),
+        localize("views.sbc.device_selection_view.subtitle")
+      )}
 
       <wa-radio-group
         class="devices-grid"

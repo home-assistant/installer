@@ -1,5 +1,5 @@
 import { localize } from "../../localization/localize.js";
-import { LitElement, html, css, nothing } from "lit";
+import { LitElement, html, nothing } from "lit";
 import {
   ViewAccessibility,
   reducedMotionStyles,
@@ -11,6 +11,7 @@ import { clearDriveSelection } from "../../utils/drive-selection.js";
 import { haHardwareName, type YellowModuleId } from "./hardware.js";
 import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "@home-assistant/webawesome/dist/components/radio/radio.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 /**
  * Picks the compute module in a Yellow, after the device step. Each module is
@@ -19,34 +20,7 @@ import "@home-assistant/webawesome/dist/components/radio/radio.js";
 @customElement("ha-hardware-module-selection-view")
 export class HaHardwareModuleSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
-  static styles = [
-    reducedMotionStyles,
-    optionCardStyles,
-    css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 2rem 0;
-        text-align: center;
-        max-width: 500px;
-      }
-    `,
-  ];
+  static styles = [stepStyles, reducedMotionStyles, optionCardStyles];
 
   @state()
   private _selected?: YellowModuleId;
@@ -71,16 +45,14 @@ export class HaHardwareModuleSelectionView extends LitElement {
 
   render() {
     return html`
-      <h2>
-        ${localize(
+      ${renderStepHeading(
+        localize(
           "views.ha_hardware.module_selection_view.select_your_compute_module"
-        )}
-      </h2>
-      <p class="subtitle">
-        ${localize(
+        ),
+        localize(
           "views.ha_hardware.module_selection_view.yellow_compute_module_hint"
-        )}
-      </p>
+        )
+      )}
 
       <wa-radio-group
         class="options"

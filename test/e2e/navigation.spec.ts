@@ -11,15 +11,14 @@ test.describe("Navigation Flow", () => {
     const logo = page.locator("welcome-view").locator(".logo");
     await expect(logo.first()).toBeVisible();
 
-    const letsGoButton = page.locator("welcome-view").locator("wa-button");
+    const letsGoButton = page.getByRole("button", { name: "Let's go" });
     await expect(letsGoButton).toBeVisible();
-    await expect(letsGoButton).toContainText("Let's go");
   });
 
   test("navigates to path selection when clicking Let's go", async ({
     page,
   }) => {
-    const letsGoButton = page.locator("welcome-view").locator("wa-button");
+    const letsGoButton = page.getByRole("button", { name: "Let's go" });
     await letsGoButton.click();
 
     // Should now be on path selection view
@@ -32,7 +31,7 @@ test.describe("Navigation Flow", () => {
 
   test("shows all installation options on path selection", async ({ page }) => {
     // Navigate to path selection
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
 
     const pathSelectionView = page.locator("path-selection-view");
     await expect(pathSelectionView).toBeVisible();
@@ -61,7 +60,7 @@ test.describe("Navigation Flow", () => {
 
   test("navigates back to welcome from path selection", async ({ page }) => {
     // Navigate to path selection
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
 
     const pathSelectionView = page.locator("path-selection-view");
     await expect(pathSelectionView).toBeVisible();
@@ -72,7 +71,9 @@ test.describe("Navigation Flow", () => {
     // Should be back on welcome view
     const welcomeView = page.locator("welcome-view");
     await expect(welcomeView).toBeVisible();
-    await expect(welcomeView.locator("wa-button")).toBeVisible();
+    await expect(
+      welcomeView.getByRole("button", { name: "Let's go" })
+    ).toBeVisible();
   });
 
   test("welcome view shows OHF logo", async ({ page }) => {
@@ -100,7 +101,7 @@ test.describe("Navigation Flow", () => {
 test.describe("Path Selection Options", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
@@ -135,7 +136,7 @@ test.describe("Path Selection Options", () => {
 test.describe("Wizard Flow", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
@@ -265,7 +266,7 @@ test.describe("SBC Device Selection", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to SBC flow
     await page.goto("/");
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
       .locator('option-card[heading="Raspberry Pi & other boards"]')
@@ -322,7 +323,7 @@ test.describe("SBC Drive Selection", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to drive selection step
     await page.goto("/");
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
       .locator('option-card[heading="Raspberry Pi & other boards"]')
@@ -353,13 +354,11 @@ test.describe("SBC Drive Selection", () => {
     );
   });
 
-  test("shows data erasure warning", async ({ page }) => {
-    const warning = page.locator(
-      'drive-selection-view inline-notice[variant="warning"]'
-    );
-    await expect(warning).toBeVisible();
-    await expect(warning).toContainText("Warning");
-    await expect(warning).toContainText("erased");
+  test("leaves the erase warning to the erase question", async ({ page }) => {
+    await expect(page.locator("drive-card").first()).toBeVisible();
+    await expect(
+      page.locator('drive-selection-view inline-notice[variant="warning"]')
+    ).toHaveCount(0);
   });
 
   test("shows refresh button", async ({ page }) => {
@@ -428,7 +427,7 @@ test.describe("SBC Confirmation", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to confirmation step
     await page.goto("/");
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
       .locator('option-card[heading="Raspberry Pi & other boards"]')
@@ -589,7 +588,7 @@ test.describe("SBC Flashing", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to flash step
     await page.goto("/");
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
       .locator('option-card[heading="Raspberry Pi & other boards"]')
@@ -724,7 +723,7 @@ test.describe("SBC Success", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to success step
     await page.goto("/");
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     await page
       .locator('option-card[heading="Raspberry Pi & other boards"]')

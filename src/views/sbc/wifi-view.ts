@@ -9,56 +9,37 @@ import type WaInput from "@home-assistant/webawesome/dist/components/input/input
 import type WaSwitch from "@home-assistant/webawesome/dist/components/switch/switch.js";
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import "@home-assistant/webawesome/dist/components/switch/switch.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 /** Optional step for boards with built-in Wi-Fi: the network to join. */
 @customElement("wifi-view")
 export class WifiView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
-  static styles = css`
-    :host {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100%;
-    }
+  static styles = [
+    stepStyles,
+    css`
+      .wifi-card {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        padding: 1.5rem;
+        background-color: var(--ha-card-background, #ffffff);
+        border: 1px solid var(--ha-border-color, #e0e0e0);
+        border-radius: var(--ha-card-border-radius, 12px);
+        width: 100%;
+        box-sizing: border-box;
+        max-width: 500px;
+      }
 
-    h2 {
-      font-size: 1.5rem;
-      font-weight: 400;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 0.5rem 0;
-      text-align: center;
-    }
-
-    .subtitle {
-      font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 1.5rem 0;
-      text-align: center;
-      max-width: 500px;
-    }
-
-    .wifi-card {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      padding: 1.5rem;
-      background-color: var(--ha-card-background, #ffffff);
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-      border-radius: var(--ha-card-border-radius, 12px);
-      width: 100%;
-      box-sizing: border-box;
-      max-width: 500px;
-    }
-
-    .note {
-      max-width: 500px;
-      margin: 1rem 0 0 0;
-      font-size: 0.875rem;
-      line-height: 1.5;
-      color: var(--ha-secondary-text-color, #727272);
-    }
-  `;
+      .note {
+        max-width: 500px;
+        margin: 1rem 0 0 0;
+        font-size: 0.875rem;
+        line-height: 1.5;
+        color: var(--ha-secondary-text-color, #727272);
+      }
+    `,
+  ];
 
   @state()
   private _wizardState: WizardState = wizardState.getState();
@@ -90,8 +71,10 @@ export class WifiView extends LitElement {
     const ssidError = wifi && this._ssidError(wifi.ssid);
     const passwordError = wifi && this._passwordError(wifi.password);
     return html`
-      <h2>${localize("views.sbc.wifi_view.title")}</h2>
-      <p class="subtitle">${localize("views.sbc.wifi_view.subtitle")}</p>
+      ${renderStepHeading(
+        localize("views.sbc.wifi_view.title"),
+        localize("views.sbc.wifi_view.subtitle")
+      )}
 
       <div class="wifi-card">
         <wa-switch .checked=${wifi !== undefined} @change=${this._onToggle}

@@ -14,35 +14,15 @@ import {
 } from "../../components/summary-card.js";
 import { formatDiskSize, formatRam } from "../../utils/format.js";
 import { mdiHarddisk, mdiMonitor, mdiServer } from "../../utils/icons.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 @customElement("proxmox-confirm-view")
 export class ProxmoxConfirmView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
     summaryStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 1.5rem 0;
-        text-align: center;
-      }
-
       .icon-container .proxmox-icon {
         fill: var(--ha-primary-color, #03a9f4);
       }
@@ -75,8 +55,10 @@ export class ProxmoxConfirmView extends LitElement {
     const config = proxmoxVmConfig(this._wizardState.selections);
 
     return html`
-      <h2>${localize("common.confirm.ready_to_install")}</h2>
-      <p class="subtitle">${localize("common.vm.confirm_subtitle")}</p>
+      ${renderStepHeading(
+        localize("common.confirm.ready_to_install"),
+        localize("common.vm.confirm_subtitle")
+      )}
 
       <div class="summary-card">
         <!-- Proxmox Server -->
