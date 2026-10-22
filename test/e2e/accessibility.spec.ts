@@ -1,6 +1,37 @@
 import { expect, test } from "@playwright/test";
 import { approveProxmoxImport, skipWifiStep } from "./fixtures.js";
 
+// sRGB channels (0 to 1) of a computed colour, rgb() or color(srgb …), painted
+// over an opaque background
+function paint(color: string, background = [1, 1, 1]) {
+  const [r, g, b, alpha = 1] = color.match(/[\d.]+/g)!.map(Number);
+  // rgb() counts to 255, color(srgb …) to 1
+  const scale = color.startsWith("color(") ? 1 : 255;
+  return [r, g, b].map(
+    (value, i) => (value / scale) * alpha + background[i] * (1 - alpha)
+  );
+}
+
+function luminance(rgb: number[]) {
+  const [r, g, b] = rgb.map((v) =>
+    v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  );
+  return r * 0.2126 + g * 0.7152 + b * 0.0722;
+}
+
+// WCAG contrast of a colour drawn over layers listed from the top down, so a
+// translucent hover or selection fill is blended with what is under it
+function contrast(foreground: string, ...backgrounds: string[]) {
+  const base = backgrounds.reduceRight(
+    (under, color) => paint(color, under),
+    [1, 1, 1]
+  );
+  const values = [luminance(paint(foreground, base)), luminance(base)].sort(
+    (a, b) => b - a
+  );
+  return (values[0] + 0.05) / (values[1] + 0.05);
+}
+
 for (const [flow, tag, flag] of [
   ["sbc", "progress-view", "_flashError"],
   ["proxmox", "proxmox-progress-view", "_vmInstallError"],
@@ -223,33 +254,75 @@ for (const colorScheme of ["light", "dark"] as const) {
       "animation-name",
       "none"
     );
-    const ratios = await page.evaluate(() => {
-      const styles = getComputedStyle(document.documentElement);
-      function luminance(hex: string) {
-        const values = hex
-          .trim()
-          .slice(1)
-          .match(/../g)!
-          .map((part) => parseInt(part, 16) / 255)
-          .map((v) =>
-            v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
-          );
-        return values[0] * 0.2126 + values[1] * 0.7152 + values[2] * 0.0722;
+    // Each pair is a foreground, then what it is drawn on from the top down
+    const text = [
+      ["--ha-primary-fill", "#ffffff"],
+      ["--ha-primary-color", "--ha-background-color"],
+      ["--ha-error-color", "--ha-background-color"],
+      ["--ha-error-color", "--ha-card-background"],
+      ["--ha-primary-color-dark", "#18bcf2"],
+      // Placeholders, like the example formats in the Proxmox connect form
+      [
+        "--wa-form-control-placeholder-color",
+        "--wa-form-control-background-color",
+      ],
+      // Plain buttons (Back, Cancel), at rest and hovered, on the page and in
+      // dialogs
+      ["--wa-color-neutral-on-quiet", "--ha-background-color"],
+      [
+        "--wa-color-neutral-on-quiet",
+        "--wa-color-neutral-fill-quiet",
+        "--ha-background-color",
+      ],
+      [
+        "--wa-color-neutral-on-quiet",
+        "--wa-color-neutral-fill-quiet",
+        "--ha-card-background",
+      ],
+    ];
+    // Field outlines and the focus ring only need 3:1 (WCAG 1.4.11)
+    const nonText = [
+      ["--wa-color-focus", "--ha-background-color"],
+      ["--wa-color-focus", "--ha-card-background"],
+      ["--wa-form-control-border-color", "--wa-form-control-background-color"],
+      ["--wa-form-control-border-color", "--ha-card-background"],
+    ];
+    // Let the browser resolve tokens, keywords and color-mix() to rgb() or
+    // color(srgb …)
+    const colors = await page.evaluate(
+      (values) => {
+        const probe = document.body.appendChild(document.createElement("span"));
+        const resolved = Object.fromEntries(
+          values.map((value) => {
+            if (value.startsWith("--")) {
+              // An unknown token would inherit the text colour and pass
+              if (!getComputedStyle(probe).getPropertyValue(value)) {
+                throw new Error(`${value} is not set`);
+              }
+              probe.style.color = `var(${value})`;
+            } else {
+              probe.style.color = value;
+            }
+            return [value, getComputedStyle(probe).color];
+          })
+        );
+        probe.remove();
+        return resolved;
+      },
+      [...new Set([...text, ...nonText].flat())]
+    );
+    for (const [minimum, pairs] of [
+      [4.5, text],
+      [3, nonText],
+    ] as const) {
+      for (const pair of pairs) {
+        const [foreground, ...backgrounds] = pair.map((value) => colors[value]);
+        expect(
+          contrast(foreground, ...backgrounds),
+          pair.join(" on ")
+        ).toBeGreaterThanOrEqual(minimum);
       }
-      function contrast(a: string, b: string) {
-        const values = [luminance(a), luminance(b)].sort((x, y) => y - x);
-        return (values[0] + 0.05) / (values[1] + 0.05);
-      }
-      const token = (name: string) => styles.getPropertyValue(name);
-      return [
-        contrast(token("--ha-primary-fill"), "#ffffff"),
-        contrast(token("--ha-primary-color"), token("--ha-background-color")),
-        contrast(token("--ha-error-color"), token("--ha-background-color")),
-        contrast(token("--ha-error-color"), token("--ha-card-background")),
-        contrast(token("--ha-primary-color-dark"), "#18bcf2"),
-      ];
-    });
-    for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(4.5);
+    }
     await page.getByRole("button", { name: "Let's go" }).click();
     await page.getByRole("button", { name: "Proxmox server" }).click();
     const indicator = page.locator("step-indicator");
@@ -266,6 +339,42 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.screenshot({
       path: testInfo.outputPath(`mobile-${colorScheme}.png`),
     });
+  });
+
+  test(`${colorScheme} architecture cards keep their text readable when selected or hovered`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Let's go" }).click();
+    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator("minipc-setup-method-view")
+      .locator("option-card, wa-radio")
+      .filter({ hasText: "I can connect the drive" })
+      .click();
+    const cards = page
+      .locator("minipc-architecture-selection-view")
+      .locator("wa-radio");
+    const selected = cards.filter({ hasText: "Intel/AMD" });
+    const hovered = cards.filter({ hasText: "ARM" });
+    await selected.click();
+    await expect(selected).toHaveAttribute("aria-checked", "true");
+    await hovered.hover();
+    for (const card of [selected, hovered]) {
+      const { fill, background, text } = await card.evaluate((radio) => ({
+        fill: getComputedStyle(radio).backgroundColor,
+        // The cards sit straight on the page
+        background: getComputedStyle(document.documentElement).backgroundColor,
+        text: [
+          ...radio.querySelectorAll(".option-description, .option-examples"),
+        ].map((line) => getComputedStyle(line).color),
+      }));
+      expect(text).toHaveLength(2);
+      for (const color of text) {
+        expect(contrast(color, fill, background)).toBeGreaterThanOrEqual(4.5);
+      }
+    }
   });
 }
 
