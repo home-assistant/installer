@@ -49,12 +49,13 @@ export class InstallProgress extends LitElement {
         container-type: inline-size;
       }
 
-      /* Narrow, Casita stands above the details, with room for the cloud */
+      /* Narrow, Casita stands above the details, with room for the cloud and
+         the 5px its top bump rises above it */
       .layout {
         display: flex;
         flex-direction: column;
         align-items: center;
-        padding-top: 110px;
+        padding-top: 115px;
       }
 
       .details {
@@ -238,7 +239,7 @@ export class InstallProgress extends LitElement {
          above instead, clear of the roof */
       @container (max-width: 520px) {
         .layout {
-          padding-top: 0;
+          padding-top: 5px;
         }
 
         .mascot-container.with-bubble {

@@ -80,10 +80,19 @@ describe("install-progress", () => {
       container.style.width = `${width}px`;
       const el = container.querySelector("install-progress")!;
       await el.updateComplete;
-      const bounds = (selector: string) =>
-        el.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
-      const cloud = bounds(".thinking-cloud");
-      const casita = bounds("casita-mascot");
+      // The bumps, not the box they sit in: some reach past it
+      const bumps = [...el.shadowRoot!.querySelectorAll(".cloud-bump")].map(
+        (bump) => bump.getBoundingClientRect()
+      );
+      const cloud = {
+        top: Math.min(...bumps.map((bump) => bump.top)),
+        bottom: Math.max(...bumps.map((bump) => bump.bottom)),
+        left: Math.min(...bumps.map((bump) => bump.left)),
+        right: Math.max(...bumps.map((bump) => bump.right)),
+      };
+      const casita = el
+        .shadowRoot!.querySelector("casita-mascot")!
+        .getBoundingClientRect();
       const outer = container.getBoundingClientRect();
       expect(cloud.left).to.be.at.least(outer.left);
       expect(cloud.right).to.be.at.most(outer.right);
