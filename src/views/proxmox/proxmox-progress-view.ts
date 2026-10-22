@@ -444,6 +444,19 @@ export class ProxmoxProgressView extends LitElement {
    * only logging in again can get past it.
    */
   private _setError(error: unknown, message?: string) {
+    // Reconnecting resumes a VM made in full, or starts one not made yet. A
+    // VM that failed while being made may exist half way, unknown to the
+    // installer: a new install would find its VM ID taken, or leave it
+    // behind under another one.
+    const halfMade =
+      !STOPPABLE_STAGES.includes(this._stage) &&
+      !wizardState.getState().selections.proxmoxVmResult;
+    const reconnect = needsReconnect(error) && !halfMade;
+    if (needsReconnect(error) && halfMade) {
+      message = localize(
+        "views.proxmox.proxmox_progress_view.connection_lost_while_creating"
+      );
+    }
     this._diagnostics?.fail(error);
     this._stage = "error";
     const installer = installerError(
@@ -453,8 +466,6 @@ export class ProxmoxProgressView extends LitElement {
       )
     );
     this._error = message ? { ...installer, message } : installer;
-    // The VM, if one was made, stays known: reconnecting resumes it
-    const reconnect = needsReconnect(error);
     if (reconnect) forgetProxmoxSession();
     this.dispatchEvent(
       new CustomEvent("install-error", {

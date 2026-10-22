@@ -229,6 +229,7 @@
   "views.proxmox.proxmox_progress_view.downloading": "Downloading",
   "views.proxmox.proxmox_progress_view.downloading_home_assistant_os": "Downloading Home Assistant OS",
   "views.proxmox.proxmox_progress_view.failed_to_create_virtual_machine": "Failed to create virtual machine",
+  "views.proxmox.proxmox_progress_view.connection_lost_while_creating": "The connection to Proxmox was lost while the virtual machine was being created, so it may be incomplete. Check it in Proxmox, and remove it before you install again.",
   "views.proxmox.proxmox_progress_view.home_assistant_did_not_respond_at_value_within_5_minutes": "Home Assistant did not respond at {value0} within 5 minutes. The virtual machine was created. Check whether it is running in Proxmox, then try again to keep waiting for it.",
   "views.proxmox.proxmox_progress_view.installation_failed": "Installation failed",
   "views.proxmox.proxmox_progress_view.installing": "Installing",
