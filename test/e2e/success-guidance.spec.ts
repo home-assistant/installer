@@ -62,11 +62,9 @@ for (const width of [1100, 390]) {
       await expect(success.locator(".next-steps")).toContainText(
         "router or on an attached display"
       );
+      // Desktop Chrome reports Windows and Desktop Safari macOS, so both warn
       await expect(success.locator("inline-notice")).toContainText(
-        "Do not format or initialize the written drive."
-      );
-      await expect(success.locator("inline-notice")).toContainText(
-        "Choose Cancel if offered, or Ignore or Eject on macOS."
+        "because it doesn't know the Home Assistant partitions"
       );
       await expect(success.locator(".next-steps-footer a")).toBeVisible();
       await expect(next(page)).toHaveText("Done");

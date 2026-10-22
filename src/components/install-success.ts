@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import { localize } from "../localization/localize.js";
 import { openExternalLink } from "../utils/external-url.js";
 import { linkStyles } from "../utils/link-styles.js";
+import { getPlatform } from "../utils/platform.js";
 import { renderCasitaHappy } from "./install-mascot.js";
 import "./inline-notice.js";
 import {
@@ -191,13 +192,16 @@ export class InstallSuccess extends LitElement {
   @property({ attribute: false }) subtitle: string | TemplateResult = "";
   @property({ attribute: false }) steps: (string | TemplateResult)[] = [];
   @property({ attribute: false }) tip: string | TemplateResult = "";
-  /** Shown above the steps, for something to avoid before starting them. */
-  @property({ attribute: false }) notice: string | TemplateResult = "";
+  /** Warns not to format the written drive, where the OS offers to. */
+  @property({ attribute: false }) formatWarning = false;
   /** Shown below the steps, such as a link to further documentation. */
   @property({ attribute: false }) footer: string | TemplateResult = "";
 
   render() {
     const title = localize("components.install_success.title");
+    const notice = this.formatWarning
+      ? localize("common.success.do_not_format", { platform: getPlatform() })
+      : "";
 
     return html`
       <div class="mascot-container" aria-hidden="true">
@@ -211,9 +215,7 @@ export class InstallSuccess extends LitElement {
         <p class="next-steps-title">
           ${localize("components.install_success.next_steps")}
         </p>
-        ${this.notice
-          ? html`<inline-notice><p>${this.notice}</p></inline-notice>`
-          : ""}
+        ${notice ? html`<inline-notice><p>${notice}</p></inline-notice>` : ""}
         <ol
           class="steps-list"
           role="list"

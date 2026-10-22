@@ -4,7 +4,28 @@ import type { InstallSuccess } from "../../../src/components/install-success.js"
 import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
 import { expectThemeLink } from "../helpers/link-style.js";
 
+const USER_AGENTS = {
+  macOS:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+  Windows:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)",
+  Linux:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko)",
+};
+
+function setUserAgent(platform: keyof typeof USER_AGENTS) {
+  Object.defineProperty(window.navigator, "userAgent", {
+    value: USER_AGENTS[platform],
+    configurable: true,
+  });
+}
+
 describe("install-success", () => {
+  // The stub shadows the prototype getter; deleting it restores the real UA.
+  afterEach(() => {
+    delete (window.navigator as { userAgent?: string }).userAgent;
+  });
+
   it("numbers the next steps in a labelled list", async () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success
@@ -36,6 +57,7 @@ describe("install-success", () => {
   });
 
   it("leaves out the notice, footer and tip unless given", async () => {
+    setUserAgent("Windows");
     const el = await fixture<InstallSuccess>(
       html`<install-success .steps=${["Only step"]}></install-success>`
     );
@@ -43,13 +65,13 @@ describe("install-success", () => {
     expect(el.shadowRoot!.querySelector(".next-steps-footer")).to.not.exist;
     expect(el.shadowRoot!.querySelector(".tip-section")).to.not.exist;
 
-    el.notice = "Do not format the drive.";
+    el.formatWarning = true;
     el.footer = html`<a href="#">Full guide</a>`;
     el.tip = "Manage it from the dashboard.";
     await el.updateComplete;
     // The notice comes before the steps, the footer after them
     const text = el.shadowRoot!.querySelector(".next-steps")!.textContent!;
-    expect(text.indexOf("Do not format the drive.")).to.be.within(
+    expect(text.indexOf("Choose Cancel.")).to.be.within(
       0,
       text.indexOf("Only step")
     );
@@ -60,6 +82,22 @@ describe("install-success", () => {
       "Manage it from the dashboard."
     );
   });
+
+  for (const [platform, wording] of [
+    ["macOS", "macOS may say it can't read this disk"],
+    ["Windows", "Windows may offer to format this drive"],
+    ["Linux", undefined],
+  ] as const) {
+    it(`${wording ? "words" : "leaves out"} the format warning for ${platform}`, async () => {
+      setUserAgent(platform);
+      const el = await fixture<InstallSuccess>(
+        html`<install-success .formatWarning=${true}></install-success>`
+      );
+      const notice = el.shadowRoot!.querySelector("inline-notice")?.textContent;
+      if (wording) expect(notice).to.contain(wording);
+      else expect(notice).to.equal(undefined);
+    });
+  }
 
   it("underlines links in the steps and footer, not the app buttons", async () => {
     const el = await fixture<InstallSuccess>(

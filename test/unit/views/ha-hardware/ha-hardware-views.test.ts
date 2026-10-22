@@ -456,6 +456,7 @@ describe("Home Assistant hardware views", () => {
         );
         const success = el.shadowRoot!.querySelector("install-success")!;
         await success.updateComplete;
+        expect(success.formatWarning).to.equal(true);
         const content = text(success.shadowRoot!);
         for (const part of expected) {
           expect(content).to.contain(part);
