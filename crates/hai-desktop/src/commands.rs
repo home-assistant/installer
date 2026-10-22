@@ -2187,7 +2187,7 @@ mod mock_tests {
         assert!(error.retryable);
         assert_eq!(
             *stages.lock().unwrap(),
-            [FlashStage::Downloading, FlashStage::Extracting]
+            [FlashStage::Downloading, FlashStage::Downloading]
         );
     }
 

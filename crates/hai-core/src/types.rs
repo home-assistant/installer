@@ -77,6 +77,44 @@ impl FlashProgress {
     }
 }
 
+/// Assert that `updates` go through `stages` in order, the way the progress
+/// views expect from any backend: stages that move bytes count them from 0 to
+/// 100%, the others report once at 0%.
+#[cfg(test)]
+pub(crate) fn assert_progress_shape(updates: &[FlashProgress], stages: &[FlashStage]) {
+    let runs: Vec<_> = updates.chunk_by(|a, b| a.stage == b.stage).collect();
+    let seen: Vec<_> = runs.iter().map(|run| run[0].stage.clone()).collect();
+    assert_eq!(seen, stages);
+    for run in runs {
+        let (first, last) = (&run[0], &run[run.len() - 1]);
+        match first.stage {
+            FlashStage::Complete => assert!(run.iter().all(|u| u.progress == 100), "{run:?}"),
+            FlashStage::Finalizing | FlashStage::CreatingVm | FlashStage::StartingVm => {
+                assert_eq!(run.len(), 1, "{run:?}");
+                assert_eq!(
+                    (first.progress, first.bytes_processed, first.total_bytes),
+                    (0, 0, 0)
+                );
+            }
+            _ => {
+                assert!(
+                    run.windows(2)
+                        .all(|pair| pair[0].progress <= pair[1].progress
+                            && pair[0].bytes_processed <= pair[1].bytes_processed),
+                    "{run:?}"
+                );
+                assert_eq!(first.progress, 0, "{run:?}");
+                assert_ne!(last.total_bytes, 0, "{run:?}");
+                assert_eq!(
+                    (last.progress, last.bytes_processed),
+                    (100, last.total_bytes)
+                );
+                assert!(run.iter().all(|u| u.bytes_processed <= u.total_bytes));
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -748,6 +786,30 @@ mod tests {
         assert_eq!(device.removable, deserialized.removable);
         assert_eq!(device.model, deserialized.model);
         assert_eq!(device.vendor, deserialized.vendor);
+    }
+
+    #[test]
+    fn progress_shape_accepts_a_flash_ending_in_two_completes() {
+        // The writer's `complete` carries the image size, `run_flash`'s none
+        let size = 4096;
+        let updates = [
+            FlashProgress::new(FlashStage::Writing, 0, size, "Writing"),
+            FlashProgress::new(FlashStage::Writing, size, size, "Written"),
+            FlashProgress::new(FlashStage::Finalizing, 0, 0, "Ejecting"),
+            FlashProgress::new(FlashStage::Complete, size, size, "Complete"),
+            FlashProgress {
+                progress: 100,
+                ..FlashProgress::new(FlashStage::Complete, 0, 0, "Installation complete!")
+            },
+        ];
+        assert_progress_shape(
+            &updates,
+            &[
+                FlashStage::Writing,
+                FlashStage::Finalizing,
+                FlashStage::Complete,
+            ],
+        );
     }
 
     // FlashProgress struct tests

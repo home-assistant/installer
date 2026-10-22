@@ -1,15 +1,17 @@
 //! `ProxmoxBackend` mock: fake authentication, nodes, storage, and a simulated
 //! VM creation.
 
-use std::time::Duration;
-
 use crate::types::{
     FlashProgress, FlashStage, ProxmoxBridge, ProxmoxCredentials, ProxmoxNode, ProxmoxSession,
     ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, VmStatusInfo,
 };
 use crate::{ProgressCallback, ProxmoxBackend, Result};
 
-use super::BackendMock;
+use super::{simulate, BackendMock, STEP};
+
+/// The OVA image's size as downloaded, and as uploaded once extracted.
+const XZ_BYTES: u64 = 396_000_000;
+const QCOW2_BYTES: u64 = 1_200_000_000;
 
 impl ProxmoxBackend for BackendMock {
     async fn certificate_fingerprint(&self, _server_url: &str) -> Result<Option<String>> {
@@ -123,30 +125,25 @@ impl ProxmoxBackend for BackendMock {
         &self,
         _session: &ProxmoxSession,
         config: &ProxmoxVmConfig,
-        progress_callback: &P,
+        cb: &P,
     ) -> Result<ProxmoxVmResult> {
         // Same stages, in the same order, as the real `create_vm`
-        for (stage, message) in [
-            (FlashStage::Downloading, "Downloading HAOS image..."),
-            (FlashStage::Extracting, "Extracting image..."),
-            (FlashStage::Uploading, "Uploading to Proxmox..."),
-            (FlashStage::CreatingVm, "Creating virtual machine..."),
-            (FlashStage::StartingVm, "Starting virtual machine..."),
+        for (stage, total_bytes, message) in [
+            (FlashStage::Downloading, XZ_BYTES, "Downloading image..."),
+            (FlashStage::Extracting, XZ_BYTES, "Extracting image..."),
+            (FlashStage::Uploading, QCOW2_BYTES, "Uploading image..."),
+            (FlashStage::CreatingVm, 0, "Creating virtual machine..."),
         ] {
-            // Like the real one, a stop counts until the VM is being created
-            if !matches!(stage, FlashStage::StartingVm) && progress_callback.is_cancelled() {
-                return Err(crate::Error::Cancelled);
-            }
-
-            progress_callback.on_progress(FlashProgress {
-                stage,
-                progress: 0,
-                bytes_processed: 0,
-                total_bytes: 0,
-                message: message.to_string(),
-            });
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            simulate(cb, stage, total_bytes, message).await?;
         }
+        // Like the real one, a stop no longer counts once the VM is being created
+        cb.on_progress(FlashProgress::new(
+            FlashStage::StartingVm,
+            0,
+            0,
+            "Starting virtual machine...",
+        ));
+        tokio::time::sleep(STEP).await;
         Ok(ProxmoxVmResult {
             vm_id: config.vm_id,
             node: config.node.clone(),

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::types::{DeviceManifest, FlashStage, HaosImage, HaosRelease, ImageFormat};
 use crate::{ProgressCallback, ReleaseSource, Result};
 
-use super::{simulate, simulate_indeterminate, touch_placeholder, BackendMock};
+use super::{simulate, BackendMock};
 
 /// A raw image with only what the flash looks at inside one: a GPT naming a
 /// FAT `hassos-boot` partition, where Wi-Fi settings are added.
@@ -130,37 +130,39 @@ impl ReleaseSource for BackendMock {
 
     async fn download_image<P: ProgressCallback>(
         &self,
-        _image: &HaosImage,
+        image: &HaosImage,
         dest_path: &Path,
         progress_callback: &P,
     ) -> Result<()> {
         simulate(
             progress_callback,
             FlashStage::Downloading,
+            image.size,
             "Downloading image (mock)...",
-            250,
         )
         .await?;
-        touch_placeholder(dest_path)
+        // Sized like the image without writing it, for the extraction to measure
+        std::fs::File::create(dest_path)?.set_len(image.size)?;
+        Ok(())
     }
 
     async fn extract_xz<P: ProgressCallback>(
         &self,
-        _archive_path: &Path,
+        archive_path: &Path,
         dest_path: &Path,
         progress_callback: &P,
     ) -> Result<()> {
-        simulate_indeterminate(
+        simulate(
             progress_callback,
             FlashStage::Extracting,
+            std::fs::metadata(archive_path)?.len(),
             "Extracting image (mock)...",
-            250,
         )
         .await?;
         if dest_path.extension().is_some_and(|ext| ext == "img") {
             write_boot_image(dest_path)
         } else {
-            touch_placeholder(dest_path)
+            Ok(std::fs::write(dest_path, b"mock-image-data")?)
         }
     }
 
