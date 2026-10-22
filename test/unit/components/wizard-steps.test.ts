@@ -3,6 +3,7 @@ import { render } from "lit";
 import {
   WIZARD_STEPS,
   wizardStep,
+  type WizardStepView,
 } from "../../../src/components/wizard-steps.js";
 import {
   wizardState,
@@ -130,6 +131,21 @@ describe("wizard-steps", () => {
         if (held.has(`${flow}/${id}`)) continue;
         expect(step.beforeNext === undefined, `${flow}/${id}`).to.be.true;
       }
+    }
+  });
+
+  it("leaves the hardware device step only when the reinstall is confirmed", async () => {
+    const run = wizardStep("ha-hardware", "device")!.beforeNext!.run;
+    for (const answer of [true, false]) {
+      let asked = 0;
+      const view = Object.assign(document.createElement("div"), {
+        confirmReinstall: () => {
+          asked++;
+          return Promise.resolve(answer);
+        },
+      }) as unknown as WizardStepView;
+      expect(await run(view)).to.equal(answer);
+      expect(asked).to.equal(1);
     }
   });
 });
