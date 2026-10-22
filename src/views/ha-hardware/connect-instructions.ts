@@ -2,6 +2,7 @@ import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { openExternalLink } from "../../utils/external-url.js";
+import { linkStyles } from "../../utils/link-styles.js";
 import type { HaHardwareId } from "./hardware.js";
 
 const RPIBOOT_URL = "https://github.com/raspberrypi/usbboot";
@@ -12,65 +13,58 @@ const RPIBOOT_URL = "https://github.com/raspberrypi/usbboot";
  */
 @customElement("ha-hardware-connect-instructions")
 export class HaHardwareConnectInstructions extends LitElement {
-  static styles = css`
-    :host {
-      display: block;
-      width: 100%;
-      max-width: 500px;
-      margin-bottom: 1.5rem;
-    }
+  static styles = [
+    linkStyles,
+    css`
+      :host {
+        display: block;
+        width: 100%;
+        max-width: 500px;
+        margin-bottom: 1.5rem;
+      }
 
-    .instructions {
-      padding: 1rem 1.25rem;
-      background-color: var(--ha-card-background, #ffffff);
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-      border-radius: 8px;
-      font-size: 0.875rem;
-      line-height: 1.5;
-      color: var(--ha-text-color, #212121);
-    }
+      .instructions {
+        padding: 1rem 1.25rem;
+        background-color: var(--ha-card-background, #ffffff);
+        border: 1px solid var(--ha-border-color, #e0e0e0);
+        border-radius: 8px;
+        font-size: 0.875rem;
+        line-height: 1.5;
+        color: var(--ha-text-color, #212121);
+      }
 
-    h3 {
-      font-size: 1rem;
-      font-weight: 500;
-      margin: 0 0 0.5rem 0;
-    }
+      h3 {
+        font-size: 1rem;
+        font-weight: 500;
+        margin: 0 0 0.5rem 0;
+      }
 
-    h4 {
-      font-size: 0.875rem;
-      font-weight: 500;
-      margin: 0.75rem 0 0.25rem 0;
-    }
+      h4 {
+        font-size: 0.875rem;
+        font-weight: 500;
+        margin: 0.75rem 0 0.25rem 0;
+      }
 
-    p {
-      margin: 0;
-    }
+      p {
+        margin: 0;
+      }
 
-    ol {
-      margin: 0;
-      padding-left: 1.25rem;
-    }
+      ol {
+        margin: 0;
+        padding-left: 1.25rem;
+      }
 
-    li + li {
-      margin-top: 0.25rem;
-    }
+      li + li {
+        margin-top: 0.25rem;
+      }
 
-    code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 0.8125rem;
-      overflow-wrap: anywhere;
-    }
-
-    a {
-      color: var(--ha-primary-color, #03a9f4);
-      font-weight: 500;
-      text-decoration: none;
-    }
-
-    a:hover {
-      text-decoration: underline;
-    }
-  `;
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.8125rem;
+        overflow-wrap: anywhere;
+      }
+    `,
+  ];
 
   @property({ attribute: false })
   hardware?: HaHardwareId;

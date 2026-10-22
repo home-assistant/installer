@@ -4,6 +4,7 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
+import { linkStyles } from "../../utils/link-styles.js";
 import { LitElement, html, css } from "lit";
 import {
   ViewAccessibility,
@@ -22,6 +23,7 @@ export class DeviceSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     reducedMotionStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -147,8 +149,10 @@ export class DeviceSelectionView extends LitElement {
         !this._devices.some((device) => device.id === this._selectedDeviceId)
       ) {
         this._selectedDeviceId = null;
-        wizardState.setSelection("device", undefined);
-        wizardState.setSelection("deviceConfig", undefined);
+        wizardState.setSelections({
+          device: undefined,
+          deviceConfig: undefined,
+        });
       }
       wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
@@ -243,10 +247,12 @@ export class DeviceSelectionView extends LitElement {
 
   private _onSelectDevice(device: Device) {
     this._selectedDeviceId = device.id;
-    wizardState.setSelection("device", device.id);
-    wizardState.setSelection("deviceName", device.name);
-    wizardState.setSelection("deviceImage", device.image_url || "");
-    wizardState.setSelection("deviceConfig", device.haos);
+    wizardState.setSelections({
+      device: device.id,
+      deviceName: device.name,
+      deviceImage: device.image_url || "",
+      deviceConfig: device.haos,
+    });
   }
 }
 

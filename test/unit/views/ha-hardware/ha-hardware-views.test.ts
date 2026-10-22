@@ -32,6 +32,7 @@ import {
   storeDriveSelection,
 } from "../../../../src/utils/drive-selection.js";
 import { deferred, mockTauriIpc, restoreTauriIpc } from "../../tauri-ipc.js";
+import { expectThemeLink } from "../../helpers/link-style.js";
 
 function configFor(id: HaHardwareId) {
   const hardware = findHaHardware(id)!;
@@ -427,6 +428,7 @@ describe("Home Assistant hardware views", () => {
       expect(el.shadowRoot!.querySelector("a")!.href).to.equal(
         "https://github.com/raspberrypi/usbboot"
       );
+      expectThemeLink(el.shadowRoot!.querySelector("a")!);
       expect(el.shadowRoot!.querySelector("ol")).to.exist;
     });
 

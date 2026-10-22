@@ -19,8 +19,12 @@ export interface WizardStepView extends HTMLElement {
 /** Work that has to succeed before Next leaves the step, like logging in. */
 interface BeforeNext {
   run(view: WizardStepView): Promise<boolean>;
-  /** Shown on Next meanwhile */
-  label(): string;
+  /**
+   * Shown and announced on Next meanwhile, which waits with a spinner.
+   * Without one, Next stays as it is: a question the step asks in a dialog
+   * says enough.
+   */
+  label?(): string;
   /**
    * What makes a result stale, so a run left behind holds up nothing:
    * leaving the flow, or also changing any selection.
@@ -87,7 +91,6 @@ export const WIZARD_STEPS: Record<
       beforeNext: {
         run: (view) =>
           (view as HaHardwareDeviceSelectionView).confirmReinstall(),
-        label: () => localize("common.next"),
         until: "flow",
       },
     },

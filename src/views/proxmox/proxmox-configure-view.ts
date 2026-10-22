@@ -3,6 +3,7 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
+import { linkStyles } from "../../utils/link-styles.js";
 import { formatNumber, localize } from "../../localization/localize.js";
 import { LitElement, html, css, noChange } from "lit";
 import {
@@ -15,7 +16,11 @@ import type WaInput from "@home-assistant/webawesome/dist/components/input/input
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 import "@home-assistant/webawesome/dist/components/select/select.js";
-import { wizardState, type WizardState } from "../../state/wizard-state.js";
+import {
+  wizardState,
+  type WizardSelections,
+  type WizardState,
+} from "../../state/wizard-state.js";
 import {
   proxmoxListNodes,
   proxmoxListStorage,
@@ -85,6 +90,7 @@ export class ProxmoxConfigureView extends LitElement {
   static styles = [
     reducedMotionStyles,
     settingStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -152,7 +158,6 @@ export class ProxmoxConfigureView extends LitElement {
 
       .import-setting a {
         font-size: 0.875rem;
-        color: var(--ha-primary-color, #03a9f4);
       }
     `,
   ];
@@ -210,6 +215,8 @@ export class ProxmoxConfigureView extends LitElement {
 
   /** Bumped per storage lookup, so only the latest one applies its result */
   private _storageLookup = 0;
+  /** Node whose storage lookup last completed, so an empty list is real. */
+  @state() private _storagesNode = "";
   @state() private _bridges: ProxmoxBridge[] = [];
   @state() private _selectedBridge = "";
   /** Node whose bridge lookup last completed, so an empty list is real. */
@@ -234,8 +241,12 @@ export class ProxmoxConfigureView extends LitElement {
       this._wizardState = state;
     });
     this._restoreSelections();
-    wizardState.setSelection("proxmoxBridgeReady", false);
-    wizardState.setSelection("proxmoxImportReady", false);
+    // Next waits until the lookups below verify these again
+    wizardState.setSelections({
+      proxmoxConfigureReady: false,
+      proxmoxBridgeReady: false,
+      proxmoxImportReady: false,
+    });
     void this._loadNodes();
   }
 
@@ -366,8 +377,10 @@ export class ProxmoxConfigureView extends LitElement {
     // never gets here, since it clears the session first
     this._error = null;
     this._sessionExpired = false;
-    wizardState.setSelection("proxmoxConfigureReady", false);
-    wizardState.setSelection("proxmoxBridgeReady", false);
+    wizardState.setSelections({
+      proxmoxConfigureReady: false,
+      proxmoxBridgeReady: false,
+    });
     this._resetImport();
     try {
       const [storageResult, bridgeResult] = await Promise.allSettled([
@@ -419,6 +432,7 @@ export class ProxmoxConfigureView extends LitElement {
         this._storages = storageResult.value.filter(
           (s) => s.active && s.content.includes("images")
         );
+        this._storagesNode = node;
 
         // Keep the selected storage if this node still offers it, otherwise
         // fall back to the first one available
@@ -517,8 +531,10 @@ export class ProxmoxConfigureView extends LitElement {
       )
     );
     if (this._sessionExpired) forgetProxmoxSession();
-    wizardState.setSelection("proxmoxConfigureReady", false);
-    wizardState.setSelection("proxmoxImportReady", false);
+    wizardState.setSelections({
+      proxmoxConfigureReady: false,
+      proxmoxImportReady: false,
+    });
   }
 
   /** Forget the previous lookup's Import state until storage is read again. */
@@ -675,40 +691,40 @@ export class ProxmoxConfigureView extends LitElement {
 
   private _saveSelections() {
     this._checkError = null;
-    wizardState.setSelection("proxmoxNode", this._selectedNode);
-    wizardState.setSelection("proxmoxStorage", this._selectedStorage);
-    wizardState.setSelection("proxmoxBridge", this._selectedBridge);
-    wizardState.setSelection("proxmoxVlanTag", this._parsedVlanTag);
-    wizardState.setSelection(
-      "proxmoxBridgeReady",
-      this._loaded &&
-        this._bridges.some((bridge) => bridge.name === this._selectedBridge)
-    );
-    wizardState.setSelection(
-      "proxmoxConfigureReady",
-      this._loaded && !this._vlanError && !this._nameError && !this._vmIdError
-    );
-    wizardState.setSelection(
-      "proxmoxImportReady",
-      this._loaded && this._importReady
-    );
+    const selections: Partial<WizardSelections> = {
+      proxmoxNode: this._selectedNode,
+      proxmoxStorage: this._selectedStorage,
+      proxmoxBridge: this._selectedBridge,
+      proxmoxVlanTag: this._parsedVlanTag,
+      proxmoxBridgeReady:
+        this._loaded &&
+        this._bridges.some((bridge) => bridge.name === this._selectedBridge),
+      proxmoxConfigureReady:
+        this._loaded &&
+        !this._vlanError &&
+        !this._nameError &&
+        !this._vmIdError,
+      proxmoxImportReady: this._loaded && this._importReady,
+      vmName: this._vmName,
+      cpuCores: this._cpuCores,
+      memoryMb: this._memoryMb,
+      diskSizeGb: this._diskSizeGb,
+    };
     // A failed initial lookup must not turn the fallback ID into a choice
     // that suppresses the next-free-ID suggestion after reconnecting.
     // An ID that isn't valid yet is left out, so the one typed before it
     // can't reach the check or the install
     if (this._vmIdChosen) {
-      wizardState.setSelection("proxmoxVmId", this._parsedVmId);
+      selections.proxmoxVmId = this._parsedVmId;
     }
-    wizardState.setSelection("vmName", this._vmName);
-    wizardState.setSelection("cpuCores", this._cpuCores);
-    wizardState.setSelection("memoryMb", this._memoryMb);
-    wizardState.setSelection("diskSizeGb", this._diskSizeGb);
+    wizardState.setSelections(selections);
   }
 
   private async _onNodeChange(e: Event) {
     const select = e.target as WaSelect;
     this._selectedNode = select.value as string;
     this._selectedStorage = "";
+    this._storagesNode = "";
     this._selectedBridge = "";
     this._bridges = [];
     this._bridgesNode = "";
@@ -1125,6 +1141,23 @@ export class ProxmoxConfigureView extends LitElement {
                 "views.proxmox.proxmox_configure_view.storage_location_for_the_vm_disk_image"
               )}
             </p>
+            ${this._loaded &&
+            this._selectedNode &&
+            this._storagesNode === this._selectedNode &&
+            this._storages.length === 0
+              ? // Next needs storage for the VM disk, so say how to get one.
+                // Like Refresh storage, retrying waits while Import is enabled.
+                html`<p class="error-text" role="alert">
+                    ${localize(
+                      "views.proxmox.proxmox_configure_view.no_disk_image_storage_on_this_node"
+                    )}
+                  </p>
+                  <wa-button
+                    ?disabled=${this._importBusy}
+                    @click=${this._loadStorage}
+                    >${localize("components.app_shell.try_again")}</wa-button
+                  >`
+              : ""}
           </div>
         </div>
 

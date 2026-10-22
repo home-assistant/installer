@@ -133,10 +133,12 @@ export class UtmConfigureView extends LitElement {
   }
 
   private _saveSelections() {
-    wizardState.setSelection("vmName", this._vmName);
-    wizardState.setSelection("cpuCores", this._cpuCores);
-    wizardState.setSelection("memoryMb", this._memoryMb);
-    wizardState.setSelection("diskSizeGb", this._diskSizeGb);
+    wizardState.setSelections({
+      vmName: this._vmName,
+      cpuCores: this._cpuCores,
+      memoryMb: this._memoryMb,
+      diskSizeGb: this._diskSizeGb,
+    });
   }
 
   private get _nameError(): string | undefined {

@@ -4,6 +4,7 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
+import { linkStyles } from "../../utils/link-styles.js";
 import { LitElement, html, css, nothing } from "lit";
 import {
   ViewAccessibility,
@@ -33,6 +34,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     reducedMotionStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -182,11 +184,13 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         )
       ) {
         this._selectedDeviceId = null;
-        wizardState.setSelection("device", undefined);
-        wizardState.setSelection("deviceConfig", undefined);
-        wizardState.setSelection("haHardware", undefined);
+        wizardState.setSelections({
+          device: undefined,
+          deviceConfig: undefined,
+          haHardware: undefined,
+        });
       } else if (this._selectedDeviceId === YELLOW_DEVICE_ID) {
-        this._storeYellowModules();
+        wizardState.setSelection("yellowModules", this._yellowModules());
       }
       wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
@@ -367,31 +371,40 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     // previous one, must not keep the old drive.
     const previous = wizardState.getState().selections.haHardware;
     this._selectedDeviceId = hardware.deviceId;
-    wizardState.setSelection("device", hardware.deviceId);
-    wizardState.setSelection("deviceImage", hardware.image);
     if (hardware.deviceId === YELLOW_DEVICE_ID) {
-      this._storeYellowModules();
+      const yellow = {
+        device: hardware.deviceId,
+        deviceImage: hardware.image,
+        yellowModules: this._yellowModules(),
+      };
       // A compute module picked before still names the device and its board
-      if (isYellow(previous)) return;
-      wizardState.setSelection("haHardware", undefined);
-      wizardState.setSelection("deviceName", haDeviceName(hardware));
-      wizardState.setSelection("deviceConfig", undefined);
+      if (isYellow(previous)) {
+        wizardState.setSelections(yellow);
+        return;
+      }
+      wizardState.setSelections({
+        ...yellow,
+        haHardware: undefined,
+        deviceName: haDeviceName(hardware),
+        deviceConfig: undefined,
+      });
       clearDriveSelection();
       return;
     }
-    wizardState.setSelection("haHardware", hardware.id);
-    wizardState.setSelection("deviceName", haHardwareName(hardware.id));
-    wizardState.setSelection("deviceConfig", config);
+    wizardState.setSelections({
+      device: hardware.deviceId,
+      haHardware: hardware.id,
+      deviceName: haHardwareName(hardware.id),
+      deviceImage: hardware.image,
+      deviceConfig: config,
+    });
     if (previous !== hardware.id) clearDriveSelection();
   }
 
-  /** Hands the Yellow's compute modules to the step that picks one. */
-  private _storeYellowModules() {
-    wizardState.setSelection(
-      "yellowModules",
-      this._devices.flatMap(({ hardware: { id }, config }) =>
-        isYellow(id) ? [{ id, config }] : []
-      )
+  /** The Yellow's compute modules, for the step that picks one. */
+  private _yellowModules() {
+    return this._devices.flatMap(({ hardware: { id }, config }) =>
+      isYellow(id) ? [{ id, config }] : []
     );
   }
 }

@@ -121,8 +121,10 @@ export class HaHardwareModuleSelectionView extends LitElement {
       this._selected = module.id;
     } else if (haHardware) {
       // The catalog no longer offers the module picked before
-      wizardState.setSelection("haHardware", undefined);
-      wizardState.setSelection("deviceConfig", undefined);
+      wizardState.setSelections({
+        haHardware: undefined,
+        deviceConfig: undefined,
+      });
       clearDriveSelection();
     }
   }
@@ -180,9 +182,11 @@ export class HaHardwareModuleSelectionView extends LitElement {
     if (!module) return;
     const previous = wizardState.getState().selections.haHardware;
     this._selected = module.id;
-    wizardState.setSelection("haHardware", module.id);
-    wizardState.setSelection("deviceName", haHardwareName(module.id));
-    wizardState.setSelection("deviceConfig", module.config);
+    wizardState.setSelections({
+      haHardware: module.id,
+      deviceName: haHardwareName(module.id),
+      deviceConfig: module.config,
+    });
     // The CM4 is installed from a USB flash drive, the CM5 from its own eMMC
     if (previous !== module.id) clearDriveSelection();
   }
