@@ -1029,6 +1029,13 @@ async fn extract_xz_owned<P: ProgressCallback>(
         .await
         .map_err(|e| Error::ExtractionFailed(e.to_string()))??;
 
+    // Past 99% and during the final sync nothing is sent, so a late cancel
+    // never reaches the extraction. Honor it here, or the caller carries on
+    // with an image the user already gave up on.
+    if progress_callback.is_cancelled() {
+        return Err(Error::Cancelled);
+    }
+
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Extracting,
         progress: 100,
@@ -2247,6 +2254,47 @@ mod tests {
             .is_err());
         drop(image);
         assert!(!path.exists());
+        assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn cancel_after_the_last_progress_update_still_cancels() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        // Cancels on the 99% update, after which extraction sends nothing more
+        #[derive(Default)]
+        struct CancelAtTheEnd {
+            cancelled: AtomicBool,
+            completed: AtomicBool,
+        }
+        impl ProgressCallback for CancelAtTheEnd {
+            fn on_progress(&self, progress: FlashProgress) {
+                if progress.progress == 99 {
+                    self.cancelled.store(true, Ordering::SeqCst);
+                }
+                if progress.progress == 100 {
+                    self.completed.store(true, Ordering::SeqCst);
+                }
+            }
+
+            fn is_cancelled(&self) -> bool {
+                self.cancelled.load(Ordering::SeqCst)
+            }
+        }
+
+        let cache = tempfile::tempdir().unwrap();
+        let image = TemporaryImage::new(cache.path(), ImageFormat::Raw).unwrap();
+        std::fs::write(image.archive_path(), compressed(b"1234567890")).unwrap();
+        let callback = CancelAtTheEnd::default();
+
+        let error = Backend
+            .extract_temporary_image(&image, &callback)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, Error::Cancelled), "{error:?}");
+        assert!(!callback.completed.load(Ordering::SeqCst));
+        drop(image);
         assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
     }
 
