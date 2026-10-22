@@ -1091,13 +1091,11 @@ export class ProxmoxConfigureView extends LitElement {
                               ? ` ${localize(
                                   "views.proxmox.proxmox_configure_view.cpu_value",
                                   {
-                                    value0: formatNumber(
-                                      Number(node.cpu_usage.toFixed(1)),
-                                      {
-                                        minimumFractionDigits: 1,
-                                        maximumFractionDigits: 1,
-                                      }
-                                    ),
+                                    // Proxmox reports a fraction (0.15 is 15%)
+                                    value0: formatNumber(node.cpu_usage, {
+                                      style: "percent",
+                                      maximumFractionDigits: 1,
+                                    }),
                                   }
                                 )}`
                               : ""

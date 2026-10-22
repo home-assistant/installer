@@ -159,7 +159,7 @@
   "views.proxmox.proxmox_configure_view.configure_virtual_machine": "Configure virtual machine",
   "views.proxmox.proxmox_configure_view.configure_your_home_assistant_vm_on_proxmox": "Configure your Home Assistant VM on Proxmox",
   "views.proxmox.proxmox_configure_view.cpu_cores": "CPU cores",
-  "views.proxmox.proxmox_configure_view.cpu_value": "(CPU: {value0}%)",
+  "views.proxmox.proxmox_configure_view.cpu_value": "(CPU: {value0})",
   "views.proxmox.proxmox_configure_view.disk_size": "Disk size",
   "views.proxmox.proxmox_configure_view.display_name": "Display name",
   "views.proxmox.proxmox_configure_view.extended_storage_for_recordings_and_backups": "Extended storage for recordings and backups",
