@@ -13,7 +13,7 @@ import { expectThemeLink } from "../helpers/link-style.js";
 describe("install-progress", () => {
   it("keeps the thought bubble inside a short scroll container", async () => {
     const container = fixtureSync<HTMLDivElement>(html`
-      <div style="width: 650px; height: 400px; overflow-y: auto">
+      <div style="width: 650px; height: 300px; overflow-y: auto">
         <install-progress
           .stages=${Array.from({ length: 7 }, (_, id) => ({
             id: `${id}`,
@@ -33,6 +33,68 @@ describe("install-progress", () => {
     expect(bubble.right).to.be.at.most(bounds.right);
     expect(container.scrollHeight).to.be.greaterThan(container.clientHeight);
   });
+
+  it("puts Casita beside the stages under the heading when wide, and above it when narrow", async () => {
+    const container = fixtureSync<HTMLDivElement>(html`
+      <div style="width: 736px">
+        <install-progress
+          .stages=${[
+            { id: "downloading", label: "Downloading" },
+            { id: "extracting", label: "Extracting" },
+          ]}
+          stage="extracting"
+        ></install-progress>
+      </div>
+    `);
+    const el = container.querySelector("install-progress")!;
+    await el.updateComplete;
+    const bounds = (selector: string) =>
+      el.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+
+    // The smallest window leaves 736px: the cloud fits beside Casita, the
+    // stages beside both, and the heading spans them all
+    expect(bounds(".thinking-cloud").right).to.be.at.most(
+      bounds(".details").left
+    );
+    expect(bounds("h2").bottom).to.be.at.most(bounds(".thinking-cloud").top);
+    expect(bounds("h2").bottom).to.be.at.most(bounds(".details").top);
+    expect(bounds("h2").left).to.be.at.most(bounds("casita-mascot").left);
+    expect(bounds("h2").right).to.be.at.least(bounds(".details").right);
+    expect(bounds("casita-mascot").width).to.equal(120);
+    expect(bounds(".details").right).to.be.at.most(
+      container.getBoundingClientRect().right
+    );
+
+    container.style.width = "500px";
+    await waitUntil(
+      () => bounds("casita-mascot").bottom <= bounds("h2").top,
+      "Casita should stand above the heading"
+    );
+  });
+
+  for (const width of [320, 440, 520, 521, 560, 600, 639]) {
+    it(`keeps the cloud inside ${width}px and clear of Casita's roof`, async () => {
+      const container = fixtureSync<HTMLDivElement>(html`
+        <div><install-progress stage="downloading"></install-progress></div>
+      `);
+      container.style.width = `${width}px`;
+      const el = container.querySelector("install-progress")!;
+      await el.updateComplete;
+      const bounds = (selector: string) =>
+        el.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+      const cloud = bounds(".thinking-cloud");
+      const casita = bounds("casita-mascot");
+      const outer = container.getBoundingClientRect();
+      expect(cloud.left).to.be.at.least(outer.left);
+      expect(cloud.right).to.be.at.most(outer.right);
+      expect(cloud.top).to.be.at.least(outer.top);
+      // Above Casita, or beside its roof's peak, never over it
+      expect(
+        cloud.bottom <= casita.top ||
+          cloud.left >= casita.left + casita.width / 2
+      ).to.be.true;
+    });
+  }
 
   it("shows where Home Assistant is checked, as a link to open it", async () => {
     const opened = captureOpenedUrls();
