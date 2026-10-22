@@ -3,6 +3,7 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
+import { linkStyles } from "../../utils/link-styles.js";
 import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
@@ -33,110 +34,113 @@ function serverOrigin(url: string): string {
 @customElement("proxmox-connect-view")
 export class ProxmoxConnectView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
-  static styles = css`
-    :host {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100%;
-    }
+  static styles = [
+    linkStyles,
+    css`
+      :host {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100%;
+      }
 
-    h2 {
-      font-size: 1.5rem;
-      font-weight: 400;
-      color: var(--ha-text-color, #212121);
-      margin: 0 0 0.5rem 0;
-      text-align: center;
-    }
+      h2 {
+        font-size: 1.5rem;
+        font-weight: 400;
+        color: var(--ha-text-color, #212121);
+        margin: 0 0 0.5rem 0;
+        text-align: center;
+      }
 
-    .subtitle {
-      font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0 0 1.5rem 0;
-      text-align: center;
-    }
+      .subtitle {
+        font-size: 1rem;
+        color: var(--ha-secondary-text-color, #727272);
+        margin: 0 0 1.5rem 0;
+        text-align: center;
+      }
 
-    .connect-card {
-      display: flex;
-      flex-direction: column;
-      gap: 1.5rem;
-      padding: 1.5rem;
-      background-color: var(--ha-card-background, #ffffff);
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-      border-radius: 12px;
-      width: 100%;
-      box-sizing: border-box;
-      max-width: 500px;
-    }
+      .connect-card {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        padding: 1.5rem;
+        background-color: var(--ha-card-background, #ffffff);
+        border: 1px solid var(--ha-border-color, #e0e0e0);
+        border-radius: 12px;
+        width: 100%;
+        box-sizing: border-box;
+        max-width: 500px;
+      }
 
-    wa-dialog {
-      --width: 34rem;
-    }
-    wa-dialog p {
-      margin: 0 0 1rem 0;
-    }
-    .certificate-host {
-      overflow-wrap: anywhere;
-    }
-    .certificate-changed {
-      color: var(--ha-error-color, #b30532);
-      font-weight: 500;
-    }
-    .fingerprint-label {
-      font-size: 0.8125rem;
-      color: var(--ha-secondary-text-color, #727272);
-      margin-bottom: 0.25rem;
-    }
-    .fingerprint {
-      font-family: monospace;
-      font-size: 0.8125rem;
-      line-height: 1.6;
-    }
+      wa-dialog {
+        --width: 34rem;
+      }
+      wa-dialog p {
+        margin: 0 0 1rem 0;
+      }
+      .certificate-host {
+        overflow-wrap: anywhere;
+      }
+      .certificate-changed {
+        color: var(--ha-error-color, #b30532);
+        font-weight: 500;
+      }
+      .fingerprint-label {
+        font-size: 0.8125rem;
+        color: var(--ha-secondary-text-color, #727272);
+        margin-bottom: 0.25rem;
+      }
+      .fingerprint {
+        font-family: monospace;
+        font-size: 0.8125rem;
+        line-height: 1.6;
+      }
 
-    .status-row {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 1rem;
-      border-radius: 8px;
-      background-color: rgba(244, 67, 54, 0.1);
-      border: 1px solid rgba(244, 67, 54, 0.3);
-    }
+      .status-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 1rem;
+        border-radius: 8px;
+        background-color: rgba(244, 67, 54, 0.1);
+        border: 1px solid rgba(244, 67, 54, 0.3);
+      }
 
-    .status-icon {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      background-color: var(--ha-error-fill, #b30532);
-    }
+      .status-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        background-color: var(--ha-error-fill, #b30532);
+      }
 
-    .status-icon svg {
-      width: 14px;
-      height: 14px;
-      fill: white;
-    }
+      .status-icon svg {
+        width: 14px;
+        height: 14px;
+        fill: white;
+      }
 
-    .status-text {
-      flex: 1;
-    }
+      .status-text {
+        flex: 1;
+      }
 
-    .status-title {
-      font-size: 0.9375rem;
-      font-weight: 500;
-      color: var(--ha-text-color, #212121);
-      margin: 0;
-    }
+      .status-title {
+        font-size: 0.9375rem;
+        font-weight: 500;
+        color: var(--ha-text-color, #212121);
+        margin: 0;
+      }
 
-    .status-description {
-      font-size: 0.8125rem;
-      color: var(--ha-error-color, #b30532);
-      margin: 0.25rem 0 0 0;
-    }
-  `;
+      .status-description {
+        font-size: 0.8125rem;
+        color: var(--ha-error-color, #b30532);
+        margin: 0.25rem 0 0 0;
+      }
+    `,
+  ];
 
   @state()
   private _serverUrl = "";
@@ -326,6 +330,13 @@ export class ProxmoxConnectView extends LitElement {
       this._connected = true;
       diagnostics.advance("complete");
 
+      // A VM made before the session expired lives on the previous server;
+      // logged in elsewhere, the install starts over there
+      const previous = wizardState.getState().selections.proxmoxPreviousServer;
+      if (previous && serverOrigin(previous.server_url) !== serverOrigin(url)) {
+        wizardState.setSelection("proxmoxVmResult", undefined);
+      }
+
       // Store session in wizard state
       wizardState.setSelection("proxmoxSession", session);
       wizardState.setSelection("proxmoxUsername", this._username);
@@ -417,6 +428,8 @@ export class ProxmoxConnectView extends LitElement {
   }
 
   render() {
+    // The fields are read-only while connecting, not disabled: that would
+    // take the focus from the one Enter was pressed in
     return html`
       <h2>
         ${localize("views.proxmox.proxmox_connect_view.connect_to_proxmox_ve")}
@@ -443,7 +456,7 @@ export class ProxmoxConnectView extends LitElement {
           .value=${this._serverUrl}
           @input=${this._onServerUrlChange}
           @keydown=${this._onKeyDown}
-          ?disabled=${this._connecting}
+          ?readonly=${this._connecting}
         ></wa-input>
 
         <wa-input
@@ -459,7 +472,7 @@ export class ProxmoxConnectView extends LitElement {
           .value=${this._username}
           @input=${this._onUsernameChange}
           @keydown=${this._onKeyDown}
-          ?disabled=${this._connecting}
+          ?readonly=${this._connecting}
         ></wa-input>
 
         <wa-input
@@ -474,7 +487,7 @@ export class ProxmoxConnectView extends LitElement {
           .value=${this._password}
           @input=${this._onPasswordChange}
           @keydown=${this._onKeyDown}
-          ?disabled=${this._connecting}
+          ?readonly=${this._connecting}
         ></wa-input>
 
         <wa-input
@@ -488,7 +501,7 @@ export class ProxmoxConnectView extends LitElement {
           .value=${this._totp}
           @input=${this._onTotpChange}
           @keydown=${this._onKeyDown}
-          ?disabled=${this._connecting}
+          ?readonly=${this._connecting}
         ></wa-input>
       </div>
       <wa-dialog

@@ -17,6 +17,7 @@ import {
   restoreTauriIpc,
   settle,
 } from "../../tauri-ipc.js";
+import { expectThemeLink } from "../../helpers/link-style.js";
 
 const session = {
   server_url: "https://pve.example:8006",
@@ -146,6 +147,7 @@ describe("Proxmox import consent", () => {
     expect(
       el.shadowRoot!.querySelector<HTMLAnchorElement>(".import-setting a")!.href
     ).to.contain("pve.proxmox.com");
+    expectThemeLink(el.shadowRoot!.querySelector(".import-setting a")!);
     expect(wizardState.getState().selections.proxmoxImportReady).to.be.false;
   });
 
@@ -566,6 +568,7 @@ describe("Proxmox import consent", () => {
     expect(reminder.textContent).to.contain("no other");
     expect(reminder.textContent).to.contain("content types unchanged");
     expect(reminder.querySelector("a")!.href).to.contain("#storage_directory");
+    expectThemeLink(reminder.querySelector("a")!);
     wizardState.setSelection("proxmoxSession", {
       ...session,
       server_url: "https://different.example:8006",

@@ -18,8 +18,12 @@ export interface WizardStepView extends HTMLElement {
 /** Work that has to succeed before Next leaves the step, like logging in. */
 interface BeforeNext {
   run(view: WizardStepView): Promise<boolean>;
-  /** Shown on Next meanwhile */
-  label(): string;
+  /**
+   * Shown and announced on Next meanwhile, which waits with a spinner.
+   * Without one, Next stays as it is: a question the step asks in a dialog
+   * says enough.
+   */
+  label?(): string;
   /**
    * What makes a result stale, so a run left behind holds up nothing:
    * leaving the flow, or also changing any selection.
@@ -32,6 +36,8 @@ export interface WizardStepDefinition {
   /** Whether Next can be pressed yet; always, without it */
   ready?(selections: WizardSelections): boolean;
   beforeNext?: BeforeNext;
+  /** A later step Next goes to instead of the following one, if any */
+  skipTo?(selections: WizardSelections): string | undefined;
 }
 
 const deviceChosen = (selections: WizardSelections) =>
@@ -84,7 +90,6 @@ export const WIZARD_STEPS: Record<
       beforeNext: {
         run: (view) =>
           (view as HaHardwareDeviceSelectionView).confirmReinstall(),
-        label: () => localize("common.next"),
         until: "flow",
       },
     },
@@ -136,6 +141,11 @@ export const WIZARD_STEPS: Record<
         // Connecting stores the session, which changes the selections
         until: "flow",
       },
+      // Back to log in again after the session expired during the install.
+      // A VM made by then can't take new settings, and checking them would
+      // only find its VM ID taken: go on waiting for it instead.
+      skipTo: (selections) =>
+        selections.proxmoxVmResult ? "install" : undefined,
     },
     configure: {
       render: () => html`<proxmox-configure-view></proxmox-configure-view>`,

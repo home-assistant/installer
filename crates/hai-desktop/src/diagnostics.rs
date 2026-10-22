@@ -320,21 +320,11 @@ pub struct Diagnostics {
 
 // OS discovery may run synchronous subprocesses; keep it off the UI thread.
 #[tauri::command(async)]
-pub fn get_diagnostics(app: tauri::AppHandle) -> Diagnostics {
-    let version = os_info::get().version().to_string();
+pub fn get_diagnostics<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Diagnostics {
     Diagnostics {
         version: app.package_info().version.to_string(),
         os: std::env::consts::OS,
-        // Some distributions supply arbitrary release text; omit it from reports.
-        os_version: if version.len() <= 64
-            && version
-                .chars()
-                .all(|c| c.is_ascii_digit() || ".-".contains(c))
-        {
-            version
-        } else {
-            "unknown".into()
-        },
+        os_version: reportable_os_version(os_info::get().version().to_string()),
         architecture: std::env::consts::ARCH,
         package_type: tauri::utils::platform::bundle_type()
             .map(|kind| format!("{kind:?}"))
@@ -343,6 +333,19 @@ pub fn get_diagnostics(app: tauri::AppHandle) -> Diagnostics {
             .lock()
             .map(|tail| tail.iter().cloned().collect::<Vec<_>>().join("\n"))
             .unwrap_or_else(|_| "Log tail unavailable".into()),
+    }
+}
+
+// Some distributions supply arbitrary release text; omit it from reports.
+fn reportable_os_version(version: String) -> String {
+    if (1..=64).contains(&version.len())
+        && version
+            .chars()
+            .all(|c| c.is_ascii_digit() || ".-".contains(c))
+    {
+        version
+    } else {
+        "unknown".into()
     }
 }
 
@@ -686,5 +689,98 @@ mod tests {
         let tail = test_log_tail().join("\n");
         assert!(tail.contains("rust panic (payload omitted)"));
         assert!(!tail.contains("panic-secret"));
+    }
+
+    #[test]
+    // A UTM command test clears the shared tail, which would drop this line
+    #[serial_test::serial]
+    fn report_has_the_app_version_platform_and_log_tail() {
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.package_info_mut().version = "2026.10.1".parse().unwrap();
+        let app = tauri::test::mock_builder().build(context).unwrap();
+        warning("report_test");
+
+        let report = get_diagnostics(app.handle().clone());
+        assert_eq!(report.version, "2026.10.1");
+        assert_eq!(report.os, std::env::consts::OS);
+        assert_eq!(report.architecture, std::env::consts::ARCH);
+        assert!(
+            report.os_version == "unknown"
+                || report
+                    .os_version
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || ".-".contains(c)),
+            "{}",
+            report.os_version
+        );
+        assert!(
+            report
+                .log_tail
+                .lines()
+                .any(|line| line.ends_with("ms warning report_test")),
+            "{}",
+            report.log_tail
+        );
+    }
+
+    #[test]
+    // A UTM command test clears the shared tail, which would drop this line
+    #[serial_test::serial]
+    fn report_has_no_user_data() {
+        let app = tauri::test::mock_app();
+        let _ = Operation::new("report-privacy-test")
+            .finish::<(), String>(Err("IO error: /home/private-user/private-file".into()));
+
+        let report = serde_json::to_value(get_diagnostics(app.handle().clone())).unwrap();
+        let report = report.as_object().unwrap();
+        let tail = report["log_tail"].as_str().unwrap();
+        assert!(
+            tail.contains("rust report-privacy-test preparing operation_failed duration_ms="),
+            "{tail}"
+        );
+        // Users paste the report into public issues
+        let mut fields: Vec<_> = report.keys().map(String::as_str).collect();
+        fields.sort_unstable();
+        assert_eq!(
+            fields,
+            [
+                "architecture",
+                "log_tail",
+                "os",
+                "os_version",
+                "package_type",
+                "version"
+            ]
+        );
+        let home = app.path().home_dir().unwrap();
+        for value in report.values() {
+            let value = value.as_str().unwrap();
+            assert!(!value.contains("private"), "{value}");
+            // A root home dir (some containers) is part of every path
+            assert!(
+                home.parent().is_none() || !value.contains(&*home.to_string_lossy()),
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn reportable_os_version_drops_release_text() {
+        for version in ["10.0.26100", "26.5.0", "1".repeat(64).as_str()] {
+            assert_eq!(reportable_os_version(version.into()), version);
+        }
+        for version in [
+            "",
+            "Rolling Release",
+            "Rolling Release (20261001)",
+            "24.04 LTS (Noble)",
+            "1".repeat(65).as_str(),
+        ] {
+            assert_eq!(
+                reportable_os_version(version.into()),
+                "unknown",
+                "{version}"
+            );
+        }
     }
 }

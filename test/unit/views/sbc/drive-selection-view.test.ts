@@ -243,6 +243,61 @@ describe("drive-selection-view", () => {
     expect(notice!.icon).to.equal("🔌");
   });
 
+  it("keeps the check on the selected drive when a refresh reorders the list", async () => {
+    const GB = 1000 * 1000 * 1000;
+    const kept: BlockDevice = {
+      ...CONNECTED,
+      id: "kept",
+      size: 128 * GB,
+      serial: "KEPT",
+    };
+    const unplugged: BlockDevice = {
+      ...CONNECTED,
+      id: "unplugged",
+      size: 64 * GB,
+      serial: "UNPLUGGED",
+    };
+    const plugged: BlockDevice = {
+      ...CONNECTED,
+      id: "plugged",
+      size: 256 * GB,
+      serial: "PLUGGED",
+    };
+    const cardIds = (el: DriveSelectionView) =>
+      [...el.shadowRoot!.querySelectorAll("drive-card")].map(
+        (card) => (card as HTMLElement & { value: string }).value
+      );
+
+    storeDriveSelection(kept);
+    let scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve([unplugged, kept]);
+      await waitUntil(() => cardIds(el).length === 2);
+      expect(cardIds(el)).to.deep.equal(["kept", "unplugged"]);
+      await waitUntil(() => selectedIds(el).length > 0);
+      expect(selectedIds(el)).to.deep.equal(["kept"]);
+
+      // Same number of drives, but the kept one moves down a place
+      scan.restore();
+      scan = holdDeviceScan();
+      (
+        el.shadowRoot!.querySelector(".drives-header wa-button") as HTMLElement
+      ).click();
+      scan.resolve([kept, plugged]);
+      await waitUntil(() => cardIds(el)[0] === "plugged");
+      await el.updateComplete;
+
+      expect(cardIds(el)).to.deep.equal(["plugged", "kept"]);
+      expect(wizardState.getState().selections.drive).to.equal("kept");
+      expect(selectedIds(el)).to.deep.equal(["kept"]);
+    } finally {
+      scan.restore();
+    }
+  });
+
   it("keeps undersized drives visible and disables them with the board minimum", async () => {
     const scan = holdDeviceScan();
     try {
