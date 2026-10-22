@@ -148,10 +148,10 @@ export class StepIndicator extends LitElement {
    */
   private _fit() {
     const steps = this._steps;
-    if (steps.length < 2) return;
-    this.removeAttribute("compact");
     const first = steps[0];
     const last = steps[steps.length - 1];
+    if (!first || !last || first === last) return;
+    this.removeAttribute("compact");
     const wraps = last.offsetTop >= first.offsetTop + first.offsetHeight;
     this.toggleAttribute("compact", wraps);
   }

@@ -10,7 +10,6 @@ import { wizardState } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/utm/utm-progress-view.js";
 import "../../../../src/views/utm/utm-configure-view.js";
 import type { UtmProgressView } from "../../../../src/views/utm/utm-progress-view.js";
-import { PollTimeoutError } from "../../../../src/utils/polling.js";
 import {
   deferred,
   ipcError,
@@ -694,24 +693,39 @@ describe("utm-progress-view", () => {
 
   it("allows a timed-out readiness check to resume the existing VM", async () => {
     wizardState.setSelection("vmId", "existing-vm");
+    const now = Date.now;
+    let ready = false;
     mockTauriIpc((cmd) => {
       if (cmd === "get_utm_vm_status")
         return { status: "started", ip_address: "192.0.2.50" };
+      if (cmd === "check_ha_ready") {
+        // The first attempt only answers once its 5 minutes have passed
+        if (!ready) Date.now = () => now() + 6 * 60 * 1000;
+        return ready;
+      }
       if (cmd === "check_ha_updated") return true;
       throw new Error(`Unexpected IPC command: ${cmd}`);
     });
-    const el = mount();
-    const internal = el as unknown as { _waitForHaReady(): Promise<void> };
-    internal._waitForHaReady = async () => {
-      throw new PollTimeoutError("Try again to keep waiting");
-    };
-    const event = await oneEvent(el, "install-error");
-    expect(event.detail.retryable).to.be.true;
-    internal._waitForHaReady = async () => {};
-    const completed = oneEvent(el, "install-complete");
-    el.retry();
-    await completed;
-    expect(wizardState.getState().selections.vmId).to.equal("existing-vm");
+    try {
+      const el = mount();
+      const event = await oneEvent(el, "install-error");
+      expect(event.detail.retryable).to.be.true;
+      await el.updateComplete;
+      expect(
+        el
+          .shadowRoot!.querySelector("install-progress")!
+          .shadowRoot!.querySelector(".error-message")!.textContent
+      ).to.contain("did not respond at 192.0.2.50 within 5 minutes");
+
+      Date.now = now;
+      ready = true;
+      const completed = oneEvent(el, "install-complete");
+      el.retry();
+      await completed;
+      expect(wizardState.getState().selections.vmId).to.equal("existing-vm");
+    } finally {
+      Date.now = now;
+    }
   });
 
   for (const rejection of [undefined, {}, "", "   "]) {

@@ -73,7 +73,7 @@ impl From<Error> for CommandError {
                 return result;
             }
             Error::ChecksumMismatch { .. } => ("checksum_mismatch", "The downloaded image failed its integrity check. Installation stopped before writing the image.", true),
-            Error::PermissionDenied(message) => ("permission_denied", message.as_str(), false),
+            Error::PermissionDenied(message) => return Self::with_message("permission_denied", message, false),
             Error::DiskServiceUnavailable(_) => ("disk_service_unavailable", "The system disk service is unavailable. Check that udisks2 is installed and running.", false),
             Error::Cancelled => ("cancelled", "Installation was cancelled.", true),
             Error::ProxmoxApi(_) => ("proxmox_api", "Proxmox could not complete the request. Check the server, account permissions, and connection.", false),
@@ -84,7 +84,7 @@ impl From<Error> for CommandError {
             // Same recovery: reconnecting shows the new certificate to confirm
             Error::ProxmoxCertificateChanged => ("proxmox_certificate_changed", "The Proxmox server's certificate changed. Reconnect to check it again.", false),
             // Installer-authored guidance for the authenticator code, never a server response
-            Error::ProxmoxTwoFactor(message) => ("proxmox_two_factor", message.as_str(), false),
+            Error::ProxmoxTwoFactor(message) => return Self::with_message("proxmox_two_factor", message, false),
             Error::Utm(message) => return Self::with_message("utm", message, true),
             Error::UtmOperationUncertain(message) => return Self::with_message("utm_operation_uncertain", message, false),
             Error::UtmVmCreated(message) => return Self::with_message("utm_vm_created", message, false),
@@ -94,7 +94,7 @@ impl From<Error> for CommandError {
             Error::Json(_) => ("json", "The installer received an unexpected response.", false),
             Error::InvalidConfig(message) => ("invalid_config", message.as_str(), false),
             // Installer-authored, and the wait time is what makes it actionable
-            Error::RateLimited(message) => ("rate_limited", message.as_str(), true),
+            Error::RateLimited(message) => return Self::with_message("rate_limited", message, true),
             // Names the service, so the frontend doesn't say the image failed
             Error::ServiceUnavailable(message) => return Self::with_message("network", message, true),
             Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and available storage.", true),
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn read_queries_can_retry_after_service_or_permission_changes() {
         for error in [
-            Error::PermissionDenied("Permission required".into()),
+            Error::PermissionDenied(hai_core::message!("backend.disk.not_authorized")),
             Error::DiskServiceUnavailable("service stopped".into()),
             Error::ProxmoxApi("network failure".into()),
         ] {
@@ -219,8 +219,14 @@ mod tests {
         assert_eq!(uncertain.details["message_key"], "backend.utm.no_answer");
         assert!(!uncertain.retryable);
 
-        let permission = CommandError::from(Error::PermissionDenied("Run as administrator".into()));
-        assert_eq!(permission.message, "Run as administrator");
+        let permission = CommandError::from(Error::PermissionDenied(hai_core::message!(
+            "backend.disk.run_as_administrator"
+        )));
+        assert!(permission.message.contains("Run as administrator"));
+        assert_eq!(
+            permission.details["message_key"],
+            "backend.disk.run_as_administrator"
+        );
         assert!(!permission.retryable);
     }
 }

@@ -97,9 +97,7 @@ fn open_device_for_write(device_path: &str) -> Result<File> {
             if is_write_protected(&error) {
                 Error::WriteProtected
             } else if error.kind() == std::io::ErrorKind::PermissionDenied {
-                Error::PermissionDenied(
-                    "Administrator access required. Please run as Administrator.".into(),
-                )
+                Error::PermissionDenied(crate::message!("backend.disk.run_as_administrator"))
             } else {
                 device_io_error(error)
             }

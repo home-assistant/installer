@@ -1,5 +1,6 @@
 import { localize } from "../localization/localize.js";
 import type {
+  DeviceType,
   HaosConfig,
   ProxmoxSession,
   ProxmoxVmResult,
@@ -42,6 +43,8 @@ export interface WizardSelections {
   driveModel?: string;
   driveVendor?: string;
   driveSerial?: string;
+  /** Shown as the drive's icon on the confirmation screen. */
+  driveType?: DeviceType;
   /** Network to add to the drive. Its password is cleared once written. */
   wifi?: WifiConfig;
 

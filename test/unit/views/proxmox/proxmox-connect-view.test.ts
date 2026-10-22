@@ -87,16 +87,6 @@ describe("proxmox-connect-view", () => {
     expect(el.shadowRoot!.querySelector("wa-dialog")!.open).to.be.false;
   });
 
-  it("updates the form state as the user types", async () => {
-    const { el, inputs } = await renderView();
-    expect(el.isFormValid()).to.be.false;
-
-    await typeInto(el, inputs[0], "https://192.168.1.100:8006");
-    await typeInto(el, inputs[2], "secret");
-
-    expect(el.isFormValid()).to.be.true;
-  });
-
   it("shows the second-factor error, retries with the code, and clears it", async () => {
     const submitted: ProxmoxCredentials[] = [];
     mockTauriIpc((cmd, args) => {
@@ -141,12 +131,15 @@ describe("proxmox-connect-view", () => {
     await typeInto(el, inputs[0], "http://192.168.1.100:8006");
     await typeInto(el, inputs[2], "secret");
 
-    expect(el.isFormValid()).to.be.false;
     expect(await el.connect()).to.be.false;
     await el.updateComplete;
 
     const error = el.shadowRoot!.querySelector(".status-description");
     expect(error!.textContent).to.include("must use HTTPS");
+    // Nothing was tried yet, so it isn't a failed connection
+    expect(
+      el.shadowRoot!.querySelector(".status-title")!.textContent!.trim()
+    ).to.equal("Check the connection details");
   });
 
   it("asks for the missing fields before connecting", async () => {
@@ -157,6 +150,9 @@ describe("proxmox-connect-view", () => {
 
     const error = el.shadowRoot!.querySelector(".status-description");
     expect(error!.textContent).to.include("fill in all fields");
+    expect(
+      el.shadowRoot!.querySelector(".status-title")!.textContent!.trim()
+    ).to.equal("Check the connection details");
   });
 
   /** Count the Next requests the view sends to the wizard. */
@@ -626,6 +622,9 @@ describe("proxmox-connect-view", () => {
     expect(
       el.shadowRoot!.querySelector(".status-description")!.textContent
     ).to.include("Certificate expired");
+    expect(
+      el.shadowRoot!.querySelector(".status-title")!.textContent!.trim()
+    ).to.equal("Connection failed");
   });
 
   it("does not authenticate after removal during the probe or start a duplicate connection", async () => {
@@ -758,7 +757,6 @@ describe("proxmox-connect-view", () => {
       const { el, inputs } = await renderView();
       await typeInto(el, inputs[0], url);
       await typeInto(el, inputs[2], "secret");
-      expect(el.isFormValid()).to.be.false;
       expect(await el.connect()).to.be.false;
     });
   }

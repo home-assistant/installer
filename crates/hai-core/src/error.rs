@@ -22,7 +22,7 @@ pub enum Error {
     ChecksumMismatch { expected: String, actual: String },
 
     #[error("Permission denied: {0}")]
-    PermissionDenied(String),
+    PermissionDenied(crate::Message),
 
     #[error("Disk service unavailable: {0}")]
     DiskServiceUnavailable(String),
@@ -42,14 +42,14 @@ pub enum Error {
     ProxmoxCertificateChanged,
 
     #[error("Proxmox two-factor authentication: {0}")]
-    ProxmoxTwoFactor(String),
+    ProxmoxTwoFactor(crate::Message),
     /// Installer-authored guidance, without raw HTTP responses or request URLs.
     #[error("{0}")]
     ProxmoxActionRequired(crate::Message),
 
     /// GitHub's API limit was reached; installer-authored guidance with the wait time.
     #[error("{0}")]
-    RateLimited(String),
+    RateLimited(crate::Message),
 
     /// The version service or GitHub's release information couldn't be
     /// reached or didn't answer usefully. Installer-authored guidance that
@@ -211,10 +211,9 @@ mod tests {
 
     #[test]
     fn test_display_permission_denied() {
-        let error = Error::PermissionDenied("Need root access".to_string());
+        let error = Error::PermissionDenied(crate::message!("backend.disk.admin_denied"));
         let msg = error.to_string();
-        assert_eq!(msg, "Permission denied: Need root access");
-        assert!(msg.contains("Need root access"));
+        assert_eq!(msg, "Permission denied: Administrator access was denied");
     }
 
     #[test]

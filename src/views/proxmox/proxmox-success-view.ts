@@ -5,6 +5,7 @@ import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { proxmoxVmConfig } from "../../state/vm-defaults.js";
 import { openExternalLink } from "../../utils/external-url.js";
 
+import "../../components/inline-notice.js";
 import "../../components/install-success.js";
 
 const DIRECTORY_STORAGE_DOCS =
@@ -19,25 +20,7 @@ export class ProxmoxSuccessView extends LitElement {
     }
 
     .import-reminder {
-      width: 100%;
-      box-sizing: border-box;
-      max-width: 500px;
       margin: 0 auto 2rem;
-      padding: 0.75rem 0 0.75rem 1rem;
-      border-left: 3px solid var(--ha-warning-color, #f5a623);
-      text-align: left;
-      font-size: 0.875rem;
-      line-height: 1.5;
-      color: var(--ha-text-color, #212121);
-      overflow-wrap: anywhere;
-    }
-
-    .import-reminder p {
-      margin: 0;
-    }
-
-    .import-reminder p + p {
-      margin-top: 0.5rem;
     }
 
     .import-reminder a {
@@ -126,8 +109,9 @@ export class ProxmoxSuccessView extends LitElement {
       .map((change) => change.storage);
     if (!storages.length) return "";
 
-    return html`<section
+    return html`<inline-notice
       class="import-reminder"
+      role="region"
       aria-label=${localize(
         "views.proxmox.proxmox_success_view.import_storage_reminder"
       )}
@@ -155,7 +139,7 @@ export class ProxmoxSuccessView extends LitElement {
           >${localize("proxmox.directory_storage_documentation")}</a
         >
       </p>
-    </section>`;
+    </inline-notice>`;
   }
 }
 

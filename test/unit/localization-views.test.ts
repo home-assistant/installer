@@ -208,8 +208,11 @@ describe("localized view contracts", () => {
   for (const [seconds, phrase] of [
     [59, "Less than a minute remaining"],
     [60, "About 1 minute remaining"],
-    [3599, "About 60 minutes remaining"],
+    [3540, "About 59 minutes remaining"],
+    // Rounded up to whole minutes first, so never "60 minutes" or "1h 60m"
+    [3599, "About 1h 0m remaining"],
     [3600, "About 1h 0m remaining"],
+    [7199, "About 2h 0m remaining"],
   ] as const) {
     it(`install-progress preserves the ${seconds}-second ETA boundary`, () => {
       Date.now = () => 10000;

@@ -145,25 +145,21 @@ async fn complete_second_factor(
         .and_then(|encoded| urlencoding::decode(encoded).ok())
         .and_then(|decoded| serde_json::from_str::<serde_json::Value>(&decoded).ok());
     if challenge.as_ref().and_then(|value| value["totp"].as_bool()) != Some(true) {
-        return Err(Error::ProxmoxTwoFactor(
-            "This account requires a second factor, but Proxmox did not offer TOTP. \
-             This installer supports authenticator app (TOTP) codes only; \
-             WebAuthn, security keys, Yubico OTP, and recovery codes are not supported."
-                .to_string(),
-        ));
+        return Err(Error::ProxmoxTwoFactor(crate::message!(
+            "backend.proxmox.two_factor_totp_unavailable"
+        )));
     }
 
     let code = credentials.totp.as_deref().unwrap_or_default().trim();
     if code.is_empty() {
-        return Err(Error::ProxmoxTwoFactor(
-            "This account requires an authenticator app code. Enter the current code and try again."
-                .to_string(),
-        ));
+        return Err(Error::ProxmoxTwoFactor(crate::message!(
+            "backend.proxmox.two_factor_code_required"
+        )));
     }
     if !(2..=16).contains(&code.len()) || !code.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(Error::ProxmoxTwoFactor(
-            "Enter a valid numeric authenticator app code.".to_string(),
-        ));
+        return Err(Error::ProxmoxTwoFactor(crate::message!(
+            "backend.proxmox.two_factor_code_invalid"
+        )));
     }
 
     let password = format!("totp:{code}");
@@ -178,38 +174,37 @@ async fn complete_second_factor(
         .await
         .map_err(|error| {
             tls::certificate_error(&error).unwrap_or_else(|| {
-                Error::ProxmoxTwoFactor(
-                    "Could not complete the second-factor request. Check your connection and try again."
-                        .to_string(),
-                )
+                Error::ProxmoxTwoFactor(crate::message!(
+                    "backend.proxmox.two_factor_request_failed"
+                ))
             })
         })?;
     if !response.status().is_success() {
         if response.status().as_u16() != 401 {
-            return Err(Error::ProxmoxTwoFactor(format!(
-                "Proxmox returned HTTP {} while completing the second-factor login. \
-                 Check the server and try again.",
-                response.status()
+            return Err(Error::ProxmoxTwoFactor(crate::message!(
+                "backend.proxmox.two_factor_http_error",
+                status = response.status().as_u16(),
             )));
         }
-        return Err(Error::ProxmoxTwoFactor(
-            "Proxmox rejected the second-factor login. Check your current authenticator app code \
-             and try again. If it still fails, check the account in Proxmox."
-                .to_string(),
-        ));
+        return Err(Error::ProxmoxTwoFactor(crate::message!(
+            "backend.proxmox.two_factor_rejected"
+        )));
     }
 
     let response: serde_json::Value = response.json().await.map_err(|_| {
-        Error::ProxmoxTwoFactor("Invalid second-factor response from Proxmox.".to_string())
+        Error::ProxmoxTwoFactor(crate::message!(
+            "backend.proxmox.two_factor_invalid_response"
+        ))
     })?;
     let data = response.get("data").ok_or_else(|| {
-        Error::ProxmoxTwoFactor("Missing second-factor response from Proxmox.".to_string())
+        Error::ProxmoxTwoFactor(crate::message!(
+            "backend.proxmox.two_factor_missing_response"
+        ))
     })?;
     if needs_second_factor(data) {
-        return Err(Error::ProxmoxTwoFactor(
-            "The second-factor login is incomplete. Enter a current authenticator app code and try again."
-                .to_string(),
-        ));
+        return Err(Error::ProxmoxTwoFactor(crate::message!(
+            "backend.proxmox.two_factor_incomplete"
+        )));
     }
     Ok(data.clone())
 }

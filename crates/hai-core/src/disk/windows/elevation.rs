@@ -44,11 +44,9 @@ fn process_is_elevated() -> std::io::Result<bool> {
 fn require_elevation(elevated: std::io::Result<bool>) -> Result<()> {
     match elevated {
         Ok(true) => Ok(()),
-        Ok(false) => Err(Error::PermissionDenied(
-            "Administrator access is required to write a drive. Close Home Assistant Installer, \
-             then right-click it and choose \"Run as administrator\"."
-                .to_string(),
-        )),
+        Ok(false) => Err(Error::PermissionDenied(crate::message!(
+            "backend.disk.run_as_administrator"
+        ))),
         Err(err) => Err(Error::Io(std::io::Error::new(
             err.kind(),
             format!("Could not check Windows administrator access: {err}"),
@@ -70,6 +68,7 @@ mod tests {
         let Error::PermissionDenied(message) = require_elevation(Ok(false)).unwrap_err() else {
             panic!("expected a permission error");
         };
+        let message = message.to_string();
         assert!(message.contains("Close Home Assistant Installer"));
         assert!(message.contains("Run as administrator"));
     }

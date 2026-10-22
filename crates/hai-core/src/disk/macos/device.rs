@@ -58,20 +58,20 @@ fn system_disks() -> Result<HashSet<String>> {
 
 /// This gate also runs in the writer, before unmounting or requesting access.
 pub(super) fn validate_flash_target(device_id: &str) -> Result<()> {
-    let disk_id = device_id.strip_prefix("/dev/disk").ok_or_else(|| {
-        Error::PermissionDenied("The flash target must be a whole /dev/diskN device".into())
-    })?;
+    let not_whole_disk =
+        || Error::PermissionDenied(crate::message!("backend.disk.not_whole_disk_device"));
+    let disk_id = device_id
+        .strip_prefix("/dev/disk")
+        .ok_or_else(not_whole_disk)?;
     if disk_id.is_empty() || !disk_id.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(Error::PermissionDenied(
-            "The flash target must be a whole /dev/diskN device".into(),
-        ));
+        return Err(not_whole_disk());
     }
     let system_disks = system_disks()?;
     let disk: DiskUtilInfo = disk_info(device_id)?;
     if device_id != format!("/dev/{}", disk.device_identifier) {
-        return Err(Error::PermissionDenied(
-            "diskutil returned an inconsistent identity for the flash target".into(),
-        ));
+        return Err(Error::PermissionDenied(crate::message!(
+            "backend.disk.inconsistent_identity"
+        )));
     }
     disk.validate_target(&system_disks)
 }

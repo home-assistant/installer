@@ -86,7 +86,9 @@ test.describe("SBC Flow - drive swapped after selection", () => {
 
     const driveView = page.locator("drive-selection-view");
     await expect(driveView).toBeVisible();
-    await expect(driveView.locator(".notice")).toBeVisible();
+    await expect(
+      driveView.locator('inline-notice[variant="error"]')
+    ).toBeVisible();
     await expect(page.locator("confirm-dialog")).not.toBeVisible();
     await expect(nextButton(page)).toHaveJSProperty("disabled", true);
   });

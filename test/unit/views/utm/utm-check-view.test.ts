@@ -247,7 +247,7 @@ describe("utm-check-view artwork", () => {
     expect(text).to.include("Not available on this Mac");
     expect(text).to.include("Apple silicon");
     // None of it applies when the option can't run here at all
-    expect(el.shadowRoot!.querySelector(".warning-card")).to.equal(null);
+    expect(el.shadowRoot!.querySelector("inline-notice")).to.equal(null);
     expect(el.shadowRoot!.querySelector('[role="alert"]')).to.equal(null);
     expect(text).not.to.include("Error checking UTM");
     expect(text).not.to.include("Try again");

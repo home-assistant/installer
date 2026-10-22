@@ -66,11 +66,13 @@ export function installerError(
       !Array.isArray(error.details)
         ? (error.details as Record<string, unknown>)
         : {};
+    const byCode = Object.prototype.hasOwnProperty.call(messages, error.code)
+      ? messages[error.code]
+      : undefined;
     let message =
       localizeBackend(details.message_key, details.message_params) ??
-      (Object.prototype.hasOwnProperty.call(messages, error.code)
-        ? messages[error.code]()
-        : error.message || fallback);
+      byCode?.() ??
+      (error.message || fallback);
     if (
       error.code === "image_too_large" &&
       typeof details.image_size === "number" &&

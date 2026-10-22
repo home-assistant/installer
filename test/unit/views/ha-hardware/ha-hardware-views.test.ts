@@ -266,7 +266,9 @@ describe("Home Assistant hardware views", () => {
       const content = text(el.shadowRoot!);
       expect(content).to.contain("Green installer, April 10, 2024");
       expect(content).not.to.contain("green-installer");
-      expect(el.shadowRoot!.querySelector(".notice")!.textContent).to.contain(
+      expect(
+        el.shadowRoot!.querySelector("inline-notice")!.textContent
+      ).to.contain(
         "the installer reinstalls Home Assistant OS and erases all data"
       );
       expect(calls).to.equal(0);
@@ -290,9 +292,9 @@ describe("Home Assistant hardware views", () => {
       const el = await fixture(html`<confirmation-view></confirmation-view>`);
       await waitUntil(() => text(el.shadowRoot!).includes("Version 18.2"));
       expect(text(el.shadowRoot!)).not.to.contain("installer");
-      expect(el.shadowRoot!.querySelector(".notice")!.textContent).to.contain(
-        "Home Assistant included"
-      );
+      expect(
+        el.shadowRoot!.querySelector("inline-notice")!.textContent
+      ).to.contain("Home Assistant included");
     });
 
     it("shows the HAOS release for the Blue", async () => {
@@ -304,9 +306,9 @@ describe("Home Assistant hardware views", () => {
       });
       const el = await fixture(html`<confirmation-view></confirmation-view>`);
       await waitUntil(() => text(el.shadowRoot!).includes("Version 18.2"));
-      expect(el.shadowRoot!.querySelector(".notice")!.textContent).to.contain(
-        "Home Assistant included"
-      );
+      expect(
+        el.shadowRoot!.querySelector("inline-notice")!.textContent
+      ).to.contain("Home Assistant included");
     });
 
     it("keeps the SBC confirmation free of the notice", async () => {
@@ -314,7 +316,7 @@ describe("Home Assistant hardware views", () => {
       mockTauriIpc(() => ({ version: "18.2", images: [] }));
       wizardState.setSelection("deviceConfig", MOCK_MANIFEST.devices[0].haos);
       const el = await fixture(html`<confirmation-view></confirmation-view>`);
-      expect(el.shadowRoot!.querySelector(".notice")).to.equal(null);
+      expect(el.shadowRoot!.querySelector("inline-notice")).to.equal(null);
     });
   });
 

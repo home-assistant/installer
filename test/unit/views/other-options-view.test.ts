@@ -14,9 +14,13 @@ const OPTIONS = [
   [
     "Synology NAS",
     "synology",
-    "https://www.home-assistant.io/installation/synology",
+    "https://www.home-assistant.io/installation/alternative#synology-nas",
   ],
-  ["QNAP NAS", "qnap", "https://www.home-assistant.io/installation/qnap"],
+  [
+    "QNAP NAS",
+    "qnap",
+    "https://www.home-assistant.io/installation/alternative#qnap-nas",
+  ],
   [
     "Linux virtual machine",
     "linux",

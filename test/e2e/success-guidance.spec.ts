@@ -62,10 +62,10 @@ for (const width of [1100, 390]) {
       await expect(success.locator(".next-steps")).toContainText(
         "router or on an attached display"
       );
-      await expect(success.locator(".notice")).toContainText(
+      await expect(success.locator("inline-notice")).toContainText(
         "Do not format or initialize the written drive."
       );
-      await expect(success.locator(".notice")).toContainText(
+      await expect(success.locator("inline-notice")).toContainText(
         "Choose Cancel if offered, or Ignore or Eject on macOS."
       );
       await expect(success.locator(".next-steps-footer a")).toBeVisible();
@@ -102,7 +102,7 @@ for (const width of [1100, 390]) {
             right: bounds.right,
             overflowing: [
               ...element.querySelectorAll(
-                ".step-text, .notice, .next-steps-footer"
+                ".step-text, inline-notice, .next-steps-footer"
               ),
             ].some((item) => item.scrollWidth > item.clientWidth + 1),
             overlappingSteps: steps.some(

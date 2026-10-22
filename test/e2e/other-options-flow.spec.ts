@@ -71,8 +71,7 @@ test.describe("Other Options View", () => {
 
     const dockerOption = page
       .locator("other-options-view")
-      .locator("option-card")
-      .filter({ hasText: "Home Assistant Container" });
+      .locator('option-card[heading="Home Assistant Container"]');
     await expect(dockerOption).toBeVisible();
     await expect(dockerOption).toContainText("Home Assistant Container");
     await expect(dockerOption).toContainText(
@@ -94,7 +93,7 @@ test.describe("Other Options View", () => {
       .locator("option-card")
       .filter({ hasText: "Synology NAS" });
     await expect(synologyOption).toBeVisible();
-    await expect(synologyOption).toContainText("Virtual Machine Manager");
+    await expect(synologyOption).toContainText("Container Manager");
   });
 
   test("displays QNAP NAS option", async ({ page }) => {
@@ -105,7 +104,7 @@ test.describe("Other Options View", () => {
       .locator("option-card")
       .filter({ hasText: "QNAP NAS" });
     await expect(qnapOption).toBeVisible();
-    await expect(qnapOption).toContainText("Virtualization Station");
+    await expect(qnapOption).toContainText("Container Station");
   });
 
   test("displays Linux Virtual Machine option", async ({ page }) => {

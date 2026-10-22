@@ -27,4 +27,10 @@ export default defineConfig(async () => ({
       ignored: ["**/crates/**", "**/target/**"],
     },
   },
+  build: {
+    // The oldest web views the README supports: Safari 17.5-era WebKit on
+    // macOS 14.5 and WebKitGTK 4.1 with current updates on Linux, and
+    // Evergreen WebView2 on Windows
+    target: ["safari17", "chrome120"],
+  },
 }));

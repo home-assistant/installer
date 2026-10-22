@@ -69,13 +69,8 @@ pub fn authopen_args(device_path: &str, open_flags: i32, use_extauth: bool) -> V
 
 /// TCC checks the responsible process, so `EACCES`/`EPERM` after a successful
 /// administrator authorization means the removable-volumes privacy setting.
-pub fn removable_volumes_message(device_id: &str) -> String {
-    format!(
-        "macOS blocked access to {device_id}. Administrator access was granted, so this is the \
-         removable volumes privacy setting rather than the password: open System Settings > \
-         Privacy & Security > Files and Folders, allow \"Home Assistant Installer\" access to \
-         Removable Volumes, and try again."
-    )
+pub fn removable_volumes_message(device_id: &str) -> crate::Message {
+    crate::message!("backend.disk.removable_volumes_blocked", device = device_id)
 }
 
 pub fn device_busy_message(device_id: &str) -> String {
@@ -131,22 +126,25 @@ pub fn classify_authopen_failure(exit_code: Option<i32>, stderr: &str, device_id
     }
 
     let detail = stderr.trim();
-    let detail = if detail.is_empty() {
-        String::new()
-    } else {
-        format!(": {detail}")
-    };
-
-    match exit_code {
-        Some(code) => Error::PermissionDenied(format!(
-            "authopen exited with status {code} without returning a descriptor for \
-             {device_id}{detail}"
-        )),
-        None => Error::PermissionDenied(format!(
-            "authopen was terminated by a signal without returning a descriptor for \
-             {device_id}{detail}"
-        )),
-    }
+    Error::PermissionDenied(match (exit_code, detail.is_empty()) {
+        (Some(code), true) => crate::message!(
+            "backend.disk.authopen_failed",
+            status = code,
+            device = device_id,
+        ),
+        (Some(code), false) => crate::message!(
+            "backend.disk.authopen_failed_with_output",
+            status = code,
+            device = device_id,
+            detail = detail,
+        ),
+        (None, true) => crate::message!("backend.disk.authopen_killed", device = device_id),
+        (None, false) => crate::message!(
+            "backend.disk.authopen_killed_with_output",
+            device = device_id,
+            detail = detail,
+        ),
+    })
 }
 
 /// Whether a failed `DKIOCSYNCHRONIZECACHE` can be ignored: `ENOTTY` (not a
@@ -187,8 +185,17 @@ pub fn fill_buffer<R: std::io::Read>(source: &mut R, buffer: &mut [u8]) -> std::
     Ok(filled)
 }
 
+/// The Authorization Services call an `OSStatus` came from.
+#[derive(Debug, Clone, Copy)]
+pub enum AuthorizationStep {
+    /// Asking for administrator access to the device.
+    Request,
+    /// Handing that access to `authopen`.
+    Externalize,
+}
+
 /// Map an `OSStatus` from Authorization Services onto an [`Error`].
-pub fn map_authorization_status(code: i32, context: &str) -> Error {
+pub fn map_authorization_status(code: i32, step: AuthorizationStep) -> Error {
     // From <Security/AuthorizationTags.h>.
     const ERR_AUTHORIZATION_DENIED: i32 = -60005;
     const ERR_AUTHORIZATION_CANCELED: i32 = -60006;
@@ -198,19 +205,22 @@ pub fn map_authorization_status(code: i32, context: &str) -> Error {
     match code {
         ERR_AUTHORIZATION_CANCELED => Error::Cancelled,
         ERR_AUTHORIZATION_DENIED => {
-            Error::PermissionDenied("Administrator access was denied".to_string())
+            Error::PermissionDenied(crate::message!("backend.disk.admin_denied"))
         }
-        ERR_AUTHORIZATION_INTERACTION_NOT_ALLOWED => Error::PermissionDenied(
-            "macOS refused to show the administrator prompt. Run the application from the \
-             desktop rather than over SSH or from a background service."
-                .to_string(),
-        ),
-        ERR_AUTHORIZATION_EXTERNALIZE_NOT_ALLOWED => Error::PermissionDenied(
-            "macOS refused to share this authorization with authopen (errAuthorization\
-             ExternalizeNotAllowed)."
-                .to_string(),
-        ),
-        other => Error::PermissionDenied(format!("{context} failed with status {other}")),
+        ERR_AUTHORIZATION_INTERACTION_NOT_ALLOWED => {
+            Error::PermissionDenied(crate::message!("backend.disk.admin_prompt_not_allowed"))
+        }
+        ERR_AUTHORIZATION_EXTERNALIZE_NOT_ALLOWED => {
+            Error::PermissionDenied(crate::message!("backend.disk.authorization_not_shared"))
+        }
+        other => Error::PermissionDenied(match step {
+            AuthorizationStep::Request => {
+                crate::message!("backend.disk.admin_request_failed", status = other)
+            }
+            AuthorizationStep::Externalize => {
+                crate::message!("backend.disk.authorization_handoff_failed", status = other)
+            }
+        }),
     }
 }
 
@@ -369,8 +379,9 @@ mod tests {
             let err = map_device_io_error(std::io::Error::from_raw_os_error(errno), "/dev/rdisk4");
             match err {
                 Error::PermissionDenied(msg) => {
-                    assert!(msg.contains("Removable Volumes"), "{errno}: {msg}");
-                    assert!(msg.contains("Privacy & Security"), "{errno}: {msg}");
+                    let text = msg.to_string();
+                    assert!(text.contains("Removable Volumes"), "{errno}: {text}");
+                    assert!(text.contains("Privacy & Security"), "{errno}: {text}");
                 }
                 other => panic!("expected PermissionDenied for {errno}, got {other:?}"),
             }
@@ -450,7 +461,14 @@ mod tests {
             let err = classify_authopen_failure(Some(1), stderr, "/dev/rdisk4");
             match err {
                 Error::PermissionDenied(msg) => {
-                    assert!(msg.contains("Removable Volumes"), "{stderr}: {msg}")
+                    assert_eq!(
+                        msg.key, "backend.disk.removable_volumes_blocked",
+                        "{stderr}"
+                    );
+                    assert!(
+                        msg.to_string().contains("Removable Volumes"),
+                        "{stderr}: {msg}"
+                    )
                 }
                 other => panic!("expected PermissionDenied for {stderr}, got {other:?}"),
             }
@@ -472,8 +490,8 @@ mod tests {
         let err = classify_authopen_failure(Some(3), "", "/dev/rdisk4");
         match err {
             Error::PermissionDenied(msg) => {
-                assert!(msg.contains("status 3"), "{msg}");
-                assert!(msg.contains("/dev/rdisk4"), "{msg}");
+                assert!(msg.to_string().contains("status 3"), "{msg}");
+                assert!(msg.to_string().contains("/dev/rdisk4"), "{msg}");
             }
             other => panic!("expected PermissionDenied, got {other:?}"),
         }
@@ -483,7 +501,7 @@ mod tests {
     fn an_authopen_killed_by_a_signal_is_reported_as_such() {
         let err = classify_authopen_failure(None, "", "/dev/rdisk4");
         match err {
-            Error::PermissionDenied(msg) => assert!(msg.contains("signal"), "{msg}"),
+            Error::PermissionDenied(msg) => assert!(msg.to_string().contains("signal"), "{msg}"),
             other => panic!("expected PermissionDenied, got {other:?}"),
         }
     }
@@ -632,33 +650,33 @@ mod tests {
     #[test]
     fn cancelling_the_dialog_maps_to_cancelled_not_permission_denied() {
         assert!(matches!(
-            map_authorization_status(-60006, "Authorization"),
+            map_authorization_status(-60006, AuthorizationStep::Request),
             Error::Cancelled
         ));
     }
 
     #[test]
     fn a_denied_authorization_is_permission_denied() {
-        match map_authorization_status(-60005, "Authorization") {
-            Error::PermissionDenied(msg) => assert!(msg.contains("denied"), "{msg}"),
+        match map_authorization_status(-60005, AuthorizationStep::Request) {
+            Error::PermissionDenied(msg) => assert!(msg.to_string().contains("denied"), "{msg}"),
             other => panic!("expected PermissionDenied, got {other:?}"),
         }
     }
 
     #[test]
     fn a_headless_session_explains_why_no_prompt_appeared() {
-        match map_authorization_status(-60007, "Authorization") {
-            Error::PermissionDenied(msg) => assert!(msg.contains("SSH"), "{msg}"),
+        match map_authorization_status(-60007, AuthorizationStep::Request) {
+            Error::PermissionDenied(msg) => assert!(msg.to_string().contains("SSH"), "{msg}"),
             other => panic!("expected PermissionDenied, got {other:?}"),
         }
     }
 
     #[test]
-    fn an_unknown_authorization_status_keeps_the_code_and_context() {
-        match map_authorization_status(-60008, "Externalizing the authorization") {
+    fn an_unknown_authorization_status_keeps_the_code_and_step() {
+        match map_authorization_status(-60008, AuthorizationStep::Externalize) {
             Error::PermissionDenied(msg) => {
-                assert!(msg.contains("-60008"), "{msg}");
-                assert!(msg.contains("Externalizing the authorization"), "{msg}");
+                assert_eq!(msg.key, "backend.disk.authorization_handoff_failed");
+                assert!(msg.to_string().contains("-60008"), "{msg}");
             }
             other => panic!("expected PermissionDenied, got {other:?}"),
         }

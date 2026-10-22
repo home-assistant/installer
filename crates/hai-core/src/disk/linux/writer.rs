@@ -555,14 +555,16 @@ fn map_udisks_error(err: zbus::Error, context: &str) -> Error {
         }
         // User dismissed the polkit dialog.
         if name.contains("NotAuthorizedDismissed") {
-            return Error::PermissionDenied("Authorization was canceled".to_string());
+            return Error::PermissionDenied(crate::message!("backend.disk.authorization_canceled"));
         }
         if name.contains("NotAuthorized") {
-            return Error::PermissionDenied(
-                message
-                    .clone()
-                    .unwrap_or_else(|| "Not authorized to access the device".to_string()),
-            );
+            // udisks' own reason, when it gives one
+            return Error::PermissionDenied(match message {
+                Some(message) => {
+                    crate::message!("backend.disk.not_authorized_detail", detail = message)
+                }
+                None => crate::message!("backend.disk.not_authorized"),
+            });
         }
         // udisks may use the dedicated DeviceBusy name, but often reports a
         // busy device as Error.Failed with "Device or resource busy" in the
@@ -1017,7 +1019,7 @@ mod tests {
         );
         let mapped = map_udisks_error(err, "opening the device");
         assert!(
-            matches!(mapped, Error::PermissionDenied(msg) if msg == "Authorization was canceled")
+            matches!(mapped, Error::PermissionDenied(msg) if msg.key == "backend.disk.authorization_canceled")
         );
     }
 
@@ -1029,7 +1031,7 @@ mod tests {
         );
         let mapped = map_udisks_error(err, "opening the device");
         assert!(
-            matches!(mapped, Error::PermissionDenied(msg) if msg == "Not authorized to open the device")
+            matches!(mapped, Error::PermissionDenied(msg) if msg.to_string() == "Not authorized to open the device")
         );
     }
 

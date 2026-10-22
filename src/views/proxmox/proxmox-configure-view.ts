@@ -375,12 +375,10 @@ export class ProxmoxConfigureView extends LitElement {
       // An expired session must take precedence over an ordinary failure
       // from the other lookup, regardless of which one finishes first.
       const failures = results.filter((result) => result.status === "rejected");
-      if (failures.length) {
-        const expired = failures.find((result) =>
-          isSessionExpired(result.reason)
-        );
-        throw (expired ?? failures[0]).reason;
-      }
+      const failure =
+        failures.find((result) => isSessionExpired(result.reason)) ??
+        failures[0];
+      if (failure) throw failure.reason;
       const nodes = (results[0] as PromiseFulfilledResult<ProxmoxNode[]>).value;
       const nextVmId = (results[1] as PromiseFulfilledResult<number>).value;
 
@@ -523,7 +521,8 @@ export class ProxmoxConfigureView extends LitElement {
         this._bridges = [];
       }
 
-      if (failures.length) throw (expired ?? failures[0]).reason;
+      const failure = expired ?? failures[0];
+      if (failure) throw failure.reason;
 
       this._saveSelections();
     } catch (error) {
@@ -880,7 +879,9 @@ export class ProxmoxConfigureView extends LitElement {
     const options = this._getCoreOptions();
     if (options.includes(this._cpuCores)) return;
     this._cpuCores =
-      options.filter((cores) => cores <= this._cpuCores).pop() ?? options[0];
+      options.filter((cores) => cores <= this._cpuCores).pop() ??
+      options[0] ??
+      this._cpuCores;
   }
 
   private _getMemoryOptions(): number[] {
@@ -907,14 +908,14 @@ export class ProxmoxConfigureView extends LitElement {
   // The sliders step through option indexes, so they show the option there
   private _formatCoresAt = (index: number) =>
     localize("views.proxmox.proxmox_configure_view.value_cores", {
-      value0: this._getCoreOptions()[index],
+      value0: this._getCoreOptions()[index] ?? this._cpuCores,
     });
 
   private _formatMemoryAt = (index: number) =>
-    this._formatMemory(this._getMemoryOptions()[index]);
+    this._formatMemory(this._getMemoryOptions()[index] ?? this._memoryMb);
 
   private _formatDiskSizeAt = (index: number) =>
-    this._formatDiskSize(this._getDiskSizeOptions()[index]);
+    this._formatDiskSize(this._getDiskSizeOptions()[index] ?? this._diskSizeGb);
 
   private _getCpuDescription(): string {
     if (this._cpuCores <= 2) {

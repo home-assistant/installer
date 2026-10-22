@@ -34,6 +34,7 @@ export function failMockOperation(operation: "flash" | "proxmox" | "utm") {
       code: "permission_denied",
       message: "Administrator access was denied",
       retryable: false,
+      details: { message_key: "backend.disk.admin_denied", message_params: {} },
     },
     "proxmox-install": {
       operation: "proxmox",

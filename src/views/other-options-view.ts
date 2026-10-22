@@ -32,17 +32,17 @@ const OTHER_OPTIONS: OtherOption[] = [
   {
     title: localize("views.other_options_view.synology_nas"),
     description: localize(
-      "views.other_options_view.run_home_assistant_on_your_synology_nas_using_virtual_machine_manager"
+      "views.other_options_view.run_home_assistant_container_on_your_synology_nas_using_container_manager"
     ),
-    url: "https://www.home-assistant.io/installation/synology",
+    url: "https://www.home-assistant.io/installation/alternative#synology-nas",
     icon: "synology",
   },
   {
     title: localize("views.other_options_view.qnap_nas"),
     description: localize(
-      "views.other_options_view.run_home_assistant_on_your_qnap_nas_using_virtualization_station"
+      "views.other_options_view.run_home_assistant_container_on_your_qnap_nas_using_container_station"
     ),
-    url: "https://www.home-assistant.io/installation/qnap",
+    url: "https://www.home-assistant.io/installation/alternative#qnap-nas",
     icon: "qnap",
   },
   {

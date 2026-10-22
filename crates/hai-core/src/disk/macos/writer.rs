@@ -14,7 +14,8 @@
 use super::super::macos_logic::{
     align_up, aligned_buffer_size, authopen_args, cache_flush_failure_is_benign,
     classify_authopen_failure, fill_buffer, map_authorization_status, map_device_io_error,
-    pad_final_block, sanitize_block_size, write_ran_past_device_end, DEFAULT_BLOCK_SIZE, O_RDWR,
+    pad_final_block, sanitize_block_size, write_ran_past_device_end, AuthorizationStep,
+    DEFAULT_BLOCK_SIZE, O_RDWR,
 };
 use super::super::*;
 use rustix::net::{recvmsg, RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, ReturnFlags};
@@ -238,7 +239,12 @@ fn request_authorization(device_path: &str) -> Result<Authorization> {
     // the one it needs and it prompts no further.
     let rights = AuthorizationItemSetBuilder::new()
         .add_right(format!("sys.openfile.readwrite.{device_path}"))
-        .map_err(|e| Error::PermissionDenied(format!("Failed to create rights: {}", e)))?
+        .map_err(|e| {
+            Error::PermissionDenied(crate::message!(
+                "backend.disk.admin_rights_unavailable",
+                detail = e.to_string(),
+            ))
+        })?
         .build();
 
     // PREAUTHORIZE shows the dialog here, so a cancellation is reported as one
@@ -248,7 +254,7 @@ fn request_authorization(device_path: &str) -> Result<Authorization> {
         None,
         Flags::INTERACTION_ALLOWED | Flags::EXTEND_RIGHTS | Flags::PREAUTHORIZE,
     )
-    .map_err(|e| map_authorization_status(e.code(), "Requesting administrator access"))
+    .map_err(|e| map_authorization_status(e.code(), AuthorizationStep::Request))
 }
 
 /// Open `device_path` read-write through `authopen` and take the descriptor it
@@ -256,7 +262,7 @@ fn request_authorization(device_path: &str) -> Result<Authorization> {
 fn open_device_with_authopen(auth: &Authorization, device_path: &str) -> Result<File> {
     let external_form = auth
         .make_external_form()
-        .map_err(|e| map_authorization_status(e.code(), "Externalizing the authorization"))?;
+        .map_err(|e| map_authorization_status(e.code(), AuthorizationStep::Externalize))?;
     let external_bytes: Vec<u8> = external_form.bytes.iter().map(|byte| *byte as u8).collect();
 
     let (handshake, output) = spawn_and_receive_descriptor(
@@ -301,8 +307,13 @@ fn spawn_and_receive_descriptor(
     // never sees EOF when the child exits without sending a descriptor.
     drop(command);
 
-    let mut child =
-        spawned.map_err(|e| Error::PermissionDenied(format!("Could not run {program}: {e}")))?;
+    let mut child = spawned.map_err(|e| {
+        Error::PermissionDenied(crate::message!(
+            "backend.disk.helper_not_started",
+            program = program,
+            detail = e.to_string(),
+        ))
+    })?;
 
     // -extauth reads the external form before opening anything.
     let sent = match child.stdin.take() {
@@ -968,7 +979,9 @@ mod tests {
             .expect_err("spawning a nonexistent program must fail");
 
         match err {
-            Error::PermissionDenied(msg) => assert!(msg.contains("hai-does-not-exist"), "{msg}"),
+            Error::PermissionDenied(msg) => {
+                assert!(msg.to_string().contains("hai-does-not-exist"), "{msg}")
+            }
             other => panic!("expected PermissionDenied, got {other:?}"),
         }
     }

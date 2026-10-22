@@ -28,12 +28,12 @@ interface WizardShell extends HTMLElement {
   nextDisabled: boolean;
   hideFooter: boolean;
   hideNext: boolean;
+  hideCancel: boolean;
 }
 
 interface ErrorFlags {
   _flashError: boolean;
-  _utmInstallError: boolean;
-  _proxmoxInstallError: boolean;
+  _vmInstallError: boolean;
 }
 
 function fire(target: Element, type: string, detail?: unknown) {
@@ -377,6 +377,15 @@ describe("app-shell", () => {
     expect(shellOf(el)).to.equal(null);
     expect(wizardState.getState().currentFlow).to.equal(null);
     expect(wizardState.getState().selections).to.deep.equal({});
+  });
+
+  it("offers only Done once the installation succeeded", async () => {
+    await enterSbcFlow(el);
+    expect(shellOf(el).hideCancel).to.be.false;
+
+    await goToStep(el, "success");
+    expect(shellOf(el).hideCancel).to.be.true;
+    expect(shellOf(el).nextLabel).to.equal("Done");
   });
 
   it("does not hold up a new flow with a Proxmox connect left behind", async () => {
@@ -816,14 +825,12 @@ describe("app-shell", () => {
     it("is cleared for every flow when a new path is chosen", async () => {
       const flags = el as unknown as ErrorFlags;
       flags._flashError = true;
-      flags._utmInstallError = true;
-      flags._proxmoxInstallError = true;
+      flags._vmInstallError = true;
 
       await enterSbcFlow(el);
 
       expect(flags._flashError).to.be.false;
-      expect(flags._utmInstallError).to.be.false;
-      expect(flags._proxmoxInstallError).to.be.false;
+      expect(flags._vmInstallError).to.be.false;
     });
   });
 

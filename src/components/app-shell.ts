@@ -32,6 +32,11 @@ import "../views/proxmox/proxmox-success-view.js";
 // Import components
 import type { WizardShell } from "./wizard-shell.js";
 import "./wizard-shell.js";
+import {
+  wizardStep,
+  type WizardStepDefinition,
+  type WizardStepView,
+} from "./wizard-steps.js";
 import type { ConfirmDialog } from "./confirm-dialog.js";
 import "./confirm-dialog.js";
 import "./info-dialog.js";
@@ -45,7 +50,6 @@ import {
 } from "../state/wizard-state.js";
 import { listBlockDevices, onCloseBlocked, quitAnyway } from "../api/index.js";
 import { findDrive, readDriveSelection } from "../utils/drive-selection.js";
-import { isValidWifi, selectedWifi } from "../utils/wifi.js";
 import { logFrontendError } from "../utils/diagnostics.js";
 import { openExternalUrl } from "../utils/external-url.js";
 
@@ -97,24 +101,16 @@ export class AppShell extends LitElement {
   private _flashError = false;
 
   @state()
-  private _utmInstallError = false;
-
-  @state()
-  private _proxmoxInstallError = false;
+  private _vmInstallError = false;
 
   @state()
   private _installRetryable = false;
 
-  // The flow the running Proxmox connect started in. Leaving the flow
-  // replaces it, so a connect left behind holds up nothing.
+  // What the running `beforeNext` of a step started from: the flow, or the
+  // selections. Leaving the flow (or changing a choice) replaces it, so a run
+  // left behind holds up nothing.
   @state()
-  private _connectingFlow?: number;
-
-  // The selections the running Proxmox check started from. Navigating,
-  // cancelling or changing a choice replaces them, so a check left behind
-  // holds up nothing.
-  @state()
-  private _checkingProxmox?: WizardState["selections"];
+  private _pendingNext?: unknown;
 
   @state()
   private _verifyingDrive = false;
@@ -268,12 +264,10 @@ export class AppShell extends LitElement {
   private _renderWizard() {
     const currentStep = wizardState.currentStep;
     const flow = this._wizardState.currentFlow;
-    const nextDisabled = this._isNextDisabled(flow, currentStep?.id);
+    const step = wizardStep(flow, currentStep?.id);
+    const nextDisabled = !this._isReady(step);
     const nextLabel = this._getNextLabel(currentStep?.id);
-
-    const checkingSettings =
-      this._checkingProxmox === this._wizardState.selections;
-    const connecting = this._connectingFlow === wizardState.flowGeneration;
+    const busy = this._isBusy(step) ? step?.beforeNext?.label() : undefined;
 
     // A running flash keeps only Cancel, until it is stopping
     const flashRunning = currentStep?.id === "flash" && !this._flashError;
@@ -295,33 +289,30 @@ export class AppShell extends LitElement {
       (flow === "vm" && currentStep?.id === "install") ||
       (flow === "proxmox" && currentStep?.id === "install");
 
+    // Done already returns to the start, so Cancel would only repeat it
+    const hideCancel = currentStep?.id === "success";
+
     // Determine when to hide next button
     const hideNext =
       flashRunning ||
       vmRunning ||
       currentStep?.id === "method" ||
       (currentStep?.id === "install" &&
-        (this._flashError ||
-          this._utmInstallError ||
-          this._proxmoxInstallError) &&
+        (this._flashError || this._vmInstallError) &&
         !this._installRetryable);
 
     return html`
       <wizard-shell
-        .nextDisabled=${nextDisabled ||
-        connecting ||
-        checkingSettings ||
-        this._verifyingDrive}
-        .nextLabel=${connecting
-          ? localize("components.app_shell.connecting")
-          : checkingSettings
-            ? localize("components.app_shell.checking_settings")
-            : this._verifyingDrive
-              ? localize("components.app_shell.checking_drive")
-              : nextLabel}
+        .nextDisabled=${nextDisabled || !!busy || this._verifyingDrive}
+        .nextLabel=${busy
+          ? busy
+          : this._verifyingDrive
+            ? localize("components.app_shell.checking_drive")
+            : nextLabel}
         .hideFooter=${hideFooter}
         .hideBack=${hideBack}
         .hideNext=${hideNext}
+        .hideCancel=${hideCancel}
         @wizard-cancel=${this._onWizardCancel}
         @wizard-exit=${this._onWizardExit}
         @wizard-next=${this._onWizardNext}
@@ -330,8 +321,10 @@ export class AppShell extends LitElement {
         @flash-stop-failed=${this._onFlashStopFailed}
         @install-stoppable=${this._onInstallStoppable}
         @install-leavable=${this._onInstallLeavable}
+        @install-complete=${this._onVmInstallComplete}
+        @install-error=${this._onVmInstallError}
       >
-        ${this._renderWizardStep(flow, currentStep?.id)}
+        ${step?.render() ?? nothing}
       </wizard-shell>
     `;
   }
@@ -342,10 +335,7 @@ export class AppShell extends LitElement {
         ? localize("components.app_shell.try_again")
         : localize("components.app_shell.choose_another_drive");
     }
-    if (
-      stepId === "install" &&
-      (this._utmInstallError || this._proxmoxInstallError)
-    ) {
+    if (stepId === "install" && this._vmInstallError) {
       return localize("components.app_shell.try_again");
     }
     if (stepId === "confirm") {
@@ -357,163 +347,29 @@ export class AppShell extends LitElement {
     return localize("common.next");
   }
 
-  private _isNextDisabled(
-    flow: WizardFlow | null,
-    stepId: string | undefined
-  ): boolean {
-    const selections = this._wizardState.selections;
-
-    // Check if required selections are made for current step
-    if (flow === "sbc" || flow === "ha-hardware") {
-      if (stepId === "device") {
-        return !selections.deviceCatalogReady || !selections.device;
-      }
-      if (stepId === "drive") {
-        return !selections.drive;
-      }
-    }
-
-    if (flow === "minipc") {
-      if (stepId === "architecture") {
-        return !selections.deviceCatalogReady || !selections.device;
-      }
-      if (stepId === "drive") {
-        return !selections.drive;
-      }
-    }
-
-    if (
-      (flow === "sbc" || flow === "ha-hardware" || flow === "minipc") &&
-      stepId === "wifi"
-    ) {
-      const wifi = selectedWifi(selections);
-      return wifi !== undefined && !isValidWifi(wifi);
-    }
-
-    // VM (UTM) flow - require UTM to be installed on check step
-    if (flow === "vm") {
-      if (stepId === "check") {
-        return !selections.utmInstalled;
-      }
-    }
-
-    // Proxmox flow
-    if (flow === "proxmox") {
-      if (stepId === "configure") {
-        return (
-          !selections.proxmoxConfigureReady ||
-          !selections.proxmoxNode ||
-          !selections.proxmoxStorage ||
-          !selections.proxmoxBridge ||
-          !selections.proxmoxBridgeReady ||
-          !selections.proxmoxImportReady
-        );
-      }
-    }
-
-    return false;
+  private _isReady(step: WizardStepDefinition | undefined): boolean {
+    return step?.ready?.(wizardState.getState().selections) ?? true;
   }
 
-  private _renderWizardStep(
-    flow: WizardFlow | null,
-    stepId: string | undefined
-  ) {
-    // SBC Flow steps
-    if (flow === "sbc") {
-      switch (stepId) {
-        case "device":
-          return html`<device-selection-view></device-selection-view>`;
-        case "drive":
-          return html`<drive-selection-view></drive-selection-view>`;
-        case "wifi":
-          return html`<wifi-view></wifi-view>`;
-        case "confirm":
-          return html`<confirmation-view></confirmation-view>`;
-        case "flash":
-          return html`<progress-view></progress-view>`;
-        case "success":
-          return html`<success-view></success-view>`;
-      }
-    }
+  /** What a `beforeNext` run of `step` started now would be held by. */
+  private _pendingToken(step: WizardStepDefinition): unknown {
+    return step.beforeNext?.until === "flow"
+      ? wizardState.flowGeneration
+      : wizardState.getState().selections;
+  }
 
-    // Home Assistant hardware: the SBC steps, with its own device picker and
-    // device-specific next steps
-    if (flow === "ha-hardware") {
-      switch (stepId) {
-        case "device":
-          return html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`;
-        case "drive":
-          return html`<drive-selection-view></drive-selection-view>`;
-        case "wifi":
-          return html`<wifi-view></wifi-view>`;
-        case "confirm":
-          return html`<confirmation-view></confirmation-view>`;
-        case "flash":
-          return html`<progress-view></progress-view>`;
-        case "success":
-          return html`<ha-hardware-success-view></ha-hardware-success-view>`;
-      }
-    }
+  private _isBusy(step: WizardStepDefinition | undefined): boolean {
+    return (
+      !!step?.beforeNext &&
+      this._pendingNext !== undefined &&
+      this._pendingNext === this._pendingToken(step)
+    );
+  }
 
-    // Mini PC Flow steps
-    if (flow === "minipc") {
-      switch (stepId) {
-        case "method":
-          return html`<minipc-setup-method-view></minipc-setup-method-view>`;
-        case "architecture":
-          return html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`;
-        case "drive":
-          return html`<drive-selection-view></drive-selection-view>`;
-        case "wifi":
-          return html`<wifi-view></wifi-view>`;
-        case "confirm":
-          return html`<confirmation-view></confirmation-view>`;
-        case "flash":
-          return html`<progress-view></progress-view>`;
-        case "success":
-          return html`<success-view></success-view>`;
-      }
-    }
-
-    // VM (UTM) Flow steps
-    if (flow === "vm") {
-      switch (stepId) {
-        case "check":
-          return html`<utm-check-view></utm-check-view>`;
-        case "configure":
-          return html`<utm-configure-view></utm-configure-view>`;
-        case "confirm":
-          return html`<utm-confirm-view></utm-confirm-view>`;
-        case "install":
-          return html`<utm-progress-view
-            @install-complete=${this._onUtmInstallComplete}
-            @install-error=${this._onUtmInstallError}
-          ></utm-progress-view>`;
-        case "success":
-          return html`<utm-success-view></utm-success-view>`;
-      }
-    }
-
-    // Proxmox Flow steps
-    if (flow === "proxmox") {
-      switch (stepId) {
-        case "connection":
-          return html`<proxmox-connect-view></proxmox-connect-view>`;
-        case "configure":
-          return html`<proxmox-configure-view></proxmox-configure-view>`;
-        case "confirm":
-          return html`<proxmox-confirm-view></proxmox-confirm-view>`;
-        case "install":
-          return html`<proxmox-progress-view
-            @install-complete=${this._onProxmoxInstallComplete}
-            @install-error=${this._onProxmoxInstallError}
-          ></proxmox-progress-view>`;
-        case "success":
-          return html`<proxmox-success-view></proxmox-success-view>`;
-      }
-    }
-
-    return nothing;
+  /** The view of the current step, the wizard shell's only child. */
+  private get _stepView(): WizardStepView | null {
+    return (this._wizardShell?.firstElementChild ??
+      null) as WizardStepView | null;
   }
 
   private _onNavigate(e: CustomEvent<{ view: ViewName }>) {
@@ -569,8 +425,7 @@ export class AppShell extends LitElement {
     this._vmStoppable = false;
     this._vmLeavable = false;
     this._flashError = false;
-    this._utmInstallError = false;
-    this._proxmoxInstallError = false;
+    this._vmInstallError = false;
     this._installRetryable = false;
   }
 
@@ -580,9 +435,7 @@ export class AppShell extends LitElement {
 
     if (
       currentStep?.id === "install" &&
-      (this._flashError ||
-        this._utmInstallError ||
-        this._proxmoxInstallError) &&
+      (this._flashError || this._vmInstallError) &&
       !this._installRetryable
     )
       return;
@@ -594,80 +447,31 @@ export class AppShell extends LitElement {
         this._goToDriveStep();
         return;
       }
-      const progressView = this._wizardShell?.querySelector("progress-view") as
-        | (HTMLElement & { retry: () => void })
-        | null;
-      progressView?.retry();
+      this._stepView?.retry?.();
       return;
     }
 
-    // Handle retry on UTM install error
-    if (
-      flow === "vm" &&
-      currentStep?.id === "install" &&
-      this._utmInstallError
-    ) {
-      this._utmInstallError = false;
-      const utmProgressView = this._wizardShell?.querySelector(
-        "utm-progress-view"
-      ) as (HTMLElement & { retry: () => void }) | null;
-      utmProgressView?.retry();
+    // Handle retry on a UTM or Proxmox install error
+    if (currentStep?.id === "install" && this._vmInstallError) {
+      this._vmInstallError = false;
+      this._stepView?.retry?.();
       return;
     }
 
-    // Handle retry on Proxmox install error
-    if (
-      flow === "proxmox" &&
-      currentStep?.id === "install" &&
-      this._proxmoxInstallError
-    ) {
-      this._proxmoxInstallError = false;
-      const proxmoxProgressView = this._wizardShell?.querySelector(
-        "proxmox-progress-view"
-      ) as (HTMLElement & { retry: () => void }) | null;
-      proxmoxProgressView?.retry();
-      return;
-    }
-
-    // Handle Proxmox connection step - connect then proceed if successful
-    if (flow === "proxmox" && currentStep?.id === "connection") {
-      const connectView = this._wizardShell?.querySelector(
-        "proxmox-connect-view"
-      ) as (HTMLElement & { connect: () => Promise<boolean> }) | null;
-      if (connectView) {
-        const generation = wizardState.flowGeneration;
-        this._connectingFlow = generation;
-        try {
-          const success = await connectView.connect();
-          if (!success) {
-            return; // Stay on current step, error shown in view
-          }
-        } finally {
-          if (this._connectingFlow === generation) {
-            this._connectingFlow = undefined;
-          }
-        }
-      }
-    }
-
-    if (flow === "proxmox" && currentStep?.id === "configure") {
+    const step = wizardStep(flow, currentStep?.id);
+    if (step?.beforeNext) {
       // Next is only clickable while enabled, but the step must never proceed
-      // without import storage, whatever triggered the event
-      const selections = wizardState.getState().selections;
-      if (
-        this._checkingProxmox === selections ||
-        this._isNextDisabled(flow, currentStep.id)
-      ) {
-        return;
-      }
-      // A problem found now can still be fixed on this step
-      this._checkingProxmox = selections;
+      // while it isn't ready, whatever triggered the event
+      const view = this._stepView;
+      if (!view || this._isBusy(step) || !this._isReady(step)) return;
+      const token = this._pendingToken(step);
+      this._pendingNext = token;
       try {
-        const view = this._wizardShell?.querySelector("proxmox-configure-view");
-        if (!(await view?.check())) return;
+        // Stay on the step when it fails: the view shows why
+        if (!(await step.beforeNext.run(view))) return;
       } finally {
-        if (this._checkingProxmox === selections) {
-          this._checkingProxmox = undefined;
+        if (this._pendingNext === token) {
+          this._pendingNext = undefined;
         }
       }
     }
@@ -847,8 +651,8 @@ export class AppShell extends LitElement {
     // The flash may have ended while the dialog was open
     if (wizardState.currentStep?.id !== "flash" || this._flashError) return;
 
-    const progressView = this._wizardShell?.querySelector("progress-view");
-    if (!progressView) return;
+    const progressView = this._stepView;
+    if (!progressView?.stop) return;
 
     this._stoppingFlash = true;
     progressView.stop();
@@ -859,19 +663,12 @@ export class AppShell extends LitElement {
     if (wizardState.currentStep?.id !== "install") return false;
 
     const flow = this._wizardState.currentFlow;
-    return (
-      (flow === "vm" && !this._utmInstallError) ||
-      (flow === "proxmox" && !this._proxmoxInstallError)
-    );
+    return (flow === "vm" || flow === "proxmox") && !this._vmInstallError;
   }
 
   private _stopVmInstall() {
-    const wizardShell = this._wizardShell;
-    const progressView =
-      wizardShell?.querySelector("utm-progress-view") ??
-      wizardShell?.querySelector("proxmox-progress-view");
     // Does nothing once the install moved past where it can stop
-    progressView?.stop();
+    this._stepView?.stop?.();
   }
 
   private _onInstallStoppable(event: CustomEvent<{ stoppable: boolean }>) {
@@ -887,24 +684,14 @@ export class AppShell extends LitElement {
     if (!this._vmLeavable) this._showLeaveDialog = false;
   }
 
-  private _onUtmInstallComplete() {
-    // Advance to success step after UTM install completes
+  private _onVmInstallComplete() {
+    // Advance to success step after the UTM or Proxmox install completes
     wizardState.nextStep();
   }
 
-  private _onUtmInstallError(event: CustomEvent<{ retryable?: boolean }>) {
+  private _onVmInstallError(event: CustomEvent<{ retryable?: boolean }>) {
     this._installRetryable = event.detail?.retryable === true;
-    this._utmInstallError = true;
-  }
-
-  private _onProxmoxInstallComplete() {
-    // Advance to success step after Proxmox install completes
-    wizardState.nextStep();
-  }
-
-  private _onProxmoxInstallError(event: CustomEvent<{ retryable?: boolean }>) {
-    this._installRetryable = event.detail?.retryable === true;
-    this._proxmoxInstallError = true;
+    this._vmInstallError = true;
   }
 
   private _renderToolboxButton() {

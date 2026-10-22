@@ -75,6 +75,43 @@ describe("installer errors", () => {
     );
   });
 
+  it("shows permission, two-factor, rate-limit and drive-size errors from the catalog", () => {
+    for (const [code, key, params, expected] of [
+      [
+        "permission_denied",
+        "backend.disk.removable_volumes_blocked",
+        { device: "/dev/rdisk4" },
+        "macOS blocked access to /dev/rdisk4.",
+      ],
+      [
+        "proxmox_two_factor",
+        "backend.proxmox.two_factor_http_error",
+        { status: 500 },
+        "Proxmox returned HTTP 500 while completing the second-factor login.",
+      ],
+      [
+        "rate_limited",
+        "backend.download.github_rate_limited",
+        { minutes: 3 },
+        "Wait at least 3 minutes, then try again.",
+      ],
+      [
+        "drive_too_small",
+        "backend.disk.drive_too_small",
+        { size: "32" },
+        "At least a 32 GB drive is required.",
+      ],
+    ] as const) {
+      const result = installerError(
+        ipcError(code, "English from Rust", false, {
+          message_key: key,
+          message_params: params,
+        })
+      );
+      expect(result.message, code).to.contain(expected);
+    }
+  });
+
   it("shows a message inside a backend message in the user's language", () => {
     const result = installerError(
       ipcError("utm_vm_created", "English from Rust", false, {

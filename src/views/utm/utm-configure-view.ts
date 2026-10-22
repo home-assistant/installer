@@ -296,7 +296,7 @@ export class UtmConfigureView extends LitElement {
     this._formatMemory(this._getMemoryOptions()[index] ?? this._memoryMb);
 
   private _formatDiskSizeAt = (index: number) =>
-    this._formatDiskSize(this._getDiskSizeOptions()[index]);
+    this._formatDiskSize(this._getDiskSizeOptions()[index] ?? this._diskSizeGb);
 
   private _getCpuDescription(): string {
     if (this._cpuCores <= 2) {

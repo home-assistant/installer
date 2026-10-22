@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
-    "lint": "eslint src/ test/",
+    "lint": "eslint --max-warnings 0 src/ test/",
     "localization:check": "node scripts/check-localization.mjs",
     "test:localization": "node --test scripts/check-localization.test.mjs",
     "test:release": "node --test scripts/next-version.test.mjs",

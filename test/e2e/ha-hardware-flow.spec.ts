@@ -120,10 +120,10 @@ test.describe("Home Assistant hardware flow", () => {
       await expect(confirmation.locator(".summary-card")).toContainText(
         scenario.version
       );
-      await expect(confirmation.locator(".notice")).toContainText(
+      await expect(confirmation.locator("inline-notice")).toContainText(
         scenario.notice
       );
-      await expect(confirmation.locator(".notice")).toContainText(
+      await expect(confirmation.locator("inline-notice")).toContainText(
         "Create a backup first"
       );
       await next(page).click();

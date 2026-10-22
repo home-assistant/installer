@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import { localize } from "../localization/localize.js";
 import { openExternalLink } from "../utils/external-url.js";
 import { renderCasitaHappy } from "./install-mascot.js";
+import "./inline-notice.js";
 import {
   ReducedSvgMotion,
   ViewAccessibility,
@@ -202,10 +203,7 @@ export class InstallSuccess extends LitElement {
         text-align: left;
       }
 
-      .notice {
-        padding: 0.75rem 0 0.75rem 1rem;
-        border-left: 3px solid var(--ha-warning-color, #f5a623);
-        line-height: 1.5;
+      inline-notice {
         margin: 1.25rem 0;
       }
 
@@ -241,7 +239,9 @@ export class InstallSuccess extends LitElement {
         <p class="next-steps-title">
           ${localize("views.proxmox.proxmox_success_view.next_steps")}
         </p>
-        ${this.notice ? html`<p class="notice">${this.notice}</p>` : ""}
+        ${this.notice
+          ? html`<inline-notice><p>${this.notice}</p></inline-notice>`
+          : ""}
         <ol
           class="steps-list"
           role="list"

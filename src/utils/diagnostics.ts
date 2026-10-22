@@ -78,7 +78,7 @@ export function diagnosticError(error: unknown): string {
     ["proxmox", "proxmox_error"],
     ["utm", "utm_error"],
     ["cancelled", "cancelled"],
-  ]) {
+  ] as const) {
     if (message.includes(needle)) return category;
   }
   return "operation_failed";

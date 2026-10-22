@@ -542,20 +542,20 @@ export class InstallProgress extends LitElement {
       return localize(
         "views.proxmox.proxmox_progress_view.less_than_a_minute_remaining"
       );
-    } else if (remainingSeconds < 3600) {
-      const minutes = Math.ceil(remainingSeconds / 60);
+    }
+    // Rounded up once, before splitting: 59m 50s left is "1h 0m", never
+    // "60 minutes", and 1h 59m 50s is "2h 0m", never "1h 60m"
+    const totalMinutes = Math.ceil(remainingSeconds / 60);
+    if (totalMinutes < 60) {
       return localize(
         "views.proxmox.proxmox_progress_view.about_value_minutevalue_remaining",
-        { value0: minutes }
-      );
-    } else {
-      const hours = Math.floor(remainingSeconds / 3600);
-      const minutes = Math.ceil((remainingSeconds % 3600) / 60);
-      return localize(
-        "views.proxmox.proxmox_progress_view.about_valueh_valuem_remaining",
-        { value0: hours, value1: minutes }
+        { value0: totalMinutes }
       );
     }
+    return localize(
+      "views.proxmox.proxmox_progress_view.about_valueh_valuem_remaining",
+      { value0: Math.floor(totalMinutes / 60), value1: totalMinutes % 60 }
+    );
   }
 
   private _calculateSpeed(): string {

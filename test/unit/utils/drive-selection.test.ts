@@ -157,6 +157,10 @@ describe("drive-selection", () => {
     expect(readDriveSelection(wizardState.getState().selections)).to.deep.equal(
       driveIdentity(drive)
     );
+    // Shown as the drive's icon on the confirmation screen
+    expect(wizardState.getState().selections.driveType).to.equal("usb_drive");
+    clearDriveSelection();
+    expect(wizardState.getState().selections.driveType).to.be.undefined;
   });
 
   it("clears the serial when clearing or replacing the selection", () => {

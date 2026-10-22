@@ -3,8 +3,8 @@ import { approveProxmoxImport, skipWifiStep } from "./fixtures.js";
 
 for (const [flow, tag, flag] of [
   ["sbc", "progress-view", "_flashError"],
-  ["proxmox", "proxmox-progress-view", "_proxmoxInstallError"],
-  ["vm", "utm-progress-view", "_utmInstallError"],
+  ["proxmox", "proxmox-progress-view", "_vmInstallError"],
+  ["vm", "utm-progress-view", "_vmInstallError"],
 ] as const) {
   test(`${flow} footer retry restores the installation heading focus`, async ({
     page,

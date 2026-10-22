@@ -339,7 +339,9 @@ test.describe("SBC Drive Selection", () => {
   });
 
   test("shows data erasure warning", async ({ page }) => {
-    const warning = page.locator("drive-selection-view .warning");
+    const warning = page.locator(
+      'drive-selection-view inline-notice[variant="warning"]'
+    );
     await expect(warning).toBeVisible();
     await expect(warning).toContainText("Warning");
     await expect(warning).toContainText("erased");

@@ -141,6 +141,24 @@ describe("install-progress", () => {
     );
   });
 
+  it("rounds the ETA up to whole minutes before splitting off the hours", async () => {
+    // 100 bytes a second over the last 100 seconds
+    const eta = async (remainingSeconds: number) => {
+      const el = await fixture<InstallProgress>(
+        html`<install-progress
+          .bytesProcessed=${10_000}
+          .totalBytes=${10_000 + remainingSeconds * 100}
+          .stageStartTime=${Date.now() - 100_000}
+        ></install-progress>`
+      );
+      return el.shadowRoot!.querySelector(".eta")!.textContent;
+    };
+    expect(await eta(30 * 60 - 10)).to.equal("About 30 minutes remaining");
+    expect(await eta(60 * 60 - 10)).to.equal("About 1h 0m remaining");
+    expect(await eta(90 * 60 + 10)).to.equal("About 1h 31m remaining");
+    expect(await eta(120 * 60 - 10)).to.equal("About 2h 0m remaining");
+  });
+
   it("shows error text safely while leaving retry to the owning flow's footer", async () => {
     const el = await fixture<InstallProgress>(
       html`<install-progress

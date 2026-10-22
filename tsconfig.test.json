@@ -1,7 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["mocha"]
+    "types": ["mocha"],
+    // Tests index into what they just rendered, and fail loudly if it isn't there
+    "noUncheckedIndexedAccess": false
   },
   "include": ["src", "test"]
 }

@@ -60,21 +60,21 @@ impl DiskInfo {
 
     pub fn validate_target(&self, system_disks: &HashSet<String>) -> Result<()> {
         if system_disks.contains(&self.device_identifier) {
-            return Err(Error::PermissionDenied(format!(
-                "{} contains a running macOS system volume and cannot be overwritten",
-                self.device_identifier
+            return Err(Error::PermissionDenied(crate::message!(
+                "backend.disk.system_volume",
+                device = self.device_identifier,
             )));
         }
         if !self.is_physical_whole_disk() {
-            return Err(Error::PermissionDenied(format!(
-                "{} is not a physical whole disk and cannot be overwritten",
-                self.device_identifier
+            return Err(Error::PermissionDenied(crate::message!(
+                "backend.disk.not_physical_whole_disk",
+                device = self.device_identifier,
             )));
         }
         if !(self.removable || self.removable_media || self.ejectable) {
-            return Err(Error::PermissionDenied(format!(
-                "{} is not a removable drive and cannot be overwritten",
-                self.device_identifier
+            return Err(Error::PermissionDenied(crate::message!(
+                "backend.disk.not_removable",
+                device = self.device_identifier,
             )));
         }
         Ok(())
@@ -140,8 +140,9 @@ pub(super) fn system_disks(
 }
 
 fn unresolved_system_disk(mount: &str) -> Error {
-    Error::PermissionDenied(format!(
-        "Cannot identify the physical disk containing {mount}; refusing to offer flash targets"
+    Error::PermissionDenied(crate::message!(
+        "backend.disk.system_disk_unknown",
+        mount = mount,
     ))
 }
 

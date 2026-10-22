@@ -146,6 +146,7 @@ export function storeDriveSelection(drive: BlockDevice) {
   wizardState.setSelection("driveModel", identity.model);
   wizardState.setSelection("driveVendor", identity.vendor);
   wizardState.setSelection("driveSerial", identity.serial);
+  wizardState.setSelection("driveType", drive.device_type);
 }
 
 export function clearDriveSelection() {
@@ -155,4 +156,5 @@ export function clearDriveSelection() {
   wizardState.setSelection("driveModel", undefined);
   wizardState.setSelection("driveVendor", undefined);
   wizardState.setSelection("driveSerial", undefined);
+  wizardState.setSelection("driveType", undefined);
 }

@@ -179,11 +179,14 @@ fn find_flash_target<'a>(
     })?;
     if device.size < config.minimum_reported_storage_bytes() {
         // A board minimum, not the image size: a bigger drive is the only fix
-        return Err(CommandError::new(
+        return Err(CommandError::with_message(
             "drive_too_small",
-            format!(
-                "The selected drive is too small. At least a {:.0} GB drive is required.",
-                config.minimum_storage_bytes as f64 / 1_000_000_000.0
+            &hai_core::message!(
+                "backend.disk.drive_too_small",
+                size = format!(
+                    "{:.0}",
+                    config.minimum_storage_bytes as f64 / 1_000_000_000.0
+                ),
             ),
             false,
         ));
@@ -1493,9 +1496,9 @@ mod tests {
     #[tokio::test]
     async fn privilege_failures_abort_before_progress_or_release_lookup() {
         fn not_elevated() -> hai_core::Result<()> {
-            Err(hai_core::Error::PermissionDenied(
-                "Run as administrator".into(),
-            ))
+            Err(hai_core::Error::PermissionDenied(hai_core::message!(
+                "backend.disk.run_as_administrator"
+            )))
         }
         fn query_failed() -> hai_core::Result<()> {
             Err(hai_core::Error::Io(std::io::Error::other(
