@@ -113,6 +113,7 @@ export class HaHardwareConnectInstructions extends LitElement {
   }
 
   private _renderYellowCm5() {
+    const [rpiboot, drivePrompt] = this._yellowCm5PlatformSteps();
     return html`
       <ol>
         <li>
@@ -131,35 +132,59 @@ export class HaHardwareConnectInstructions extends LitElement {
             "views.ha_hardware.connect_instructions.yellow_cm5_recovery"
           )}
         </li>
-        <li>
-          ${localizeContent(
-            "views.ha_hardware.connect_instructions.yellow_cm5_rpiboot",
-            {
-              rpiboot: html`<a
-                href=${RPIBOOT_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                @click=${openExternalLink}
-                >rpiboot</a
-              >`,
-              command: html`<code
-                >sudo ./rpiboot -d mass-storage-gadget64</code
-              >`,
-              shortcut: html`<code
-                >rpiboot-CM4-CM5 - Mass Storage Gadget</code
-              >`,
-              platform: getPlatform(),
-            }
-          )}
-        </li>
+        <li>${rpiboot}</li>
         <li>
           ${localizeContent(
             "views.ha_hardware.connect_instructions.yellow_cm5_drive",
-            { driveName: html`<code>RPi-MSD</code>`, platform: getPlatform() }
+            { driveName: html`<code>RPi-MSD</code>` }
           )}
+          ${drivePrompt}
         </li>
       </ol>
     `;
+  }
+
+  // How to run rpiboot, and what the OS asks when the drive shows up.
+  private _yellowCm5PlatformSteps() {
+    const rpiboot = html`<a
+      href=${RPIBOOT_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      @click=${openExternalLink}
+      >rpiboot</a
+    >`;
+    const command = html`<code>sudo ./rpiboot -d mass-storage-gadget64</code>`;
+    const shortcut = html`<code>rpiboot-CM4-CM5 - Mass Storage Gadget</code>`;
+    switch (getPlatform()) {
+      case "macos":
+        return [
+          localizeContent(
+            "views.ha_hardware.connect_instructions.yellow_cm5_rpiboot_macos",
+            { rpiboot, command }
+          ),
+          localize(
+            "views.ha_hardware.connect_instructions.yellow_cm5_drive_prompt_macos"
+          ),
+        ];
+      case "windows":
+        return [
+          localizeContent(
+            "views.ha_hardware.connect_instructions.yellow_cm5_rpiboot_windows",
+            { rpiboot, shortcut }
+          ),
+          localize(
+            "views.ha_hardware.connect_instructions.yellow_cm5_drive_prompt_windows"
+          ),
+        ];
+      default:
+        return [
+          localizeContent(
+            "views.ha_hardware.connect_instructions.yellow_cm5_rpiboot_linux",
+            { rpiboot, command }
+          ),
+          nothing,
+        ];
+    }
   }
 
   private _renderBlue() {
