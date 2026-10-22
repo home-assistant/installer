@@ -2,9 +2,8 @@ import { localize } from "../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../utils/view-accessibility.js";
 import { customElement, state } from "lit/decorators.js";
-import { pageHeaderStyles } from "../utils/page-header.js";
+import { pageHeaderStyles, renderBackHeader } from "../utils/page-header.js";
 
-import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../components/option-card.js";
 import { getPlatform } from "../utils/platform.js";
 import { isUtmSupported } from "../api/commands.js";
@@ -35,7 +34,7 @@ export class PathSelectionView extends LitElement {
         flex-direction: column;
         align-items: center;
         overflow-y: auto;
-        padding: 1rem 2rem 2rem;
+        padding: 1rem var(--ha-page-gutter, 2rem) 2rem;
       }
 
       /* The auto margins center the options while they fit; once they don't,
@@ -91,11 +90,7 @@ export class PathSelectionView extends LitElement {
 
   render() {
     return html`
-      <div class="header">
-        <wa-button appearance="plain" @click=${this._onBack}>
-          <span slot="start">←</span> ${localize("common.back")}
-        </wa-button>
-      </div>
+      ${renderBackHeader(this._onBack)}
 
       <div class="content">
         <h1>

@@ -27,7 +27,7 @@ export class WelcomeView extends LitElement {
         align-items: center;
         justify-content: center;
         height: 100%;
-        padding: 2rem;
+        padding: 2rem var(--ha-page-gutter, 2rem);
         text-align: center;
         position: relative;
       }

@@ -29,6 +29,9 @@
   --ha-error-border: rgba(219, 68, 55, 0.3);
   /* Behind a plain or outlined button that is hovered or pressed */
   --ha-hover-fill: rgba(0, 0, 0, 0.06);
+  /* Between the window's edges and the header, content and footer of every
+   * screen, so Back, Cancel, Next and the content line up */
+  --ha-page-gutter: 2rem;
 
   /* Map Web Awesome color tokens onto our theme colors. wa-button reads these
    * through its variant -> generic token chain (e.g. variant="brand" resolves
@@ -102,6 +105,14 @@ a {
 
 a:hover {
   text-decoration: underline;
+}
+
+/* A narrow window leaves more of its width to the content. Zooming in narrows
+ * it too: the smallest window, 800px wide, is 400px at 200%. */
+@media (max-width: 600px) {
+  :root {
+    --ha-page-gutter: 1rem;
+  }
 }
 
 @media (prefers-color-scheme: dark) {

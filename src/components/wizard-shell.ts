@@ -53,14 +53,14 @@ export class WizardShell extends LitElement {
       .content {
         flex: 1;
         overflow-y: auto;
-        padding: 2rem;
+        padding: 2rem var(--ha-page-gutter, 2rem);
       }
 
       .footer {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 1rem 2rem;
+        padding: 1rem var(--ha-page-gutter, 2rem);
         border-top: 1px solid var(--ha-border-color, #e0e0e0);
       }
 
