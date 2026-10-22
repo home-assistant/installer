@@ -7123,7 +7123,7 @@ mod tests {
             assert!(updates.iter().any(|update| {
                 update.bytes_processed == 18 && update.message.starts_with("Uploading ")
             }));
-            assert_eq!(updates.last().unwrap().progress, 100);
+            crate::types::assert_progress_shape(&updates, &[FlashStage::Uploading]);
 
             upload_mock.assert_async().await;
             task_mock.assert_async().await;

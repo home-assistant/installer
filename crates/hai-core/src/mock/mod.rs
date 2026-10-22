@@ -9,7 +9,6 @@
 //! Each backend trait is implemented in its own module:
 //! [`release_source`], [`device`], [`proxmox`], [`utm`], [`host`].
 
-use std::path::Path;
 use std::time::Duration;
 
 use crate::types::{FlashProgress, FlashStage};
@@ -25,74 +24,155 @@ mod utm;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BackendMock;
 
-/// Write a small placeholder file so orchestration that inspects the output
-/// (size checks, metadata) still works end-to-end in mock mode.
-pub(crate) fn touch_placeholder(path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, b"mock-image-data")?;
-    Ok(())
-}
+/// How long each simulated update shows: longer than the progress bar's CSS
+/// transition, so the bar settles.
+const STEP: Duration = Duration::from_millis(250);
 
-/// Pretend size of every mock image, so byte counters look plausible.
-const MOCK_IMAGE_BYTES: u64 = 100_000_000;
-
-/// Drive a fake 0→100 progress sweep for a single stage in 5% steps.
-///
-/// Steps are coarse and `step_ms` apart so each update outlives the progress
-/// bar's CSS transition; with finer, faster steps the bar never settles.
+/// Report a stage the way the native backend does: counted from 0 to `total`
+/// bytes in 10% steps, or once at 0% when it has no bytes to count. A stop is
+/// honored before every update.
 pub(crate) async fn simulate<P: ProgressCallback>(
     cb: &P,
     stage: FlashStage,
+    total: u64,
     message: &str,
-    step_ms: u64,
 ) -> Result<()> {
-    for pct in (0..=100).step_by(5) {
+    let steps = if total > 0 { 10 } else { 0 };
+    for step in 0..=steps {
         if cb.is_cancelled() {
             return Err(crate::Error::Cancelled);
         }
 
-        cb.on_progress(FlashProgress {
-            stage: stage.clone(),
-            progress: pct,
-            bytes_processed: u64::from(pct) * (MOCK_IMAGE_BYTES / 100),
-            total_bytes: MOCK_IMAGE_BYTES,
-            message: message.to_string(),
-        });
-        tokio::time::sleep(Duration::from_millis(step_ms)).await;
+        let bytes = total * step / 10;
+        cb.on_progress(FlashProgress::new(stage.clone(), bytes, total, message));
+        tokio::time::sleep(STEP).await;
     }
     Ok(())
 }
 
-/// Simulate a few indeterminate updates (`total_bytes` 0 while bytes grow),
-/// then a single final 100%.
-pub(crate) async fn simulate_indeterminate<P: ProgressCallback>(
-    cb: &P,
-    stage: FlashStage,
-    message: &str,
-    step_ms: u64,
-) -> Result<()> {
-    for step in 1..=8u64 {
-        if cb.is_cancelled() {
-            return Err(crate::Error::Cancelled);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{assert_progress_shape, ProxmoxSession, ProxmoxVmConfig};
+    use crate::{DeviceBackend, ProxmoxBackend, ReleaseSource};
+
+    /// Records every update, and stops once `stop_at` is reported.
+    #[derive(Default)]
+    struct Recorder {
+        updates: std::sync::Mutex<Vec<FlashProgress>>,
+        stop_at: Option<FlashStage>,
+    }
+
+    impl ProgressCallback for Recorder {
+        fn on_progress(&self, progress: FlashProgress) {
+            self.updates.lock().unwrap().push(progress);
         }
 
-        cb.on_progress(FlashProgress {
-            stage: stage.clone(),
-            progress: 0,
-            bytes_processed: step * (MOCK_IMAGE_BYTES / 8),
-            total_bytes: 0,
-            message: message.to_string(),
-        });
-        tokio::time::sleep(Duration::from_millis(step_ms)).await;
+        fn is_cancelled(&self) -> bool {
+            let updates = self.updates.lock().unwrap();
+            updates
+                .iter()
+                .any(|u| Some(&u.stage) == self.stop_at.as_ref())
+        }
     }
-    cb.on_progress(FlashProgress {
-        stage,
-        progress: 100,
-        bytes_processed: MOCK_IMAGE_BYTES,
-        total_bytes: MOCK_IMAGE_BYTES,
-        message: message.to_string(),
-    });
-    Ok(())
+
+    #[tokio::test(start_paused = true)]
+    async fn flash_reports_progress_like_the_native_backend() {
+        use FlashStage::*;
+
+        let directory = tempfile::tempdir().unwrap();
+        let archive = directory.path().join("haos.img.xz");
+        let extracted = directory.path().join("haos.img");
+        let image = &BackendMock.get_haos_release("latest").await.unwrap().images[0];
+        for verify in [true, false] {
+            let progress = Recorder::default();
+            BackendMock
+                .download_image(image, &archive, &progress)
+                .await
+                .unwrap();
+            BackendMock
+                .extract_xz(&archive, &extracted, &progress)
+                .await
+                .unwrap();
+            let written = crate::disk::Image::new(&extracted);
+            BackendMock
+                .write_image(
+                    &written,
+                    "mock-sd-card-32gb",
+                    &Default::default(),
+                    verify,
+                    &progress,
+                )
+                .await
+                .unwrap();
+
+            let mut stages = vec![
+                Downloading,
+                Extracting,
+                Writing,
+                Verifying,
+                Finalizing,
+                Complete,
+            ];
+            stages.retain(|stage| verify || *stage != Verifying);
+            let updates = progress.updates.lock().unwrap();
+            assert_progress_shape(&updates, &stages);
+            // Like natively, the extraction counts the downloaded archive
+            let extracting = updates.iter().find(|u| u.stage == Extracting).unwrap();
+            assert_eq!(extracting.total_bytes, image.size);
+        }
+    }
+
+    fn session() -> ProxmoxSession {
+        ProxmoxSession {
+            server_url: "https://pve.example:8006".into(),
+            ticket: "mock-ticket".into(),
+            csrf_token: "mock-csrf-token".into(),
+            certificate_sha256: None,
+        }
+    }
+
+    fn config() -> ProxmoxVmConfig {
+        ProxmoxVmConfig {
+            node: "pve".into(),
+            storage: "local-lvm".into(),
+            bridge: "vmbr0".into(),
+            vlan_tag: None,
+            vm_id: 100,
+            name: "homeassistant".into(),
+            cpu_cores: 2,
+            memory_mb: 4096,
+            disk_size_gb: 32,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn proxmox_install_reports_progress_like_the_native_backend() {
+        use FlashStage::*;
+
+        let progress = Recorder::default();
+        ProxmoxBackend::create_vm(&BackendMock, &session(), &config(), &progress)
+            .await
+            .unwrap();
+        assert_progress_shape(
+            &progress.updates.lock().unwrap(),
+            &[Downloading, Extracting, Uploading, CreatingVm, StartingVm],
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn proxmox_install_stops_until_the_vm_is_being_created() {
+        for (stop_at, stopped) in [
+            (FlashStage::Uploading, true),
+            (FlashStage::CreatingVm, false),
+        ] {
+            let progress = Recorder {
+                stop_at: Some(stop_at),
+                ..Default::default()
+            };
+            let result =
+                ProxmoxBackend::create_vm(&BackendMock, &session(), &config(), &progress).await;
+            assert_eq!(matches!(result, Err(crate::Error::Cancelled)), stopped);
+        }
+    }
 }

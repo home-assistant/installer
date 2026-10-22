@@ -2836,14 +2836,7 @@ mod tests {
         assert!(result.is_ok());
         mock.assert_async().await;
 
-        // Check that we got progress callbacks
-        let progress_calls = calls.lock().unwrap();
-        assert!(!progress_calls.is_empty());
-        assert!(progress_calls.iter().any(|p| p.progress == 0)); // Start
-        assert!(progress_calls.iter().any(|p| p.progress == 100)); // End
-        assert!(progress_calls
-            .iter()
-            .all(|p| p.stage == FlashStage::Downloading));
+        crate::types::assert_progress_shape(&calls.lock().unwrap(), &[FlashStage::Downloading]);
 
         std::fs::remove_file(&dest).unwrap();
     }
@@ -3001,19 +2994,9 @@ mod tests {
                 .unwrap();
 
             let calls = callback.calls.lock().unwrap();
-            assert_eq!(calls.first().unwrap().progress, 0);
-            assert_eq!(calls.last().unwrap().progress, 100);
-            assert_eq!(calls.last().unwrap().bytes_processed, archive.len() as u64);
+            crate::types::assert_progress_shape(&calls, &[FlashStage::Extracting]);
             assert!(calls[..calls.len() - 1].iter().all(|p| p.progress < 100));
-            assert!(calls.iter().all(|p| {
-                p.stage == FlashStage::Extracting
-                    && p.total_bytes == archive.len() as u64
-                    && p.bytes_processed <= p.total_bytes
-            }));
-            assert!(calls.windows(2).all(|pair| {
-                pair[0].progress <= pair[1].progress
-                    && pair[0].bytes_processed <= pair[1].bytes_processed
-            }));
+            assert!(calls.iter().all(|p| p.total_bytes == archive.len() as u64));
             if callback.expected.len() > 64 * 1024 {
                 assert!(calls.iter().any(|p| p.progress > 0 && p.progress < 99));
             }

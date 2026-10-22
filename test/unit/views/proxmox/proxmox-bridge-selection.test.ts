@@ -1,6 +1,7 @@
 import { expect, fixture, html, waitUntil } from "@open-wc/testing";
 import type { ProxmoxBridge } from "../../../../src/api/types.js";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
+import { findByRole, fullA11ySnapshot } from "../../helpers/a11y.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import type { ProxmoxConfigureView } from "../../../../src/views/proxmox/proxmox-configure-view.js";
 import "../../../../src/views/proxmox/proxmox-configure-view.js";
@@ -190,6 +191,46 @@ describe("Proxmox bridge selection", () => {
     select.dispatchEvent(new Event("change"));
     expect(wizardState.getState().selections.proxmoxConfigureReady).to.be.true;
     expect(wizardState.getState().selections.proxmoxVlanTag).to.equal(42);
+  });
+
+  // Next is disabled while the tag needs another bridge, and only the VLAN
+  // field says why
+  it("keeps Advanced open while a VLAN tag is set", async () => {
+    mockNetworks(() => [
+      bridge("vmbr0"),
+      { ...bridge("vmbr1"), vlan_aware: false },
+    ]);
+    const el = await mount();
+    await ready();
+    await el.updateComplete;
+    const details = el.shadowRoot!.querySelector("wa-details")!;
+    const toggle = async () => {
+      details.shadowRoot!.querySelector("summary")!.click();
+      await details.updateComplete;
+    };
+    await toggle();
+    const input = el.shadowRoot!.querySelector<WaInput>("#vlan-tag")!;
+    input.value = "42";
+    input.dispatchEvent(new Event("input"));
+    await toggle();
+    const select =
+      el.shadowRoot!.querySelector<HTMLSelectElement>("#network-bridge")!;
+    select.value = "vmbr1";
+    select.dispatchEvent(new Event("change"));
+    await el.updateComplete;
+    await details.updateComplete;
+    expect(wizardState.getState().selections.proxmoxConfigureReady).to.be.false;
+    // A closed section leaves the error out of the accessibility tree
+    expect(
+      findByRole(await fullA11ySnapshot(), "StaticText").map(
+        (node) => node.name
+      )
+    ).to.include("Select a VLAN-aware bridge or remove the VLAN tag.");
+    input.value = "";
+    input.dispatchEvent(new Event("input"));
+    await el.updateComplete;
+    await toggle();
+    expect(details.open).to.be.false;
   });
 
   for (const command of [
