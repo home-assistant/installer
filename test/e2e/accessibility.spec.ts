@@ -211,6 +211,81 @@ test("navigation focuses headings without stealing focus on input", async ({
   ).toBeFocused();
 });
 
+test("connecting to Proxmox keeps the focus and says so", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Let's go" }).click();
+  await page.getByRole("button", { name: "Proxmox server" }).click();
+  await page
+    .getByRole("textbox", { name: "Server URL" })
+    .fill("https://pve.test:8006");
+  const password = page.getByRole("textbox", { name: "Password", exact: true });
+  await password.fill("mock-password");
+  await password.press("Enter");
+  // The browser mock takes a moment to log in
+  const next = page.locator("wizard-shell .footer-right wa-button");
+  await expect(next).toHaveText("Connecting...");
+  await expect(next).toHaveAttribute("loading", "");
+  await expect(page.locator("wizard-shell [aria-live=polite]")).toHaveText(
+    "Connecting..."
+  );
+  await expect(password).toBeFocused();
+  await expect(
+    page.getByRole("heading", { name: "Configure virtual machine" })
+  ).toBeFocused();
+});
+
+test("cancelling the erase question returns to Install", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Let's go" }).click();
+  await page
+    .getByRole("button", { name: "Raspberry Pi & other boards" })
+    .click();
+  await page
+    .getByRole("radio", { name: "Raspberry Pi 5", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("radio").first().click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await skipWifiStep(page);
+  // Checking the drive first leaves Install focused, for the dialog to return to
+  const install = page.getByRole("button", { name: "Install", exact: true });
+  await install.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await expect(install).toBeFocused();
+});
+
+test("a VM install moves the focus from Cancel as it hides", async ({
+  page,
+}) => {
+  test.setTimeout(60000);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Let's go" }).click();
+  await page.getByRole("button", { name: "Proxmox server" }).click();
+  await page
+    .getByRole("textbox", { name: "Server URL" })
+    .fill("https://pve.test:8006");
+  await page
+    .getByRole("textbox", { name: "Password", exact: true })
+    .fill("mock-password");
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await approveProxmoxImport(page);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Install", exact: true }).click();
+  const cancel = page.getByRole("button", { name: "Cancel", exact: true });
+  const footer = page.locator("wizard-shell .footer:has(.footer-left)");
+  const before = await footer.boundingBox();
+  await cancel.focus();
+  // Creating the VM can't be stopped, so Cancel goes, in place
+  await expect(cancel).toBeHidden({ timeout: 20000 });
+  await expect(
+    page.locator("proxmox-progress-view").getByRole("heading")
+  ).toBeFocused();
+  expect(await footer.boundingBox()).toEqual(before);
+});
+
 for (const colorScheme of ["light", "dark"] as const) {
   test(`${colorScheme} theme text contrast and reduced motion`, async ({
     page,

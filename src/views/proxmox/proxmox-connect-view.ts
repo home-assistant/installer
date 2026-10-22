@@ -424,6 +424,8 @@ export class ProxmoxConnectView extends LitElement {
   }
 
   render() {
+    // The fields are read-only while connecting, not disabled: that would
+    // take the focus from the one Enter was pressed in
     return html`
       <h2>
         ${localize("views.proxmox.proxmox_connect_view.connect_to_proxmox_ve")}
@@ -450,7 +452,7 @@ export class ProxmoxConnectView extends LitElement {
           .value=${this._serverUrl}
           @input=${this._onServerUrlChange}
           @keydown=${this._onKeyDown}
-          ?disabled=${this._connecting}
+          ?readonly=${this._connecting}
         ></wa-input>
 
         <wa-input
@@ -466,7 +468,7 @@ export class ProxmoxConnectView extends LitElement {
           .value=${this._username}
           @input=${this._onUsernameChange}
           @keydown=${this._onKeyDown}
-          ?disabled=${this._connecting}
+          ?readonly=${this._connecting}
         ></wa-input>
 
         <wa-input
@@ -481,7 +483,7 @@ export class ProxmoxConnectView extends LitElement {
           .value=${this._password}
           @input=${this._onPasswordChange}
           @keydown=${this._onKeyDown}
-          ?disabled=${this._connecting}
+          ?readonly=${this._connecting}
         ></wa-input>
 
         <wa-input
@@ -495,7 +497,7 @@ export class ProxmoxConnectView extends LitElement {
           .value=${this._totp}
           @input=${this._onTotpChange}
           @keydown=${this._onKeyDown}
-          ?disabled=${this._connecting}
+          ?readonly=${this._connecting}
         ></wa-input>
       </div>
       <wa-dialog
