@@ -40,7 +40,7 @@ export class DiagnosticsActions extends LitElement {
       color: var(--ha-text-color);
       background: var(--ha-background-color);
       border: 1px solid var(--ha-border-color, #ccc);
-      border-radius: 4px;
+      border-radius: var(--wa-form-control-border-radius);
       padding: 0.5rem;
     }
     p {

@@ -121,7 +121,7 @@ export class InstallSuccess extends LitElement {
         padding: 1.5rem;
         background-color: var(--ha-card-background, #ffffff);
         border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: 12px;
+        border-radius: var(--ha-card-border-radius, 12px);
       }
 
       .companion-title {
@@ -145,7 +145,7 @@ export class InstallSuccess extends LitElement {
         padding: 0.625rem 1rem;
         background-color: var(--ha-background-color, #f5f5f5);
         border: 1px solid var(--ha-control-border-color, #e0e0e0);
-        border-radius: 8px;
+        border-radius: var(--ha-small-border-radius, 8px);
         color: var(--ha-text-color, #212121);
         text-decoration: none;
         font-size: 0.875rem;
@@ -177,7 +177,7 @@ export class InstallSuccess extends LitElement {
         margin-bottom: 2rem;
         padding: 1rem;
         background-color: rgba(3, 169, 244, 0.1);
-        border-radius: 8px;
+        border-radius: var(--ha-small-border-radius, 8px);
         font-size: 0.875rem;
         color: var(--ha-text-color, #212121);
         text-align: left;

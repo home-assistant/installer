@@ -39,9 +39,9 @@ export class DeviceCard extends WaRadio {
         padding: 1.25rem;
         height: 180px;
         box-sizing: border-box;
-        background-color: var(--wa-color-surface-default);
-        border: 2px solid var(--wa-color-surface-border);
-        border-radius: var(--wa-panel-border-radius);
+        background-color: var(--ha-card-background, #ffffff);
+        border: 2px solid var(--ha-border-color, #e0e0e0);
+        border-radius: var(--ha-card-border-radius, 12px);
         transition:
           border-color 0.2s ease,
           box-shadow 0.2s ease,
@@ -50,7 +50,7 @@ export class DeviceCard extends WaRadio {
 
       .card:hover {
         border-color: var(--ha-primary-color, #03a9f4);
-        box-shadow: var(--wa-shadow-s);
+        box-shadow: var(--ha-card-hover-shadow);
       }
 
       .card:active {
@@ -59,7 +59,7 @@ export class DeviceCard extends WaRadio {
 
       :host(:state(checked)) .card {
         border-color: var(--ha-primary-color, #03a9f4);
-        box-shadow: 0 0 0 3px rgba(3, 169, 244, 0.2);
+        box-shadow: var(--ha-card-selected-shadow);
       }
 
       :host(:focus-visible) .card {
@@ -94,7 +94,7 @@ export class DeviceCard extends WaRadio {
       .name {
         font-size: 0.875rem;
         font-weight: 500;
-        color: var(--wa-color-text-normal);
+        color: var(--ha-text-color, #212121);
         text-align: center;
         margin: 0;
         line-height: 1.3;

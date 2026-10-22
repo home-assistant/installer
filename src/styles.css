@@ -20,7 +20,16 @@
   --ha-inactive-color: #e0e0e0;
   /* Borders of buttons drawn on a card, like the app store links */
   --ha-control-border-color: #e0e0e0;
-  --ha-card-hover-shadow: 0 4px 12px rgba(3, 169, 244, 0.15);
+  /* Glow under a card that is hovered and ring around one that is selected,
+   * in the theme's primary color */
+  --ha-card-hover-shadow: 0 4px 12px
+    color-mix(in srgb, var(--ha-primary-color) 15%, transparent);
+  --ha-card-selected-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--ha-primary-color) 20%, transparent);
+  /* Corners of cards and the tiles picked from, and of the smaller boxes:
+   * notices, and the panels and links set on a card or dialog */
+  --ha-card-border-radius: 12px;
+  --ha-small-border-radius: 8px;
   /* Tinted warning and error boxes */
   --ha-warning-background: rgba(255, 152, 0, 0.1);
   --ha-warning-border: rgba(255, 152, 0, 0.3);
@@ -53,15 +62,21 @@
    * dark mode, which barely shows against the page. */
   --wa-color-neutral-fill-quiet: var(--ha-hover-fill);
 
-  /* Borders of the device and drive cards, wa-select's listbox and
-   * wa-details, so they match every other border */
+  /* Borders of wa-select's listbox and wa-details, so they match every other
+   * border */
   --wa-color-surface-border: var(--ha-border-color);
+  /* Fill of the fields and the architecture choices, and the hints under
+   * fields, so they match the cards. Web Awesome's own fill is a navy darker
+   * than the page in dark mode, its quiet text a bluish grey. */
+  --wa-color-surface-default: var(--ha-card-background);
+  --wa-color-text-quiet: var(--ha-secondary-text-color);
 
   /* wa-dialog surface/text/backdrop. Web Awesome's own dark tokens are gated
    * to WA's neutral palette, so map them to our theme vars instead. */
   --wa-color-surface-raised: var(--ha-card-background);
   --wa-color-text-normal: var(--ha-text-color);
   --wa-color-overlay-modal: rgba(0, 0, 0, 0.5);
+  /* Dialogs, a little rounder than the cards under them */
   --wa-panel-border-radius: 16px;
 
   /* Typography */
@@ -115,7 +130,8 @@ a:hover {
     --ha-border-color: #333333;
     --ha-inactive-color: #444444;
     --ha-control-border-color: #444444;
-    --ha-card-hover-shadow: 0 4px 12px rgba(3, 169, 244, 0.25);
+    --ha-card-hover-shadow: 0 4px 12px
+      color-mix(in srgb, var(--ha-primary-color) 25%, transparent);
     --ha-warning-background: rgba(255, 152, 0, 0.15);
     --ha-warning-border: rgba(255, 152, 0, 0.4);
     --ha-warning-heading-color: #ffb74d;

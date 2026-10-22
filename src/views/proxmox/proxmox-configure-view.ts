@@ -115,7 +115,7 @@ export class ProxmoxConfigureView extends LitElement {
         padding: 1rem 1.25rem;
         background-color: var(--ha-card-background, #ffffff);
         border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: 12px;
+        border-radius: var(--ha-card-border-radius, 12px);
         width: 100%;
         box-sizing: border-box;
         max-width: 500px;
