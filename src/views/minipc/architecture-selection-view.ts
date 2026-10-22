@@ -4,6 +4,7 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
+import { linkStyles } from "../../utils/link-styles.js";
 import { LitElement, html, css } from "lit";
 import {
   ViewAccessibility,
@@ -25,6 +26,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     reducedMotionStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -120,16 +122,18 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         margin: 0 0 0.25rem 0;
       }
 
+      /* The control shade of secondary text stays readable on the selected
+       * card's tinted fill */
       .option-description {
         font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-control-secondary-text-color, #686868);
         margin: 0 0 0.75rem 0;
         line-height: 1.4;
       }
 
       .option-examples {
         font-size: 0.8125rem;
-        color: var(--ha-secondary-text-color, #9e9e9e);
+        color: var(--ha-control-secondary-text-color, #686868);
         margin: 0;
         line-height: 1.4;
       }
@@ -239,8 +243,10 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         )
       ) {
         this._selectedDeviceId = null;
-        wizardState.setSelection("device", undefined);
-        wizardState.setSelection("deviceConfig", undefined);
+        wizardState.setSelections({
+          device: undefined,
+          deviceConfig: undefined,
+        });
       }
       wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
@@ -413,10 +419,12 @@ export class MiniPCArchitectureSelectionView extends LitElement {
 
   private _onSelectDevice(device: Device) {
     this._selectedDeviceId = device.id;
-    wizardState.setSelection("device", device.id);
-    wizardState.setSelection("deviceName", device.name);
-    wizardState.setSelection("deviceImage", device.image_url || "");
-    wizardState.setSelection("deviceConfig", device.haos);
+    wizardState.setSelections({
+      device: device.id,
+      deviceName: device.name,
+      deviceImage: device.image_url || "",
+      deviceConfig: device.haos,
+    });
   }
 }
 

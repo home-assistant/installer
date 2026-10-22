@@ -3,6 +3,7 @@ import { executeServerCommand } from "@web/test-runner-commands";
 export interface AXNode {
   role: string;
   name?: string;
+  description?: string;
   children?: AXNode[];
 }
 

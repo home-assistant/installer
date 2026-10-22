@@ -3,7 +3,8 @@ import { customElement, property } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import type WaSlider from "@home-assistant/webawesome/dist/components/slider/slider.js";
 import "@home-assistant/webawesome/dist/components/slider/slider.js";
-import { formatNumber, localize } from "../localization/localize.js";
+import { localize } from "../localization/localize.js";
+import { formatDiskSize, formatMemory } from "../utils/format.js";
 import { settingStyles } from "../utils/setting-styles.js";
 
 /** What a VM gets, as `resources-change` reports it */
@@ -17,22 +18,6 @@ export function formatCores(cores: number): string {
   return localize("views.proxmox.proxmox_configure_view.value_cores", {
     value0: cores,
   });
-}
-
-export function formatMemory(mb: number): string {
-  return localize("components.drive_card.value_gb", {
-    value0: formatNumber(mb / 1024, { maximumFractionDigits: 20 }),
-  });
-}
-
-export function formatDiskSize(gb: number): string {
-  return gb >= 1024
-    ? localize("components.drive_card.value_tb", {
-        value0: formatNumber(gb / 1024, { maximumFractionDigits: 20 }),
-      })
-    : localize("components.drive_card.value_gb", {
-        value0: formatNumber(gb, { maximumFractionDigits: 20 }),
-      });
 }
 
 function cpuDescription(cores: number): string {
@@ -220,9 +205,12 @@ export class VmResources extends LitElement {
           ><div slot="label" class="setting-header">
             <span class="setting-label">${label}</span
             ><span class="setting-value" aria-hidden="true">${text}</span>
-          </div></wa-slider
+          </div>
+          <!-- The hint describes the slider, so its advice is read out with it -->
+          <p slot="hint" class="setting-description">
+            ${description}
+          </p></wa-slider
         >
-        <p class="setting-description">${description}</p>
       </div>
     </div>`;
   }

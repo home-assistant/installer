@@ -15,11 +15,12 @@
 Everything runs in one workflow,
 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml); there is no
 separate release workflow. It runs on every pull request, on every push to
-`main`, and by hand to make a release. The workflow file is the reference for
+`main`, daily on `main` for the audits alone, and by hand to make a release. The workflow file is the reference for
 the jobs and their steps; in short:
 
 - **Audit** jobs check `package-lock.json` (`npm audit`) and `Cargo.lock`
-  (`cargo audit`) for known vulnerabilities.
+  (`cargo audit`) for known vulnerabilities. On a pull request, `cargo audit`
+  only runs when the pull request changes `Cargo.lock`.
 - **zizmor** lints the workflow itself.
 - **Lint** jobs run ESLint, Prettier, the TypeScript type check, the
   localization catalog check, `cargo fmt`, `cargo shear` and Clippy (on all

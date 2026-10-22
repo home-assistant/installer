@@ -1,5 +1,6 @@
 import { expect, fixture, html, waitUntil } from "@open-wc/testing";
 import { emit } from "@tauri-apps/api/event";
+import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import "../../../src/components/app-shell.js";
 import type { AppShell } from "../../../src/components/app-shell.js";
 import type { ConfirmDialog } from "../../../src/components/confirm-dialog.js";
@@ -26,6 +27,7 @@ const CONNECTED = MOCK_BLOCK_DEVICES[0];
 interface WizardShell extends HTMLElement {
   nextLabel: string;
   nextDisabled: boolean;
+  nextBusy: boolean;
   hideFooter: boolean;
   hideNext: boolean;
   hideCancel: boolean;
@@ -227,14 +229,18 @@ describe("app-shell", () => {
 
     fire(shellOf(el), "wizard-next");
     await waitUntil(() => shellOf(el).nextLabel === "Checking settings...");
-    expect(shellOf(el).nextDisabled).to.be.true;
+    // Busy rather than disabled, so it keeps the focus
+    expect(shellOf(el).nextBusy).to.be.true;
+    expect(shellOf(el).nextDisabled).to.be.false;
+    // Nothing else sends the step on meanwhile either
+    fire(shellOf(el), "wizard-next");
     check.reject(
       ipcError(
         "proxmox_action_required",
         "VM ID 100 can't be used. Choose a different ID."
       )
     );
-    await waitUntil(() => !shellOf(el).nextDisabled);
+    await waitUntil(() => !shellOf(el).nextBusy);
     expect(wizardState.currentStep!.id).to.equal("configure");
     expect(
       shellOf(el)
@@ -257,11 +263,33 @@ describe("app-shell", () => {
     wizardState.previousStep();
     await goToStep(el, "configure");
     await waitUntil(() => !shellOf(el).nextDisabled);
+    expect(shellOf(el).nextBusy).to.be.false;
     expect(shellOf(el).nextLabel).not.to.equal("Checking settings...");
 
     check.resolve(null);
     await settle();
     expect(wizardState.currentStep!.id).to.equal("configure");
+  });
+
+  it("keeps a settings check when an edit leaves the settings as they were", async () => {
+    const check = deferred<unknown>();
+    await enterProxmoxConfigure(el, () => check.promise);
+    fire(shellOf(el), "wizard-next");
+    await waitUntil(() => shellOf(el).nextLabel === "Checking settings...");
+
+    // Every edit saves all settings again; a leading zero keeps the VM ID
+    const vmId = shellOf(el)
+      .querySelector("proxmox-configure-view")!
+      .shadowRoot!.querySelector<WaInput>('wa-input[type="number"]')!;
+    const saved = wizardState.getState().selections;
+    vmId.value = `0${vmId.value}`;
+    vmId.dispatchEvent(new Event("input"));
+    await el.updateComplete;
+    expect(wizardState.getState().selections === saved).to.be.true;
+    expect(shellOf(el).nextLabel).to.equal("Checking settings...");
+
+    check.resolve(null);
+    await waitUntil(() => wizardState.currentStep?.id === "confirm");
   });
 
   for (const [flow, step] of [
@@ -418,12 +446,14 @@ describe("app-shell", () => {
     });
 
     fire(shellOf(el), "wizard-next");
-    await waitUntil(() => shellOf(el).nextDisabled);
+    await waitUntil(() => shellOf(el).nextBusy);
+    expect(shellOf(el).nextLabel).to.equal("Connecting...");
+    expect(shellOf(el).nextDisabled).to.be.false;
     fire(shellOf(el), "wizard-exit");
     await el.updateComplete;
     await enterProxmox();
 
-    expect(shellOf(el).nextDisabled).to.be.false;
+    expect(shellOf(el).nextBusy).to.be.false;
     expect(shellOf(el).nextLabel).to.equal("Next");
     fingerprint.resolve(null);
     await settle();
@@ -450,6 +480,33 @@ describe("app-shell", () => {
     await finishDialogHide(el);
     await waitUntil(() => wizardState.currentStep?.id === "flash");
     expect(shellOf(el).querySelector("progress-view")).to.exist;
+  });
+
+  it("leaves Next as it is while the reinstall question is open", async () => {
+    await enterSbcFlow(el);
+    wizardState.startFlow("ha-hardware");
+    wizardState.setSelection("device", "ha-green");
+    await el.updateComplete;
+    await waitUntil(
+      () => wizardState.getState().selections.deviceCatalogReady === true
+    );
+    await el.updateComplete;
+    const question = () =>
+      shellOf(el)
+        .querySelector("ha-hardware-device-selection-view")!
+        .shadowRoot!.querySelector("info-dialog") as InfoDialog;
+
+    fire(shellOf(el), "wizard-next");
+    await waitUntil(() => question().open);
+    await el.updateComplete;
+    // Not disabled, so the question returns the focus to it
+    expect(shellOf(el).nextDisabled).to.be.false;
+    expect(shellOf(el).nextBusy).to.be.false;
+    expect(shellOf(el).nextLabel).to.equal("Next");
+
+    fire(question(), "dialog-secondary");
+    await settle();
+    expect(wizardState.currentStep?.id).to.equal("device");
   });
 
   describe("selected drive check before erasing", () => {
@@ -522,6 +579,35 @@ describe("app-shell", () => {
         expect(dialogOf(el).hasAttribute("open")).to.be.false;
         // The step before Confirm, Wi-Fi for this board
         expect(wizardState.currentStep!.id).to.equal("wifi");
+      } finally {
+        scan.restore();
+      }
+    });
+
+    it("keeps Install focusable while it checks the drive, once", async () => {
+      const scan = holdDeviceScan();
+      const tauri = (window as unknown as Record<string, unknown>)
+        .__TAURI_INTERNALS__ as { invoke: () => unknown };
+      const invoke = tauri.invoke;
+      let scans = 0;
+      tauri.invoke = () => {
+        scans++;
+        return invoke();
+      };
+      try {
+        fire(shellOf(el), "wizard-next");
+        await waitUntil(() => shellOf(el).nextLabel === "Checking drive...");
+        // Busy rather than disabled: the erase dialog then returns the focus
+        // to it when cancelled
+        expect(shellOf(el).nextBusy).to.be.true;
+        expect(shellOf(el).nextDisabled).to.be.false;
+
+        fire(shellOf(el), "wizard-next");
+        scan.resolve(MOCK_BLOCK_DEVICES);
+        await waitForDialogOpen(el);
+        expect(scans).to.equal(1);
+        expect(shellOf(el).nextBusy).to.be.false;
+        expect(shellOf(el).nextLabel).to.equal("Install");
       } finally {
         scan.restore();
       }
@@ -857,6 +943,26 @@ describe("app-shell", () => {
       await waitUntil(() => shellOf(el).hideFooter, "Cancel stayed");
       expect(stopDialogOf(el).open).to.be.false;
     });
+
+    it("stops asking once the install failed", async () => {
+      // The download keeps running
+      await enterProxmoxInstall(() =>
+        mockTauriIpc(() => new Promise(() => {}))
+      );
+      await waitUntil(() => !shellOf(el).hideFooter, "Cancel never showed");
+      fire(shellOf(el), "wizard-cancel");
+      await el.updateComplete;
+      expect(stopDialogOf(el).open).to.be.true;
+
+      // Without waiting for the view to report it can no longer stop
+      fire(
+        el.shadowRoot!.querySelector("proxmox-progress-view")!,
+        "install-error",
+        { retryable: true }
+      );
+      await el.updateComplete;
+      expect(stopDialogOf(el).open).to.be.false;
+    });
   });
 
   // These flags reveal Cancel and "Try again" on the progress steps. Left
@@ -985,6 +1091,37 @@ describe("app-shell", () => {
       expect(stopDialog.open).to.be.false;
       expect(quitDialogOf(el).open).to.be.true;
     });
+
+    for (const [flow, step, ended] of [
+      ["sbc", "flash", "flash-complete"],
+      ["sbc", "flash", "flash-error"],
+      ["vm", "install", "install-complete"],
+      ["vm", "install", "install-error"],
+    ] as const) {
+      it(`stops asking once the install ended (${ended})`, async () => {
+        // The install keeps running until the test ends it
+        mockTauriIpc(() => new Promise(() => {}), { mockEvents: true });
+        // Reconnecting makes the shell listen through these events
+        const parent = el.parentNode!;
+        el.remove();
+        parent.appendChild(el);
+        await settle();
+        wizardState.startFlow(flow);
+        if (flow === "sbc") selectTargets();
+        await goToStep(el, step);
+        fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+          view: "wizard",
+        });
+        await el.updateComplete;
+        await blockClose();
+        expect(quitDialogOf(el).open).to.be.true;
+
+        fire(shellOf(el), ended);
+        await el.updateComplete;
+
+        expect(quitDialogOf(el).open).to.be.false;
+      });
+    }
 
     it("logs, rather than throws, when it can't listen for close requests", async () => {
       const logged: unknown[] = [];

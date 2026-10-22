@@ -1,4 +1,7 @@
-import { wizardState } from "../../state/wizard-state.js";
+import {
+  wizardState,
+  type WizardSelections,
+} from "../../state/wizard-state.js";
 
 /** Lookups report an expired session as its own code, answered with Reconnect */
 export const SESSION_EXPIRED = "proxmox_session_expired";
@@ -25,12 +28,15 @@ export function needsReconnect(error: unknown): boolean {
  */
 export function forgetProxmoxSession() {
   const session = wizardState.getState().selections.proxmoxSession;
+  const changes: Partial<WizardSelections> = {
+    proxmoxSession: undefined,
+    proxmoxConnected: false,
+  };
   if (session) {
-    wizardState.setSelection("proxmoxPreviousServer", {
+    changes.proxmoxPreviousServer = {
       server_url: session.server_url,
       certificate_sha256: session.certificate_sha256,
-    });
+    };
   }
-  wizardState.setSelection("proxmoxSession", undefined);
-  wizardState.setSelection("proxmoxConnected", false);
+  wizardState.setSelections(changes);
 }

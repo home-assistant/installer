@@ -651,7 +651,12 @@ describe("proxmox-progress-view", () => {
 
       expect(install.stops).to.deep.equal([install.attempt()]);
       expect(el.stoppable, "a second stop has nothing to add").to.be.false;
-      expect(stageTitle(el)).to.equal("Stopping...");
+      expect(stageTitle(el)).to.equal("Stopping");
+      // The thinking cloud adds the ellipsis to the stage title
+      await el.shadowRoot!.querySelector("install-progress")!.updateComplete;
+      expect(
+        progressOf(el).querySelector(".cloud-text")!.textContent!.trim()
+      ).to.equal("Stopping...");
 
       const failed = oneEvent(el, "install-error");
       install.createVm.reject(CANCELLED);
@@ -687,7 +692,7 @@ describe("proxmox-progress-view", () => {
       await completed;
 
       expect(el.hasError).to.be.false;
-      expect(stageTitle(el)).to.not.equal("Stopping...");
+      expect(stageTitle(el)).to.not.equal("Stopping");
     });
 
     it("offers the stop again when the request fails", async () => {
@@ -700,7 +705,7 @@ describe("proxmox-progress-view", () => {
 
       expect(install.stops).to.have.length(1);
       expect(el.stoppable).to.be.true;
-      expect(stageTitle(el)).to.not.equal("Stopping...");
+      expect(stageTitle(el)).to.not.equal("Stopping");
     });
   });
 
