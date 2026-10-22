@@ -137,8 +137,8 @@ test.describe("Other Options View", () => {
     const options = page.locator("other-options-view").locator("option-card");
     const count = await options.count();
 
-    // Should have 5 options
-    expect(count).toBe(5);
+    // Should have 6 options
+    expect(count).toBe(6);
 
     // Each option should have an external icon
     for (let i = 0; i < count; i++) {

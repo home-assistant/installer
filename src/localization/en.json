@@ -145,6 +145,8 @@
   "views.other_options_view.synology_nas": "Synology NAS",
   "views.other_options_view.subtitle": "These options are not directly supported by this installer, but you can follow our documentation to set them up. {link}.",
   "views.other_options_view.windows_virtual_machine": "Windows virtual machine",
+  "views.other_options_view.macos_virtual_machine": "macOS virtual machine",
+  "views.other_options_view.macos_description": "Run Home Assistant OS in VirtualBox or UTM on macOS",
   "views.path_selection_view.proxmox_description": "Create a VM on your Proxmox virtualization server",
   "views.path_selection_view.needs_a_mac_with_apple_silicon": "Needs a Mac with Apple silicon. This Mac has an Intel processor.",
   "views.path_selection_view.other_description": "Other options like Docker can be found in our documentation",

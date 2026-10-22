@@ -32,6 +32,11 @@ const OPTIONS = [
     "windows",
     "https://www.home-assistant.io/installation/windows",
   ],
+  [
+    "macOS virtual machine",
+    "vm",
+    "https://www.home-assistant.io/installation/macos",
+  ],
 ] as const;
 
 const INSTALLATION_TYPES_URL =

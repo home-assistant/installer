@@ -51,6 +51,12 @@ const OTHER_OPTIONS: OtherOption[] = [
     url: "https://www.home-assistant.io/installation/windows",
     icon: "windows",
   },
+  {
+    title: localize("views.other_options_view.macos_virtual_machine"),
+    description: localize("views.other_options_view.macos_description"),
+    url: "https://www.home-assistant.io/installation/macos",
+    icon: "vm",
+  },
 ];
 
 @customElement("other-options-view")
