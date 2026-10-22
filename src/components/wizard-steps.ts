@@ -3,6 +3,7 @@ import { localize } from "../localization/localize.js";
 import { isValidUtmVmName } from "../state/vm-defaults.js";
 import type { WizardFlow, WizardSelections } from "../state/wizard-state.js";
 import { isValidWifi, selectedWifi } from "../utils/wifi.js";
+import type { HaHardwareDeviceSelectionView } from "../views/ha-hardware/device-selection-view.js";
 import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-view.js";
 import type { ProxmoxConnectView } from "../views/proxmox/proxmox-connect-view.js";
 
@@ -79,6 +80,13 @@ export const WIZARD_STEPS: Record<
       render: () =>
         html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`,
       ready: deviceChosen,
+      // The hardware ships with Home Assistant, so reinstalling is the exception
+      beforeNext: {
+        run: (view) =>
+          (view as HaHardwareDeviceSelectionView).confirmReinstall(),
+        label: () => localize("common.next"),
+        until: "flow",
+      },
     },
     drive,
     wifi,

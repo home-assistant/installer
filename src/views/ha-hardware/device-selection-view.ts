@@ -4,7 +4,7 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import {
   ViewAccessibility,
   reducedMotionStyles,
@@ -23,6 +23,7 @@ import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import { clearDriveSelection } from "../../utils/drive-selection.js";
 import "../../components/device-card.js";
+import "../../components/info-dialog.js";
 
 @customElement("ha-hardware-device-selection-view")
 export class HaHardwareDeviceSelectionView extends LitElement {
@@ -107,6 +108,13 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         margin-bottom: 1rem;
       }
 
+      .reinstall-note {
+        margin: 1rem 0 0 0;
+        font-size: 0.9375rem;
+        line-height: 1.6;
+        color: var(--ha-text-color, #212121);
+      }
+
       .hint {
         max-width: 600px;
         margin: 1.5rem 0 0 0;
@@ -129,6 +137,15 @@ export class HaHardwareDeviceSelectionView extends LitElement {
 
   @state()
   private _selectedDeviceId: string | null = null;
+
+  /** Settles the open reinstall question; unset while none is asked. */
+  @state()
+  private _confirmReinstall?: (confirmed: boolean) => void;
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._answerReinstall(false);
+  }
 
   connectedCallback() {
     super.connectedCallback();
@@ -259,7 +276,74 @@ export class HaHardwareDeviceSelectionView extends LitElement {
           "views.ha_hardware.device_selection_view.yellow_compute_module_hint"
         )}
       </p>
+
+      ${this._renderReinstallDialog()}
     `;
+  }
+
+  private _renderReinstallDialog() {
+    const hardware = HA_HARDWARE.find(
+      ({ deviceId }) => deviceId === this._selectedDeviceId
+    );
+    if (!hardware) return nothing;
+    // A Yellow kit may come without a compute module, so nothing is on it yet
+    const yellow = hardware.id === "yellow-cm4" || hardware.id === "yellow-cm5";
+    return html`
+      <info-dialog
+        ?open=${!!this._confirmReinstall}
+        heading=${yellow
+          ? localize(
+              "views.ha_hardware.device_selection_view.yellow_may_be_ready"
+            )
+          : localize("views.ha_hardware.device_selection_view.ready_to_use", {
+              device: haHardwareName(hardware.id),
+            })}
+        message=${yellow
+          ? localize(
+              "views.ha_hardware.device_selection_view.yellow_comes_installed"
+            )
+          : localize("views.ha_hardware.device_selection_view.comes_installed")}
+        primary-label=${yellow
+          ? localize("common.install")
+          : localize("views.ha_hardware.device_selection_view.reinstall")}
+        secondary-label=${localize("common.go_back")}
+        @dialog-primary=${this._onReinstallConfirmed}
+        @dialog-secondary=${this._onReinstallDeclined}
+      >
+        <p class="reinstall-note">
+          ${yellow
+            ? localize("views.ha_hardware.device_selection_view.yellow_install")
+            : localize(
+                "views.ha_hardware.device_selection_view.only_reinstall"
+              )}
+        </p>
+      </info-dialog>
+    `;
+  }
+
+  /**
+   * Official hardware ships with Home Assistant installed, so before going on
+   * ask whether the user really wants to reinstall. Resolves true to go on.
+   */
+  confirmReinstall(): Promise<boolean> {
+    this._answerReinstall(false);
+    return new Promise((resolve) => {
+      this._confirmReinstall = resolve;
+    });
+  }
+
+  private _onReinstallConfirmed() {
+    this._answerReinstall(true);
+  }
+
+  private _onReinstallDeclined() {
+    this._answerReinstall(false);
+  }
+
+  private _answerReinstall(confirmed: boolean) {
+    const resolve = this._confirmReinstall;
+    this._confirmReinstall = undefined;
+    resolve?.(confirmed);
   }
 
   private _onDeviceChange(e: Event) {

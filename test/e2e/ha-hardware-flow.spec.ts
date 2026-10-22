@@ -6,9 +6,20 @@ import { skipWifiStep } from "./fixtures.js";
 
 const next = (page: Page) =>
   page.locator("wizard-shell .footer-right wa-button");
-const back = (page: Page) => page.locator("wizard-shell .header wa-button");
+// The reinstall dialog has a header with a close button of its own
+const back = (page: Page) =>
+  page.locator("wizard-shell .header:has(step-indicator) > wa-button");
 const cancel = (page: Page) =>
   page.locator("wizard-shell .footer-left wa-button");
+
+const reinstallDialog = (page: Page) =>
+  page.locator("ha-hardware-device-selection-view info-dialog");
+
+/** Next on the device step, answering the reinstall question with Continue. */
+async function nextFromDevice(page: Page) {
+  await next(page).click();
+  await reinstallDialog(page).locator('wa-button[variant="brand"]').click();
+}
 
 async function openHaHardware(page: Page) {
   await page.goto("/");
@@ -100,13 +111,36 @@ test.describe("Home Assistant hardware flow", () => {
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
+  test("Next says the device is ready before reinstalling", async ({
+    page,
+  }) => {
+    await openHaHardware(page);
+    await page.locator('device-card[value="ha-green"]').click();
+    await next(page).click();
+
+    const dialog = reinstallDialog(page);
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(
+      "Your Home Assistant Green is ready to use"
+    );
+    await expect(dialog).toContainText("Reinstalling erases everything on it");
+
+    // Go back stays on the device step, with the device still selected
+    await dialog.locator('wa-button[appearance="outlined"]').click();
+    await expect(dialog).not.toBeVisible();
+    await expect(
+      page.locator('device-card[value="ha-green"]')
+    ).toHaveJSProperty("checked", true);
+    await expect(page.locator("drive-selection-view")).toHaveCount(0);
+  });
+
   for (const scenario of scenarios) {
     test(`${scenario.name} goes from drive to next steps`, async ({ page }) => {
       test.setTimeout(60000);
       await openHaHardware(page);
 
       await page.locator(`device-card[value="${scenario.value}"]`).click();
-      await next(page).click();
+      await nextFromDevice(page);
 
       const drive = page.locator("drive-selection-view");
       const instructions = drive.locator("ha-hardware-connect-instructions");
@@ -152,7 +186,7 @@ test.describe("Home Assistant hardware flow", () => {
   test("Back keeps the device and Cancel leaves the flow", async ({ page }) => {
     await openHaHardware(page);
     await page.locator('device-card[value="ha-yellow-cm5"]').click();
-    await next(page).click();
+    await nextFromDevice(page);
     await expect(
       page.locator("ha-hardware-connect-instructions")
     ).toContainText("Set jumper JP1 to USB");
@@ -165,7 +199,7 @@ test.describe("Home Assistant hardware flow", () => {
 
     // Another Yellow is prepared differently, so its instructions follow.
     await page.locator('device-card[value="ha-yellow-cm4"]').click();
-    await next(page).click();
+    await nextFromDevice(page);
     await expect(
       page.locator("ha-hardware-connect-instructions")
     ).toContainText("USB flash drive");

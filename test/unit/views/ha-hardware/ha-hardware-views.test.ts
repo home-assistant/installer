@@ -12,6 +12,7 @@ import "../../../../src/views/ha-hardware/success-view.js";
 import "../../../../src/views/sbc/confirmation-view.js";
 import "../../../../src/views/sbc/drive-selection-view.js";
 import "../../../../src/views/sbc/progress-view.js";
+import type { HaHardwareDeviceSelectionView } from "../../../../src/views/ha-hardware/device-selection-view.js";
 import type { HaHardwareConnectInstructions } from "../../../../src/views/ha-hardware/connect-instructions.js";
 import {
   HA_HARDWARE,
@@ -77,6 +78,68 @@ describe("Home Assistant hardware views", () => {
         "Home Assistant Yellow with CM5",
         "Home Assistant Blue",
       ]);
+    });
+
+    for (const [id, name, heading, action, note] of [
+      [
+        "green",
+        "Home Assistant Green",
+        "Your Home Assistant Green is ready to use",
+        "Reinstall",
+        "Only reinstall to reset or recover it",
+      ],
+      [
+        "blue",
+        "Home Assistant Blue",
+        "Your Home Assistant Blue is ready to use",
+        "Reinstall",
+        "Only reinstall to reset or recover it",
+      ],
+      [
+        "yellow-cm4",
+        "Home Assistant Yellow with CM4",
+        "Your Yellow may be ready to use",
+        "Install",
+        "set up a compute module of your own",
+      ],
+    ] as const) {
+      it(`asks before reinstalling the ${id}`, async () => {
+        select(id, name);
+        const el = await fixture<HaHardwareDeviceSelectionView>(
+          html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
+        );
+        await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
+        const dialog = el.shadowRoot!.querySelector("info-dialog")!;
+        expect(dialog.open).to.equal(false);
+
+        const declined = el.confirmReinstall();
+        await el.updateComplete;
+        expect(dialog.open).to.equal(true);
+        expect(dialog.heading).to.equal(heading);
+        expect(dialog.message).to.contain("homeassistant.local");
+        expect(dialog.primaryLabel).to.equal(action);
+        expect(dialog.textContent).to.contain(note);
+        dialog.dispatchEvent(new CustomEvent("dialog-secondary"));
+        expect(await declined).to.equal(false);
+
+        const confirmed = el.confirmReinstall();
+        await el.updateComplete;
+        dialog.dispatchEvent(new CustomEvent("dialog-primary"));
+        expect(await confirmed).to.equal(true);
+        await el.updateComplete;
+        expect(dialog.open).to.equal(false);
+      });
+    }
+
+    it("declines the reinstall question when the step goes away", async () => {
+      select("green", "Home Assistant Green");
+      const el = await fixture<HaHardwareDeviceSelectionView>(
+        html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
+      );
+      await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
+      const answer = el.confirmReinstall();
+      el.remove();
+      expect(await answer).to.equal(false);
     });
 
     for (const [value, id, board] of [

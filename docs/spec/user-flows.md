@@ -243,6 +243,13 @@ Then continues to drive selection (same as SBC flow).
 └─────────────────────────────────────────────────────────────┘
 ```
 
+Next first opens a dialog saying the device is ready to use: the Green and Blue,
+and a Yellow bought with its compute module, come with Home Assistant installed
+and only need power and Ethernet. A second paragraph says that reinstalling, to
+reset or recover it, erases everything on it. Reinstall (Install for a Yellow,
+which may need a compute module of the user's own set up) goes on; Go back stays
+on the step.
+
 Then continues to drive selection and flashing.
 
 ---
