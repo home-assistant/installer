@@ -12,9 +12,8 @@ import {
 } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
 import { customElement, query, state } from "lit/decorators.js";
-import { getManifest, type Device } from "../../api/index.js";
+import { getManifest, isUtmSupported, type Device } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
-import { getPlatform } from "../../utils/platform.js";
 import type WaButton from "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import type WaRadioGroup from "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
@@ -237,6 +236,10 @@ export class MiniPCArchitectureSelectionView extends LitElement {
   @state()
   private _selectedDeviceId: string | null = null;
 
+  /** Intel Macs can't run the UTM install the note points to. */
+  @state()
+  private _utmSupported = false;
+
   @query("wa-radio-group")
   private _radioGroup?: WaRadioGroup;
 
@@ -263,6 +266,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
 
     try {
       const manifest = await getManifest();
+      this._utmSupported = await isUtmSupported().catch(() => false);
       if (!this.isConnected) return;
       // Find the generic x86-64 and ARM64 devices
       this._x86Device =
@@ -426,7 +430,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
             `
           : ""}
       </wa-radio-group>
-      ${getPlatform() === "macos"
+      ${this._utmSupported
         ? html`<p class="mac-note">
             ${localizeContent(
               "views.minipc.architecture_selection_view.this_mac_note",
