@@ -3,7 +3,8 @@ import { customElement, property } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import type WaSlider from "@home-assistant/webawesome/dist/components/slider/slider.js";
 import "@home-assistant/webawesome/dist/components/slider/slider.js";
-import { formatNumber, localize } from "../localization/localize.js";
+import { localize } from "../localization/localize.js";
+import { formatDiskSize, formatMemory } from "../utils/format.js";
 import { settingStyles } from "../utils/setting-styles.js";
 
 /** What a VM gets, as `resources-change` reports it */
@@ -17,22 +18,6 @@ export function formatCores(cores: number): string {
   return localize("components.vm_resources.cores", {
     count: cores,
   });
-}
-
-export function formatMemory(mb: number): string {
-  return localize("common.size_gb", {
-    size: formatNumber(mb / 1024, { maximumFractionDigits: 20 }),
-  });
-}
-
-export function formatDiskSize(gb: number): string {
-  return gb >= 1024
-    ? localize("common.size_tb", {
-        size: formatNumber(gb / 1024, { maximumFractionDigits: 20 }),
-      })
-    : localize("common.size_gb", {
-        size: formatNumber(gb, { maximumFractionDigits: 20 }),
-      });
 }
 
 function cpuDescription(cores: number): string {

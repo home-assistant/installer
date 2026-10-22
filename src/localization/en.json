@@ -210,7 +210,6 @@
   "common.vm.cores_and_memory": "{cores, plural, one {# CPU core} other {# CPU cores}}, {memory}",
   "common.vm.memory_gb": "{size} GB RAM",
   "views.proxmox.proxmox_confirm_view.name_and_id": "{name} (ID: {id})",
-  "views.utm.utm_confirm_view.memory_mb": "{size} MB RAM",
   "common.confirm.version_summary": "Version {version}",
   "common.vm.virtual_disk_description": "Virtual disk for Home Assistant data",
   "views.proxmox.proxmox_confirm_view.bridge_summary": "Network bridge: {bridge}",

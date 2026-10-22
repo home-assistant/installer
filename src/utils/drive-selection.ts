@@ -140,21 +140,25 @@ export function readDriveSelection(
 /** Record the full identity, not just the path, so it can be re-checked later. */
 export function storeDriveSelection(drive: BlockDevice) {
   const identity = driveIdentity(drive);
-  wizardState.setSelection("drive", identity.id);
-  wizardState.setSelection("driveName", identity.name);
-  wizardState.setSelection("driveSize", identity.size);
-  wizardState.setSelection("driveModel", identity.model);
-  wizardState.setSelection("driveVendor", identity.vendor);
-  wizardState.setSelection("driveSerial", identity.serial);
-  wizardState.setSelection("driveType", drive.device_type);
+  wizardState.setSelections({
+    drive: identity.id,
+    driveName: identity.name,
+    driveSize: identity.size,
+    driveModel: identity.model,
+    driveVendor: identity.vendor,
+    driveSerial: identity.serial,
+    driveType: drive.device_type,
+  });
 }
 
 export function clearDriveSelection() {
-  wizardState.setSelection("drive", undefined);
-  wizardState.setSelection("driveName", undefined);
-  wizardState.setSelection("driveSize", undefined);
-  wizardState.setSelection("driveModel", undefined);
-  wizardState.setSelection("driveVendor", undefined);
-  wizardState.setSelection("driveSerial", undefined);
-  wizardState.setSelection("driveType", undefined);
+  wizardState.setSelections({
+    drive: undefined,
+    driveName: undefined,
+    driveSize: undefined,
+    driveModel: undefined,
+    driveVendor: undefined,
+    driveSerial: undefined,
+    driveType: undefined,
+  });
 }
