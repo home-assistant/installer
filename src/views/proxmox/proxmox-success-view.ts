@@ -56,18 +56,17 @@ export class ProxmoxSuccessView extends LitElement {
 
     return html`
       <install-success
-        .subtitle=${localize(
-          "views.proxmox.proxmox_success_view.home_assistant_is_now_running_on_proxmox_as_value_vm_value_on_node_value",
-          { value0: name, value1: vm_id, value2: node }
-        )}
+        .subtitle=${localize("views.proxmox.proxmox_success_view.subtitle", {
+          name: name,
+          id: vm_id,
+          node: node,
+        })}
         .steps=${[
-          localize(
-            "views.proxmox.proxmox_success_view.wait_a_few_minutes_for_home_assistant_to_complete_its_initial_setup"
-          ),
+          localize("views.proxmox.proxmox_success_view.step_wait"),
           html`${localizeContent(
-            "views.proxmox.proxmox_success_view.open_value_in_your_browser",
+            "views.proxmox.proxmox_success_view.step_open",
             {
-              value0: html`<a
+              url: html`<a
                 href=${haUrl}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -77,14 +76,12 @@ export class ProxmoxSuccessView extends LitElement {
               </a>`,
             }
           )}`,
-          localize(
-            "views.proxmox.proxmox_success_view.create_your_user_account_and_start_automating"
-          ),
+          localize("views.proxmox.proxmox_success_view.step_onboard"),
         ]}
         .tip=${html`${localizeContent(
-          "views.proxmox.proxmox_success_view.value_you_can_manage_your_home_assistant_virtual_machine_anytime_from_the_p",
+          "views.proxmox.proxmox_success_view.manage_tip",
           {
-            value0: html`<strong
+            label: html`<strong
               >${localize("views.proxmox.proxmox_success_view.tip")}</strong
             >`,
           }

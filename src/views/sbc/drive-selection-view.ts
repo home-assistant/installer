@@ -260,18 +260,12 @@ export class DriveSelectionView extends LitElement {
 
   private _subtitle(): string {
     if (this._isMiniPCFlow()) {
-      return localize(
-        "views.sbc.drive_selection_view.choose_the_nvme_ssd_drive_to_install_home_assistant_on"
-      );
+      return localize("views.sbc.drive_selection_view.subtitle_nvme");
     }
     if (this._isHaHardwareFlow()) {
-      return localize(
-        "views.sbc.drive_selection_view.connect_your_device_storage_then_select_it"
-      );
+      return localize("views.sbc.drive_selection_view.connect_device_storage");
     }
-    return localize(
-      "views.sbc.drive_selection_view.choose_the_sd_card_or_usb_drive_to_install_home_assistant_on"
-    );
+    return localize("views.sbc.drive_selection_view.subtitle_removable");
   }
 
   render() {
@@ -287,14 +281,11 @@ export class DriveSelectionView extends LitElement {
 
       <inline-notice>
         <p>
-          ${localizeContent(
-            "views.sbc.drive_selection_view.value_all_data_on_the_selected_drive_will_be_permanently_erased_make_sure_y",
-            {
-              value0: html`<strong
-                >${localize("views.sbc.drive_selection_view.warning")}</strong
-              >`,
-            }
-          )}
+          ${localizeContent("views.sbc.drive_selection_view.erase_warning", {
+            label: html`<strong
+              >${localize("views.sbc.drive_selection_view.warning")}</strong
+            >`,
+          })}
         </p>
       </inline-notice>
 
@@ -307,7 +298,7 @@ export class DriveSelectionView extends LitElement {
               <inline-notice variant="error" icon="🔌">
                 <p>
                   ${localize(
-                    "views.sbc.drive_selection_view.the_drive_you_selected_is_no_longer_available_so_the_selection_was_cleared_"
+                    "views.sbc.drive_selection_view.selection_cleared"
                   )}
                 </p>
               </inline-notice>
@@ -366,16 +357,10 @@ export class DriveSelectionView extends LitElement {
         "views.sbc.drive_selection_view.no_drives_found"
       );
       const emptyText = this._isMiniPCFlow()
-        ? localize(
-            "views.sbc.drive_selection_view.connect_your_drive_using_a_usb_adapter_and_select_refresh"
-          )
+        ? localize("views.sbc.drive_selection_view.no_drives_adapter")
         : this._isHaHardwareFlow()
-          ? localize(
-              "views.sbc.drive_selection_view.connect_the_drive_as_described_above_and_select_refresh"
-            )
-          : localize(
-              "views.sbc.drive_selection_view.insert_an_sd_card_or_usb_drive_and_select_refresh"
-            );
+          ? localize("views.sbc.drive_selection_view.no_drives_described_above")
+          : localize("views.sbc.drive_selection_view.no_drives_removable");
 
       return html`
         <div class="empty-state">
@@ -429,10 +414,9 @@ export class DriveSelectionView extends LitElement {
             const disabled = !isEligibleFlashTarget(drive, config);
             const reason =
               fit === "too-small"
-                ? localize(
-                    "views.sbc.drive_selection_view.minimum_value_drive_required",
-                    { value0: formatBytes(config!.minimum_storage_bytes) }
-                  )
+                ? localize("views.sbc.drive_selection_view.minimum_size", {
+                    size: formatBytes(config!.minimum_storage_bytes),
+                  })
                 : fit === "unavailable"
                   ? localize(
                       "views.sbc.drive_selection_view.drive_capacity_or_board_requirements_unavailable"
@@ -451,8 +435,8 @@ export class DriveSelectionView extends LitElement {
                 .disabledReason=${reason}
                 .capacityWarning=${fit === "below-recommended"
                   ? localize(
-                      "views.sbc.drive_selection_view.a_value_drive_is_recommended_space_for_apps_history_and_backups_will_be_lim",
-                      { value0: formatBytes(config!.recommended_storage_bytes) }
+                      "views.sbc.drive_selection_view.recommended_size",
+                      { size: formatBytes(config!.recommended_storage_bytes) }
                     )
                   : ""}
               ></drive-card>

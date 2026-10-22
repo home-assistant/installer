@@ -98,22 +98,16 @@ export class PathSelectionView extends LitElement {
       </div>
 
       <div class="content">
-        <h1>
-          ${localize(
-            "views.path_selection_view.what_would_you_like_to_install_on"
-          )}
-        </h1>
+        <h1>${localize("views.path_selection_view.title")}</h1>
         <p class="subtitle">
-          ${localize(
-            "views.path_selection_view.select_how_you_want_to_run_home_assistant"
-          )}
+          ${localize("views.path_selection_view.subtitle")}
         </p>
 
         <div class="options-grid">
           <option-card
             heading=${localize("components.app_shell.home_assistant_hardware")}
             description=${localize(
-              "views.path_selection_view.home_assistant_green_yellow_or_blue_by_nabu_casa"
+              "views.path_selection_view.ha_hardware_description"
             )}
             icon="ha-hardware"
             data-path="ha-hardware"
@@ -124,9 +118,7 @@ export class PathSelectionView extends LitElement {
             heading=${localize(
               "components.app_shell.raspberry_pi_other_boards"
             )}
-            description=${localize(
-              "views.path_selection_view.single_board_computers_like_raspberry_pi_odroid_and_more"
-            )}
+            description=${localize("views.path_selection_view.sbc_description")}
             icon="sbc"
             data-path="sbc"
             @click=${this._onSelectPath}
@@ -135,7 +127,7 @@ export class PathSelectionView extends LitElement {
           <option-card
             heading=${localize("components.app_shell.generic_mini_pc")}
             description=${localize(
-              "views.path_selection_view.x86_64_or_arm64_computers_like_beelink_intel_nuc_and_more"
+              "views.path_selection_view.minipc_description"
             )}
             icon="minipc"
             data-path="minipc"
@@ -145,7 +137,7 @@ export class PathSelectionView extends LitElement {
           <option-card
             heading=${localize("components.app_shell.proxmox_server")}
             description=${localize(
-              "views.path_selection_view.create_a_vm_on_your_proxmox_virtualization_server"
+              "views.path_selection_view.proxmox_description"
             )}
             icon="proxmox"
             data-path="proxmox"
@@ -157,7 +149,7 @@ export class PathSelectionView extends LitElement {
           <option-card
             heading=${localize("views.path_selection_view.others")}
             description=${localize(
-              "views.path_selection_view.other_options_like_docker_can_be_found_in_our_documentation"
+              "views.path_selection_view.other_description"
             )}
             icon="others"
             @click=${this._onOtherOptions}
@@ -177,9 +169,7 @@ export class PathSelectionView extends LitElement {
         heading=${localize("components.app_shell.virtual_machine")}
         description=${this._vmNeedsAppleSilicon
           ? localize("views.path_selection_view.needs_a_mac_with_apple_silicon")
-          : localize(
-              "views.path_selection_view.run_home_assistant_in_utm_on_your_mac"
-            )}
+          : localize("views.path_selection_view.utm_description")}
         icon="vm"
         data-path="vm"
         @click=${this._onSelectPath}

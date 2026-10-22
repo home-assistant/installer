@@ -275,11 +275,7 @@ export class UtmCheckView extends LitElement {
   render() {
     return html`
       <h2>${localize("views.utm.utm_check_view.virtual_machine_setup")}</h2>
-      <p class="subtitle">
-        ${localize(
-          "views.utm.utm_check_view.run_home_assistant_in_a_virtual_machine_using_utm"
-        )}
-      </p>
+      <p class="subtitle">${localize("views.utm.utm_check_view.subtitle")}</p>
 
       ${this._unavailable ? "" : this._renderTestingWarning()}
 
@@ -315,24 +311,14 @@ export class UtmCheckView extends LitElement {
           ${localize("views.utm.utm_check_view.best_for_testing_evaluation")}
         </p>
         <p class="warning-description">
-          ${localize(
-            "views.utm.utm_check_view.a_virtual_machine_in_utm_is_great_for_trying_home_assistant_out_but_maybe_n"
-          )}
+          ${localize("views.utm.utm_check_view.testing_notice")}
         </p>
         <ul class="warning-list">
+          <li>${localize("views.utm.utm_check_view.mac_must_stay_on")}</li>
+          <li>${localize("views.utm.utm_check_view.no_autostart")}</li>
           <li>
             ${localize(
-              "views.utm.utm_check_view.your_mac_needs_to_be_running_and_you_need_to_be_logged_in"
-            )}
-          </li>
-          <li>
-            ${localize(
-              "views.utm.utm_check_view.the_virtual_machine_won_t_start_automatically_on_boot"
-            )}
-          </li>
-          <li>
-            ${localize(
-              "views.utm.utm_check_view.for_always_on_home_assistant_dedicated_hardware_is_recommended"
+              "views.utm.utm_check_view.dedicated_hardware_recommended"
             )}
           </li>
         </ul>
@@ -405,9 +391,8 @@ export class UtmCheckView extends LitElement {
             appearance="outlined"
             @click=${this._checkStatus}
           >
-            ${localizeContent("views.utm.utm_check_view.value_try_again", {
-              value0: this._renderRefreshIcon(),
-            })}
+            ${this._renderRefreshIcon()}
+            ${localize("views.utm.utm_check_view.try_again")}
           </wa-button>`
         : ""}
     `;
@@ -434,9 +419,7 @@ export class UtmCheckView extends LitElement {
               : localize("utm.installed")}
           </p>
           <p class="status-description">
-            ${localize(
-              "views.utm.utm_check_view.ready_to_create_a_home_assistant_virtual_machine"
-            )}
+            ${localize("views.utm.utm_check_view.ready")}
           </p>
         </div>
       </div>
@@ -458,9 +441,7 @@ export class UtmCheckView extends LitElement {
             ${localize("views.utm.utm_check_view.utm_is_not_installed")}
           </p>
           <p class="status-description">
-            ${localize(
-              "views.utm.utm_check_view.download_and_install_utm_to_continue_utm_is_a_free_open_source_virtualizati"
-            )}
+            ${localize("views.utm.utm_check_view.not_installed_description")}
           </p>
         </div>
       </div>
@@ -469,18 +450,16 @@ export class UtmCheckView extends LitElement {
         appearance="accent"
         @click=${this._openUtmDownload}
       >
-        ${localizeContent("views.utm.utm_check_view.value_download_utm", {
-          value0: this._renderDownloadIcon(),
-        })}
+        ${this._renderDownloadIcon()}
+        ${localize("views.utm.utm_check_view.download_utm")}
       </wa-button>
       <wa-button
         variant="brand"
         appearance="outlined"
         @click=${this._checkStatus}
       >
-        ${localizeContent("views.utm.utm_check_view.value_i_ve_installed_utm", {
-          value0: this._renderRefreshIcon(),
-        })}
+        ${this._renderRefreshIcon()}
+        ${localize("views.utm.utm_check_view.utm_installed")}
       </wa-button>
     `;
   }

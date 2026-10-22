@@ -81,10 +81,12 @@ names, catalog syntax, and unused entries in CI.
 
 Choose semantic keys for a specific UI meaning, not merely identical English
 wording, and named placeholders such as `version` or `drive`. Storage pools
-and virtual disks have separate keys even when both say "Storage". Before the
-first translation upload, review the initial extracted keys and positional
-placeholders for concise, stable names and translator context; no keys have
-been published to a translation service yet.
+and virtual disks have separate keys even when both say "Storage". Name a key
+after its role, like `title`, `subtitle`, `*_description` or `*_hint`, never
+after its sentence: a key spelled from the copy stops matching it at the next
+copy edit, and renaming a key drops its translations. Never use positional
+placeholders like `value0`; a translator can't tell what goes there. No keys
+have been published to a translation service yet.
 
 Startup reads the OS locale through Tauri's locale-only command permission before
 loading component modules. Browser development uses `navigator.languages`.
@@ -103,9 +105,10 @@ the existing unit basis and rounding: byte formatting uses decimal units
 (1000 bytes is 1 KB) with its existing B/KB/MB/GB/TB labels. IDs, version strings,
 URLs, filenames, IPC names, state keys, and device names are data, not messages.
 
-Backend errors carry a fixed `code`. The frontend maps known codes to fixed
-English messages in `src/utils/installer-error.ts`; moving that map into the
-catalog is a follow-up. Never infer a code from English error text. Copy added by other branches must be extracted when
+Backend errors carry a fixed `code`, and many also carry a `message_key` from
+the catalog's `backend.*` entries. The frontend shows that message, or the
+catalog text for the code from `src/utils/installer-error.ts`. Never infer a
+code from English error text. Copy added by other branches must be extracted when
 those changes are integrated.
 
 ### Code Style

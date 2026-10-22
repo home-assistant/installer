@@ -206,9 +206,7 @@ export class DeviceSelectionView extends LitElement {
     return html`
       <h2>${localize("views.sbc.device_selection_view.select_your_device")}</h2>
       <p class="subtitle">
-        ${localize(
-          "views.sbc.device_selection_view.choose_the_single_board_computer_you_want_to_install_home_assistant_on"
-        )}
+        ${localize("views.sbc.device_selection_view.subtitle")}
       </p>
 
       <wa-radio-group

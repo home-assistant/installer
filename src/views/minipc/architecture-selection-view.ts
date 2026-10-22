@@ -313,9 +313,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         )}
       </h2>
       <p class="subtitle">
-        ${localize(
-          "views.minipc.architecture_selection_view.choose_the_cpu_architecture_of_your_mini_pc"
-        )}
+        ${localize("views.minipc.architecture_selection_view.subtitle")}
       </p>
 
       <wa-radio-group
@@ -345,12 +343,12 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                   </p>
                   <p class="option-description">
                     ${localize(
-                      "views.minipc.architecture_selection_view.standard_pc_architecture_used_by_most_mini_pcs_nucs_and_desktops"
+                      "views.minipc.architecture_selection_view.x86_64_description"
                     )}
                   </p>
                   <p class="option-examples">
                     ${localize(
-                      "views.minipc.architecture_selection_view.examples_intel_nuc_asus_nuc_beelink_gmktec_minisforum_dell_hp"
+                      "views.minipc.architecture_selection_view.x86_64_examples"
                     )}
                   </p>
                 </div>
@@ -375,12 +373,12 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                   </p>
                   <p class="option-description">
                     ${localize(
-                      "views.minipc.architecture_selection_view.arm64_systems_with_uefi_firmware_supported_by_home_assistant_os"
+                      "views.minipc.architecture_selection_view.arm64_description"
                     )}
                   </p>
                   <p class="option-examples">
                     ${localize(
-                      "views.minipc.architecture_selection_view.examples_ampere_based_servers_and_other_uefi_arm64_machines_a_raspberry_pi_"
+                      "views.minipc.architecture_selection_view.arm64_examples"
                     )}
                   </p>
                 </div>
@@ -391,9 +389,9 @@ export class MiniPCArchitectureSelectionView extends LitElement {
       ${getPlatform() === "macos"
         ? html`<p class="mac-note">
             ${localizeContent(
-              "views.minipc.architecture_selection_view.want_home_assistant_on_this_mac_itself_start_over_and_choose_value_to_run_i",
+              "views.minipc.architecture_selection_view.this_mac_hint",
               {
-                value0: html`<strong
+                option: html`<strong
                   >${localize("components.app_shell.virtual_machine")}</strong
                 >`,
               }

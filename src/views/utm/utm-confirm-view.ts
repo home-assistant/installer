@@ -166,9 +166,7 @@ export class UtmConfirmView extends LitElement {
         ${localize("views.proxmox.proxmox_confirm_view.ready_to_install")}
       </h2>
       <p class="subtitle">
-        ${localize(
-          "views.proxmox.proxmox_confirm_view.review_your_virtual_machine_configuration_before_installing"
-        )}
+        ${localize("views.proxmox.proxmox_confirm_view.subtitle")}
       </p>
 
       <div class="summary-card">
@@ -182,8 +180,8 @@ export class UtmConfirmView extends LitElement {
             <p class="summary-value">${vmName}</p>
             <p class="summary-detail">
               ${localizeContent(
-                "views.proxmox.proxmox_confirm_view.value_cpu_cores_value",
-                { value0: cpuCores, value1: this._formatMemory(memoryMb) }
+                "views.proxmox.proxmox_confirm_view.cores_and_memory",
+                { cores: cpuCores, memory: this._formatMemory(memoryMb) }
               )}
             </p>
           </div>
@@ -221,9 +219,9 @@ export class UtmConfirmView extends LitElement {
                 ? localize("common.version_unknown")
                 : this._haosVersion
                   ? localize(
-                      "views.proxmox.proxmox_confirm_view.version_value",
+                      "views.proxmox.proxmox_confirm_view.version_summary",
                       {
-                        value0: this._haosVersion,
+                        version: this._haosVersion,
                       }
                     )
                   : localize("common.loading")}
@@ -241,25 +239,25 @@ export class UtmConfirmView extends LitElement {
 
   private _formatMemory(mb: number): string {
     if (mb >= 1024) {
-      return localize("views.proxmox.proxmox_confirm_view.value_gb_ram", {
-        value0: formatNumber(Number((mb / 1024).toFixed(0)), {
+      return localize("views.proxmox.proxmox_confirm_view.memory_gb", {
+        size: formatNumber(Number((mb / 1024).toFixed(0)), {
           maximumFractionDigits: 0,
         }),
       });
     }
-    return localize("views.proxmox.proxmox_confirm_view.value_mb_ram", {
-      value0: formatNumber(mb, { maximumFractionDigits: 20 }),
+    return localize("views.proxmox.proxmox_confirm_view.memory_mb", {
+      size: formatNumber(mb, { maximumFractionDigits: 20 }),
     });
   }
 
   private _formatDiskSize(gb: number): string {
     if (gb >= 1024) {
-      return localize("components.drive_card.value_tb", {
-        value0: formatNumber(gb / 1024, { maximumFractionDigits: 20 }),
+      return localize("components.drive_card.size_tb", {
+        size: formatNumber(gb / 1024, { maximumFractionDigits: 20 }),
       });
     }
-    return localize("components.drive_card.value_gb", {
-      value0: formatNumber(gb, { maximumFractionDigits: 20 }),
+    return localize("components.drive_card.size_gb", {
+      size: formatNumber(gb, { maximumFractionDigits: 20 }),
     });
   }
 

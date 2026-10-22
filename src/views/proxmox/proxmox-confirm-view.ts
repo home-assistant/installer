@@ -154,9 +154,7 @@ export class ProxmoxConfirmView extends LitElement {
         ${localize("views.proxmox.proxmox_confirm_view.ready_to_install")}
       </h2>
       <p class="subtitle">
-        ${localize(
-          "views.proxmox.proxmox_confirm_view.review_your_virtual_machine_configuration_before_installing"
-        )}
+        ${localize("views.proxmox.proxmox_confirm_view.subtitle")}
       </p>
 
       <div class="summary-card">
@@ -169,21 +167,20 @@ export class ProxmoxConfirmView extends LitElement {
             </p>
             <p class="summary-value">
               ${localizeContent(
-                "views.proxmox.proxmox_confirm_view.node_value",
-                { value0: config.node }
+                "views.proxmox.proxmox_confirm_view.node_summary",
+                { node: config.node }
               )}
             </p>
             <p class="summary-detail">
               ${localizeContent(
-                "views.proxmox.proxmox_confirm_view.storage_value",
-                { value0: config.storage }
+                "views.proxmox.proxmox_confirm_view.storage_summary",
+                { storage: config.storage }
               )}
             </p>
             <p class="summary-detail">
-              ${localize(
-                "views.proxmox.proxmox_confirm_view.network_bridge_value",
-                { value0: config.bridge }
-              )}
+              ${localize("views.proxmox.proxmox_confirm_view.bridge_summary", {
+                bridge: config.bridge,
+              })}
               ${config.vlan_tag != null
                 ? html`<br />${localize(
                       "views.proxmox.proxmox_confirm_view.vlan_tag_value",
@@ -205,16 +202,16 @@ export class ProxmoxConfirmView extends LitElement {
             </p>
             <p class="summary-value">
               ${localizeContent(
-                "views.proxmox.proxmox_confirm_view.value_id_value",
-                { value0: config.name, value1: config.vm_id }
+                "views.proxmox.proxmox_confirm_view.name_and_id",
+                { name: config.name, id: config.vm_id }
               )}
             </p>
             <p class="summary-detail">
               ${localizeContent(
-                "views.proxmox.proxmox_confirm_view.value_cpu_cores_value",
+                "views.proxmox.proxmox_confirm_view.cores_and_memory",
                 {
-                  value0: config.cpu_cores,
-                  value1: this._formatMemory(config.memory_mb),
+                  cores: config.cpu_cores,
+                  memory: this._formatMemory(config.memory_mb),
                 }
               )}
             </p>
@@ -255,9 +252,9 @@ export class ProxmoxConfirmView extends LitElement {
                 ? localize("common.version_unknown")
                 : this._haosVersion
                   ? localize(
-                      "views.proxmox.proxmox_confirm_view.version_value",
+                      "views.proxmox.proxmox_confirm_view.version_summary",
                       {
-                        value0: this._haosVersion,
+                        version: this._haosVersion,
                       }
                     )
                   : localize("common.loading")}
@@ -274,14 +271,14 @@ export class ProxmoxConfirmView extends LitElement {
   }
 
   private _formatMemory(mb: number): string {
-    return localize("views.proxmox.proxmox_confirm_view.value_gb_ram", {
-      value0: formatNumber(mb / 1024, { maximumFractionDigits: 0 }),
+    return localize("views.proxmox.proxmox_confirm_view.memory_gb", {
+      size: formatNumber(mb / 1024, { maximumFractionDigits: 0 }),
     });
   }
 
   private _formatDiskSize(gb: number): string {
-    return localize("components.drive_card.value_gb", {
-      value0: formatNumber(gb, { maximumFractionDigits: 20 }),
+    return localize("components.drive_card.size_gb", {
+      size: formatNumber(gb, { maximumFractionDigits: 20 }),
     });
   }
 

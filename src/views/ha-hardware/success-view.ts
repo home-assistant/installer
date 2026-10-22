@@ -56,15 +56,9 @@ export class HaHardwareSuccessView extends LitElement {
     return html`
       <install-success
         .subtitle=${writesHaos
-          ? localize(
-              "views.sbc.success_view.home_assistant_os_has_been_written_to_your_storage_device"
-            )
-          : localize(
-              "views.ha_hardware.success_view.the_installer_has_been_written_to_your_drive"
-            )}
-        .notice=${localize(
-          "views.sbc.success_view.do_not_format_or_initialize_the_written_drive"
-        )}
+          ? localize("views.sbc.success_view.subtitle")
+          : localize("views.ha_hardware.success_view.subtitle")}
+        .notice=${localize("views.sbc.success_view.do_not_format")}
         .steps=${[
           localize(
             "views.sbc.success_view.eject_the_drive_before_disconnecting"

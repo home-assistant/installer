@@ -303,9 +303,7 @@ export class UtmProgressView extends LitElement {
       if (!vmId) {
         if (selections.utmSupersededVmId) {
           throw new Error(
-            localize(
-              "views.utm.utm_progress_view.a_virtual_machine_was_already_created_with_earlier_settings"
-            )
+            localize("views.utm.utm_progress_view.vm_already_created")
           );
         }
         const pending = selections.utmCreation;
@@ -342,14 +340,11 @@ export class UtmProgressView extends LitElement {
           this._progress = Math.round(setup.progress ?? 0);
         },
         messages: {
-          noAddress: localize(
-            "views.utm.utm_progress_view.the_virtual_machine_did_not_report_an_ip_address"
-          ),
+          noAddress: localize("views.utm.utm_progress_view.no_ip_address"),
           notResponding: (ipAddress) =>
-            localize(
-              "views.utm.utm_progress_view.home_assistant_did_not_respond_at_value_within_5_minutes",
-              { value0: ipAddress }
-            ),
+            localize("views.utm.utm_progress_view.not_responding", {
+              address: ipAddress,
+            }),
           notUpdated: (address) => localize("utm.update_timeout", { address }),
         },
         signal,
@@ -422,11 +417,7 @@ export class UtmProgressView extends LitElement {
 
   private _createVm(config: UtmVmConfig, generation: number): Promise<string> {
     const changed = () =>
-      new Error(
-        localize(
-          "views.utm.utm_progress_view.the_installation_changed_while_the_virtual_machine_was_being_created"
-        )
-      );
+      new Error(localize("views.utm.utm_progress_view.installation_changed"));
     const pending = wizardState.getState().selections.utmCreation;
     if (pending) {
       if (
@@ -640,9 +631,7 @@ export class UtmProgressView extends LitElement {
           "views.proxmox.proxmox_progress_view.waiting_for_home_assistant"
         );
       case "updating":
-        return localize(
-          "views.proxmox.proxmox_progress_view.installing_latest_home_assistant_this_can_take_up_to_20_minutes"
-        );
+        return localize("views.proxmox.proxmox_progress_view.subtitle");
       case "complete":
         return localize("api.commands.installation_complete");
       default:

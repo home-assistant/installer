@@ -231,9 +231,12 @@ export class ConfirmationView extends LitElement {
             <p class="summary-value">${deviceName}</p>
             ${deviceConfig && !installer
               ? html`<p class="summary-detail">
-                  ${localizeContent("views.sbc.confirmation_view.board_value", {
-                    value0: deviceConfig.board,
-                  })}
+                  ${localizeContent(
+                    "views.sbc.confirmation_view.board_summary",
+                    {
+                      board: deviceConfig.board,
+                    }
+                  )}
                 </p>`
               : ""}
           </div>
@@ -301,9 +304,12 @@ export class ConfirmationView extends LitElement {
             ${this._haosVersion === null
               ? localize("common.version_unknown")
               : this._haosVersion
-                ? localize("views.proxmox.proxmox_confirm_view.version_value", {
-                    value0: this._haosVersion,
-                  })
+                ? localize(
+                    "views.proxmox.proxmox_confirm_view.version_summary",
+                    {
+                      version: this._haosVersion,
+                    }
+                  )
                 : localize("common.loading")}
           </p>
           <p class="summary-detail">
@@ -326,9 +332,7 @@ export class ConfirmationView extends LitElement {
           </p>
           <p class="summary-value">${installerName(installer)}</p>
           <p class="summary-detail">
-            ${localize(
-              "views.sbc.confirmation_view.installs_home_assistant_os_on_the_device"
-            )}
+            ${localize("views.sbc.confirmation_view.installer_detail")}
           </p>
         </div>
       </div>

@@ -144,9 +144,7 @@ export class ConfirmDialog extends LitElement {
         ${this._renderDriveDetails()}
         ${this._promptsForPassword()
           ? html`<p class="password-note">
-              ${localize(
-                "components.confirm_dialog.you_may_be_prompted_for_your_password_to_allow_writing_to_the_drive_this_is"
-              )}
+              ${localize("components.confirm_dialog.password_notice")}
             </p>`
           : ""}
 

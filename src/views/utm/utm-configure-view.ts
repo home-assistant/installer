@@ -234,9 +234,7 @@ export class UtmConfigureView extends LitElement {
                 would pull focus out of the field halfway through typing -->
               <span slot="hint" class="name-hint" aria-live="polite"
                 >${this._nameError ??
-                localize(
-                  "views.utm.utm_configure_view.shown_in_utm_s_virtual_machine_list"
-                )}</span
+                localize("views.utm.utm_configure_view.vm_name_hint")}</span
               >
             </wa-input>
           </div>

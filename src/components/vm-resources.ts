@@ -14,24 +14,24 @@ export interface VmResourceValues {
 }
 
 export function formatCores(cores: number): string {
-  return localize("views.proxmox.proxmox_configure_view.value_cores", {
-    value0: cores,
+  return localize("views.proxmox.proxmox_configure_view.cores", {
+    count: cores,
   });
 }
 
 export function formatMemory(mb: number): string {
-  return localize("components.drive_card.value_gb", {
-    value0: formatNumber(mb / 1024, { maximumFractionDigits: 20 }),
+  return localize("components.drive_card.size_gb", {
+    size: formatNumber(mb / 1024, { maximumFractionDigits: 20 }),
   });
 }
 
 export function formatDiskSize(gb: number): string {
   return gb >= 1024
-    ? localize("components.drive_card.value_tb", {
-        value0: formatNumber(gb / 1024, { maximumFractionDigits: 20 }),
+    ? localize("components.drive_card.size_tb", {
+        size: formatNumber(gb / 1024, { maximumFractionDigits: 20 }),
       })
-    : localize("components.drive_card.value_gb", {
-        value0: formatNumber(gb, { maximumFractionDigits: 20 }),
+    : localize("components.drive_card.size_gb", {
+        size: formatNumber(gb, { maximumFractionDigits: 20 }),
       });
 }
 
@@ -66,7 +66,7 @@ function memoryDescription(mb: number): string {
     );
   } else if (gb <= 8) {
     return localize(
-      "views.proxmox.proxmox_configure_view.better_for_add_ons_and_many_integrations"
+      "views.proxmox.proxmox_configure_view.memory_many_integrations"
     );
   }
   return localize(
@@ -84,9 +84,7 @@ function diskDescription(gb: number): string {
       "views.proxmox.proxmox_configure_view.room_for_add_ons_and_history"
     );
   } else if (gb <= 128) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.plenty_of_space_for_long_term_use"
-    );
+    return localize("views.proxmox.proxmox_configure_view.disk_long_term");
   }
   return localize(
     "views.proxmox.proxmox_configure_view.extended_storage_for_recordings_and_backups"

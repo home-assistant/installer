@@ -526,9 +526,7 @@ export class InstallProgress extends LitElement {
       ${this.leavable
         ? nothing
         : html`<p class="stage-description">
-            ${localize(
-              "views.proxmox.proxmox_progress_view.please_keep_this_window_open_during_installation"
-            )}
+            ${localize("views.proxmox.proxmox_progress_view.keep_window_open")}
           </p>`}
     `;
   }
@@ -561,14 +559,13 @@ export class InstallProgress extends LitElement {
     // "60 minutes", and 1h 59m 50s is "2h 0m", never "1h 60m"
     const totalMinutes = Math.ceil(remainingSeconds / 60);
     if (totalMinutes < 60) {
-      return localize(
-        "views.proxmox.proxmox_progress_view.about_value_minutevalue_remaining",
-        { value0: totalMinutes }
-      );
+      return localize("views.proxmox.proxmox_progress_view.minutes_remaining", {
+        minutes: totalMinutes,
+      });
     }
     return localize(
-      "views.proxmox.proxmox_progress_view.about_valueh_valuem_remaining",
-      { value0: Math.floor(totalMinutes / 60), value1: totalMinutes % 60 }
+      "views.proxmox.proxmox_progress_view.hours_minutes_remaining",
+      { hours: Math.floor(totalMinutes / 60), minutes: totalMinutes % 60 }
     );
   }
 
@@ -586,8 +583,8 @@ export class InstallProgress extends LitElement {
     const bytesPerSecond = bytesInStage / elapsed;
     if (bytesPerSecond <= 0 || !isFinite(bytesPerSecond)) return "";
 
-    return localize("views.proxmox.proxmox_progress_view.value_s", {
-      value0: formatBytes(bytesPerSecond),
+    return localize("views.proxmox.proxmox_progress_view.speed", {
+      speed: formatBytes(bytesPerSecond),
     });
   }
 }

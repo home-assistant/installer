@@ -58,9 +58,7 @@ export class MiniPCSetupMethodView extends LitElement {
         ${localize("views.minipc.setup_method_view.how_will_you_install")}
       </h2>
       <p class="subtitle">
-        ${localize(
-          "views.minipc.setup_method_view.choose_how_you_want_to_install_home_assistant_on_your_mini_pc"
-        )}
+        ${localize("views.minipc.setup_method_view.subtitle")}
       </p>
 
       <div class="options">
@@ -70,7 +68,7 @@ export class MiniPCSetupMethodView extends LitElement {
             "views.minipc.setup_method_view.i_can_connect_the_drive"
           )}
           description=${localize(
-            "views.minipc.setup_method_view.connect_the_ssd_or_nvme_drive_from_your_mini_pc_to_this_computer_via_usb_ad"
+            "views.minipc.setup_method_view.connect_drive_description"
           )}
           icon="drive-connect"
           @click=${this._onConnectDrive}
@@ -82,7 +80,7 @@ export class MiniPCSetupMethodView extends LitElement {
             "views.minipc.setup_method_view.i_need_to_boot_from_usb"
           )}
           description=${localize(
-            "views.minipc.setup_method_view.create_a_bootable_usb_drive_to_install_home_assistant_directly_on_the_mini_"
+            "views.minipc.setup_method_view.boot_from_usb_description"
           )}
           icon="usb-boot"
           @click=${this._onUsbBoot}
@@ -96,7 +94,7 @@ export class MiniPCSetupMethodView extends LitElement {
           "views.minipc.setup_method_view.usb_boot_installation"
         )}
         message=${localize(
-          "views.minipc.setup_method_view.creating_bootable_usb_drives_is_not_supported_by_this_installer_however_we_"
+          "views.minipc.setup_method_view.boot_from_usb_unsupported"
         )}
         primary-label=${localize("common.view_instructions")}
         secondary-label=${localize("common.go_back")}

@@ -306,13 +306,12 @@ export class ProxmoxProgressView extends LitElement {
         },
         messages: {
           noAddress: localize(
-            "views.proxmox.proxmox_progress_view.the_virtual_machine_did_not_report_an_ip_address"
+            "views.proxmox.proxmox_progress_view.no_ip_address"
           ),
           notResponding: (ipAddress) =>
-            localize(
-              "views.proxmox.proxmox_progress_view.home_assistant_did_not_respond_at_value_within_5_minutes",
-              { value0: ipAddress }
-            ),
+            localize("views.proxmox.proxmox_progress_view.not_responding", {
+              address: ipAddress,
+            }),
           notUpdated: (address) =>
             localize("views.proxmox.proxmox_progress_view.update_timeout", {
               address,
@@ -573,9 +572,7 @@ export class ProxmoxProgressView extends LitElement {
           "views.proxmox.proxmox_progress_view.waiting_for_home_assistant"
         );
       case "updating":
-        return localize(
-          "views.proxmox.proxmox_progress_view.installing_latest_home_assistant_this_can_take_up_to_20_minutes"
-        );
+        return localize("views.proxmox.proxmox_progress_view.subtitle");
       case "complete":
         return localize("api.commands.installation_complete");
       default:

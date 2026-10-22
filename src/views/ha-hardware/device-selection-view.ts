@@ -248,9 +248,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         )}
       </h2>
       <p class="subtitle">
-        ${localize(
-          "views.ha_hardware.device_selection_view.choose_your_official_home_assistant_hardware_by_nabu_casa"
-        )}
+        ${localize("views.ha_hardware.device_selection_view.subtitle")}
       </p>
 
       <wa-radio-group

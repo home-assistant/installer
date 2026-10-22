@@ -671,9 +671,7 @@ export class ProxmoxConfigureView extends LitElement {
   private get _vlanError(): string | undefined {
     if (!this._vlanTag) return undefined;
     if (this._parsedVlanTag === undefined) {
-      return localize(
-        "views.proxmox.proxmox_configure_view.vlan_tag_must_be_a_whole_number"
-      );
+      return localize("views.proxmox.proxmox_configure_view.vlan_tag_invalid");
     }
     if (
       !this._loadingNodes &&
@@ -683,7 +681,7 @@ export class ProxmoxConfigureView extends LitElement {
         ?.vlan_aware
     ) {
       return localize(
-        "views.proxmox.proxmox_configure_view.select_a_vlan_aware_bridge_or_remove_the_vlan_tag"
+        "views.proxmox.proxmox_configure_view.vlan_needs_aware_bridge"
       );
     }
     return undefined;
@@ -911,10 +909,10 @@ export class ProxmoxConfigureView extends LitElement {
                   (storage) => html`
                     <wa-option value=${storage.name}>
                       ${localize(
-                        "views.proxmox.proxmox_configure_view.value_value_free",
+                        "views.proxmox.proxmox_configure_view.storage_free",
                         {
-                          value0: storage.name,
-                          value1: formatBytes(storage.available),
+                          storage: storage.name,
+                          free: formatBytes(storage.available),
                         }
                       )}
                     </wa-option>
@@ -1009,9 +1007,7 @@ export class ProxmoxConfigureView extends LitElement {
           )}
         </h2>
         <p class="subtitle">
-          ${localize(
-            "views.proxmox.proxmox_configure_view.configure_your_home_assistant_vm_on_proxmox"
-          )}
+          ${localize("views.proxmox.proxmox_configure_view.subtitle")}
         </p>
         <div class="config-card">
           <p class="error-text" role="alert" style="overflow-wrap: anywhere;">
@@ -1040,9 +1036,7 @@ export class ProxmoxConfigureView extends LitElement {
         )}
       </h2>
       <p class="subtitle">
-        ${localize(
-          "views.proxmox.proxmox_configure_view.configure_your_home_assistant_vm_on_proxmox"
-        )}
+        ${localize("views.proxmox.proxmox_configure_view.subtitle")}
       </p>
 
       <div class="config-card">
@@ -1101,9 +1095,9 @@ export class ProxmoxConfigureView extends LitElement {
                           ${`${node.name}${
                             node.cpu_usage != null
                               ? ` ${localize(
-                                  "views.proxmox.proxmox_configure_view.cpu_value",
+                                  "views.proxmox.proxmox_configure_view.node_cpu_usage",
                                   {
-                                    value0: formatNumber(
+                                    percent: formatNumber(
                                       Number(node.cpu_usage.toFixed(1)),
                                       {
                                         minimumFractionDigits: 1,
@@ -1120,9 +1114,7 @@ export class ProxmoxConfigureView extends LitElement {
                   </wa-select>
                 `}
             <p class="setting-description">
-              ${localize(
-                "views.proxmox.proxmox_configure_view.proxmox_node_where_the_vm_will_be_created"
-              )}
+              ${localize("views.proxmox.proxmox_configure_view.node_hint")}
             </p>
           </div>
         </div>
@@ -1149,10 +1141,10 @@ export class ProxmoxConfigureView extends LitElement {
                       (storage) => html`
                         <wa-option value=${storage.name}>
                           ${localize(
-                            "views.proxmox.proxmox_configure_view.value_value_free",
+                            "views.proxmox.proxmox_configure_view.storage_free",
                             {
-                              value0: storage.name,
-                              value1: formatBytes(storage.available),
+                              storage: storage.name,
+                              free: formatBytes(storage.available),
                             }
                           )}
                         </wa-option>
@@ -1161,9 +1153,7 @@ export class ProxmoxConfigureView extends LitElement {
                   </wa-select>
                 `}
             <p class="setting-description">
-              ${localize(
-                "views.proxmox.proxmox_configure_view.storage_location_for_the_vm_disk_image"
-              )}
+              ${localize("views.proxmox.proxmox_configure_view.storage_hint")}
             </p>
           </div>
         </div>
@@ -1209,7 +1199,7 @@ export class ProxmoxConfigureView extends LitElement {
                       html`<p class="error-text" role="alert">
                           ${this._selectedNode
                             ? localize(
-                                "views.proxmox.proxmox_configure_view.no_network_bridges_available_on_this_node"
+                                "views.proxmox.proxmox_configure_view.no_bridges"
                               )
                             : localize(
                                 "views.proxmox.proxmox_configure_view.no_online_proxmox_nodes_found"

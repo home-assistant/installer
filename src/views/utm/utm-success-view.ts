@@ -45,17 +45,15 @@ export class UtmSuccessView extends LitElement {
     return html`
       <install-success
         .subtitle=${html`${localizeContent(
-          "views.utm.utm_success_view.home_assistant_is_now_running_in_utm_as_value",
-          { value0: vmName }
+          "views.utm.utm_success_view.subtitle",
+          { name: vmName }
         )}`}
         .steps=${[
-          localize(
-            "views.proxmox.proxmox_success_view.wait_a_few_minutes_for_home_assistant_to_complete_its_initial_setup"
-          ),
+          localize("views.proxmox.proxmox_success_view.step_wait"),
           html`${localizeContent(
-            "views.proxmox.proxmox_success_view.open_value_in_your_browser",
+            "views.proxmox.proxmox_success_view.step_open",
             {
-              value0: html`<a
+              url: html`<a
                 href=${haUrl}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -65,18 +63,13 @@ export class UtmSuccessView extends LitElement {
               </a>`,
             }
           )}`,
-          localize(
-            "views.proxmox.proxmox_success_view.create_your_user_account_and_start_automating"
-          ),
+          localize("views.proxmox.proxmox_success_view.step_onboard"),
         ]}
-        .tip=${html`${localizeContent(
-          "views.utm.utm_success_view.value_you_can_manage_your_home_assistant_virtual_machine_anytime_by_opening",
-          {
-            value0: html`<strong
-              >${localize("views.proxmox.proxmox_success_view.tip")}</strong
-            >`,
-          }
-        )}`}
+        .tip=${html`${localizeContent("views.utm.utm_success_view.manage_tip", {
+          label: html`<strong
+            >${localize("views.proxmox.proxmox_success_view.tip")}</strong
+          >`,
+        })}`}
       ></install-success>
     `;
   }

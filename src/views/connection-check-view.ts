@@ -87,10 +87,7 @@ export class ConnectionCheckView extends LitElement {
           : localize("views.connection_check_view.unable_to_connect")}
       </h2>
       <p role=${this._error ? "alert" : "status"}>
-        ${this._error ||
-        localize(
-          "views.connection_check_view.connecting_to_home_assistant_s_version_service"
-        )}
+        ${this._error || localize("views.connection_check_view.connecting")}
       </p>
       <div class="actions">
         <wa-button @click=${this._back}>${localize("common.back")}</wa-button>

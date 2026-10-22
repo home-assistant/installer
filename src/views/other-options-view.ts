@@ -23,41 +23,31 @@ const INSTALLATION_TYPES_URL =
 const OTHER_OPTIONS: OtherOption[] = [
   {
     title: localize("views.other_options_view.home_assistant_container"),
-    description: localize(
-      "views.other_options_view.run_it_with_docker_without_apps_add_ons_or_the_supervisor"
-    ),
+    description: localize("views.other_options_view.docker_description"),
     url: "https://www.home-assistant.io/installation/linux#docker-compose",
     icon: "docker",
   },
   {
     title: localize("views.other_options_view.synology_nas"),
-    description: localize(
-      "views.other_options_view.run_home_assistant_container_on_your_synology_nas_using_container_manager"
-    ),
+    description: localize("views.other_options_view.synology_description"),
     url: "https://www.home-assistant.io/installation/alternative#synology-nas",
     icon: "synology",
   },
   {
     title: localize("views.other_options_view.qnap_nas"),
-    description: localize(
-      "views.other_options_view.run_home_assistant_container_on_your_qnap_nas_using_container_station"
-    ),
+    description: localize("views.other_options_view.qnap_description"),
     url: "https://www.home-assistant.io/installation/alternative#qnap-nas",
     icon: "qnap",
   },
   {
     title: localize("views.other_options_view.linux_virtual_machine"),
-    description: localize(
-      "views.other_options_view.run_home_assistant_os_in_kvm_virtualbox_or_vmware_on_linux"
-    ),
+    description: localize("views.other_options_view.linux_description"),
     url: "https://www.home-assistant.io/installation/linux",
     icon: "linux",
   },
   {
     title: localize("views.other_options_view.windows_virtual_machine"),
-    description: localize(
-      "views.other_options_view.run_home_assistant_os_in_hyper_v_virtualbox_or_vmware_on_windows"
-    ),
+    description: localize("views.other_options_view.windows_description"),
     url: "https://www.home-assistant.io/installation/windows",
     icon: "windows",
   },
@@ -129,20 +119,17 @@ export class OtherOptionsView extends LitElement {
           ${localize("views.other_options_view.other_installation_methods")}
         </h1>
         <p class="subtitle">
-          ${localizeContent(
-            "views.other_options_view.these_options_are_not_directly_supported_by_this_installer_but_you_can_foll",
-            {
-              value0: html`<a
-                href=${INSTALLATION_TYPES_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                @click=${openExternalLink}
-                >${localize(
-                  "views.other_options_view.compare_installation_types"
-                )}</a
-              >`,
-            }
-          )}
+          ${localizeContent("views.other_options_view.subtitle", {
+            link: html`<a
+              href=${INSTALLATION_TYPES_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              @click=${openExternalLink}
+              >${localize(
+                "views.other_options_view.compare_installation_types"
+              )}</a
+            >`,
+          })}
         </p>
 
         <div class="options-list">
