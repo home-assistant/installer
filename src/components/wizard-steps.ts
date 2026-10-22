@@ -1,5 +1,6 @@
 import { html, type TemplateResult } from "lit";
 import { localize } from "../localization/localize.js";
+import { isValidUtmVmName } from "../state/vm-defaults.js";
 import type { WizardFlow, WizardSelections } from "../state/wizard-state.js";
 import { isValidWifi, selectedWifi } from "../utils/wifi.js";
 import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-view.js";
@@ -112,7 +113,7 @@ export const WIZARD_STEPS: Record<
       // The name is kept as typed, so a cleared one holds Next back. Until
       // the view first saves there is none, and the default name applies.
       ready: (selections) =>
-        selections.vmName === undefined || selections.vmName.trim() !== "",
+        selections.vmName === undefined || isValidUtmVmName(selections.vmName),
     },
     confirm: { render: () => html`<utm-confirm-view></utm-confirm-view>` },
     install: { render: () => html`<utm-progress-view></utm-progress-view>` },

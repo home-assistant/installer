@@ -19,6 +19,7 @@ import {
   DEFAULT_DISK_SIZE_GB,
   DEFAULT_MEMORY_MB,
   DEFAULT_UTM_VM_NAME,
+  isValidUtmVmName,
 } from "../../state/vm-defaults.js";
 
 @customElement("utm-configure-view")
@@ -211,7 +212,7 @@ export class UtmConfigureView extends LitElement {
   }
 
   private get _nameError(): string | undefined {
-    return this._vmName.trim()
+    return isValidUtmVmName(this._vmName)
       ? undefined
       : localize("views.utm.utm_configure_view.vm_name_required");
   }
@@ -439,15 +440,17 @@ export class UtmConfigureView extends LitElement {
               @input=${this._onNameChange}
               placeholder=${DEFAULT_UTM_VM_NAME}
               .customError=${this._nameError ?? null}
-            ></wa-input>
-            <!-- Not role="alert": ViewAccessibility focuses a new alert, which
-              would pull focus out of the field halfway through typing -->
-            <p class="setting-description name-hint" aria-live="polite">
-              ${this._nameError ??
-              localize(
-                "views.utm.utm_configure_view.shown_in_utm_s_virtual_machine_list"
-              )}
-            </p>
+            >
+              <!-- In the hint slot, so the field describes itself with it.
+                Not role="alert": ViewAccessibility focuses a new alert, which
+                would pull focus out of the field halfway through typing -->
+              <span slot="hint" class="name-hint" aria-live="polite"
+                >${this._nameError ??
+                localize(
+                  "views.utm.utm_configure_view.shown_in_utm_s_virtual_machine_list"
+                )}</span
+              >
+            </wa-input>
           </div>
         </div>
 

@@ -16,6 +16,11 @@ export const DEFAULT_DISK_SIZE_GB = 32;
 /** UTM shows the name in its virtual machine list, so spaces are fine. */
 export const DEFAULT_UTM_VM_NAME = "Home Assistant";
 
+/** Whether UTM can be given this name. The view and the Next check share it. */
+export function isValidUtmVmName(name: string): boolean {
+  return name.trim() !== "";
+}
+
 /** Proxmox names must be hostname-safe (alphanumeric, dash, underscore, dot). */
 export const DEFAULT_PROXMOX_VM_NAME = "home-assistant";
 export const DEFAULT_PROXMOX_VM_ID = 100;

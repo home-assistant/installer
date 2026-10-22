@@ -139,6 +139,8 @@ describe("utm-configure-view", () => {
       expect(
         el.shadowRoot!.querySelector(".name-hint")!.textContent
       ).to.contain("Enter a name for the virtual machine.");
+      // In the input's hint slot, so it is the field's accessible description
+      expect(el.shadowRoot!.querySelector(".name-hint")!.slot).to.equal("hint");
       // The error must not take focus from someone still typing
       expect(el.shadowRoot!.activeElement).to.equal(name);
     }

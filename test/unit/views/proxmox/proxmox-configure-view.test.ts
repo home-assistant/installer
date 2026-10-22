@@ -189,6 +189,10 @@ describe("proxmox-configure-view", () => {
       expect(
         el.shadowRoot!.querySelector(".vm-id-hint")!.textContent
       ).to.contain("Enter a whole number from 100 to 999,999,999.");
+      // In the input's hint slot, so it is the field's accessible description
+      expect(el.shadowRoot!.querySelector(".vm-id-hint")!.slot).to.equal(
+        "hint"
+      );
       // The error must not take focus from someone still typing
       expect(el.shadowRoot!.activeElement).to.equal(vmId);
     }

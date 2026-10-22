@@ -71,6 +71,17 @@ const MAX_VM_ID = 999_999_999;
 
 const CORE_OPTIONS = [2, 4, 6, 8, 10, 12, 16];
 
+/** A whole number from min to max, or undefined */
+function parseWholeNumber(
+  text: string,
+  min: number,
+  max: number
+): number | undefined {
+  if (!/^\d+$/.test(text)) return undefined;
+  const value = Number(text);
+  return value >= min && value <= max ? value : undefined;
+}
+
 function isSessionExpired(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -725,14 +736,7 @@ export class ProxmoxConfigureView extends LitElement {
   }
 
   private get _parsedVlanTag(): number | undefined {
-    if (
-      !/^\d+$/.test(this._vlanTag) ||
-      Number(this._vlanTag) < 1 ||
-      Number(this._vlanTag) > 4094
-    ) {
-      return undefined;
-    }
-    return Number(this._vlanTag);
+    return parseWholeNumber(this._vlanTag, 1, 4094);
   }
 
   private get _vlanError(): string | undefined {
@@ -828,14 +832,7 @@ export class ProxmoxConfigureView extends LitElement {
   }
 
   private get _parsedVmId(): number | undefined {
-    if (
-      !/^\d+$/.test(this._vmIdText) ||
-      Number(this._vmIdText) < MIN_VM_ID ||
-      Number(this._vmIdText) > MAX_VM_ID
-    ) {
-      return undefined;
-    }
-    return Number(this._vmIdText);
+    return parseWholeNumber(this._vmIdText, MIN_VM_ID, MAX_VM_ID);
   }
 
   private get _vmIdError(): string | undefined {
@@ -1270,13 +1267,17 @@ export class ProxmoxConfigureView extends LitElement {
               placeholder="home-assistant"
               maxlength="63"
               .customError=${this._nameError ?? null}
-            ></wa-input>
-            <!-- Not role="alert": ViewAccessibility focuses a new alert, which
-              would pull focus out of the field halfway through typing -->
-            <p class="setting-description name-hint" aria-live="polite">
-              ${this._nameError ??
-              localize("views.proxmox.proxmox_configure_view.vm_name_hint")}
-            </p>
+            >
+              <!-- In the hint slot, so the field describes itself with it.
+                Not role="alert": ViewAccessibility focuses a new alert, which
+                would pull focus out of the field halfway through typing -->
+              <span slot="hint" class="name-hint" aria-live="polite"
+                >${this._nameError ??
+                localize(
+                  "views.proxmox.proxmox_configure_view.vm_name_hint"
+                )}</span
+              >
+            </wa-input>
           </div>
         </div>
 
@@ -1448,14 +1449,15 @@ export class ProxmoxConfigureView extends LitElement {
               min=${MIN_VM_ID}
               max=${MAX_VM_ID}
               .customError=${this._vmIdError ?? null}
-            ></wa-input>
-            <!-- Not role="alert", for the same reason as the name hint -->
-            <p class="setting-description vm-id-hint" aria-live="polite">
-              ${this._vmIdError ??
-              localize(
-                "views.proxmox.proxmox_configure_view.unique_identifier_for_the_virtual_machine"
-              )}
-            </p>
+            >
+              <!-- In the hint slot and not role="alert", like the name hint -->
+              <span slot="hint" class="vm-id-hint" aria-live="polite"
+                >${this._vmIdError ??
+                localize(
+                  "views.proxmox.proxmox_configure_view.unique_identifier_for_the_virtual_machine"
+                )}</span
+              >
+            </wa-input>
           </div>
         </div>
 
