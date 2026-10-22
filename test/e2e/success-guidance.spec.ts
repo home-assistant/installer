@@ -158,7 +158,13 @@ test("a Wi-Fi network set on its own step replaces the cable step", async ({
   await step.locator("#wifi-ssid").fill("Home");
   await step.locator("#wifi-password").fill("1234567");
   await expect(next(page)).toHaveJSProperty("disabled", true);
+  // Leaving the field says why Next is off
+  const tooShort = step.getByText("Use at least 8 characters.");
+  await expect(tooShort).toHaveCount(0);
+  await step.locator("#wifi-password").blur();
+  await expect(tooShort).toBeVisible();
   await step.locator("#wifi-password").fill("12345678");
+  await expect(tooShort).toHaveCount(0);
   await expect(next(page)).toHaveJSProperty("disabled", false);
   await next(page).click();
 

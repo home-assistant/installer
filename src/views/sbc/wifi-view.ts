@@ -4,7 +4,7 @@ import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import type { WifiConfig } from "../../api/types.js";
-import { ssidTooLong } from "../../utils/wifi.js";
+import { ssidProblem, wifiPasswordProblem } from "../../utils/wifi.js";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import type WaSwitch from "@home-assistant/webawesome/dist/components/switch/switch.js";
 import "@home-assistant/webawesome/dist/components/input/input.js";
@@ -63,6 +63,14 @@ export class WifiView extends LitElement {
   @state()
   private _wizardState: WizardState = wizardState.getState();
 
+  // Fields left at least once. Until then an empty or short value may still
+  // be on its way; one filled in on an earlier visit to this step is done.
+  @state()
+  private _ssidLeft = !!this._wizardState.selections.wifi?.ssid;
+
+  @state()
+  private _passwordLeft = !!this._wizardState.selections.wifi?.password;
+
   private _unsubscribe?: () => void;
 
   connectedCallback() {
@@ -79,6 +87,8 @@ export class WifiView extends LitElement {
 
   render() {
     const wifi = this._wizardState.selections.wifi;
+    const ssidError = wifi && this._ssidError(wifi.ssid);
+    const passwordError = wifi && this._passwordError(wifi.password);
     return html`
       <h2>${localize("views.sbc.wifi_view.title")}</h2>
       <p class="subtitle">${localize("views.sbc.wifi_view.subtitle")}</p>
@@ -92,26 +102,40 @@ export class WifiView extends LitElement {
               <wa-input
                 input-id="wifi-ssid"
                 label=${localize("views.sbc.wifi_view.network")}
-                hint=${ssidTooLong(wifi.ssid)
-                  ? localize("views.sbc.wifi_view.network_too_long")
-                  : ""}
                 autocomplete="off"
                 autocapitalize="off"
                 autocorrect="off"
                 .spellcheck=${false}
                 .value=${wifi.ssid}
+                .customError=${ssidError ?? null}
                 @input=${this._onSsidInput}
-              ></wa-input>
+                @blur=${this._onSsidBlur}
+              >
+                <!-- In the hint slot, so the field describes itself with it.
+                  Not role="alert": ViewAccessibility focuses a new alert, which
+                  would pull focus out of the field halfway through typing -->
+                <span slot="hint" class="ssid-hint" aria-live="polite"
+                  >${ssidError ?? ""}</span
+                >
+              </wa-input>
               <wa-input
                 type="password"
                 input-id="wifi-password"
                 label=${localize("views.sbc.wifi_view.password")}
-                hint=${localize("views.sbc.wifi_view.password_hint")}
                 autocomplete="off"
                 password-toggle
                 .value=${wifi.password}
+                .customError=${passwordError ?? null}
                 @input=${this._onPasswordInput}
-              ></wa-input>
+                @blur=${this._onPasswordBlur}
+              >
+                <!-- In the hint slot and not role="alert", like the network
+                  name's -->
+                <span slot="hint" class="password-hint" aria-live="polite"
+                  >${passwordError ??
+                  localize("views.sbc.wifi_view.password_hint")}</span
+                >
+              </wa-input>
             `
           : nothing}
       </div>
@@ -119,11 +143,57 @@ export class WifiView extends LitElement {
     `;
   }
 
+  /** Why Next is off because of the network name, once that is clear. */
+  private _ssidError(ssid: string): string | undefined {
+    switch (ssidProblem(ssid)) {
+      case "missing":
+        // Not before the step is used, but once a field was left the empty
+        // name is what holds Next back
+        return this._ssidLeft || this._passwordLeft
+          ? localize("views.sbc.wifi_view.network_missing")
+          : undefined;
+      case "too_long":
+        return localize("views.sbc.wifi_view.network_too_long");
+      case "control_characters":
+        return localize("views.sbc.wifi_view.network_control_characters");
+      default:
+        return undefined;
+    }
+  }
+
+  /** Why Next is off because of the password, once that is clear. */
+  private _passwordError(password: string): string | undefined {
+    switch (wifiPasswordProblem(password)) {
+      case "characters":
+        return localize("views.sbc.wifi_view.password_characters");
+      case "too_long":
+        return localize("views.sbc.wifi_view.password_too_long");
+      case "too_short":
+        // Every password is too short while it's being typed
+        return this._passwordLeft
+          ? localize("views.sbc.wifi_view.password_too_short")
+          : undefined;
+      default:
+        return undefined;
+    }
+  }
+
   private _onToggle(e: Event) {
+    // Fresh fields, so nothing to point out until they're used
+    this._ssidLeft = false;
+    this._passwordLeft = false;
     wizardState.setSelection(
       "wifi",
       (e.target as WaSwitch).checked ? { ssid: "", password: "" } : undefined
     );
+  }
+
+  private _onSsidBlur() {
+    this._ssidLeft = true;
+  }
+
+  private _onPasswordBlur() {
+    this._passwordLeft = true;
   }
 
   private _onSsidInput(e: Event) {
