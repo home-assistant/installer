@@ -6,6 +6,7 @@ import {
 } from "../utils/view-accessibility.js";
 import { customElement } from "lit/decorators.js";
 import { pageHeaderStyles } from "../utils/page-header.js";
+import { linkStyles } from "../utils/link-styles.js";
 import "../components/option-card.js";
 import { openExternalLink, openExternalUrl } from "../utils/external-url.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
@@ -69,6 +70,7 @@ export class OtherOptionsView extends LitElement {
   static styles = [
     reducedMotionStyles,
     pageHeaderStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -108,10 +110,6 @@ export class OtherOptionsView extends LitElement {
         gap: 1rem;
         max-width: 600px;
         width: 100%;
-      }
-
-      .subtitle a {
-        color: var(--ha-primary-color, #03a9f4);
       }
     `,
   ];

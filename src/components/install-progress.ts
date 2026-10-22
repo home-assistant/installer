@@ -15,6 +15,7 @@ import "./progress-bar.js";
 import "./inline-notice.js";
 import { renderErrorHelp } from "../utils/installer-error.js";
 import { openExternalLink } from "../utils/external-url.js";
+import { linkStyles } from "../utils/link-styles.js";
 import {
   LiveStatus,
   ReducedSvgMotion,
@@ -37,6 +38,7 @@ export class InstallProgress extends LitElement {
   static styles = [
     srOnlyStyles,
     reducedMotionStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -324,16 +326,6 @@ export class InstallProgress extends LitElement {
         margin: 0 0 1rem 0;
         text-align: center;
         overflow-wrap: anywhere;
-      }
-
-      .address a {
-        color: var(--ha-primary-color, #03a9f4);
-        text-decoration: none;
-        font-weight: 500;
-      }
-
-      .address a:hover {
-        text-decoration: underline;
       }
 
       .stage-description {

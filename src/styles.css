@@ -95,15 +95,6 @@ body {
   overflow: hidden;
 }
 
-a {
-  color: var(--ha-primary-color);
-  text-decoration: none;
-}
-
-a:hover {
-  text-decoration: underline;
-}
-
 @media (prefers-color-scheme: dark) {
   :root {
     --ha-primary-color: #7bd4fb;

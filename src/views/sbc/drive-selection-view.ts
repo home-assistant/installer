@@ -4,6 +4,7 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
+import { linkStyles } from "../../utils/link-styles.js";
 import { LitElement, html, css } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import {
@@ -38,6 +39,7 @@ export class DriveSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     reducedMotionStyles,
+    linkStyles,
     css`
       :host {
         display: flex;

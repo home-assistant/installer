@@ -3,6 +3,7 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
+import { linkStyles } from "../../utils/link-styles.js";
 import { formatNumber, localize } from "../../localization/localize.js";
 import { LitElement, html, css, noChange } from "lit";
 import {
@@ -85,6 +86,7 @@ export class ProxmoxConfigureView extends LitElement {
   static styles = [
     reducedMotionStyles,
     settingStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -152,7 +154,6 @@ export class ProxmoxConfigureView extends LitElement {
 
       .import-setting a {
         font-size: 0.875rem;
-        color: var(--ha-primary-color, #03a9f4);
       }
     `,
   ];
