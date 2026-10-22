@@ -162,27 +162,21 @@ export class UtmConfirmView extends LitElement {
     const diskSizeGb = selections.diskSizeGb || DEFAULT_DISK_SIZE_GB;
 
     return html`
-      <h2>
-        ${localize("views.proxmox.proxmox_confirm_view.ready_to_install")}
-      </h2>
-      <p class="subtitle">
-        ${localize("views.proxmox.proxmox_confirm_view.subtitle")}
-      </p>
+      <h2>${localize("common.confirm.ready_to_install")}</h2>
+      <p class="subtitle">${localize("common.vm.confirm_subtitle")}</p>
 
       <div class="summary-card">
         <!-- VM Configuration -->
         <div class="summary-row">
           <div class="icon-container">${this._renderVmIcon()}</div>
           <div class="summary-info">
-            <p class="summary-label">
-              ${localize("components.app_shell.virtual_machine")}
-            </p>
+            <p class="summary-label">${localize("common.virtual_machine")}</p>
             <p class="summary-value">${vmName}</p>
             <p class="summary-detail">
-              ${localizeContent(
-                "views.proxmox.proxmox_confirm_view.cores_and_memory",
-                { cores: cpuCores, memory: this._formatMemory(memoryMb) }
-              )}
+              ${localizeContent("common.vm.cores_and_memory", {
+                cores: cpuCores,
+                memory: this._formatMemory(memoryMb),
+              })}
             </p>
           </div>
         </div>
@@ -196,9 +190,7 @@ export class UtmConfirmView extends LitElement {
             <p class="summary-label">${localize("vm.disk_storage")}</p>
             <p class="summary-value">${this._formatDiskSize(diskSizeGb)}</p>
             <p class="summary-detail">
-              ${localize(
-                "views.proxmox.proxmox_confirm_view.virtual_disk_for_home_assistant_data"
-              )}
+              ${localize("common.vm.virtual_disk_description")}
             </p>
           </div>
         </div>
@@ -210,26 +202,19 @@ export class UtmConfirmView extends LitElement {
           <div class="icon-container">${this._renderHaIcon()}</div>
           <div class="summary-info">
             <p class="summary-label">
-              ${localize(
-                "views.proxmox.proxmox_confirm_view.home_assistant_operating_system"
-              )}
+              ${localize("common.confirm.home_assistant_operating_system")}
             </p>
             <p class="summary-value">
               ${this._haosVersion === null
                 ? localize("common.version_unknown")
                 : this._haosVersion
-                  ? localize(
-                      "views.proxmox.proxmox_confirm_view.version_summary",
-                      {
-                        version: this._haosVersion,
-                      }
-                    )
+                  ? localize("common.confirm.version_summary", {
+                      version: this._haosVersion,
+                    })
                   : localize("common.loading")}
             </p>
             <p class="summary-detail">
-              ${localize(
-                "views.proxmox.proxmox_confirm_view.latest_stable_release"
-              )}
+              ${localize("common.confirm.latest_stable_release")}
             </p>
           </div>
         </div>
@@ -239,24 +224,24 @@ export class UtmConfirmView extends LitElement {
 
   private _formatMemory(mb: number): string {
     if (mb >= 1024) {
-      return localize("views.proxmox.proxmox_confirm_view.memory_gb", {
+      return localize("common.vm.memory_gb", {
         size: formatNumber(Number((mb / 1024).toFixed(0)), {
           maximumFractionDigits: 0,
         }),
       });
     }
-    return localize("views.proxmox.proxmox_confirm_view.memory_mb", {
+    return localize("views.utm.utm_confirm_view.memory_mb", {
       size: formatNumber(mb, { maximumFractionDigits: 20 }),
     });
   }
 
   private _formatDiskSize(gb: number): string {
     if (gb >= 1024) {
-      return localize("components.drive_card.size_tb", {
+      return localize("common.size_tb", {
         size: formatNumber(gb / 1024, { maximumFractionDigits: 20 }),
       });
     }
-    return localize("components.drive_card.size_gb", {
+    return localize("common.size_gb", {
       size: formatNumber(gb, { maximumFractionDigits: 20 }),
     });
   }

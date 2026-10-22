@@ -150,21 +150,15 @@ export class ProxmoxConfirmView extends LitElement {
     const config = proxmoxVmConfig(this._wizardState.selections);
 
     return html`
-      <h2>
-        ${localize("views.proxmox.proxmox_confirm_view.ready_to_install")}
-      </h2>
-      <p class="subtitle">
-        ${localize("views.proxmox.proxmox_confirm_view.subtitle")}
-      </p>
+      <h2>${localize("common.confirm.ready_to_install")}</h2>
+      <p class="subtitle">${localize("common.vm.confirm_subtitle")}</p>
 
       <div class="summary-card">
         <!-- Proxmox Server -->
         <div class="summary-row">
           <div class="icon-container">${this._renderProxmoxIcon()}</div>
           <div class="summary-info">
-            <p class="summary-label">
-              ${localize("components.app_shell.proxmox_server")}
-            </p>
+            <p class="summary-label">${localize("common.proxmox_server")}</p>
             <p class="summary-value">
               ${localizeContent(
                 "views.proxmox.proxmox_confirm_view.node_summary",
@@ -197,9 +191,7 @@ export class ProxmoxConfirmView extends LitElement {
         <div class="summary-row">
           <div class="icon-container">${this._renderVmIcon()}</div>
           <div class="summary-info">
-            <p class="summary-label">
-              ${localize("components.app_shell.virtual_machine")}
-            </p>
+            <p class="summary-label">${localize("common.virtual_machine")}</p>
             <p class="summary-value">
               ${localizeContent(
                 "views.proxmox.proxmox_confirm_view.name_and_id",
@@ -207,13 +199,10 @@ export class ProxmoxConfirmView extends LitElement {
               )}
             </p>
             <p class="summary-detail">
-              ${localizeContent(
-                "views.proxmox.proxmox_confirm_view.cores_and_memory",
-                {
-                  cores: config.cpu_cores,
-                  memory: this._formatMemory(config.memory_mb),
-                }
-              )}
+              ${localizeContent("common.vm.cores_and_memory", {
+                cores: config.cpu_cores,
+                memory: this._formatMemory(config.memory_mb),
+              })}
             </p>
           </div>
         </div>
@@ -229,9 +218,7 @@ export class ProxmoxConfirmView extends LitElement {
               ${this._formatDiskSize(config.disk_size_gb)}
             </p>
             <p class="summary-detail">
-              ${localize(
-                "views.proxmox.proxmox_confirm_view.virtual_disk_for_home_assistant_data"
-              )}
+              ${localize("common.vm.virtual_disk_description")}
             </p>
           </div>
         </div>
@@ -243,26 +230,19 @@ export class ProxmoxConfirmView extends LitElement {
           <div class="icon-container">${this._renderHaIcon()}</div>
           <div class="summary-info">
             <p class="summary-label">
-              ${localize(
-                "views.proxmox.proxmox_confirm_view.home_assistant_operating_system"
-              )}
+              ${localize("common.confirm.home_assistant_operating_system")}
             </p>
             <p class="summary-value">
               ${this._haosVersion === null
                 ? localize("common.version_unknown")
                 : this._haosVersion
-                  ? localize(
-                      "views.proxmox.proxmox_confirm_view.version_summary",
-                      {
-                        version: this._haosVersion,
-                      }
-                    )
+                  ? localize("common.confirm.version_summary", {
+                      version: this._haosVersion,
+                    })
                   : localize("common.loading")}
             </p>
             <p class="summary-detail">
-              ${localize(
-                "views.proxmox.proxmox_confirm_view.latest_stable_release"
-              )}
+              ${localize("common.confirm.latest_stable_release")}
             </p>
           </div>
         </div>
@@ -271,13 +251,13 @@ export class ProxmoxConfirmView extends LitElement {
   }
 
   private _formatMemory(mb: number): string {
-    return localize("views.proxmox.proxmox_confirm_view.memory_gb", {
+    return localize("common.vm.memory_gb", {
       size: formatNumber(mb / 1024, { maximumFractionDigits: 0 }),
     });
   }
 
   private _formatDiskSize(gb: number): string {
-    return localize("components.drive_card.size_gb", {
+    return localize("common.size_gb", {
       size: formatNumber(gb, { maximumFractionDigits: 20 }),
     });
   }

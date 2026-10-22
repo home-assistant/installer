@@ -263,7 +263,7 @@ export class DriveSelectionView extends LitElement {
       return localize("views.sbc.drive_selection_view.subtitle_nvme");
     }
     if (this._isHaHardwareFlow()) {
-      return localize("views.sbc.drive_selection_view.connect_device_storage");
+      return localize("views.sbc.drive_selection_view.subtitle_device_storage");
     }
     return localize("views.sbc.drive_selection_view.subtitle_removable");
   }
@@ -282,7 +282,7 @@ export class DriveSelectionView extends LitElement {
       <inline-notice>
         <p>
           ${localizeContent("views.sbc.drive_selection_view.erase_warning", {
-            label: html`<strong
+            warning_prefix: html`<strong
               >${localize("views.sbc.drive_selection_view.warning")}</strong
             >`,
           })}
@@ -345,7 +345,7 @@ export class DriveSelectionView extends LitElement {
                 appearance="outlined"
                 @click=${this._loadDrives}
               >
-                ${localize("components.app_shell.try_again")}
+                ${localize("common.try_again")}
               </wa-button>`
             : ""}
         </div>
@@ -397,7 +397,7 @@ export class DriveSelectionView extends LitElement {
       <wa-radio-group
         class="drives-list"
         radio-tag="drive-card"
-        aria-label=${localize("views.sbc.confirmation_view.target_drive")}
+        aria-label=${localize("common.target_drive")}
         .value=${this._selectedDriveId ?? ""}
         @change=${this._onDriveChange}
       >

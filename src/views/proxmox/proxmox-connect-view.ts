@@ -422,9 +422,7 @@ export class ProxmoxConnectView extends LitElement {
         ${localize("views.proxmox.proxmox_connect_view.connect_to_proxmox_ve")}
       </h2>
       <p class="subtitle">
-        ${localize(
-          "views.proxmox.proxmox_connect_view.enter_your_proxmox_server_credentials"
-        )}
+        ${localize("views.proxmox.proxmox_connect_view.subtitle")}
       </p>
 
       <div class="connect-card">

@@ -56,24 +56,18 @@ export class HaHardwareSuccessView extends LitElement {
     return html`
       <install-success
         .subtitle=${writesHaos
-          ? localize("views.sbc.success_view.subtitle")
+          ? localize("common.success.subtitle")
           : localize("views.ha_hardware.success_view.subtitle")}
-        .notice=${localize("views.sbc.success_view.do_not_format")}
+        .notice=${localize("common.success.do_not_format")}
         .steps=${[
-          localize(
-            "views.sbc.success_view.eject_the_drive_before_disconnecting"
-          ),
+          localize("common.success.step_eject"),
           ...this._steps(hardware),
           renderOpenHomeAssistantStep(),
           ...(writesHaos
             ? [
                 selectedWifi(this._wizardState.selections)
-                  ? localize(
-                      "views.sbc.success_view.the_preparing_home_assistant_page_wifi"
-                    )
-                  : localize(
-                      "views.sbc.success_view.the_preparing_home_assistant_page"
-                    ),
+                  ? localize("common.success.step_preparing_page_wifi")
+                  : localize("common.success.step_preparing_page"),
               ]
             : []),
         ]}
@@ -122,7 +116,7 @@ export class HaHardwareSuccessView extends LitElement {
       case "blue":
         return [
           localize("views.ha_hardware.success_view.blue_restore"),
-          localize("views.sbc.success_view.connect_ethernet_and_power"),
+          localize("common.success.step_connect_ethernet_and_power"),
         ];
     }
   }

@@ -299,7 +299,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                 appearance="outlined"
                 @click=${this._loadDevices}
               >
-                ${localize("components.app_shell.try_again")}
+                ${localize("common.try_again")}
               </wa-button>`
             : ""}
         </div>
@@ -389,10 +389,10 @@ export class MiniPCArchitectureSelectionView extends LitElement {
       ${getPlatform() === "macos"
         ? html`<p class="mac-note">
             ${localizeContent(
-              "views.minipc.architecture_selection_view.this_mac_hint",
+              "views.minipc.architecture_selection_view.this_mac_note",
               {
                 option: html`<strong
-                  >${localize("components.app_shell.virtual_machine")}</strong
+                  >${localize("common.virtual_machine")}</strong
                 >`,
               }
             )}

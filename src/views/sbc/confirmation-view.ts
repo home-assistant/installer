@@ -199,13 +199,9 @@ export class ConfirmationView extends LitElement {
     const wifi = selectedWifi(selections);
 
     return html`
-      <h2>
-        ${localize("views.proxmox.proxmox_confirm_view.ready_to_install")}
-      </h2>
+      <h2>${localize("common.confirm.ready_to_install")}</h2>
       <p class="subtitle">
-        ${localize(
-          "views.sbc.confirmation_view.review_your_selections_before_installing"
-        )}
+        ${localize("views.sbc.confirmation_view.subtitle")}
       </p>
 
       <div class="summary-card">
@@ -225,9 +221,7 @@ export class ConfirmationView extends LitElement {
                 </div>`}
           </div>
           <div class="summary-info">
-            <p class="summary-label">
-              ${localize("components.confirm_dialog.device")}
-            </p>
+            <p class="summary-label">${localize("common.device")}</p>
             <p class="summary-value">${deviceName}</p>
             ${deviceConfig && !installer
               ? html`<p class="summary-detail">
@@ -250,9 +244,7 @@ export class ConfirmationView extends LitElement {
             ${renderDriveIcon(selections.driveType ?? "unknown")}
           </div>
           <div class="summary-info">
-            <p class="summary-label">
-              ${localize("views.sbc.confirmation_view.target_drive")}
-            </p>
+            <p class="summary-label">${localize("common.target_drive")}</p>
             <p class="summary-value">${driveName}</p>
             <p class="summary-detail">
               ${this._formatSize(driveSize)}${driveModel
@@ -296,26 +288,19 @@ export class ConfirmationView extends LitElement {
         <div class="icon-container">${this._renderHaIcon()}</div>
         <div class="summary-info">
           <p class="summary-label">
-            ${localize(
-              "views.proxmox.proxmox_confirm_view.home_assistant_operating_system"
-            )}
+            ${localize("common.confirm.home_assistant_operating_system")}
           </p>
           <p class="summary-value">
             ${this._haosVersion === null
               ? localize("common.version_unknown")
               : this._haosVersion
-                ? localize(
-                    "views.proxmox.proxmox_confirm_view.version_summary",
-                    {
-                      version: this._haosVersion,
-                    }
-                  )
+                ? localize("common.confirm.version_summary", {
+                    version: this._haosVersion,
+                  })
                 : localize("common.loading")}
           </p>
           <p class="summary-detail">
-            ${localize(
-              "views.proxmox.proxmox_confirm_view.latest_stable_release"
-            )}
+            ${localize("common.confirm.latest_stable_release")}
           </p>
         </div>
       </div>
@@ -369,8 +354,7 @@ export class ConfirmationView extends LitElement {
   }
 
   private _formatSize(bytes: number | undefined): string {
-    if (bytes === undefined)
-      return localize("views.sbc.confirmation_view.unknown_size");
+    if (bytes === undefined) return localize("common.unknown_size");
     return formatBytes(bytes);
   }
 

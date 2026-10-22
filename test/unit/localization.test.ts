@@ -47,17 +47,17 @@ describe("localization", () => {
 
   it("formats ICU plural durations without changing the existing wording", () => {
     expect(
-      localize("views.proxmox.proxmox_progress_view.minutes_remaining", {
+      localize("components.install_progress.minutes_remaining", {
         minutes: 1,
       })
     ).to.equal("About 1 minute remaining");
     expect(
-      localize("views.proxmox.proxmox_progress_view.minutes_remaining", {
+      localize("components.install_progress.minutes_remaining", {
         minutes: 2,
       })
     ).to.equal("About 2 minutes remaining");
     expect(
-      localize("views.proxmox.proxmox_progress_view.hours_minutes_remaining", {
+      localize("components.install_progress.hours_minutes_remaining", {
         hours: 1,
         minutes: 30,
       })

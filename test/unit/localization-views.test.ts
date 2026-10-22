@@ -81,7 +81,7 @@ describe("localized view contracts", () => {
       "Insert the written storage into your device."
     );
     replace(
-      "views.sbc.success_view.insert_the_written_storage_unknown_device",
+      "views.sbc.success_view.step_insert_storage_generic",
       "Insert fixture."
     );
     expect(insertStep()).to.equal("Insert fixture.");
@@ -154,7 +154,7 @@ describe("localized view contracts", () => {
   });
 
   it("install-progress gets its pending ETA from the catalog", () => {
-    replace("views.sbc.progress_view.calculating", "Pending ETA fixture");
+    replace("components.install_progress.calculating", "Pending ETA fixture");
     const content = output(
       view("install-progress", {
         stage: "downloading",

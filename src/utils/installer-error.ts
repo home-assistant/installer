@@ -24,8 +24,7 @@ const messages: Record<string, () => string> = {
   proxmox_api: () => localize("utils.installer_error.proxmox_api"),
   proxmox_certificate_changed: () =>
     localize("utils.installer_error.proxmox_certificate_changed"),
-  proxmox_session_expired: () =>
-    localize("utils.installer_error.proxmox_session_expired"),
+  proxmox_session_expired: () => localize("proxmox.session_expired"),
   // The backend's text names internals such as file names or parse errors
   invalid_config: () => localize("utils.installer_error.invalid_config"),
   drive_disconnected: () =>

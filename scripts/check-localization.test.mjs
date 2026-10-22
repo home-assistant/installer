@@ -90,3 +90,64 @@ test("catalog check ties backend messages to the Rust code", () => {
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("catalog check rejects positional placeholders", () => {
+  const checker = fileURLToPath(
+    new URL("./check-localization.mjs", import.meta.url)
+  );
+  const catalogPath = fileURLToPath(
+    new URL("../src/localization/en.json", import.meta.url)
+  );
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "hai-localization-"));
+  try {
+    const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
+    catalog["utm.update_timeout"] = catalog["utm.update_timeout"].replace(
+      "{address}",
+      "{value0}"
+    );
+    const fixture = path.join(directory, "en.json");
+    fs.writeFileSync(fixture, JSON.stringify(catalog));
+    const result = spawnSync(process.execPath, [checker, fixture], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /name the \{value0\} placeholder/);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("catalog check keeps a key with the file that renders it", () => {
+  const checker = fileURLToPath(
+    new URL("./check-localization.mjs", import.meta.url)
+  );
+  const catalogPath = fileURLToPath(
+    new URL("../src/localization/en.json", import.meta.url)
+  );
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "hai-localization-"));
+  try {
+    const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
+    catalog["views.second_view.title"] = "Title";
+    const fixture = path.join(directory, "en.json");
+    fs.writeFileSync(fixture, JSON.stringify(catalog));
+
+    // A view borrowing another view's key
+    const source = path.join(directory, "src");
+    fs.mkdirSync(path.join(source, "views"), { recursive: true });
+    fs.writeFileSync(
+      path.join(source, "views", "first-view.ts"),
+      'localize("views.second_view.title");\n'
+    );
+
+    const result = spawnSync(process.execPath, [checker, fixture, source], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /views\.second_view\.title belongs to another file/
+    );
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

@@ -105,7 +105,7 @@ export class PathSelectionView extends LitElement {
 
         <div class="options-grid">
           <option-card
-            heading=${localize("components.app_shell.home_assistant_hardware")}
+            heading=${localize("common.home_assistant_hardware")}
             description=${localize(
               "views.path_selection_view.ha_hardware_description"
             )}
@@ -116,7 +116,7 @@ export class PathSelectionView extends LitElement {
 
           <option-card
             heading=${localize(
-              "components.app_shell.raspberry_pi_other_boards"
+              "views.path_selection_view.raspberry_pi_other_boards"
             )}
             description=${localize("views.path_selection_view.sbc_description")}
             icon="sbc"
@@ -125,7 +125,7 @@ export class PathSelectionView extends LitElement {
           ></option-card>
 
           <option-card
-            heading=${localize("components.app_shell.generic_mini_pc")}
+            heading=${localize("views.path_selection_view.generic_mini_pc")}
             description=${localize(
               "views.path_selection_view.minipc_description"
             )}
@@ -135,7 +135,7 @@ export class PathSelectionView extends LitElement {
           ></option-card>
 
           <option-card
-            heading=${localize("components.app_shell.proxmox_server")}
+            heading=${localize("common.proxmox_server")}
             description=${localize(
               "views.path_selection_view.proxmox_description"
             )}
@@ -166,7 +166,7 @@ export class PathSelectionView extends LitElement {
 
     return html`
       <option-card
-        heading=${localize("components.app_shell.virtual_machine")}
+        heading=${localize("common.virtual_machine")}
         description=${this._vmNeedsAppleSilicon
           ? localize("views.path_selection_view.needs_a_mac_with_apple_silicon")
           : localize("views.path_selection_view.utm_description")}

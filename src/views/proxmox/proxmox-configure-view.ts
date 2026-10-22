@@ -298,7 +298,7 @@ export class ProxmoxConfigureView extends LitElement {
     if (!session) {
       this._setError({
         code: SESSION_EXPIRED,
-        message: localize("utils.installer_error.proxmox_session_expired"),
+        message: localize("proxmox.session_expired"),
         retryable: false,
         details: {},
       });
@@ -1001,11 +1001,7 @@ export class ProxmoxConfigureView extends LitElement {
   render() {
     if (this._error) {
       return html`
-        <h2>
-          ${localize(
-            "views.proxmox.proxmox_configure_view.configure_virtual_machine"
-          )}
-        </h2>
+        <h2>${localize("common.vm.configure_virtual_machine")}</h2>
         <p class="subtitle">
           ${localize("views.proxmox.proxmox_configure_view.subtitle")}
         </p>
@@ -1022,7 +1018,7 @@ export class ProxmoxConfigureView extends LitElement {
               >
                 ${this._sessionExpired
                   ? localize("views.proxmox.proxmox_configure_view.reconnect")
-                  : localize("components.app_shell.try_again")}
+                  : localize("common.try_again")}
               </wa-button>`
             : ""}
         </div>
@@ -1030,11 +1026,7 @@ export class ProxmoxConfigureView extends LitElement {
     }
 
     return html`
-      <h2>
-        ${localize(
-          "views.proxmox.proxmox_configure_view.configure_virtual_machine"
-        )}
-      </h2>
+      <h2>${localize("common.vm.configure_virtual_machine")}</h2>
       <p class="subtitle">
         ${localize("views.proxmox.proxmox_configure_view.subtitle")}
       </p>
@@ -1045,9 +1037,7 @@ export class ProxmoxConfigureView extends LitElement {
           <div class="setting-icon">${this._renderLabelIcon()}</div>
           <div class="setting-content">
             <wa-input
-              label=${localize(
-                "views.proxmox.proxmox_configure_view.display_name"
-              )}
+              label=${localize("common.vm.display_name")}
               type="text"
               size="s"
               .value=${this._vmName}
@@ -1209,9 +1199,7 @@ export class ProxmoxConfigureView extends LitElement {
                           @click=${this._selectedNode
                             ? this._loadStorage
                             : this._loadNodes}
-                          >${localize(
-                            "components.app_shell.try_again"
-                          )}</wa-button
+                          >${localize("common.try_again")}</wa-button
                         >`
                     : ""}
                 `}

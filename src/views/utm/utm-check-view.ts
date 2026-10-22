@@ -392,7 +392,7 @@ export class UtmCheckView extends LitElement {
             @click=${this._checkStatus}
           >
             ${this._renderRefreshIcon()}
-            ${localize("views.utm.utm_check_view.try_again")}
+            ${localize("views.utm.utm_check_view.retry_check")}
           </wa-button>`
         : ""}
     `;
@@ -459,7 +459,7 @@ export class UtmCheckView extends LitElement {
         @click=${this._checkStatus}
       >
         ${this._renderRefreshIcon()}
-        ${localize("views.utm.utm_check_view.utm_installed")}
+        ${localize("views.utm.utm_check_view.confirm_installed")}
       </wa-button>
     `;
   }

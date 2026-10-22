@@ -81,51 +81,42 @@ export class SuccessView extends LitElement {
 
     return html`
       <install-success
-        .subtitle=${localize("views.sbc.success_view.subtitle")}
-        .notice=${localize("views.sbc.success_view.do_not_format")}
+        .subtitle=${localize("common.success.subtitle")}
+        .notice=${localize("common.success.do_not_format")}
         .steps=${[
-          localize(
-            "views.sbc.success_view.eject_the_drive_before_disconnecting"
-          ),
+          localize("common.success.step_eject"),
           isMiniPc
-            ? localize("views.sbc.success_view.minipc_install_drive")
+            ? localize("views.sbc.success_view.step_minipc_install_drive")
             : supportsDirectUsb
               ? html`${deviceName
                   ? localize(
-                      "views.sbc.success_view.insert_the_media_or_disconnect_usb",
+                      "views.sbc.success_view.step_insert_or_disconnect",
                       { device: deviceName }
                     )
                   : localize(
-                      "views.sbc.success_view.insert_the_media_or_disconnect_usb_generic"
+                      "views.sbc.success_view.step_insert_or_disconnect_generic"
                     )}
                 ${board === "odroid-m1s"
                   ? localize(
                       "views.sbc.success_view.remove_the_emmc2ums_sd_card"
                     )
-                  : localize("views.sbc.success_view.boot_switch_to_mmc")}`
+                  : localize("views.sbc.success_view.step_boot_switch_to_mmc")}`
               : deviceName
-                ? localize(
-                    "views.sbc.success_view.insert_the_written_storage",
-                    {
-                      device: deviceName,
-                    }
-                  )
+                ? localize("views.sbc.success_view.step_insert_storage", {
+                    device: deviceName,
+                  })
                 : localize(
-                    "views.sbc.success_view.insert_the_written_storage_unknown_device"
+                    "views.sbc.success_view.step_insert_storage_generic"
                   ),
           wifi
-            ? localize("views.sbc.success_view.connect_power_wifi", {
+            ? localize("views.sbc.success_view.step_connect_power_wifi", {
                 network: wifi.ssid,
               })
-            : localize("views.sbc.success_view.connect_ethernet_and_power"),
+            : localize("common.success.step_connect_ethernet_and_power"),
           renderOpenHomeAssistantStep(),
           wifi
-            ? localize(
-                "views.sbc.success_view.the_preparing_home_assistant_page_wifi"
-              )
-            : localize(
-                "views.sbc.success_view.the_preparing_home_assistant_page"
-              ),
+            ? localize("common.success.step_preparing_page_wifi")
+            : localize("common.success.step_preparing_page"),
         ]}
         .footer=${html`<a
           href=${guide}

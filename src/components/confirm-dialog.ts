@@ -172,9 +172,7 @@ export class ConfirmDialog extends LitElement {
       <dl class="drive-details">
         ${this.drivePath
           ? html`
-              <dt class="detail-label">
-                ${localize("components.confirm_dialog.device")}
-              </dt>
+              <dt class="detail-label">${localize("common.device")}</dt>
               <dd class="detail-value path">${this.drivePath}</dd>
             `
           : nothing}

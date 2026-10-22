@@ -14,81 +14,59 @@ export interface VmResourceValues {
 }
 
 export function formatCores(cores: number): string {
-  return localize("views.proxmox.proxmox_configure_view.cores", {
+  return localize("components.vm_resources.cores", {
     count: cores,
   });
 }
 
 export function formatMemory(mb: number): string {
-  return localize("components.drive_card.size_gb", {
+  return localize("common.size_gb", {
     size: formatNumber(mb / 1024, { maximumFractionDigits: 20 }),
   });
 }
 
 export function formatDiskSize(gb: number): string {
   return gb >= 1024
-    ? localize("components.drive_card.size_tb", {
+    ? localize("common.size_tb", {
         size: formatNumber(gb / 1024, { maximumFractionDigits: 20 }),
       })
-    : localize("components.drive_card.size_gb", {
+    : localize("common.size_gb", {
         size: formatNumber(gb, { maximumFractionDigits: 20 }),
       });
 }
 
 function cpuDescription(cores: number): string {
   if (cores <= 2) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.minimum_for_basic_operation"
-    );
+    return localize("components.vm_resources.cpu_minimum");
   } else if (cores <= 4) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.recommended_for_most_users"
-    );
+    return localize("components.vm_resources.cpu_recommended");
   } else if (cores <= 8) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.better_performance_with_many_integrations"
-    );
+    return localize("components.vm_resources.cpu_more");
   }
-  return localize(
-    "views.proxmox.proxmox_configure_view.maximum_performance_for_power_users"
-  );
+  return localize("components.vm_resources.cpu_maximum");
 }
 
 function memoryDescription(mb: number): string {
   const gb = mb / 1024;
   if (gb <= 2) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.minimum_for_basic_operation"
-    );
+    return localize("components.vm_resources.memory_minimum");
   } else if (gb <= 4) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.recommended_for_most_users"
-    );
+    return localize("components.vm_resources.memory_recommended");
   } else if (gb <= 8) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.memory_many_integrations"
-    );
+    return localize("components.vm_resources.memory_more");
   }
-  return localize(
-    "views.proxmox.proxmox_configure_view.maximum_performance_for_power_users"
-  );
+  return localize("components.vm_resources.memory_maximum");
 }
 
 function diskDescription(gb: number): string {
   if (gb <= 32) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.good_for_getting_started"
-    );
+    return localize("components.vm_resources.disk_starter");
   } else if (gb <= 64) {
-    return localize(
-      "views.proxmox.proxmox_configure_view.room_for_add_ons_and_history"
-    );
+    return localize("components.vm_resources.disk_room");
   } else if (gb <= 128) {
-    return localize("views.proxmox.proxmox_configure_view.disk_long_term");
+    return localize("components.vm_resources.disk_long_term");
   }
-  return localize(
-    "views.proxmox.proxmox_configure_view.extended_storage_for_recordings_and_backups"
-  );
+  return localize("components.vm_resources.disk_extended");
 }
 
 /**
@@ -229,7 +207,7 @@ export class VmResources extends LitElement {
     return html`
       ${this._renderSlider(
         cpuIcon,
-        localize("views.proxmox.proxmox_configure_view.cpu_cores"),
+        localize("components.vm_resources.cpu_cores"),
         this.coreOptions,
         this.cpuCores,
         formatCores(this.cpuCores),
@@ -239,7 +217,7 @@ export class VmResources extends LitElement {
       )}
       ${this._renderSlider(
         memoryIcon,
-        localize("views.proxmox.proxmox_configure_view.memory"),
+        localize("components.vm_resources.memory"),
         this.memoryOptions,
         this.memoryMb,
         formatMemory(this.memoryMb),
@@ -249,7 +227,7 @@ export class VmResources extends LitElement {
       )}
       ${this._renderSlider(
         diskIcon,
-        localize("views.proxmox.proxmox_configure_view.disk_size"),
+        localize("components.vm_resources.disk_size"),
         this.diskOptions,
         this.diskSizeGb,
         formatDiskSize(this.diskSizeGb),

@@ -82,11 +82,20 @@ names, catalog syntax, and unused entries in CI.
 Choose semantic keys for a specific UI meaning, not merely identical English
 wording, and named placeholders such as `version` or `drive`. Storage pools
 and virtual disks have separate keys even when both say "Storage". Name a key
-after its role, like `title`, `subtitle`, `*_description` or `*_hint`, never
-after its sentence: a key spelled from the copy stops matching it at the next
-copy edit, and renaming a key drops its translations. Never use positional
-placeholders like `value0`; a translator can't tell what goes there. No keys
-have been published to a translation service yet.
+after its role, like `title`, `subtitle`, `*_description`, `*_hint` or
+`step_*`. A short descriptive key such as `room_for_add_ons_and_history` is
+fine; a key that spells out a whole sentence is not, because it stops matching
+the copy at the next edit, and renaming a key drops its translations. Name
+placeholders after what they hold, never `value0`; a translator can't tell what
+goes there.
+
+A key lives under the namespace of the file that renders it, so
+`views.sbc.success_view.*` for `src/views/sbc/success-view.ts`. In Lokalise,
+that path is a translator's main hint where a string appears. A string shared
+by several screens goes under `common.*`, grouped by where it appears, like
+`common.install.*` for the progress of every flow or `common.vm.*` for UTM and
+Proxmox. `npm run localization:check` enforces both the namespace and the
+placeholder names. No keys have been published to a translation service yet.
 
 Startup reads the OS locale through Tauri's locale-only command permission before
 loading component modules. Browser development uses `navigator.languages`.
@@ -107,8 +116,11 @@ URLs, filenames, IPC names, state keys, and device names are data, not messages.
 
 Backend errors carry a fixed `code`, and many also carry a `message_key` from
 the catalog's `backend.*` entries. The frontend shows that message, or the
-catalog text for the code from `src/utils/installer-error.ts`. Never infer a
-code from English error text. Copy added by other branches must be extracted when
+catalog text for the code from `src/utils/installer-error.ts`. A code that has
+neither still shows the backend's English, so give every new code catalog
+text. `image_too_large` is the exception the other way: it always builds its
+own message from the sizes, even over a `message_key`. Never infer a code from
+English error text. Copy added by other branches must be extracted when
 those changes are integrated.
 
 ### Code Style

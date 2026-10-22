@@ -33,7 +33,29 @@ for (const [key, message] of Object.entries(catalog)) {
       ignoreTag: true,
     }).getAst()
   );
+  for (const name of names) {
+    assert(
+      !/^value\d+$/.test(name),
+      `${key}: name the {${name}} placeholder after what it holds`
+    );
+  }
   parameters.set(key, [...names].sort());
+}
+
+// A key under a file's namespace (views.sbc.success_view.title for
+// src/views/sbc/success-view.ts) belongs to that file. In Lokalise the key is
+// a translator's main hint where a string appears; one shared by several
+// screens goes under common.* instead.
+const FILE_NAMESPACES = ["views.", "components.", "utils.", "api."];
+// Tests pass a temporary source folder to check a misplaced key.
+const sourceRoot = process.argv[3] ?? path.join(root, "src");
+function fileNamespace(filename) {
+  return path
+    .relative(sourceRoot, filename)
+    .replace(/\.ts$/, "")
+    .split(path.sep)
+    .map((part) => part.replaceAll("-", "_"))
+    .join(".");
 }
 
 const used = new Set();
@@ -66,6 +88,13 @@ function walk(directory) {
           parameters.has(key.text),
           `${filename}: unknown key ${key.text}`
         );
+        if (FILE_NAMESPACES.some((prefix) => key.text.startsWith(prefix))) {
+          assert.equal(
+            key.text.slice(0, key.text.lastIndexOf(".")),
+            fileNamespace(filename),
+            `${filename}: ${key.text} belongs to another file. Use this file's namespace, or common.* when several screens share it`
+          );
+        }
         assert(
           !values || ts.isObjectLiteralExpression(values),
           `${key.text}: placeholders must be explicit`
@@ -99,7 +128,7 @@ function walk(directory) {
     visit(source);
   }
 }
-walk(path.join(root, "src"));
+walk(sourceRoot);
 
 // Backend messages are named in Rust with message!(key, name = value, ...).
 // Only those calls count, outside comments and test modules, and their

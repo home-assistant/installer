@@ -437,9 +437,7 @@ export class ProxmoxProgressView extends LitElement {
     this._stage = "error";
     const installer = installerError(
       error,
-      localize(
-        "views.proxmox.proxmox_progress_view.failed_to_create_virtual_machine"
-      )
+      localize("common.vm.failed_to_create_virtual_machine")
     );
     this._error = message ? { ...installer, message } : installer;
     this.dispatchEvent(
@@ -468,14 +466,12 @@ export class ProxmoxProgressView extends LitElement {
           id,
           label:
             id === "updating"
-              ? localize(
-                  "views.proxmox.proxmox_progress_view.installing_latest_home_assistant"
-                )
+              ? localize("common.vm.installing_latest_home_assistant")
               : this._getStageDescription(id),
         }))}
         .stage=${stage}
         .stageTitle=${this._stopping
-          ? localize("views.sbc.progress_view.stopping")
+          ? localize("common.install.stopping")
           : this._getStageTitle(stage)}
         .description=${this._getStageDescription(stage)}
         .progress=${this._progress}
@@ -519,66 +515,54 @@ export class ProxmoxProgressView extends LitElement {
   private _getStageTitle(stage: string): string {
     switch (stage) {
       case "downloading":
-        return localize("views.proxmox.proxmox_progress_view.downloading");
+        return localize("common.install.downloading");
       case "extracting":
-        return localize("views.sbc.progress_view.extracting");
+        return localize("common.install.extracting");
       case "uploading":
         return localize("views.proxmox.proxmox_progress_view.uploading");
       case "creating_vm":
-        return localize("views.proxmox.proxmox_progress_view.creating");
+        return localize("common.vm.creating");
       case "starting_vm":
-        return localize("views.proxmox.proxmox_progress_view.starting");
+        return localize("common.vm.starting");
       case "waiting":
         return localize("views.proxmox.proxmox_progress_view.connecting");
       case "ready":
-        return localize("views.proxmox.proxmox_progress_view.waiting");
+        return localize("common.vm.waiting");
       case "updating":
-        return localize("views.proxmox.proxmox_progress_view.updating");
+        return localize("common.vm.updating");
       case "complete":
-        return localize("views.proxmox.proxmox_progress_view.complete");
+        return localize("common.install.complete");
       case "error":
         return localize("common.error");
       default:
-        return localize("views.proxmox.proxmox_progress_view.installing");
+        return localize("common.install.installing");
     }
   }
 
   private _getStageDescription(stage: string): string {
     switch (stage) {
       case "downloading":
-        return localize(
-          "views.proxmox.proxmox_progress_view.downloading_home_assistant_os"
-        );
+        return localize("common.vm.downloading_home_assistant_os");
       case "extracting":
-        return localize("views.sbc.progress_view.extracting_the_image");
+        return localize("common.install.extracting_the_image");
       case "uploading":
         return localize(
           "views.proxmox.proxmox_progress_view.uploading_image_to_proxmox"
         );
       case "creating_vm":
-        return localize(
-          "views.proxmox.proxmox_progress_view.creating_virtual_machine"
-        );
+        return localize("common.vm.creating_virtual_machine");
       case "starting_vm":
-        return localize(
-          "views.proxmox.proxmox_progress_view.starting_home_assistant_os"
-        );
+        return localize("common.vm.starting_home_assistant_os");
       case "waiting":
-        return localize(
-          "views.proxmox.proxmox_progress_view.waiting_for_network_connection"
-        );
+        return localize("common.vm.waiting_for_network_connection");
       case "ready":
-        return localize(
-          "views.proxmox.proxmox_progress_view.waiting_for_home_assistant"
-        );
+        return localize("common.vm.waiting_for_home_assistant");
       case "updating":
-        return localize("views.proxmox.proxmox_progress_view.subtitle");
+        return localize("common.vm.updating_description");
       case "complete":
-        return localize("api.commands.installation_complete");
+        return localize("common.install.installation_complete");
       default:
-        return localize(
-          "views.proxmox.proxmox_progress_view.installing_home_assistant"
-        );
+        return localize("common.install.installing_home_assistant");
     }
   }
 }

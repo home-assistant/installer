@@ -245,7 +245,7 @@ export class ProgressView extends LitElement {
         ].map((id) => ({ id, label: this._getStageDescription(id) }))}
         .stage=${stage}
         .stageTitle=${this._stopping
-          ? localize("views.sbc.progress_view.stopping")
+          ? localize("common.install.stopping")
           : this._getStageTitle(stage)}
         .description=${this._getStageDescription(stage)}
         .progress=${this._progress?.progress || 0}
@@ -264,9 +264,9 @@ export class ProgressView extends LitElement {
   private _getStageTitle(stage: string): string {
     switch (stage) {
       case "downloading":
-        return localize("views.proxmox.proxmox_progress_view.downloading");
+        return localize("common.install.downloading");
       case "extracting":
-        return localize("views.sbc.progress_view.extracting");
+        return localize("common.install.extracting");
       case "writing":
         return localize("views.sbc.progress_view.writing");
       case "verifying":
@@ -274,11 +274,11 @@ export class ProgressView extends LitElement {
       case "finalizing":
         return localize("views.sbc.progress_view.finalizing");
       case "complete":
-        return localize("views.proxmox.proxmox_progress_view.complete");
+        return localize("common.install.complete");
       case "error":
         return localize("common.error");
       default:
-        return localize("views.proxmox.proxmox_progress_view.installing");
+        return localize("common.install.installing");
     }
   }
 
@@ -294,7 +294,7 @@ export class ProgressView extends LitElement {
               "views.sbc.progress_view.fetching_the_home_assistant_image"
             );
       case "extracting":
-        return localize("views.sbc.progress_view.extracting_the_image");
+        return localize("common.install.extracting_the_image");
       case "writing":
         return installer
           ? localize(
@@ -310,11 +310,9 @@ export class ProgressView extends LitElement {
           "views.sbc.progress_view.finishing_up_the_installation"
         );
       case "complete":
-        return localize("api.commands.installation_complete");
+        return localize("common.install.installation_complete");
       default:
-        return localize(
-          "views.proxmox.proxmox_progress_view.installing_home_assistant"
-        );
+        return localize("common.install.installing_home_assistant");
     }
   }
 }

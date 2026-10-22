@@ -225,7 +225,7 @@ async function simulateFlashProgress(
     progress: 100,
     bytes_processed: extractedSize,
     total_bytes: extractedSize,
-    message: localize("api.commands.installation_complete"),
+    message: localize("common.install.installation_complete"),
   });
 
   return {
@@ -248,7 +248,7 @@ export async function getManifest(): Promise<DeviceManifest> {
  */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0)
-    return localize("views.sbc.confirmation_view.unknown_size");
+    return localize("common.unknown_size");
   if (bytes === 0) return localize("api.commands.0_b");
 
   const k = 1000;

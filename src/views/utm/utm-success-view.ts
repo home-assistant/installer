@@ -49,26 +49,21 @@ export class UtmSuccessView extends LitElement {
           { name: vmName }
         )}`}
         .steps=${[
-          localize("views.proxmox.proxmox_success_view.step_wait"),
-          html`${localizeContent(
-            "views.proxmox.proxmox_success_view.step_open",
-            {
-              url: html`<a
-                href=${haUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                @click=${openExternalLink}
-              >
-                ${displayUrl}
-              </a>`,
-            }
-          )}`,
-          localize("views.proxmox.proxmox_success_view.step_onboard"),
+          localize("common.vm.step_wait"),
+          html`${localizeContent("common.vm.step_open", {
+            url: html`<a
+              href=${haUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              @click=${openExternalLink}
+            >
+              ${displayUrl}
+            </a>`,
+          })}`,
+          localize("common.vm.step_onboard"),
         ]}
         .tip=${html`${localizeContent("views.utm.utm_success_view.manage_tip", {
-          label: html`<strong
-            >${localize("views.proxmox.proxmox_success_view.tip")}</strong
-          >`,
+          tip_prefix: html`<strong>${localize("common.vm.tip")}</strong>`,
         })}`}
       ></install-success>
     `;

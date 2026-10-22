@@ -202,15 +202,9 @@ export class UtmConfigureView extends LitElement {
 
   render() {
     return html`
-      <h2>
-        ${localize(
-          "views.proxmox.proxmox_configure_view.configure_virtual_machine"
-        )}
-      </h2>
+      <h2>${localize("common.vm.configure_virtual_machine")}</h2>
       <p class="subtitle">
-        ${localize(
-          "views.utm.utm_configure_view.customize_your_home_assistant_vm_settings"
-        )}
+        ${localize("views.utm.utm_configure_view.subtitle")}
       </p>
 
       <div class="config-card">
@@ -219,9 +213,7 @@ export class UtmConfigureView extends LitElement {
           <div class="setting-icon">${this._renderLabelIcon()}</div>
           <div class="setting-content">
             <wa-input
-              label=${localize(
-                "views.proxmox.proxmox_configure_view.display_name"
-              )}
+              label=${localize("common.vm.display_name")}
               type="text"
               size="s"
               .value=${this._vmName}
