@@ -20,12 +20,7 @@ import {
   type VmStatusInfo,
 } from "../../api/commands.js";
 import type { FlashProgress, UtmVmConfig } from "../../api/types.js";
-import {
-  DEFAULT_CPU_CORES,
-  DEFAULT_DISK_SIZE_GB,
-  DEFAULT_MEMORY_MB,
-  DEFAULT_UTM_VM_NAME,
-} from "../../state/vm-defaults.js";
+import { utmVmConfig } from "../../state/vm-defaults.js";
 import { isCancelled, throwIfCancelled } from "../../utils/polling.js";
 import {
   checkedAddress,
@@ -289,10 +284,6 @@ export class UtmProgressView extends LitElement {
 
     const selections = this._wizardState.selections;
     const flowGeneration = wizardState.flowGeneration;
-    const vmName = selections.vmName || DEFAULT_UTM_VM_NAME;
-    const cpuCores = selections.cpuCores ?? DEFAULT_CPU_CORES;
-    const memoryMb = selections.memoryMb ?? DEFAULT_MEMORY_MB;
-    const diskSizeGb = selections.diskSizeGb ?? DEFAULT_DISK_SIZE_GB;
     let imagePath: string | undefined;
 
     try {
@@ -316,12 +307,8 @@ export class UtmProgressView extends LitElement {
         this._startStage("creating");
 
         const config: UtmVmConfig = {
-          name: vmName,
+          ...utmVmConfig(selections),
           image_path: pending?.config.image_path ?? imagePath!,
-          cpu_cores: cpuCores,
-          memory_mb: memoryMb,
-          disk_size_gb: diskSizeGb,
-          auto_start: false,
         };
 
         vmId = await this._createVm(config, flowGeneration);
@@ -448,11 +435,12 @@ export class UtmProgressView extends LitElement {
         if (wizardState.flowGeneration !== generation || current.vmId) {
           throw changed();
         }
+        const chosen = utmVmConfig(current);
         if (
-          (current.vmName || DEFAULT_UTM_VM_NAME) !== config.name ||
-          (current.cpuCores ?? DEFAULT_CPU_CORES) !== config.cpu_cores ||
-          (current.memoryMb ?? DEFAULT_MEMORY_MB) !== config.memory_mb ||
-          (current.diskSizeGb ?? DEFAULT_DISK_SIZE_GB) !== config.disk_size_gb
+          chosen.name !== config.name ||
+          chosen.cpu_cores !== config.cpu_cores ||
+          chosen.memory_mb !== config.memory_mb ||
+          chosen.disk_size_gb !== config.disk_size_gb
         ) {
           wizardState.setSelection("utmSupersededVmId", vmId);
           throw changed();
