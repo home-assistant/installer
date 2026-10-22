@@ -6,7 +6,7 @@
  * installing something other than what the confirm step showed them.
  */
 
-import type { ProxmoxVmConfig } from "../api/types.js";
+import type { ProxmoxVmConfig, UtmVmConfig } from "../api/types.js";
 import type { WizardSelections } from "./wizard-state.js";
 
 export const DEFAULT_CPU_CORES = 4;
@@ -19,6 +19,24 @@ export const DEFAULT_UTM_VM_NAME = "Home Assistant";
 /** Whether UTM can be given this name. The view and the Next check share it. */
 export function isValidUtmVmName(name: string): boolean {
   return name.trim() !== "";
+}
+
+/**
+ * The VM a UTM install creates, so its confirm step and the install agree.
+ * The install downloads the image, so it adds the image's path itself.
+ */
+export function utmVmConfig(
+  selections: WizardSelections
+): Omit<UtmVmConfig, "image_path"> {
+  return {
+    name: selections.vmName || DEFAULT_UTM_VM_NAME,
+    cpu_cores: selections.cpuCores ?? DEFAULT_CPU_CORES,
+    memory_mb: selections.memoryMb ?? DEFAULT_MEMORY_MB,
+    disk_size_gb: selections.diskSizeGb ?? DEFAULT_DISK_SIZE_GB,
+    // The install starts it once it has stored the VM's id, so a failed
+    // start is retried on that VM instead of creating another
+    auto_start: false,
+  };
 }
 
 /** Proxmox names must be hostname-safe (alphanumeric, dash, underscore, dot). */

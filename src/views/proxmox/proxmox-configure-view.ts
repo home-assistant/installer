@@ -43,17 +43,13 @@ import {
   proxmoxVmConfig,
 } from "../../state/vm-defaults.js";
 import { settingStyles } from "../../utils/setting-styles.js";
+import {
+  SESSION_EXPIRED,
+  forgetProxmoxSession,
+  needsReconnect,
+} from "./proxmox-session.js";
 import "../../components/vm-resources.js";
 import type { VmResourceValues } from "../../components/vm-resources.js";
-
-/** Lookups report an expired session as its own code, answered with Reconnect */
-const SESSION_EXPIRED = "proxmox_session_expired";
-
-/**
- * A changed certificate needs the same answer: reconnecting shows the new
- * certificate to confirm, while retrying would keep hitting the old pin.
- */
-const CERTIFICATE_CHANGED = "proxmox_certificate_changed";
 
 const DIRECTORY_STORAGE_DOCS =
   "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory";
@@ -81,15 +77,6 @@ function parseWholeNumber(
   if (!/^\d+$/.test(text)) return undefined;
   const value = Number(text);
   return value >= min && value <= max ? value : undefined;
-}
-
-function isSessionExpired(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error.code === SESSION_EXPIRED || error.code === CERTIFICATE_CHANGED)
-  );
 }
 
 @customElement("proxmox-configure-view")
@@ -223,6 +210,8 @@ export class ProxmoxConfigureView extends LitElement {
 
   /** Bumped per storage lookup, so only the latest one applies its result */
   private _storageLookup = 0;
+  /** Node whose storage lookup last completed, so an empty list is real. */
+  @state() private _storagesNode = "";
   @state() private _bridges: ProxmoxBridge[] = [];
   @state() private _selectedBridge = "";
   /** Node whose bridge lookup last completed, so an empty list is real. */
@@ -318,8 +307,7 @@ export class ProxmoxConfigureView extends LitElement {
       // from the other lookup, regardless of which one finishes first.
       const failures = results.filter((result) => result.status === "rejected");
       const failure =
-        failures.find((result) => isSessionExpired(result.reason)) ??
-        failures[0];
+        failures.find((result) => needsReconnect(result.reason)) ?? failures[0];
       if (failure) throw failure.reason;
       const nodes = (results[0] as PromiseFulfilledResult<ProxmoxNode[]>).value;
       const nextVmId = (results[1] as PromiseFulfilledResult<number>).value;
@@ -397,9 +385,7 @@ export class ProxmoxConfigureView extends LitElement {
         (result): result is PromiseRejectedResult =>
           result.status === "rejected"
       );
-      const expired = failures.find((result) =>
-        isSessionExpired(result.reason)
-      );
+      const expired = failures.find((result) => needsReconnect(result.reason));
       if (!isLatest()) {
         // Session expiry applies to every node, even from a superseded
         // lookup; the catch below handles it. Other failures belong to the
@@ -435,6 +421,7 @@ export class ProxmoxConfigureView extends LitElement {
         this._storages = storageResult.value.filter(
           (s) => s.active && s.content.includes("images")
         );
+        this._storagesNode = node;
 
         // Keep the selected storage if this node still offers it, otherwise
         // fall back to the first one available
@@ -472,7 +459,7 @@ export class ProxmoxConfigureView extends LitElement {
       if (!isLatest()) {
         // Session expiry applies to every node, even if this lookup was
         // superseded. Ordinary failures still belong to the old selection.
-        if (isSessionExpired(error)) {
+        if (needsReconnect(error)) {
           this._setError(error);
         }
         return;
@@ -511,7 +498,7 @@ export class ProxmoxConfigureView extends LitElement {
       return true;
     } catch (error) {
       if (!isCurrent()) return false;
-      if (isSessionExpired(error)) {
+      if (needsReconnect(error)) {
         this._setError(error);
       } else {
         new InstallDiagnostics("proxmox").fail(error);
@@ -525,24 +512,14 @@ export class ProxmoxConfigureView extends LitElement {
     // Only reached for the current, connected lookup, so detached or
     // superseded lookups never add diagnostics
     new InstallDiagnostics("proxmox").fail(error);
-    this._sessionExpired = isSessionExpired(error);
+    this._sessionExpired = needsReconnect(error);
     this._error = installerError(
       error,
       localize(
         "views.proxmox.proxmox_configure_view.failed_to_load_proxmox_configuration"
       )
     );
-    if (this._sessionExpired) {
-      const session = wizardState.getState().selections.proxmoxSession;
-      if (session) {
-        wizardState.setSelection("proxmoxPreviousServer", {
-          server_url: session.server_url,
-          certificate_sha256: session.certificate_sha256,
-        });
-      }
-      wizardState.setSelection("proxmoxSession", undefined);
-      wizardState.setSelection("proxmoxConnected", false);
-    }
+    if (this._sessionExpired) forgetProxmoxSession();
     wizardState.setSelection("proxmoxConfigureReady", false);
     wizardState.setSelection("proxmoxImportReady", false);
   }
@@ -601,7 +578,7 @@ export class ProxmoxConfigureView extends LitElement {
       await this._loadStorage();
     } catch (error) {
       if (!isCurrent()) return;
-      if (isSessionExpired(error)) {
+      if (needsReconnect(error)) {
         this._setError(error);
         return;
       }
@@ -735,6 +712,7 @@ export class ProxmoxConfigureView extends LitElement {
     const select = e.target as WaSelect;
     this._selectedNode = select.value as string;
     this._selectedStorage = "";
+    this._storagesNode = "";
     this._selectedBridge = "";
     this._bridges = [];
     this._bridgesNode = "";
@@ -1013,7 +991,7 @@ export class ProxmoxConfigureView extends LitElement {
                 ?disabled=${this._loadingNodes || this._loadingStorage}
               >
                 ${this._sessionExpired
-                  ? localize("views.proxmox.proxmox_configure_view.reconnect")
+                  ? localize("proxmox.reconnect")
                   : localize("components.app_shell.try_again")}
               </wa-button>`
             : ""}
@@ -1091,13 +1069,11 @@ export class ProxmoxConfigureView extends LitElement {
                               ? ` ${localize(
                                   "views.proxmox.proxmox_configure_view.cpu_value",
                                   {
-                                    value0: formatNumber(
-                                      Number(node.cpu_usage.toFixed(1)),
-                                      {
-                                        minimumFractionDigits: 1,
-                                        maximumFractionDigits: 1,
-                                      }
-                                    ),
+                                    // Proxmox reports a fraction (0.15 is 15%)
+                                    value0: formatNumber(node.cpu_usage, {
+                                      style: "percent",
+                                      maximumFractionDigits: 1,
+                                    }),
                                   }
                                 )}`
                               : ""
@@ -1153,6 +1129,23 @@ export class ProxmoxConfigureView extends LitElement {
                 "views.proxmox.proxmox_configure_view.storage_location_for_the_vm_disk_image"
               )}
             </p>
+            ${this._loaded &&
+            this._selectedNode &&
+            this._storagesNode === this._selectedNode &&
+            this._storages.length === 0
+              ? // Next needs storage for the VM disk, so say how to get one.
+                // Like Refresh storage, retrying waits while Import is enabled.
+                html`<p class="error-text" role="alert">
+                    ${localize(
+                      "views.proxmox.proxmox_configure_view.no_disk_image_storage_on_this_node"
+                    )}
+                  </p>
+                  <wa-button
+                    ?disabled=${this._importBusy}
+                    @click=${this._loadStorage}
+                    >${localize("components.app_shell.try_again")}</wa-button
+                  >`
+              : ""}
           </div>
         </div>
 

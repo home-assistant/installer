@@ -5,6 +5,7 @@ import {
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { LitElement, html, css } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import {
   ViewAccessibility,
   reducedMotionStyles,
@@ -416,15 +417,19 @@ export class DriveSelectionView extends LitElement {
         .value=${this._selectedDriveId ?? ""}
         @change=${this._onDriveChange}
       >
-        ${[...this._drives]
-          .sort((a, b) => {
+        ${repeat(
+          [...this._drives].sort((a, b) => {
             const aTooSmall = !isEligibleFlashTarget(a, config);
             const bTooSmall = !isEligibleFlashTarget(b, config);
             // Sort selectable drives first, then by size descending
             if (aTooSmall !== bTooSmall) return aTooSmall ? 1 : -1;
             return b.size - a.size;
-          })
-          .map((drive) => {
+          }),
+          // Keyed, so a card stays with its drive. The radio group only
+          // re-syncs `checked` when its own value changes: reused by position,
+          // a card would keep the check while showing a newly listed drive.
+          (drive) => drive.id,
+          (drive) => {
             const fit = getDriveFit(drive.size, config);
             const disabled = !isEligibleFlashTarget(drive, config);
             const reason =
@@ -457,7 +462,8 @@ export class DriveSelectionView extends LitElement {
                   : ""}
               ></drive-card>
             `;
-          })}
+          }
+        )}
       </wa-radio-group>
     `;
   }

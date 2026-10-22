@@ -348,6 +348,7 @@ export class InstallProgress extends LitElement {
 
   @property({ attribute: false }) stages: InstallStage[] = [];
   @property() stage = "downloading";
+  /** A bare stage name, as the thinking cloud adds its own ellipsis */
   @property({ attribute: "stage-title" }) stageTitle = localize(
     "views.proxmox.proxmox_progress_view.downloading"
   );
