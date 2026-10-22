@@ -6,10 +6,13 @@ import {
   type HaSetupProgress,
 } from "../../../src/utils/ha-setup.js";
 import {
+  WAIT_STAGES,
   checkedAddress,
   isWaitStage,
   waitError,
   waitForHomeAssistant,
+  waitStageDescription,
+  waitStageTitle,
   type WaitStage,
 } from "../../../src/utils/vm-wait.js";
 import { ipcError, mockTauriIpc, restoreTauriIpc } from "../tauri-ipc.js";
@@ -25,6 +28,18 @@ describe("vm-wait", () => {
   afterEach(() => {
     restoreTauriIpc();
     wizardState.reset();
+  });
+
+  // The progress's live region announces only the title
+  it("names each wait differently", () => {
+    const titles = WAIT_STAGES.map(waitStageTitle);
+    expect(new Set(titles).size).to.equal(WAIT_STAGES.length);
+    expect(titles).to.deep.equal(["Connecting", "Waiting", "Updating"]);
+    expect(WAIT_STAGES.map(waitStageDescription)).to.deep.equal([
+      "Waiting for network connection",
+      "Waiting for Home Assistant",
+      "Installing latest Home Assistant (this can take up to 20 minutes)",
+    ]);
   });
 
   it("waits for the address, then Home Assistant, then its update", async () => {

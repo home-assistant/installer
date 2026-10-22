@@ -691,6 +691,32 @@ describe("utm-progress-view", () => {
     el.remove();
   });
 
+  // The live region announces only the stage title
+  it("names the wait for an address apart from the wait for Home Assistant", async () => {
+    wizardState.setSelection("vmId", "existing-vm");
+    const status = deferred<{ status: string; ip_address: string }>();
+    let statusCalls = 0;
+    mockTauriIpc((cmd) => {
+      if (cmd === "get_utm_vm_status") {
+        // The first check only decides whether to start the VM
+        if (++statusCalls === 1) return { status: "started", ip_address: null };
+        return status.promise;
+      }
+      if (cmd === "check_ha_ready") return new Promise(() => {});
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+    const el = mount();
+    await el.updateComplete;
+    const layout = el.shadowRoot!.querySelector("install-progress")!;
+
+    await waitUntil(() => layout.stage === "waiting");
+    expect(layout.stageTitle).to.equal("Connecting");
+    status.resolve({ status: "started", ip_address: "192.0.2.50" });
+    await waitUntil(() => layout.stage === "ready");
+    expect(layout.stageTitle).to.equal("Waiting");
+    el.remove();
+  });
+
   it("shows the Core download and what holds it up while Home Assistant installs", async () => {
     wizardState.setSelection("vmId", "existing-vm");
     mockTauriIpc((cmd) => {
