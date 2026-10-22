@@ -207,7 +207,6 @@
   "views.proxmox.proxmox_confirm_view.value_cpu_cores_value": "{value0, number} CPU cores, {value1}",
   "views.proxmox.proxmox_confirm_view.value_gb_ram": "{value0} GB RAM",
   "views.proxmox.proxmox_confirm_view.value_id_value": "{value0} (ID: {value1})",
-  "views.proxmox.proxmox_confirm_view.value_mb_ram": "{value0} MB RAM",
   "views.proxmox.proxmox_confirm_view.version_value": "Version {value0}",
   "views.proxmox.proxmox_confirm_view.virtual_disk_for_home_assistant_data": "Virtual disk for Home Assistant data",
   "views.proxmox.proxmox_confirm_view.network_bridge_value": "Network bridge: {value0}",

@@ -1,5 +1,6 @@
 import { expect, fixture, html, waitUntil } from "@open-wc/testing";
 import { emit } from "@tauri-apps/api/event";
+import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import "../../../src/components/app-shell.js";
 import type { AppShell } from "../../../src/components/app-shell.js";
 import type { ConfirmDialog } from "../../../src/components/confirm-dialog.js";
@@ -268,6 +269,27 @@ describe("app-shell", () => {
     check.resolve(null);
     await settle();
     expect(wizardState.currentStep!.id).to.equal("configure");
+  });
+
+  it("keeps a settings check when an edit leaves the settings as they were", async () => {
+    const check = deferred<unknown>();
+    await enterProxmoxConfigure(el, () => check.promise);
+    fire(shellOf(el), "wizard-next");
+    await waitUntil(() => shellOf(el).nextLabel === "Checking settings...");
+
+    // Every edit saves all settings again; a leading zero keeps the VM ID
+    const vmId = shellOf(el)
+      .querySelector("proxmox-configure-view")!
+      .shadowRoot!.querySelector<WaInput>('wa-input[type="number"]')!;
+    const saved = wizardState.getState().selections;
+    vmId.value = `0${vmId.value}`;
+    vmId.dispatchEvent(new Event("input"));
+    await el.updateComplete;
+    expect(wizardState.getState().selections === saved).to.be.true;
+    expect(shellOf(el).nextLabel).to.equal("Checking settings...");
+
+    check.resolve(null);
+    await waitUntil(() => wizardState.currentStep?.id === "confirm");
   });
 
   for (const [flow, step] of [
