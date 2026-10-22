@@ -4,13 +4,13 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import {
   ViewAccessibility,
   reducedMotionStyles,
 } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import { checkUtmAutomation, checkUtmStatus } from "../../api/commands.js";
 import type { UtmStatus } from "../../api/types.js";
 import { wizardState } from "../../state/wizard-state.js";
@@ -71,6 +71,12 @@ export class UtmCheckView extends LitElement {
       casita-mascot {
         width: 96px;
         height: 96px;
+      }
+
+      /* Out of the card's flow while empty, so it adds no gap, yet still in
+         the accessibility tree to announce what comes next */
+      .status.empty {
+        position: absolute;
       }
 
       .status-row {
@@ -209,6 +215,9 @@ export class UtmCheckView extends LitElement {
   @state()
   private _askingAutomation = false;
 
+  @query(".status .status-title")
+  private _statusTitle?: HTMLElement;
+
   /** Bumped per check, so only the latest one decides */
   private _check = 0;
 
@@ -231,8 +240,8 @@ export class UtmCheckView extends LitElement {
       this.isConnected &&
       check === this._check &&
       flowGeneration === wizardState.flowGeneration;
+    // The previous result, and its buttons, stay until this one replaces it
     this._loading = true;
-    this._error = null;
     // Coming back from a later step left this set: Next waits for the check
     wizardState.setSelection("utmInstalled", false);
 
@@ -250,6 +259,7 @@ export class UtmCheckView extends LitElement {
       }
 
       // Store UTM installed status in wizard state
+      this._error = null;
       wizardState.setSelection("utmInstalled", status.installed);
     } catch (error) {
       if (!isCurrent()) return;
@@ -265,6 +275,12 @@ export class UtmCheckView extends LitElement {
         this._askingAutomation = false;
       }
     }
+
+    // The button that started the check can be gone now, as when UTM was
+    // found: continue from what the check found
+    await this.updateComplete;
+    if (!isCurrent()) return;
+    this._accessibility.restoreFocus(this._statusTitle);
   }
 
   /** An Intel Mac: nothing to fix or retry, this option just isn't for it. */
@@ -273,6 +289,7 @@ export class UtmCheckView extends LitElement {
   }
 
   render() {
+    const status = this._renderStatus();
     return html`
       <h2>${localize("views.utm.utm_check_view.virtual_machine_setup")}</h2>
       <p class="subtitle">
@@ -295,16 +312,72 @@ export class UtmCheckView extends LitElement {
                   ? "happy"
                   : "sad"}
         ></casita-mascot>
-        ${this._loading
-          ? this._renderLoading()
-          : this._unavailable
-            ? this._renderUnavailable()
-            : this._error
-              ? this._renderError()
-              : this._utmStatus?.installed
-                ? this._renderInstalled()
-                : this._renderNotInstalled()}
+        <!-- Stays in the DOM, so each new status is announced -->
+        <div
+          class=${status === nothing ? "status empty" : "status"}
+          role="status"
+        >
+          ${status}
+        </div>
+        ${this._error && !this._loading && !this._unavailable
+          ? this._renderError()
+          : ""}
+        ${this._renderActions()}
       </div>
+    `;
+  }
+
+  private _renderStatus() {
+    if (this._loading) return this._renderLoading();
+    if (this._unavailable) return this._renderUnavailable();
+    // The alert says what went wrong
+    if (this._error) return nothing;
+    return this._utmStatus?.installed
+      ? this._renderInstalled()
+      : this._renderNotInstalled();
+  }
+
+  /**
+   * What the result offers to do. A check started here keeps them, busy, so
+   * the button pressed keeps focus while it runs.
+   */
+  private _renderActions() {
+    if (this._unavailable) return "";
+    if (this._error) {
+      return this._error.retryable
+        ? html`<wa-button
+            variant="brand"
+            appearance="outlined"
+            ?loading=${this._loading}
+            @click=${this._checkStatus}
+          >
+            ${localizeContent("views.utm.utm_check_view.value_try_again", {
+              value0: this._renderRefreshIcon(),
+            })}
+          </wa-button>`
+        : "";
+    }
+    if (!this._utmStatus || this._utmStatus.installed) return "";
+    return html`
+      <wa-button
+        variant="brand"
+        appearance="accent"
+        @click=${this._openUtmDownload}
+      >
+        ${localizeContent("views.utm.utm_check_view.value_download_utm", {
+          value0: this._renderDownloadIcon(),
+        })}
+      </wa-button>
+      <wa-button
+        variant="brand"
+        appearance="outlined"
+        ?loading=${this._loading}
+        @click=${this._checkStatus}
+      >
+        ${localizeContent("views.utm.utm_check_view.value_i_ve_installed_utm", {
+          value0: this._renderRefreshIcon(),
+        })}
+      </wa-button>
     `;
   }
 
@@ -342,7 +415,7 @@ export class UtmCheckView extends LitElement {
 
   private _renderUnavailable() {
     return html`
-      <div class="status-text unavailable" role="status">
+      <div class="status-text unavailable">
         <p class="status-title">
           ${localize("views.utm.utm_check_view.not_available_on_this_mac")}
         </p>
@@ -399,17 +472,6 @@ export class UtmCheckView extends LitElement {
           ${renderErrorHelp()}
         </div>
       </div>
-      ${this._error?.retryable
-        ? html`<wa-button
-            variant="brand"
-            appearance="outlined"
-            @click=${this._checkStatus}
-          >
-            ${localizeContent("views.utm.utm_check_view.value_try_again", {
-              value0: this._renderRefreshIcon(),
-            })}
-          </wa-button>`
-        : ""}
     `;
   }
 
@@ -464,24 +526,6 @@ export class UtmCheckView extends LitElement {
           </p>
         </div>
       </div>
-      <wa-button
-        variant="brand"
-        appearance="accent"
-        @click=${this._openUtmDownload}
-      >
-        ${localizeContent("views.utm.utm_check_view.value_download_utm", {
-          value0: this._renderDownloadIcon(),
-        })}
-      </wa-button>
-      <wa-button
-        variant="brand"
-        appearance="outlined"
-        @click=${this._checkStatus}
-      >
-        ${localizeContent("views.utm.utm_check_view.value_i_ve_installed_utm", {
-          value0: this._renderRefreshIcon(),
-        })}
-      </wa-button>
     `;
   }
 

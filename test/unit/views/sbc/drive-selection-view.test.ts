@@ -72,6 +72,47 @@ describe("drive-selection-view", () => {
     }
   });
 
+  it("keeps focus on Refresh while it scans, and announces what it found", async () => {
+    let scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve([]);
+      await flush();
+      const status = el.shadowRoot!.querySelector(".sr-only[role=status]")!;
+      expect(status.textContent).to.contain("No drives found");
+      // Read out, not shown: the empty state says it on screen
+      expect(status.getBoundingClientRect().width).to.be.at.most(1);
+
+      scan.restore();
+      scan = holdDeviceScan();
+      const refresh = el.shadowRoot!.querySelector(
+        ".empty-state wa-button"
+      ) as HTMLElement & { loading: boolean };
+      refresh.focus();
+      refresh.click();
+      await el.updateComplete;
+
+      // Not swapped for the full-page spinner, which took focus with it
+      expect(refresh.isConnected).to.be.true;
+      expect(refresh.loading).to.be.true;
+      expect(el.shadowRoot!.activeElement).to.equal(refresh);
+      expect(status.textContent).to.contain("Scanning for drives");
+
+      // The list replaces the empty state: its own Refresh takes over
+      scan.resolve([CONNECTED]);
+      await waitUntil(() => !!el.shadowRoot!.querySelector("drive-card"));
+      await el.updateComplete;
+      expect(el.shadowRoot!.activeElement).to.equal(
+        el.shadowRoot!.querySelector(".drives-header wa-button")
+      );
+      expect(status.textContent).to.contain("1 drive found");
+    } finally {
+      scan.restore();
+    }
+  });
+
   it("keeps a selection whose drive is still connected", async () => {
     storeDriveSelection(CONNECTED);
 

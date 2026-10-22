@@ -180,6 +180,45 @@ describe("Proxmox import consent", () => {
     );
   });
 
+  it("says Import is enabled, and continues focus where its section was", async () => {
+    const el = await mount();
+    const status = el.shadowRoot!.querySelector(".sr-only[role=status]")!;
+    expect(status.textContent!.trim()).to.equal("");
+    // Read out, not shown
+    expect(status.getBoundingClientRect().width).to.be.at.most(1);
+
+    // The consent dialog hands focus back to nothing: it falls to the page
+    (document.activeElement as HTMLElement | null)?.blur();
+    await approve(el);
+    await waitUntil(() => !el.shadowRoot!.querySelector(".import-setting"));
+    await settle();
+    await el.updateComplete;
+
+    expect(status.textContent).to.contain('Import is enabled on "local"');
+    expect(el.shadowRoot!.activeElement).to.equal(
+      el.shadowRoot!.querySelector("#network-bridge")
+    );
+  });
+
+  it("keeps focus on Refresh storage when Import is still missing", async () => {
+    const el = await mount();
+    const refresh = el.shadowRoot!.querySelector(
+      ".refresh-storage"
+    ) as HTMLElement;
+    refresh.focus();
+    refresh.click();
+    await el.updateComplete;
+    // Reading storage hides the section, and the button with it
+    expect(refresh.isConnected).to.be.false;
+    await waitUntil(() => reads === 2);
+    await settle();
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.activeElement).to.equal(
+      el.shadowRoot!.querySelector(".refresh-storage")
+    );
+  });
+
   it("does not prompt when active import storage exists, including a non-directory backend", async () => {
     storages.push({ ...directory, storage_type: "nfs", content: ["import"] });
     const el = await mount();

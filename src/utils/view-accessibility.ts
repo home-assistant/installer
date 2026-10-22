@@ -1,5 +1,8 @@
 import { css, type LitElement, type ReactiveController } from "lit";
 
+/** What `restoreFocus` focuses as it is, rather than like a heading. */
+const CONTROLS = "a[href], button, input, select, wa-button, wa-select";
+
 function activeElement(): Element | null {
   let active = document.activeElement;
   while (active?.shadowRoot?.activeElement) {
@@ -50,6 +53,22 @@ export class ViewAccessibility implements ReactiveController {
       }
     }
     this._alert = text;
+  }
+
+  /**
+   * Continue from `target` when an update removed the control that had
+   * focus, as when a button gives way to what it loaded. Focus would
+   * otherwise fall to the page, and a screen reader start over from the top.
+   * Focus anywhere else is left alone. Text is focused like a heading.
+   */
+  restoreFocus(target: HTMLElement | null | undefined) {
+    const active = activeElement();
+    if (!target || (active && active !== document.body)) return;
+    if (target.matches(CONTROLS)) {
+      target.focus();
+    } else {
+      this._focus(target);
+    }
   }
 
   private _focus(element: HTMLElement) {

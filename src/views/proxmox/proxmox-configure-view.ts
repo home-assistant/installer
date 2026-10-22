@@ -8,9 +8,10 @@ import { LitElement, html, css } from "lit";
 import {
   ViewAccessibility,
   reducedMotionStyles,
+  srOnlyStyles,
 } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
@@ -96,6 +97,7 @@ function isSessionExpired(error: unknown): boolean {
 export class ProxmoxConfigureView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    srOnlyStyles,
     reducedMotionStyles,
     settingStyles,
     css`
@@ -236,6 +238,14 @@ export class ProxmoxConfigureView extends LitElement {
   @state() private _importDialog = false;
   @state() private _importDeclined = false;
   @state() private _importError: InstallerError | null = null;
+  /** Said once Import is enabled, as its section then goes away */
+  @state() private _importStatus = "";
+
+  // Where focus continues after a lookup hid the button that started it
+  @query(".enable-import") private _enableImportButton?: HTMLElement;
+  @query(".refresh-storage") private _refreshStorageButton?: HTMLElement;
+  @query(".bridge-retry") private _bridgeRetryButton?: HTMLElement;
+  @query("#network-bridge") private _bridgeSelect?: HTMLElement;
   /** Why Proxmox would reject these settings, until one of them changes */
   @state() private _checkError: InstallerError | null = null;
   /** Raw text of the VLAN field; empty keeps today's untagged network. */
@@ -552,6 +562,7 @@ export class ProxmoxConfigureView extends LitElement {
 
   /** Forget the previous lookup's Import state until storage is read again. */
   private _resetImport() {
+    this._importStatus = "";
     this._importReady = false;
     this._importCandidates = [];
     this._importStorage = "";
@@ -601,7 +612,25 @@ export class ProxmoxConfigureView extends LitElement {
       if (!isCurrent()) return;
       // Only a fresh read decides readiness, so the step never trusts its
       // own assumption about what the server now has
-      await this._loadStorage();
+      const reload = this._loadStorage();
+      const reloadLookup = this._storageLookup;
+      await reload;
+      if (
+        !this.isConnected ||
+        reloadLookup !== this._storageLookup ||
+        this._wizardState.selections.proxmoxSession !== session
+      )
+        return;
+      if (this._importReady) {
+        this._importStatus = localize(
+          "views.proxmox.proxmox_configure_view.import_enabled_on_storage",
+          { storage }
+        );
+      }
+      // Reading storage again hid the section holding the button
+      await this._restoreFocus(
+        () => this._enableImportButton ?? this._bridgeSelect
+      );
     } catch (error) {
       if (!isCurrent()) return;
       if (isSessionExpired(error)) {
@@ -658,6 +687,30 @@ export class ProxmoxConfigureView extends LitElement {
   private _retry() {
     if (this._loadingNodes || this._loadingStorage) return;
     void this._loadNodes();
+  }
+
+  private async _refreshStorage() {
+    await this._loadStorage();
+    await this._restoreFocus(
+      () => this._refreshStorageButton ?? this._bridgeSelect
+    );
+  }
+
+  private async _retryBridges() {
+    await (this._selectedNode ? this._loadStorage() : this._loadNodes());
+    await this._restoreFocus(
+      () => this._bridgeRetryButton ?? this._bridgeSelect
+    );
+  }
+
+  /**
+   * After a lookup that hid the button starting it, continue from what
+   * `target` finds once it has rendered. Focus moved elsewhere stays.
+   */
+  private async _restoreFocus(target: () => HTMLElement | undefined) {
+    await this.updateComplete;
+    if (!this.isConnected) return;
+    this._accessibility.restoreFocus(target());
   }
 
   private _reconnect() {
@@ -949,9 +1002,10 @@ export class ProxmoxConfigureView extends LitElement {
           <div class="import-actions">
             ${selected
               ? html`<wa-button
+                  class="enable-import"
                   variant="brand"
                   size="s"
-                  ?disabled=${this._importBusy}
+                  ?loading=${this._importBusy}
                   @click=${this._askToEnableImport}
                 >
                   ${this._importBusy
@@ -964,10 +1018,11 @@ export class ProxmoxConfigureView extends LitElement {
                 </wa-button>`
               : ""}
             <wa-button
+              class="refresh-storage"
               appearance="outlined"
               size="s"
               ?disabled=${this._importBusy}
-              @click=${this._loadStorage}
+              @click=${this._refreshStorage}
             >
               ${localize(
                 "views.proxmox.proxmox_configure_view.refresh_storage"
@@ -1044,6 +1099,7 @@ export class ProxmoxConfigureView extends LitElement {
           "views.proxmox.proxmox_configure_view.configure_your_home_assistant_vm_on_proxmox"
         )}
       </p>
+      <p class="sr-only" role="status">${this._importStatus}</p>
 
       <div class="config-card">
         <!-- VM Name (Display Name) - First -->
@@ -1216,9 +1272,8 @@ export class ProxmoxConfigureView extends LitElement {
                               )}
                         </p>
                         <wa-button
-                          @click=${this._selectedNode
-                            ? this._loadStorage
-                            : this._loadNodes}
+                          class="bridge-retry"
+                          @click=${this._retryBridges}
                           >${localize(
                             "components.app_shell.try_again"
                           )}</wa-button
