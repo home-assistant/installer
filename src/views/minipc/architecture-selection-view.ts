@@ -325,18 +325,14 @@ export class MiniPCArchitectureSelectionView extends LitElement {
 
     return html`
       ${renderStepHeading(
-        localize(
-          "views.minipc.architecture_selection_view.select_your_architecture"
-        ),
+        localize("views.minipc.architecture_selection_view.title"),
         localize("views.minipc.architecture_selection_view.subtitle")
       )}
 
       <wa-radio-group
         class="options"
         orientation="horizontal"
-        label=${localize(
-          "views.minipc.architecture_selection_view.cpu_architecture"
-        )}
+        label=${localize("views.minipc.architecture_selection_view.processor")}
         .value=${this._selectedDeviceId ?? ""}
         @change=${this._onDeviceChange}
       >

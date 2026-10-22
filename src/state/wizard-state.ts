@@ -127,7 +127,7 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
     { id: "method", title: localize("state.wizard_state.installation_method") },
     {
       id: "architecture",
-      title: localize("state.wizard_state.select_architecture"),
+      title: localize("state.wizard_state.select_processor"),
     },
     { id: "drive", title: localize("state.wizard_state.select_drive") },
     { id: "wifi", title: localize("state.wizard_state.wifi") },
