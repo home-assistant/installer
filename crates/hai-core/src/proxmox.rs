@@ -1213,14 +1213,18 @@ async fn poll_task_status(client: &reqwest::Client, url: &str, ticket: &str) -> 
     };
 
     let status = response.status();
+    // A busy API (5xx) may answer next time, a rejection won't change.
+    let retryable = status.is_success() || status.is_server_error();
     let body = match response.text().await {
         Ok(body) => body,
-        Err(error) => {
+        Err(error) if retryable => {
             return Ok(TaskPoll::Retry(request_error(
                 error,
                 "Failed to read task status",
             )));
         }
+        // Still a rejection when its explanation got lost on the way
+        Err(_) => String::new(),
     };
 
     if !status.is_success() {
@@ -1231,8 +1235,7 @@ async fn poll_task_status(client: &reqwest::Client, url: &str, ticket: &str) -> 
             status,
             body.trim()
         ));
-        // A busy API (5xx) may answer next time, a rejection won't change.
-        return if status.is_server_error() {
+        return if retryable {
             Ok(TaskPoll::Retry(error))
         } else {
             Err(error)
@@ -5115,6 +5118,56 @@ mod tests {
             assert!(result.is_ok(), "{result:?}");
 
             server.await.unwrap();
+        }
+
+        /// A rejection stays a rejection when its body gets cut off, and the
+        /// error still names the status.
+        #[tokio::test]
+        #[serial]
+        async fn test_wait_for_task_cut_off_rejection_is_not_retried() {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                let body = r#"{"errors":{"upid":"no such task"},"data":null}"#;
+                let mut request = [0; 4096];
+
+                let (mut cut_off, _) = listener.accept().await.unwrap();
+                let _ = cut_off.read(&mut request).await.unwrap();
+                let response = format!(
+                    "HTTP/1.1 404 Not Found\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                    body.len(),
+                    &body[..body.len() / 2]
+                );
+                cut_off.write_all(response.as_bytes()).await.unwrap();
+                drop(cut_off);
+
+                // A retry would land here, and must not happen
+                tokio::time::timeout(std::time::Duration::from_millis(200), listener.accept())
+                    .await
+                    .is_err()
+            });
+
+            let session = ProxmoxSession {
+                certificate_sha256: None,
+                server_url: format!("http://{address}"),
+                ticket: "test-ticket".to_string(),
+                csrf_token: "test-csrf".to_string(),
+            };
+            let result = wait_for_task(
+                &session,
+                "pve",
+                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
+                10,
+            )
+            .await;
+            assert!(
+                matches!(&result, Err(Error::ProxmoxApi(message)) if message.contains("404")),
+                "{result:?}"
+            );
+
+            assert!(server.await.unwrap(), "the rejection was retried");
         }
 
         /// A complete answer that isn't JSON won't parse the next time either.
