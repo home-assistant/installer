@@ -378,10 +378,12 @@ export class UtmProgressView extends LitElement {
         return;
       }
 
-      this._diagnostics?.fail(error);
+      // Log a wait that ran out as a timeout, not by the words of its message
+      const failure = waitError(error);
+      this._diagnostics?.fail(failure);
       this._stage = "error";
       const installer = installerError(
-        waitError(error),
+        failure,
         localize(
           "views.proxmox.proxmox_progress_view.failed_to_create_virtual_machine"
         )
