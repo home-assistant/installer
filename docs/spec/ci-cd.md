@@ -44,11 +44,13 @@ keeps per repository.
 A release is made by running the CI workflow on `main` from the Actions tab
 (**Run workflow**) and choosing a channel: `alpha`, `beta` or `stable`. The
 run tests and builds everything like a push to `main`, and its `release` job
-creates the GitHub release once every other job has passed:
+creates the GitHub release as a draft once every other job has passed. Nothing
+is published automatically, so each release can be finished by hand (its
+image added, its notes edited) before it goes out:
 
-- **Alpha:** published right away, as a prerelease.
-- **Beta:** a draft prerelease, which an admin reviews and publishes.
-- **Stable:** a draft, which an admin reviews and publishes.
+- **Alpha:** a draft prerelease, which anyone with write access may publish.
+- **Beta:** a draft prerelease, which an admin publishes.
+- **Stable:** a draft, which an admin publishes.
 
 ### Versions
 
@@ -97,16 +99,10 @@ A release run differs from a push to `main` in these ways:
   integrity and origin.
 
 The release targets the commit the run built, and GitHub creates the tag on
-that commit when the release is published. `gh` uploads the installers to a
-draft first and only publishes it once they are all there, so an alpha never
-goes out with files missing, and once it's out it is immutable.
+that commit when the draft is published. Once it's out it is immutable, so
+anything to add to a release goes into the draft first.
 
-Only `github-actions[bot]` publishes alphas: it can't be on a ruleset's bypass
-list, and only alpha tags may be created without one (see
-[Immutable Release Protections](#immutable-release-protections)). That's why
-betas stay drafts for an admin to publish.
-
-A beta or stable draft has no tag until it's published. Until then, another
+A draft has no tag until it's published. Until then, another
 release run on the same channel picks the same version and replaces the draft
 as a whole, notes and assets included, so re-running a failed release run is
 safe. The release job refuses to touch a version that is already published or
@@ -129,8 +125,7 @@ from:
   pick.
 
 Edit the notes in a draft before publishing if needed. The title and notes of
-a published release, an alpha included, can still be edited; its files and
-tag can't.
+a published release can still be edited; its files and tag can't.
 
 ### Assets
 
@@ -186,9 +181,9 @@ transparency log, so there are no signing keys to manage or rotate.
    - "Version tags" covers every tag except alpha tags (`*-alpha.*`): only
      admins may create one, so only admins may publish a beta or stable
      release, and only admins may move or delete one.
-   - "Alpha tags" covers `*-alpha.*`: anyone with write access, and the
-     release job as `github-actions[bot]`, may create one, but nobody may move
-     or delete one.
+   - "Alpha tags" covers `*-alpha.*`: anyone with write access may create
+     one, so anyone with write access may publish an alpha, but nobody may
+     move or delete one.
 
 2. **Branch protection on main**:
    - Require PR reviews
@@ -197,10 +192,9 @@ transparency log, so there are no signing keys to manage or rotate.
 
 3. **Release process**:
    - Releases are only made from `main`
-   - Anyone with write access may release an alpha, which is published right
-     away
-   - Betas and stable releases are started by admins, created as drafts, and
-     reviewed and published by an admin
+   - Every release is created as a draft
+   - Anyone with write access may start and publish an alpha
+   - Betas and stable releases are started and published by admins
    - Immutable releases are enabled, so once a release is published, GitHub
      refuses any change to its assets or tag, including from the release job
 
@@ -259,12 +253,12 @@ deletes its own copy after packing it.
 
 1. Go to **Actions → CI → Run workflow**, keep the branch at `main`, choose the
    channel and run it
-2. CI tests, builds and signs everything and creates the release; the run's
-   summary names the version. An alpha is now published, and nothing else is
-   needed
-3. For a beta or stable release, an admin reviews the draft: notes, assets,
-   and that the macOS DMG opens without warnings
-4. The admin publishes it (creates the tag and makes the release immutable)
+2. CI tests, builds and signs everything and creates the release as a draft;
+   the run's summary names the version
+3. Finish the draft: add the release image, review the notes and assets, and
+   check that the macOS DMG opens without warnings
+4. Publish it (creates the tag and makes the release immutable): anyone with
+   write access for an alpha, an admin for a beta or stable release
 
 The workspace `Cargo.toml` is the only place the app version lives, and a
 release run is the only thing that sets it:
