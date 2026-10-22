@@ -337,6 +337,60 @@ fn first_usable_ipv4(output: &str) -> Option<String> {
         .map(|ip| ip.to_string())
 }
 
+/// The interface the default route leaves through, from `route -n get default`.
+#[cfg(any(target_os = "macos", test))]
+fn default_route_interface(route_output: &str) -> Option<&str> {
+    route_output
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("interface:"))
+        .map(str::trim)
+        .filter(|interface| !interface.is_empty())
+}
+
+/// Devices from `networksetup -listnetworkserviceorder`, in the order the
+/// user ranked their network services.
+#[cfg(any(target_os = "macos", test))]
+fn service_order_devices(service_order_output: &str) -> Vec<&str> {
+    service_order_output
+        .lines()
+        .filter_map(|line| line.split_once("Device: ")?.1.strip_suffix(')'))
+        .map(str::trim)
+        .filter(|device| !device.is_empty())
+        .collect()
+}
+
+/// UTM bridges through vmnet, which only offers physical interfaces. A VPN
+/// tunnel (`utunN`) or the Thunderbolt bridge (`bridgeN`) is accepted when
+/// the VM is created and then fails on every start.
+#[cfg(any(target_os = "macos", test))]
+fn is_bridgeable_interface(interface: &str) -> bool {
+    interface
+        .strip_prefix("en")
+        .is_some_and(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Pick the host interface for UTM's bridged network. The default route is
+/// the best guess, unless a full tunnel VPN owns it. Then the highest ranked
+/// physical interface that is actually connected is the LAN the user is on.
+#[cfg(any(target_os = "macos", test))]
+fn choose_bridge_interface(
+    default_route: Option<&str>,
+    service_order: &[&str],
+    mut has_ipv4: impl FnMut(&str) -> bool,
+) -> String {
+    if let Some(interface) = default_route.filter(|interface| is_bridgeable_interface(interface)) {
+        return interface.to_string();
+    }
+
+    service_order
+        .iter()
+        .copied()
+        .filter(|device| is_bridgeable_interface(device))
+        .find(|device| has_ipv4(device))
+        .unwrap_or("en0")
+        .to_string()
+}
+
 #[cfg(any(target_os = "macos", test))]
 fn finish_vm_creation(
     config: &UtmVmConfig,
@@ -441,31 +495,28 @@ mod macos {
             .map(|s| s.to_string())
     }
 
-    /// Get the primary network interface for bridged networking.
-    /// Uses the default route to determine which interface has internet connectivity.
+    /// Get the physical network interface UTM should bridge the VM onto.
     pub(super) fn get_primary_network_interface() -> String {
-        let output = Command::new("route")
-            .args(["-n", "get", "default"])
-            .output();
+        let route = command_stdout("route", &["-n", "get", "default"]).unwrap_or_default();
+        let service_order =
+            command_stdout("networksetup", &["-listnetworkserviceorder"]).unwrap_or_default();
 
-        if let Ok(output) = output {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    if line.trim().starts_with("interface:") {
-                        if let Some(interface) = line.split(':').nth(1) {
-                            let interface = interface.trim();
-                            if !interface.is_empty() {
-                                return interface.to_string();
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        choose_bridge_interface(
+            default_route_interface(&route),
+            &service_order_devices(&service_order),
+            |device| {
+                command_stdout("ipconfig", &["getifaddr", device])
+                    .is_some_and(|address| !address.trim().is_empty())
+            },
+        )
+    }
 
-        // Default to en0 if detection fails
-        "en0".to_string()
+    fn command_stdout(program: &str, arguments: &[&str]) -> Option<String> {
+        let output = Command::new(program).args(arguments).output().ok()?;
+        output
+            .status
+            .success()
+            .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
     }
 
     /// Run an AppleScript and return the output. `arguments` reach its run
@@ -853,6 +904,101 @@ mod tests {
         }
     }
 
+    const SERVICE_ORDER: &str = "An asterisk (*) denotes that a network service is disabled.
+(1) USB JTAG/serial debug unit
+(Hardware Port: USB JTAG/serial debug unit, Device: usbmodem1101)
+
+(2) Thunderbolt Bridge
+(Hardware Port: Thunderbolt Bridge, Device: bridge0)
+
+(3) USB 10/100/1000 LAN
+(Hardware Port: USB 10/100/1000 LAN, Device: en14)
+
+(4) Wi-Fi
+(Hardware Port: Wi-Fi, Device: en0)
+
+(5) Cisco AnyConnect
+(Hardware Port: com.cisco.anyconnect, Device: )
+";
+
+    fn route_through(interface: &str) -> String {
+        format!(
+            "   route to: default\ndestination: default\n    gateway: 10.0.0.1\n  interface: {interface}\n      flags: <UP,GATEWAY,DONE,STATIC>\n"
+        )
+    }
+
+    #[test]
+    fn service_order_lists_devices_in_priority_order() {
+        assert_eq!(
+            service_order_devices(SERVICE_ORDER),
+            ["usbmodem1101", "bridge0", "en14", "en0"]
+        );
+    }
+
+    #[test]
+    fn a_physical_default_route_is_bridged_as_is() {
+        let route = route_through("en5");
+        let interface = choose_bridge_interface(
+            default_route_interface(&route),
+            &service_order_devices(SERVICE_ORDER),
+            |_| panic!("the service order must not be consulted"),
+        );
+        assert_eq!(interface, "en5");
+    }
+
+    #[test]
+    fn a_vpn_default_route_falls_back_to_the_connected_physical_interface() {
+        let route = route_through("utun4");
+        let mut checked = Vec::new();
+        let interface = choose_bridge_interface(
+            default_route_interface(&route),
+            &service_order_devices(SERVICE_ORDER),
+            |device| {
+                checked.push(device.to_string());
+                device == "en0"
+            },
+        );
+        assert_eq!(interface, "en0");
+        // The unplugged USB adapter ranks higher, but has no address. The
+        // serial device and the Thunderbolt bridge are never candidates.
+        assert_eq!(checked, ["en14", "en0"]);
+    }
+
+    #[test]
+    fn nothing_usable_falls_back_to_en0() {
+        for route in [
+            "",
+            "route: writing to routing socket: not in table",
+            &route_through("bridge0"),
+        ] {
+            let interface = choose_bridge_interface(
+                default_route_interface(route),
+                &service_order_devices(SERVICE_ORDER),
+                |_| false,
+            );
+            assert_eq!(interface, "en0");
+        }
+    }
+
+    #[test]
+    fn only_en_interfaces_can_be_bridged() {
+        for interface in ["en0", "en16"] {
+            assert!(is_bridgeable_interface(interface), "{interface}");
+        }
+        for interface in [
+            "",
+            "en",
+            "enx",
+            "utun0",
+            "bridge0",
+            "lo0",
+            "awdl0",
+            "usbmodem1101",
+        ] {
+            assert!(!is_bridgeable_interface(interface), "{interface}");
+        }
+    }
+
     #[test]
     fn address_selection_skips_the_haos_docker_networks() {
         // Before the LAN lease only HAOS's own bridges have an IPv4 (#369)
@@ -960,24 +1106,12 @@ mod tests {
         fn test_get_primary_network_interface() {
             let interface = get_primary_network_interface();
 
-            // Should return a non-empty string
-            assert!(!interface.is_empty(), "Interface should not be empty");
-
-            // Should typically start with "en" (like en0, en1, en2, etc.) or be "en0" as fallback
-            // Common macOS interfaces: en0 (Ethernet/WiFi), en1, bridge0, etc.
-            // At minimum, it should return "en0" as the fallback
+            // Whatever this Mac is connected through, VPN included, UTM
+            // must only ever be handed a physical interface
             assert!(
-                interface.starts_with("en") || interface.starts_with("bridge"),
-                "Interface should typically start with 'en' or 'bridge', got: {}",
-                interface
+                super::is_bridgeable_interface(&interface),
+                "Expected a physical en interface, got: {interface}"
             );
-
-            // The fallback is specifically "en0"
-            // If the command fails or no interface is found, it returns "en0"
-            if interface == "en0" {
-                // This is valid - either it's the actual interface or the fallback
-                assert_eq!(interface, "en0");
-            }
         }
 
         #[tokio::test]
