@@ -57,6 +57,7 @@ import {
 } from "./proxmox-session.js";
 import "../../components/vm-resources.js";
 import type { VmResourceValues } from "../../components/vm-resources.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 const DIRECTORY_STORAGE_DOCS =
   "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory";
@@ -90,34 +91,13 @@ function parseWholeNumber(
 export class ProxmoxConfigureView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
     srOnlyStyles,
     reducedMotionStyles,
     settingStyles,
     fieldErrorStyles,
     linkStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 1.5rem 0;
-        text-align: center;
-      }
-
       .config-card {
         display: flex;
         flex-direction: column;
@@ -1093,10 +1073,10 @@ export class ProxmoxConfigureView extends LitElement {
   render() {
     if (this._error) {
       return html`
-        <h2>${localize("common.vm.configure_virtual_machine")}</h2>
-        <p class="subtitle">
-          ${localize("views.proxmox.proxmox_configure_view.subtitle")}
-        </p>
+        ${renderStepHeading(
+          localize("common.vm.configure_virtual_machine"),
+          localize("views.proxmox.proxmox_configure_view.subtitle")
+        )}
         <div class="config-card">
           <p class="error-text" role="alert" style="overflow-wrap: anywhere;">
             ${this._error.message}
@@ -1118,10 +1098,10 @@ export class ProxmoxConfigureView extends LitElement {
     }
 
     return html`
-      <h2>${localize("common.vm.configure_virtual_machine")}</h2>
-      <p class="subtitle">
-        ${localize("views.proxmox.proxmox_configure_view.subtitle")}
-      </p>
+      ${renderStepHeading(
+        localize("common.vm.configure_virtual_machine"),
+        localize("views.proxmox.proxmox_configure_view.subtitle")
+      )}
       <p class="sr-only" role="status">${this._importStatus}</p>
 
       <div class="config-card">

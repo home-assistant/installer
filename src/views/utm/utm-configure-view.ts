@@ -22,37 +22,17 @@ import { settingStyles } from "../../utils/setting-styles.js";
 import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 import "../../components/vm-resources.js";
 import type { VmResourceValues } from "../../components/vm-resources.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 @customElement("utm-configure-view")
 export class UtmConfigureView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
     reducedMotionStyles,
     settingStyles,
     fieldErrorStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 1.5rem 0;
-        text-align: center;
-      }
-
       .config-card {
         display: flex;
         flex-direction: column;
@@ -206,10 +186,10 @@ export class UtmConfigureView extends LitElement {
 
   render() {
     return html`
-      <h2>${localize("common.vm.configure_virtual_machine")}</h2>
-      <p class="subtitle">
-        ${localize("views.utm.utm_configure_view.subtitle")}
-      </p>
+      ${renderStepHeading(
+        localize("common.vm.configure_virtual_machine"),
+        localize("views.utm.utm_configure_view.subtitle")
+      )}
 
       <div class="config-card">
         <!-- VM Name -->

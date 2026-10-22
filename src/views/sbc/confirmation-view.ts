@@ -20,6 +20,7 @@ import {
   type HaHardwareInstaller,
 } from "../ha-hardware/hardware.js";
 import "../../components/inline-notice.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 // A board, for a device without a picture
 const boardIcon =
@@ -32,30 +33,9 @@ const mdiWifi =
 export class ConfirmationView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
     summaryStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 1.5rem 0;
-        text-align: center;
-      }
-
       .device-image {
         width: 64px;
         height: 64px;
@@ -131,10 +111,10 @@ export class ConfirmationView extends LitElement {
     const wifi = selectedWifi(selections);
 
     return html`
-      <h2>${localize("common.confirm.ready_to_install")}</h2>
-      <p class="subtitle">
-        ${localize("views.sbc.confirmation_view.subtitle")}
-      </p>
+      ${renderStepHeading(
+        localize("common.confirm.ready_to_install"),
+        localize("views.sbc.confirmation_view.subtitle")
+      )}
 
       <div class="summary-card">
         <!-- Device -->

@@ -20,37 +20,16 @@ import "@home-assistant/webawesome/dist/components/button/button.js";
 import type WaRadioGroup from "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "@home-assistant/webawesome/dist/components/radio/radio.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 @customElement("minipc-architecture-selection-view")
 export class MiniPCArchitectureSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
     reducedMotionStyles,
     linkStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 2rem 0;
-        text-align: center;
-        max-width: 500px;
-      }
-
       .options {
         display: block;
         width: 100%;
@@ -345,14 +324,12 @@ export class MiniPCArchitectureSelectionView extends LitElement {
     }
 
     return html`
-      <h2>
-        ${localize(
+      ${renderStepHeading(
+        localize(
           "views.minipc.architecture_selection_view.select_your_architecture"
-        )}
-      </h2>
-      <p class="subtitle">
-        ${localize("views.minipc.architecture_selection_view.subtitle")}
-      </p>
+        ),
+        localize("views.minipc.architecture_selection_view.subtitle")
+      )}
 
       <wa-radio-group
         class="options"

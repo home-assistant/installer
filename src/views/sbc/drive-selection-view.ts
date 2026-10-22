@@ -34,37 +34,17 @@ import "../../components/drive-card.js";
 import "../../components/casita-mascot.js";
 import "../../components/inline-notice.js";
 import "../ha-hardware/connect-instructions.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 @customElement("drive-selection-view")
 export class DriveSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
     srOnlyStyles,
     reducedMotionStyles,
     linkStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 1.5rem 0;
-        text-align: center;
-      }
-
       inline-notice {
         margin-bottom: 1.5rem;
       }
@@ -314,9 +294,10 @@ export class DriveSelectionView extends LitElement {
 
   render() {
     return html`
-      <h2>${localize("views.sbc.drive_selection_view.select_your_drive")}</h2>
-      <p class="subtitle">${this._subtitle()}</p>
-
+      ${renderStepHeading(
+        localize("views.sbc.drive_selection_view.select_your_drive"),
+        this._subtitle()
+      )}
       ${this._isHaHardwareFlow()
         ? html`<ha-hardware-connect-instructions
             .hardware=${wizardState.getState().selections.haHardware}

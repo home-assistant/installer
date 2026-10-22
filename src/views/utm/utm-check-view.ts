@@ -20,6 +20,7 @@ import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/ha-svg-icon.js";
 import "../../components/casita-mascot.js";
 import "../../components/inline-notice.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 // mdi:download
 const mdiDownload = "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z";
@@ -31,31 +32,10 @@ const mdiRefresh =
 export class UtmCheckView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
     reducedMotionStyles,
     linkStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 1.5rem 0;
-        text-align: center;
-      }
-
       .status-card {
         display: flex;
         flex-direction: column;
@@ -298,9 +278,10 @@ export class UtmCheckView extends LitElement {
   render() {
     const status = this._renderStatus();
     return html`
-      <h2>${localize("views.utm.utm_check_view.virtual_machine_setup")}</h2>
-      <p class="subtitle">${localize("views.utm.utm_check_view.subtitle")}</p>
-
+      ${renderStepHeading(
+        localize("views.utm.utm_check_view.virtual_machine_setup"),
+        localize("views.utm.utm_check_view.subtitle")
+      )}
       ${this._unavailable ? "" : this._renderTestingWarning()}
 
       <div class="status-card">
