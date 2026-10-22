@@ -1,5 +1,6 @@
 import { expect, fixture, html, waitUntil } from "@open-wc/testing";
 import { emit } from "@tauri-apps/api/event";
+import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import "../../../src/components/app-shell.js";
 import type { AppShell } from "../../../src/components/app-shell.js";
 import type { ConfirmDialog } from "../../../src/components/confirm-dialog.js";
@@ -268,6 +269,27 @@ describe("app-shell", () => {
     check.resolve(null);
     await settle();
     expect(wizardState.currentStep!.id).to.equal("configure");
+  });
+
+  it("keeps a settings check when an edit leaves the settings as they were", async () => {
+    const check = deferred<unknown>();
+    await enterProxmoxConfigure(el, () => check.promise);
+    fire(shellOf(el), "wizard-next");
+    await waitUntil(() => shellOf(el).nextLabel === "Checking settings...");
+
+    // Every edit saves all settings again; a leading zero keeps the VM ID
+    const vmId = shellOf(el)
+      .querySelector("proxmox-configure-view")!
+      .shadowRoot!.querySelector<WaInput>('wa-input[type="number"]')!;
+    const saved = wizardState.getState().selections;
+    vmId.value = `0${vmId.value}`;
+    vmId.dispatchEvent(new Event("input"));
+    await el.updateComplete;
+    expect(wizardState.getState().selections === saved).to.be.true;
+    expect(shellOf(el).nextLabel).to.equal("Checking settings...");
+
+    check.resolve(null);
+    await waitUntil(() => wizardState.currentStep?.id === "confirm");
   });
 
   for (const [flow, step] of [
@@ -970,6 +992,26 @@ describe("app-shell", () => {
       await waitUntil(() => shellOf(el).hideFooter, "Cancel stayed");
       expect(stopDialogOf(el).open).to.be.false;
     });
+
+    it("stops asking once the install failed", async () => {
+      // The download keeps running
+      await enterProxmoxInstall(() =>
+        mockTauriIpc(() => new Promise(() => {}))
+      );
+      await waitUntil(() => !shellOf(el).hideFooter, "Cancel never showed");
+      fire(shellOf(el), "wizard-cancel");
+      await el.updateComplete;
+      expect(stopDialogOf(el).open).to.be.true;
+
+      // Without waiting for the view to report it can no longer stop
+      fire(
+        el.shadowRoot!.querySelector("proxmox-progress-view")!,
+        "install-error",
+        { retryable: true }
+      );
+      await el.updateComplete;
+      expect(stopDialogOf(el).open).to.be.false;
+    });
   });
 
   // These flags reveal Cancel and "Try again" on the progress steps. Left
@@ -1098,6 +1140,37 @@ describe("app-shell", () => {
       expect(stopDialog.open).to.be.false;
       expect(quitDialogOf(el).open).to.be.true;
     });
+
+    for (const [flow, step, ended] of [
+      ["sbc", "flash", "flash-complete"],
+      ["sbc", "flash", "flash-error"],
+      ["vm", "install", "install-complete"],
+      ["vm", "install", "install-error"],
+    ] as const) {
+      it(`stops asking once the install ended (${ended})`, async () => {
+        // The install keeps running until the test ends it
+        mockTauriIpc(() => new Promise(() => {}), { mockEvents: true });
+        // Reconnecting makes the shell listen through these events
+        const parent = el.parentNode!;
+        el.remove();
+        parent.appendChild(el);
+        await settle();
+        wizardState.startFlow(flow);
+        if (flow === "sbc") selectTargets();
+        await goToStep(el, step);
+        fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+          view: "wizard",
+        });
+        await el.updateComplete;
+        await blockClose();
+        expect(quitDialogOf(el).open).to.be.true;
+
+        fire(shellOf(el), ended);
+        await el.updateComplete;
+
+        expect(quitDialogOf(el).open).to.be.false;
+      });
+    }
 
     it("logs, rather than throws, when it can't listen for close requests", async () => {
       const logged: unknown[] = [];

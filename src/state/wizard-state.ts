@@ -267,9 +267,24 @@ class WizardStateStore {
     key: K,
     value: WizardSelections[K]
   ) {
-    const selections = { ...this.state.selections, [key]: value };
+    this.setSelections({ [key]: value });
+  }
+
+  /**
+   * Set several selections at once, so subscribers hear of them once.
+   *
+   * State is never changed in place, so values are compared by identity. A
+   * write that changes nothing keeps the same `selections` object and
+   * notifies no one, so a check that compares selections by identity to
+   * notice a change while it ran still applies.
+   */
+  setSelections(changes: Partial<WizardSelections>) {
+    const previous = this.state.selections;
+    const keys = Object.keys(changes) as (keyof WizardSelections)[];
+    if (keys.every((key) => Object.is(previous[key], changes[key]))) return;
+    const selections = { ...previous, ...changes };
     const { currentFlow, currentStepIndex } = this.state;
-    if (key === "deviceConfig" && currentFlow) {
+    if ("deviceConfig" in changes && currentFlow) {
       // The board decides whether there is a Wi-Fi step; stay on the same step
       const current = this.state.steps[currentStepIndex]?.id;
       const steps = stepsFor(currentFlow, selections);
