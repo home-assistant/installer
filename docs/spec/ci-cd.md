@@ -34,9 +34,9 @@ the jobs and their steps; in short:
   [Required Secrets](#required-secrets)).
 
 A new push to a pull request cancels the run for the push before it. Only
-runs on `main` save the cargo caches; pull requests restore them but don't
-write their own, so they don't push `main`'s caches out of the 10 GB GitHub
-keeps per repository.
+runs on `main` save the cargo and apt caches; pull requests restore them but
+don't write their own, so they don't push `main`'s caches out of the 10 GB
+GitHub keeps per repository.
 
 ---
 
@@ -84,9 +84,9 @@ A release run differs from a push to `main` in these ways:
   alpha. The build and release jobs wait for the `version` job, so nothing is
   built if a check fails. Who may publish is limited separately, by the tag
   rulesets (see [Immutable Release Protections](#immutable-release-protections)).
-- **No caches:** no job restores the npm, cargo or Playwright cache, so the
-  installers and the tests that gate them never depend on what another run
-  wrote.
+- **No caches:** no job restores the npm, cargo, apt or Playwright cache, so
+  the installers and the tests that gate them never depend on what another
+  run wrote.
 - **Version:** the `version` job picks the version once, and each build job
   writes it into `Cargo.toml` and checks that Cargo picked it up before it
   builds anything.
