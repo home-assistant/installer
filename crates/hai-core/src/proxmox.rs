@@ -1174,6 +1174,17 @@ fn task_node(upid: &str) -> Option<&str> {
         .filter(|node| !node.is_empty())
 }
 
+/// How long to wait between two task status checks. Tests poll mock
+/// servers, which answer right away.
+const TASK_POLL_INTERVAL: std::time::Duration = if cfg!(test) {
+    std::time::Duration::from_millis(10)
+} else {
+    std::time::Duration::from_secs(2)
+};
+
+/// Failed task status checks in a row before giving up on a task.
+const MAX_TASK_POLL_FAILURES: u32 = 3;
+
 /// Wait for a Proxmox task to complete.
 async fn wait_for_task(
     session: &ProxmoxSession,
@@ -1200,6 +1211,7 @@ async fn wait_for_task_completion(
     let client = create_client(session, 30)?;
     let start = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs(timeout_secs);
+    let mut failed_polls = 0;
 
     loop {
         if start.elapsed() > timeout {
@@ -1209,12 +1221,48 @@ async fn wait_for_task_completion(
             )));
         }
 
-        let response = client
+        // The task keeps running on Proxmox whatever happens to one status
+        // check. Giving up on a single network hiccup or a busy API (5xx)
+        // leaves a VM behind that is never resized or started.
+        let poll = match client
             .get(&url)
             .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
             .send()
             .await
-            .map_err(|e| request_error(e, "Failed to check task status"))?;
+        {
+            Ok(response) if response.status().is_server_error() => {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                Err(Error::ProxmoxApi(format!(
+                    "Failed to check task status ({}): {}",
+                    status,
+                    body.trim()
+                )))
+            }
+            Ok(response) => Ok(response),
+            Err(error) => match request_error(error, "Failed to check task status") {
+                // A changed certificate doesn't change back by asking again.
+                Error::ProxmoxCertificateChanged => return Err(Error::ProxmoxCertificateChanged),
+                error => Err(error),
+            },
+        };
+
+        let response = match poll {
+            Ok(response) => response,
+            Err(error) => {
+                failed_polls += 1;
+                if failed_polls >= MAX_TASK_POLL_FAILURES {
+                    return Err(error);
+                }
+
+                eprintln!(
+                    "Task status check {failed_polls} of {MAX_TASK_POLL_FAILURES} failed, trying again: {error}"
+                );
+                tokio::time::sleep(TASK_POLL_INTERVAL).await;
+                continue;
+            }
+        };
+        failed_polls = 0;
 
         let status = response.status();
         if !status.is_success() {
@@ -1248,16 +1296,23 @@ async fn wait_for_task_completion(
                 .unwrap_or("");
             if exitstatus == "OK" {
                 return Ok(());
-            } else {
-                return Err(Error::ProxmoxApi(format!(
-                    "Task failed with status: {}",
-                    exitstatus
-                )));
             }
+
+            // Proxmox ends a task that logged warnings with "WARNINGS: <count>"
+            // and shows it as succeeded, so the work is done.
+            if exitstatus.starts_with("WARNINGS: ") {
+                eprintln!("Proxmox task {upid} finished with {exitstatus}");
+                return Ok(());
+            }
+
+            return Err(Error::ProxmoxApi(format!(
+                "Task failed with status: {}",
+                exitstatus
+            )));
         }
 
         // Task still running, wait a bit before checking again
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        tokio::time::sleep(TASK_POLL_INTERVAL).await;
     }
 }
 
@@ -4687,12 +4742,14 @@ mod tests {
         async fn test_wait_for_task_http_error() {
             let mut server = Server::new_async().await;
 
+            // A server error is retried, but not forever.
             let task_mock = server
                 .mock(
                     "GET",
                     "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
                 )
                 .with_status(500)
+                .expect(MAX_TASK_POLL_FAILURES as usize)
                 .create_async()
                 .await;
 
@@ -4767,7 +4824,8 @@ mod tests {
         async fn test_wait_for_task_error_includes_what_proxmox_said() {
             let mut server = Server::new_async().await;
 
-            let _task_mock = server
+            // Asking again won't make a task exist, so it isn't retried.
+            let task_mock = server
                 .mock(
                     "GET",
                     "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
@@ -4775,6 +4833,7 @@ mod tests {
                 .with_status(400)
                 .with_header("content-type", "application/json")
                 .with_body(r#"{"errors":{"upid":"no such task"},"data":null}"#)
+                .expect(1)
                 .create_async()
                 .await;
 
@@ -4800,6 +4859,192 @@ mod tests {
                 }
                 other => panic!("Expected ProxmoxApi error, got {other:?}"),
             }
+
+            task_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_wait_for_task_client_errors_are_not_retried() {
+            for status in [401, 403, 404] {
+                let mut server = Server::new_async().await;
+                let task_mock = server
+                    .mock(
+                        "GET",
+                        "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
+                    )
+                    .with_status(status)
+                    .expect(1)
+                    .create_async()
+                    .await;
+
+                let result = wait_for_task(
+                    &test_session(&server),
+                    "pve",
+                    "UPID:pve:00000001:00000002:00000003:test:root@pam:",
+                    10,
+                )
+                .await;
+                assert!(result.is_err(), "{status}");
+
+                task_mock.assert_async().await;
+            }
+        }
+
+        /// Proxmox shows a task that ended with warnings as succeeded.
+        #[tokio::test]
+        #[serial]
+        async fn test_wait_for_task_with_warnings_succeeds() {
+            let mut server = Server::new_async().await;
+            let task_mock = server
+                .mock(
+                    "GET",
+                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
+                )
+                .with_body(r#"{"data":{"status":"stopped","exitstatus":"WARNINGS: 1"}}"#)
+                .create_async()
+                .await;
+
+            let mut stopped = false;
+            let result = wait_for_task_completion(
+                &test_session(&server),
+                "pve",
+                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
+                10,
+                &mut stopped,
+            )
+            .await;
+            assert!(result.is_ok(), "{result:?}");
+            assert!(stopped);
+
+            task_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        #[serial]
+        async fn test_wait_for_task_survives_a_few_server_errors() {
+            let mut server = Server::new_async().await;
+
+            // mockito serves the first mock until its expected hits are used up.
+            let failing = server
+                .mock(
+                    "GET",
+                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
+                )
+                .with_status(503)
+                .expect(MAX_TASK_POLL_FAILURES as usize - 1)
+                .create_async()
+                .await;
+            let done = server
+                .mock(
+                    "GET",
+                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
+                )
+                .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
+                .create_async()
+                .await;
+
+            let result = wait_for_task(
+                &test_session(&server),
+                "pve",
+                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
+                10,
+            )
+            .await;
+            assert!(result.is_ok(), "{result:?}");
+
+            failing.assert_async().await;
+            done.assert_async().await;
+        }
+
+        /// Failures only count while they're in a row; a good poll in
+        /// between starts the count over.
+        #[tokio::test]
+        #[serial]
+        async fn test_wait_for_task_resets_failures_after_a_good_poll() {
+            let mut server = Server::new_async().await;
+            let path = "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status";
+            let below_limit = MAX_TASK_POLL_FAILURES as usize - 1;
+
+            let first_failures = server
+                .mock("GET", path)
+                .with_status(500)
+                .expect(below_limit)
+                .create_async()
+                .await;
+            let running = server
+                .mock("GET", path)
+                .with_body(r#"{"data":{"status":"running"}}"#)
+                .expect(1)
+                .create_async()
+                .await;
+            let second_failures = server
+                .mock("GET", path)
+                .with_status(500)
+                .expect(below_limit)
+                .create_async()
+                .await;
+            let done = server
+                .mock("GET", path)
+                .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
+                .create_async()
+                .await;
+
+            let result = wait_for_task(
+                &test_session(&server),
+                "pve",
+                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
+                10,
+            )
+            .await;
+            assert!(result.is_ok(), "{result:?}");
+
+            first_failures.assert_async().await;
+            running.assert_async().await;
+            second_failures.assert_async().await;
+            done.assert_async().await;
+        }
+
+        /// A dropped connection is a network error, the same path a request
+        /// timeout takes, without waiting 30 seconds for one.
+        #[tokio::test]
+        #[serial]
+        async fn test_wait_for_task_survives_a_dropped_connection() {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                let (dropped, _) = listener.accept().await.unwrap();
+                drop(dropped);
+
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0; 4096];
+                let _ = stream.read(&mut request).await.unwrap();
+                let body = r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            });
+
+            let session = ProxmoxSession {
+                certificate_sha256: None,
+                server_url: format!("http://{address}"),
+                ticket: "test-ticket".to_string(),
+                csrf_token: "test-csrf".to_string(),
+            };
+            let result = wait_for_task(
+                &session,
+                "pve",
+                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
+                10,
+            )
+            .await;
+            assert!(result.is_ok(), "{result:?}");
+
+            server.await.unwrap();
         }
 
         #[tokio::test]
