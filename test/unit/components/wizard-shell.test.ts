@@ -154,13 +154,97 @@ describe("wizard-shell", () => {
     expect(wizardState.getState().currentStepIndex).to.equal(0);
   });
 
-  it("hides footer when hideFooter is true", async () => {
-    const el = await fixture<WizardShell>(html`
-      <wizard-shell hide-footer></wizard-shell>
-    `);
+  it("hides the footer's buttons in place when hideFooter is true", async () => {
+    const el = await fixture<WizardShell>(html`<wizard-shell></wizard-shell>`);
+    const footer = el.shadowRoot!.querySelector(".footer") as HTMLElement;
+    const height = footer.offsetHeight;
 
-    const footer = el.shadowRoot!.querySelector(".footer");
-    expect(footer).to.be.null;
+    el.hideFooter = true;
+    await el.updateComplete;
+
+    // The same footer, so the step above it doesn't move
+    expect(el.shadowRoot!.querySelector(".footer") === footer).to.be.true;
+    expect(footer.offsetHeight).to.equal(height);
+    for (const button of footer.querySelectorAll("wa-button")) {
+      expect(getComputedStyle(button).visibility).to.equal("hidden");
+    }
+  });
+
+  it("moves the focus from a hiding Cancel to the step's heading", async () => {
+    const step = document.createElement("div");
+    step.attachShadow({ mode: "open" }).innerHTML =
+      "<section><h2>Creating the virtual machine</h2></section>";
+    const el = await fixture<WizardShell>(html`
+      <wizard-shell hide-next>${step}</wizard-shell>
+    `);
+    const cancel = el.shadowRoot!.querySelector(
+      ".footer-left wa-button"
+    ) as HTMLElement;
+    await (cancel as HTMLElement & { updateComplete: Promise<unknown> })
+      .updateComplete;
+    cancel.focus();
+    expect(el.shadowRoot!.activeElement === cancel).to.be.true;
+
+    el.hideFooter = true;
+    await el.updateComplete;
+
+    const heading = step.shadowRoot!.querySelector("h2")!;
+    expect(step.shadowRoot!.activeElement === heading).to.be.true;
+  });
+
+  it("leaves the focus alone when the buttons hide without it", async () => {
+    const step = document.createElement("div");
+    step.attachShadow({ mode: "open" }).innerHTML =
+      "<h2>Installing</h2><input />";
+    const el = await fixture<WizardShell>(html`
+      <wizard-shell>${step}</wizard-shell>
+    `);
+    const input = step.shadowRoot!.querySelector("input")!;
+    input.focus();
+
+    el.hideFooter = true;
+    await el.updateComplete;
+
+    expect(step.shadowRoot!.activeElement === input).to.be.true;
+  });
+
+  it("keeps a busy Next focusable, says what it waits for, and takes no clicks", async () => {
+    const el = await fixture<WizardShell>(html`<wizard-shell></wizard-shell>`);
+    const next = el.shadowRoot!.querySelector(
+      ".footer-right wa-button"
+    ) as HTMLElement & { updateComplete: Promise<unknown> };
+    const status = el.shadowRoot!.querySelector("[aria-live=polite]")!;
+    await next.updateComplete;
+    next.focus();
+    // Mounted empty, so the busy label is announced as it arrives
+    expect(status.textContent).to.equal("");
+
+    el.nextBusy = true;
+    el.nextLabel = "Connecting...";
+    await el.updateComplete;
+    await next.updateComplete;
+
+    expect(next.hasAttribute("loading")).to.be.true;
+    expect(next.hasAttribute("disabled")).to.be.false;
+    expect(el.shadowRoot!.activeElement === next).to.be.true;
+    expect(
+      next.shadowRoot!.querySelector("button")!.getAttribute("aria-busy")
+    ).to.equal("true");
+    expect(next.textContent!.trim()).to.equal("Connecting...");
+    expect(status.textContent).to.equal("Connecting...");
+
+    let nexts = 0;
+    el.addEventListener("wizard-next", () => nexts++);
+    next.click();
+    expect(nexts).to.equal(0);
+
+    el.nextBusy = false;
+    el.nextLabel = "Next";
+    await el.updateComplete;
+    await next.updateComplete;
+    expect(status.textContent).to.equal("");
+    next.click();
+    expect(nexts).to.equal(1);
   });
 
   it("hides next button when hideNext is true", async () => {

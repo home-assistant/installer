@@ -3,6 +3,7 @@ import "../../../src/views/other-options-view.js";
 import type { OtherOptionsView } from "../../../src/views/other-options-view.js";
 import type { OptionCard } from "../../../src/components/option-card.js";
 import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
+import { expectThemeLink } from "../helpers/link-style.js";
 import { captureOpenedUrls, restoreTauriIpc, settle } from "../tauri-ipc.js";
 
 const OPTIONS = [
@@ -59,6 +60,7 @@ describe("other-options-view", () => {
     expect(link.getAttribute("href")).to.equal(INSTALLATION_TYPES_URL);
     expect(link.getAttribute("target")).to.equal("_blank");
     expect(link.getAttribute("rel")).to.equal("noopener noreferrer");
+    expectThemeLink(link);
   });
 
   it("lists each method with its own icon", async () => {

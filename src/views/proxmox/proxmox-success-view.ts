@@ -4,6 +4,7 @@ import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { proxmoxVmConfig } from "../../state/vm-defaults.js";
 import { openExternalLink } from "../../utils/external-url.js";
+import { linkStyles } from "../../utils/link-styles.js";
 
 import "../../components/inline-notice.js";
 import "../../components/install-success.js";
@@ -13,20 +14,19 @@ const DIRECTORY_STORAGE_DOCS =
 
 @customElement("proxmox-success-view")
 export class ProxmoxSuccessView extends LitElement {
-  static styles = css`
-    :host {
-      display: block;
-      min-height: 100%;
-    }
+  static styles = [
+    linkStyles,
+    css`
+      :host {
+        display: block;
+        min-height: 100%;
+      }
 
-    .import-reminder {
-      margin: 0 auto 2rem;
-    }
-
-    .import-reminder a {
-      color: var(--ha-primary-color, #03a9f4);
-    }
-  `;
+      .import-reminder {
+        margin: 0 auto 2rem;
+      }
+    `,
+  ];
 
   @state()
   private _wizardState: WizardState = wizardState.getState();
@@ -72,9 +72,8 @@ export class ProxmoxSuccessView extends LitElement {
                 target="_blank"
                 rel="noopener noreferrer"
                 @click=${openExternalLink}
-              >
-                ${displayUrl}
-              </a>`,
+                >${displayUrl}</a
+              >`,
             }
           )}`,
           localize(

@@ -2,6 +2,7 @@ import { expect, fixture, html } from "@open-wc/testing";
 import "../../../src/components/install-success.js";
 import type { InstallSuccess } from "../../../src/components/install-success.js";
 import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
+import { expectThemeLink } from "../helpers/link-style.js";
 
 describe("install-success", () => {
   it("numbers the next steps in a labelled list", async () => {
@@ -58,6 +59,22 @@ describe("install-success", () => {
     expect(el.shadowRoot!.querySelector(".tip-section")!.textContent).to.equal(
       "Manage it from the dashboard."
     );
+  });
+
+  it("underlines links in the steps and footer, not the app buttons", async () => {
+    const el = await fixture<InstallSuccess>(
+      html`<install-success
+        .steps=${[
+          html`Open <a href="#">homeassistant.local</a> in your browser`,
+        ]}
+        .footer=${html`<a href="#">Full guide</a>`}
+      ></install-success>`
+    );
+    expectThemeLink(el.shadowRoot!.querySelector(".step-text a")!);
+    expectThemeLink(el.shadowRoot!.querySelector(".next-steps-footer a")!);
+    // Bordered, with an icon: buttons more than links in a sentence
+    for (const link of el.shadowRoot!.querySelectorAll(".app-link"))
+      expect(getComputedStyle(link).textDecorationLine).to.equal("none");
   });
 
   it("shows slotted content and keeps Casita decorative", async () => {
