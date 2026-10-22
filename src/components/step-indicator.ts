@@ -3,11 +3,15 @@ import { customElement, property, queryAll } from "lit/decorators.js";
 import type { WizardStep } from "../state/wizard-state.js";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { localize } from "../localization/localize.js";
-import { reducedMotionStyles } from "../utils/view-accessibility.js";
+import {
+  reducedMotionStyles,
+  srOnlyStyles,
+} from "../utils/view-accessibility.js";
 
 @customElement("step-indicator")
 export class StepIndicator extends LitElement {
   static styles = [
+    srOnlyStyles,
     reducedMotionStyles,
     css`
       :host {
