@@ -386,7 +386,7 @@ pub struct ProxmoxNode {
     pub name: String,
     /// Node status (online/offline)
     pub status: String,
-    /// CPU usage percentage
+    /// CPU usage as Proxmox reports it, a fraction from 0 to 1 (0.15 is 15%)
     pub cpu_usage: Option<f64>,
     /// Logical CPUs; Proxmox won't start a VM with more cores than this
     pub cpu_count: Option<u32>,

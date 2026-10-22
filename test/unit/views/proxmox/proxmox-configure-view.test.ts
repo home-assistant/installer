@@ -75,7 +75,7 @@ describe("proxmox-configure-view", () => {
             {
               name: "pve",
               status: "online",
-              cpu_usage: 12.5,
+              cpu_usage: 0.125,
               cpu_count: null,
             },
             {
@@ -108,6 +108,49 @@ describe("proxmox-configure-view", () => {
     const select = el.shadowRoot!.querySelector("wa-select")!;
     await waitUntil(() => select.displayLabel === "pve (CPU: 12.5%)");
     expect(select.displayInput.value).to.equal("pve (CPU: 12.5%)");
+  });
+
+  // Proxmox reports CPU usage as a fraction, so 0.153 is 15.3%
+  it("shows each node's CPU usage as a percentage", async () => {
+    mockTauriIpc((cmd) => {
+      switch (cmd) {
+        case "proxmox_list_bridges":
+          return [{ name: "vmbr0", network_type: "bridge", comments: null }];
+        case "proxmox_list_nodes":
+          return [
+            {
+              name: "pve",
+              status: "online",
+              cpu_usage: 0.153,
+              cpu_count: null,
+            },
+            {
+              name: "pve2",
+              status: "online",
+              cpu_usage: 0.5,
+              cpu_count: null,
+            },
+          ];
+        case "proxmox_get_next_vm_id":
+          return 100;
+        case "proxmox_list_storage":
+          return [];
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+
+    const el = fixtureSync<ProxmoxConfigureView>(html`
+      <proxmox-configure-view></proxmox-configure-view>
+    `);
+    await waitUntil(
+      () => el.shadowRoot!.querySelectorAll("wa-select wa-option").length,
+      "the node dropdown never rendered"
+    );
+
+    const options = [
+      ...el.shadowRoot!.querySelectorAll("wa-select wa-option"),
+    ].map((option) => option.textContent!.trim());
+    expect(options).to.include.members(["pve (CPU: 15.3%)", "pve2 (CPU: 50%)"]);
   });
 
   it("exposes named controls and announces actual slider sizes", async () => {
@@ -321,6 +364,114 @@ describe("proxmox-configure-view", () => {
     await mount();
 
     expect(wizardState.getState().selections.proxmoxStorage).to.equal("local");
+  });
+
+  describe("without storage for the VM disk", () => {
+    // A directory storage without Disk image content, and an image storage
+    // that is not active: neither can hold the VM disk
+    const local: ProxmoxStorage = {
+      name: "local",
+      storage_type: "dir",
+      active: true,
+      content: ["iso", "vztmpl", "backup", "import"],
+      available: 100,
+    };
+    const inactiveLvm: ProxmoxStorage = {
+      name: "local-lvm",
+      storage_type: "lvmthin",
+      active: false,
+      content: ["images", "rootdir"],
+      available: 100,
+    };
+    let storages: ProxmoxStorage[] | Promise<ProxmoxStorage[]>;
+    let calls: string[];
+
+    beforeEach(() => {
+      storages = [local, inactiveLvm];
+      calls = [];
+      mockTauriIpc((cmd) => {
+        calls.push(cmd);
+        switch (cmd) {
+          case "proxmox_list_bridges":
+            return [{ name: "vmbr0", network_type: "bridge", comments: null }];
+          case "proxmox_list_nodes":
+            return [{ name: "pve", status: "online" }];
+          case "proxmox_get_next_vm_id":
+            return 100;
+          case "proxmox_list_storage":
+            return storages;
+        }
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+    });
+
+    it("says why Next is blocked and what to do", async () => {
+      wizardState.setSelection("proxmoxStorage", "local-lvm");
+      const el = await mount();
+
+      const alert = el.shadowRoot!.querySelector("[role=alert]")!;
+      expect(alert.textContent).to.contain(
+        "No active storage on this node can hold the VM disk."
+      );
+      expect(alert.textContent).to.contain(
+        'Enable the "Disk image" content type'
+      );
+      expect(alert.textContent).to.contain("choose another node");
+      // Next needs a storage, so the restored one may not stay chosen
+      expect(wizardState.getState().selections.proxmoxStorage).to.equal("");
+      const storageSelect = el.shadowRoot!.querySelectorAll("wa-select")[1];
+      expect(storageSelect.disabled).to.be.true;
+    });
+
+    it("reads the storage again from Try again", async () => {
+      const el = await mount();
+      await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
+
+      storages = [local, { ...inactiveLvm, active: true }];
+      calls.length = 0;
+      const retry = [...el.shadowRoot!.querySelectorAll("wa-button")].find(
+        (button) => button.textContent!.trim() === "Try again"
+      )!;
+      retry.click();
+      await waitUntil(
+        () => wizardState.getState().selections.proxmoxStorage === "local-lvm",
+        "the retry never chose the storage it found"
+      );
+      await el.updateComplete;
+
+      // Only the node's storage and bridges are read again
+      expect(calls).to.deep.equal([
+        "proxmox_list_storage",
+        "proxmox_list_bridges",
+      ]);
+      expect(el.shadowRoot!.querySelector("[role=alert]")).to.be.null;
+      const storageSelect = el.shadowRoot!.querySelectorAll("wa-select")[1];
+      expect(storageSelect.disabled).to.be.false;
+      expect(storageSelect.value).to.equal("local-lvm");
+    });
+
+    it("only says so after reading the selected node's storage", async () => {
+      const pending = deferred<ProxmoxStorage[]>();
+      storages = pending.promise;
+      const el = await fixture<ProxmoxConfigureView>(html`
+        <proxmox-configure-view></proxmox-configure-view>
+      `);
+      await waitUntil(() => calls.includes("proxmox_list_storage"));
+
+      // A new session makes this lookup's answer one nobody waits for
+      wizardState.setSelection("proxmoxSession", {
+        server_url: "https://192.168.1.100:8006",
+        ticket: "new-ticket",
+        csrf_token: "mock-csrf",
+      });
+      pending.resolve([]);
+      await settle();
+      await el.updateComplete;
+
+      expect(el.shadowRoot!.textContent).to.not.contain(
+        "No active storage on this node"
+      );
+    });
   });
 
   it("does not save after being detached during the storage lookup", async () => {

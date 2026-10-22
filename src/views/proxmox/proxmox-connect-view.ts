@@ -3,6 +3,7 @@ import {
   renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
+import { linkStyles } from "../../utils/link-styles.js";
 import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
@@ -37,6 +38,7 @@ export class ProxmoxConnectView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     fieldErrorStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -455,6 +457,8 @@ export class ProxmoxConnectView extends LitElement {
   }
 
   render() {
+    // The fields are read-only while connecting, not disabled: that would
+    // take the focus from the one Enter was pressed in
     return html`
       <h2>
         ${localize("views.proxmox.proxmox_connect_view.connect_to_proxmox_ve")}
@@ -481,7 +485,7 @@ export class ProxmoxConnectView extends LitElement {
           .value=${this._serverUrl}
           @input=${this._onServerUrlChange}
           @keydown=${this._onKeyDown}
-          ?disabled=${this._connecting}
+          ?readonly=${this._connecting}
           ${fieldError(this._fieldErrors.serverUrl)}
         >
           <!-- In the hint slot, so the field describes itself with it. Live:
@@ -506,7 +510,7 @@ export class ProxmoxConnectView extends LitElement {
           .value=${this._username}
           @input=${this._onUsernameChange}
           @keydown=${this._onKeyDown}
-          ?disabled=${this._connecting}
+          ?readonly=${this._connecting}
           ${fieldError(this._fieldErrors.username)}
         >
           <span slot="hint" aria-live="polite"
@@ -528,7 +532,7 @@ export class ProxmoxConnectView extends LitElement {
           .value=${this._password}
           @input=${this._onPasswordChange}
           @keydown=${this._onKeyDown}
-          ?disabled=${this._connecting}
+          ?readonly=${this._connecting}
           ${fieldError(this._fieldErrors.password)}
         >
           <span slot="hint" aria-live="polite"
@@ -547,7 +551,7 @@ export class ProxmoxConnectView extends LitElement {
           .value=${this._totp}
           @input=${this._onTotpChange}
           @keydown=${this._onKeyDown}
-          ?disabled=${this._connecting}
+          ?readonly=${this._connecting}
         ></wa-input>
       </div>
       <wa-dialog
