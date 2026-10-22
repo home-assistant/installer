@@ -66,7 +66,7 @@ export const HA_HARDWARE: readonly HaHardware[] = [
     // The Blue is an ODROID-N2+ in a Home Assistant case.
     id: "blue",
     deviceId: "ha-blue",
-    image: "/assets/devices/hardkernel_odroid-n2.png",
+    image: "/assets/devices/homeassistant_blue.png",
     manifestBoard: "odroid-n2",
   },
 ];
