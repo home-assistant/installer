@@ -4,7 +4,7 @@ import {
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { formatNumber, localize } from "../../localization/localize.js";
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, noChange } from "lit";
 import {
   ViewAccessibility,
   reducedMotionStyles,
@@ -240,8 +240,6 @@ export class ProxmoxConfigureView extends LitElement {
   @state() private _checkError: InstallerError | null = null;
   /** Raw text of the VLAN field; empty keeps today's untagged network. */
   @state() private _vlanTag = "";
-  /** A restored tag opens Advanced, so it is never hidden from review. */
-  private _advancedOpen = false;
 
   connectedCallback() {
     super.connectedCallback();
@@ -265,7 +263,6 @@ export class ProxmoxConfigureView extends LitElement {
     this._selectedStorage = selections.proxmoxStorage ?? "";
     this._selectedBridge = selections.proxmoxBridge ?? "";
     this._vlanTag = selections.proxmoxVlanTag?.toString() ?? "";
-    this._advancedOpen = !!this._vlanTag;
     this._vmName = selections.vmName ?? DEFAULT_PROXMOX_VM_NAME;
     this._cpuCores = selections.cpuCores ?? DEFAULT_CPU_CORES;
     this._memoryMb = selections.memoryMb ?? DEFAULT_MEMORY_MB;
@@ -687,6 +684,11 @@ export class ProxmoxConfigureView extends LitElement {
       );
     }
     return undefined;
+  }
+
+  /** A set tag changes the VM's network and can block Next: never hide it */
+  private _keepVlanTagShown(e: Event) {
+    if (this._vlanTag && e.target === e.currentTarget) e.preventDefault();
   }
 
   private _onVlanInput(e: Event) {
@@ -1268,7 +1270,8 @@ export class ProxmoxConfigureView extends LitElement {
       <wa-details
         appearance="plain"
         summary=${localize("views.proxmox.proxmox_configure_view.advanced")}
-        ?open=${this._advancedOpen}
+        ?open=${!!this._vlanTag || noChange}
+        @wa-hide=${this._keepVlanTagShown}
       >
         <wa-input
           id="vlan-tag"
