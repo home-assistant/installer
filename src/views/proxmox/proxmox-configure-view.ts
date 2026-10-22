@@ -245,6 +245,8 @@ export class ProxmoxConfigureView extends LitElement {
    * that would otherwise vanish while it runs. That part stays, busy.
    */
   @state() private _reloadFrom?: "import" | "bridges";
+  /** The storage the last read found Import enabled on, to say so */
+  private _importReadyOn?: string;
 
   // Where focus continues after a lookup hid the button that started it
   @query(".enable-import") private _enableImportButton?: HTMLElement;
@@ -294,8 +296,9 @@ export class ProxmoxConfigureView extends LitElement {
     this._unsubscribe?.();
   }
 
-  private async _loadNodes() {
+  private async _loadNodes(from?: "bridges") {
     this._loadingNodes = true;
+    this._reloadFrom = from;
     this._error = null;
     this._sessionExpired = false;
     // Preserve choices across reconnects, but block Next until revalidated.
@@ -360,7 +363,7 @@ export class ProxmoxConfigureView extends LitElement {
       this._fitCoresToNode();
 
       if (this._selectedNode) {
-        await this._loadStorage();
+        await this._loadStorage(from);
         // The storage lookup is another chance to have left this step
         if (!this.isConnected || !isCurrentSession()) return;
       }
@@ -371,6 +374,7 @@ export class ProxmoxConfigureView extends LitElement {
       this._setError(error);
     } finally {
       this._loadingNodes = false;
+      this._reloadFrom = undefined;
       if (this.isConnected && isCurrentSession()) this._saveSelections();
     }
   }
@@ -431,13 +435,14 @@ export class ProxmoxConfigureView extends LitElement {
         // The image is uploaded to import storage before the VM disk is made.
         // ESXi only advertises Import as a source, and a full storage cannot
         // take the upload either.
-        this._importReady = storageResult.value.some(
+        this._importReadyOn = storageResult.value.find(
           (s) =>
             s.active &&
             s.storage_type !== "esxi" &&
             s.available > 0 &&
             s.content.includes("import")
-        );
+        )?.name;
+        this._importReady = this._importReadyOn !== undefined;
         this._importCandidates = storageResult.value.filter(
           (s) =>
             s.active &&
@@ -573,6 +578,7 @@ export class ProxmoxConfigureView extends LitElement {
   private _resetImport(keepShown = false) {
     this._importStatus = "";
     this._importReady = false;
+    this._importReadyOn = undefined;
     this._importDialog = false;
     this._importDeclined = false;
     this._importError = null;
@@ -707,7 +713,21 @@ export class ProxmoxConfigureView extends LitElement {
   }
 
   private async _refreshStorage() {
-    await this._loadStorage("import");
+    const reload = this._loadStorage("import");
+    const lookup = this._storageLookup;
+    await reload;
+    // Import may have been enabled in Proxmox meanwhile. Its section goes
+    // away then, so say why.
+    if (
+      this.isConnected &&
+      lookup === this._storageLookup &&
+      this._importReadyOn
+    ) {
+      this._importStatus = localize(
+        "views.proxmox.proxmox_configure_view.import_enabled_on_storage",
+        { storage: this._importReadyOn }
+      );
+    }
     await this._restoreFocus(
       () => this._refreshStorageButton ?? this._bridgeSelect
     );
@@ -716,7 +736,7 @@ export class ProxmoxConfigureView extends LitElement {
   private async _retryBridges() {
     await (this._selectedNode
       ? this._loadStorage("bridges")
-      : this._loadNodes());
+      : this._loadNodes("bridges"));
     await this._restoreFocus(
       () => this._bridgeRetryButton ?? this._bridgeSelect
     );
@@ -729,7 +749,12 @@ export class ProxmoxConfigureView extends LitElement {
   private async _restoreFocus(target: () => HTMLElement | undefined) {
     await this.updateComplete;
     if (!this.isConnected) return;
-    this._accessibility.restoreFocus(target());
+    const element = target();
+    // A select this update enabled takes that on in its own update, and
+    // can't take focus before
+    await (element as { updateComplete?: Promise<unknown> } | undefined)
+      ?.updateComplete;
+    this._accessibility.restoreFocus(element);
   }
 
   private _reconnect() {
@@ -1280,9 +1305,10 @@ export class ProxmoxConfigureView extends LitElement {
                       `
                     )}
                   </wa-select>
-                  ${this._bridges.length === 0 &&
-                  this._bridgesNode === this._selectedNode &&
-                  !this._error
+                  ${this._reloadFrom === "bridges" ||
+                  (this._bridges.length === 0 &&
+                    this._bridgesNode === this._selectedNode &&
+                    !this._error)
                     ? // A lookup error already offers its own retry above.
                       // Empty while trying again, so the same result is read
                       // out again.

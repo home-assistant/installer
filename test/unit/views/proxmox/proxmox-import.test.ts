@@ -222,6 +222,20 @@ describe("Proxmox import consent", () => {
     expect(el.shadowRoot!.activeElement).to.equal(refresh);
   });
 
+  it("says Import is enabled when Refresh storage finds it enabled in Proxmox", async () => {
+    const el = await mount();
+    const status = el.shadowRoot!.querySelector(".sr-only[role=status]")!;
+    // Someone enables Import in Proxmox, then the user refreshes
+    storages = [{ ...directory, content: ["backup", "import"] }, disk];
+    (el.shadowRoot!.querySelector(".refresh-storage") as HTMLElement).click();
+    await waitUntil(() => !el.shadowRoot!.querySelector(".import-setting"));
+    await settle();
+    await el.updateComplete;
+
+    expect(status.textContent).to.contain('Import is enabled on "local"');
+    expect(writes).to.deep.equal([]);
+  });
+
   it("hands focus back to Enable Import once its dialog closes", async () => {
     const el = await mount();
     // Without opening it for real: a test page in the background never

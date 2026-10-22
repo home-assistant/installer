@@ -368,6 +368,58 @@ describe("Proxmox bridge selection", () => {
     );
   });
 
+  it("keeps Try again in place through node discovery and the bridges after it", async () => {
+    let nodes = deferred<unknown>();
+    nodes.resolve([]);
+    const bridges = deferred<ProxmoxBridge[]>();
+    let bridgeRequests = 0;
+    mockTauriIpc((cmd) => {
+      if (cmd === "proxmox_list_nodes") return nodes.promise;
+      if (cmd === "proxmox_get_next_vm_id") return 100;
+      if (cmd === "proxmox_list_storage")
+        return [
+          { name: "local", active: true, content: ["images"], available: 100 },
+        ];
+      if (cmd === "proxmox_list_bridges") {
+        bridgeRequests++;
+        return bridges.promise;
+      }
+      throw new Error(`Unexpected command: ${cmd}`);
+    });
+    const el = await mount();
+    await waitUntil(() => !!el.shadowRoot!.querySelector(".bridge-retry"));
+    const retry = el.shadowRoot!.querySelector(
+      ".bridge-retry"
+    ) as HTMLElement & {
+      loading: boolean;
+    };
+
+    nodes = deferred<unknown>();
+    retry.focus();
+    retry.click();
+    await el.updateComplete;
+    // Looking for nodes: still there, busy
+    expect(retry.isConnected).to.be.true;
+    expect(retry.loading).to.be.true;
+    expect(el.shadowRoot!.activeElement === retry).to.be.true;
+
+    // A node turns up, and its bridges are read: still there
+    nodes.resolve([{ name: "pve", status: "online" }]);
+    await waitUntil(() => bridgeRequests === 1);
+    await el.updateComplete;
+    expect(retry.isConnected).to.be.true;
+    expect(el.shadowRoot!.activeElement === retry).to.be.true;
+
+    bridges.resolve([bridge("vmbr0")]);
+    await ready();
+    await settle();
+    await el.updateComplete;
+    expect(
+      el.shadowRoot!.activeElement ===
+        el.shadowRoot!.querySelector("#network-bridge")
+    ).to.be.true;
+  });
+
   it("does not trust a restored bridge while its lookup is pending", async () => {
     wizardState.setSelection("proxmoxBridge", "vmbr1");
     wizardState.setSelection("proxmoxBridgeReady", true);
