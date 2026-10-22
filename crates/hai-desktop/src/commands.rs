@@ -888,7 +888,11 @@ mod tests {
         };
         let error = proxmox_check_vm_config(session, config).await.unwrap_err();
 
-        assert_eq!(error.code, "proxmox_api");
+        assert_eq!(error.code, "proxmox_action_required");
+        assert_eq!(
+            error.details["message_key"],
+            "backend.proxmox.disk_too_small"
+        );
     }
 
     // The configure view picks Retry or Reconnect from the code, so a failed

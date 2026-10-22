@@ -40,9 +40,9 @@ const MIN_DISK_SIZE_GB: u32 = 32;
 
 fn validate_disk_size(disk_size_gb: u32) -> Result<()> {
     if disk_size_gb < MIN_DISK_SIZE_GB {
-        return Err(Error::ProxmoxApi(format!(
-            "The HAOS disk must be at least {} GiB. Proxmox cannot shrink the imported disk.",
-            MIN_DISK_SIZE_GB
+        return Err(Error::ProxmoxActionRequired(crate::message!(
+            "backend.proxmox.disk_too_small",
+            size = MIN_DISK_SIZE_GB,
         )));
     }
     Ok(())
@@ -518,14 +518,17 @@ async fn ensure_bridge_available(
             "backend.proxmox.vlan_tag_out_of_range"
         )));
     }
-    if !valid_bridge_name(&config.bridge) {
-        return Err(Error::ProxmoxApi(
-            "Select a valid network bridge before continuing.".to_string(),
-        ));
-    }
-    list_bridges(session, &config.node).await?.into_iter()
+    list_bridges(session, &config.node)
+        .await?
+        .into_iter()
         .find(|bridge| bridge.name == config.bridge)
-        .ok_or_else(|| Error::ProxmoxApi(format!("Network bridge '{}' is no longer available on node '{}'. Return to configuration and select a network bridge.", config.bridge, config.node)))
+        .ok_or_else(|| {
+            Error::ProxmoxActionRequired(crate::message!(
+                "backend.proxmox.bridge_unavailable",
+                bridge = config.bridge,
+                node = config.node,
+            ))
+        })
 }
 
 /// List available storage on a node
@@ -1026,7 +1029,10 @@ async fn ensure_bridge_access(session: &ProxmoxSession, config: &ProxmoxVmConfig
             return Err(Error::ProxmoxSessionExpired);
         }
         if response.status() == reqwest::StatusCode::FORBIDDEN {
-            return Err(Error::ProxmoxApi(format!("Cannot read SDN VNet '{}'. Grant SDN.Audit on this VNet so its network permissions can be checked.", bridge.name)));
+            return Err(Error::ProxmoxActionRequired(crate::message!(
+                "backend.proxmox.missing_sdn_audit",
+                vnet = bridge.name,
+            )));
         }
         if !response.status().is_success() {
             return Err(Error::ProxmoxApi(format!(
@@ -3214,12 +3220,19 @@ mod tests {
                 .await
                 .unwrap()
                 .is_empty());
-            assert!(
-                ensure_bridge_available(&test_session(&server), &vm_config())
-                    .await
-                    .unwrap_err()
-                    .to_string()
-                    .contains("no longer available")
+            let error = ensure_bridge_available(&test_session(&server), &vm_config())
+                .await
+                .unwrap_err();
+            let Error::ProxmoxActionRequired(message) = error else {
+                panic!("{error:?}");
+            };
+            assert_eq!(
+                message,
+                crate::message!(
+                    "backend.proxmox.bridge_unavailable",
+                    bridge = "vmbr0",
+                    node = "pve",
+                )
             );
             network.expect(2).assert_async().await;
         }
@@ -3260,7 +3273,8 @@ mod tests {
 
         #[tokio::test]
         async fn test_bridge_validation_rejects_net0_and_path_injection_before_create() {
-            let server = Server::new_async().await;
+            let mut server = Server::new_async().await;
+            mock_default_bridge(&mut server).await;
             for name in [
                 "",
                 "vmbr0,tag=10",
@@ -3281,9 +3295,16 @@ mod tests {
                 )
                 .await
                 .unwrap_err();
-                assert!(
-                    error.to_string().contains("valid network bridge"),
-                    "{error}"
+                let Error::ProxmoxActionRequired(message) = error else {
+                    panic!("{error:?}");
+                };
+                assert_eq!(
+                    message,
+                    crate::message!(
+                        "backend.proxmox.bridge_unavailable",
+                        bridge = name,
+                        node = "pve",
+                    )
                 );
             }
         }
@@ -3598,10 +3619,18 @@ mod tests {
                 let error = ensure_bridge_access(&test_session(&server), &config)
                     .await
                     .unwrap_err();
-                if status == 401 {
-                    assert!(matches!(error, Error::ProxmoxSessionExpired));
-                } else {
-                    assert!(matches!(error, Error::ProxmoxApi(_)));
+                match status {
+                    401 => assert!(matches!(error, Error::ProxmoxSessionExpired)),
+                    403 => {
+                        let Error::ProxmoxActionRequired(message) = error else {
+                            panic!("{error:?}");
+                        };
+                        assert_eq!(
+                            message,
+                            crate::message!("backend.proxmox.missing_sdn_audit", vnet = "lan")
+                        );
+                    }
+                    _ => assert!(matches!(error, Error::ProxmoxApi(_))),
                 }
                 network.assert_async().await;
                 vnet.assert_async().await;
@@ -5027,16 +5056,24 @@ mod tests {
             };
             for size in [0, 1, 31] {
                 let config = disk_test_config(size);
-                let error = create_vm(&Backend, &session, &config, &crate::NoOpProgress)
-                    .await
-                    .unwrap_err();
-                assert!(error.to_string().contains("at least 32 GiB"));
                 // The check before confirming rejects it the same way
-                let error = Backend
-                    .check_vm_config(&session, &config)
-                    .await
-                    .unwrap_err();
-                assert!(error.to_string().contains("cannot shrink"));
+                for error in [
+                    create_vm(&Backend, &session, &config, &crate::NoOpProgress)
+                        .await
+                        .unwrap_err(),
+                    Backend
+                        .check_vm_config(&session, &config)
+                        .await
+                        .unwrap_err(),
+                ] {
+                    let Error::ProxmoxActionRequired(message) = error else {
+                        panic!("{error:?}");
+                    };
+                    assert_eq!(
+                        message,
+                        crate::message!("backend.proxmox.disk_too_small", size = 32)
+                    );
+                }
             }
         }
 
