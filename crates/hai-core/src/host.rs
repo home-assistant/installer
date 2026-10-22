@@ -85,6 +85,9 @@ async fn check_ha_updated(ip: &str) -> bool {
 /// connections each time.
 static HA_CLIENT: LazyLock<Option<reqwest::Client>> = LazyLock::new(|| {
     reqwest::Client::builder()
+        // The VM is on the local network, out of reach for a corporate proxy.
+        // The proxy's own 407 would pass as ready, its 502 would never pass.
+        .no_proxy()
         .timeout(Duration::from_secs(5))
         .build()
         .ok()
@@ -215,5 +218,44 @@ mod tests {
         let path = format!("/{}", server.host_with_port());
         assert_eq!(get_status("", &path).await, None);
         mock.assert_async().await;
+    }
+
+    /// Run by `test_probes_ignore_proxy_environment` in a child process, so the
+    /// proxy variables it sets never leak into tests running in parallel.
+    #[tokio::test]
+    #[ignore = "run in its own process by test_probes_ignore_proxy_environment"]
+    async fn probes_with_dead_proxy_in_environment() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/manifest.json")
+            .with_status(200)
+            .create_async()
+            .await;
+
+        assert!(check_ha_updated(&server.host_with_port()).await);
+        mock.assert_async().await;
+    }
+
+    #[test]
+    fn test_probes_ignore_proxy_environment() {
+        // Nothing listens on the discard port, so any request sent through it fails
+        let dead_proxy = "http://127.0.0.1:9";
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "host::tests::probes_with_dead_proxy_in_environment",
+                "--ignored",
+                "--quiet",
+            ])
+            .env("HTTP_PROXY", dead_proxy)
+            .env("http_proxy", dead_proxy)
+            .env("ALL_PROXY", dead_proxy)
+            .env("all_proxy", dead_proxy)
+            .env_remove("NO_PROXY")
+            .env_remove("no_proxy")
+            .status()
+            .unwrap();
+
+        assert!(status.success());
     }
 }
