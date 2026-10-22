@@ -174,8 +174,8 @@ mod platform {
     /// The portal's "suspend the session" flag.
     const INHIBIT_SUSPEND: u32 = 4;
 
-    /// How long the desktop gets to confirm the inhibition before we fall back.
-    const PORTAL_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
+    /// How long the desktop gets to inhibit suspend before we fall back.
+    const PORTAL_TIMEOUT: Duration = Duration::from_secs(5);
 
     #[zbus::proxy(
         interface = "org.freedesktop.portal.Inhibit",
@@ -228,7 +228,12 @@ mod platform {
 
     impl Inner {
         pub(super) async fn acquire(reason: &str) -> Result<Self> {
-            if let Ok(connection) = inhibit_with_portal(reason).await {
+            // The portal may never answer: it silently drops a request the
+            // user's permissions don't allow, and one that can't start holds
+            // the call until D-Bus gives up, two minutes later on Ubuntu.
+            if let Ok(Ok(connection)) =
+                tokio::time::timeout(PORTAL_TIMEOUT, inhibit_with_portal(reason)).await
+            {
                 return Ok(Self {
                     _lock: Lock::Portal(connection),
                 });
@@ -286,11 +291,9 @@ mod platform {
             ));
         }
 
-        // No answer at all happens too: when the user's portal permissions
-        // don't allow inhibiting suspend, the request is silently dropped.
-        let response = tokio::time::timeout(PORTAL_RESPONSE_TIMEOUT, responses.next())
+        let response = responses
+            .next()
             .await
-            .map_err(|_| zbus::Error::Failure("The portal did not answer in time".into()))?
             .ok_or_else(|| zbus::Error::Failure("The portal went away".into()))?;
         match response.args()?.response {
             0 => Ok(connection),
