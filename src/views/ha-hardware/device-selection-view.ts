@@ -184,9 +184,11 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         )
       ) {
         this._selectedDeviceId = null;
-        wizardState.setSelection("device", undefined);
-        wizardState.setSelection("deviceConfig", undefined);
-        wizardState.setSelection("haHardware", undefined);
+        wizardState.setSelections({
+          device: undefined,
+          deviceConfig: undefined,
+          haHardware: undefined,
+        });
       }
       wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
@@ -362,11 +364,13 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     // previous one, must not keep the old drive.
     const previous = wizardState.getState().selections.haHardware;
     this._selectedDeviceId = hardware.deviceId;
-    wizardState.setSelection("device", hardware.deviceId);
-    wizardState.setSelection("haHardware", hardware.id);
-    wizardState.setSelection("deviceName", haHardwareName(hardware.id));
-    wizardState.setSelection("deviceImage", hardware.image);
-    wizardState.setSelection("deviceConfig", config);
+    wizardState.setSelections({
+      device: hardware.deviceId,
+      haHardware: hardware.id,
+      deviceName: haHardwareName(hardware.id),
+      deviceImage: hardware.image,
+      deviceConfig: config,
+    });
     if (previous !== hardware.id) clearDriveSelection();
   }
 }

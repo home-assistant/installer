@@ -334,10 +334,12 @@ export class ProxmoxConnectView extends LitElement {
       }
 
       // Store session in wizard state
-      wizardState.setSelection("proxmoxSession", session);
-      wizardState.setSelection("proxmoxUsername", this._username);
-      wizardState.setSelection("proxmoxConnected", true);
-      wizardState.setSelection("proxmoxPreviousServer", undefined);
+      wizardState.setSelections({
+        proxmoxSession: session,
+        proxmoxUsername: this._username,
+        proxmoxConnected: true,
+        proxmoxPreviousServer: undefined,
+      });
       return true;
     } catch (error) {
       if (!isCurrent()) return false;

@@ -239,8 +239,10 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         )
       ) {
         this._selectedDeviceId = null;
-        wizardState.setSelection("device", undefined);
-        wizardState.setSelection("deviceConfig", undefined);
+        wizardState.setSelections({
+          device: undefined,
+          deviceConfig: undefined,
+        });
       }
       wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
@@ -413,10 +415,12 @@ export class MiniPCArchitectureSelectionView extends LitElement {
 
   private _onSelectDevice(device: Device) {
     this._selectedDeviceId = device.id;
-    wizardState.setSelection("device", device.id);
-    wizardState.setSelection("deviceName", device.name);
-    wizardState.setSelection("deviceImage", device.image_url || "");
-    wizardState.setSelection("deviceConfig", device.haos);
+    wizardState.setSelections({
+      device: device.id,
+      deviceName: device.name,
+      deviceImage: device.image_url || "",
+      deviceConfig: device.haos,
+    });
   }
 }
 
