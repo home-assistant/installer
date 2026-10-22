@@ -15,6 +15,7 @@ import "./progress-bar.js";
 import "./inline-notice.js";
 import { renderErrorHelp } from "../utils/installer-error.js";
 import { openExternalLink } from "../utils/external-url.js";
+import { linkStyles } from "../utils/link-styles.js";
 import {
   LiveStatus,
   ReducedSvgMotion,
@@ -37,6 +38,7 @@ export class InstallProgress extends LitElement {
   static styles = [
     srOnlyStyles,
     reducedMotionStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -346,16 +348,6 @@ export class InstallProgress extends LitElement {
         overflow-wrap: anywhere;
       }
 
-      .address a {
-        color: var(--ha-primary-color, #03a9f4);
-        text-decoration: none;
-        font-weight: 500;
-      }
-
-      .address a:hover {
-        text-decoration: underline;
-      }
-
       .stage-description {
         font-size: 0.9375rem;
         font-weight: 400;
@@ -368,6 +360,7 @@ export class InstallProgress extends LitElement {
 
   @property({ attribute: false }) stages: InstallStage[] = [];
   @property() stage = "downloading";
+  /** A bare stage name, as the thinking cloud adds its own ellipsis */
   @property({ attribute: "stage-title" }) stageTitle = localize(
     "views.proxmox.proxmox_progress_view.downloading"
   );

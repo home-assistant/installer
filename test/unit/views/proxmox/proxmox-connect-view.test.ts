@@ -241,18 +241,25 @@ describe("proxmox-connect-view", () => {
     });
   });
 
-  it("disables the fields while connecting and stores the session", async () => {
+  it("keeps the fields read-only while connecting and stores the session", async () => {
     const { el, inputs } = await renderView();
     await typeInto(el, inputs[0], "https://192.168.1.100:8006/");
     await typeInto(el, inputs[2], "secret");
+    const password = nativeInput(inputs[2]);
+    password.focus();
 
     const connecting = el.connect();
     await el.updateComplete;
-    expect(inputs.every((input) => input.disabled)).to.be.true;
+    await Promise.all(inputs.map((input) => input.updateComplete));
+    expect(inputs.every((input) => nativeInput(input).readOnly)).to.be.true;
+    expect(inputs.some((input) => input.disabled)).to.be.false;
+    // Still in the field Enter was pressed in
+    expect(inputs[2].shadowRoot!.activeElement === password).to.be.true;
 
     expect(await connecting).to.be.true;
     await el.updateComplete;
-    expect(inputs.some((input) => input.disabled)).to.be.false;
+    await Promise.all(inputs.map((input) => input.updateComplete));
+    expect(inputs.some((input) => nativeInput(input).readOnly)).to.be.false;
 
     const { selections } = wizardState.getState();
     expect(selections.proxmoxConnected).to.be.true;
@@ -707,7 +714,7 @@ describe("proxmox-connect-view", () => {
       else pending.reject("Stale authentication error");
       expect(await first).to.be.false;
       await el.updateComplete;
-      expect(inputs.every((input) => input.disabled)).to.be.true;
+      expect(inputs.every((input) => input.readonly)).to.be.true;
       expect(await el.connect()).to.be.false;
       expect(el.shadowRoot!.querySelector(".status-description")).to.be.null;
 
