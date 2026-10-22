@@ -8,7 +8,11 @@ import type {
   WifiConfig,
 } from "../api/types.js";
 import type { InstallationPath } from "../views/path-selection-view.js";
-import type { HaHardwareId } from "../views/ha-hardware/hardware.js";
+import {
+  YELLOW_DEVICE_ID,
+  type HaHardwareId,
+  type YellowModuleId,
+} from "../views/ha-hardware/hardware.js";
 import { supportsWifi } from "../utils/wifi.js";
 
 export type WizardFlow = InstallationPath;
@@ -35,6 +39,8 @@ export interface WizardSelections {
   deviceConfig?: HaosConfig;
   /** Nabu Casa device picked in the Home Assistant hardware flow. */
   haHardware?: HaHardwareId;
+  /** The Yellow's compute modules the catalog offers, each with its storage config. */
+  yellowModules?: { id: YellowModuleId; config: HaosConfig }[];
   /** Device id of the selected drive; also the path sent to the backend. */
   drive?: string;
   /** Rest of the selected drive's identity, kept so it can be re-verified. */
@@ -130,6 +136,7 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
   ],
   "ha-hardware": [
     { id: "device", title: localize("state.wizard_state.select_device") },
+    { id: "module", title: localize("state.wizard_state.select_module") },
     { id: "drive", title: localize("state.wizard_state.select_drive") },
     { id: "wifi", title: localize("state.wizard_state.wifi") },
     { id: "confirm", title: localize("common.confirm") },
@@ -155,14 +162,19 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
   ],
 };
 
-/** The steps of `flow`. Wi-Fi is offered only for boards that have it. */
+/**
+ * The steps of `flow`. Wi-Fi is offered only for boards that have it, and the
+ * compute module only for the Yellow.
+ */
 function stepsFor(
   flow: WizardFlow,
   selections: WizardSelections
 ): WizardStep[] {
-  return FLOW_STEPS[flow].filter(
-    (step) => step.id !== "wifi" || supportsWifi(selections.deviceConfig?.board)
-  );
+  return FLOW_STEPS[flow].filter((step) => {
+    if (step.id === "wifi") return supportsWifi(selections.deviceConfig?.board);
+    if (step.id === "module") return selections.device === YELLOW_DEVICE_ID;
+    return true;
+  });
 }
 
 function createInitialState(): WizardState {
@@ -250,8 +262,9 @@ class WizardStateStore {
   ) {
     const selections = { ...this.state.selections, [key]: value };
     const { currentFlow, currentStepIndex } = this.state;
-    if (key === "deviceConfig" && currentFlow) {
-      // The board decides whether there is a Wi-Fi step; stay on the same step
+    if ((key === "deviceConfig" || key === "device") && currentFlow) {
+      // The board decides whether there is a Wi-Fi step, and the device whether
+      // there is a compute module step; stay on the same step
       const current = this.state.steps[currentStepIndex]?.id;
       const steps = stepsFor(currentFlow, selections);
       const index = steps.findIndex((step) => step.id === current);

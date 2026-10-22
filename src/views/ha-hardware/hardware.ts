@@ -1,8 +1,11 @@
 import { localize } from "../../localization/localize.js";
 import type { HaosConfig } from "../../api/types.js";
 
+/** The compute modules a Yellow can have inside, each prepared differently. */
+export type YellowModuleId = "yellow-cm4" | "yellow-cm5";
+
 /** The Nabu Casa device, and for the Yellow the compute module in it. */
-export type HaHardwareId = "green" | "yellow-cm4" | "yellow-cm5" | "blue";
+export type HaHardwareId = "green" | YellowModuleId | "blue";
 
 export interface HaHardwareInstaller {
   /** Board the backend resolves to its pinned installer image. */
@@ -11,9 +14,12 @@ export interface HaHardwareInstaller {
   released: Date;
 }
 
+/** Device id of the Yellow, whose compute module is picked on a step of its own. */
+export const YELLOW_DEVICE_ID = "ha-yellow";
+
 export interface HaHardware {
   id: HaHardwareId;
-  /** Device id in the wizard selections. */
+  /** Device id in the wizard selections; both Yellows share one. */
   deviceId: string;
   image: string;
   /** Pinned installer; without one, the latest HAOS for `manifestBoard`. */
@@ -50,7 +56,7 @@ export const HA_HARDWARE: readonly HaHardware[] = [
   },
   {
     id: "yellow-cm4",
-    deviceId: "ha-yellow-cm4",
+    deviceId: YELLOW_DEVICE_ID,
     image: "/assets/devices/homeassistant_yellow.png",
     installer: YELLOW_INSTALLER,
   },
@@ -58,7 +64,7 @@ export const HA_HARDWARE: readonly HaHardware[] = [
     // The pinned Yellow installer only boots on a CM4. On a CM5, rpiboot
     // exposes the eMMC itself, so Home Assistant OS is written to it directly.
     id: "yellow-cm5",
-    deviceId: "ha-yellow-cm5",
+    deviceId: YELLOW_DEVICE_ID,
     image: "/assets/devices/homeassistant_yellow.png",
     manifestBoard: "yellow",
   },
@@ -73,6 +79,17 @@ export const HA_HARDWARE: readonly HaHardware[] = [
 
 export function findHaHardware(id: unknown): HaHardware | undefined {
   return HA_HARDWARE.find((hardware) => hardware.id === id);
+}
+
+export function isYellow(id: HaHardwareId | undefined): id is YellowModuleId {
+  return findHaHardware(id)?.deviceId === YELLOW_DEVICE_ID;
+}
+
+/** Name on the device step, where the Yellow has no compute module yet. */
+export function haDeviceName(hardware: HaHardware): string {
+  return hardware.deviceId === YELLOW_DEVICE_ID
+    ? localize("views.ha_hardware.hardware.yellow")
+    : haHardwareName(hardware.id);
 }
 
 export function haHardwareName(id: HaHardwareId): string {

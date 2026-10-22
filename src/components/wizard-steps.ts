@@ -3,6 +3,7 @@ import { localize } from "../localization/localize.js";
 import { isValidUtmVmName } from "../state/vm-defaults.js";
 import type { WizardFlow, WizardSelections } from "../state/wizard-state.js";
 import { isValidWifi, selectedWifi } from "../utils/wifi.js";
+import { isYellow } from "../views/ha-hardware/hardware.js";
 import type { HaHardwareDeviceSelectionView } from "../views/ha-hardware/device-selection-view.js";
 import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-view.js";
 import type { ProxmoxConnectView } from "../views/proxmox/proxmox-connect-view.js";
@@ -87,6 +88,13 @@ export const WIZARD_STEPS: Record<
         label: () => localize("common.next"),
         until: "flow",
       },
+    },
+    // Only for the Yellow, which has a CM4 or CM5 inside
+    module: {
+      render: () =>
+        html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`,
+      ready: (selections) =>
+        isYellow(selections.haHardware) && !!selections.deviceConfig,
     },
     drive,
     wifi,

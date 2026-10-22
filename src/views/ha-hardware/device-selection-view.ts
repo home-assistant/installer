@@ -15,8 +15,11 @@ import { getManifest, type HaosConfig } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import {
   HA_HARDWARE,
+  YELLOW_DEVICE_ID,
+  haDeviceName,
   haHardwareName,
   installerConfig,
+  isYellow,
   type HaHardware,
 } from "./hardware.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
@@ -114,18 +117,13 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         line-height: 1.6;
         color: var(--ha-text-color, #212121);
       }
-
-      .hint {
-        max-width: 600px;
-        margin: 1.5rem 0 0 0;
-        font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #727272);
-        text-align: center;
-      }
     `,
   ];
 
-  /** Selectable hardware, each with the storage config its write uses. */
+  /**
+   * Selectable hardware, each with the storage config its write uses. Both
+   * Yellows share one card; the next step picks the compute module.
+   */
   @state()
   private _devices: { hardware: HaHardware; config: HaosConfig }[] = [];
 
@@ -187,6 +185,8 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         wizardState.setSelection("device", undefined);
         wizardState.setSelection("deviceConfig", undefined);
         wizardState.setSelection("haHardware", undefined);
+      } else if (this._selectedDeviceId === YELLOW_DEVICE_ID) {
+        this._storeYellowModules();
       }
       wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
@@ -260,25 +260,30 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         .value=${this._selectedDeviceId ?? ""}
         @change=${this._onDeviceChange}
       >
-        ${this._devices.map(
-          ({ hardware }) => html`
+        ${this._cards().map(
+          (hardware) => html`
             <device-card
               .value=${hardware.deviceId}
-              .name=${haHardwareName(hardware.id)}
+              .name=${haDeviceName(hardware)}
               .image=${hardware.image}
             ></device-card>
           `
         )}
       </wa-radio-group>
 
-      <p class="hint">
-        ${localize(
-          "views.ha_hardware.device_selection_view.yellow_compute_module_hint"
-        )}
-      </p>
-
       ${this._renderReinstallDialog()}
     `;
+  }
+
+  /** One card per device, so the Yellow shows once whatever its module. */
+  private _cards(): HaHardware[] {
+    return this._devices
+      .map(({ hardware }) => hardware)
+      .filter(
+        (hardware, index, all) =>
+          all.findIndex(({ deviceId }) => deviceId === hardware.deviceId) ===
+          index
+      );
   }
 
   private _renderReinstallDialog() {
@@ -287,7 +292,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     );
     if (!hardware) return nothing;
     // A Yellow kit may come without a compute module, so nothing is on it yet
-    const yellow = hardware.id === "yellow-cm4" || hardware.id === "yellow-cm5";
+    const yellow = hardware.deviceId === YELLOW_DEVICE_ID;
     return html`
       <info-dialog
         ?open=${!!this._confirmReinstall}
@@ -363,11 +368,31 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     const previous = wizardState.getState().selections.haHardware;
     this._selectedDeviceId = hardware.deviceId;
     wizardState.setSelection("device", hardware.deviceId);
+    wizardState.setSelection("deviceImage", hardware.image);
+    if (hardware.deviceId === YELLOW_DEVICE_ID) {
+      this._storeYellowModules();
+      // A compute module picked before still names the device and its board
+      if (isYellow(previous)) return;
+      wizardState.setSelection("haHardware", undefined);
+      wizardState.setSelection("deviceName", haDeviceName(hardware));
+      wizardState.setSelection("deviceConfig", undefined);
+      clearDriveSelection();
+      return;
+    }
     wizardState.setSelection("haHardware", hardware.id);
     wizardState.setSelection("deviceName", haHardwareName(hardware.id));
-    wizardState.setSelection("deviceImage", hardware.image);
     wizardState.setSelection("deviceConfig", config);
     if (previous !== hardware.id) clearDriveSelection();
+  }
+
+  /** Hands the Yellow's compute modules to the step that picks one. */
+  private _storeYellowModules() {
+    wizardState.setSelection(
+      "yellowModules",
+      this._devices.flatMap(({ hardware: { id }, config }) =>
+        isYellow(id) ? [{ id, config }] : []
+      )
+    );
   }
 }
 
