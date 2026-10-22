@@ -2,7 +2,7 @@ import { LitElement, html, css } from "lit";
 import { localize, localizeContent } from "../../localization/localize.js";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
-import { DEFAULT_UTM_VM_NAME } from "../../state/vm-defaults.js";
+import { utmVmConfig } from "../../state/vm-defaults.js";
 import { openExternalLink } from "../../utils/external-url.js";
 
 import "../../components/install-success.js";
@@ -35,7 +35,7 @@ export class UtmSuccessView extends LitElement {
 
   render() {
     const selections = this._wizardState.selections;
-    const vmName = selections.vmName || DEFAULT_UTM_VM_NAME;
+    const { name } = utmVmConfig(selections);
     const ipAddress = selections.ipAddress;
     const haUrl = ipAddress
       ? `http://${ipAddress}`
@@ -46,7 +46,7 @@ export class UtmSuccessView extends LitElement {
       <install-success
         .subtitle=${html`${localizeContent(
           "views.utm.utm_success_view.subtitle",
-          { name: vmName }
+          { name }
         )}`}
         .steps=${[
           localize("common.vm.step_wait"),

@@ -1,7 +1,7 @@
 //! `DeviceBackend` mock: a fixed list of fake block devices and a simulated
 //! write.
 
-use crate::types::{BlockDevice, DeviceType, FlashStage};
+use crate::types::{BlockDevice, DeviceType, FlashProgress, FlashStage};
 use crate::{DeviceBackend, ProgressCallback, Result};
 
 use super::{simulate, BackendMock};
@@ -68,18 +68,19 @@ impl DeviceBackend for BackendMock {
 
     async fn write_image<P: ProgressCallback>(
         &self,
-        _image: &crate::disk::Image,
+        image: &crate::disk::Image,
         _device_id: &str,
         _expected: &crate::types::ExpectedDevice,
-        _verify: bool,
-        progress_callback: &P,
+        verify: bool,
+        cb: &P,
     ) -> Result<()> {
-        simulate(
-            progress_callback,
-            FlashStage::Writing,
-            "Writing to device (mock)...",
-            250,
-        )
-        .await
+        let size = image.size()?;
+        simulate(cb, FlashStage::Writing, size, "Writing to device (mock)...").await?;
+        if verify {
+            simulate(cb, FlashStage::Verifying, size, "Verifying (mock)...").await?;
+        }
+        simulate(cb, FlashStage::Finalizing, 0, "Ejecting (mock)...").await?;
+        cb.on_progress(FlashProgress::new(FlashStage::Complete, size, size, "Done"));
+        Ok(())
     }
 }

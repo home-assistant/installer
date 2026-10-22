@@ -20,6 +20,7 @@ import {
   ReducedSvgMotion,
   ViewAccessibility,
   reducedMotionStyles,
+  srOnlyStyles,
 } from "../utils/view-accessibility.js";
 
 export interface InstallStage {
@@ -34,6 +35,7 @@ export class InstallProgress extends LitElement {
   private readonly _status = new LiveStatus(this);
 
   static styles = [
+    srOnlyStyles,
     reducedMotionStyles,
     css`
       :host {
@@ -156,15 +158,6 @@ export class InstallProgress extends LitElement {
       .stage[aria-current="step"] {
         color: var(--ha-text-color, #212121);
         font-weight: 600;
-      }
-
-      .stage-status {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
       }
 
       .stage-dot {
@@ -355,6 +348,7 @@ export class InstallProgress extends LitElement {
 
   @property({ attribute: false }) stages: InstallStage[] = [];
   @property() stage = "downloading";
+  /** A bare stage name, as the thinking cloud adds its own ellipsis */
   @property({ attribute: "stage-title" }) stageTitle = localize(
     "common.install.downloading"
   );
@@ -445,7 +439,7 @@ export class InstallProgress extends LitElement {
               <span class="stage-label"
                 >${stage.label}${this.stage === "complete" ||
                 index < currentIndex
-                  ? html`<span class="stage-status"
+                  ? html`<span class="sr-only"
                       >${` ${localize("components.install_progress.completed")}`}</span
                     >`
                   : nothing}</span

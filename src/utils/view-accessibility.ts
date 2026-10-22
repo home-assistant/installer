@@ -96,8 +96,7 @@ export class LiveStatus implements ReactiveController {
   }
 }
 
-// This sheet belongs in each animated component's shadow root, not just :root.
-export const reducedMotionStyles = css`
+export const srOnlyStyles = css`
   .sr-only {
     position: absolute;
     width: 1px;
@@ -109,6 +108,10 @@ export const reducedMotionStyles = css`
     white-space: nowrap;
     border: 0;
   }
+`;
+
+// This sheet belongs in each animated component's shadow root, not just :root.
+export const reducedMotionStyles = css`
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

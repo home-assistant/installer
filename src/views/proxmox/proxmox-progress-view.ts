@@ -35,6 +35,11 @@ import {
   haSetupProblemMessage,
   type HaSetupProgress,
 } from "../../utils/ha-setup.js";
+import {
+  SESSION_EXPIRED,
+  forgetProxmoxSession,
+  needsReconnect,
+} from "./proxmox-session.js";
 import "../../components/install-progress.js";
 
 /** The stages `proxmoxCreateVm` reports, in order */
@@ -266,7 +271,9 @@ export class ProxmoxProgressView extends LitElement {
     const session = selections.proxmoxSession;
 
     if (!session) {
+      // Answered like an expired one: by logging in again
       this._setError(
+        { code: SESSION_EXPIRED, message: "", retryable: false, details: {} },
         localize(
           "views.proxmox.proxmox_progress_view.no_proxmox_session_available"
         )
@@ -431,8 +438,24 @@ export class ProxmoxProgressView extends LitElement {
     this._setup = { progress: null, problem: null };
   }
 
-  /** Show an error and tell the shell whether a retry is safe. */
+  /**
+   * Show an error and tell the shell whether a retry is safe, or whether
+   * only logging in again can get past it.
+   */
   private _setError(error: unknown, message?: string) {
+    // Reconnecting resumes a VM made in full, or starts one not made yet. A
+    // VM that failed while being made may exist half way, unknown to the
+    // installer: a new install would find its VM ID taken, or leave it
+    // behind under another one.
+    const halfMade =
+      !STOPPABLE_STAGES.includes(this._stage) &&
+      !wizardState.getState().selections.proxmoxVmResult;
+    const reconnect = needsReconnect(error) && !halfMade;
+    if (needsReconnect(error) && halfMade) {
+      message = localize(
+        "views.proxmox.proxmox_progress_view.connection_lost_while_creating"
+      );
+    }
     this._diagnostics?.fail(error);
     this._stage = "error";
     const installer = installerError(
@@ -440,9 +463,10 @@ export class ProxmoxProgressView extends LitElement {
       localize("common.vm.failed_to_create_virtual_machine")
     );
     this._error = message ? { ...installer, message } : installer;
+    if (reconnect) forgetProxmoxSession();
     this.dispatchEvent(
       new CustomEvent("install-error", {
-        detail: { retryable: this._error.retryable },
+        detail: { retryable: this._error.retryable, reconnect },
         bubbles: true,
         composed: true,
       })

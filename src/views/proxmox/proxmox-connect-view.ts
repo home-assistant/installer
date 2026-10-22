@@ -326,6 +326,13 @@ export class ProxmoxConnectView extends LitElement {
       this._connected = true;
       diagnostics.advance("complete");
 
+      // A VM made before the session expired lives on the previous server;
+      // logged in elsewhere, the install starts over there
+      const previous = wizardState.getState().selections.proxmoxPreviousServer;
+      if (previous && serverOrigin(previous.server_url) !== serverOrigin(url)) {
+        wizardState.setSelection("proxmoxVmResult", undefined);
+      }
+
       // Store session in wizard state
       wizardState.setSelection("proxmoxSession", session);
       wizardState.setSelection("proxmoxUsername", this._username);

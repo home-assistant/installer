@@ -8,12 +8,7 @@ import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { logFrontendError } from "../../utils/diagnostics.js";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
-import {
-  DEFAULT_CPU_CORES,
-  DEFAULT_DISK_SIZE_GB,
-  DEFAULT_MEMORY_MB,
-  DEFAULT_UTM_VM_NAME,
-} from "../../state/vm-defaults.js";
+import { utmVmConfig } from "../../state/vm-defaults.js";
 import { getUtmHaosRelease } from "../../api/commands.js";
 
 @customElement("utm-confirm-view")
@@ -155,11 +150,8 @@ export class UtmConfirmView extends LitElement {
   }
 
   render() {
-    const selections = this._wizardState.selections;
-    const vmName = selections.vmName || DEFAULT_UTM_VM_NAME;
-    const cpuCores = selections.cpuCores || DEFAULT_CPU_CORES;
-    const memoryMb = selections.memoryMb || DEFAULT_MEMORY_MB;
-    const diskSizeGb = selections.diskSizeGb || DEFAULT_DISK_SIZE_GB;
+    // What the install creates, not the raw selections
+    const config = utmVmConfig(this._wizardState.selections);
 
     return html`
       <h2>${localize("common.confirm.ready_to_install")}</h2>
@@ -171,11 +163,11 @@ export class UtmConfirmView extends LitElement {
           <div class="icon-container">${this._renderVmIcon()}</div>
           <div class="summary-info">
             <p class="summary-label">${localize("common.virtual_machine")}</p>
-            <p class="summary-value">${vmName}</p>
+            <p class="summary-value">${config.name}</p>
             <p class="summary-detail">
               ${localizeContent("common.vm.cores_and_memory", {
-                cores: cpuCores,
-                memory: this._formatMemory(memoryMb),
+                cores: config.cpu_cores,
+                memory: this._formatMemory(config.memory_mb),
               })}
             </p>
           </div>
@@ -188,7 +180,9 @@ export class UtmConfirmView extends LitElement {
           <div class="icon-container">${this._renderDiskIcon()}</div>
           <div class="summary-info">
             <p class="summary-label">${localize("vm.disk_storage")}</p>
-            <p class="summary-value">${this._formatDiskSize(diskSizeGb)}</p>
+            <p class="summary-value">
+              ${this._formatDiskSize(config.disk_size_gb)}
+            </p>
             <p class="summary-detail">
               ${localize("common.vm.virtual_disk_description")}
             </p>

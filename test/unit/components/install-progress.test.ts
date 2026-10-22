@@ -164,7 +164,7 @@ describe("install-progress", () => {
     expect(
       el.shadowRoot!.querySelectorAll(".stage-dot.complete").length
     ).to.equal(3);
-    expect(el.shadowRoot!.querySelectorAll(".stage-status").length).to.equal(3);
+    expect(el.shadowRoot!.querySelectorAll("li .sr-only").length).to.equal(3);
     expect(el.shadowRoot!.querySelector("[aria-current]")).to.not.exist;
     expect(el.shadowRoot!.querySelector(".thinking-cloud")).to.not.exist;
   });

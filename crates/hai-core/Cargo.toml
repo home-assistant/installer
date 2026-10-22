@@ -51,7 +51,7 @@ windows-sys = { workspace = true }
 [dev-dependencies]
 ts-rs = { workspace = true }
 plist = { workspace = true }
-tokio = { workspace = true, features = ["net"] }
+tokio = { workspace = true, features = ["net", "test-util"] }
 tempfile = { workspace = true }
 serial_test = { workspace = true }
 mockito = { workspace = true }

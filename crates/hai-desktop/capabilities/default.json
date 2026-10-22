@@ -8,6 +8,7 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "core:webview:allow-internal-toggle-devtools",
+    "core:webview:allow-set-webview-zoom",
     "opener:allow-open-url",
     "opener:allow-default-urls",
     "os:allow-locale"
