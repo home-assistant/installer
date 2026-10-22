@@ -19,6 +19,7 @@ import {
   isValidUtmVmName,
 } from "../../state/vm-defaults.js";
 import { settingStyles } from "../../utils/setting-styles.js";
+import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 import "../../components/vm-resources.js";
 import type { VmResourceValues } from "../../components/vm-resources.js";
 
@@ -28,6 +29,7 @@ export class UtmConfigureView extends LitElement {
   static styles = [
     reducedMotionStyles,
     settingStyles,
+    fieldErrorStyles,
     css`
       :host {
         display: flex;
@@ -227,7 +229,7 @@ export class UtmConfigureView extends LitElement {
               .value=${this._vmName}
               @input=${this._onNameChange}
               placeholder=${DEFAULT_UTM_VM_NAME}
-              .customError=${this._nameError ?? null}
+              ${fieldError(this._nameError)}
             >
               <!-- In the hint slot, so the field describes itself with it.
                 Not role="alert": ViewAccessibility focuses a new alert, which

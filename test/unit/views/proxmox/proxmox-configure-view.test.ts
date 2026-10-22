@@ -162,12 +162,14 @@ describe("proxmox-configure-view", () => {
       expect(
         el.shadowRoot!.querySelector(".name-hint")!.textContent
       ).to.contain("Start and end with a letter or number");
+      expect(name.input.getAttribute("aria-invalid")).to.equal("true");
       // The error must not take focus from someone still typing
       expect(el.shadowRoot!.activeElement).to.equal(name);
     }
 
     await type("home-assistant.lan");
     expect(name.checkValidity()).to.be.true;
+    expect(name.input.getAttribute("aria-invalid")).to.equal("false");
     expect(wizardState.getState().selections.proxmoxConfigureReady).to.be.true;
   });
 
@@ -200,6 +202,7 @@ describe("proxmox-configure-view", () => {
       expect(el.shadowRoot!.querySelector(".vm-id-hint")!.slot).to.equal(
         "hint"
       );
+      expect(vmId.input.getAttribute("aria-invalid")).to.equal("true");
       // The error must not take focus from someone still typing
       expect(el.shadowRoot!.activeElement).to.equal(vmId);
     }
@@ -209,6 +212,7 @@ describe("proxmox-configure-view", () => {
     await type("250");
     expect(vmId.value).to.equal("250");
     expect(vmId.checkValidity()).to.be.true;
+    expect(vmId.input.getAttribute("aria-invalid")).to.equal("false");
     const selections = wizardState.getState().selections;
     expect(selections.proxmoxVmId).to.equal(250);
     expect(selections.proxmoxConfigureReady).to.be.true;

@@ -18,6 +18,9 @@ import {
   settle,
 } from "../../tauri-ipc.js";
 
+/** The error colour without the app's theme, which the unit tests don't load */
+const ERROR_COLOR = "rgb(179, 5, 50)";
+
 /** The cores, memory and disk sliders, in the shared resources component */
 async function resourcesOf(el: HTMLElement): Promise<ShadowRoot> {
   const resources = el.shadowRoot!.querySelector("vm-resources")!;
@@ -148,6 +151,11 @@ describe("utm-configure-view", () => {
       ).to.contain("Enter a name for the virtual machine.");
       // In the input's hint slot, so it is the field's accessible description
       expect(el.shadowRoot!.querySelector(".name-hint")!.slot).to.equal("hint");
+      // Invalid to screen readers, and shown as an error, not a grey hint
+      expect(name.input.getAttribute("aria-invalid")).to.equal("true");
+      expect(
+        getComputedStyle(el.shadowRoot!.querySelector(".name-hint")!).color
+      ).to.equal(ERROR_COLOR);
       // The error must not take focus from someone still typing
       expect(el.shadowRoot!.activeElement).to.equal(name);
     }
@@ -158,6 +166,10 @@ describe("utm-configure-view", () => {
     expect(name.value).to.equal("X");
     expect(wizardState.getState().selections.vmName).to.equal("X");
     expect(name.checkValidity()).to.be.true;
+    expect(name.input.getAttribute("aria-invalid")).to.equal("false");
+    expect(
+      getComputedStyle(el.shadowRoot!.querySelector(".name-hint")!).color
+    ).not.to.equal(ERROR_COLOR);
     expect(el.shadowRoot!.querySelector(".name-hint")!.textContent).to.contain(
       "Shown in UTM's virtual machine list"
     );

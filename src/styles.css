@@ -64,6 +64,11 @@
   --wa-color-overlay-modal: rgba(0, 0, 0, 0.5);
   --wa-panel-border-radius: 16px;
 
+  /* The asterisk after a required field's label, without text for screen
+   * readers: it became part of the field's name ("Password *"), and they
+   * already say the field is required. */
+  --wa-form-control-required-content: "*" / "";
+
   /* Typography */
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu,

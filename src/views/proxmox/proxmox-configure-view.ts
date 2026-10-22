@@ -43,6 +43,7 @@ import {
   proxmoxVmConfig,
 } from "../../state/vm-defaults.js";
 import { settingStyles } from "../../utils/setting-styles.js";
+import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 import {
   SESSION_EXPIRED,
   forgetProxmoxSession,
@@ -85,6 +86,7 @@ export class ProxmoxConfigureView extends LitElement {
   static styles = [
     reducedMotionStyles,
     settingStyles,
+    fieldErrorStyles,
     css`
       :host {
         display: flex;
@@ -1022,7 +1024,7 @@ export class ProxmoxConfigureView extends LitElement {
               @input=${this._onNameChange}
               placeholder="home-assistant"
               maxlength="63"
-              .customError=${this._nameError ?? null}
+              ${fieldError(this._nameError)}
             >
               <!-- In the hint slot, so the field describes itself with it.
                 Not role="alert": ViewAccessibility focuses a new alert, which
@@ -1204,7 +1206,7 @@ export class ProxmoxConfigureView extends LitElement {
               @input=${this._onVmIdChange}
               min=${MIN_VM_ID}
               max=${MAX_VM_ID}
-              .customError=${this._vmIdError ?? null}
+              ${fieldError(this._vmIdError)}
             >
               <!-- In the hint slot and not role="alert", like the name hint -->
               <span slot="hint" class="vm-id-hint" aria-live="polite"
@@ -1241,7 +1243,7 @@ export class ProxmoxConfigureView extends LitElement {
           inputmode="numeric"
           .value=${this._vlanTag}
           @input=${this._onVlanInput}
-          .customError=${this._vlanError ?? null}
+          ${fieldError(this._vlanError)}
         >
           <!-- Not role="alert": ViewAccessibility focuses a new alert, which
             took focus out of the field as soon as a digit made it invalid -->

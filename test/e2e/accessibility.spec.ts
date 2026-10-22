@@ -175,18 +175,20 @@ test("navigation focuses headings without stealing focus on input", async ({
   await url.fill("http://pve.test:8006");
   await expect(url).toBeFocused();
   await page.getByRole("button", { name: "Next", exact: true }).click();
-  const error = page.getByRole("alert");
-  await expect(error).toContainText("fill in all fields");
-  await expect(error).toBeFocused();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(error).toBeFocused();
-  await page.screenshot({ path: testInfo.outputPath("desktop-error.png") });
-  await page.keyboard.press("Tab");
+  // Each field says what is wrong with it, and Next goes to the first one
+  const password = page.getByRole("textbox", { name: "Password", exact: true });
   await expect(url).toBeFocused();
+  await expect(url).toHaveAttribute("aria-invalid", "true");
+  await expect(url).toHaveAccessibleDescription(/must use HTTPS/);
+  await expect(password).toHaveAttribute("aria-invalid", "true");
+  await expect(password).toHaveAccessibleDescription("Enter the password");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(url).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath("desktop-error.png") });
   await url.fill("https://pve.test:8006");
-  await page
-    .getByRole("textbox", { name: "Password", exact: true })
-    .fill("mock-password");
+  await expect(url).toHaveAttribute("aria-invalid", "false");
+  await password.fill("mock-password");
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Configure virtual machine" })

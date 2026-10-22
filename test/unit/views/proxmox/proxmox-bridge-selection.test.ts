@@ -135,6 +135,7 @@ describe("Proxmox bridge selection", () => {
         .be.false;
       await input.updateComplete;
       expect(input.validity.customError).to.be.true;
+      expect(input.input.getAttribute("aria-invalid"), value).to.equal("true");
     }
     for (const value of ["1", "4094", ""]) {
       input.value = value;
@@ -142,6 +143,7 @@ describe("Proxmox bridge selection", () => {
       await el.updateComplete;
       await input.updateComplete;
       expect(input.validity.customError).to.be.false;
+      expect(input.input.getAttribute("aria-invalid"), value).to.equal("false");
       expect(wizardState.getState().selections.proxmoxConfigureReady, value).to
         .be.true;
       expect(wizardState.getState().selections.proxmoxVlanTag).to.equal(
