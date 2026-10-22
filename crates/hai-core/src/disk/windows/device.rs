@@ -185,16 +185,10 @@ pub(crate) fn parse_friendly_name(name: &str) -> (Option<String>, Option<String>
         "USB",
     ];
 
-    let name_lower = name.to_lowercase();
-
     for vendor in vendors {
-        if name_lower.contains(&vendor.to_lowercase()) {
-            // Find the vendor in the original string (preserving case)
-            let vendor_start = name_lower.find(&vendor.to_lowercase()).unwrap();
-            let vendor_end = vendor_start + vendor.len();
-
+        if let Some(found) = find_vendor(name, vendor) {
             // Model is whatever comes after the vendor name
-            let model = name[vendor_end..]
+            let model = name[found.end..]
                 .trim()
                 .trim_start_matches(&[' ', '-', '_'][..])
                 .to_string();
@@ -288,5 +282,23 @@ mod tests {
         let (vendor, model) = parse_friendly_name("samsung evo");
         assert_eq!(vendor, Some("Samsung".to_string()));
         assert_eq!(model, Some("evo".to_string()));
+    }
+
+    #[test]
+    fn test_parse_friendly_name_survives_text_that_grows_when_lowercased() {
+        // "İ" is 2 bytes but lowercases to 3, which used to shift the slice
+        // past the end of the original name and panic.
+        let (vendor, model) = parse_friendly_name("İSanDisk Ultra");
+        assert_eq!(vendor, Some("SanDisk".to_string()));
+        assert_eq!(model, Some("Ultra".to_string()));
+    }
+
+    #[test]
+    fn test_parse_friendly_name_ignores_the_kelvin_sign() {
+        // The Kelvin sign lowercases to an ASCII "k", but it is not a "K".
+        // Matching it used to cut the model to "on DataTraveler".
+        let (vendor, model) = parse_friendly_name("\u{212A}ingston DataTraveler");
+        assert_eq!(vendor, None);
+        assert_eq!(model, Some("\u{212A}ingston DataTraveler".to_string()));
     }
 }

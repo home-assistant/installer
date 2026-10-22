@@ -197,6 +197,25 @@ fn mentions_sd_card(s: &str) -> bool {
     })
 }
 
+/// Find an ASCII vendor name in a drive name, ignoring ASCII case, and return
+/// its byte range in `name`.
+///
+/// Searching a lowercased copy instead hands back offsets into a string that
+/// can differ in length from the original ("İ" grows when lowercased), and
+/// slicing the original with those panics. An ASCII match can only land on
+/// ASCII bytes, so the range is always on char boundaries of `name`.
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
+fn find_vendor(name: &str, vendor: &str) -> Option<std::ops::Range<usize>> {
+    if vendor.is_empty() {
+        return None;
+    }
+
+    name.as_bytes()
+        .windows(vendor.len())
+        .position(|window| window.eq_ignore_ascii_case(vendor.as_bytes()))
+        .map(|start| start..start + vendor.len())
+}
+
 /// Raw OS error codes that mean the drive went away. The numbers differ per
 /// OS: on Windows 6 is `ERROR_INVALID_HANDLE` and 19 `ERROR_WRITE_PROTECT`.
 #[cfg(unix)]
@@ -532,6 +551,28 @@ mod tests {
         ] {
             assert!(!mentions_sd_card(s), "{s:?} should not be an SD card");
         }
+    }
+
+    #[test]
+    fn test_find_vendor_ignores_ascii_case() {
+        assert_eq!(find_vendor("Ultra SANDISK", "SanDisk"), Some(6..13));
+        assert_eq!(find_vendor("samsung evo", "Samsung"), Some(0..7));
+        assert_eq!(find_vendor("Unknown Device", "SanDisk"), None);
+        assert_eq!(find_vendor("SanDisk", ""), None);
+    }
+
+    #[test]
+    fn test_find_vendor_returns_ranges_into_the_original_name() {
+        // Lowercasing changes the byte length of these names, so offsets
+        // taken from a lowercased copy would point at the wrong bytes.
+        let name = "İSanDisk Ultra";
+        let found = find_vendor(name, "SanDisk").unwrap();
+        assert_eq!(&name[found], "SanDisk");
+
+        assert_eq!(
+            find_vendor("\u{212A}ingston DataTraveler", "Kingston"),
+            None
+        );
     }
 
     #[test]
