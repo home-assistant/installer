@@ -1,5 +1,6 @@
 import { expect, fixture, html, waitUntil } from "@open-wc/testing";
 import { emit } from "@tauri-apps/api/event";
+import type { LitElement } from "lit";
 import "../../../src/components/app-shell.js";
 import type { AppShell } from "../../../src/components/app-shell.js";
 import type { ConfirmDialog } from "../../../src/components/confirm-dialog.js";
@@ -12,6 +13,7 @@ import { wizardState } from "../../../src/state/wizard-state.js";
 import { storeDriveSelection } from "../../../src/utils/drive-selection.js";
 import { flush, holdDeviceScan } from "../helpers/hold-device-scan.js";
 import {
+  captureOpenedUrls,
   deferred,
   ipcError,
   mockTauriIpc,
@@ -386,6 +388,115 @@ describe("app-shell", () => {
     await goToStep(el, "success");
     expect(shellOf(el).hideCancel).to.be.true;
     expect(shellOf(el).nextLabel).to.equal("Done");
+  });
+
+  // The first click changes the screen, and the second lands on whatever the
+  // next screen has in that spot
+  describe("double-click", () => {
+    /** Click `target` as the `detail`th click in a row; keys give 0. */
+    function click(target: Element, detail: number) {
+      target.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          composed: true,
+          cancelable: true,
+          detail,
+        })
+      );
+    }
+
+    const viewOf = (el: AppShell, name: string) =>
+      el.shadowRoot!.querySelector(name) as LitElement;
+
+    it("on Back on the first step stops at the path selection", async () => {
+      await enterSbcFlow(el);
+
+      click(shellOf(el).shadowRoot!.querySelector(".header wa-button")!, 1);
+      await el.updateComplete;
+      // The path selection has its own Back in the same spot
+      const paths = viewOf(el, "path-selection-view");
+      await paths.updateComplete;
+      click(paths.shadowRoot!.querySelector(".header wa-button")!, 2);
+      await el.updateComplete;
+
+      expect(!!viewOf(el, "path-selection-view")).to.be.true;
+      expect(!!viewOf(el, "welcome-view")).to.be.false;
+    });
+
+    it("on connecting the drive picks no architecture", async () => {
+      await enterSbcFlow(el);
+      wizardState.startFlow("minipc");
+      await el.updateComplete;
+      const method = shellOf(el).querySelector(
+        "minipc-setup-method-view"
+      ) as LitElement;
+      await method.updateComplete;
+
+      click(method.shadowRoot!.querySelector("option-card")!, 1);
+      await el.updateComplete;
+      const architectures = shellOf(el).querySelector(
+        "minipc-architecture-selection-view"
+      )!;
+      await waitUntil(
+        () => architectures.shadowRoot!.querySelectorAll("wa-radio").length > 0
+      );
+      // The architectures open where the card was
+      click(architectures.shadowRoot!.querySelector("wa-radio")!, 2);
+      await settle();
+
+      expect(wizardState.currentStep!.id).to.equal("architecture");
+      expect(wizardState.getState().selections.device).to.equal(undefined);
+    });
+
+    it("on Done does not open the Home Toolbox", async () => {
+      await enterSbcFlow(el);
+      await goToStep(el, "success");
+      const opened = captureOpenedUrls();
+
+      click(
+        shellOf(el).shadowRoot!.querySelector(".footer-right wa-button")!,
+        1
+      );
+      await el.updateComplete;
+      // The toolbox button sits over where Done was
+      const toolbox = viewOf(el, "fab-button");
+      await toolbox.updateComplete;
+      click(toolbox.shadowRoot!.querySelector("wa-button")!, 2);
+      await settle();
+      expect(!!viewOf(el, "welcome-view")).to.be.true;
+      expect(opened).to.deep.equal([]);
+
+      // A click of its own still opens it
+      click(toolbox.shadowRoot!.querySelector("wa-button")!, 1);
+      await settle();
+      expect(opened).to.deep.equal(["https://toolbox.openhomefoundation.org/"]);
+    });
+
+    it("leaves the keyboard alone", async () => {
+      await enterSbcFlow(el);
+
+      click(shellOf(el).shadowRoot!.querySelector(".header wa-button")!, 1);
+      await el.updateComplete;
+      const paths = viewOf(el, "path-selection-view");
+      await paths.updateComplete;
+      click(paths.shadowRoot!.querySelector(".header wa-button")!, 0);
+      await el.updateComplete;
+
+      expect(!!viewOf(el, "welcome-view")).to.be.true;
+    });
+
+    it("still counts on a screen that stays", async () => {
+      const welcome = viewOf(el, "welcome-view");
+      const logo = welcome.shadowRoot!.querySelector(".logo-container")!;
+
+      click(logo, 1);
+      click(logo, 2);
+
+      // The logo plays a sound after five clicks in a row
+      expect(
+        (welcome as unknown as { _logoClickCount: number })._logoClickCount
+      ).to.equal(2);
+    });
   });
 
   it("does not hold up a new flow with a Proxmox connect left behind", async () => {

@@ -150,8 +150,13 @@ export class AppShell extends LitElement {
   private _stopCloseListener?: Promise<() => void>;
   private _pendingFlow?: WizardFlow;
 
+  /** The screen the latest single click landed on. */
+  private _clickedScreen?: string;
+
   connectedCallback() {
     super.connectedCallback();
+    // Capturing, so it runs before the controls on the screen
+    this.addEventListener("click", this._onClick, true);
     this._unsubscribe = wizardState.subscribe((state) => {
       this._wizardState = state;
     });
@@ -169,6 +174,7 @@ export class AppShell extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this.removeEventListener("click", this._onClick, true);
     this._unsubscribe?.();
     void this._stopCloseListener?.then((stop) => stop());
   }
@@ -375,6 +381,28 @@ export class AppShell extends LitElement {
     return (this._wizardShell?.firstElementChild ??
       null) as WizardStepView | null;
   }
+
+  /** What is on screen: the view, and in the wizard, its step. */
+  private get _screen(): string {
+    return this._currentView === "wizard"
+      ? `wizard/${wizardState.currentStep?.id}`
+      : this._currentView;
+  }
+
+  // A click that changes the screen does so before the second click of a
+  // double-click arrives, so that one would act on whatever the next screen
+  // has in the same spot: Back on the first step and then Back on the path
+  // selection went all the way to the welcome screen, and Next on a
+  // configured VM went past its confirmation into the install. `detail`
+  // counts the clicks; keyboard activation reports 0.
+  private _onClick = (event: MouseEvent) => {
+    if (event.detail < 2) {
+      this._clickedScreen = this._screen;
+    } else if (this._screen !== this._clickedScreen) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
 
   private _onNavigate(e: CustomEvent<{ view: ViewName }>) {
     this._currentView = e.detail.view;
