@@ -63,7 +63,7 @@ const scenarios = [
   {
     value: "ha-yellow-cm5",
     name: "Home Assistant Yellow with CM5",
-    connect: "sudo ./rpiboot -d mass-storage-gadget64",
+    connect: "RPi-MSD",
     version: "Version 16.3",
     notice: "Home Assistant included",
     steps: ["JP1 back to UART", "starts Home Assistant OS from the eMMC"],

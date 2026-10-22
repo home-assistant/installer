@@ -3,6 +3,7 @@ import { LitElement, html, css, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { openExternalLink } from "../../utils/external-url.js";
 import { linkStyles } from "../../utils/link-styles.js";
+import { getPlatform } from "../../utils/platform.js";
 import type { HaHardwareId } from "./hardware.js";
 
 const RPIBOOT_URL = "https://github.com/raspberrypi/usbboot";
@@ -144,16 +145,17 @@ export class HaHardwareConnectInstructions extends LitElement {
               command: html`<code
                 >sudo ./rpiboot -d mass-storage-gadget64</code
               >`,
-              windowsCommand: html`<code
+              shortcut: html`<code
                 >rpiboot-CM4-CM5 - Mass Storage Gadget</code
               >`,
+              platform: getPlatform(),
             }
           )}
         </li>
         <li>
           ${localizeContent(
             "views.ha_hardware.connect_instructions.yellow_cm5_drive",
-            { driveName: html`<code>RPi-MSD</code>` }
+            { driveName: html`<code>RPi-MSD</code>`, platform: getPlatform() }
           )}
         </li>
       </ol>
