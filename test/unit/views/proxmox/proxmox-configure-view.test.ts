@@ -164,6 +164,66 @@ describe("proxmox-configure-view", () => {
     expect(wizardState.getState().selections.proxmoxConfigureReady).to.be.true;
   });
 
+  it("keeps the VM ID as typed and only saves one Proxmox accepts", async () => {
+    const el = await mount();
+    const vmId = el.shadowRoot!.querySelector<WaInput>(
+      'wa-input[type="number"]'
+    )!;
+    const type = async (value: string) => {
+      vmId.value = value;
+      vmId.dispatchEvent(new Event("input"));
+      await el.updateComplete;
+      await vmId.updateComplete;
+    };
+
+    // None of these may turn into 100, or into what was there before
+    vmId.focus();
+    for (const rejected of ["", "99", "1e5", "1000000000"]) {
+      await type(rejected);
+      expect(vmId.value).to.equal(rejected);
+      expect(wizardState.getState().selections.proxmoxVmId, rejected).to.be
+        .undefined;
+      expect(vmId.checkValidity(), rejected).to.be.false;
+      expect(wizardState.getState().selections.proxmoxConfigureReady).to.be
+        .false;
+      expect(
+        el.shadowRoot!.querySelector(".vm-id-hint")!.textContent
+      ).to.contain("Enter a whole number from 100 to 999,999,999.");
+      // The error must not take focus from someone still typing
+      expect(el.shadowRoot!.activeElement).to.equal(vmId);
+    }
+
+    // What is typed after clearing is the whole ID, without a default
+    await type("");
+    await type("250");
+    expect(vmId.value).to.equal("250");
+    expect(vmId.checkValidity()).to.be.true;
+    const selections = wizardState.getState().selections;
+    expect(selections.proxmoxVmId).to.equal(250);
+    expect(selections.proxmoxConfigureReady).to.be.true;
+  });
+
+  it("suggests a free VM ID again after leaving with a cleared one", async () => {
+    wizardState.setSelection("proxmoxVmId", 250);
+    const first = await mount();
+    const vmId = first.shadowRoot!.querySelector<WaInput>(
+      'wa-input[type="number"]'
+    )!;
+    vmId.value = "";
+    vmId.dispatchEvent(new Event("input"));
+    await first.updateComplete;
+    first.remove();
+
+    // The cleared field is not a choice, so 250 doesn't come back either
+    const el = await mount();
+
+    const restored = el.shadowRoot!.querySelector<WaInput>(
+      'wa-input[type="number"]'
+    )!;
+    expect(restored.value).to.equal("100");
+    expect(wizardState.getState().selections.proxmoxVmId).to.equal(100);
+  });
+
   it("offers no more cores than the selected node has", async () => {
     // The mocked pve2 has 8 CPUs
     wizardState.setSelection("proxmoxNode", "pve2");

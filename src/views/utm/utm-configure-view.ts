@@ -210,9 +210,17 @@ export class UtmConfigureView extends LitElement {
     wizardState.setSelection("diskSizeGb", this._diskSizeGb);
   }
 
+  private get _nameError(): string | undefined {
+    return this._vmName.trim()
+      ? undefined
+      : localize("views.utm.utm_configure_view.vm_name_required");
+  }
+
   private _onNameChange(e: Event) {
-    const input = e.target as WaInput;
-    this._vmName = input.value || DEFAULT_UTM_VM_NAME;
+    // Kept as typed: falling back to the default here wrote it back into a
+    // cleared field, in front of whatever was typed next. _nameError holds
+    // Next back instead.
+    this._vmName = (e.target as WaInput).value ?? "";
     this._saveSelections();
   }
 
@@ -430,9 +438,13 @@ export class UtmConfigureView extends LitElement {
               .value=${this._vmName}
               @input=${this._onNameChange}
               placeholder=${DEFAULT_UTM_VM_NAME}
+              .customError=${this._nameError ?? null}
             ></wa-input>
-            <p class="setting-description">
-              ${localize(
+            <!-- Not role="alert": ViewAccessibility focuses a new alert, which
+              would pull focus out of the field halfway through typing -->
+            <p class="setting-description name-hint" aria-live="polite">
+              ${this._nameError ??
+              localize(
                 "views.utm.utm_configure_view.shown_in_utm_s_virtual_machine_list"
               )}
             </p>

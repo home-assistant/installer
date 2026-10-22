@@ -65,6 +65,10 @@ const DIRECTORY_STORAGE_DOCS =
 const VM_NAME_LABEL = "[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?";
 const VM_NAME_PATTERN = new RegExp(`^${VM_NAME_LABEL}(\\.${VM_NAME_LABEL})*$`);
 
+/** The VM IDs Proxmox accepts */
+const MIN_VM_ID = 100;
+const MAX_VM_ID = 999_999_999;
+
 const CORE_OPTIONS = [2, 4, 6, 8, 10, 12, 16];
 
 function isSessionExpired(error: unknown): boolean {
@@ -253,8 +257,9 @@ export class ProxmoxConfigureView extends LitElement {
   @state()
   private _selectedStorage = "";
 
+  /** Raw text of the VM ID field, so it never changes while typing */
   @state()
-  private _vmId = DEFAULT_PROXMOX_VM_ID;
+  private _vmIdText = String(DEFAULT_PROXMOX_VM_ID);
 
   @state()
   private _vmName = DEFAULT_PROXMOX_VM_NAME;
@@ -327,7 +332,7 @@ export class ProxmoxConfigureView extends LitElement {
     this._diskSizeGb = selections.diskSizeGb ?? DEFAULT_DISK_SIZE_GB;
 
     if (selections.proxmoxVmId !== undefined) {
-      this._vmId = selections.proxmoxVmId;
+      this._vmIdText = String(selections.proxmoxVmId);
       this._vmIdChosen = true;
     }
   }
@@ -387,7 +392,7 @@ export class ProxmoxConfigureView extends LitElement {
       // The next free VM ID is only a suggestion - never overwrite an ID the
       // user has already been shown and may have changed
       if (!this._vmIdChosen) {
-        this._vmId = nextVmId;
+        this._vmIdText = String(nextVmId);
         this._vmIdChosen = true;
       }
 
@@ -775,7 +780,8 @@ export class ProxmoxConfigureView extends LitElement {
         !this._loadingStorage &&
         !this._error &&
         !this._vlanError &&
-        !this._nameError
+        !this._nameError &&
+        !this._vmIdError
     );
     wizardState.setSelection(
       "proxmoxImportReady",
@@ -786,8 +792,10 @@ export class ProxmoxConfigureView extends LitElement {
     );
     // A failed initial lookup must not turn the fallback ID into a choice
     // that suppresses the next-free-ID suggestion after reconnecting.
+    // An ID that isn't valid yet is left out, so the one typed before it
+    // can't reach the check or the install
     if (this._vmIdChosen) {
-      wizardState.setSelection("proxmoxVmId", this._vmId);
+      wizardState.setSelection("proxmoxVmId", this._parsedVmId);
     }
     wizardState.setSelection("vmName", this._vmName);
     wizardState.setSelection("cpuCores", this._cpuCores);
@@ -819,9 +827,29 @@ export class ProxmoxConfigureView extends LitElement {
     this._saveSelections();
   }
 
+  private get _parsedVmId(): number | undefined {
+    if (
+      !/^\d+$/.test(this._vmIdText) ||
+      Number(this._vmIdText) < MIN_VM_ID ||
+      Number(this._vmIdText) > MAX_VM_ID
+    ) {
+      return undefined;
+    }
+    return Number(this._vmIdText);
+  }
+
+  private get _vmIdError(): string | undefined {
+    if (this._parsedVmId !== undefined) return undefined;
+    return localize("views.proxmox.proxmox_configure_view.vm_id_invalid", {
+      min: MIN_VM_ID,
+      max: MAX_VM_ID,
+    });
+  }
+
   private _onVmIdChange(e: Event) {
-    const input = e.target as WaInput;
-    this._vmId = parseInt(input.value ?? "", 10) || DEFAULT_PROXMOX_VM_ID;
+    // Kept as typed, like the name: falling back to a default here put it
+    // in front of whatever was typed next. _vmIdError holds Next back.
+    this._vmIdText = (e.target as WaInput).value ?? "";
     this._vmIdChosen = true;
     this._saveSelections();
   }
@@ -1415,13 +1443,16 @@ export class ProxmoxConfigureView extends LitElement {
               label=${localize("views.proxmox.proxmox_configure_view.vm_id")}
               type="number"
               size="s"
-              .value=${String(this._vmId)}
+              .value=${this._vmIdText}
               @input=${this._onVmIdChange}
-              min="100"
-              max="999999999"
+              min=${MIN_VM_ID}
+              max=${MAX_VM_ID}
+              .customError=${this._vmIdError ?? null}
             ></wa-input>
-            <p class="setting-description">
-              ${localize(
+            <!-- Not role="alert", for the same reason as the name hint -->
+            <p class="setting-description vm-id-hint" aria-live="polite">
+              ${this._vmIdError ??
+              localize(
                 "views.proxmox.proxmox_configure_view.unique_identifier_for_the_virtual_machine"
               )}
             </p>

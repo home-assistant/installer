@@ -87,6 +87,10 @@ describe("wizard-steps", () => {
     expect(pickDevice("minipc", "architecture")).to.deep.equal([false, true]);
     expect(readyWith("vm", "check", {})).to.be.false;
     expect(readyWith("vm", "check", { utmInstalled: true })).to.be.true;
+    expect(readyWith("vm", "configure", {})).to.be.true;
+    expect(readyWith("vm", "configure", { vmName: "My Home" })).to.be.true;
+    expect(readyWith("vm", "configure", { vmName: "" })).to.be.false;
+    expect(readyWith("vm", "configure", { vmName: "  " })).to.be.false;
 
     const configured: WizardSelections = {
       proxmoxConfigureReady: true,

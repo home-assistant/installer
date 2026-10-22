@@ -120,6 +120,52 @@ describe("utm-configure-view", () => {
     expect(input!.value).to.equal("My Home");
   });
 
+  it("keeps the name as typed and asks for one when it is cleared", async () => {
+    const el = await mount();
+    const name = el.shadowRoot!.querySelector<WaInput>("wa-input")!;
+    const type = async (value: string) => {
+      name.value = value;
+      name.dispatchEvent(new Event("input"));
+      await el.updateComplete;
+      await name.updateComplete;
+    };
+
+    name.focus();
+    for (const cleared of ["", "  "]) {
+      await type(cleared);
+      expect(name.value).to.equal(cleared);
+      expect(wizardState.getState().selections.vmName).to.equal(cleared);
+      expect(name.checkValidity(), cleared).to.be.false;
+      expect(
+        el.shadowRoot!.querySelector(".name-hint")!.textContent
+      ).to.contain("Enter a name for the virtual machine.");
+      // The error must not take focus from someone still typing
+      expect(el.shadowRoot!.activeElement).to.equal(name);
+    }
+
+    // What is typed after clearing is the whole name, without the default
+    await type("");
+    await type("X");
+    expect(name.value).to.equal("X");
+    expect(wizardState.getState().selections.vmName).to.equal("X");
+    expect(name.checkValidity()).to.be.true;
+    expect(el.shadowRoot!.querySelector(".name-hint")!.textContent).to.contain(
+      "Shown in UTM's virtual machine list"
+    );
+  });
+
+  it("restores a cleared name as cleared", async () => {
+    wizardState.setSelection("vmName", "");
+
+    const el = await mount();
+
+    const name = el.shadowRoot!.querySelector<WaInput>("wa-input")!;
+    await name.updateComplete;
+    expect(name.value).to.equal("");
+    expect(name.checkValidity()).to.be.false;
+    expect(wizardState.getState().selections.vmName).to.equal("");
+  });
+
   it("still caps a restored value the system cannot offer", async () => {
     // The mocked system reports 10 cores and 32 GB of memory
     wizardState.setSelection("cpuCores", 64);

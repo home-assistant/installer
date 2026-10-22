@@ -109,6 +109,10 @@ export const WIZARD_STEPS: Record<
     },
     configure: {
       render: () => html`<utm-configure-view></utm-configure-view>`,
+      // The name is kept as typed, so a cleared one holds Next back. Until
+      // the view first saves there is none, and the default name applies.
+      ready: (selections) =>
+        selections.vmName === undefined || selections.vmName.trim() !== "",
     },
     confirm: { render: () => html`<utm-confirm-view></utm-confirm-view>` },
     install: { render: () => html`<utm-progress-view></utm-progress-view>` },
