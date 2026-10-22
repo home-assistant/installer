@@ -245,8 +245,6 @@ export class ProxmoxConfigureView extends LitElement {
    * that would otherwise vanish while it runs. That part stays, busy.
    */
   @state() private _reloadFrom?: "import" | "bridges";
-  /** The storage the last read found Import enabled on, to say so */
-  private _importReadyOn?: string;
 
   // Where focus continues after a lookup hid the button that started it
   @query(".enable-import") private _enableImportButton?: HTMLElement;
@@ -435,14 +433,22 @@ export class ProxmoxConfigureView extends LitElement {
         // The image is uploaded to import storage before the VM disk is made.
         // ESXi only advertises Import as a source, and a full storage cannot
         // take the upload either.
-        this._importReadyOn = storageResult.value.find(
+        const importStorage = storageResult.value.find(
           (s) =>
             s.active &&
             s.storage_type !== "esxi" &&
             s.available > 0 &&
             s.content.includes("import")
-        )?.name;
-        this._importReady = this._importReadyOn !== undefined;
+        );
+        this._importReady = importStorage !== undefined;
+        // Read from the Import section, which goes away now: say why, whether
+        // this step enabled it or it was enabled in Proxmox meanwhile
+        if (from === "import" && importStorage) {
+          this._importStatus = localize(
+            "views.proxmox.proxmox_configure_view.import_enabled_on_storage",
+            { storage: importStorage.name }
+          );
+        }
         this._importCandidates = storageResult.value.filter(
           (s) =>
             s.active &&
@@ -578,7 +584,6 @@ export class ProxmoxConfigureView extends LitElement {
   private _resetImport(keepShown = false) {
     this._importStatus = "";
     this._importReady = false;
-    this._importReadyOn = undefined;
     this._importDialog = false;
     this._importDeclined = false;
     this._importError = null;
@@ -628,21 +633,7 @@ export class ProxmoxConfigureView extends LitElement {
       if (!isCurrent()) return;
       // Only a fresh read decides readiness, so the step never trusts its
       // own assumption about what the server now has
-      const reload = this._loadStorage("import");
-      const reloadLookup = this._storageLookup;
-      await reload;
-      if (
-        !this.isConnected ||
-        reloadLookup !== this._storageLookup ||
-        this._wizardState.selections.proxmoxSession !== session
-      )
-        return;
-      if (this._importReady) {
-        this._importStatus = localize(
-          "views.proxmox.proxmox_configure_view.import_enabled_on_storage",
-          { storage }
-        );
-      }
+      await this._loadStorage("import");
       // Reading storage again hid the section holding the button
       await this._restoreFocus(
         () => this._enableImportButton ?? this._bridgeSelect
@@ -713,21 +704,7 @@ export class ProxmoxConfigureView extends LitElement {
   }
 
   private async _refreshStorage() {
-    const reload = this._loadStorage("import");
-    const lookup = this._storageLookup;
-    await reload;
-    // Import may have been enabled in Proxmox meanwhile. Its section goes
-    // away then, so say why.
-    if (
-      this.isConnected &&
-      lookup === this._storageLookup &&
-      this._importReadyOn
-    ) {
-      this._importStatus = localize(
-        "views.proxmox.proxmox_configure_view.import_enabled_on_storage",
-        { storage: this._importReadyOn }
-      );
-    }
+    await this._loadStorage("import");
     await this._restoreFocus(
       () => this._refreshStorageButton ?? this._bridgeSelect
     );
