@@ -45,6 +45,13 @@ export interface WizardSelections {
   driveSerial?: string;
   /** Shown as the drive's icon on the confirmation screen. */
   driveType?: DeviceType;
+  /** The current drive picker has scanned, so a drive it kept is connected. */
+  driveScanReady?: boolean;
+  /**
+   * The drive was cleared because the install couldn't confirm it, so the
+   * drive step explains why.
+   */
+  driveSelectionLost?: boolean;
   /** Network to add to the drive. Its password is cleared once written. */
   wifi?: WifiConfig;
 
@@ -213,7 +220,11 @@ class WizardStateStore {
       this.state = {
         ...this.state,
         currentStepIndex: this.state.currentStepIndex + 1,
-        selections: { ...this.state.selections, deviceCatalogReady: false },
+        selections: {
+          ...this.state.selections,
+          deviceCatalogReady: false,
+          driveScanReady: false,
+        },
       };
       this.notify();
     }
@@ -224,7 +235,11 @@ class WizardStateStore {
       this.state = {
         ...this.state,
         currentStepIndex: this.state.currentStepIndex - 1,
-        selections: { ...this.state.selections, deviceCatalogReady: false },
+        selections: {
+          ...this.state.selections,
+          deviceCatalogReady: false,
+          driveScanReady: false,
+        },
       };
       this.notify();
     }
@@ -238,7 +253,11 @@ class WizardStateStore {
         selections:
           index === this.state.currentStepIndex
             ? this.state.selections
-            : { ...this.state.selections, deviceCatalogReady: false },
+            : {
+                ...this.state.selections,
+                deviceCatalogReady: false,
+                driveScanReady: false,
+              },
       };
       this.notify();
     }

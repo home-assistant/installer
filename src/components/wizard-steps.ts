@@ -41,7 +41,8 @@ const deviceChosen = (selections: WizardSelections) =>
 
 const drive: WizardStepDefinition = {
   render: () => html`<drive-selection-view></drive-selection-view>`,
-  ready: (selections) => !!selections.drive,
+  // A drive picked earlier may be gone by now, so wait for the scan
+  ready: (selections) => !!selections.driveScanReady && !!selections.drive,
 };
 
 const wifi: WizardStepDefinition = {

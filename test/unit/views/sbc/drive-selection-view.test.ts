@@ -83,6 +83,63 @@ describe("drive-selection-view", () => {
       .not.exist;
   });
 
+  it("holds Next until a scan has checked the selection", async () => {
+    storeDriveSelection(CONNECTED);
+    const scanReady = () => wizardState.getState().selections.driveScanReady;
+    let scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      expect(scanReady()).to.not.be.true;
+      scan.resolve([CONNECTED]);
+      await waitUntil(() => scanReady() === true, "scan never finished");
+      expect(wizardState.getState().selections.drive).to.equal(CONNECTED.id);
+
+      // A refresh can drop the drive just the same
+      scan.restore();
+      scan = holdDeviceScan();
+      (
+        el.shadowRoot!.querySelector(".drives-header wa-button") as HTMLElement
+      ).click();
+      expect(scanReady()).to.equal(false);
+      scan.resolve([CONNECTED]);
+      await waitUntil(() => scanReady() === true, "refresh never finished");
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("explains a drive the install could not confirm", async () => {
+    wizardState.setSelection("driveSelectionLost", true);
+    const scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      // Inserted only after the region is in place, so it is announced
+      const region = el.shadowRoot!.querySelector('[role="status"]')!;
+      expect(region.querySelector("inline-notice")).to.not.exist;
+
+      scan.resolve([CONNECTED]);
+      await waitUntil(
+        () => region.querySelector('inline-notice[variant="error"]'),
+        "the notice never showed"
+      );
+      expect(wizardState.getState().selections.driveSelectionLost).to.be
+        .undefined;
+
+      el.shadowRoot!.querySelector("drive-card")!.click();
+      await waitUntil(
+        () => wizardState.getState().selections.drive === CONNECTED.id
+      );
+      await el.updateComplete;
+      expect(region.querySelector("inline-notice")).to.not.exist;
+    } finally {
+      scan.restore();
+    }
+  });
+
   it("clears a selection whose path now names a different disk", async () => {
     storeDriveSelection({ ...CONNECTED, model: "Some Older Card" });
 

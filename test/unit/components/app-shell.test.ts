@@ -452,6 +452,25 @@ describe("app-shell", () => {
     expect(shellOf(el).querySelector("progress-view")).to.exist;
   });
 
+  it("holds Next on the drive step until the drives are scanned again", async () => {
+    await enterSbcFlow(el);
+    selectTargets();
+    await goToStep(el, "wifi");
+    const scan = holdDeviceScan();
+    try {
+      wizardState.previousStep();
+      await el.updateComplete;
+      expect(wizardState.currentStep!.id).to.equal("drive");
+      expect(shellOf(el).nextDisabled).to.be.true;
+
+      scan.resolve(MOCK_BLOCK_DEVICES);
+      await waitUntil(() => !shellOf(el).nextDisabled, "Next stayed disabled");
+      expect(wizardState.getState().selections.drive).to.equal(CONNECTED.id);
+    } finally {
+      scan.restore();
+    }
+  });
+
   describe("selected drive check before erasing", () => {
     beforeEach(async () => {
       await enterSbcFlow(el);
@@ -506,6 +525,36 @@ describe("app-shell", () => {
         "stale selection was never cleared"
       );
       expect(wizardState.currentStep!.id).to.equal("drive");
+      expect(dialogOf(el).hasAttribute("open")).to.be.false;
+    });
+
+    it("explains going back when the drive could not be checked", async () => {
+      // The check's scan fails, while the drive step's own scan finds the drive
+      const scans = [deferred<unknown>(), deferred<unknown>()];
+      let calls = 0;
+      mockTauriIpc((cmd) => {
+        if (cmd === "list_block_devices") return scans[calls++].promise;
+        throw new Error(cmd);
+      });
+      fire(shellOf(el), "wizard-next");
+      await waitUntil(() => shellOf(el).nextLabel === "Checking drive...");
+      scans[0].reject(ipcError("operation_failed", "Scan failed"));
+      await waitUntil(() => wizardState.currentStep?.id === "drive");
+      await el.updateComplete;
+
+      // Picking the drive again is up to the user, not Next
+      expect(wizardState.getState().selections.drive).to.be.undefined;
+      expect(shellOf(el).nextDisabled).to.be.true;
+      scans[1].resolve(MOCK_BLOCK_DEVICES);
+      const view = shellOf(el).querySelector("drive-selection-view")!;
+      await waitUntil(
+        () =>
+          view.shadowRoot!.querySelector(
+            '[role="status"] inline-notice[variant="error"]'
+          ),
+        "the drive step never said why"
+      );
+      expect(shellOf(el).nextDisabled).to.be.true;
       expect(dialogOf(el).hasAttribute("open")).to.be.false;
     });
 

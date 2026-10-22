@@ -212,7 +212,7 @@ describe("wizard-state", () => {
     expect(wizardState.currentStep?.id).to.equal("drive");
   });
 
-  it("invalidates catalog readiness before notifying a step change", () => {
+  it("invalidates catalog and drive scan readiness before notifying a step change", () => {
     for (const move of [
       () => wizardState.nextStep(),
       () => wizardState.previousStep(),
@@ -223,8 +223,10 @@ describe("wizard-state", () => {
       wizardState.setSelection("device", "rpi5");
       wizardState.setSelection("drive", "saved-drive");
       wizardState.setSelection("deviceCatalogReady", true);
+      wizardState.setSelection("driveScanReady", true);
       const unsubscribe = wizardState.subscribe((state) => {
         expect(state.selections.deviceCatalogReady).to.equal(false);
+        expect(state.selections.driveScanReady).to.equal(false);
         expect(state.selections.device).to.equal("rpi5");
         expect(state.selections.drive).to.equal("saved-drive");
       });
@@ -233,10 +235,12 @@ describe("wizard-state", () => {
     }
   });
 
-  it("preserves catalog readiness when the current step is selected again", () => {
+  it("preserves readiness when the current step is selected again", () => {
     wizardState.startFlow("sbc");
     wizardState.setSelection("deviceCatalogReady", true);
+    wizardState.setSelection("driveScanReady", true);
     wizardState.goToStep(0);
     expect(wizardState.getState().selections.deviceCatalogReady).to.equal(true);
+    expect(wizardState.getState().selections.driveScanReady).to.equal(true);
   });
 });

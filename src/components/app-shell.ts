@@ -49,7 +49,11 @@ import {
   type WizardState,
 } from "../state/wizard-state.js";
 import { listBlockDevices, onCloseBlocked, quitAnyway } from "../api/index.js";
-import { findDrive, readDriveSelection } from "../utils/drive-selection.js";
+import {
+  clearDriveSelection,
+  findDrive,
+  readDriveSelection,
+} from "../utils/drive-selection.js";
 import { logFrontendError } from "../utils/diagnostics.js";
 import { openExternalUrl } from "../utils/external-url.js";
 
@@ -524,8 +528,8 @@ export class AppShell extends LitElement {
 
   /**
    * Confirm the selected path still belongs to the same device; the OS can
-   * hand it to another one. On failure, go back to the drive step, which
-   * re-scans and explains why the selection was cleared.
+   * hand it to another one. On failure, clear the selection and go back to
+   * the drive step, which re-scans and explains why it was cleared.
    *
    * Resolves false without acting if the user navigated, cancelled or changed
    * the selection while the scan ran: the result no longer applies.
@@ -561,6 +565,9 @@ export class AppShell extends LitElement {
     }
 
     if (!found) {
+      // Have the user pick again, rather than let Next carry it back here
+      clearDriveSelection();
+      wizardState.setSelection("driveSelectionLost", true);
       this._goToStep("drive");
     }
     return found;
