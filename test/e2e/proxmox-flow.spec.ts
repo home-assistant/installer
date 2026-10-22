@@ -364,10 +364,12 @@ test.describe("Proxmox Installation Flow", () => {
     );
     await expect(wizardShell.locator(".footer-right wa-button")).toHaveCount(0);
 
-    // Past this, the VM exists, and the install runs to the end
-    await expect(wizardShell.locator(".footer")).not.toBeVisible({
+    // Past this, the VM exists, and the install runs to the end. Cancel
+    // goes, but the footer stays in place
+    await expect(wizardShell.locator(".footer-left wa-button")).toBeHidden({
       timeout: 15000,
     });
+    await expect(wizardShell.locator(".footer-left")).toBeVisible();
   });
 
   test("step 4: Cancel asks first, then stops before anything is created", async ({

@@ -56,9 +56,8 @@ export class UtmSuccessView extends LitElement {
               target="_blank"
               rel="noopener noreferrer"
               @click=${openExternalLink}
-            >
-              ${displayUrl}
-            </a>`,
+              >${displayUrl}</a
+            >`,
           })}`,
           localize("common.vm.step_onboard"),
         ]}

@@ -2,6 +2,7 @@ import { LitElement, html, css, svg, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { localize } from "../localization/localize.js";
 import { openExternalLink } from "../utils/external-url.js";
+import { linkStyles } from "../utils/link-styles.js";
 import { renderCasitaHappy } from "./install-mascot.js";
 import "./inline-notice.js";
 import {
@@ -17,6 +18,7 @@ export class InstallSuccess extends LitElement {
 
   static styles = [
     reducedMotionStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -102,16 +104,6 @@ export class InstallSuccess extends LitElement {
         padding-top: 2px;
         min-width: 0;
         overflow-wrap: anywhere;
-      }
-
-      .next-steps a {
-        color: var(--ha-primary-color, #03a9f4);
-        text-decoration: none;
-        font-weight: 500;
-      }
-
-      .next-steps a:hover {
-        text-decoration: underline;
       }
 
       .companion-section {
