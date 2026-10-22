@@ -94,7 +94,7 @@ describe("structured IPC errors in views", () => {
             ipcError(
               // Not unsupported_platform: the UTM check has its own screen for that
               retryable ? "permission_denied" : "json",
-              "Run as administrator",
+              "Not authorized to access the device",
               retryable
             )
           )
@@ -105,7 +105,9 @@ describe("structured IPC errors in views", () => {
         fixtureSync(html`<div>${el}</div>`);
         await waitUntil(() => !!el.shadowRoot?.querySelector(".error-help"));
         expect(el.shadowRoot!.textContent).to.contain(
-          retryable ? "Run as administrator" : "unexpected response"
+          retryable
+            ? "Not authorized to access the device"
+            : "unexpected response"
         );
         const retry = [...el.shadowRoot!.querySelectorAll("wa-button")].find(
           (button) => button.textContent?.includes("Try again")
