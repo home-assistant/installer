@@ -199,9 +199,13 @@ export class InstallSuccess extends LitElement {
 
   render() {
     const title = localize("components.install_success.title");
-    const notice = this.formatWarning
-      ? localize("common.success.do_not_format", { platform: getPlatform() })
-      : "";
+    const platform = this.formatWarning && getPlatform();
+    const notice =
+      platform === "macos"
+        ? localize("common.success.do_not_format.macos")
+        : platform === "windows"
+          ? localize("common.success.do_not_format.windows")
+          : "";
 
     return html`
       <div class="mascot-container" aria-hidden="true">
