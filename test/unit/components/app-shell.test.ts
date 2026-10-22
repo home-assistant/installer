@@ -791,6 +791,26 @@ describe("app-shell", () => {
       await waitUntil(() => shellOf(el).hideFooter, "Cancel stayed");
       expect(stopDialogOf(el).open).to.be.false;
     });
+
+    it("stops asking once the install failed", async () => {
+      // The download keeps running
+      await enterProxmoxInstall(() =>
+        mockTauriIpc(() => new Promise(() => {}))
+      );
+      await waitUntil(() => !shellOf(el).hideFooter, "Cancel never showed");
+      fire(shellOf(el), "wizard-cancel");
+      await el.updateComplete;
+      expect(stopDialogOf(el).open).to.be.true;
+
+      // Without waiting for the view to report it can no longer stop
+      fire(
+        el.shadowRoot!.querySelector("proxmox-progress-view")!,
+        "install-error",
+        { retryable: true }
+      );
+      await el.updateComplete;
+      expect(stopDialogOf(el).open).to.be.false;
+    });
   });
 
   // These flags reveal Cancel and "Try again" on the progress steps. Left
@@ -919,6 +939,37 @@ describe("app-shell", () => {
       expect(stopDialog.open).to.be.false;
       expect(quitDialogOf(el).open).to.be.true;
     });
+
+    for (const [flow, step, ended] of [
+      ["sbc", "flash", "flash-complete"],
+      ["sbc", "flash", "flash-error"],
+      ["vm", "install", "install-complete"],
+      ["vm", "install", "install-error"],
+    ] as const) {
+      it(`stops asking once the install ended (${ended})`, async () => {
+        // The install keeps running until the test ends it
+        mockTauriIpc(() => new Promise(() => {}), { mockEvents: true });
+        // Reconnecting makes the shell listen through these events
+        const parent = el.parentNode!;
+        el.remove();
+        parent.appendChild(el);
+        await settle();
+        wizardState.startFlow(flow);
+        if (flow === "sbc") selectTargets();
+        await goToStep(el, step);
+        fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+          view: "wizard",
+        });
+        await el.updateComplete;
+        await blockClose();
+        expect(quitDialogOf(el).open).to.be.true;
+
+        fire(shellOf(el), ended);
+        await el.updateComplete;
+
+        expect(quitDialogOf(el).open).to.be.false;
+      });
+    }
 
     it("logs, rather than throws, when it can't listen for close requests", async () => {
       const logged: unknown[] = [];
