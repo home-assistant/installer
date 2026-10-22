@@ -353,13 +353,11 @@ test.describe("SBC Drive Selection", () => {
     );
   });
 
-  test("shows data erasure warning", async ({ page }) => {
-    const warning = page.locator(
-      'drive-selection-view inline-notice[variant="warning"]'
-    );
-    await expect(warning).toBeVisible();
-    await expect(warning).toContainText("Warning");
-    await expect(warning).toContainText("erased");
+  test("leaves the erase warning to the erase question", async ({ page }) => {
+    await expect(page.locator("drive-card").first()).toBeVisible();
+    await expect(
+      page.locator('drive-selection-view inline-notice[variant="warning"]')
+    ).toHaveCount(0);
   });
 
   test("shows refresh button", async ({ page }) => {

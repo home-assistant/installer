@@ -284,8 +284,6 @@
   "views.sbc.drive_selection_view.drives_found": "{count, plural, one {# drive found} other {# drives found}}",
   "views.sbc.drive_selection_view.select_your_drive": "Select your drive",
   "views.sbc.drive_selection_view.selection_cleared": "The drive you selected is no longer available, so the selection was cleared. Devices can reappear under the same name as a different drive, so please pick your drive again.",
-  "views.sbc.drive_selection_view.erase_warning": "{warning_prefix} All data on the selected drive will be permanently erased. Make sure you have backed up any important files before proceeding.",
-  "views.sbc.drive_selection_view.warning": "Warning:",
   "views.sbc.drive_selection_view.minimum_size": "Minimum {size} drive required",
   "views.sbc.drive_selection_view.drive_capacity_or_board_requirements_unavailable": "Drive capacity or board requirements unavailable",
   "views.sbc.drive_selection_view.recommended_size": "A {size} drive is recommended. Space for apps, history, and backups will be limited.",

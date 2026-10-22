@@ -1,4 +1,4 @@
-import { localize, localizeContent } from "../../localization/localize.js";
+import { localize } from "../../localization/localize.js";
 import {
   installerError,
   renderErrorHelp,
@@ -303,16 +303,6 @@ export class DriveSelectionView extends LitElement {
             .hardware=${wizardState.getState().selections.haHardware}
           ></ha-hardware-connect-instructions>`
         : ""}
-
-      <inline-notice>
-        <p>
-          ${localizeContent("views.sbc.drive_selection_view.erase_warning", {
-            warning_prefix: html`<strong
-              >${localize("views.sbc.drive_selection_view.warning")}</strong
-            >`,
-          })}
-        </p>
-      </inline-notice>
 
       <!-- The live region stays in the DOM so that inserting the notice into
            it is announced; a region added together with its content often
