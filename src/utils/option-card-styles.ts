@@ -3,7 +3,8 @@ import { css } from "lit";
 /**
  * A choice between a few options, as a `wa-radio-group` of class `options`
  * whose `wa-radio` buttons are cards with an `.option-icon`, `.option-title`
- * and `.option-description`. Side by side, and stacked on narrow windows.
+ * and `.option-description`, and a `.selected-indicator` on the chosen one.
+ * Side by side, and stacked on narrow windows.
  */
 export const optionCardStyles = css`
   .options {
@@ -71,5 +72,36 @@ export const optionCardStyles = css`
     color: var(--ha-control-secondary-text-color, #686868);
     margin: 0;
     line-height: 1.4;
+  }
+
+  /* The chosen one gets a check like the device and drive cards, as its
+   * border and tint are only a change of color */
+  .selected-indicator {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    background-color: var(--ha-primary-fill, #006787);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--wa-color-brand-on-loud, white);
+    font-size: 14px;
+  }
+
+  /* Forced colors would draw both choices with the same border, and hide
+   * the check behind a backplate */
+  @media (forced-colors: active) {
+    wa-radio[aria-checked="true"] {
+      border-color: Highlight;
+    }
+
+    .selected-indicator {
+      forced-color-adjust: none;
+      background-color: Highlight;
+      color: HighlightText;
+    }
   }
 `;

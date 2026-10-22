@@ -351,6 +351,33 @@ describe("Home Assistant hardware views", () => {
       });
     }
 
+    it("marks the chosen compute module with a check, not only a color", async () => {
+      pickYellow();
+      const el = await fixture(
+        html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
+      );
+      const radios = [...el.shadowRoot!.querySelectorAll("wa-radio")];
+      const checks = () =>
+        radios.map((radio) => !!radio.querySelector(".selected-indicator"));
+      expect(checks()).to.deep.equal([false, false]);
+
+      radios[1].click();
+      await waitUntil(() => checks()[1], "choice never marked");
+      expect(checks()).to.deep.equal([false, true]);
+      const check = radios[1].querySelector(".selected-indicator")!;
+      expect(check.getAttribute("aria-hidden")).to.equal("true");
+      // The check sits in the radio's corner, out of the centered content
+      const radioBox = radios[1].getBoundingClientRect();
+      const checkBox = check.getBoundingClientRect();
+      expect(checkBox.width).to.be.greaterThan(0);
+      expect(radioBox.right - checkBox.right).to.be.within(8, 10);
+      expect(checkBox.top - radioBox.top).to.be.within(8, 10);
+
+      radios[0].click();
+      await waitUntil(() => checks()[0], "new choice never marked");
+      expect(checks()).to.deep.equal([true, false]);
+    });
+
     it("forgets the drive when switching to another compute module", async () => {
       pickYellow();
       const el = await fixture(

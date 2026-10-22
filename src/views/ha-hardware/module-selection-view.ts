@@ -1,5 +1,5 @@
 import { localize } from "../../localization/localize.js";
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import {
   ViewAccessibility,
   reducedMotionStyles,
@@ -105,11 +105,19 @@ export class HaHardwareModuleSelectionView extends LitElement {
                 <p class="option-title">${moduleName(id)}</p>
                 <p class="option-description">${moduleDescription(id)}</p>
               </div>
+              ${this._renderCheck(id)}
             </wa-radio>
           `
         )}
       </wa-radio-group>
     `;
+  }
+
+  // Screen readers already hear which radio is checked
+  private _renderCheck(id: YellowModuleId) {
+    return id === this._selected
+      ? html`<span class="selected-indicator" aria-hidden="true">✓</span>`
+      : nothing;
   }
 
   private _modules() {

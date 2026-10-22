@@ -61,37 +61,6 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         max-width: 500px;
       }
 
-      /* The chosen one gets a check like the device and drive cards, as its
-         border and tint are only a change of color */
-      .selected-indicator {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        width: 24px;
-        height: 24px;
-        background-color: var(--ha-primary-fill, #006787);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--wa-color-brand-on-loud, white);
-        font-size: 14px;
-      }
-
-      /* Forced colors would draw both choices with the same border, and hide
-         the check behind a backplate */
-      @media (forced-colors: active) {
-        wa-radio[aria-checked="true"] {
-          border-color: Highlight;
-        }
-
-        .selected-indicator {
-          forced-color-adjust: none;
-          background-color: Highlight;
-          color: HighlightText;
-        }
-      }
-
       .option-content {
         display: flex;
         flex-direction: column;
