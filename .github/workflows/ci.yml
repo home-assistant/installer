@@ -18,11 +18,23 @@ on:
 
 permissions: {}
 
+# A new push to a pull request cancels the run for the push before it. Runs
+# on main and release runs each get a group of their own and always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
+  # Line numbers are all a failing test's backtrace needs. Full debug info
+  # makes the target directory, and so the cargo caches, several times larger.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 # Release runs build the installers users download, so no job restores a
-# cache there that another run could have written.
+# cache there that another run could have written. Only runs on main save
+# the cargo caches: GitHub keeps 10 GB per repository, and a pull request's
+# copy, which only that pull request can restore, evicts the ones on main
+# that every pull request starts from.
 
 jobs:
   audit-frontend:
@@ -236,6 +248,8 @@ jobs:
       - name: Cache cargo
         if: github.event_name != 'workflow_dispatch'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Tauri dependencies (Linux)
         if: runner.os == 'Linux'
@@ -295,8 +309,10 @@ jobs:
           flags: frontend
           fail_ci_if_error: false
 
+  # The E2E suite takes over ten minutes per browser in one job, longer than
+  # any other job, so each browser's tests are split across three.
   test-e2e:
-    name: Test E2E (${{ matrix.browser }})
+    name: Test E2E (${{ matrix.browser }}, ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -304,6 +320,7 @@ jobs:
       fail-fast: false
       matrix:
         browser: [chromium, webkit]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -338,13 +355,13 @@ jobs:
         run: npx playwright install --with-deps ${{ matrix.browser }}
 
       - name: Run E2E tests
-        run: npm run test:e2e -- --project=${{ matrix.browser }}
+        run: npm run test:e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/3
 
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: playwright-report-${{ matrix.browser }}
+          name: playwright-report-${{ matrix.browser }}-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 7
 
@@ -376,6 +393,8 @@ jobs:
       - name: Cache cargo
         if: github.event_name != 'workflow_dispatch'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Tauri dependencies (Linux)
         if: runner.os == 'Linux'
@@ -479,9 +498,13 @@ jobs:
 
       # Signed and release builds are what users install, so they compile
       # everything themselves instead of linking objects another run cached.
+      # The macOS build on main is signed and saves no cache, so a pull
+      # request's macOS build has none to restore either.
       - name: Cache cargo
-        if: env.SIGN_MACOS != 'true' && github.event_name != 'workflow_dispatch'
+        if: runner.os != 'macOS' && github.event_name != 'workflow_dispatch'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Tauri dependencies (Linux)
         if: runner.os == 'Linux'
