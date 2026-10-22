@@ -11,7 +11,7 @@ type TestWindow = typeof window & {
 
 async function configure(page: Page, failFirst = false, changed = true) {
   await page.goto("/");
-  await page.locator("welcome-view wa-button").click();
+  await page.getByRole("button", { name: "Let's go" }).click();
   await page.locator('option-card[heading="Proxmox server"]').click();
   await expect(page.locator("proxmox-connect-view")).toBeVisible();
   await page.evaluate(

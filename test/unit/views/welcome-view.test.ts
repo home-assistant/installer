@@ -3,12 +3,6 @@ import "../../../src/views/welcome-view.js";
 import type { WelcomeView } from "../../../src/views/welcome-view.js";
 
 describe("welcome-view", () => {
-  it("welcomes the user with the supplied Casita artwork", async () => {
-    const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
-    expect(el.shadowRoot!.querySelector("casita-mascot")!.mood).to.equal(
-      "winking"
-    );
-  });
   it("renders the Home Assistant logo", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
@@ -25,13 +19,11 @@ describe("welcome-view", () => {
     );
   });
 
-  it("renders the welcome text", async () => {
+  it("says what the installer does in one line", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
-    const welcomeText = el.shadowRoot!.querySelector(".welcome-text");
-    expect(welcomeText).to.exist;
-    expect(welcomeText!.textContent).to.include("privacy-first");
-    expect(welcomeText!.textContent).to.include("Home Assistant");
+    const intro = el.shadowRoot!.querySelector(".intro");
+    expect(intro!.textContent).to.include("sets up Home Assistant");
   });
 
   it("renders the Let's go button", async () => {
@@ -87,5 +79,15 @@ describe("welcome-view", () => {
     expect(ohfLink!.getAttribute("href")).to.include("openhomefoundation.org");
     expect(lightLogo).to.exist;
     expect(darkLogo).to.exist;
+  });
+
+  it("puts Report a problem and Learn more in the footer", async () => {
+    const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
+
+    const footer = el.shadowRoot!.querySelector(".welcome-footer")!;
+    expect(footer.querySelector("diagnostics-actions.report")).to.exist;
+    expect(footer.querySelector(".learn-more")!.textContent!.trim()).to.equal(
+      "Learn more"
+    );
   });
 });

@@ -9,7 +9,7 @@ test("catalog navigation preserves selection without a Lit mount-update warning"
       warnings.push(message.text());
   });
   await page.goto("/");
-  await page.locator("welcome-view wa-button").click();
+  await page.getByRole("button", { name: "Let's go" }).click();
   await page
     .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();

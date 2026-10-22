@@ -16,7 +16,7 @@ interface TotpWindow {
 test.describe("Proxmox TOTP login", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await page.locator("welcome-view wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await page.locator('option-card[heading="Proxmox server"]').click();
     await expect(page.locator("proxmox-connect-view")).toBeVisible();
 
@@ -172,7 +172,7 @@ test.describe("Proxmox TOTP login", () => {
       await page.evaluate(() => (window as unknown as TotpWindow).totpAttempts)
     ).toEqual([]);
 
-    await page.locator("welcome-view wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await page.locator('option-card[heading="Proxmox server"]').click();
     await expect(code).toHaveValue("");
     await page
