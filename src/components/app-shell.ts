@@ -275,7 +275,13 @@ export class AppShell extends LitElement {
     const step = wizardStep(flow, currentStep?.id);
     const nextDisabled = !this._isReady(step);
     const nextLabel = this._getNextLabel(currentStep?.id);
-    const busy = this._isBusy(step) ? step?.beforeNext?.label() : undefined;
+    // What Next waits for. It says so and keeps the focus: disabled, it
+    // would drop the focus to the page
+    const busy = this._isBusy(step)
+      ? step?.beforeNext?.label?.()
+      : this._verifyingDrive
+        ? localize("components.app_shell.checking_drive")
+        : undefined;
 
     // A running flash keeps only Cancel, until it is stopping
     const flashRunning = currentStep?.id === "flash" && !this._flashError;
@@ -283,7 +289,7 @@ export class AppShell extends LitElement {
     // A running VM install keeps only Cancel, while it can still stop
     const vmRunning = this._isVmInstallRunning();
 
-    // Determine when to hide footer (during active processes)
+    // Determine when to hide the footer's buttons (during active processes)
     // Once the VM runs, waiting for Home Assistant can take an hour, and
     // leaving no longer leaves anything half done
     const hideFooter =
@@ -309,12 +315,9 @@ export class AppShell extends LitElement {
 
     return html`
       <wizard-shell
-        .nextDisabled=${nextDisabled || !!busy || this._verifyingDrive}
-        .nextLabel=${busy
-          ? busy
-          : this._verifyingDrive
-            ? localize("components.app_shell.checking_drive")
-            : nextLabel}
+        .nextDisabled=${nextDisabled}
+        .nextBusy=${!!busy}
+        .nextLabel=${busy ?? nextLabel}
         .hideFooter=${hideFooter}
         .hideBack=${hideBack}
         .hideNext=${hideNext}
@@ -480,8 +483,8 @@ export class AppShell extends LitElement {
 
     const step = wizardStep(flow, currentStep?.id);
     if (step?.beforeNext) {
-      // Next is only clickable while enabled, but the step must never proceed
-      // while it isn't ready, whatever triggered the event
+      // Next takes no clicks while it isn't ready or is busy, but the step
+      // must never proceed meanwhile, whatever triggered the event
       const view = this._stepView;
       if (!view || this._isBusy(step) || !this._isReady(step)) return;
       const token = this._pendingToken(step);
@@ -502,6 +505,8 @@ export class AppShell extends LitElement {
       currentStep?.id === "confirm" &&
       (flow === "sbc" || flow === "minipc" || flow === "ha-hardware")
     ) {
+      // Next is busy with this already, whatever else sent the event
+      if (this._verifyingDrive) return;
       if (!(await this._verifySelectedDrive())) {
         return;
       }

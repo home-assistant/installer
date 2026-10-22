@@ -913,6 +913,61 @@ describe("utm-progress-view", () => {
     expect(calls).to.not.include("check_ha_updated");
   });
 
+  // Their messages say "network" or "UTM", which must not decide the category
+  for (const stage of ["waiting", "ready", "updating"] as const) {
+    it(`logs running out of time while ${stage} as a timeout`, async () => {
+      wizardState.setSelection("vmId", "existing-vm");
+      const now = Date.now;
+      let skipped = 0;
+      Date.now = () => now() + skipped;
+      // Each answer to the wait that runs out comes an hour later
+      const late = <T>(answer: T) => {
+        skipped += 61 * 60 * 1000;
+        return answer;
+      };
+      const logged: Record<string, unknown>[] = [];
+      mockTauriIpc(
+        (cmd, args) => {
+          switch (cmd) {
+            case "log_frontend_event":
+              logged.push(args as Record<string, unknown>);
+              return undefined;
+            case "get_utm_vm_status":
+              return stage === "waiting"
+                ? late({ status: "started", ip_address: null })
+                : { status: "started", ip_address: "192.0.2.50" };
+            case "check_ha_ready":
+              return stage === "ready" ? late(false) : true;
+            case "check_ha_updated":
+              return late(false);
+            case "get_ha_setup_status":
+              return {
+                core_install_progress: null,
+                supervisor_update_progress: null,
+                problems: [],
+              };
+          }
+          throw new Error(`Unexpected IPC command: ${cmd}`);
+        },
+        { includeLogs: true }
+      );
+      try {
+        const el = mount();
+        const failed = await oneEvent(el, "install-error");
+        expect(failed.detail.retryable).to.be.true;
+        // An earlier test's late cleanup may log here too, as the application
+        const failure = () =>
+          logged.find(
+            (event) => event.flow === "utm" && event.outcome === "failed"
+          );
+        await waitUntil(failure);
+        expect(failure()).to.include({ stage, error: "timeout" });
+      } finally {
+        Date.now = now;
+      }
+    });
+  }
+
   for (const status of ["starting", "resuming"]) {
     it(`does not start a VM that is already ${status}`, async () => {
       wizardState.setSelection("vmId", "existing-vm");
@@ -1111,8 +1166,12 @@ describe("utm-progress-view", () => {
       el.stop();
       await settle();
       expect(install.stops).to.deep.equal([install.attempt()]);
+      const layout = el.shadowRoot!.querySelector("install-progress")!;
+      expect(layout.stageTitle).to.equal("Stopping");
+      // The thinking cloud adds the ellipsis to the stage title
+      await layout.updateComplete;
       expect(
-        el.shadowRoot!.querySelector("install-progress")!.stageTitle
+        layout.shadowRoot!.querySelector(".cloud-text")!.textContent!.trim()
       ).to.equal("Stopping...");
 
       const failed = oneEvent(el, "install-error");

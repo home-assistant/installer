@@ -15,6 +15,10 @@ on:
         type: choice
         required: true
         options: [alpha, beta, stable]
+  # The daily run on main only audits the dependencies, to catch advisories
+  # published against what is already locked while nothing is merged.
+  schedule:
+    - cron: "17 4 * * *"
 
 permissions: {}
 
@@ -85,13 +89,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # A pull request is checked out as its merge commit, whose first
+          # parent is main, so one more commit shows what it changes.
+          fetch-depth: 2
+
+      # The runs on main, daily ones included, catch advisories published
+      # against what is already locked, so a pull request only needs the
+      # audit when it changes Cargo.lock. The job itself still runs, so its
+      # check always reports.
+      - name: Check whether to audit
+        id: lock
+        run: |
+          if [[ "$GITHUB_REF" == refs/heads/main ]] || ! git diff --quiet HEAD^1 HEAD -- Cargo.lock; then
+            echo "audit=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install cargo-audit
+        if: steps.lock.outputs.audit == 'true'
         uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-audit@0.22.2
 
       - name: Audit Rust dependencies
+        if: steps.lock.outputs.audit == 'true'
         run: cargo audit
 
   # Picks the version of a release run from the existing version tags, once,
@@ -159,6 +179,7 @@ jobs:
 
   zizmor:
     name: Lint GitHub Actions
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -175,6 +196,7 @@ jobs:
 
   lint-frontend:
     name: Lint Frontend
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -222,6 +244,7 @@ jobs:
 
   lint-backend:
     name: Lint Backend (${{ matrix.os }})
+    if: github.event_name != 'schedule'
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -283,6 +306,7 @@ jobs:
 
   test-frontend:
     name: Test Frontend
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -313,6 +337,7 @@ jobs:
   # any other job, so each browser's tests are split across three.
   test-e2e:
     name: Test E2E (${{ matrix.browser }}, ${{ matrix.shard }}/3)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -367,6 +392,7 @@ jobs:
 
   test-backend:
     name: Test Backend (${{ matrix.os }})
+    if: github.event_name != 'schedule'
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -431,7 +457,7 @@ jobs:
     name: Build (${{ matrix.target }})
     # Only release runs have a version job; elsewhere it's skipped.
     needs: version
-    if: ${{ !cancelled() && (needs.version.result == 'success' || needs.version.result == 'skipped') }}
+    if: ${{ !cancelled() && github.event_name != 'schedule' && (needs.version.result == 'success' || needs.version.result == 'skipped') }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
