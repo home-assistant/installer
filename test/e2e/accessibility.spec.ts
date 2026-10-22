@@ -337,9 +337,10 @@ test("connecting to Proxmox keeps the focus and says so", async ({ page }) => {
   const next = page.locator("wizard-shell .footer-right wa-button");
   await expect(next).toHaveText("Connecting...");
   await expect(next).toHaveAttribute("loading", "");
-  await expect(page.locator("wizard-shell [aria-live=polite]")).toHaveText(
-    "Connecting..."
-  );
+  // The footer's own live region; the fields' hints are live regions too
+  await expect(
+    page.locator("wizard-shell .footer-right [aria-live=polite]")
+  ).toHaveText("Connecting...");
   await expect(password).toBeFocused();
   await expect(
     page.getByRole("heading", { name: "Configure virtual machine" })
