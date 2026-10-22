@@ -106,6 +106,10 @@ export class AppShell extends LitElement {
   @state()
   private _installRetryable = false;
 
+  /** The failed install needs a new Proxmox login before it can go on */
+  @state()
+  private _installReconnect = false;
+
   // What the running `beforeNext` of a step started from: the flow, or the
   // selections. Leaving the flow (or changing a choice) replaces it, so a run
   // left behind holds up nothing.
@@ -297,9 +301,7 @@ export class AppShell extends LitElement {
       flashRunning ||
       vmRunning ||
       currentStep?.id === "method" ||
-      (currentStep?.id === "install" &&
-        (this._flashError || this._vmInstallError) &&
-        !this._installRetryable);
+      (currentStep?.id === "install" && this._installStuck());
 
     return html`
       <wizard-shell
@@ -336,7 +338,9 @@ export class AppShell extends LitElement {
         : localize("components.app_shell.choose_another_drive");
     }
     if (stepId === "install" && this._vmInstallError) {
-      return localize("components.app_shell.try_again");
+      return this._installReconnect
+        ? localize("proxmox.reconnect")
+        : localize("components.app_shell.try_again");
     }
     if (stepId === "confirm") {
       return localize("common.install");
@@ -427,27 +431,39 @@ export class AppShell extends LitElement {
     this._flashError = false;
     this._vmInstallError = false;
     this._installRetryable = false;
+    this._installReconnect = false;
+  }
+
+  /** Whether the failed install can neither be tried again nor resumed. */
+  private _installStuck(): boolean {
+    return (
+      (this._flashError || this._vmInstallError) &&
+      !this._installRetryable &&
+      !this._installReconnect
+    );
   }
 
   private async _onWizardNext() {
     const currentStep = wizardState.currentStep;
     const flow = this._wizardState.currentFlow;
 
-    if (
-      currentStep?.id === "install" &&
-      (this._flashError || this._vmInstallError) &&
-      !this._installRetryable
-    )
-      return;
+    if (currentStep?.id === "install" && this._installStuck()) return;
 
     // Handle retry on flash error
     if (currentStep?.id === "flash" && this._flashError) {
       this._flashError = false;
       if (!this._installRetryable) {
-        this._goToDriveStep();
+        this._goToStep("drive");
         return;
       }
       this._stepView?.retry?.();
+      return;
+    }
+
+    // A Proxmox session that stopped working: log in again, then carry on
+    if (currentStep?.id === "install" && this._installReconnect) {
+      this._resetErrorState();
+      this._goToStep("connection");
       return;
     }
 
@@ -489,11 +505,18 @@ export class AppShell extends LitElement {
       return;
     }
 
+    const skipTo = step?.skipTo?.(wizardState.getState().selections);
+    const skipIndex = skipTo
+      ? this._wizardState.steps.findIndex(({ id }) => id === skipTo)
+      : -1;
+
     if (wizardState.isLastStep) {
       // Flow complete - go back to welcome
       this._resetErrorState();
       wizardState.reset();
       this._currentView = "welcome";
+    } else if (skipIndex >= 0) {
+      wizardState.goToStep(skipIndex);
     } else {
       wizardState.nextStep();
     }
@@ -538,15 +561,13 @@ export class AppShell extends LitElement {
     }
 
     if (!found) {
-      this._goToDriveStep();
+      this._goToStep("drive");
     }
     return found;
   }
 
-  private _goToDriveStep() {
-    const index = this._wizardState.steps.findIndex(
-      (step) => step.id === "drive"
-    );
+  private _goToStep(id: string) {
+    const index = this._wizardState.steps.findIndex((step) => step.id === id);
     if (index >= 0) {
       wizardState.goToStep(index);
     }
@@ -689,8 +710,11 @@ export class AppShell extends LitElement {
     wizardState.nextStep();
   }
 
-  private _onVmInstallError(event: CustomEvent<{ retryable?: boolean }>) {
+  private _onVmInstallError(
+    event: CustomEvent<{ retryable?: boolean; reconnect?: boolean }>
+  ) {
     this._installRetryable = event.detail?.retryable === true;
+    this._installReconnect = event.detail?.reconnect === true;
     this._vmInstallError = true;
   }
 

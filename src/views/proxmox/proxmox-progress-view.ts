@@ -35,6 +35,11 @@ import {
   haSetupProblemMessage,
   type HaSetupProgress,
 } from "../../utils/ha-setup.js";
+import {
+  SESSION_EXPIRED,
+  forgetProxmoxSession,
+  needsReconnect,
+} from "./proxmox-session.js";
 import "../../components/install-progress.js";
 
 /** The stages `proxmoxCreateVm` reports, in order */
@@ -266,7 +271,9 @@ export class ProxmoxProgressView extends LitElement {
     const session = selections.proxmoxSession;
 
     if (!session) {
+      // Answered like an expired one: by logging in again
       this._setError(
+        { code: SESSION_EXPIRED, message: "", retryable: false, details: {} },
         localize(
           "views.proxmox.proxmox_progress_view.no_proxmox_session_available"
         )
@@ -432,7 +439,10 @@ export class ProxmoxProgressView extends LitElement {
     this._setup = { progress: null, problem: null };
   }
 
-  /** Show an error and tell the shell whether a retry is safe. */
+  /**
+   * Show an error and tell the shell whether a retry is safe, or whether
+   * only logging in again can get past it.
+   */
   private _setError(error: unknown, message?: string) {
     this._diagnostics?.fail(error);
     this._stage = "error";
@@ -443,9 +453,12 @@ export class ProxmoxProgressView extends LitElement {
       )
     );
     this._error = message ? { ...installer, message } : installer;
+    // The VM, if one was made, stays known: reconnecting resumes it
+    const reconnect = needsReconnect(error);
+    if (reconnect) forgetProxmoxSession();
     this.dispatchEvent(
       new CustomEvent("install-error", {
-        detail: { retryable: this._error.retryable },
+        detail: { retryable: this._error.retryable, reconnect },
         bubbles: true,
         composed: true,
       })

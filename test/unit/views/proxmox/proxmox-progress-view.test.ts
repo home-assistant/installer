@@ -454,6 +454,12 @@ describe("proxmox-progress-view", () => {
       expect(calls).to.not.include("check_ha_ready");
       // The VM stays known, for when the user comes back to it
       expect(wizardState.getState().selections.proxmoxVmResult).to.exist;
+      // Only a new login gets past an expired session
+      const reconnect = error.code === "proxmox_session_expired";
+      expect(failed.detail.reconnect).to.equal(reconnect);
+      const selections = wizardState.getState().selections;
+      expect(!!selections.proxmoxSession).to.equal(!reconnect);
+      expect(!!selections.proxmoxPreviousServer).to.equal(reconnect);
     });
   }
 
