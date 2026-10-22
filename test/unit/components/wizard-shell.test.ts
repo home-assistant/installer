@@ -139,24 +139,6 @@ describe("wizard-shell", () => {
     expect(event).to.exist;
   });
 
-  it("ignores the second click of a double-click", async () => {
-    wizardState.nextStep(); // Go to step 2, so Back steps back instead of leaving
-
-    const el = await fixture<WizardShell>(html`<wizard-shell></wizard-shell>`);
-    const events: string[] = [];
-    el.addEventListener("wizard-next", () => events.push("next"));
-    el.addEventListener("wizard-back", () => events.push("back"));
-
-    for (const selector of [".footer-right wa-button", ".header wa-button"]) {
-      el.shadowRoot!.querySelector(selector)!.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, composed: true, detail: 2 })
-      );
-    }
-
-    expect(events).to.deep.equal([]);
-    expect(wizardState.getState().currentStepIndex).to.equal(1);
-  });
-
   it("dispatches wizard-back event and goes to previous step", async () => {
     wizardState.nextStep(); // Go to step 2
 

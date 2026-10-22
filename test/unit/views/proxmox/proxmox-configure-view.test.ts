@@ -205,12 +205,14 @@ describe("proxmox-configure-view", () => {
       expect(
         el.shadowRoot!.querySelector(".name-hint")!.textContent
       ).to.contain("Start and end with a letter or number");
+      expect(name.input.getAttribute("aria-invalid")).to.equal("true");
       // The error must not take focus from someone still typing
       expect(el.shadowRoot!.activeElement).to.equal(name);
     }
 
     await type("home-assistant.lan");
     expect(name.checkValidity()).to.be.true;
+    expect(name.input.getAttribute("aria-invalid")).to.equal("false");
     expect(wizardState.getState().selections.proxmoxConfigureReady).to.be.true;
   });
 
@@ -243,6 +245,7 @@ describe("proxmox-configure-view", () => {
       expect(el.shadowRoot!.querySelector(".vm-id-hint")!.slot).to.equal(
         "hint"
       );
+      expect(vmId.input.getAttribute("aria-invalid")).to.equal("true");
       // The error must not take focus from someone still typing
       expect(el.shadowRoot!.activeElement).to.equal(vmId);
     }
@@ -252,6 +255,7 @@ describe("proxmox-configure-view", () => {
     await type("250");
     expect(vmId.value).to.equal("250");
     expect(vmId.checkValidity()).to.be.true;
+    expect(vmId.input.getAttribute("aria-invalid")).to.equal("false");
     const selections = wizardState.getState().selections;
     expect(selections.proxmoxVmId).to.equal(250);
     expect(selections.proxmoxConfigureReady).to.be.true;
@@ -423,12 +427,22 @@ describe("proxmox-configure-view", () => {
       const el = await mount();
       await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
 
-      storages = [local, { ...inactiveLvm, active: true }];
+      const lookup = deferred<ProxmoxStorage[]>();
+      storages = lookup.promise;
       calls.length = 0;
       const retry = [...el.shadowRoot!.querySelectorAll("wa-button")].find(
         (button) => button.textContent!.trim() === "Try again"
-      )!;
+      )! as HTMLElement & { loading: boolean };
+      retry.focus();
       retry.click();
+      await el.updateComplete;
+
+      // Still there, busy, so the focus stays with it while storage is read
+      expect(retry.isConnected).to.be.true;
+      expect(retry.loading).to.be.true;
+      expect(el.shadowRoot!.activeElement === retry).to.be.true;
+
+      lookup.resolve([local, { ...inactiveLvm, active: true }]);
       await waitUntil(
         () => wizardState.getState().selections.proxmoxStorage === "local-lvm",
         "the retry never chose the storage it found"
@@ -444,6 +458,10 @@ describe("proxmox-configure-view", () => {
       const storageSelect = el.shadowRoot!.querySelectorAll("wa-select")[1];
       expect(storageSelect.disabled).to.be.false;
       expect(storageSelect.value).to.equal("local-lvm");
+      // Try again went with the alert: focus goes on to the storage found
+      await settle();
+      await el.updateComplete;
+      expect(el.shadowRoot!.activeElement === storageSelect).to.be.true;
     });
 
     it("only says so after reading the selected node's storage", async () => {

@@ -45,37 +45,25 @@ export class UtmSuccessView extends LitElement {
     return html`
       <install-success
         .subtitle=${html`${localizeContent(
-          "views.utm.utm_success_view.home_assistant_is_now_running_in_utm_as_value",
-          { value0: name }
+          "views.utm.utm_success_view.subtitle",
+          { name }
         )}`}
         .steps=${[
-          localize(
-            "views.proxmox.proxmox_success_view.wait_a_few_minutes_for_home_assistant_to_complete_its_initial_setup"
-          ),
-          html`${localizeContent(
-            "views.proxmox.proxmox_success_view.open_value_in_your_browser",
-            {
-              value0: html`<a
-                href=${haUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                @click=${openExternalLink}
-                >${displayUrl}</a
-              >`,
-            }
-          )}`,
-          localize(
-            "views.proxmox.proxmox_success_view.create_your_user_account_and_start_automating"
-          ),
-        ]}
-        .tip=${html`${localizeContent(
-          "views.utm.utm_success_view.value_you_can_manage_your_home_assistant_virtual_machine_anytime_by_opening",
-          {
-            value0: html`<strong
-              >${localize("views.proxmox.proxmox_success_view.tip")}</strong
+          localize("common.vm.step_wait"),
+          html`${localizeContent("common.vm.step_open", {
+            url: html`<a
+              href=${haUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              @click=${openExternalLink}
+              >${displayUrl}</a
             >`,
-          }
-        )}`}
+          })}`,
+          localize("common.vm.step_onboard"),
+        ]}
+        .tip=${html`${localizeContent("views.utm.utm_success_view.manage_tip", {
+          tip_prefix: html`<strong>${localize("common.vm.tip")}</strong>`,
+        })}`}
       ></install-success>
     `;
   }

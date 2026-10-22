@@ -131,13 +131,9 @@ export class ConfirmationView extends LitElement {
     const wifi = selectedWifi(selections);
 
     return html`
-      <h2>
-        ${localize("views.proxmox.proxmox_confirm_view.ready_to_install")}
-      </h2>
+      <h2>${localize("common.confirm.ready_to_install")}</h2>
       <p class="subtitle">
-        ${localize(
-          "views.sbc.confirmation_view.review_your_selections_before_installing"
-        )}
+        ${localize("views.sbc.confirmation_view.subtitle")}
       </p>
 
       <div class="summary-card">
@@ -154,12 +150,12 @@ export class ConfirmationView extends LitElement {
             : html`<div class="device-image-placeholder">
                 ${renderSummaryIcon(boardIcon)}
               </div>`,
-          localize("components.confirm_dialog.device"),
+          localize("common.device"),
           deviceName,
           deviceConfig && !installer
             ? html`<p class="summary-detail">
-                ${localizeContent("views.sbc.confirmation_view.board_value", {
-                  value0: deviceConfig.board,
+                ${localizeContent("views.sbc.confirmation_view.board_summary", {
+                  board: deviceConfig.board,
                 })}
               </p>`
             : nothing
@@ -170,7 +166,7 @@ export class ConfirmationView extends LitElement {
         <!-- Drive -->
         ${renderSummaryRow(
           renderDriveIcon(selections.driveType ?? "unknown"),
-          localize("views.sbc.confirmation_view.target_drive"),
+          localize("common.target_drive"),
           driveName,
           html`<p class="summary-detail">
               ${this._formatSize(driveSize)}${driveModel
@@ -215,9 +211,7 @@ export class ConfirmationView extends LitElement {
       localize("views.sbc.confirmation_view.installer"),
       installerName(installer),
       html`<p class="summary-detail">
-        ${localize(
-          "views.sbc.confirmation_view.installs_home_assistant_os_on_the_device"
-        )}
+        ${localize("views.sbc.confirmation_view.installer_detail")}
       </p>`
     );
   }
@@ -242,8 +236,7 @@ export class ConfirmationView extends LitElement {
   }
 
   private _formatSize(bytes: number | undefined): string {
-    if (bytes === undefined)
-      return localize("views.sbc.confirmation_view.unknown_size");
+    if (bytes === undefined) return localize("common.unknown_size");
     return formatBytes(bytes);
   }
 }

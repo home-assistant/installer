@@ -113,7 +113,7 @@ export class InstallSuccess extends LitElement {
         padding: 1.5rem;
         background-color: var(--ha-card-background, #ffffff);
         border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: 12px;
+        border-radius: var(--ha-card-border-radius, 12px);
       }
 
       .companion-title {
@@ -137,7 +137,7 @@ export class InstallSuccess extends LitElement {
         padding: 0.625rem 1rem;
         background-color: var(--ha-background-color, #f5f5f5);
         border: 1px solid var(--ha-control-border-color, #e0e0e0);
-        border-radius: 8px;
+        border-radius: var(--ha-small-border-radius, 8px);
         color: var(--ha-text-color, #212121);
         text-decoration: none;
         font-size: 0.875rem;
@@ -169,7 +169,7 @@ export class InstallSuccess extends LitElement {
         margin-bottom: 2rem;
         padding: 1rem;
         background-color: rgba(3, 169, 244, 0.1);
-        border-radius: 8px;
+        border-radius: var(--ha-small-border-radius, 8px);
         font-size: 0.875rem;
         color: var(--ha-text-color, #212121);
         text-align: left;
@@ -197,7 +197,7 @@ export class InstallSuccess extends LitElement {
   @property({ attribute: false }) footer: string | TemplateResult = "";
 
   render() {
-    const title = localize("views.proxmox.proxmox_success_view.you_re_all_set");
+    const title = localize("components.install_success.title");
 
     return html`
       <div class="mascot-container" aria-hidden="true">
@@ -209,7 +209,7 @@ export class InstallSuccess extends LitElement {
       <p class="subtitle">${this.subtitle}</p>
       <div class="next-steps">
         <p class="next-steps-title">
-          ${localize("views.proxmox.proxmox_success_view.next_steps")}
+          ${localize("components.install_success.next_steps")}
         </p>
         ${this.notice
           ? html`<inline-notice><p>${this.notice}</p></inline-notice>`
@@ -217,9 +217,7 @@ export class InstallSuccess extends LitElement {
         <ol
           class="steps-list"
           role="list"
-          aria-label=${localize(
-            "views.proxmox.proxmox_success_view.next_steps"
-          )}
+          aria-label=${localize("components.install_success.next_steps")}
         >
           ${this.steps.map(
             (step, index) => html`
@@ -238,9 +236,7 @@ export class InstallSuccess extends LitElement {
       ${this.tip ? html`<div class="tip-section">${this.tip}</div>` : ""}
       <div class="companion-section">
         <p class="companion-title">
-          ${localize(
-            "views.proxmox.proxmox_success_view.get_the_home_assistant_companion_app"
-          )}
+          ${localize("components.install_success.companion_app")}
         </p>
         <div class="app-links">
           <a
@@ -251,9 +247,7 @@ export class InstallSuccess extends LitElement {
             @click=${openExternalLink}
           >
             ${this._renderAppleIcon()}
-            <span
-              >${localize("views.proxmox.proxmox_success_view.app_store")}</span
-            >
+            <span>${localize("components.install_success.app_store")}</span>
           </a>
           <a
             class="app-link"
@@ -263,11 +257,7 @@ export class InstallSuccess extends LitElement {
             @click=${openExternalLink}
           >
             ${this._renderGooglePlayIcon()}
-            <span
-              >${localize(
-                "views.proxmox.proxmox_success_view.google_play"
-              )}</span
-            >
+            <span>${localize("components.install_success.google_play")}</span>
           </a>
         </div>
       </div>

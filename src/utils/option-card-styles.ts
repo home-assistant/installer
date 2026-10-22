@@ -28,11 +28,12 @@ export const optionCardStyles = css`
   }
 
   wa-radio {
+    position: relative;
     flex: 1;
     min-width: 0;
     height: auto;
     padding: 1.5rem;
-    border-radius: 12px;
+    border-radius: var(--ha-card-border-radius, 12px);
     align-items: flex-start;
   }
 

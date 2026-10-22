@@ -44,9 +44,9 @@ export class DriveCard extends WaRadio {
         align-items: center;
         gap: 1rem;
         padding: 1rem 1.25rem;
-        background-color: var(--wa-color-surface-default);
-        border: 2px solid var(--wa-color-surface-border);
-        border-radius: var(--wa-panel-border-radius);
+        background-color: var(--ha-card-background, #ffffff);
+        border: 2px solid var(--ha-border-color, #e0e0e0);
+        border-radius: var(--ha-card-border-radius, 12px);
         transition:
           border-color 0.2s ease,
           box-shadow 0.2s ease,
@@ -55,7 +55,7 @@ export class DriveCard extends WaRadio {
 
       .card:hover {
         border-color: var(--ha-primary-color, #03a9f4);
-        box-shadow: var(--wa-shadow-s);
+        box-shadow: var(--ha-card-hover-shadow);
       }
 
       .card:active {
@@ -64,7 +64,7 @@ export class DriveCard extends WaRadio {
 
       :host(:state(checked)) .card {
         border-color: var(--ha-primary-color, #03a9f4);
-        box-shadow: 0 0 0 3px rgba(3, 169, 244, 0.2);
+        box-shadow: var(--ha-card-selected-shadow);
       }
 
       :host(:state(disabled)) .card {
@@ -84,7 +84,7 @@ export class DriveCard extends WaRadio {
       .icon-container svg {
         width: 40px;
         height: 40px;
-        fill: var(--wa-color-text-quiet);
+        fill: var(--ha-secondary-text-color, #727272);
       }
 
       :host(:state(checked)) .icon-container svg {
@@ -99,7 +99,7 @@ export class DriveCard extends WaRadio {
       .name {
         font-size: 1rem;
         font-weight: 500;
-        color: var(--wa-color-text-normal);
+        color: var(--ha-text-color, #212121);
         margin: 0 0 0.25rem 0;
         white-space: nowrap;
         overflow: hidden;
@@ -108,14 +108,14 @@ export class DriveCard extends WaRadio {
 
       .details {
         font-size: 0.8125rem;
-        color: var(--wa-color-text-quiet);
+        color: var(--ha-secondary-text-color, #727272);
         margin: 0;
       }
 
       .size {
         font-size: 1rem;
         font-weight: 500;
-        color: var(--wa-color-text-normal);
+        color: var(--ha-text-color, #212121);
         flex-shrink: 0;
       }
 

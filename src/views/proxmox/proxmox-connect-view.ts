@@ -8,7 +8,7 @@ import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, query, state } from "lit/decorators.js";
+import { customElement, queryAll, state } from "lit/decorators.js";
 import {
   proxmoxCertificateFingerprint,
   proxmoxConnect,
@@ -19,8 +19,10 @@ import "@home-assistant/webawesome/dist/components/input/input.js";
 import type WaDialog from "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
+import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 
-const INVALID_INPUT = "invalid_input";
+/** The fields Next checks before connecting */
+type Field = "serverUrl" | "username" | "password";
 
 /** A certificate belongs to a server, however its address is spelled. */
 function serverOrigin(url: string): string {
@@ -35,6 +37,7 @@ function serverOrigin(url: string): string {
 export class ProxmoxConnectView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    fieldErrorStyles,
     linkStyles,
     css`
       :host {
@@ -66,10 +69,15 @@ export class ProxmoxConnectView extends LitElement {
         padding: 1.5rem;
         background-color: var(--ha-card-background, #ffffff);
         border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: 12px;
+        border-radius: var(--ha-card-border-radius, 12px);
         width: 100%;
         box-sizing: border-box;
         max-width: 500px;
+      }
+
+      /* The password has no hint, only room for its error */
+      wa-input[type="password"]:not([custom-error])::part(hint) {
+        margin-block-start: 0;
       }
 
       wa-dialog {
@@ -101,7 +109,7 @@ export class ProxmoxConnectView extends LitElement {
         align-items: center;
         gap: 0.75rem;
         padding: 1rem;
-        border-radius: 8px;
+        border-radius: var(--ha-small-border-radius, 8px);
         background-color: rgba(244, 67, 54, 0.1);
         border: 1px solid rgba(244, 67, 54, 0.3);
       }
@@ -163,6 +171,10 @@ export class ProxmoxConnectView extends LitElement {
   @state()
   private _error: InstallerError | null = null;
 
+  /** What to fix in each field before connecting, until it is edited */
+  @state()
+  private _fieldErrors: Partial<Record<Field, string>> = {};
+
   @state()
   private _certificate: {
     url: string;
@@ -171,8 +183,8 @@ export class ProxmoxConnectView extends LitElement {
     changed: boolean;
   } | null = null;
 
-  @query('[role="alert"]')
-  private _alert?: HTMLElement;
+  @queryAll("wa-input")
+  private _fields!: NodeListOf<WaInput>;
 
   // The last certificate trusted for each server, `null` when the platform
   // trusted it. The same one again (an authenticator code, a typo in the
@@ -268,32 +280,18 @@ export class ProxmoxConnectView extends LitElement {
     }
 
     if (this._connecting) return false;
-    if (!this._serverUrl || !this._username || !this._password) {
-      return this._validationError(
-        localize("proxmox.validation.required_fields")
-      );
-    }
-
-    // Validate URL format - must be HTTPS for security
     const url = this._serverUrl.trim().replace(/\/$/, "");
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol !== "https:") {
-        return this._validationError(localize("proxmox.validation.https_url"));
-      }
-      if (
-        parsed.username ||
-        parsed.password ||
-        parsed.pathname !== "/" ||
-        parsed.search ||
-        parsed.hash
-      ) {
-        return this._validationError(
-          localize("views.proxmox.proxmox_connect_view.url_without_extras")
-        );
-      }
-    } catch {
-      return this._validationError(localize("proxmox.validation.valid_url"));
+    const fieldErrors = {
+      serverUrl: this._serverUrlError(url),
+      username: this._username
+        ? undefined
+        : localize("views.proxmox.proxmox_connect_view.enter_the_username"),
+      password: this._password
+        ? undefined
+        : localize("views.proxmox.proxmox_connect_view.enter_the_password"),
+    };
+    if (Object.values(fieldErrors).some(Boolean)) {
+      return this._showFieldErrors(fieldErrors);
     }
 
     this._connecting = true;
@@ -362,38 +360,65 @@ export class ProxmoxConnectView extends LitElement {
     }
   }
 
+  /** Why the server URL can't be connected to, if it can't */
+  private _serverUrlError(url: string): string | undefined {
+    if (!url) {
+      return localize(
+        "views.proxmox.proxmox_connect_view.enter_the_server_url"
+      );
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return localize("proxmox.validation.valid_url");
+    }
+    // Must be HTTPS for security
+    if (parsed.protocol !== "https:") {
+      return localize("proxmox.validation.https_url");
+    }
+    if (
+      parsed.username ||
+      parsed.password ||
+      parsed.pathname !== "/" ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      return localize("views.proxmox.proxmox_connect_view.url_without_extras");
+    }
+    return undefined;
+  }
+
+  private async _showFieldErrors(
+    fieldErrors: Partial<Record<Field, string>>
+  ): Promise<false> {
+    this._fieldErrors = fieldErrors;
+    await this.updateComplete;
+    // Each field says what to fix in its hint, which is its description, so
+    // go to the first of them rather than to an alert. Every time: Next
+    // again with the same errors renders nothing new.
+    if (this.isConnected) {
+      [...this._fields].find((field) => field.customError)?.focus();
+    }
+    return false;
+  }
+
   private _onServerUrlChange(e: Event) {
     const input = e.target as WaInput;
     this._serverUrl = input.value ?? "";
-    this._resetConnection();
+    this._resetConnection("serverUrl");
   }
 
   private _onUsernameChange(e: Event) {
     const input = e.target as WaInput;
     this._username = input.value ?? "";
-    this._resetConnection();
-  }
-
-  private async _validationError(message: string): Promise<false> {
-    // A local input problem: no installation help or report link needed
-    this._error = {
-      code: INVALID_INPUT,
-      message,
-      retryable: false,
-      details: {},
-    };
-    await this.updateComplete;
-    // An identical validation message does not trigger another Lit update.
-    if (this.isConnected) {
-      this._alert?.focus();
-    }
-    return false;
+    this._resetConnection("username");
   }
 
   private _onPasswordChange(e: Event) {
     const input = e.target as WaInput;
     this._password = input.value ?? "";
-    this._resetConnection();
+    this._resetConnection("password");
   }
 
   private _onTotpChange(e: Event) {
@@ -401,12 +426,16 @@ export class ProxmoxConnectView extends LitElement {
     this._resetConnection();
   }
 
-  private _resetConnection() {
+  private _resetConnection(field?: Field) {
     if (this._connected) {
       this._connected = false;
       wizardState.setSelection("proxmoxConnected", false);
     }
     this._error = null;
+    // The edited field's error goes, the others stay until they are fixed
+    if (field && this._fieldErrors[field]) {
+      this._fieldErrors = { ...this._fieldErrors, [field]: undefined };
+    }
   }
 
   private _onKeyDown(e: KeyboardEvent) {
@@ -437,9 +466,7 @@ export class ProxmoxConnectView extends LitElement {
         ${localize("views.proxmox.proxmox_connect_view.connect_to_proxmox_ve")}
       </h2>
       <p class="subtitle">
-        ${localize(
-          "views.proxmox.proxmox_connect_view.enter_your_proxmox_server_credentials"
-        )}
+        ${localize("views.proxmox.proxmox_connect_view.subtitle")}
       </p>
 
       <div class="connect-card">
@@ -449,33 +476,48 @@ export class ProxmoxConnectView extends LitElement {
           type="url"
           input-id="server-url"
           label=${localize("views.proxmox.proxmox_connect_view.server_url")}
-          hint=${localize("proxmox.server_url_hint")}
           placeholder="https://192.168.1.100:8006"
           autocomplete="url"
           autocapitalize="off"
           autocorrect="off"
           .spellcheck=${false}
+          required
           .value=${this._serverUrl}
           @input=${this._onServerUrlChange}
           @keydown=${this._onKeyDown}
           ?readonly=${this._connecting}
-        ></wa-input>
+          ${fieldError(this._fieldErrors.serverUrl)}
+        >
+          <!-- In the hint slot, so the field describes itself with it. Live:
+            Enter in the first field to fix leaves focus where it is, and
+            nothing else would read out its new error -->
+          <span slot="hint" aria-live="polite"
+            >${this._fieldErrors.serverUrl ??
+            localize("proxmox.server_url_hint")}</span
+          >
+        </wa-input>
 
         <wa-input
           type="text"
           input-id="username"
           label=${localize("views.proxmox.proxmox_connect_view.username")}
-          hint=${localize("proxmox.username_hint")}
           placeholder="root@pam"
           autocomplete="username"
           autocapitalize="off"
           autocorrect="off"
           .spellcheck=${false}
+          required
           .value=${this._username}
           @input=${this._onUsernameChange}
           @keydown=${this._onKeyDown}
           ?readonly=${this._connecting}
-        ></wa-input>
+          ${fieldError(this._fieldErrors.username)}
+        >
+          <span slot="hint" aria-live="polite"
+            >${this._fieldErrors.username ??
+            localize("proxmox.username_hint")}</span
+          >
+        </wa-input>
 
         <wa-input
           type="password"
@@ -486,11 +528,17 @@ export class ProxmoxConnectView extends LitElement {
           )}
           autocomplete="current-password"
           password-toggle
+          required
           .value=${this._password}
           @input=${this._onPasswordChange}
           @keydown=${this._onKeyDown}
           ?readonly=${this._connecting}
-        ></wa-input>
+          ${fieldError(this._fieldErrors.password)}
+        >
+          <span slot="hint" aria-live="polite"
+            >${this._fieldErrors.password ?? ""}</span
+          >
+        </wa-input>
 
         <wa-input
           type="text"
@@ -574,8 +622,6 @@ export class ProxmoxConnectView extends LitElement {
   }
 
   private _renderError() {
-    // A field to fix, not a connection that was tried
-    const invalidInput = this._error?.code === INVALID_INPUT;
     return html`
       <div class="status-row" role="alert">
         <div class="status-icon">
@@ -587,16 +633,12 @@ export class ProxmoxConnectView extends LitElement {
         </div>
         <div class="status-text">
           <p class="status-title">
-            ${invalidInput
-              ? localize("views.proxmox.proxmox_connect_view.check_the_details")
-              : localize(
-                  "views.proxmox.proxmox_connect_view.connection_failed"
-                )}
+            ${localize("views.proxmox.proxmox_connect_view.connection_failed")}
           </p>
           <p class="status-description" style="overflow-wrap: anywhere;">
             ${this._error?.message}
           </p>
-          ${invalidInput ? "" : renderErrorHelp()}
+          ${renderErrorHelp()}
         </div>
       </div>
     `;

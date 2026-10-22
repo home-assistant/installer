@@ -9,9 +9,10 @@ import { LitElement, html, css, noChange } from "lit";
 import {
   ViewAccessibility,
   reducedMotionStyles,
+  srOnlyStyles,
 } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
@@ -48,6 +49,7 @@ import {
   proxmoxVmConfig,
 } from "../../state/vm-defaults.js";
 import { settingStyles } from "../../utils/setting-styles.js";
+import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 import {
   SESSION_EXPIRED,
   forgetProxmoxSession,
@@ -88,8 +90,10 @@ function parseWholeNumber(
 export class ProxmoxConfigureView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    srOnlyStyles,
     reducedMotionStyles,
     settingStyles,
+    fieldErrorStyles,
     linkStyles,
     css`
       :host {
@@ -121,7 +125,7 @@ export class ProxmoxConfigureView extends LitElement {
         padding: 1rem 1.25rem;
         background-color: var(--ha-card-background, #ffffff);
         border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: 12px;
+        border-radius: var(--ha-card-border-radius, 12px);
         width: 100%;
         box-sizing: border-box;
         max-width: 500px;
@@ -132,6 +136,19 @@ export class ProxmoxConfigureView extends LitElement {
         max-width: 500px;
         margin-top: 1rem;
         flex-shrink: 0;
+      }
+
+      /* Web Awesome animates the expand from script for these durations,
+         which the reduced-motion sheet can't reach */
+      @media (prefers-reduced-motion: reduce) {
+        wa-details {
+          --show-duration: 0s;
+          --hide-duration: 0s;
+        }
+
+        wa-details::part(icon) {
+          transition: none;
+        }
       }
 
       .loading-text {
@@ -230,6 +247,21 @@ export class ProxmoxConfigureView extends LitElement {
   @state() private _importDialog = false;
   @state() private _importDeclined = false;
   @state() private _importError: InstallerError | null = null;
+  /** Said once Import is enabled, as its section then goes away */
+  @state() private _importStatus = "";
+  /**
+   * Where the running storage lookup was started from, if from a button
+   * that would otherwise vanish while it runs. That part stays, busy.
+   */
+  @state() private _reloadFrom?: "import" | "bridges" | "storage";
+
+  // Where focus continues after a lookup hid the button that started it
+  @query(".enable-import") private _enableImportButton?: HTMLElement;
+  @query(".refresh-storage") private _refreshStorageButton?: HTMLElement;
+  @query(".bridge-retry") private _bridgeRetryButton?: HTMLElement;
+  @query("#network-bridge") private _bridgeSelect?: HTMLElement;
+  @query(".storage-retry") private _storageRetryButton?: HTMLElement;
+  @query("#storage") private _storageSelect?: HTMLElement;
   /** Why Proxmox would reject these settings, until one of them changes */
   @state() private _checkError: InstallerError | null = null;
   /** Raw text of the VLAN field; empty keeps today's untagged network. */
@@ -277,8 +309,9 @@ export class ProxmoxConfigureView extends LitElement {
     this._unsubscribe?.();
   }
 
-  private async _loadNodes() {
+  private async _loadNodes(from?: "bridges") {
     this._loadingNodes = true;
+    this._reloadFrom = from;
     this._error = null;
     this._sessionExpired = false;
     // Preserve choices across reconnects, but block Next until revalidated.
@@ -293,7 +326,7 @@ export class ProxmoxConfigureView extends LitElement {
     if (!session) {
       this._setError({
         code: SESSION_EXPIRED,
-        message: localize("utils.installer_error.proxmox_session_expired"),
+        message: localize("proxmox.session_expired"),
         retryable: false,
         details: {},
       });
@@ -342,7 +375,7 @@ export class ProxmoxConfigureView extends LitElement {
       this._fitCoresToNode();
 
       if (this._selectedNode) {
-        await this._loadStorage();
+        await this._loadStorage(from);
         // The storage lookup is another chance to have left this step
         if (!this.isConnected || !isCurrentSession()) return;
       }
@@ -353,11 +386,12 @@ export class ProxmoxConfigureView extends LitElement {
       this._setError(error);
     } finally {
       this._loadingNodes = false;
+      this._reloadFrom = undefined;
       if (this.isConnected && isCurrentSession()) this._saveSelections();
     }
   }
 
-  private async _loadStorage() {
+  private async _loadStorage(from?: "import" | "bridges" | "storage") {
     if (!this._selectedNode) return;
 
     const session = this._wizardState.selections.proxmoxSession;
@@ -373,6 +407,7 @@ export class ProxmoxConfigureView extends LitElement {
       this._wizardState.selections.proxmoxSession === session;
 
     this._loadingStorage = true;
+    this._reloadFrom = from;
     // A new lookup replaces the previous one's error; an expired session
     // never gets here, since it clears the session first
     this._error = null;
@@ -381,7 +416,7 @@ export class ProxmoxConfigureView extends LitElement {
       proxmoxConfigureReady: false,
       proxmoxBridgeReady: false,
     });
-    this._resetImport();
+    this._resetImport(from === "import");
     try {
       const [storageResult, bridgeResult] = await Promise.allSettled([
         proxmoxListStorage(session, node),
@@ -412,13 +447,22 @@ export class ProxmoxConfigureView extends LitElement {
         // The image is uploaded to import storage before the VM disk is made.
         // ESXi only advertises Import as a source, and a full storage cannot
         // take the upload either.
-        this._importReady = storageResult.value.some(
+        const importStorage = storageResult.value.find(
           (s) =>
             s.active &&
             s.storage_type !== "esxi" &&
             s.available > 0 &&
             s.content.includes("import")
         );
+        this._importReady = importStorage !== undefined;
+        // Read from the Import section, which goes away now: say why, whether
+        // this step enabled it or it was enabled in Proxmox meanwhile
+        if (from === "import" && importStorage) {
+          this._importStatus = localize(
+            "views.proxmox.proxmox_configure_view.import_enabled_on_storage",
+            { storage: importStorage.name }
+          );
+        }
         this._importCandidates = storageResult.value.filter(
           (s) =>
             s.active &&
@@ -483,6 +527,8 @@ export class ProxmoxConfigureView extends LitElement {
       // A newer lookup is still running and owns the loading state
       if (isLatest()) {
         this._loadingStorage = false;
+        this._reloadFrom = undefined;
+        this._importBusy = false;
         if (this.isConnected && isCurrentSession()) this._saveSelections();
       }
     }
@@ -537,16 +583,22 @@ export class ProxmoxConfigureView extends LitElement {
     });
   }
 
-  /** Forget the previous lookup's Import state until storage is read again. */
-  private _resetImport() {
+  /**
+   * Forget the previous lookup's Import state until storage is read again.
+   * With `keepShown`, the section stays on screen meanwhile, busy, so the
+   * button that started the lookup keeps focus. It is never ready meanwhile.
+   */
+  private _resetImport(keepShown = false) {
+    this._importStatus = "";
     this._importReady = false;
-    this._importCandidates = [];
-    this._importStorage = "";
-    this._importBusy = false;
     this._importDialog = false;
     this._importDeclined = false;
     this._importError = null;
     wizardState.setSelection("proxmoxImportReady", false);
+    if (keepShown) return;
+    this._importCandidates = [];
+    this._importStorage = "";
+    this._importBusy = false;
   }
 
   /**
@@ -588,7 +640,11 @@ export class ProxmoxConfigureView extends LitElement {
       if (!isCurrent()) return;
       // Only a fresh read decides readiness, so the step never trusts its
       // own assumption about what the server now has
-      await this._loadStorage();
+      await this._loadStorage("import");
+      // Reading storage again hid the section holding the button
+      await this._restoreFocus(
+        () => this._enableImportButton ?? this._bridgeSelect
+      );
     } catch (error) {
       if (!isCurrent()) return;
       if (needsReconnect(error)) {
@@ -647,6 +703,51 @@ export class ProxmoxConfigureView extends LitElement {
     void this._loadNodes();
   }
 
+  /** The dialog hands focus back to nothing: continue from its button. */
+  private _onImportDialogHidden() {
+    this._accessibility.restoreFocus(
+      this._enableImportButton ?? this._bridgeSelect
+    );
+  }
+
+  private async _refreshStorage() {
+    await this._loadStorage("import");
+    await this._restoreFocus(
+      () => this._refreshStorageButton ?? this._bridgeSelect
+    );
+  }
+
+  private async _retryStorage() {
+    await this._loadStorage("storage");
+    await this._restoreFocus(
+      () => this._storageRetryButton ?? this._storageSelect
+    );
+  }
+
+  private async _retryBridges() {
+    await (this._selectedNode
+      ? this._loadStorage("bridges")
+      : this._loadNodes("bridges"));
+    await this._restoreFocus(
+      () => this._bridgeRetryButton ?? this._bridgeSelect
+    );
+  }
+
+  /**
+   * After a lookup that hid the button starting it, continue from what
+   * `target` finds once it has rendered. Focus moved elsewhere stays.
+   */
+  private async _restoreFocus(target: () => HTMLElement | undefined) {
+    await this.updateComplete;
+    if (!this.isConnected) return;
+    const element = target();
+    // A select this update enabled takes that on in its own update, and
+    // can't take focus before
+    await (element as { updateComplete?: Promise<unknown> } | undefined)
+      ?.updateComplete;
+    this._accessibility.restoreFocus(element);
+  }
+
   private _reconnect() {
     wizardState.goToStep(0);
   }
@@ -663,9 +764,7 @@ export class ProxmoxConfigureView extends LitElement {
   private get _vlanError(): string | undefined {
     if (!this._vlanTag) return undefined;
     if (this._parsedVlanTag === undefined) {
-      return localize(
-        "views.proxmox.proxmox_configure_view.vlan_tag_must_be_a_whole_number"
-      );
+      return localize("views.proxmox.proxmox_configure_view.vlan_tag_invalid");
     }
     if (
       this._loaded &&
@@ -673,7 +772,7 @@ export class ProxmoxConfigureView extends LitElement {
         ?.vlan_aware
     ) {
       return localize(
-        "views.proxmox.proxmox_configure_view.select_a_vlan_aware_bridge_or_remove_the_vlan_tag"
+        "views.proxmox.proxmox_configure_view.vlan_needs_aware_bridge"
       );
     }
     return undefined;
@@ -848,7 +947,15 @@ export class ProxmoxConfigureView extends LitElement {
   }
 
   private _renderImport() {
-    if (!this._selectedNode || !this._loaded || this._importReady) return "";
+    // A read started from this section keeps it on screen, busy
+    const keptForReload = this._loadingStorage && this._reloadFrom === "import";
+    if (
+      !this._selectedNode ||
+      (!this._loaded && !keptForReload) ||
+      this._importReady
+    )
+      return "";
+    const reloading = this._loadingStorage && !this._importBusy;
 
     const candidates = this._importCandidates;
     const selected = candidates.find((s) => s.name === this._importStorage);
@@ -882,17 +989,17 @@ export class ProxmoxConfigureView extends LitElement {
                 )}
                 size="s"
                 .value=${this._importStorage}
-                ?disabled=${this._importBusy}
+                ?disabled=${this._importBusy || reloading}
                 @change=${this._onImportStorageChange}
               >
                 ${candidates.map(
                   (storage) => html`
                     <wa-option value=${storage.name}>
                       ${localize(
-                        "views.proxmox.proxmox_configure_view.value_value_free",
+                        "views.proxmox.proxmox_configure_view.storage_free",
                         {
-                          value0: storage.name,
-                          value1: formatBytes(storage.available),
+                          storage: storage.name,
+                          free: formatBytes(storage.available),
                         }
                       )}
                     </wa-option>
@@ -927,9 +1034,11 @@ export class ProxmoxConfigureView extends LitElement {
           <div class="import-actions">
             ${selected
               ? html`<wa-button
+                  class="enable-import"
                   variant="brand"
                   size="s"
-                  ?disabled=${this._importBusy}
+                  ?loading=${this._importBusy}
+                  ?disabled=${reloading}
                   @click=${this._askToEnableImport}
                 >
                   ${this._importBusy
@@ -942,10 +1051,12 @@ export class ProxmoxConfigureView extends LitElement {
                 </wa-button>`
               : ""}
             <wa-button
+              class="refresh-storage"
               appearance="outlined"
               size="s"
               ?disabled=${this._importBusy}
-              @click=${this._loadStorage}
+              ?loading=${reloading}
+              @click=${this._refreshStorage}
             >
               ${localize(
                 "views.proxmox.proxmox_configure_view.refresh_storage"
@@ -959,6 +1070,7 @@ export class ProxmoxConfigureView extends LitElement {
       </div>
       <info-dialog
         .open=${this._importDialog}
+        @wa-after-hide=${this._onImportDialogHidden}
         heading=${localize(
           "views.proxmox.proxmox_configure_view.enable_import_on_storage_title"
         )}
@@ -981,15 +1093,9 @@ export class ProxmoxConfigureView extends LitElement {
   render() {
     if (this._error) {
       return html`
-        <h2>
-          ${localize(
-            "views.proxmox.proxmox_configure_view.configure_virtual_machine"
-          )}
-        </h2>
+        <h2>${localize("common.vm.configure_virtual_machine")}</h2>
         <p class="subtitle">
-          ${localize(
-            "views.proxmox.proxmox_configure_view.configure_your_home_assistant_vm_on_proxmox"
-          )}
+          ${localize("views.proxmox.proxmox_configure_view.subtitle")}
         </p>
         <div class="config-card">
           <p class="error-text" role="alert" style="overflow-wrap: anywhere;">
@@ -1004,7 +1110,7 @@ export class ProxmoxConfigureView extends LitElement {
               >
                 ${this._sessionExpired
                   ? localize("proxmox.reconnect")
-                  : localize("components.app_shell.try_again")}
+                  : localize("common.try_again")}
               </wa-button>`
             : ""}
         </div>
@@ -1012,16 +1118,11 @@ export class ProxmoxConfigureView extends LitElement {
     }
 
     return html`
-      <h2>
-        ${localize(
-          "views.proxmox.proxmox_configure_view.configure_virtual_machine"
-        )}
-      </h2>
+      <h2>${localize("common.vm.configure_virtual_machine")}</h2>
       <p class="subtitle">
-        ${localize(
-          "views.proxmox.proxmox_configure_view.configure_your_home_assistant_vm_on_proxmox"
-        )}
+        ${localize("views.proxmox.proxmox_configure_view.subtitle")}
       </p>
+      <p class="sr-only" role="status">${this._importStatus}</p>
 
       <div class="config-card">
         <!-- VM Name (Display Name) - First -->
@@ -1029,16 +1130,14 @@ export class ProxmoxConfigureView extends LitElement {
           <div class="setting-icon">${this._renderLabelIcon()}</div>
           <div class="setting-content">
             <wa-input
-              label=${localize(
-                "views.proxmox.proxmox_configure_view.display_name"
-              )}
+              label=${localize("common.vm.display_name")}
               type="text"
               size="s"
               .value=${this._vmName}
               @input=${this._onNameChange}
               placeholder="home-assistant"
               maxlength="63"
-              .customError=${this._nameError ?? null}
+              ${fieldError(this._nameError)}
             >
               <!-- In the hint slot, so the field describes itself with it.
                 Not role="alert": ViewAccessibility focuses a new alert, which
@@ -1079,10 +1178,10 @@ export class ProxmoxConfigureView extends LitElement {
                           ${`${node.name}${
                             node.cpu_usage != null
                               ? ` ${localize(
-                                  "views.proxmox.proxmox_configure_view.cpu_value",
+                                  "views.proxmox.proxmox_configure_view.node_cpu_usage",
                                   {
                                     // Proxmox reports a fraction (0.15 is 15%)
-                                    value0: formatNumber(node.cpu_usage, {
+                                    percent: formatNumber(node.cpu_usage, {
                                       style: "percent",
                                       maximumFractionDigits: 1,
                                     }),
@@ -1096,9 +1195,7 @@ export class ProxmoxConfigureView extends LitElement {
                   </wa-select>
                 `}
             <p class="setting-description">
-              ${localize(
-                "views.proxmox.proxmox_configure_view.proxmox_node_where_the_vm_will_be_created"
-              )}
+              ${localize("views.proxmox.proxmox_configure_view.node_hint")}
             </p>
           </div>
         </div>
@@ -1107,7 +1204,7 @@ export class ProxmoxConfigureView extends LitElement {
         <div class="setting-row">
           <div class="setting-icon">${this._renderDatabaseIcon()}</div>
           <div class="setting-content">
-            ${this._loadingStorage
+            ${this._loadingStorage && this._reloadFrom !== "storage"
               ? html`<span class="loading-text"
                   >${localize(
                     "views.proxmox.proxmox_configure_view.loading_storage"
@@ -1115,6 +1212,7 @@ export class ProxmoxConfigureView extends LitElement {
                 >`
               : html`
                   <wa-select
+                    id="storage"
                     label=${localize("proxmox.storage_pool")}
                     size="s"
                     .value=${this._selectedStorage}
@@ -1125,10 +1223,10 @@ export class ProxmoxConfigureView extends LitElement {
                       (storage) => html`
                         <wa-option value=${storage.name}>
                           ${localize(
-                            "views.proxmox.proxmox_configure_view.value_value_free",
+                            "views.proxmox.proxmox_configure_view.storage_free",
                             {
-                              value0: storage.name,
-                              value1: formatBytes(storage.available),
+                              storage: storage.name,
+                              free: formatBytes(storage.available),
                             }
                           )}
                         </wa-option>
@@ -1137,25 +1235,30 @@ export class ProxmoxConfigureView extends LitElement {
                   </wa-select>
                 `}
             <p class="setting-description">
-              ${localize(
-                "views.proxmox.proxmox_configure_view.storage_location_for_the_vm_disk_image"
-              )}
+              ${localize("views.proxmox.proxmox_configure_view.storage_hint")}
             </p>
-            ${this._loaded &&
-            this._selectedNode &&
-            this._storagesNode === this._selectedNode &&
-            this._storages.length === 0
+            ${this._reloadFrom === "storage" ||
+            (this._loaded &&
+              this._selectedNode &&
+              this._storagesNode === this._selectedNode &&
+              this._storages.length === 0)
               ? // Next needs storage for the VM disk, so say how to get one.
                 // Like Refresh storage, retrying waits while Import is enabled.
+                // Try again stays, busy, while it reads; the alert is empty
+                // meanwhile, so the same result is read out again.
                 html`<p class="error-text" role="alert">
-                    ${localize(
-                      "views.proxmox.proxmox_configure_view.no_disk_image_storage_on_this_node"
-                    )}
+                    ${this._reloadFrom === "storage"
+                      ? ""
+                      : localize(
+                          "views.proxmox.proxmox_configure_view.no_disk_storage_on_node"
+                        )}
                   </p>
                   <wa-button
+                    class="storage-retry"
                     ?disabled=${this._importBusy}
-                    @click=${this._loadStorage}
-                    >${localize("components.app_shell.try_again")}</wa-button
+                    ?loading=${this._reloadFrom === "storage"}
+                    @click=${this._retryStorage}
+                    >${localize("common.try_again")}</wa-button
                   >`
               : ""}
           </div>
@@ -1164,7 +1267,8 @@ export class ProxmoxConfigureView extends LitElement {
         <div class="setting-row">
           <div class="setting-icon">${this._renderServerIcon()}</div>
           <div class="setting-content">
-            ${this._loadingStorage || this._loadingNodes
+            ${(this._loadingStorage || this._loadingNodes) &&
+            this._reloadFrom !== "bridges"
               ? html`<span class="loading-text"
                   >${localize(
                     "views.proxmox.proxmox_configure_view.loading_network_bridges"
@@ -1195,26 +1299,29 @@ export class ProxmoxConfigureView extends LitElement {
                       `
                     )}
                   </wa-select>
-                  ${this._bridges.length === 0 &&
-                  this._bridgesNode === this._selectedNode &&
-                  !this._error
-                    ? // A lookup error already offers its own retry above
+                  ${this._reloadFrom === "bridges" ||
+                  (this._bridges.length === 0 &&
+                    this._bridgesNode === this._selectedNode &&
+                    !this._error)
+                    ? // A lookup error already offers its own retry above.
+                      // Empty while trying again, so the same result is read
+                      // out again.
                       html`<p class="error-text" role="alert">
-                          ${this._selectedNode
-                            ? localize(
-                                "views.proxmox.proxmox_configure_view.no_network_bridges_available_on_this_node"
-                              )
-                            : localize(
-                                "views.proxmox.proxmox_configure_view.no_online_proxmox_nodes_found"
-                              )}
+                          ${this._reloadFrom === "bridges"
+                            ? ""
+                            : this._selectedNode
+                              ? localize(
+                                  "views.proxmox.proxmox_configure_view.no_bridges"
+                                )
+                              : localize(
+                                  "views.proxmox.proxmox_configure_view.no_online_proxmox_nodes_found"
+                                )}
                         </p>
                         <wa-button
-                          @click=${this._selectedNode
-                            ? this._loadStorage
-                            : this._loadNodes}
-                          >${localize(
-                            "components.app_shell.try_again"
-                          )}</wa-button
+                          class="bridge-retry"
+                          ?loading=${this._reloadFrom === "bridges"}
+                          @click=${this._retryBridges}
+                          >${localize("common.try_again")}</wa-button
                         >`
                     : ""}
                 `}
@@ -1235,7 +1342,7 @@ export class ProxmoxConfigureView extends LitElement {
               @input=${this._onVmIdChange}
               min=${MIN_VM_ID}
               max=${MAX_VM_ID}
-              .customError=${this._vmIdError ?? null}
+              ${fieldError(this._vmIdError)}
             >
               <!-- In the hint slot and not role="alert", like the name hint -->
               <span slot="hint" class="vm-id-hint" aria-live="polite"
@@ -1272,7 +1379,7 @@ export class ProxmoxConfigureView extends LitElement {
           inputmode="numeric"
           .value=${this._vlanTag}
           @input=${this._onVlanInput}
-          .customError=${this._vlanError ?? null}
+          ${fieldError(this._vlanError)}
         >
           <!-- Not role="alert": ViewAccessibility focuses a new alert, which
             took focus out of the field as soon as a digit made it invalid -->

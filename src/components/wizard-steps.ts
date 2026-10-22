@@ -46,7 +46,8 @@ const deviceChosen = (selections: WizardSelections) =>
 
 const drive: WizardStepDefinition = {
   render: () => html`<drive-selection-view></drive-selection-view>`,
-  ready: (selections) => !!selections.drive,
+  // A drive picked earlier may be gone by now, so wait for the scan
+  ready: (selections) => !!selections.driveScanReady && !!selections.drive,
 };
 
 const wifi: WizardStepDefinition = {
@@ -145,7 +146,7 @@ export const WIZARD_STEPS: Record<
       render: () => html`<proxmox-connect-view></proxmox-connect-view>`,
       beforeNext: {
         run: (view) => (view as ProxmoxConnectView).connect(),
-        label: () => localize("components.app_shell.connecting"),
+        label: () => localize("components.wizard_steps.connecting"),
         // Connecting stores the session, which changes the selections
         until: "flow",
       },
@@ -167,7 +168,7 @@ export const WIZARD_STEPS: Record<
       // A problem Proxmox finds now can still be fixed on this step
       beforeNext: {
         run: (view) => (view as ProxmoxConfigureView).check(),
-        label: () => localize("components.app_shell.checking_settings"),
+        label: () => localize("components.wizard_steps.checking_settings"),
         until: "selections",
       },
     },

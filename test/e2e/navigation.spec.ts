@@ -244,6 +244,21 @@ test.describe("Wizard Flow", () => {
     await expect(page.locator("path-selection-view")).toBeVisible();
     await expect(wizardShell).toHaveCount(0);
   });
+
+  test("a double-click on Back stops at the path selection", async ({
+    page,
+  }) => {
+    await page
+      .locator('option-card[heading="Raspberry Pi & other boards"]')
+      .click();
+    await expect(page.locator("device-selection-view")).toBeVisible();
+
+    // The path selection has its own Back in the same spot
+    await page.locator("wizard-shell").locator(".header wa-button").dblclick();
+
+    await expect(page.locator("path-selection-view")).toBeVisible();
+    await expect(page.locator("welcome-view")).toHaveCount(0);
+  });
 });
 
 test.describe("SBC Device Selection", () => {

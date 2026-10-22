@@ -66,7 +66,14 @@ describe("wizard-steps", () => {
   it("holds Next until the step has what it needs", () => {
     for (const flow of ["sbc", "ha-hardware", "minipc"] as const) {
       expect(readyWith(flow, "drive", {}), flow).to.be.false;
-      expect(readyWith(flow, "drive", { drive: "/dev/sdb" }), flow).to.be.true;
+      // A drive picked earlier waits for the scan that confirms it
+      expect(readyWith(flow, "drive", { drive: "/dev/sdb" }), flow).to.be.false;
+      expect(readyWith(flow, "drive", { driveScanReady: true }), flow).to.be
+        .false;
+      expect(
+        readyWith(flow, "drive", { drive: "/dev/sdb", driveScanReady: true }),
+        flow
+      ).to.be.true;
       expect(readyWith(flow, "wifi", { deviceConfig: WIFI_BOARD }), flow).to.be
         .true;
       expect(

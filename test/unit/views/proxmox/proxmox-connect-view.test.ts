@@ -34,6 +34,18 @@ async function typeInto(el: ProxmoxConnectView, input: WaInput, value: string) {
   await el.updateComplete;
 }
 
+/** Wait for the fields to show what the view last gave them */
+async function settled(inputs: WaInput[]) {
+  await Promise.all(inputs.map((input) => input.updateComplete));
+}
+
+/** The hint, or the error in its place, under each field */
+function hints(inputs: WaInput[]) {
+  return inputs.map(
+    (input) => input.querySelector('[slot="hint"]')?.textContent?.trim() ?? ""
+  );
+}
+
 describe("proxmox-connect-view", () => {
   beforeEach(() => {
     wizardState.reset();
@@ -126,33 +138,111 @@ describe("proxmox-connect-view", () => {
     );
   });
 
-  it("rejects a server URL that is not HTTPS", async () => {
-    const { el, inputs } = await renderView();
-    await typeInto(el, inputs[0], "http://192.168.1.100:8006");
-    await typeInto(el, inputs[2], "secret");
+  it("marks the server URL, username and password required, not the code", async () => {
+    const { inputs } = await renderView();
 
-    expect(await el.connect()).to.be.false;
-    await el.updateComplete;
-
-    const error = el.shadowRoot!.querySelector(".status-description");
-    expect(error!.textContent).to.include("must use HTTPS");
-    // Nothing was tried yet, so it isn't a failed connection
-    expect(
-      el.shadowRoot!.querySelector(".status-title")!.textContent!.trim()
-    ).to.equal("Check the connection details");
+    expect(inputs.map((input) => nativeInput(input).required)).to.deep.equal([
+      true,
+      true,
+      true,
+      false,
+    ]);
   });
 
-  it("asks for the missing fields before connecting", async () => {
-    const { el } = await renderView();
+  it("says on the URL field why a server URL can't be used", async () => {
+    const calls: string[] = [];
+    mockTauriIpc((cmd) => {
+      calls.push(cmd);
+      throw new Error(cmd);
+    });
+    const { el, inputs } = await renderView();
+    await typeInto(el, inputs[2], "secret");
+
+    for (const [url, error] of [
+      ["http://192.168.1.100:8006", "URL must use HTTPS"],
+      ["192.168.1.100:8006", "Enter a valid URL"],
+      ["https://pve.example/api", "Use a server URL without credentials"],
+    ]) {
+      await typeInto(el, inputs[0], url);
+      expect(await el.connect()).to.be.false;
+      await settled(inputs);
+      expect(hints(inputs)[0], url).to.contain(error);
+      expect(nativeInput(inputs[0]).getAttribute("aria-invalid")).to.equal(
+        "true"
+      );
+      // Nothing was tried yet, so it isn't a failed connection
+      expect(el.shadowRoot!.querySelector('[role="alert"]')).to.be.null;
+    }
+    expect(calls).to.deep.equal([]);
+  });
+
+  it("says on each field what is missing and goes to the first", async () => {
+    const { el, inputs } = await renderView();
+    await typeInto(el, inputs[1], "");
 
     expect(await el.connect()).to.be.false;
-    await el.updateComplete;
+    await settled(inputs);
 
-    const error = el.shadowRoot!.querySelector(".status-description");
-    expect(error!.textContent).to.include("fill in all fields");
+    expect(hints(inputs)).to.deep.equal([
+      "Enter the server URL",
+      "Enter the username",
+      "Enter the password",
+      "",
+    ]);
     expect(
-      el.shadowRoot!.querySelector(".status-title")!.textContent!.trim()
-    ).to.equal("Check the connection details");
+      inputs.map((input) => nativeInput(input).getAttribute("aria-invalid"))
+    ).to.deep.equal(["true", "true", "true", null]);
+    expect(el.shadowRoot!.querySelector('[role="alert"]')).to.be.null;
+    expect(el.shadowRoot!.activeElement === inputs[0]).to.be.true;
+
+    // Fixing a field takes its error away, the others stay until fixed
+    await typeInto(el, inputs[0], "https://pve.example:8006");
+    await typeInto(el, inputs[1], "root@pam");
+    await settled(inputs);
+    expect(hints(inputs).slice(0, 3)).to.deep.equal([
+      "Full URL to your Proxmox server (for example, https://192.168.1.100:8006)",
+      "Usually root@pam for the default admin account",
+      "Enter the password",
+    ]);
+    expect(
+      inputs.map((input) => nativeInput(input).getAttribute("aria-invalid"))
+    ).to.deep.equal(["false", "false", "true", null]);
+
+    // Next again goes to the field still to fix
+    expect(await el.connect()).to.be.false;
+    expect(el.shadowRoot!.activeElement === inputs[2]).to.be.true;
+  });
+
+  it("says what is missing to screen readers on the field itself", async () => {
+    const { el, inputs } = await renderView();
+
+    expect(await el.connect()).to.be.false;
+    await settled(inputs);
+
+    const fields = findByRole(await fullA11ySnapshot(), "textbox").filter(
+      (node) => node.name === "Server URL" || node.name === "Password"
+    );
+    expect(
+      fields.map(({ name, description, invalid, required }) => ({
+        name,
+        description,
+        invalid,
+        required,
+      }))
+    ).to.deep.equal([
+      {
+        name: "Server URL",
+        description: "Enter the server URL",
+        invalid: "true",
+        required: true,
+      },
+      {
+        name: "Password",
+        description: "Enter the password",
+        invalid: "true",
+        required: true,
+      },
+    ]);
   });
 
   /** Count the Next requests the view sends to the wizard. */

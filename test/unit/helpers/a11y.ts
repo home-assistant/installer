@@ -4,6 +4,9 @@ export interface AXNode {
   role: string;
   name?: string;
   description?: string;
+  /** "true" when it is invalid, left out when it isn't */
+  invalid?: string;
+  required?: boolean;
   children?: AXNode[];
 }
 

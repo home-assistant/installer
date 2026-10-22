@@ -27,7 +27,7 @@ export class WelcomeView extends LitElement {
         align-items: center;
         justify-content: center;
         height: 100%;
-        padding: 2rem;
+        padding: 2rem var(--ha-page-gutter, 2rem);
         text-align: center;
         position: relative;
       }
@@ -162,16 +162,8 @@ export class WelcomeView extends LitElement {
       <casita-mascot mood="winking"></casita-mascot>
 
       <div class="welcome-text">
-        <p>
-          ${localize(
-            "views.welcome_view.welcome_to_home_assistant_a_local_and_privacy_first_home_automation_platfor"
-          )}
-        </p>
-        <p>
-          ${localize(
-            "views.welcome_view.this_installer_guides_you_through_setting_up_home_assistant_on_your_hardwar"
-          )}
-        </p>
+        <p>${localize("views.welcome_view.welcome")}</p>
+        <p>${localize("views.welcome_view.intro")}</p>
       </div>
 
       <wa-button

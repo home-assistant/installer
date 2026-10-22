@@ -69,29 +69,20 @@ export class UtmConfirmView extends LitElement {
     const config = utmVmConfig(this._wizardState.selections);
 
     return html`
-      <h2>
-        ${localize("views.proxmox.proxmox_confirm_view.ready_to_install")}
-      </h2>
-      <p class="subtitle">
-        ${localize(
-          "views.proxmox.proxmox_confirm_view.review_your_virtual_machine_configuration_before_installing"
-        )}
-      </p>
+      <h2>${localize("common.confirm.ready_to_install")}</h2>
+      <p class="subtitle">${localize("common.vm.confirm_subtitle")}</p>
 
       <div class="summary-card">
         <!-- VM Configuration -->
         ${renderSummaryRow(
           renderSummaryIcon(mdiMonitor),
-          localize("components.app_shell.virtual_machine"),
+          localize("common.virtual_machine"),
           config.name,
           html`<p class="summary-detail">
-            ${localizeContent(
-              "views.proxmox.proxmox_confirm_view.value_cpu_cores_value",
-              {
-                value0: config.cpu_cores,
-                value1: formatRam(config.memory_mb),
-              }
-            )}
+            ${localizeContent("common.vm.cores_and_memory", {
+              cores: config.cpu_cores,
+              memory: formatRam(config.memory_mb),
+            })}
           </p>`
         )}
 
@@ -103,9 +94,7 @@ export class UtmConfirmView extends LitElement {
           localize("vm.disk_storage"),
           formatDiskSize(config.disk_size_gb),
           html`<p class="summary-detail">
-            ${localize(
-              "views.proxmox.proxmox_confirm_view.virtual_disk_for_home_assistant_data"
-            )}
+            ${localize("common.vm.virtual_disk_description")}
           </p>`
         )}
 

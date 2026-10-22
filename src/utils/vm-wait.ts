@@ -4,6 +4,7 @@
  * Proxmox flows share it, so a fix to these checks lands in both.
  */
 import { checkHaReady } from "../api/commands.js";
+import { localize } from "../localization/localize.js";
 import { wizardState } from "../state/wizard-state.js";
 import { waitForHaSetup, type HaSetupProgress } from "./ha-setup.js";
 import { PollTimeoutError, pollUntil, throwIfCancelled } from "./polling.js";
@@ -15,6 +16,33 @@ export type WaitStage = (typeof WAIT_STAGES)[number];
 
 export function isWaitStage(stage: string): stage is WaitStage {
   return (WAIT_STAGES as readonly string[]).includes(stage);
+}
+
+/**
+ * A wait's name in the thinking cloud. The progress's live region announces
+ * only this, so each wait needs its own.
+ */
+export function waitStageTitle(stage: WaitStage): string {
+  switch (stage) {
+    case "waiting":
+      return localize("common.vm.connecting");
+    case "ready":
+      return localize("common.vm.waiting");
+    case "updating":
+      return localize("common.vm.updating");
+  }
+}
+
+/** What a wait is waiting for, in full. */
+export function waitStageDescription(stage: WaitStage): string {
+  switch (stage) {
+    case "waiting":
+      return localize("common.vm.waiting_for_network_connection");
+    case "ready":
+      return localize("common.vm.waiting_for_home_assistant");
+    case "updating":
+      return localize("common.vm.updating_description");
+  }
 }
 
 const POLL_INTERVAL_MS = 2000;

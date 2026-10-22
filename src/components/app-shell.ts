@@ -50,7 +50,11 @@ import {
   type WizardState,
 } from "../state/wizard-state.js";
 import { listBlockDevices, onCloseBlocked, quitAnyway } from "../api/index.js";
-import { findDrive, readDriveSelection } from "../utils/drive-selection.js";
+import {
+  clearDriveSelection,
+  findDrive,
+  readDriveSelection,
+} from "../utils/drive-selection.js";
 import { logFrontendError } from "../utils/diagnostics.js";
 import { openExternalUrl } from "../utils/external-url.js";
 
@@ -151,8 +155,13 @@ export class AppShell extends LitElement {
   private _stopCloseListener?: Promise<() => void>;
   private _pendingFlow?: WizardFlow;
 
+  /** The screen the latest single click landed on. */
+  private _clickedScreen?: string;
+
   connectedCallback() {
     super.connectedCallback();
+    // Capturing, so it runs before the controls on the screen
+    this.addEventListener("click", this._onClick, true);
     this._unsubscribe = wizardState.subscribe((state) => {
       this._wizardState = state;
     });
@@ -170,6 +179,7 @@ export class AppShell extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this.removeEventListener("click", this._onClick, true);
     this._unsubscribe?.();
     void this._stopCloseListener?.then((stop) => stop());
   }
@@ -338,13 +348,13 @@ export class AppShell extends LitElement {
   private _getNextLabel(stepId: string | undefined): string {
     if (stepId === "flash" && this._flashError) {
       return this._installRetryable
-        ? localize("components.app_shell.try_again")
+        ? localize("common.try_again")
         : localize("components.app_shell.choose_another_drive");
     }
     if (stepId === "install" && this._vmInstallError) {
       return this._installReconnect
         ? localize("proxmox.reconnect")
-        : localize("components.app_shell.try_again");
+        : localize("common.try_again");
     }
     if (stepId === "confirm") {
       return localize("common.install");
@@ -379,6 +389,28 @@ export class AppShell extends LitElement {
     return (this._wizardShell?.firstElementChild ??
       null) as WizardStepView | null;
   }
+
+  /** What is on screen: the view, and in the wizard, its step. */
+  private get _screen(): string {
+    return this._currentView === "wizard"
+      ? `wizard/${wizardState.currentStep?.id}`
+      : this._currentView;
+  }
+
+  // A click that changes the screen does so before the second click of a
+  // double-click arrives, so that one would act on whatever the next screen
+  // has in the same spot: Back on the first step and then Back on the path
+  // selection went all the way to the welcome screen, and Next on a
+  // configured VM went past its confirmation into the install. `detail`
+  // counts the clicks; keyboard activation reports 0.
+  private _onClick = (event: MouseEvent) => {
+    if (event.detail < 2) {
+      this._clickedScreen = this._screen;
+    } else if (this._screen !== this._clickedScreen) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
 
   private _onNavigate(e: CustomEvent<{ view: ViewName }>) {
     this._currentView = e.detail.view;
@@ -530,8 +562,8 @@ export class AppShell extends LitElement {
 
   /**
    * Confirm the selected path still belongs to the same device; the OS can
-   * hand it to another one. On failure, go back to the drive step, which
-   * re-scans and explains why the selection was cleared.
+   * hand it to another one. On failure, clear the selection and go back to
+   * the drive step, which re-scans and explains why it was cleared.
    *
    * Resolves false without acting if the user navigated, cancelled or changed
    * the selection while the scan ran: the result no longer applies.
@@ -567,6 +599,9 @@ export class AppShell extends LitElement {
     }
 
     if (!found) {
+      // Have the user pick again, rather than let Next carry it back here
+      clearDriveSelection();
+      wizardState.setSelection("driveSelectionLost", true);
       this._goToStep("drive");
     }
     return found;
@@ -630,6 +665,7 @@ export class AppShell extends LitElement {
 
   private _onFlashComplete() {
     this._showStopDialog = false;
+    this._showQuitDialog = false;
     this._stoppingFlash = false;
     // The password is on the drive now; the success step needs only the name
     const wifi = this._wizardState.selections.wifi;
@@ -641,6 +677,7 @@ export class AppShell extends LitElement {
 
   private _onFlashError(event: CustomEvent<{ retryable?: boolean }>) {
     this._showStopDialog = false;
+    this._showQuitDialog = false;
     this._stoppingFlash = false;
     this._installRetryable = event.detail?.retryable === true;
     this._flashError = true;
@@ -712,6 +749,7 @@ export class AppShell extends LitElement {
   }
 
   private _onVmInstallComplete() {
+    this._showQuitDialog = false;
     // Advance to success step after the UTM or Proxmox install completes
     wizardState.nextStep();
   }
@@ -719,6 +757,11 @@ export class AppShell extends LitElement {
   private _onVmInstallError(
     event: CustomEvent<{ retryable?: boolean; reconnect?: boolean }>
   ) {
+    // The install ended, so there is nothing left to stop, leave or quit,
+    // whether or not the view said so first
+    this._showStopDialog = false;
+    this._showLeaveDialog = false;
+    this._showQuitDialog = false;
     this._installRetryable = event.detail?.retryable === true;
     this._installReconnect = event.detail?.reconnect === true;
     this._vmInstallError = true;

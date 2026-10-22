@@ -125,6 +125,59 @@ describe("proxmox-progress-view", () => {
     expect(selections.ipAddress).to.be.undefined;
   });
 
+  it("leaves a new flow alone when one starts while it is still shown", async () => {
+    const createVm = mockCreateVm();
+    const el = mount();
+    const events: string[] = [];
+    el.addEventListener("install-complete", () => events.push("complete"));
+    el.addEventListener("install-error", () => events.push("error"));
+
+    await createVm.called;
+    const signal = abortSignalOf(el)!;
+    wizardState.startFlow("proxmox");
+    expect(signal.aborted).to.be.true;
+    createVm.resolve({ vm_id: 100, node: "pve" });
+    await settle();
+
+    expect(events).to.deep.equal([]);
+    // The VM belongs to the flow that made it
+    const selections = wizardState.getState().selections;
+    expect(selections.proxmoxVmResult).to.be.undefined;
+    expect(selections.ipAddress).to.be.undefined;
+    el.remove();
+  });
+
+  it("starts from the wizard state as it is when attached again", async () => {
+    let creates = 0;
+    mockTauriIpc((cmd) => {
+      switch (cmd) {
+        case "proxmox_create_vm":
+          creates++;
+          return new Promise(() => {});
+        case "proxmox_get_vm_status":
+          return { status: "running", ip_address: "192.168.1.50" };
+        case "check_ha_ready":
+        case "check_ha_updated":
+          return true;
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+    const el = mount();
+    await settle();
+    const parent = el.parentElement!;
+    el.remove();
+
+    // Made meanwhile, so attaching again waits for it
+    wizardState.setSelection("proxmoxVmResult", { vm_id: 100, node: "pve" });
+    let completed = false;
+    el.addEventListener("install-complete", () => (completed = true));
+    parent.append(el);
+    await waitUntil(() => completed || creates > 1, "never went on");
+
+    expect(creates).to.equal(1);
+    expect(completed).to.be.true;
+  });
+
   it("stores the result and advances when the install succeeds", async () => {
     const createVm = mockCreateVm();
     const el = mount();
@@ -570,6 +623,58 @@ describe("proxmox-progress-view", () => {
       await el.updateComplete;
       expect(progressOf(el).querySelector("h2")!.textContent).to.equal(heading);
     }
+  });
+
+  it("shows the backend's progress in whole percent", async () => {
+    let report!: (progress: FlashProgress) => void;
+    mockTauriIpc((cmd, args) => {
+      if (cmd === "proxmox_create_vm") {
+        const { progressChannel } = args as {
+          progressChannel: { onmessage: (progress: FlashProgress) => void };
+        };
+        report = (progress) => progressChannel.onmessage(progress);
+        return new Promise(() => {});
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+
+    const el = mount();
+    await settle();
+    report({
+      stage: "uploading",
+      progress: 42.4,
+      bytes_processed: 42_400,
+      total_bytes: 100_000,
+      message: "",
+    });
+    await el.updateComplete;
+    const layout = el.shadowRoot!.querySelector("install-progress")!;
+    await layout.updateComplete;
+
+    expect(layout.progress).to.equal(42);
+    expect(progressOf(el).querySelector(".percentage")!.textContent).to.equal(
+      "42%"
+    );
+  });
+
+  it("keeps no empty progress details while it waits", async () => {
+    wizardState.setSelection("proxmoxVmResult", { vm_id: 100, node: "pve" });
+    mockTauriIpc((cmd) => {
+      // The VM has no address yet
+      if (cmd === "proxmox_get_vm_status") return new Promise(() => {});
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+
+    const el = mount();
+    await el.updateComplete;
+    const layout = el.shadowRoot!.querySelector("install-progress")!;
+    await waitUntil(() => layout.stage === "waiting");
+    await layout.updateComplete;
+
+    expect(layout.indeterminate).to.be.true;
+    expect(!!progressOf(el).querySelector("progress-bar")).to.be.true;
+    expect(!!progressOf(el).querySelector(".progress-details")).to.be.false;
+    el.remove();
   });
 
   describe("stop", () => {

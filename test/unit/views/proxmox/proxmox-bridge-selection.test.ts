@@ -135,6 +135,7 @@ describe("Proxmox bridge selection", () => {
         .be.false;
       await input.updateComplete;
       expect(input.validity.customError).to.be.true;
+      expect(input.input.getAttribute("aria-invalid"), value).to.equal("true");
     }
     for (const value of ["1", "4094", ""]) {
       input.value = value;
@@ -142,6 +143,7 @@ describe("Proxmox bridge selection", () => {
       await el.updateComplete;
       await input.updateComplete;
       expect(input.validity.customError).to.be.false;
+      expect(input.input.getAttribute("aria-invalid"), value).to.equal("false");
       expect(wizardState.getState().selections.proxmoxConfigureReady, value).to
         .be.true;
       expect(wizardState.getState().selections.proxmoxVlanTag).to.equal(
@@ -334,6 +336,90 @@ describe("Proxmox bridge selection", () => {
     el.shadowRoot!.querySelector<HTMLElement>("wa-button")!.click();
     await ready();
     expect(wizardState.getState().selections.proxmoxBridge).to.equal("vmbr1");
+  });
+
+  it("keeps Try again in place, busy, and moves on to the bridges it finds", async () => {
+    let lookup = deferred<ProxmoxBridge[]>();
+    lookup.resolve([]);
+    mockNetworks(() => lookup.promise);
+    const el = await mount();
+    await waitUntil(() => !!el.shadowRoot!.querySelector(".bridge-retry"));
+    const retry = el.shadowRoot!.querySelector(
+      ".bridge-retry"
+    ) as HTMLElement & {
+      loading: boolean;
+    };
+    const alert = el.shadowRoot!.querySelector("[role=alert]")!;
+
+    lookup = deferred<ProxmoxBridge[]>();
+    retry.focus();
+    retry.click();
+    await el.updateComplete;
+    expect(retry.isConnected).to.be.true;
+    expect(retry.loading).to.be.true;
+    expect(el.shadowRoot!.activeElement).to.equal(retry);
+    // Empty meanwhile, so the same result is read out again
+    expect(alert.textContent!.trim()).to.equal("");
+
+    lookup.resolve([bridge("vmbr0")]);
+    await ready();
+    await settle();
+    await el.updateComplete;
+    expect(el.shadowRoot!.activeElement).to.equal(
+      el.shadowRoot!.querySelector("#network-bridge")
+    );
+  });
+
+  it("keeps Try again in place through node discovery and the bridges after it", async () => {
+    let nodes = deferred<unknown>();
+    nodes.resolve([]);
+    const bridges = deferred<ProxmoxBridge[]>();
+    let bridgeRequests = 0;
+    mockTauriIpc((cmd) => {
+      if (cmd === "proxmox_list_nodes") return nodes.promise;
+      if (cmd === "proxmox_get_next_vm_id") return 100;
+      if (cmd === "proxmox_list_storage")
+        return [
+          { name: "local", active: true, content: ["images"], available: 100 },
+        ];
+      if (cmd === "proxmox_list_bridges") {
+        bridgeRequests++;
+        return bridges.promise;
+      }
+      throw new Error(`Unexpected command: ${cmd}`);
+    });
+    const el = await mount();
+    await waitUntil(() => !!el.shadowRoot!.querySelector(".bridge-retry"));
+    const retry = el.shadowRoot!.querySelector(
+      ".bridge-retry"
+    ) as HTMLElement & {
+      loading: boolean;
+    };
+
+    nodes = deferred<unknown>();
+    retry.focus();
+    retry.click();
+    await el.updateComplete;
+    // Looking for nodes: still there, busy
+    expect(retry.isConnected).to.be.true;
+    expect(retry.loading).to.be.true;
+    expect(el.shadowRoot!.activeElement === retry).to.be.true;
+
+    // A node turns up, and its bridges are read: still there
+    nodes.resolve([{ name: "pve", status: "online" }]);
+    await waitUntil(() => bridgeRequests === 1);
+    await el.updateComplete;
+    expect(retry.isConnected).to.be.true;
+    expect(el.shadowRoot!.activeElement === retry).to.be.true;
+
+    bridges.resolve([bridge("vmbr0")]);
+    await ready();
+    await settle();
+    await el.updateComplete;
+    expect(
+      el.shadowRoot!.activeElement ===
+        el.shadowRoot!.querySelector("#network-bridge")
+    ).to.be.true;
   });
 
   it("does not trust a restored bridge while its lookup is pending", async () => {

@@ -10,9 +10,10 @@ import { repeat } from "lit/directives/repeat.js";
 import {
   ViewAccessibility,
   reducedMotionStyles,
+  srOnlyStyles,
 } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import {
   formatBytes,
   listBlockDevices,
@@ -38,6 +39,7 @@ import "../ha-hardware/connect-instructions.js";
 export class DriveSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    srOnlyStyles,
     reducedMotionStyles,
     linkStyles,
     css`
@@ -170,6 +172,14 @@ export class DriveSelectionView extends LitElement {
   @state()
   private _loading = true;
 
+  /** A scan finished, so a new one keeps its result on screen meanwhile */
+  @state()
+  private _scanned = false;
+
+  /** Whichever Refresh, or Try again, the current result offers */
+  @query(".drives-header wa-button, .empty-state wa-button, .error wa-button")
+  private _refreshButton?: HTMLElement;
+
   @state()
   private _error: InstallerError | null = null;
 
@@ -191,8 +201,12 @@ export class DriveSelectionView extends LitElement {
   }
 
   private async _loadDrives() {
+    // The previous result, error included, stays until this one replaces it
     this._loading = true;
-    this._error = null;
+    // Next waits until this scan has confirmed the selection
+    if (wizardState.getState().selections.driveScanReady) {
+      wizardState.setSelection("driveScanReady", false);
+    }
 
     let drives: BlockDevice[];
     let error: InstallerError | null = null;
@@ -220,7 +234,27 @@ export class DriveSelectionView extends LitElement {
     this._error = error;
     if (error) new InstallDiagnostics("flash").fail(scanError);
     this._loading = false;
+    this._scanned = true;
     this._reconcileSelection();
+    wizardState.setSelection("driveScanReady", true);
+
+    // Refresh can give way to the list it found, or the other way around
+    await this.updateComplete;
+    this._accessibility.restoreFocus(this._refreshButton);
+  }
+
+  /** What the last scan found, once there is a list to refresh. */
+  private _scanStatus(): string {
+    if (!this._scanned) return "";
+    if (this._loading) {
+      return localize("views.sbc.drive_selection_view.scanning_for_drives");
+    }
+    if (this._error) return "";
+    return this._drives.length
+      ? localize("views.sbc.drive_selection_view.drives_found", {
+          count: this._drives.length,
+        })
+      : localize("views.sbc.drive_selection_view.no_drives_found");
   }
 
   /**
@@ -230,6 +264,13 @@ export class DriveSelectionView extends LitElement {
    * and without this the wizard would carry that path to the erase.
    */
   private _reconcileSelection() {
+    // The install dropped a drive it couldn't confirm and sent the user back.
+    // Said only now, into the live region already in place, so it is announced.
+    if (wizardState.getState().selections.driveSelectionLost) {
+      wizardState.setSelection("driveSelectionLost", undefined);
+      this._selectionLost = true;
+    }
+
     const selection = readDriveSelection(wizardState.getState().selections);
     if (!selection) {
       this._selectedDriveId = null;
@@ -263,18 +304,12 @@ export class DriveSelectionView extends LitElement {
 
   private _subtitle(): string {
     if (this._isMiniPCFlow()) {
-      return localize(
-        "views.sbc.drive_selection_view.choose_the_nvme_ssd_drive_to_install_home_assistant_on"
-      );
+      return localize("views.sbc.drive_selection_view.subtitle_nvme");
     }
     if (this._isHaHardwareFlow()) {
-      return localize(
-        "views.sbc.drive_selection_view.connect_your_device_storage_then_select_it"
-      );
+      return localize("views.sbc.drive_selection_view.subtitle_device_storage");
     }
-    return localize(
-      "views.sbc.drive_selection_view.choose_the_sd_card_or_usb_drive_to_install_home_assistant_on"
-    );
+    return localize("views.sbc.drive_selection_view.subtitle_removable");
   }
 
   render() {
@@ -290,14 +325,11 @@ export class DriveSelectionView extends LitElement {
 
       <inline-notice>
         <p>
-          ${localizeContent(
-            "views.sbc.drive_selection_view.value_all_data_on_the_selected_drive_will_be_permanently_erased_make_sure_y",
-            {
-              value0: html`<strong
-                >${localize("views.sbc.drive_selection_view.warning")}</strong
-              >`,
-            }
-          )}
+          ${localizeContent("views.sbc.drive_selection_view.erase_warning", {
+            warning_prefix: html`<strong
+              >${localize("views.sbc.drive_selection_view.warning")}</strong
+            >`,
+          })}
         </p>
       </inline-notice>
 
@@ -310,13 +342,14 @@ export class DriveSelectionView extends LitElement {
               <inline-notice variant="error" icon="🔌">
                 <p>
                   ${localize(
-                    "views.sbc.drive_selection_view.the_drive_you_selected_is_no_longer_available_so_the_selection_was_cleared_"
+                    "views.sbc.drive_selection_view.selection_cleared"
                   )}
                 </p>
               </inline-notice>
             `
           : ""}
       </div>
+      <p class="sr-only" role="status">${this._scanStatus()}</p>
       ${this._renderContent()}
     `;
   }
@@ -324,9 +357,10 @@ export class DriveSelectionView extends LitElement {
   private _renderContent() {
     const config = wizardState.getState().selections.deviceConfig;
     // Full-page spinner only on the initial scan (nothing to show yet).
-    // A refresh with drives already listed keeps the list visible and shows
-    // the loading state on the refresh button instead.
-    if (this._loading && this._drives.length === 0) {
+    // A refresh keeps the list, the empty state or the error visible, and
+    // shows the loading state on the button that started it, so the button
+    // keeps focus.
+    if (!this._scanned) {
       return html`
         <div class="loading">
           <div class="loading-spinner"></div>
@@ -343,21 +377,23 @@ export class DriveSelectionView extends LitElement {
       return html`
         <div class="error">
           <span class="error-icon">⚠️</span>
+          <!-- Empty while trying again, so the same failure is read out again -->
           <p
             class="error-message"
             role="alert"
             style="overflow-wrap: anywhere;"
           >
-            ${this._error?.message}
+            ${this._loading ? "" : this._error?.message}
           </p>
           ${renderErrorHelp()}
           ${this._error.retryable
             ? html`<wa-button
                 variant="brand"
                 appearance="outlined"
+                ?loading=${this._loading}
                 @click=${this._loadDrives}
               >
-                ${localize("components.app_shell.try_again")}
+                ${localize("common.try_again")}
               </wa-button>`
             : ""}
         </div>
@@ -369,16 +405,10 @@ export class DriveSelectionView extends LitElement {
         "views.sbc.drive_selection_view.no_drives_found"
       );
       const emptyText = this._isMiniPCFlow()
-        ? localize(
-            "views.sbc.drive_selection_view.connect_your_drive_using_a_usb_adapter_and_select_refresh"
-          )
+        ? localize("views.sbc.drive_selection_view.no_drives_adapter")
         : this._isHaHardwareFlow()
-          ? localize(
-              "views.sbc.drive_selection_view.connect_the_drive_as_described_above_and_select_refresh"
-            )
-          : localize(
-              "views.sbc.drive_selection_view.insert_an_sd_card_or_usb_drive_and_select_refresh"
-            );
+          ? localize("views.sbc.drive_selection_view.no_drives_described_above")
+          : localize("views.sbc.drive_selection_view.no_drives_removable");
 
       return html`
         <div class="empty-state">
@@ -388,6 +418,7 @@ export class DriveSelectionView extends LitElement {
           <wa-button
             variant="brand"
             appearance="outlined"
+            ?loading=${this._loading}
             @click=${this._loadDrives}
             style="margin-top: 1rem;"
           >
@@ -415,7 +446,7 @@ export class DriveSelectionView extends LitElement {
       <wa-radio-group
         class="drives-list"
         radio-tag="drive-card"
-        aria-label=${localize("views.sbc.confirmation_view.target_drive")}
+        aria-label=${localize("common.target_drive")}
         .value=${this._selectedDriveId ?? ""}
         @change=${this._onDriveChange}
       >
@@ -436,10 +467,9 @@ export class DriveSelectionView extends LitElement {
             const disabled = !isEligibleFlashTarget(drive, config);
             const reason =
               fit === "too-small"
-                ? localize(
-                    "views.sbc.drive_selection_view.minimum_value_drive_required",
-                    { value0: formatBytes(config!.minimum_storage_bytes) }
-                  )
+                ? localize("views.sbc.drive_selection_view.minimum_size", {
+                    size: formatBytes(config!.minimum_storage_bytes),
+                  })
                 : fit === "unavailable"
                   ? localize(
                       "views.sbc.drive_selection_view.drive_capacity_or_board_requirements_unavailable"
@@ -458,8 +488,8 @@ export class DriveSelectionView extends LitElement {
                 .disabledReason=${reason}
                 .capacityWarning=${fit === "below-recommended"
                   ? localize(
-                      "views.sbc.drive_selection_view.a_value_drive_is_recommended_space_for_apps_history_and_backups_will_be_lim",
-                      { value0: formatBytes(config!.recommended_storage_bytes) }
+                      "views.sbc.drive_selection_view.recommended_size",
+                      { size: formatBytes(config!.recommended_storage_bytes) }
                     )
                   : ""}
               ></drive-card>

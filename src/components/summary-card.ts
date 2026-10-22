@@ -19,7 +19,7 @@ export const summaryStyles = css`
     padding: 1.5rem;
     background-color: var(--ha-card-background, #ffffff);
     border: 1px solid var(--ha-border-color, #e0e0e0);
-    border-radius: 12px;
+    border-radius: var(--ha-card-border-radius, 12px);
     width: 100%;
     box-sizing: border-box;
     max-width: 500px;
@@ -137,18 +137,16 @@ export function renderSummaryRow(
 export function renderHaosVersionRow(version: string | null | undefined) {
   return renderSummaryRow(
     haIcon,
-    localize(
-      "views.proxmox.proxmox_confirm_view.home_assistant_operating_system"
-    ),
+    localize("common.confirm.home_assistant_operating_system"),
     version === null
       ? localize("common.version_unknown")
       : version
-        ? localize("views.proxmox.proxmox_confirm_view.version_value", {
-            value0: version,
+        ? localize("common.confirm.version_summary", {
+            version,
           })
         : localize("common.loading"),
     html`<p class="summary-detail">
-      ${localize("views.proxmox.proxmox_confirm_view.latest_stable_release")}
+      ${localize("common.confirm.latest_stable_release")}
     </p>`
   );
 }

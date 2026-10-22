@@ -75,7 +75,7 @@ describe("VM writing progress", () => {
       await bar.updateComplete;
       expect(bar.indeterminate).to.be.true;
       for (const selector of [".percentage", ".bytes-info", ".speed", ".eta"]) {
-        expect(root.querySelector(selector)!.textContent).to.equal("");
+        expect(root.querySelector(selector)?.textContent ?? "").to.equal("");
       }
     });
   }

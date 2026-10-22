@@ -58,7 +58,7 @@ export class OptionCard extends LitElement {
         min-height: 200px;
         background-color: var(--ha-card-background, #ffffff);
         border: 2px solid var(--ha-border-color, #e0e0e0);
-        border-radius: 12px;
+        border-radius: var(--ha-card-border-radius, 12px);
         cursor: pointer;
         transition:
           border-color 0.2s ease,
@@ -68,10 +68,7 @@ export class OptionCard extends LitElement {
 
       .card:hover {
         border-color: var(--ha-primary-color, #03a9f4);
-        box-shadow: var(
-          --ha-card-hover-shadow,
-          0 4px 12px rgba(3, 169, 244, 0.15)
-        );
+        box-shadow: var(--ha-card-hover-shadow);
       }
 
       .card:active {

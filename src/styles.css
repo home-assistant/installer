@@ -19,13 +19,22 @@
   --ha-text-color: #212121;
   /* Borders, dividers and empty tracks; components used to fall back to these */
   --ha-border-color: #e0e0e0;
-  /* Steps and stages not reached yet */
-  --ha-inactive-color: #e0e0e0;
+  /* Steps and stages not reached yet. Their rings need 3:1 to the page. */
+  --ha-inactive-color: #8c8c8c;
   /* Borders of buttons drawn on a card, like the app store links */
   --ha-control-border-color: #e0e0e0;
   /* Outlines of text fields and selects, 3:1 against the field and the card */
   --ha-input-border-color: #8e8e8e;
-  --ha-card-hover-shadow: 0 4px 12px rgba(3, 169, 244, 0.15);
+  /* Glow under a card that is hovered and ring around one that is selected,
+   * in the theme's primary color */
+  --ha-card-hover-shadow: 0 4px 12px
+    color-mix(in srgb, var(--ha-primary-color) 15%, transparent);
+  --ha-card-selected-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--ha-primary-color) 20%, transparent);
+  /* Corners of cards and the tiles picked from, and of the smaller boxes:
+   * notices, and the panels and links set on a card or dialog */
+  --ha-card-border-radius: 12px;
+  --ha-small-border-radius: 8px;
   /* Tinted warning and error boxes */
   --ha-warning-background: rgba(255, 152, 0, 0.1);
   --ha-warning-border: rgba(255, 152, 0, 0.3);
@@ -34,6 +43,9 @@
   --ha-error-border: rgba(219, 68, 55, 0.3);
   /* Behind a plain or outlined button that is hovered or pressed */
   --ha-hover-fill: rgba(0, 0, 0, 0.06);
+  /* Between the window's edges and the header, content and footer of every
+   * screen, so Back, Cancel, Next and the content line up */
+  --ha-page-gutter: 2rem;
 
   /* Map Web Awesome color tokens onto our theme colors. wa-button reads these
    * through its variant -> generic token chain (e.g. variant="brand" resolves
@@ -67,16 +79,27 @@
   --wa-form-control-border-color: var(--ha-input-border-color);
   --wa-form-control-placeholder-color: var(--ha-secondary-text-color);
 
-  /* Borders of the device and drive cards, wa-select's listbox and
-   * wa-details, so they match every other border */
+  /* Borders of wa-select's listbox and wa-details, so they match every other
+   * border */
   --wa-color-surface-border: var(--ha-border-color);
+  /* Fill of the fields and the architecture choices, and the hints under
+   * fields, so they match the cards. Web Awesome's own fill is a navy darker
+   * than the page in dark mode, its quiet text a bluish grey. */
+  --wa-color-surface-default: var(--ha-card-background);
+  --wa-color-text-quiet: var(--ha-secondary-text-color);
 
   /* wa-dialog surface/text/backdrop. Web Awesome's own dark tokens are gated
    * to WA's neutral palette, so map them to our theme vars instead. */
   --wa-color-surface-raised: var(--ha-card-background);
   --wa-color-text-normal: var(--ha-text-color);
   --wa-color-overlay-modal: rgba(0, 0, 0, 0.5);
+  /* Dialogs, a little rounder than the cards under them */
   --wa-panel-border-radius: 16px;
+
+  /* The asterisk after a required field's label, without text for screen
+   * readers: it became part of the field's name ("Password *"), and they
+   * already say the field is required. */
+  --wa-form-control-required-content: "*" / "";
 
   /* Typography */
   font-family:
@@ -109,6 +132,14 @@ body {
   overflow: hidden;
 }
 
+/* A narrow window leaves more of its width to the content. Zooming in narrows
+ * it too: the smallest window, 800px wide, is 400px at 200%. */
+@media (max-width: 600px) {
+  :root {
+    --ha-page-gutter: 1rem;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --ha-primary-color: #7bd4fb;
@@ -119,10 +150,11 @@ body {
     --ha-secondary-text-color: #9e9e9e;
     --ha-control-secondary-text-color: #9e9e9e;
     --ha-border-color: #333333;
-    --ha-inactive-color: #444444;
+    --ha-inactive-color: #707070;
     --ha-control-border-color: #444444;
     --ha-input-border-color: #707070;
-    --ha-card-hover-shadow: 0 4px 12px rgba(3, 169, 244, 0.25);
+    --ha-card-hover-shadow: 0 4px 12px
+      color-mix(in srgb, var(--ha-primary-color) 25%, transparent);
     --ha-warning-background: rgba(255, 152, 0, 0.15);
     --ha-warning-border: rgba(255, 152, 0, 0.4);
     --ha-warning-heading-color: #ffb74d;
