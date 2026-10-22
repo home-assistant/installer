@@ -182,6 +182,76 @@ describe("Proxmox import consent", () => {
     );
   });
 
+  it("says Import is enabled, and continues focus where its section was", async () => {
+    const el = await mount();
+    const status = el.shadowRoot!.querySelector(".sr-only[role=status]")!;
+    expect(status.textContent!.trim()).to.equal("");
+    // Read out, not shown
+    expect(status.getBoundingClientRect().width).to.be.at.most(1);
+
+    // The consent dialog hands focus back to nothing: it falls to the page
+    (document.activeElement as HTMLElement | null)?.blur();
+    await approve(el);
+    await waitUntil(() => !el.shadowRoot!.querySelector(".import-setting"));
+    await settle();
+    await el.updateComplete;
+
+    expect(status.textContent).to.contain('Import is enabled on "local"');
+    expect(el.shadowRoot!.activeElement).to.equal(
+      el.shadowRoot!.querySelector("#network-bridge")
+    );
+  });
+
+  it("keeps Refresh storage in place, busy, while storage is read again", async () => {
+    const el = await mount();
+    const refresh = el.shadowRoot!.querySelector(
+      ".refresh-storage"
+    ) as HTMLElement & { loading: boolean };
+    const lookup = deferred<ProxmoxStorage[]>();
+    list = () => lookup.promise;
+    refresh.focus();
+    refresh.click();
+    await el.updateComplete;
+
+    // The section stays while the lookup runs, so focus doesn't fall away
+    expect(refresh.isConnected).to.be.true;
+    expect(refresh.loading).to.be.true;
+    expect(el.shadowRoot!.activeElement).to.equal(refresh);
+    expect(wizardState.getState().selections.proxmoxImportReady).to.be.false;
+
+    lookup.resolve(storages);
+    await waitUntil(() => !refresh.loading);
+    expect(el.shadowRoot!.activeElement).to.equal(refresh);
+  });
+
+  it("says Import is enabled when Refresh storage finds it enabled in Proxmox", async () => {
+    const el = await mount();
+    const status = el.shadowRoot!.querySelector(".sr-only[role=status]")!;
+    // Someone enables Import in Proxmox, then the user refreshes
+    storages = [{ ...directory, content: ["backup", "import"] }, disk];
+    (el.shadowRoot!.querySelector(".refresh-storage") as HTMLElement).click();
+    await waitUntil(() => !el.shadowRoot!.querySelector(".import-setting"));
+    await settle();
+    await el.updateComplete;
+
+    expect(status.textContent).to.contain('Import is enabled on "local"');
+    expect(writes).to.deep.equal([]);
+  });
+
+  it("hands focus back to Enable Import once its dialog closes", async () => {
+    const el = await mount();
+    // Without opening it for real: a test page in the background never
+    // finishes the dialog's closing animation, which keeps the page inert
+    (document.activeElement as HTMLElement | null)?.blur();
+    el.shadowRoot!.querySelector("info-dialog")!.dispatchEvent(
+      new Event("wa-after-hide")
+    );
+
+    const enable = el.shadowRoot!.querySelector(".enable-import");
+    expect(enable).to.exist;
+    expect(el.shadowRoot!.activeElement === enable).to.be.true;
+  });
+
   it("does not prompt when active import storage exists, including a non-directory backend", async () => {
     storages.push({ ...directory, storage_type: "nfs", content: ["import"] });
     const el = await mount();

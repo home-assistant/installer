@@ -10,9 +10,10 @@ import { repeat } from "lit/directives/repeat.js";
 import {
   ViewAccessibility,
   reducedMotionStyles,
+  srOnlyStyles,
 } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import {
   formatBytes,
   listBlockDevices,
@@ -38,6 +39,7 @@ import "../ha-hardware/connect-instructions.js";
 export class DriveSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    srOnlyStyles,
     reducedMotionStyles,
     linkStyles,
     css`
@@ -170,6 +172,14 @@ export class DriveSelectionView extends LitElement {
   @state()
   private _loading = true;
 
+  /** A scan finished, so a new one keeps its result on screen meanwhile */
+  @state()
+  private _scanned = false;
+
+  /** Whichever Refresh, or Try again, the current result offers */
+  @query(".drives-header wa-button, .empty-state wa-button, .error wa-button")
+  private _refreshButton?: HTMLElement;
+
   @state()
   private _error: InstallerError | null = null;
 
@@ -191,8 +201,8 @@ export class DriveSelectionView extends LitElement {
   }
 
   private async _loadDrives() {
+    // The previous result, error included, stays until this one replaces it
     this._loading = true;
-    this._error = null;
 
     let drives: BlockDevice[];
     let error: InstallerError | null = null;
@@ -220,7 +230,26 @@ export class DriveSelectionView extends LitElement {
     this._error = error;
     if (error) new InstallDiagnostics("flash").fail(scanError);
     this._loading = false;
+    this._scanned = true;
     this._reconcileSelection();
+
+    // Refresh can give way to the list it found, or the other way around
+    await this.updateComplete;
+    this._accessibility.restoreFocus(this._refreshButton);
+  }
+
+  /** What the last scan found, once there is a list to refresh. */
+  private _scanStatus(): string {
+    if (!this._scanned) return "";
+    if (this._loading) {
+      return localize("views.sbc.drive_selection_view.scanning_for_drives");
+    }
+    if (this._error) return "";
+    return this._drives.length
+      ? localize("views.sbc.drive_selection_view.drives_found", {
+          count: this._drives.length,
+        })
+      : localize("views.sbc.drive_selection_view.no_drives_found");
   }
 
   /**
@@ -308,6 +337,7 @@ export class DriveSelectionView extends LitElement {
             `
           : ""}
       </div>
+      <p class="sr-only" role="status">${this._scanStatus()}</p>
       ${this._renderContent()}
     `;
   }
@@ -315,9 +345,10 @@ export class DriveSelectionView extends LitElement {
   private _renderContent() {
     const config = wizardState.getState().selections.deviceConfig;
     // Full-page spinner only on the initial scan (nothing to show yet).
-    // A refresh with drives already listed keeps the list visible and shows
-    // the loading state on the refresh button instead.
-    if (this._loading && this._drives.length === 0) {
+    // A refresh keeps the list, the empty state or the error visible, and
+    // shows the loading state on the button that started it, so the button
+    // keeps focus.
+    if (!this._scanned) {
       return html`
         <div class="loading">
           <div class="loading-spinner"></div>
@@ -334,18 +365,20 @@ export class DriveSelectionView extends LitElement {
       return html`
         <div class="error">
           <span class="error-icon">⚠️</span>
+          <!-- Empty while trying again, so the same failure is read out again -->
           <p
             class="error-message"
             role="alert"
             style="overflow-wrap: anywhere;"
           >
-            ${this._error?.message}
+            ${this._loading ? "" : this._error?.message}
           </p>
           ${renderErrorHelp()}
           ${this._error.retryable
             ? html`<wa-button
                 variant="brand"
                 appearance="outlined"
+                ?loading=${this._loading}
                 @click=${this._loadDrives}
               >
                 ${localize("common.try_again")}
@@ -373,6 +406,7 @@ export class DriveSelectionView extends LitElement {
           <wa-button
             variant="brand"
             appearance="outlined"
+            ?loading=${this._loading}
             @click=${this._loadDrives}
             style="margin-top: 1rem;"
           >

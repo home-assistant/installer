@@ -9,6 +9,10 @@ import {
   settle,
 } from "../tauri-ipc.js";
 
+/** The alert stays in the DOM, so a failure shows up as its text */
+const alertText = (el: ConnectionCheckView) =>
+  el.shadowRoot!.querySelector('[role="alert"]')!.textContent!.trim();
+
 describe("connection-check-view", () => {
   afterEach(restoreTauriIpc);
 
@@ -34,7 +38,7 @@ describe("connection-check-view", () => {
         message_params: {},
       })
     );
-    await waitUntil(() => !!el.shadowRoot!.querySelector('[role="alert"]'));
+    await waitUntil(() => !!alertText(el));
     expect(el.shadowRoot!.textContent).to.contain(
       "Check your internet connection"
     );
@@ -50,6 +54,45 @@ describe("connection-check-view", () => {
     await waitUntil(() => ready === 1);
   });
 
+  it("keeps focus on Retry while it checks again, and announces the outcome", async () => {
+    const retry = deferred<void>();
+    let calls = 0;
+    mockTauriIpc(() =>
+      ++calls === 1
+        ? Promise.reject(ipcError("network", "Offline", true))
+        : retry.promise
+    );
+    const el = await fixture<ConnectionCheckView>(
+      html`<connection-check-view></connection-check-view>`
+    );
+    await waitUntil(() => !!alertText(el));
+    const status = el.shadowRoot!.querySelector('[role="status"]')!;
+    const alert = el.shadowRoot!.querySelector('[role="alert"]')!;
+    // The failure takes focus, so it is read out
+    expect(el.shadowRoot!.activeElement).to.equal(alert);
+
+    const button = el.shadowRoot!.querySelector(
+      'wa-button[variant="brand"]'
+    ) as HTMLElement & { loading: boolean };
+    button.focus();
+    button.click();
+    await el.updateComplete;
+
+    // Retry stays where it was, busy, so focus doesn't fall to the page
+    expect(button.isConnected).to.be.true;
+    expect(button.loading).to.be.true;
+    expect(el.shadowRoot!.activeElement).to.equal(button);
+    // The same regions report the new check, rather than new ones appearing
+    expect(el.shadowRoot!.querySelector('[role="status"]')).to.equal(status);
+    expect(status.textContent).to.contain("version service");
+    expect(alertText(el)).to.equal("");
+
+    retry.reject(ipcError("network", "Still offline", true));
+    await waitUntil(() => !!alertText(el));
+    expect(el.shadowRoot!.querySelector('[role="alert"]')).to.equal(alert);
+    expect(status.textContent!.trim()).to.equal("");
+  });
+
   it("does not describe a service failure as offline", async () => {
     mockTauriIpc(() =>
       Promise.reject(
@@ -62,7 +105,7 @@ describe("connection-check-view", () => {
     const el = await fixture<ConnectionCheckView>(
       html`<connection-check-view></connection-check-view>`
     );
-    await waitUntil(() => !!el.shadowRoot!.querySelector('[role="alert"]'));
+    await waitUntil(() => !!alertText(el));
     expect(el.shadowRoot!.textContent).to.contain("HTTP 503");
     expect(el.shadowRoot!.textContent).not.to.contain("No internet connection");
     // The shared mascot serves its artwork from public/, unlike a bundled path

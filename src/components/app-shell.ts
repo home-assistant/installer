@@ -629,6 +629,7 @@ export class AppShell extends LitElement {
 
   private _onFlashComplete() {
     this._showStopDialog = false;
+    this._showQuitDialog = false;
     this._stoppingFlash = false;
     // The password is on the drive now; the success step needs only the name
     const wifi = this._wizardState.selections.wifi;
@@ -640,6 +641,7 @@ export class AppShell extends LitElement {
 
   private _onFlashError(event: CustomEvent<{ retryable?: boolean }>) {
     this._showStopDialog = false;
+    this._showQuitDialog = false;
     this._stoppingFlash = false;
     this._installRetryable = event.detail?.retryable === true;
     this._flashError = true;
@@ -711,6 +713,7 @@ export class AppShell extends LitElement {
   }
 
   private _onVmInstallComplete() {
+    this._showQuitDialog = false;
     // Advance to success step after the UTM or Proxmox install completes
     wizardState.nextStep();
   }
@@ -718,6 +721,11 @@ export class AppShell extends LitElement {
   private _onVmInstallError(
     event: CustomEvent<{ retryable?: boolean; reconnect?: boolean }>
   ) {
+    // The install ended, so there is nothing left to stop, leave or quit,
+    // whether or not the view said so first
+    this._showStopDialog = false;
+    this._showLeaveDialog = false;
+    this._showQuitDialog = false;
     this._installRetryable = event.detail?.retryable === true;
     this._installReconnect = event.detail?.reconnect === true;
     this._vmInstallError = true;

@@ -3,25 +3,33 @@ import { customElement, state } from "lit/decorators.js";
 import { checkConnection } from "../api/commands.js";
 import { localize } from "../localization/localize.js";
 import { installerError } from "../utils/installer-error.js";
+import { ViewAccessibility } from "../utils/view-accessibility.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/spinner/spinner.js";
 import "../components/casita-mascot.js";
 
 @customElement("connection-check-view")
 export class ConnectionCheckView extends LitElement {
+  protected readonly _accessibility = new ViewAccessibility(this);
   static styles = css`
     :host {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 1.5rem;
+      overflow-y: auto;
       padding: 2rem;
       box-sizing: border-box;
       text-align: center;
       color: var(--ha-text-color, #212121);
     }
-    h2 {
+    /* Centered while it fits, and scrolled from the top once it doesn't */
+    .content {
+      margin: auto 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5rem;
+    }
+    h1 {
       font-size: 1.5rem;
       font-weight: 400;
       margin: 0;
@@ -40,6 +48,8 @@ export class ConnectionCheckView extends LitElement {
 
   @state() private _checking = false;
   @state() private _error = "";
+  /** A check failed, so Retry stays, also while it checks again */
+  @state() private _failed = false;
   private _request = 0;
 
   connectedCallback() {
@@ -66,6 +76,7 @@ export class ConnectionCheckView extends LitElement {
     } catch (error) {
       if (this.isConnected && request === this._request) {
         this._error = installerError(error).message;
+        this._failed = true;
       }
     } finally {
       if (request === this._request) this._checking = false;
@@ -73,29 +84,40 @@ export class ConnectionCheckView extends LitElement {
   }
 
   render() {
+    // Both regions stay in the DOM, so a change to either is announced
     return html`
-      ${this._checking
-        ? html`<wa-spinner
-            aria-label=${localize(
-              "views.connection_check_view.checking_connection"
-            )}
-          ></wa-spinner>`
-        : html`<casita-mascot mood="sad"></casita-mascot>`}
-      <h2>
+      <div class="content">
         ${this._checking
-          ? localize("views.connection_check_view.checking_connection")
-          : localize("views.connection_check_view.unable_to_connect")}
-      </h2>
-      <p role=${this._error ? "alert" : "status"}>
-        ${this._error || localize("views.connection_check_view.connecting")}
-      </p>
-      <div class="actions">
-        <wa-button @click=${this._back}>${localize("common.back")}</wa-button>
-        ${this._error
-          ? html`<wa-button variant="brand" @click=${this._check}
-              >${localize("views.connection_check_view.retry")}</wa-button
-            >`
-          : ""}
+          ? html`<wa-spinner
+              aria-label=${localize(
+                "views.connection_check_view.checking_connection"
+              )}
+            ></wa-spinner>`
+          : html`<casita-mascot mood="sad"></casita-mascot>`}
+        <h1>
+          ${this._checking
+            ? localize("views.connection_check_view.checking_connection")
+            : localize("views.connection_check_view.unable_to_connect")}
+        </h1>
+        <div>
+          <p role="status">
+            ${this._checking
+              ? localize("views.connection_check_view.connecting")
+              : ""}
+          </p>
+          <p role="alert">${this._error}</p>
+        </div>
+        <div class="actions">
+          <wa-button @click=${this._back}>${localize("common.back")}</wa-button>
+          ${this._failed
+            ? html`<wa-button
+                variant="brand"
+                ?loading=${this._checking}
+                @click=${this._check}
+                >${localize("views.connection_check_view.retry")}</wa-button
+              >`
+            : ""}
+        </div>
       </div>
     `;
   }

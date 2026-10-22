@@ -22,7 +22,10 @@ export async function approveProxmoxImport(page: Page) {
   await page
     .getByRole("button", { name: "Enable Import", exact: true })
     .click();
-  await expect(enable).toHaveCount(0);
+  // The section stays, busy, until storage has been read again
+  await expect(
+    page.locator("proxmox-configure-view .import-setting")
+  ).toHaveCount(0);
 }
 
 /**

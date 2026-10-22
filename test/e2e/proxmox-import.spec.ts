@@ -268,9 +268,10 @@ for (const width of [1100, 390]) {
     expect(await writeCount(page)).toBe(0);
     await page.getByRole("button", { name: "Not now", exact: true }).click();
     await expect(dialog).not.toBeVisible();
-    await expect(page.getByRole("status")).toContainText(
-      "Installation is paused"
-    );
+    // The view also keeps a status for when Import gets enabled
+    await expect(
+      page.getByRole("status").filter({ hasText: "Installation is paused" })
+    ).toBeVisible();
     await expect(
       page.getByRole("link", {
         name: "Proxmox directory storage documentation",
