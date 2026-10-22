@@ -454,6 +454,12 @@ describe("proxmox-progress-view", () => {
       expect(calls).to.not.include("check_ha_ready");
       // The VM stays known, for when the user comes back to it
       expect(wizardState.getState().selections.proxmoxVmResult).to.exist;
+      // Only a new login gets past an expired session
+      const reconnect = error.code === "proxmox_session_expired";
+      expect(failed.detail.reconnect).to.equal(reconnect);
+      const selections = wizardState.getState().selections;
+      expect(!!selections.proxmoxSession).to.equal(!reconnect);
+      expect(!!selections.proxmoxPreviousServer).to.equal(reconnect);
     });
   }
 
@@ -483,6 +489,51 @@ describe("proxmox-progress-view", () => {
     expect(statusCalls).to.equal(2);
     expect(el.hasError).to.be.false;
   });
+
+  // Before the VM is created, logging in again can start over safely. Once
+  // it is being created, it may exist half way, unknown to the installer.
+  for (const [stage, reconnect] of [
+    ["uploading", true],
+    ["creating_vm", false],
+    ["starting_vm", false],
+  ] as const) {
+    it(`${reconnect ? "offers" : "does not offer"} Reconnect when the session expires while ${stage}`, async () => {
+      const createVm = deferred<ProxmoxVmResult>();
+      let report!: (progress: FlashProgress) => void;
+      mockTauriIpc((cmd, args) => {
+        if (cmd === "proxmox_create_vm") {
+          const { progressChannel } = args as {
+            progressChannel: { onmessage: (progress: FlashProgress) => void };
+          };
+          report = (progress) => progressChannel.onmessage(progress);
+          return createVm.promise;
+        }
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+
+      const el = mount();
+      await settle();
+      report({
+        stage,
+        progress: 0,
+        bytes_processed: 0,
+        total_bytes: 0,
+        message: "",
+      });
+      const failed = oneEvent(el, "install-error");
+      createVm.reject(
+        ipcError("proxmox_session_expired", "Proxmox session expired.")
+      );
+      expect((await failed).detail.reconnect).to.equal(reconnect);
+      await el.updateComplete;
+
+      const selections = wizardState.getState().selections;
+      expect(!!selections.proxmoxSession).to.equal(!reconnect);
+      expect(errorText(el)).to.contain(
+        reconnect ? "Reconnect to Proxmox" : "Check it in Proxmox"
+      );
+    });
+  }
 
   it("shows the step the backend reports", async () => {
     const createVm = deferred<ProxmoxVmResult>();

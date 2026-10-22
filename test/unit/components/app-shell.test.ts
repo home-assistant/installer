@@ -761,6 +761,72 @@ describe("app-shell", () => {
       expect(wizardState.getState().selections.proxmoxVmResult).to.be.undefined;
     });
 
+    it("logs in again after the session expired, then waits for the VM it made", async () => {
+      const calls: string[] = [];
+      let expired = true;
+      await enterProxmoxInstall(() => {
+        wizardState.setSelection("proxmoxVmResult", {
+          vm_id: 100,
+          node: "pve",
+        });
+        mockTauriIpc((cmd) => {
+          calls.push(cmd);
+          if (cmd === "proxmox_get_vm_status") {
+            if (expired) {
+              return Promise.reject(
+                ipcError(
+                  "proxmox_session_expired",
+                  "Proxmox session expired or invalid."
+                )
+              );
+            }
+            return { status: "running", ip_address: "192.0.2.50" };
+          }
+          if (cmd === "proxmox_certificate_fingerprint") return null;
+          if (cmd === "proxmox_connect")
+            return {
+              server_url: "https://pve:8006",
+              ticket: "renewed",
+              csrf_token: "renewed",
+            };
+          if (cmd === "check_ha_ready") return new Promise(() => {});
+          throw new Error(`Unexpected IPC command: ${cmd}`);
+        });
+      });
+
+      // Not a dead end with only Cancel: Next logs in again
+      await waitUntil(() => shellOf(el).nextLabel === "Reconnect");
+      expect(shellOf(el).hideNext).to.be.false;
+      expect(shellOf(el).hideFooter).to.be.false;
+      const selections = wizardState.getState().selections;
+      expect(selections.proxmoxSession).to.be.undefined;
+      expect(selections.proxmoxPreviousServer?.server_url).to.equal(
+        "https://pve:8006"
+      );
+
+      fire(shellOf(el), "wizard-next");
+      await waitUntil(
+        () => !!shellOf(el).querySelector("proxmox-connect-view"),
+        "Reconnect did not open the connect step"
+      );
+      expect((el as unknown as ErrorFlags)._vmInstallError).to.be.false;
+
+      expired = false;
+      Object.assign(shellOf(el).querySelector("proxmox-connect-view")!, {
+        _password: "test",
+      });
+      fire(shellOf(el), "wizard-next");
+
+      // The VM exists: past its settings, straight back to waiting for it
+      await waitUntil(
+        () => calls.includes("check_ha_ready"),
+        "The install did not resume"
+      );
+      expect(wizardState.currentStep?.id).to.equal("install");
+      expect(calls).to.not.include("proxmox_create_vm");
+      expect(calls).to.not.include("proxmox_check_vm_config");
+    });
+
     it("hides Cancel once the VM is being created", async () => {
       let report!: (stage: string) => void;
       await enterProxmoxInstall(() =>

@@ -32,6 +32,8 @@ export interface WizardStepDefinition {
   /** Whether Next can be pressed yet; always, without it */
   ready?(selections: WizardSelections): boolean;
   beforeNext?: BeforeNext;
+  /** A later step Next goes to instead of the following one, if any */
+  skipTo?(selections: WizardSelections): string | undefined;
 }
 
 const deviceChosen = (selections: WizardSelections) =>
@@ -136,6 +138,11 @@ export const WIZARD_STEPS: Record<
         // Connecting stores the session, which changes the selections
         until: "flow",
       },
+      // Back to log in again after the session expired during the install.
+      // A VM made by then can't take new settings, and checking them would
+      // only find its VM ID taken: go on waiting for it instead.
+      skipTo: (selections) =>
+        selections.proxmoxVmResult ? "install" : undefined,
     },
     configure: {
       render: () => html`<proxmox-configure-view></proxmox-configure-view>`,

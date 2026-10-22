@@ -225,7 +225,7 @@ name: string,
  */
 status: string,
 /**
- * CPU usage percentage
+ * CPU usage as Proxmox reports it, a fraction from 0 to 1 (0.15 is 15%)
  */
 cpu_usage: number | null,
 /**
