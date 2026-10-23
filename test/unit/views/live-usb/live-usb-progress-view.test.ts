@@ -48,7 +48,7 @@ describe("live-usb-progress-view", () => {
       html`<live-usb-progress-view></live-usb-progress-view>`
     );
     let completed = 0;
-    el.addEventListener("flash-complete", () => completed++);
+    el.addEventListener("install-complete", () => completed++);
     await settle();
 
     expect(calls).to.have.length(1);
@@ -124,7 +124,7 @@ describe("live-usb-progress-view", () => {
       html`<live-usb-progress-view></live-usb-progress-view>`
     );
     const errors: boolean[] = [];
-    el.addEventListener("flash-error", (event) =>
+    el.addEventListener("install-error", (event) =>
       errors.push(
         (event as CustomEvent<{ retryable: boolean }>).detail.retryable
       )

@@ -220,32 +220,6 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
 
     await startUtmVm(vmId);
   }
-
-  protected _stageTitle(stage: UtmStage): string {
-    switch (stage) {
-      case "downloading":
-        return localize("common.install.downloading");
-      case "extracting":
-        return localize("common.install.extracting");
-      case "creating":
-        return localize("common.vm.creating");
-      case "starting":
-        return localize("common.vm.starting");
-    }
-  }
-
-  protected _stageDescription(stage: UtmStage): string {
-    switch (stage) {
-      case "downloading":
-        return localize("common.vm.downloading_home_assistant_os");
-      case "extracting":
-        return localize("common.install.extracting_the_image");
-      case "creating":
-        return localize("common.vm.creating_virtual_machine");
-      case "starting":
-        return localize("common.vm.starting_home_assistant_os");
-    }
-  }
 }
 
 declare global {
