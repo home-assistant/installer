@@ -58,6 +58,8 @@ import { renderRetryButton } from "../../utils/load-state.js";
 // MDI icons only this view uses; utils/icons.ts has the shared ones
 const vmIdIcon =
   "M9,7H11V15H9V7M13,7H15V15H13V7M5,3H19A2,2 0 0,1 21,5V19A2,2 0 0,1 19,21H5A2,2 0 0,1 3,19V5A2,2 0 0,1 5,3M5,5V19H19V5H5Z";
+const mdiInformationOutline =
+  "M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z";
 
 function renderIcon(path: string) {
   return html`<svg viewBox="0 0 24 24"><path d=${path} /></svg>`;
@@ -104,6 +106,42 @@ export class ProxmoxConfigureView extends LitElement {
       .error-text {
         font-size: 0.875rem;
         color: var(--ha-error-color, #db4437);
+      }
+
+      /* Last on the step, and at its foot when the step is short, so it is
+         next to the Next it explains */
+      .next-hint {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        width: 100%;
+        max-width: 500px;
+        margin-top: auto;
+        font-size: 0.875rem;
+        line-height: 1.4;
+        color: var(--ha-secondary-text-color, #727272);
+        overflow-wrap: anywhere;
+      }
+
+      /* The live region is always there, so it is in place before it says
+         anything; empty, it takes no room */
+      .next-hint > * {
+        margin-top: 1.5rem;
+      }
+
+      .next-hint svg {
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+        fill: currentColor;
+      }
+
+      .next-hint p {
+        margin: 0;
+      }
+
+      .next-hint p + p {
+        margin-top: 0.25rem;
       }
     `,
     importStorageStyles,
@@ -441,7 +479,11 @@ export class ProxmoxConfigureView extends LitElement {
         )}
         <div class="config-card">
           <!-- Empty while trying again, so the same failure is read out again -->
-          <p class="error-text" role="alert" style="overflow-wrap: anywhere;">
+          <p
+            class="error-text"
+            data-focus-alert
+            style="overflow-wrap: anywhere;"
+          >
             ${this._retrying ? "" : error.message}
           </p>
           ${renderErrorHelp()}
@@ -561,9 +603,14 @@ export class ProxmoxConfigureView extends LitElement {
               lookup.storages.length === 0)
               ? // Next needs storage for the VM disk, so say how to get one.
                 // Like Refresh storage, retrying waits while Import is enabled.
-                // Try again stays, busy, while it reads; the alert is empty
-                // meanwhile, so the same result is read out again.
-                html`<p class="error-text" role="alert">
+                // Only what Try again finds takes the focus; a lookup nobody
+                // asked for is said near Next. Try again stays, busy, while it
+                // reads; the text is empty meanwhile, so the same result is
+                // read out again.
+                html`<p
+                    class="error-text"
+                    ?data-focus-alert=${lookup.askedFrom === "storage"}
+                  >
                     ${lookup.reloadFrom === "storage"
                       ? ""
                       : localize(
@@ -622,9 +669,13 @@ export class ProxmoxConfigureView extends LitElement {
                     lookup.bridgesNode === lookup.selectedNode &&
                     !lookup.error)
                     ? // A lookup error already offers its own retry above.
-                      // Empty while trying again, so the same result is read
-                      // out again.
-                      html`<p class="error-text" role="alert">
+                      // Like the storage one, it takes the focus only when
+                      // Try again finds it, and is empty while trying again,
+                      // so the same result is read out again.
+                      html`<p
+                          class="error-text"
+                          ?data-focus-alert=${lookup.askedFrom === "bridges"}
+                        >
                           ${lookup.reloadFrom === "bridges"
                             ? ""
                             : lookup.selectedNode
@@ -704,11 +755,64 @@ export class ProxmoxConfigureView extends LitElement {
         </wa-input>
       </wa-details>
       ${this._checkError
-        ? html`<p class="error-text" role="alert">
+        ? html`<p class="error-text" data-focus-alert>
             ${this._checkError.message}
           </p>`
         : ""}
+      <div class="next-hint" role="status">${this._renderNextHint()}</div>
     `;
+  }
+
+  /**
+   * What the latest lookup found missing that Next needs. The disabled
+   * button can't say, and the section that does may be scrolled away.
+   */
+  private _nextHints(): string[] {
+    const lookup = this._lookup;
+    if (!lookup.loaded) return [];
+    const node = lookup.selectedNode;
+    if (!node) {
+      return [
+        localize("views.proxmox.proxmox_configure_view.next_hint_no_node"),
+      ];
+    }
+    const hints: string[] = [];
+    if (lookup.storagesNode === node && lookup.storages.length === 0) {
+      hints.push(
+        localize("views.proxmox.proxmox_configure_view.next_hint_no_storage", {
+          node,
+        })
+      );
+    }
+    if (lookup.bridgesNode === node && lookup.bridges.length === 0) {
+      hints.push(
+        localize("views.proxmox.proxmox_configure_view.next_hint_no_bridge", {
+          node,
+        })
+      );
+    }
+    if (lookup.storagesNode === node && !lookup.importStorage.ready) {
+      hints.push(
+        localize(
+          "views.proxmox.proxmox_configure_view.next_hint_no_import_storage",
+          { node }
+        )
+      );
+    }
+    return hints;
+  }
+
+  /**
+   * A polite status, so a lookup that finishes while someone types in the
+   * form says what it found without taking the focus from them
+   */
+  private _renderNextHint() {
+    const hints = this._nextHints();
+    if (!hints.length) return "";
+    return html`<svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d=${mdiInformationOutline} />
+      </svg>
+      <div>${hints.map((hint) => html`<p>${hint}</p>`)}</div>`;
   }
 }
 

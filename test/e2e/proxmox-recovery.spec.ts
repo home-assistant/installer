@@ -102,16 +102,16 @@ async function finishRecovery(page: Page, { retried = false } = {}) {
   );
   if (retried) {
     // Try again stays, busy and focused, until the lookups are back; the
-    // alert is empty meanwhile, so the same failure would be read out again
+    // error is empty meanwhile, so the same failure would be read out again
     const retry = view.getByRole("button", { name: "Try again", exact: true });
     await expect(view.locator("wa-button.load-retry")).toHaveAttribute(
       "loading",
       ""
     );
     await expect(retry).toBeFocused();
-    await expect(view.getByRole("alert")).toHaveText("");
+    await expect(view.locator("[data-focus-alert]")).toHaveText("");
   } else {
-    await expect(view.getByRole("alert")).toHaveCount(0);
+    await expect(view.locator("[data-focus-alert]")).toHaveCount(0);
     await expect(view).toContainText("Loading nodes");
   }
   await expect(next).toBeDisabled();
@@ -146,10 +146,13 @@ test.describe("Proxmox configuration recovery", () => {
     await mockLookupFailure(page, false);
     await connect(page);
     const view = page.locator("proxmox-configure-view");
-    // The view shows the safe message for the code, not the remote text
-    await expect(view.getByRole("alert")).toHaveText(
+    // The view shows the safe message for the code, not the remote text,
+    // and focuses it to read it out
+    const error = view.locator("[data-focus-alert]");
+    await expect(error).toHaveText(
       "Proxmox could not complete the request. Check the server, account permissions, and connection."
     );
+    await expect(error).toBeFocused();
     await expect(
       page.getByRole("button", { name: "Next", exact: true })
     ).toBeDisabled();
@@ -166,7 +169,7 @@ test.describe("Proxmox configuration recovery", () => {
     await mockLookupFailure(page, true);
     await connect(page);
     const view = page.locator("proxmox-configure-view");
-    await expect(view.getByRole("alert")).toHaveText(
+    await expect(view.locator("[data-focus-alert]")).toHaveText(
       "Your Proxmox session expired. Reconnect to Proxmox to continue."
     );
     await expect(

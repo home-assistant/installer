@@ -261,7 +261,9 @@ describe("Proxmox bridge selection", () => {
         throw new Error(`Unexpected command: ${cmd}`);
       });
       const el = await mount();
-      await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
+      await waitUntil(
+        () => !!el.shadowRoot!.querySelector("[data-focus-alert]")
+      );
       await settle();
       expect(wizardState.getState().selections.proxmoxVlanTag).to.equal(42);
       expect(wizardState.getState().selections.proxmoxConfigureReady).to.be
@@ -325,7 +327,7 @@ describe("Proxmox bridge selection", () => {
     let bridges: ProxmoxBridge[] = [];
     mockNetworks(() => bridges);
     const el = await mount();
-    await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
+    await waitUntil(() => !!el.shadowRoot!.querySelector(".error-text"));
     expect(wizardState.getState().selections.proxmoxBridge).to.equal("");
     expect(wizardState.getState().selections.proxmoxBridgeReady).to.be.false;
     expect(
@@ -349,7 +351,7 @@ describe("Proxmox bridge selection", () => {
     ) as HTMLElement & {
       loading: boolean;
     };
-    const alert = el.shadowRoot!.querySelector("[role=alert]")!;
+    const message = el.shadowRoot!.querySelector(".error-text")!;
 
     lookup = deferred<ProxmoxBridge[]>();
     retry.focus();
@@ -359,7 +361,7 @@ describe("Proxmox bridge selection", () => {
     expect(retry.loading).to.be.true;
     expect(el.shadowRoot!.activeElement).to.equal(retry);
     // Empty meanwhile, so the same result is read out again
-    expect(alert.textContent!.trim()).to.equal("");
+    expect(message.textContent!.trim()).to.equal("");
 
     lookup.resolve([bridge("vmbr0")]);
     await ready();
@@ -463,9 +465,9 @@ describe("Proxmox bridge selection", () => {
         throw new Error(`Unexpected command: ${cmd}`);
       });
       const el = await mount();
-      await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
+      await waitUntil(() => !!el.shadowRoot!.querySelector(".error-text"));
       expect(
-        el.shadowRoot!.querySelector("[role=alert]")!.textContent
+        el.shadowRoot!.querySelector(".error-text")!.textContent
       ).to.contain("No online Proxmox nodes found.");
       expect(wizardState.getState().selections.proxmoxBridgeReady).to.be.false;
       expect(networkRequests).to.equal(0);

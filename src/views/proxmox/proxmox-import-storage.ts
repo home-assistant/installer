@@ -73,6 +73,8 @@ function rememberImportChange(serverUrl: string, storage: string) {
  * offers to enable Import on a directory storage, once the user agrees.
  *
  * It renders into the view, so the view's alerts and focus handling cover it.
+ * Only Enable Import failing takes the focus. The view says near Next that
+ * the section stands in the way, without moving the focus.
  */
 export class ProxmoxImportStorage {
   /** The node has active storage with room that already accepts Import. */
@@ -305,7 +307,9 @@ export class ProxmoxImportStorage {
                   )}
                 </p>`}
           ${this.error
-            ? html`<p class="error-text" role="alert">${this.error.message}</p>
+            ? html`<p class="error-text" data-focus-alert>
+                  ${this.error.message}
+                </p>
                 <p class="setting-description">
                   ${localize(
                     "views.proxmox.proxmox_import_storage.check_storage_permissions_and_try_again"

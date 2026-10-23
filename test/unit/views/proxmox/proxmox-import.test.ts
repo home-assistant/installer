@@ -343,7 +343,7 @@ describe("Proxmox import consent", () => {
       const el = await mount();
       await approve(el);
       expect(
-        el.shadowRoot!.querySelector("[role=alert]")!.textContent
+        el.shadowRoot!.querySelector("[data-focus-alert]")!.textContent
       ).to.contain(shown);
       expect(el.shadowRoot!.textContent).not.to.contain("raw server response");
       expect(el.shadowRoot!.querySelectorAll("wa-select").length).to.equal(3);
@@ -378,7 +378,7 @@ describe("Proxmox import consent", () => {
       throw ipcError("proxmox_api", "storage refresh denied", true);
     };
     await approve(el);
-    expect(el.shadowRoot!.querySelector("[role=alert]")).to.exist;
+    expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.exist;
     expect(wizardState.getState().selections.proxmoxImportReady).to.be.false;
     // A failed read after the write does not forget the accepted change
     expect(
@@ -436,8 +436,9 @@ describe("Proxmox import consent", () => {
           expect(wizardState.getState()).to.equal(before);
         }
         expect(reads).to.equal(beforeReads);
-        expect(el.shadowRoot!.querySelector(".import-setting [role=alert]")).to
-          .be.null;
+        expect(
+          el.shadowRoot!.querySelector(".import-setting [data-focus-alert]")
+        ).to.be.null;
       });
     }
   }

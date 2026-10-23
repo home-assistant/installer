@@ -67,6 +67,11 @@ export class ProxmoxTargetLookup implements ReactiveController {
   bridgesNode = "";
   /** Where the running lookup was started from, see `ReloadFrom` */
   reloadFrom?: ReloadFrom;
+  /**
+   * Where the latest lookup was started from, still known once it finished.
+   * What it found there was asked for; what it found anywhere else wasn't.
+   */
+  askedFrom?: ReloadFrom;
   /** Whether the node's storage accepts Import, and the consent to enable it */
   readonly importStorage = new ProxmoxImportStorage(this);
 
@@ -147,6 +152,7 @@ export class ProxmoxTargetLookup implements ReactiveController {
   async loadNodes(from?: "bridges") {
     this.loadingNodes = true;
     this.reloadFrom = from;
+    this.askedFrom = from;
     this.error = null;
     this.sessionExpired = false;
     this.requestUpdate();
@@ -236,6 +242,7 @@ export class ProxmoxTargetLookup implements ReactiveController {
 
     this.loadingStorage = true;
     this.reloadFrom = from;
+    this.askedFrom = from;
     // A new lookup replaces the previous one's error; an expired session
     // never gets here, since it clears the session first
     this.error = null;

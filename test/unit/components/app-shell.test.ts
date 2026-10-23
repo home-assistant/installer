@@ -206,7 +206,7 @@ describe("app-shell", () => {
       () =>
         !!el
           .shadowRoot!.querySelector("proxmox-configure-view")!
-          .shadowRoot!.querySelector("[role=alert]")
+          .shadowRoot!.querySelector("[data-focus-alert]")
     );
     expect(shellOf(el).nextDisabled).to.be.true;
     mockTauriIpc((cmd) => {
@@ -256,7 +256,7 @@ describe("app-shell", () => {
     expect(
       shellOf(el)
         .querySelector("proxmox-configure-view")!
-        .shadowRoot!.querySelector("[role=alert]")!.textContent
+        .shadowRoot!.querySelector("[data-focus-alert]")!.textContent
     ).to.contain("VM ID 100 can't be used.");
 
     check = deferred<unknown>();

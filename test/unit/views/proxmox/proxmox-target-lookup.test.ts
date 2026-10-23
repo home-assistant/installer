@@ -213,6 +213,24 @@ describe("ProxmoxTargetLookup", () => {
     expect(lookup.loadingNodes).to.be.false;
   });
 
+  it("remembers where the latest lookup was started from once it is done", async () => {
+    const { lookup } = createLookup();
+    await lookup.loadNodes();
+    expect(lookup.askedFrom).to.be.undefined;
+
+    await lookup.loadStorage("storage");
+    expect(lookup.reloadFrom).to.be.undefined;
+    expect(lookup.askedFrom).to.equal("storage");
+
+    // Another node is looked up because of the choice, not asked for
+    lookup.selectNode("pve");
+    await lookup.loadStorage();
+    expect(lookup.askedFrom).to.be.undefined;
+
+    await lookup.loadNodes("bridges");
+    expect(lookup.askedFrom).to.equal("bridges");
+  });
+
   for (const [name, accepted, ready] of [
     [
       "a directory",

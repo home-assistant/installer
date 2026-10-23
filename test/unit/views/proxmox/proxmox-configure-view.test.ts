@@ -486,14 +486,14 @@ describe("proxmox-configure-view", () => {
       wizardState.setSelection("proxmoxStorage", "local-lvm");
       const el = await mount();
 
-      const alert = el.shadowRoot!.querySelector("[role=alert]")!;
-      expect(alert.textContent).to.contain(
+      const message = el.shadowRoot!.querySelector(".error-text")!;
+      expect(message.textContent).to.contain(
         "No active storage on this node can hold the VM disk."
       );
-      expect(alert.textContent).to.contain(
+      expect(message.textContent).to.contain(
         'Enable the "Disk image" content type'
       );
-      expect(alert.textContent).to.contain("choose another node");
+      expect(message.textContent).to.contain("choose another node");
       // Next needs a storage, so the restored one may not stay chosen
       expect(wizardState.getState().selections.proxmoxStorage).to.equal("");
       const storageSelect = el.shadowRoot!.querySelectorAll("wa-select")[1];
@@ -502,7 +502,7 @@ describe("proxmox-configure-view", () => {
 
     it("reads the storage again from Try again", async () => {
       const el = await mount();
-      await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
+      await waitUntil(() => !!el.shadowRoot!.querySelector(".error-text"));
 
       const lookup = deferred<ProxmoxStorage[]>();
       storages = lookup.promise;
@@ -531,7 +531,7 @@ describe("proxmox-configure-view", () => {
         "proxmox_list_storage",
         "proxmox_list_bridges",
       ]);
-      expect(el.shadowRoot!.querySelector("[role=alert]")).to.be.null;
+      expect(el.shadowRoot!.querySelector(".error-text")).to.be.null;
       const storageSelect = el.shadowRoot!.querySelectorAll("wa-select")[1];
       expect(storageSelect.disabled).to.be.false;
       expect(storageSelect.value).to.equal("local-lvm");
@@ -837,7 +837,7 @@ describe("proxmox-configure-view", () => {
       if (outcome === "replaced session" || outcome === "detached view") {
         expect(selections.proxmoxSession).to.equal(session);
         expect(selections.proxmoxConnected).to.be.true;
-        expect(el.shadowRoot!.querySelector("[role=alert]")).to.be.null;
+        expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.be.null;
       } else {
         expect(selections.proxmoxSession).to.be.undefined;
         expect(selections.proxmoxConnected).to.be.false;
@@ -967,7 +967,9 @@ describe("proxmox-configure-view", () => {
       const el = await fixture<ProxmoxConfigureView>(html`
         <proxmox-configure-view></proxmox-configure-view>
       `);
-      await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
+      await waitUntil(
+        () => !!el.shadowRoot!.querySelector("[data-focus-alert]")
+      );
       // Remote details stay out of the view; the code picks a safe message
       expect(el.shadowRoot!.textContent).to.contain("account permissions");
       expect(wizardState.getState().selections.proxmoxConfigureReady).to.be
@@ -987,7 +989,7 @@ describe("proxmox-configure-view", () => {
       expect(el.shadowRoot!.querySelector("wa-button") === retry).to.be.true;
       expect(retry.hasAttribute("loading")).to.be.true;
       expect(
-        el.shadowRoot!.querySelector("[role=alert]")!.textContent!.trim()
+        el.shadowRoot!.querySelector("[data-focus-alert]")!.textContent!.trim()
       ).to.equal("");
       expect(el.shadowRoot!.activeElement === retry).to.be.true;
       expect(wizardState.getState().selections.proxmoxConfigureReady).to.be
@@ -1014,7 +1016,7 @@ describe("proxmox-configure-view", () => {
       expect(selections.cpuCores).to.equal(8);
       expect(selections.memoryMb).to.equal(8192);
       expect(selections.diskSizeGb).to.equal(64);
-      expect(el.shadowRoot!.querySelector("[role=alert]")).to.be.null;
+      expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.be.null;
     });
 
     it(`offers reconnect when ${failingCommand} rejects an expired session`, async () => {
@@ -1039,7 +1041,9 @@ describe("proxmox-configure-view", () => {
       const el = await fixture<ProxmoxConfigureView>(html`
         <proxmox-configure-view></proxmox-configure-view>
       `);
-      await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
+      await waitUntil(
+        () => !!el.shadowRoot!.querySelector("[data-focus-alert]")
+      );
       expect(wizardState.getState().selections.proxmoxSession).to.be.undefined;
       expect(wizardState.getState().selections.proxmoxConnected).to.be.false;
       if (failingCommand !== "proxmox_list_storage") {
@@ -1185,7 +1189,7 @@ describe("proxmox-configure-view", () => {
       vm_id: 100,
     });
     expect(
-      el.shadowRoot!.querySelector("[role=alert]")!.textContent
+      el.shadowRoot!.querySelector("[data-focus-alert]")!.textContent
     ).to.contain("VM ID 100 can't be used. Choose a different ID.");
 
     // The form stays, so the setting can be fixed right here
@@ -1195,8 +1199,8 @@ describe("proxmox-configure-view", () => {
     vmId.value = "101";
     vmId.dispatchEvent(new Event("input"));
     await el.updateComplete;
-    expect(el.shadowRoot!.querySelector("[role=alert]")?.textContent).to.be
-      .undefined;
+    expect(el.shadowRoot!.querySelector("[data-focus-alert]")?.textContent).to
+      .be.undefined;
 
     rejection = undefined;
     expect(await el.check()).to.be.true;
@@ -1248,7 +1252,7 @@ describe("proxmox-configure-view", () => {
     const el = await fixture<ProxmoxConfigureView>(html`
       <proxmox-configure-view></proxmox-configure-view>
     `);
-    await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
+    await waitUntil(() => !!el.shadowRoot!.querySelector("[data-focus-alert]"));
 
     // The pinned session can never succeed again, so it is dropped
     const selections = wizardState.getState().selections;
@@ -1276,7 +1280,7 @@ describe("proxmox-configure-view", () => {
     const el = await fixture<ProxmoxConfigureView>(html`
       <proxmox-configure-view></proxmox-configure-view>
     `);
-    await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
+    await waitUntil(() => !!el.shadowRoot!.querySelector("[data-focus-alert]"));
     el.shadowRoot!.querySelector("wa-button")!.click();
     el.remove();
     expect(wizardState.currentStep!.id).to.equal("connection");
