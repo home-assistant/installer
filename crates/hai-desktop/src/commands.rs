@@ -104,6 +104,40 @@ async fn reuse_download<P: ProgressCallback>(
     }
 }
 
+/// Download `image` into a new temporary image in the cache, or reuse this
+/// session's download of it, and unpack it there.
+async fn download_release_image<B, P>(
+    backend: &B,
+    image: &HaosImage,
+    format: ImageFormat,
+    callback: &P,
+    downloads: &SessionDownload,
+) -> Result<TemporaryImage, CommandError>
+where
+    B: ReleaseSource,
+    P: ProgressCallback,
+{
+    let cache_dir = backend.cache_dir().map_err(CommandError::from)?;
+    let temporary_image = TemporaryImage::new(&cache_dir, format).map_err(CommandError::from)?;
+    let compressed_path = temporary_image.archive_path();
+
+    if !reuse_download(downloads, image, &compressed_path, callback).await? {
+        backend
+            .download_image(image, &compressed_path, callback)
+            .await
+            .map_err(CommandError::from)?;
+        keep_download(downloads, &cache_dir, image, format, &compressed_path);
+    }
+
+    // Unpacking takes a while; a stop right after the download shouldn't wait for it
+    check_cancelled(callback)?;
+    backend
+        .extract_temporary_image(&temporary_image, callback)
+        .await
+        .map_err(CommandError::from)?;
+    Ok(temporary_image)
+}
+
 /// Keep the download of `image` at `path` for a retry, in a folder of its own so
 /// it outlives this attempt's. Not keeping it only means a retry downloads again.
 ///
@@ -113,9 +147,10 @@ fn keep_download(
     downloads: &SessionDownload,
     cache_dir: &std::path::Path,
     image: &HaosImage,
+    format: ImageFormat,
     path: &std::path::Path,
 ) {
-    let Ok(kept) = TemporaryImage::new(cache_dir, ImageFormat::Raw) else {
+    let Ok(kept) = TemporaryImage::new(cache_dir, format) else {
         return;
     };
     if std::fs::hard_link(path, kept.archive_path()).is_ok() {
@@ -390,28 +425,9 @@ where
         message: "Starting download...".to_string(),
     });
 
-    // Get cache directory and download
-    let cache_dir = backend.cache_dir().map_err(CommandError::from)?;
     let temporary_image =
-        TemporaryImage::new(&cache_dir, ImageFormat::Raw).map_err(CommandError::from)?;
-    let compressed_path = temporary_image.archive_path();
-
-    if !reuse_download(downloads, &image, &compressed_path, callback).await? {
-        backend
-            .download_image(&image, &compressed_path, callback)
-            .await
-            .map_err(CommandError::from)?;
-        keep_download(downloads, &cache_dir, &image, &compressed_path);
-    }
-
-    // Extract the image
+        download_release_image(backend, &image, ImageFormat::Raw, callback, downloads).await?;
     let extracted_path = temporary_image.path();
-
-    check_cancelled(callback)?;
-    backend
-        .extract_temporary_image(&temporary_image, callback)
-        .await
-        .map_err(CommandError::from)?;
 
     let mut image = Image::new(&extracted_path);
     if let Some(wifi) = request.wifi.clone() {
@@ -614,23 +630,8 @@ where
         hai_core::Error::InvalidConfig("No compatible virtual-machine image was found.".into())
     })?;
 
-    let cache_dir = backend.cache_dir().map_err(CommandError::from)?;
     let temporary_image =
-        TemporaryImage::new(&cache_dir, ImageFormat::Qcow2).map_err(CommandError::from)?;
-    let compressed_path = temporary_image.archive_path();
-
-    if !reuse_download(downloads, image, &compressed_path, callback).await? {
-        backend
-            .download_image(image, &compressed_path, callback)
-            .await
-            .map_err(CommandError::from)?;
-        keep_download(downloads, &cache_dir, image, &compressed_path);
-    }
-
-    backend
-        .extract_temporary_image(&temporary_image, callback)
-        .await
-        .map_err(CommandError::from)?;
+        download_release_image(backend, image, ImageFormat::Qcow2, callback, downloads).await?;
 
     callback.on_progress(FlashProgress {
         stage: FlashStage::Complete,
