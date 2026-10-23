@@ -18,6 +18,8 @@ use std::sync::LazyLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
+pub(crate) mod sha256sums;
+
 /// Files owned by one installation attempt, never paths supplied by a caller.
 /// Clones keep background extraction alive until its file handles are closed.
 #[derive(Clone, Debug)]
@@ -259,7 +261,8 @@ const HAOS_RELEASES_API: &str =
     "https://api.github.com/repos/home-assistant/operating-system/releases";
 
 /// Images are only ever downloaded from the official HAOS repository.
-const HAOS_DOWNLOADS: &str = "https://github.com/home-assistant/operating-system/releases/download";
+pub(crate) const HAOS_DOWNLOADS: &str =
+    "https://github.com/home-assistant/operating-system/releases/download";
 
 /// User agent for API requests
 const USER_AGENT: &str = concat!("HomeAssistantInstaller/", env!("CARGO_PKG_VERSION"));
@@ -510,9 +513,12 @@ fn rate_limit_wait(headers: &reqwest::header::HeaderMap, now: u64) -> u64 {
     retry_after.max(reset).max(60)
 }
 
+/// The release with each image's digest from its verified `SHA256SUMS`,
+/// whose files are at `<downloads_url>/<version>/<file>`.
 async fn fetch_cached_release(
     cache: &Mutex<HashMap<String, HaosRelease>>,
     api_base_url: &str,
+    downloads_url: &str,
     version: &str,
 ) -> Result<HaosRelease> {
     // Serialize misses so concurrent installations do not spend multiple API requests.
@@ -520,14 +526,20 @@ async fn fetch_cached_release(
     if let Some(release) = cache.get(version) {
         return Ok(release.clone());
     }
-    let release = fetch_release_from_api(api_base_url, version).await?;
+    let mut release = fetch_release_from_api(api_base_url, version).await?;
+    let sums = sha256sums::verified(shared_client()?, downloads_url, version).await?;
+    for image in &mut release.images {
+        // Without a digest, the download is refused
+        let name = image.download_url.rsplit('/').next();
+        image.digest = name.and_then(|name| sums.get(name)).cloned();
+    }
     cache.insert(version.to_string(), release.clone());
     Ok(release)
 }
 
 /// Fetch a specific HAOS release by version
 async fn fetch_release(version: &str) -> Result<HaosRelease> {
-    fetch_cached_release(&RELEASE_CACHE, HAOS_RELEASES_API, version).await
+    fetch_cached_release(&RELEASE_CACHE, HAOS_RELEASES_API, HAOS_DOWNLOADS, version).await
 }
 
 /// Fetch HAOS release info for a specific version (or "latest")
@@ -582,7 +594,7 @@ fn parse_github_release(release: GitHubRelease, version: &str) -> Result<HaosRel
             format,
             download_url: asset.browser_download_url,
             size: asset.size,
-            digest: asset.digest,
+            digest: None,
         });
     }
 
@@ -622,12 +634,13 @@ pub fn parse_board_from_filename(filename: &str, version: &str) -> Result<String
     parse_board_from_filename_with_suffix(filename, version, ".img.xz")
 }
 
-/// Require the SHA-256 digest supplied by GitHub's release metadata over HTTPS.
-/// Missing/unknown digests must never downgrade an installation to an XZ-only check.
+/// Require the image's verified SHA-256 digest. Missing/unknown digests must
+/// never downgrade an installation to an XZ-only check.
 pub(crate) fn expected_sha256(image: &HaosImage) -> Result<[u8; 32]> {
     let digest = image.digest.as_deref().ok_or_else(|| {
         Error::VerificationFailed(
-            "GitHub did not provide a SHA-256 digest for this image; installation stopped. Try again later.".to_string(),
+            "The release's verified checksums don't list this image; installation stopped."
+                .to_string(),
         )
     })?;
     let mut expected = [0; 32];
@@ -636,8 +649,7 @@ pub(crate) fn expected_sha256(image: &HaosImage) -> Result<[u8; 32]> {
         .is_some_and(|value| hex::decode_to_slice(value, &mut expected).is_ok());
     if !valid {
         return Err(Error::VerificationFailed(
-            "GitHub provided an invalid or unsupported image digest; installation stopped."
-                .to_string(),
+            "The image has an invalid or unsupported digest; installation stopped.".to_string(),
         ));
     }
     Ok(expected)
@@ -1869,59 +1881,48 @@ mod tests {
         request.assert_async().await;
     }
 
-    #[test]
-    fn release_metadata_preserves_unusable_digests_for_explicit_rejection() {
-        for digest in [
-            None,
-            Some(serde_json::Value::Null),
-            Some(serde_json::json!("sha256:bad")),
-        ] {
-            let mut asset = serde_json::json!({ "name": "haos_ova-18.3.qcow2.xz", "size": 100, "browser_download_url": "https://github.com/home-assistant/operating-system/releases/download/18.3/haos_ova-18.3.qcow2.xz" });
-            if let Some(digest) = digest {
-                asset["digest"] = digest;
-            }
-            let release: GitHubRelease =
-                serde_json::from_value(serde_json::json!({"tag_name": "18.3", "assets": [asset]}))
-                    .unwrap();
-            let release = parse_github_release(release, "18.3").unwrap();
-            assert!(
-                expected_sha256(release.image_for("ova", ImageFormat::Qcow2).unwrap()).is_err()
-            );
-        }
-    }
-
     #[tokio::test]
-    async fn release_digest_survives_metadata_parsing_and_controls_download() {
-        let data = b"published compressed bytes";
+    async fn release_digests_come_from_the_verified_sums_and_control_download() {
+        let data = b"what GitHub's metadata vouches for";
         let mut server = mockito::Server::new_async().await;
         let image = image_for_data(
             &format!("{HAOS_DOWNLOADS}/18.3/haos_ova-18.3.qcow2.xz"),
             data,
         );
-        let metadata = server.mock("GET", "/tags/18.3").with_header("content-type", "application/json").with_body(serde_json::json!({
-            "tag_name": "18.3", "assets": [{ "name": "haos_ova-18.3.qcow2.xz", "size": data.len(), "browser_download_url": image.download_url, "digest": image.digest }]
+        let unlisted = format!("{HAOS_DOWNLOADS}/18.3/haos_tinker-18.3.img.xz");
+        server.mock("GET", "/tags/18.3").with_header("content-type", "application/json").with_body(serde_json::json!({
+            "tag_name": "18.3", "assets": [
+                { "name": "haos_ova-18.3.qcow2.xz", "size": data.len(), "browser_download_url": image.download_url, "digest": image.digest },
+                { "name": "haos_tinker-18.3.img.xz", "size": data.len(), "browser_download_url": unlisted, "digest": image.digest },
+            ]
         }).to_string()).create_async().await;
-        let asset = server
+        server
             .mock("GET", "/image.xz")
             .with_body(data)
             .create_async()
             .await;
-        let release = fetch_release_from_api(&server.url(), "18.3").await.unwrap();
+        let url = server.url();
+
+        let release = fetch_cached_release(&Mutex::new(HashMap::new()), &url, &url, "18.3")
+            .await
+            .unwrap();
+
+        let tinker = release.image_for("tinker", ImageFormat::Raw).unwrap();
+        assert_eq!(tinker.digest, None);
         let mut selected = release
             .image_for("ova", ImageFormat::Qcow2)
             .unwrap()
             .clone();
-        assert_eq!(selected.digest, image.digest);
-        selected.download_url = format!("{}/image.xz", server.url());
+        assert_eq!(
+            selected.digest.as_deref(),
+            Some("sha256:fae6a728768cc10aff60d4820bfcd40d64cd77fab82c8bd92af13b3d9d414090")
+        );
+        selected.download_url = format!("{url}/image.xz");
         let directory = tempfile::tempdir().unwrap();
         let destination = directory.path().join("image.xz");
-        std::fs::write(&destination, b"same name from a previous download").unwrap();
-        download_image(&selected, &destination, &crate::NoOpProgress)
-            .await
-            .unwrap();
-        assert_eq!(std::fs::read(destination).unwrap(), data);
-        metadata.assert_async().await;
-        asset.assert_async().await;
+        let result = download_image(&selected, &destination, &crate::NoOpProgress).await;
+        assert!(matches!(result, Err(Error::ChecksumMismatch { .. })));
+        assert!(!destination.exists());
     }
 
     fn stable_with(boards: &[(&str, &str)]) -> StableVersionInfo {
@@ -2175,6 +2176,7 @@ mod tests {
     #[tokio::test]
     async fn release_cache_reuses_success_per_version_and_retries_failures() {
         let mut server = mockito::Server::new_async().await;
+        let url = server.url();
         let cache = Mutex::new(HashMap::new());
         let failed = server
             .mock("GET", "/tags/18.3")
@@ -2182,45 +2184,50 @@ mod tests {
             .expect(1)
             .create_async()
             .await;
-        assert!(fetch_cached_release(&cache, &server.url(), "18.3")
+        assert!(fetch_cached_release(&cache, &url, &url, "18.3")
             .await
             .is_err());
         failed.assert_async().await;
         failed.remove_async().await;
-        for version in ["18.3", "18.4"] {
-            let digest = format!("sha256:{}", "ab".repeat(32));
-            let download_url = format!("{HAOS_DOWNLOADS}/{version}/haos_rpi5-64-{version}.img.xz");
-            let mock = server
-                .mock("GET", format!("/tags/{version}").as_str())
-                .with_status(200)
-                .with_body(
-                    serde_json::json!({
-                        "tag_name": version,
-                        "assets": [{
-                            "name": format!("haos_rpi5-64-{version}.img.xz"),
-                            "size": 123,
-                            "browser_download_url": download_url,
-                            "digest": digest,
-                        }],
-                    })
-                    .to_string(),
-                )
-                .expect(1)
-                .create_async()
-                .await;
-            let url = server.url();
-            let (first, second) = tokio::join!(
-                fetch_cached_release(&cache, &url, version),
-                fetch_cached_release(&cache, &url, version)
-            );
-            for release in [first.unwrap(), second.unwrap()] {
-                assert_eq!(release.version, version);
-                let image = release.image_for("rpi5-64", ImageFormat::Raw).unwrap();
-                assert_eq!(image.download_url, download_url);
-                assert_eq!(image.digest.as_deref(), Some(digest.as_str()));
-            }
-            mock.assert_async().await;
+        let download_url = format!("{HAOS_DOWNLOADS}/18.3/haos_rpi5-64-18.3.img.xz");
+        let mock = server
+            .mock("GET", "/tags/18.3")
+            .with_status(200)
+            .with_body(
+                serde_json::json!({
+                    "tag_name": "18.3",
+                    "assets": [{
+                        "name": "haos_rpi5-64-18.3.img.xz",
+                        "size": 123,
+                        "browser_download_url": download_url,
+                    }],
+                })
+                .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let (first, second) = tokio::join!(
+            fetch_cached_release(&cache, &url, &url, "18.3"),
+            fetch_cached_release(&cache, &url, &url, "18.3")
+        );
+        for release in [first.unwrap(), second.unwrap()] {
+            assert_eq!(release.version, "18.3");
+            let image = release.image_for("rpi5-64", ImageFormat::Raw).unwrap();
+            assert_eq!(image.download_url, download_url);
+            assert!(image.digest.is_some());
         }
+        mock.assert_async().await;
+        let other = server
+            .mock("GET", "/tags/18.4")
+            .with_status(404)
+            .expect(1)
+            .create_async()
+            .await;
+        assert!(fetch_cached_release(&cache, &url, &url, "18.4")
+            .await
+            .is_err());
+        other.assert_async().await;
     }
 
     #[test]
@@ -2571,20 +2578,17 @@ mod tests {
             assets: vec![
                 GitHubAsset {
                     name: "haos_rpi5-64-14.2.img.xz".to_string(),
-                    digest: None,
                     size: 500_000_000,
                     browser_download_url: "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz".to_string(),
                 },
                 GitHubAsset {
                     name: "haos_ova-14.2.qcow2.xz".to_string(),
-                    digest: None,
                     size: 600_000_000,
                     browser_download_url: "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_ova-14.2.qcow2.xz".to_string(),
                 },
                 // Should be ignored (wrong extension)
                 GitHubAsset {
                     name: "haos_rpi5-64-14.2.img.xz.sha256".to_string(),
-                    digest: None,
                     size: 100,
                     browser_download_url: "https://github.com/download/sha256".to_string(),
                 },
@@ -2610,7 +2614,6 @@ mod tests {
     fn release_downloads_come_only_from_the_requested_official_release() {
         let official = |name: &str| GitHubAsset {
             name: name.to_string(),
-            digest: None,
             size: 1,
             browser_download_url: format!("{HAOS_DOWNLOADS}/14.2/{name}"),
         };
@@ -3054,7 +3057,6 @@ mod tests {
             tag_name: "14.2".to_string(),
             assets: vec![GitHubAsset {
                 name: "invalid_filename.img.xz".to_string(), // Doesn't match pattern
-                digest: None,
                 size: 500_000_000,
                 browser_download_url: "https://github.com/download/invalid.img.xz".to_string(),
             }],

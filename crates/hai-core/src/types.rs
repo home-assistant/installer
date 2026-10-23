@@ -304,7 +304,7 @@ pub struct HaosImage {
     pub download_url: String,
     /// File size in bytes
     pub size: u64,
-    /// GitHub's digest of the compressed asset. Required for installation.
+    /// Verified SHA-256 of the compressed asset. Required for installation.
     #[serde(default)]
     pub digest: Option<String>,
 }
@@ -315,7 +315,6 @@ pub struct GitHubAsset {
     pub name: String,
     pub size: u64,
     pub browser_download_url: String,
-    pub digest: Option<String>,
 }
 
 /// GitHub release from API

@@ -34,6 +34,10 @@ sha2 = "0.11"
 hex = "0.4"
 rustls = "0.23"
 rustls-platform-verifier = "0.7"
+# Verifies the Sigstore signature of each HAOS release's SHA256SUMS.
+sigstore-trust-root = { version = "0.15", default-features = false, features = ["aws-lc-rs", "tuf"] }
+sigstore-types = "0.15"
+sigstore-verify = { version = "0.15", default-features = false, features = ["aws-lc-rs"] }
 
 # Compression
 # Static, so that the build never links a liblzma that users' machines lack
