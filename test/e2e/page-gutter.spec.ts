@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { skipWifiStep } from "./fixtures.js";
 
 // The smallest window, 800 by 750, zoomed to 200% is 400 by 375. There, as on
 // a regular window, Back, the content and Cancel and Next keep one distance
@@ -82,3 +83,39 @@ for (const [width, height, gutter] of [
     });
   });
 }
+
+// A recovery label makes Next its longest, and the footer the widest, in the
+// smallest window. Back and Next go below Cancel rather than past the edge.
+test("the footer keeps a recovery label inside the smallest window", async ({
+  page,
+}) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 400, height: 375 });
+  await page.addInitScript(() =>
+    sessionStorage.setItem("hai:mock-failure", "flash-disconnected")
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Let's go" }).click();
+  await page
+    .getByRole("button", { name: "Raspberry Pi & other boards" })
+    .click();
+  const next = page.locator("wizard-shell .footer-right wa-button");
+  await page.locator("device-selection-view device-card").first().click();
+  await next.click();
+  await page.locator("drive-selection-view drive-card").first().click();
+  await next.click();
+  await skipWifiStep(page);
+  await next.click();
+  await page.locator('confirm-dialog wa-button[variant="danger"]').click();
+  await expect(next).toHaveText("Choose another drive", { timeout: 30000 });
+
+  for (const button of [
+    page.locator("wizard-shell .footer-left wa-button"),
+    page.locator("wizard-shell .back"),
+    next,
+  ]) {
+    const box = (await button.boundingBox())!;
+    expect(Math.round(box.x)).toBeGreaterThanOrEqual(16);
+    expect(Math.round(box.x + box.width)).toBeLessThanOrEqual(400 - 16);
+  }
+});

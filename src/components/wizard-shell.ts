@@ -56,8 +56,9 @@ export class WizardShell extends LitElement {
 
       .footer {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 1rem;
+        gap: 0.5rem 1rem;
         padding: 1rem var(--ha-page-gutter, 2rem);
         border-top: 1px solid var(--ha-border-color, #e0e0e0);
       }
@@ -65,7 +66,14 @@ export class WizardShell extends LitElement {
       .footer-left {
         display: flex;
         gap: 1rem;
-        margin-inline-end: auto;
+      }
+
+      /* Without room beside Cancel, Back and Next go below it together */
+      .footer-nav {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-inline-start: auto;
       }
 
       .footer-right {
@@ -190,33 +198,35 @@ export class WizardShell extends LitElement {
                 ${localize("common.cancel")}
               </wa-button>`}
         </div>
-        <wa-button
-          class="back"
-          appearance="plain"
-          @click=${this._onBack}
-          ?disabled=${this.hideBack}
-          style=${this.hideBack ? "visibility: hidden" : ""}
-        >
-          <span slot="start">←</span> ${localize("common.back")}
-        </wa-button>
-        <div class="footer-right">
-          <!-- A new label on the focused button isn't always read out -->
-          <span class="sr-only" aria-live="polite"
-            >${this.nextBusy ? this.nextLabel : ""}</span
+        <div class="footer-nav">
+          <wa-button
+            class="back"
+            appearance="plain"
+            @click=${this._onBack}
+            ?disabled=${this.hideBack}
+            style=${this.hideBack ? "visibility: hidden" : ""}
           >
-          ${!this.hideNext
-            ? html`
-                <wa-button
-                  variant="brand"
-                  appearance="accent"
-                  @click=${this._onNext}
-                  ?disabled=${this.nextDisabled}
-                  ?loading=${this.nextBusy}
-                >
-                  ${this.nextLabel}
-                </wa-button>
-              `
-            : ""}
+            <span slot="start">←</span> ${localize("common.back")}
+          </wa-button>
+          <div class="footer-right">
+            <!-- A new label on the focused button isn't always read out -->
+            <span class="sr-only" aria-live="polite"
+              >${this.nextBusy ? this.nextLabel : ""}</span
+            >
+            ${!this.hideNext
+              ? html`
+                  <wa-button
+                    variant="brand"
+                    appearance="accent"
+                    @click=${this._onNext}
+                    ?disabled=${this.nextDisabled}
+                    ?loading=${this.nextBusy}
+                  >
+                    ${this.nextLabel}
+                  </wa-button>
+                `
+              : ""}
+          </div>
         </div>
       </div>
     `;
