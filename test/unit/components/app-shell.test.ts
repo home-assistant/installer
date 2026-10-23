@@ -623,7 +623,7 @@ describe("app-shell", () => {
 
     fire(shellOf(el), "wizard-next");
     await waitForDialogOpen(el);
-    fire(dialogOf(el), "dialog-confirm");
+    fire(dialogOf(el), "dialog-primary");
     await finishDialogHide(el);
     await waitUntil(() => wizardState.currentStep?.id === "flash");
     expect(shellOf(el).querySelector("progress-view")).to.exist;
@@ -728,7 +728,7 @@ describe("app-shell", () => {
       fire(shellOf(el), "wizard-next");
       await waitForDialogOpen(el);
 
-      fire(dialogOf(el), "dialog-confirm");
+      fire(dialogOf(el), "dialog-primary");
       expect(wizardState.currentStep!.id).to.equal("confirm");
       await finishDialogHide(el);
 
@@ -747,7 +747,7 @@ describe("app-shell", () => {
     it("does not advance if the selected configuration changes while the dialog closes", async () => {
       fire(shellOf(el), "wizard-next");
       await waitForDialogOpen(el);
-      fire(dialogOf(el), "dialog-confirm");
+      fire(dialogOf(el), "dialog-primary");
       wizardState.setSelection("device", "different-device");
       await finishDialogHide(el);
       expect(wizardState.currentStep!.id).to.equal("confirm");
@@ -756,7 +756,7 @@ describe("app-shell", () => {
     it("does not advance after cancelling the dialog", async () => {
       fire(shellOf(el), "wizard-next");
       await waitForDialogOpen(el);
-      fire(dialogOf(el), "dialog-cancel");
+      fire(dialogOf(el), "dialog-secondary");
       await finishDialogHide(el);
       expect(wizardState.currentStep!.id).to.equal("confirm");
     });
@@ -858,7 +858,7 @@ describe("app-shell", () => {
       await waitForDialogOpen(el);
 
       wizardState.setSelection("driveModel", "Swapped While You Read This");
-      fire(dialogOf(el), "dialog-confirm");
+      fire(dialogOf(el), "dialog-primary");
       await finishDialogHide(el);
 
       await waitUntil(
@@ -876,7 +876,7 @@ describe("app-shell", () => {
         minimum_storage_bytes: CONNECTED.size * 2,
         recommended_storage_bytes: CONNECTED.size * 2,
       });
-      fire(dialogOf(el), "dialog-confirm");
+      fire(dialogOf(el), "dialog-primary");
       await finishDialogHide(el);
       await waitUntil(() => wizardState.currentStep?.id === "drive");
       await waitUntil(
@@ -1039,7 +1039,7 @@ describe("app-shell", () => {
 
       fire(shellOf(el), "wizard-next");
       await waitForDialogOpen(el);
-      fire(dialogOf(el), "dialog-confirm");
+      fire(dialogOf(el), "dialog-primary");
       await finishDialogHide(el);
       await waitUntil(() => wizardState.currentStep?.id === "flash");
       await el.updateComplete;

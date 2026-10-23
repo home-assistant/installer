@@ -4,12 +4,18 @@ import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import { dialogStyles } from "../utils/dialog-styles.js";
 
 /**
+ * How a dialog was closed: with its main action, or any other way. Escape,
+ * backdrop click, and the header close button count as the other way.
+ */
+export type DialogChoice = "dialog-primary" | "dialog-secondary";
+
+/**
  * A dialog built on wa-dialog (focus trap, Escape, backdrop dismiss, and
  * role="dialog"/aria-modal come for free) that reports how it was closed.
  *
- * Toggle `open`. Each action button calls `choose()` with the event it
- * reports. Escape, backdrop click, and the header close button all report
- * `dismissEvent`.
+ * Toggle `open`, and listen for `dialog-primary` / `dialog-secondary`. The
+ * main action button calls `choose("dialog-primary")` and the other one
+ * `choose("dialog-secondary")`, so every dialog reports the same two events.
  */
 export abstract class DialogBase extends LitElement {
   static styles: CSSResultGroup = [
@@ -70,9 +76,6 @@ export abstract class DialogBase extends LitElement {
   @property({ type: Boolean, reflect: true })
   open = false;
 
-  /** What Escape, backdrop click, and the header close button report */
-  protected abstract readonly dismissEvent: string;
-
   /** From wa-dialog starting to animate out until it has */
   private _closing = false;
 
@@ -124,7 +127,7 @@ export abstract class DialogBase extends LitElement {
    * second click, or a click after Escape while the dialog animates out,
    * reports nothing.
    */
-  protected choose(type: string) {
+  protected choose(type: DialogChoice) {
     if (!this.open || this._closing) return;
     this.open = false;
     this._dispatch(type);
@@ -155,7 +158,7 @@ export abstract class DialogBase extends LitElement {
       return;
     }
     this.open = false;
-    this._dispatch(this.dismissEvent);
+    this._dispatch("dialog-secondary");
   }
 
   private _setClosing(closing: boolean) {
@@ -163,7 +166,7 @@ export abstract class DialogBase extends LitElement {
     this.toggleAttribute("closing", closing);
   }
 
-  private _dispatch(type: string) {
+  private _dispatch(type: DialogChoice) {
     this.dispatchEvent(
       new CustomEvent(type, { bubbles: true, composed: true })
     );

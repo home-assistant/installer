@@ -200,8 +200,8 @@ export class AppShell extends LitElement {
           .filter(Boolean)
           .join(" ")}
         .driveSize=${selections.driveSize}
-        @dialog-cancel=${this._onDialogCancel}
-        @dialog-confirm=${this._onDialogConfirm}
+        @dialog-primary=${this._onDialogConfirm}
+        @dialog-secondary=${this._onDialogCancel}
       ></confirm-dialog>
       <info-dialog
         class="stop-dialog"

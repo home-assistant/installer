@@ -41,8 +41,6 @@ export class InfoDialog extends DialogBase {
   @property({ type: String })
   emphasis: "primary" | "secondary" = "primary";
 
-  protected readonly dismissEvent = "dialog-secondary";
-
   protected renderContent() {
     const secondaryStandsOut = this.emphasis === "secondary";
 

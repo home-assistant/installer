@@ -10,9 +10,9 @@ import { DialogBase } from "./dialog-base.js";
  * Destructive confirmation dialog built on DialogBase.
  *
  * Toggle `open`, describe the target with `driveName` / `drivePath` /
- * `driveModel` / `driveSize`, and listen for `dialog-confirm` /
- * `dialog-cancel`. Escape, backdrop click, and the header close button all
- * map to `dialog-cancel`.
+ * `driveModel` / `driveSize`, and listen for `dialog-primary` (erase) /
+ * `dialog-secondary` (cancel). Escape, backdrop click, and the header close
+ * button all map to `dialog-secondary`.
  *
  * The device path is shown because it is the one value actually sent to the
  * backend, and it is the only thing that tells two otherwise identical cards
@@ -81,8 +81,6 @@ export class ConfirmDialog extends DialogBase {
   /** Size in bytes; undefined when unknown. */
   @property({ type: Number, attribute: "drive-size" })
   driveSize?: number;
-
-  protected readonly dismissEvent = "dialog-cancel";
 
   protected renderContent() {
     return html`
@@ -154,11 +152,11 @@ export class ConfirmDialog extends DialogBase {
   }
 
   private _onCancel() {
-    this.choose("dialog-cancel");
+    this.choose("dialog-secondary");
   }
 
   private _onConfirm() {
-    this.choose("dialog-confirm");
+    this.choose("dialog-primary");
   }
 
   // macOS asks for admin credentials via Authorization Services; Linux raises

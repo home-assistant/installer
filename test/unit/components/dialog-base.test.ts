@@ -3,8 +3,6 @@ import type WaDialog from "@home-assistant/webawesome/dist/components/dialog/dia
 import { DialogBase } from "../../../src/components/dialog-base.js";
 
 class TestDialog extends DialogBase {
-  protected readonly dismissEvent = "test-dismiss";
-
   protected renderContent() {
     return html`
       ${this.renderTitle("Title")}
@@ -13,7 +11,7 @@ class TestDialog extends DialogBase {
   }
 
   private _onGo() {
-    this.choose("test-choice");
+    this.choose("dialog-primary");
   }
 }
 customElements.define("dialog-base-test-dialog", TestDialog);
@@ -25,7 +23,7 @@ async function mount() {
   const dialog = el.shadowRoot!.querySelector<WaDialog>("wa-dialog")!;
   const button = el.shadowRoot!.querySelector("button")!;
   const events: string[] = [];
-  for (const type of ["test-choice", "test-dismiss"])
+  for (const type of ["dialog-primary", "dialog-secondary"])
     el.addEventListener(type, () => events.push(type));
   // What wa-dialog fires as it starts to animate out, and once it has
   const hide = () =>
@@ -63,7 +61,7 @@ describe("DialogBase", () => {
     button.click();
     button.click();
 
-    expect(events).to.deep.equal(["test-choice"]);
+    expect(events).to.deep.equal(["dialog-primary"]);
   });
 
   it("ignores a click once a dismissal started", async () => {
@@ -75,7 +73,7 @@ describe("DialogBase", () => {
     expect(el.open).to.be.true;
     afterHide();
 
-    expect(events).to.deep.equal(["test-dismiss"]);
+    expect(events).to.deep.equal(["dialog-secondary"]);
     expect(el.open).to.be.false;
     expect(el.hasAttribute("closing")).to.be.false;
   });

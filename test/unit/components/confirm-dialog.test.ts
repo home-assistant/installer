@@ -108,7 +108,7 @@ describe("confirm-dialog", () => {
     expect(confirmButton!.textContent!.trim()).to.equal("Erase and install");
   });
 
-  it("dispatches dialog-cancel event when cancel button is clicked", async () => {
+  it("dispatches dialog-secondary event when cancel button is clicked", async () => {
     const el = await fixture<ConfirmDialog>(html`
       <confirm-dialog open></confirm-dialog>
     `);
@@ -118,11 +118,11 @@ describe("confirm-dialog", () => {
     ) as HTMLButtonElement;
 
     setTimeout(() => cancelButton.click());
-    const event = await oneEvent(el, "dialog-cancel");
+    const event = await oneEvent(el, "dialog-secondary");
     expect(event).to.exist;
   });
 
-  it("dispatches dialog-confirm event when confirm button is clicked", async () => {
+  it("dispatches dialog-primary event when confirm button is clicked", async () => {
     const el = await fixture<ConfirmDialog>(html`
       <confirm-dialog open></confirm-dialog>
     `);
@@ -132,7 +132,7 @@ describe("confirm-dialog", () => {
     ) as HTMLButtonElement;
 
     setTimeout(() => confirmButton.click());
-    const event = await oneEvent(el, "dialog-confirm");
+    const event = await oneEvent(el, "dialog-primary");
     expect(event).to.exist;
   });
 
@@ -141,7 +141,7 @@ describe("confirm-dialog", () => {
       html`<confirm-dialog open></confirm-dialog>`
     );
     let confirms = 0;
-    el.addEventListener("dialog-confirm", () => confirms++);
+    el.addEventListener("dialog-primary", () => confirms++);
     const button = el.shadowRoot!.querySelector<HTMLElement>(
       "wa-button[variant='danger']"
     )!;
@@ -155,7 +155,7 @@ describe("confirm-dialog", () => {
       html`<confirm-dialog open></confirm-dialog>`
     );
     let cancels = 0;
-    el.addEventListener("dialog-cancel", () => cancels++);
+    el.addEventListener("dialog-secondary", () => cancels++);
     const button = el.shadowRoot!.querySelector<HTMLElement>(
       "wa-button[appearance='outlined']"
     )!;
@@ -194,7 +194,7 @@ describe("confirm-dialog", () => {
     expect(el.open).to.be.false;
   });
 
-  it("dispatches dialog-cancel when dismissed (escape/backdrop/close)", async () => {
+  it("dispatches dialog-secondary when dismissed (escape/backdrop/close)", async () => {
     const el = await fixture<ConfirmDialog>(html`
       <confirm-dialog open></confirm-dialog>
     `);
@@ -206,18 +206,18 @@ describe("confirm-dialog", () => {
         new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
       )
     );
-    const event = await oneEvent(el, "dialog-cancel");
+    const event = await oneEvent(el, "dialog-secondary");
     expect(event).to.exist;
     expect(el.open).to.be.false;
   });
 
-  it("does not also fire dialog-cancel when confirmed", async () => {
+  it("does not also fire dialog-secondary when confirmed", async () => {
     const el = await fixture<ConfirmDialog>(html`
       <confirm-dialog open></confirm-dialog>
     `);
 
     let cancelFired = false;
-    el.addEventListener("dialog-cancel", () => (cancelFired = true));
+    el.addEventListener("dialog-secondary", () => (cancelFired = true));
 
     const confirmButton = el.shadowRoot!.querySelector(
       "wa-button[variant='danger']"
@@ -239,13 +239,13 @@ describe("confirm-dialog", () => {
     expect(el.open).to.be.false;
   });
 
-  it("fires dialog-cancel exactly once when cancelled", async () => {
+  it("fires dialog-secondary exactly once when cancelled", async () => {
     const el = await fixture<ConfirmDialog>(html`
       <confirm-dialog open></confirm-dialog>
     `);
 
     let cancelCount = 0;
-    el.addEventListener("dialog-cancel", () => (cancelCount += 1));
+    el.addEventListener("dialog-secondary", () => (cancelCount += 1));
 
     const cancelButton = el.shadowRoot!.querySelector(
       "wa-button[appearance='outlined']"
@@ -272,7 +272,7 @@ describe("confirm-dialog", () => {
     `);
 
     let cancelFired = false;
-    el.addEventListener("dialog-cancel", () => (cancelFired = true));
+    el.addEventListener("dialog-secondary", () => (cancelFired = true));
 
     // Closing through the public `open` property is not a user dismissal,
     // so it must not report one even though it still completes a hide.
@@ -339,7 +339,7 @@ describe("confirm-dialog", () => {
     ) as HTMLButtonElement;
 
     setTimeout(() => confirmButton.click());
-    const event = await oneEvent(el, "dialog-confirm");
+    const event = await oneEvent(el, "dialog-primary");
     expect(event.bubbles).to.be.true;
     expect(event.composed).to.be.true;
   });

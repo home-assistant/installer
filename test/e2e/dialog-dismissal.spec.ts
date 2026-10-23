@@ -3,21 +3,13 @@ import { expect, test } from "./fixtures.js";
 
 // A dialog closed with one of its buttons animates out, as it does after
 // Escape. It still takes clicks while it does, but reports only the first way
-// out. With reduced motion, every dialog appears and goes at once.
+// out. Every dialog reports its main action as dialog-primary, and any other
+// way out as dialog-secondary. With reduced motion, every dialog appears and
+// goes at once.
 
 const dialogs = [
-  {
-    tag: "info-dialog",
-    action: "OK",
-    choice: "dialog-primary",
-    dismissal: "dialog-secondary",
-  },
-  {
-    tag: "confirm-dialog",
-    action: "Erase and install",
-    choice: "dialog-confirm",
-    dismissal: "dialog-cancel",
-  },
+  { tag: "info-dialog", action: "OK" },
+  { tag: "confirm-dialog", action: "Erase and install" },
 ] as const;
 
 type Events = { dialogEvents: string[] };
@@ -33,12 +25,7 @@ async function open(page: Page, tag: string) {
     };
     const events: string[] = [];
     (window as unknown as Events).dialogEvents = events;
-    for (const type of [
-      "dialog-primary",
-      "dialog-secondary",
-      "dialog-confirm",
-      "dialog-cancel",
-    ])
+    for (const type of ["dialog-primary", "dialog-secondary"])
       dialog.addEventListener(type, () => events.push(type));
     dialog.open = true;
     document.body.append(dialog);
@@ -55,7 +42,7 @@ async function open(page: Page, tag: string) {
 const events = (page: Page) =>
   page.evaluate(() => (window as unknown as Events).dialogEvents);
 
-for (const { tag, action, choice, dismissal } of dialogs) {
+for (const { tag, action } of dialogs) {
   test(`${tag} animates out after a button, as after Escape`, async ({
     page,
   }) => {
@@ -67,7 +54,7 @@ for (const { tag, action, choice, dismissal } of dialogs) {
     await expect(dialog).toHaveClass(/\bhide\b/);
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.locator(tag)).toBeHidden();
-    expect(await events(page)).toEqual([choice]);
+    expect(await events(page)).toEqual(["dialog-primary"]);
   });
 
   test(`${tag} reports one choice for a double click`, async ({ page }) => {
@@ -75,7 +62,7 @@ for (const { tag, action, choice, dismissal } of dialogs) {
     await page.getByRole("button", { name: action, exact: true }).dblclick();
 
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    expect(await events(page)).toEqual([choice]);
+    expect(await events(page)).toEqual(["dialog-primary"]);
   });
 
   test(`${tag} reports Escape, not a click while it animates out`, async ({
@@ -90,7 +77,7 @@ for (const { tag, action, choice, dismissal } of dialogs) {
       .click({ force: true });
 
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    expect(await events(page)).toEqual([dismissal]);
+    expect(await events(page)).toEqual(["dialog-secondary"]);
   });
 }
 
