@@ -160,8 +160,9 @@ export class VmResources extends LitElement {
     onInput: (e: Event) => void,
     formatter: (index: number) => string
   ) {
+    // The slider's label says what the icon shows
     return html`<div class="setting-row">
-      <div class="setting-icon">${icon}</div>
+      <div class="setting-icon" aria-hidden="true">${icon}</div>
       <div class="setting-content">
         <wa-slider
           with-markers

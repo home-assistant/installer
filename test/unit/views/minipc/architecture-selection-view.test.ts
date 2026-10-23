@@ -175,6 +175,15 @@ describe("minipc-architecture-selection-view choices", () => {
     expect(checks()).to.deep.equal([true, false]);
   });
 
+  it("keeps the processor logos from screen readers", async () => {
+    const el = await renderChoices();
+    await el.shadowRoot!.querySelector("wa-radio-group")!.updateComplete;
+    const tree = await fullA11ySnapshot();
+
+    expect(findByRole(tree, "image")).to.deep.equal([]);
+    expect(findByRole(tree, "radio")[0]!.name).to.contain("Intel/AMD (x86-64)");
+  });
+
   // Apple silicon Macs also report "Intel Mac OS X"
   const macUserAgent =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";

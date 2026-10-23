@@ -266,7 +266,6 @@
   "common.confirm.home_assistant_operating_system": "Home Assistant Operating System",
   "common.confirm.latest_stable_release": "Latest stable release",
   "views.proxmox.proxmox_confirm_view.node_summary": "Node: {node}",
-  "views.proxmox.proxmox_confirm_view.proxmox": "Proxmox",
   "common.confirm.ready_to_install": "Ready to install",
   "common.vm.confirm_subtitle": "Review your virtual machine configuration before installing",
   "views.proxmox.proxmox_confirm_view.storage_summary": "Storage: {storage}",
