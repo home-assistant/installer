@@ -18,6 +18,19 @@ export const pageHeaderStyles = css`
   .header [slot="start"]:dir(rtl) {
     transform: scaleX(-1);
   }
+
+  /* A low window leaves more of its height to the screen below. Zooming in
+     lowers it too: the smallest window, 750px high, is 375px at 200%. The
+     text keeps its size; only the space around it shrinks. */
+  @media (max-height: 600px) {
+    .header {
+      padding-block: 0.5rem;
+    }
+
+    .header wa-button {
+      --wa-form-control-height: 2.25em;
+    }
+  }
 `;
 
 /** The header of a screen that has only Back in it. */

@@ -90,6 +90,17 @@ export class WizardShell extends LitElement {
         gap: 1rem;
       }
 
+      /* Thinner on a low window, like the header */
+      @media (max-height: 600px) {
+        .footer {
+          padding-block: 0.5rem;
+        }
+
+        .footer wa-button {
+          --wa-form-control-height: 2.25em;
+        }
+      }
+
       /* Out of use, the buttons keep their place, so the step doesn't move */
       .footer.idle wa-button {
         visibility: hidden;
