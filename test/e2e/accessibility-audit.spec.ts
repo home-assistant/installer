@@ -14,11 +14,13 @@ import { approveProxmoxImport, expect, test } from "./fixtures.js";
  * any other input named that way still fails.
  */
 function insideSelect(rule: string, node: NodeResult) {
-  // Each step down the chain is a selector in the shadow root above it
+  // Each step down the chain is a selector in the shadow root above it. The
+  // select's own step is its id when it has one, so the input is told by its
+  // part instead.
   const chain = node.target.flat();
   return (
     rule === "label-title-only" &&
-    /^wa-select\b/.test(chain[chain.length - 2] ?? "")
+    chain[chain.length - 1].includes("display-input")
   );
 }
 
