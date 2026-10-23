@@ -95,7 +95,7 @@ export class OptionCard extends LitElement {
       :host([horizontal]) .title,
       :host([horizontal]) .description {
         grid-column: 2;
-        text-align: left;
+        text-align: start;
         margin: 0;
       }
 
@@ -105,6 +105,12 @@ export class OptionCard extends LitElement {
         grid-row: 1 / span 2;
         color: var(--ha-secondary-text-color, #9e9e9e);
         font-size: 1.25rem;
+      }
+
+      /* Its arrow points the way the page reads. WebKit doesn't match :dir()
+         on the slot itself. */
+      :host([horizontal]:dir(rtl)) slot[name="end"] {
+        transform: scaleX(-1);
       }
 
       .icon-container {

@@ -26,7 +26,7 @@ export class InlineNotice extends LitElement {
       font-size: 0.875rem;
       line-height: 1.5;
       color: var(--ha-text-color, #212121);
-      text-align: left;
+      text-align: start;
       overflow-wrap: anywhere;
     }
 

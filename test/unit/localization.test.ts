@@ -156,25 +156,6 @@ describe("localization", () => {
     expect(getLanguage()).to.equal("en");
   });
 
-  it("formats ICU plural durations without changing the existing wording", () => {
-    expect(
-      localize("components.install_progress.minutes_remaining", {
-        minutes: 1,
-      })
-    ).to.equal("About 1 minute remaining");
-    expect(
-      localize("components.install_progress.minutes_remaining", {
-        minutes: 2,
-      })
-    ).to.equal("About 2 minutes remaining");
-    expect(
-      localize("components.install_progress.hours_minutes_remaining", {
-        hours: 1,
-        minutes: 30,
-      })
-    ).to.equal("About 1h 30m remaining");
-  });
-
   it("keeps the decimal byte basis and flooring", () => {
     expect(formatBytes(0)).to.equal("0 bytes");
     expect(formatBytes(1000)).to.equal("1 kB");

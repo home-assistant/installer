@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing } from "lit";
 import {
   formatNumber,
+  getLanguage,
   localize,
   localizeContent,
 } from "../localization/localize.js";
@@ -226,6 +227,8 @@ export class InstallProgress extends LitElement {
         }
       }
 
+      /* Right of Casita in either direction: the artwork's bubbles rise that
+         way */
       .thinking-cloud {
         position: absolute;
         top: -110px;
@@ -637,14 +640,13 @@ export class InstallProgress extends LitElement {
     // Rounded up once, before splitting: 59m 50s left is "1h 0m", never
     // "60 minutes", and 1h 59m 50s is "2h 0m", never "1h 60m"
     const totalMinutes = Math.ceil(remainingSeconds / 60);
-    if (totalMinutes < 60) {
-      return localize("components.install_progress.minutes_remaining", {
-        minutes: totalMinutes,
-      });
-    }
-    return localize("components.install_progress.hours_minutes_remaining", {
-      hours: Math.floor(totalMinutes / 60),
-      minutes: totalMinutes % 60,
+    const hours = Math.floor(totalMinutes / 60);
+    return localize("components.install_progress.time_remaining", {
+      duration: new Intl.DurationFormat(getLanguage(), {
+        // "30 minutes" on its own, but "1h 30m" next to hours
+        style: hours ? "narrow" : "long",
+        minutesDisplay: "always",
+      }).format({ hours, minutes: totalMinutes % 60 }),
     });
   }
 

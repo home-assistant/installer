@@ -96,25 +96,64 @@ fn write_message<'a>(
     };
 
     let mut rest = template.as_str();
-    while let Some(start) = rest.find('{') {
-        let Some(length) = rest[start..].find('}') else {
-            break;
-        };
-        let placeholder = &rest[start..=start + length];
-        let name = &placeholder[1..placeholder.len() - 1];
-
-        formatter.write_str(&rest[..start])?;
-        match param(name) {
-            Some(Value::String(text)) => formatter.write_str(text)?,
-            Some(value) => match nested(value) {
+    while let Some((text, argument, after)) = split_argument(rest) {
+        formatter.write_str(text)?;
+        let mut parts = argument.splitn(3, ',').map(str::trim);
+        let value = param(parts.next().unwrap_or_default());
+        match (value, parts.next(), parts.next()) {
+            (Some(value), Some("number"), style) => write!(formatter, "{value}{}", unit(style))?,
+            (Some(value), Some("plural"), Some(branches)) => {
+                formatter.write_str(&plural(branches, value).replace('#', &value.to_string()))?
+            }
+            (Some(Value::String(text)), ..) => formatter.write_str(text)?,
+            (Some(value), ..) => match nested(value) {
                 Some((key, params)) => write_message(formatter, key, &|name| params.get(name))?,
                 None => write!(formatter, "{value}")?,
             },
-            None => formatter.write_str(placeholder)?,
+            (None, ..) => write!(formatter, "{{{argument}}}")?,
         }
-        rest = &rest[start + placeholder.len()..];
+        rest = after;
     }
     formatter.write_str(rest)
+}
+
+/// The text before the first `{argument}`, the argument without its braces,
+/// and the text after it. A plural's branches stay inside its argument.
+fn split_argument(text: &str) -> Option<(&str, &str, &str)> {
+    let start = text.find('{')?;
+    let mut depth = 0;
+    let end = start
+        + text[start..].bytes().position(|byte| {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => depth -= 1,
+                _ => {}
+            }
+            depth == 0
+        })?;
+    Some((&text[..start], &text[start + 1..end], &text[end + 1..]))
+}
+
+/// The English symbol of a number's unit skeleton, like `::unit/gigabyte`.
+fn unit(style: Option<&str>) -> &'static str {
+    match style {
+        Some("::unit/gigabyte") => " GB",
+        Some("::unit/megabyte") => " MB",
+        _ => "",
+    }
+}
+
+/// The English branch of a plural's `one {...} other {...}` for `count`.
+fn plural<'a>(branches: &'a str, count: &Value) -> &'a str {
+    let wanted = if *count == 1 { "one" } else { "other" };
+    let mut rest = branches;
+    while let Some((selector, branch, after)) = split_argument(rest) {
+        if selector.trim() == wanted {
+            return branch;
+        }
+        rest = after;
+    }
+    ""
 }
 
 /// The key and parameters of a message that is another message's parameter.
@@ -133,14 +172,16 @@ fn catalog() -> &'static HashMap<String, String> {
     })
 }
 
-/// The `{name}` placeholders in a catalog message.
+/// The names of a catalog message's arguments, like `size` in `{size, number}`.
 #[cfg(any(debug_assertions, test))]
 fn placeholders(template: &str) -> BTreeSet<&str> {
-    template
-        .split('{')
-        .skip(1)
-        .filter_map(|part| part.split_once('}').map(|(name, _)| name))
-        .collect()
+    let mut names = BTreeSet::new();
+    let mut rest = template;
+    while let Some((_, argument, after)) = split_argument(rest) {
+        names.insert(argument.split(',').next().unwrap_or_default().trim());
+        rest = after;
+    }
+    names
 }
 
 #[cfg(test)]
@@ -149,17 +190,31 @@ mod tests {
 
     #[test]
     fn backend_messages_stay_simple() {
-        // The English here is a plain substitution, so the catalog's backend
-        // messages can't use ICU plurals, selects or quoting
+        // The English here knows only plain placeholders, numbers in its
+        // units and one/other plurals of plain text: no selects or quoting
         for (key, template) in catalog() {
             if !key.starts_with("backend.") {
                 continue;
             }
-            for name in placeholders(template) {
+            let mut rest = template.as_str();
+            while let Some((_, argument, after)) = split_argument(rest) {
+                let known = match argument.splitn(3, ", ").collect::<Vec<_>>()[..] {
+                    [name] => name.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
+                    [_, "number"] => true,
+                    [_, "number", style] => !unit(Some(style)).is_empty(),
+                    [_, "plural", branches] => {
+                        let (one, other) =
+                            (plural(branches, &1.into()), plural(branches, &2.into()));
+                        branches == format!("one {{{one}}} other {{{other}}}")
+                            && !format!("{one}{other}").contains('{')
+                    }
+                    _ => false,
+                };
                 assert!(
-                    name.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
-                    "{key}: {{{name}}} is more than a plain placeholder"
+                    known,
+                    "{key}: {{{argument}}} is more than the English here knows"
                 );
+                rest = after;
             }
             // "can't" is fine, but an apostrophe before one of these quotes it
             for quoted in ["'{", "'}", "''", "'#", "'|"] {
@@ -179,6 +234,26 @@ mod tests {
             message.to_string(),
             "Node \"pve\" is offline. Choose an online node or start it in Proxmox."
         );
+    }
+
+    #[test]
+    fn renders_numbers_and_plurals_in_english() {
+        let message = crate::message!(
+            "backend.proxmox.storage_too_small",
+            storage = "local-lvm",
+            size_gb = 32,
+            free_gb = 12,
+        );
+        assert_eq!(message.params_json()["size_gb"], 32);
+        assert_eq!(
+            message.to_string(),
+            "Not enough free space on \"local-lvm\" for the 32 GB disk (12 GB free)."
+        );
+        for (minutes, wait) in [(1, "1 minute,"), (5, "5 minutes,")] {
+            let message =
+                crate::message!("backend.download.github_rate_limited", minutes = minutes);
+            assert!(message.to_string().contains(wait), "{message}");
+        }
     }
 
     #[test]

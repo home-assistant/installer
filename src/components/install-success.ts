@@ -71,7 +71,7 @@ export class InstallSuccess extends LitElement {
       .next-steps {
         width: 100%;
         max-width: 500px;
-        text-align: left;
+        text-align: start;
         margin-bottom: 2rem;
       }
 
@@ -188,7 +188,7 @@ export class InstallSuccess extends LitElement {
         border-radius: var(--ha-small-border-radius, 8px);
         font-size: 0.875rem;
         color: var(--ha-text-color, #212121);
-        text-align: left;
+        text-align: start;
       }
 
       .next-steps-footer {
