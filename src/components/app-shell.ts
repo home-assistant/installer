@@ -64,6 +64,7 @@ import {
   readDriveSelection,
 } from "../utils/drive-selection.js";
 import { logFrontendError } from "../utils/diagnostics.js";
+import { homeAssistantUrl } from "../utils/external-url.js";
 
 export type ViewName =
   | "welcome"
@@ -183,9 +184,7 @@ export class AppShell extends LitElement {
 
   render() {
     const selections = this._wizardState.selections;
-    const address = selections.ipAddress
-      ? `http://${selections.ipAddress}`
-      : "http://homeassistant.local";
+    const address = homeAssistantUrl(selections.ipAddress);
     // Leaving skips the success view, which reminds of the Import this flow
     // enabled
     const importStorages = enabledImportStorageList(selections);

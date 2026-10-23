@@ -1218,6 +1218,32 @@ describe("app-shell", () => {
       expect(wizardState.getState().selections.proxmoxVmResult).to.be.undefined;
     });
 
+    it("points to the name Home Assistant announces while the VM has no address", async () => {
+      const calls: string[] = [];
+      await enterProxmoxInstall(() =>
+        mockTauriIpc((cmd) => {
+          calls.push(cmd);
+          if (cmd === "proxmox_create_vm") return { vm_id: 100, node: "pve" };
+          if (cmd === "proxmox_get_vm_status")
+            return { status: "running", ip_address: null };
+          throw new Error(`Unexpected IPC command: ${cmd}`);
+        })
+      );
+      await waitUntil(
+        () =>
+          calls.includes("proxmox_get_vm_status") && !shellOf(el).hideFooter,
+        "Cancel never came back once the VM existed"
+      );
+      const leaveDialog = el.shadowRoot!.querySelector(
+        "info-dialog.leave-dialog"
+      ) as InfoDialog;
+
+      fire(shellOf(el), "wizard-cancel");
+      await el.updateComplete;
+      expect(leaveDialog.open).to.be.true;
+      expect(leaveDialog.message).to.contain("http://homeassistant.local");
+    });
+
     // Import is cluster-wide and stays on, and only the success view would
     // remind of it otherwise
     describe("after this flow enabled Import", () => {

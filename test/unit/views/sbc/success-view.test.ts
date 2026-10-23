@@ -62,6 +62,7 @@ describe("success-view next steps", () => {
     const el = await renderSuccess();
     const link = content(el).querySelector<HTMLAnchorElement>(".step-text a")!;
     expect(link.href).to.equal("http://homeassistant.local/");
+    expect(link.textContent).to.equal("homeassistant.local");
     expect(text(el)).to.contain(
       "IP address in your router or on an attached display"
     );

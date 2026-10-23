@@ -3,12 +3,15 @@ import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { revealInFolder } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
-import { openExternalLink } from "../../utils/external-url.js";
+import {
+  HOME_ASSISTANT_HOST,
+  homeAssistantUrl,
+  openExternalLink,
+} from "../../utils/external-url.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/install-success.js";
 
 const GUIDE = "https://www.home-assistant.io/installation/generic-x86-64/";
-const HOME_ASSISTANT = "http://homeassistant.local";
 
 /** Next steps on the computer being installed, for a stick or for the saved ISO. */
 @customElement("live-usb-success-view")
@@ -58,11 +61,11 @@ export class LiveUsbSuccessView extends LitElement {
         "views.live_usb.live_usb_success_view.open_home_assistant",
         {
           address: html`<a
-            href=${HOME_ASSISTANT}
+            href=${homeAssistantUrl()}
             target="_blank"
             rel="noopener noreferrer"
             @click=${openExternalLink}
-            >homeassistant.local</a
+            >${HOME_ASSISTANT_HOST}</a
           >`,
         }
       )}`,

@@ -3,7 +3,11 @@ import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { WizardState } from "../../state/wizard-state.js";
 import { WizardStateController } from "../../state/wizard-state-controller.js";
-import { openExternalLink } from "../../utils/external-url.js";
+import {
+  HOME_ASSISTANT_HOST,
+  homeAssistantUrl,
+  openExternalLink,
+} from "../../utils/external-url.js";
 import { selectedWifi } from "../../utils/wifi.js";
 
 import "../../components/install-success.js";
@@ -29,11 +33,11 @@ const INSTALLATION_GUIDES: Record<string, string> = {
 export function renderOpenHomeAssistantStep() {
   return html`${localizeContent("views.sbc.success_view.step_open", {
     url: html`<a
-      href="http://homeassistant.local"
+      href=${homeAssistantUrl()}
       target="_blank"
       rel="noopener noreferrer"
       @click=${openExternalLink}
-      >homeassistant.local</a
+      >${HOME_ASSISTANT_HOST}</a
     >`,
     ip_url: html`<code dir="ltr"
       >http://&lt;<bdi>${localize(

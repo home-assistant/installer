@@ -70,6 +70,26 @@ describe("live-usb-success-view", () => {
     }
   });
 
+  it("links to the name Home Assistant announces, for a stick and an ISO alike", async () => {
+    for (const media of ["usb", "iso"] as const) {
+      wizardState.startFlow("minipc");
+      wizardState.setSelection("liveMedia", media);
+      wizardState.setSelection("liveIsoPath", "/home/me/haos.iso");
+      const view = fixtureSync<LiveUsbSuccessView>(
+        html`<live-usb-success-view></live-usb-success-view>`
+      );
+      await view.updateComplete;
+      const layout = view.shadowRoot!.querySelector("install-success")!;
+      await layout.updateComplete;
+
+      const link =
+        layout.shadowRoot!.querySelector<HTMLAnchorElement>(".step-text a")!;
+      expect(link.href).to.equal("http://homeassistant.local/");
+      expect(link.textContent).to.equal("homeassistant.local");
+      wizardState.reset();
+    }
+  });
+
   it("says so when the folder can't be shown", async () => {
     wizardState.startFlow("minipc");
     wizardState.setSelection("liveMedia", "iso");
