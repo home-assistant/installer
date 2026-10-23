@@ -231,11 +231,15 @@ Then continues to drive selection (same as SBC flow).
 │   Select your device                                        │
 │                                                             │
 │   ┌─────────────────────────────────────────────────────┐   │
+│   │  Home Assistant Green                               │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│   ┌─────────────────────────────────────────────────────┐   │
 │   │  Home Assistant Yellow                              │   │
 │   └─────────────────────────────────────────────────────┘   │
 │                                                             │
 │   ┌─────────────────────────────────────────────────────┐   │
-│   │  Home Assistant Green                               │   │
+│   │  Home Assistant Blue                                │   │
 │   └─────────────────────────────────────────────────────┘   │
 │                                                             │
 │                                             [ Back ]        │
@@ -249,6 +253,14 @@ and only need power and Ethernet. A second paragraph says that reinstalling, to
 reset or recover it, erases everything on it. Reinstall (Install for a Yellow,
 which may need a compute module of the user's own set up) goes on; Go back stays
 on the step.
+
+### Step 2: Select Module (Yellow only)
+
+The Yellow has a Raspberry Pi Compute Module 4 or 5 inside, and each is prepared
+differently: the CM4 boots a USB flash drive that installs Home Assistant, the
+CM5 is written directly over USB-C with rpiboot. So only the Yellow gets this
+step, after the dialog, offering the modules the catalog has (the CM5 needs the
+`yellow` board). The step indicator shows it as soon as the Yellow is picked.
 
 Then continues to drive selection and flashing.
 

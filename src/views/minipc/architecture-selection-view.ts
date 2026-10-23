@@ -9,6 +9,7 @@ import {
   ViewAccessibility,
   reducedMotionStyles,
 } from "../../utils/view-accessibility.js";
+import { optionCardStyles } from "../../utils/option-card-styles.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
 import { customElement, query, state } from "lit/decorators.js";
 import { getManifest, isUtmSupported, type Device } from "../../api/index.js";
@@ -33,28 +34,8 @@ export class MiniPCArchitectureSelectionView extends LitElement {
     loadStateStyles,
     reducedMotionStyles,
     linkStyles,
+    optionCardStyles,
     css`
-      .options {
-        display: block;
-        width: 100%;
-        max-width: 700px;
-      }
-
-      .options::part(form-control-label) {
-        display: none;
-      }
-
-      .options::part(form-control-input) {
-        display: flex;
-        gap: 1rem;
-      }
-
-      @media (max-width: 500px) {
-        .options::part(form-control-input) {
-          flex-direction: column;
-        }
-      }
-
       .mac-note {
         font-size: 1rem;
         color: var(--ha-secondary-text-color, #727272);
@@ -63,87 +44,14 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         max-width: 500px;
       }
 
-      wa-radio {
-        position: relative;
-        flex: 1;
-        min-width: 0;
-        height: auto;
-        padding: 1.5rem;
-        border-radius: var(--ha-card-border-radius, 12px);
-        align-items: flex-start;
-      }
-
-      /* The chosen one gets a check like the device and drive cards, as its
-         border and tint are only a change of color */
-      .selected-indicator {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        width: 24px;
-        height: 24px;
-        background-color: var(--ha-primary-fill, #006787);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--wa-color-brand-on-loud, white);
-        font-size: 14px;
-      }
-
-      /* Forced colors would draw both choices with the same border, and hide
-         the check behind a backplate */
-      @media (forced-colors: active) {
-        wa-radio[aria-checked="true"] {
-          border-color: Highlight;
-        }
-
-        .selected-indicator {
-          forced-color-adjust: none;
-          background-color: Highlight;
-          color: HighlightText;
-        }
-      }
-
-      wa-radio::part(label) {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        white-space: normal;
-        gap: 0.75rem;
-      }
-
-      .option-icon {
-        width: 48px;
-        height: 48px;
-      }
-
-      .option-icon svg {
-        width: 100%;
-        height: 100%;
-        fill: var(--ha-primary-color, #03a9f4);
-      }
-
       .option-content {
         display: flex;
         flex-direction: column;
         align-items: center;
       }
 
-      .option-title {
-        font-size: 1.125rem;
-        font-weight: 500;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.25rem 0;
-      }
-
-      /* The control shade of secondary text stays readable on the selected
-       * card's tinted fill */
       .option-description {
-        font-size: 0.875rem;
-        color: var(--ha-control-secondary-text-color, #686868);
         margin: 0 0 0.75rem 0;
-        line-height: 1.4;
       }
 
       .option-examples {
@@ -258,18 +166,14 @@ export class MiniPCArchitectureSelectionView extends LitElement {
 
     return html`
       ${renderStepHeading(
-        localize(
-          "views.minipc.architecture_selection_view.select_your_architecture"
-        ),
+        localize("views.minipc.architecture_selection_view.title"),
         localize("views.minipc.architecture_selection_view.subtitle")
       )}
 
       <wa-radio-group
         class="options"
         orientation="horizontal"
-        label=${localize(
-          "views.minipc.architecture_selection_view.cpu_architecture"
-        )}
+        label=${localize("views.minipc.architecture_selection_view.processor")}
         .value=${this._selectedDeviceId ?? ""}
         @change=${this._onDeviceChange}
       >

@@ -5,6 +5,7 @@ import {
   stepStyles,
 } from "../../../src/utils/step-styles.js";
 import "../../../src/views/ha-hardware/device-selection-view.js";
+import "../../../src/views/ha-hardware/module-selection-view.js";
 import "../../../src/views/minipc/architecture-selection-view.js";
 import "../../../src/views/minipc/setup-method-view.js";
 import "../../../src/views/proxmox/proxmox-configure-view.js";
@@ -20,6 +21,7 @@ import "../../../src/views/utm/utm-confirm-view.js";
 
 const STEPS = [
   "ha-hardware-device-selection-view",
+  "ha-hardware-module-selection-view",
   "minipc-architecture-selection-view",
   "minipc-setup-method-view",
   "proxmox-configure-view",

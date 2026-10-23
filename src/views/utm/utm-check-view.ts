@@ -19,7 +19,6 @@ import { openExternalUrl } from "../../utils/external-url.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/ha-svg-icon.js";
 import "../../components/casita-mascot.js";
-import "../../components/inline-notice.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 import { renderRetryButton } from "../../utils/load-state.js";
 
@@ -141,42 +140,13 @@ export class UtmCheckView extends LitElement {
         margin: 0;
       }
 
-      inline-notice {
-        margin-bottom: 1rem;
-      }
-
-      .warning-title {
+      .testing-note {
+        max-width: 500px;
+        margin: 0 0 1.5rem;
         font-size: 0.875rem;
-        font-weight: 500;
-        color: var(--ha-warning-heading-color, #212121);
-        margin: 0;
-      }
-
-      .warning-description {
-        font-size: 0.8125rem;
-        color: var(--ha-text-color, #212121);
-        margin: 0;
-      }
-
-      .warning-list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        font-size: 0.8125rem;
-        color: var(--ha-text-color, #212121);
-      }
-
-      .warning-list li {
-        padding-left: 1rem;
-        position: relative;
-        line-height: 1.4;
-      }
-
-      .warning-list li::before {
-        content: "•";
-        position: absolute;
-        left: 0;
-        color: #ff9800;
+        line-height: 1.5;
+        color: var(--ha-secondary-text-color, #727272);
+        text-align: center;
       }
 
       wa-button ha-svg-icon {
@@ -283,7 +253,7 @@ export class UtmCheckView extends LitElement {
         localize("views.utm.utm_check_view.virtual_machine_setup"),
         localize("views.utm.utm_check_view.subtitle")
       )}
-      ${this._unavailable ? "" : this._renderTestingWarning()}
+      ${this._unavailable ? "" : this._renderTestingNote()}
 
       <div class="status-card">
         <casita-mascot
@@ -355,26 +325,10 @@ export class UtmCheckView extends LitElement {
     `;
   }
 
-  private _renderTestingWarning() {
-    return html`
-      <inline-notice>
-        <p class="warning-title">
-          ${localize("views.utm.utm_check_view.best_for_testing_evaluation")}
-        </p>
-        <p class="warning-description">
-          ${localize("views.utm.utm_check_view.testing_notice")}
-        </p>
-        <ul class="warning-list">
-          <li>${localize("views.utm.utm_check_view.mac_must_stay_on")}</li>
-          <li>${localize("views.utm.utm_check_view.no_autostart")}</li>
-          <li>
-            ${localize(
-              "views.utm.utm_check_view.dedicated_hardware_recommended"
-            )}
-          </li>
-        </ul>
-      </inline-notice>
-    `;
+  private _renderTestingNote() {
+    return html`<p class="testing-note">
+      ${localize("views.utm.utm_check_view.testing_note")}
+    </p>`;
   }
 
   private _renderUnavailable() {

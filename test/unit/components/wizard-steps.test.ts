@@ -23,7 +23,11 @@ const WIFI_BOARD = {
 /** Every step `flow` can show */
 function stepsOf(flow: WizardFlow): string[] {
   wizardState.startFlow(flow);
-  wizardState.setSelection("deviceConfig", WIFI_BOARD);
+  // The Yellow's compute modules add their step to the hardware flow
+  wizardState.setSelections({
+    yellowModules: [{ id: "yellow-cm4", config: WIFI_BOARD }],
+    deviceConfig: WIFI_BOARD,
+  });
   return wizardState.getState().steps.map(({ id }) => id);
 }
 
@@ -92,6 +96,14 @@ describe("wizard-steps", () => {
       readyWith(flow, stepId, { device: "rpi5", deviceCatalogReady: true }),
     ];
     expect(pickDevice("sbc", "device")).to.deep.equal([false, true]);
+    expect(readyWith("ha-hardware", "module", { device: "ha-yellow" })).to.be
+      .false;
+    expect(
+      readyWith("ha-hardware", "module", {
+        haHardware: "yellow-cm5",
+        deviceConfig: WIFI_BOARD,
+      })
+    ).to.be.true;
     expect(pickDevice("minipc", "architecture")).to.deep.equal([false, true]);
     expect(readyWith("vm", "check", {})).to.be.false;
     expect(readyWith("vm", "check", { utmInstalled: true })).to.be.true;

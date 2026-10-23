@@ -15,12 +15,20 @@ const cancel = (page: Page) =>
 const reinstallDialog = (page: Page) =>
   page.locator("ha-hardware-device-selection-view info-dialog");
 
-/** Next on the device step, answering yes to the reinstall question. */
+/** Next on the device step, going on past the reinstall dialog. */
 async function nextFromDevice(page: Page) {
   await next(page).click();
   await reinstallDialog(page)
     .getByRole("button", { name: /^(Reinstall|Install)$/ })
     .click();
+}
+
+/** Picks the Yellow's compute module on its own step, then goes on. */
+async function pickModule(page: Page, module: string) {
+  await page
+    .locator(`ha-hardware-module-selection-view wa-radio[value="${module}"]`)
+    .click();
+  await next(page).click();
 }
 
 async function openHaHardware(page: Page) {
@@ -48,7 +56,8 @@ const scenarios = [
     guide: "https://support.nabucasa.com/hc/en-us/articles/25162566451485",
   },
   {
-    value: "ha-yellow-cm4",
+    value: "ha-yellow",
+    module: "yellow-cm4",
     name: "Home Assistant Yellow with CM4",
     connect: "Insert a USB flash drive into this computer",
     version: "Yellow installer, October 25, 2023",
@@ -63,7 +72,8 @@ const scenarios = [
     guide: "https://support.nabucasa.com/hc/en-us/articles/25484982657309",
   },
   {
-    value: "ha-yellow-cm5",
+    value: "ha-yellow",
+    module: "yellow-cm5",
     name: "Home Assistant Yellow with CM5",
     connect: "RPi-MSD",
     version: "Version 16.3",
@@ -95,14 +105,16 @@ test.describe("Home Assistant hardware flow", () => {
     );
   });
 
-  test("lists each device, with both Yellow compute modules", async ({
-    page,
-  }) => {
+  test("lists each device, with one Yellow", async ({ page }) => {
     await openHaHardware(page);
 
     const cards = page.locator("ha-hardware-device-selection-view device-card");
-    await expect(cards).toHaveCount(4);
-    for (const { name } of scenarios) {
+    await expect(cards).toHaveCount(3);
+    for (const name of [
+      "Home Assistant Green",
+      "Home Assistant Yellow",
+      "Home Assistant Blue",
+    ]) {
       await expect(
         page.getByRole("radio", { name, exact: true })
       ).toBeVisible();
@@ -150,6 +162,7 @@ test.describe("Home Assistant hardware flow", () => {
 
       await page.locator(`device-card[value="${scenario.value}"]`).click();
       await nextFromDevice(page);
+      if (scenario.module) await pickModule(page, scenario.module);
 
       const drive = page.locator("drive-selection-view");
       const instructions = drive.locator("ha-hardware-connect-instructions");
@@ -192,26 +205,50 @@ test.describe("Home Assistant hardware flow", () => {
     });
   }
 
+  test("the Yellow asks for its compute module after the dialog", async ({
+    page,
+  }) => {
+    await openHaHardware(page);
+    await page.locator('device-card[value="ha-yellow"]').click();
+    await expect(page.locator("step-indicator")).toContainText("Select module");
+    await nextFromDevice(page);
+
+    const modules = page.locator("ha-hardware-module-selection-view");
+    await expect(modules).toContainText("Select your compute module");
+    await expect(modules.locator("wa-radio")).toHaveCount(2);
+    await expect(next(page)).toHaveJSProperty("disabled", true);
+    await modules.locator('wa-radio[value="yellow-cm4"]').click();
+    await expect(next(page)).toHaveJSProperty("disabled", false);
+  });
+
   test("Back keeps the device and Cancel leaves the flow", async ({ page }) => {
     await openHaHardware(page);
-    await page.locator('device-card[value="ha-yellow-cm5"]').click();
+    await page.locator('device-card[value="ha-yellow"]').click();
     await nextFromDevice(page);
+    await pickModule(page, "yellow-cm5");
     await expect(
       page.locator("ha-hardware-connect-instructions")
     ).toContainText("Set jumper JP1 to USB");
 
     await back(page).click();
     await expect(
-      page.locator('device-card[value="ha-yellow-cm5"]')
+      page.locator(
+        'ha-hardware-module-selection-view wa-radio[value="yellow-cm5"]'
+      )
     ).toHaveJSProperty("checked", true);
     await expect(next(page)).toHaveJSProperty("disabled", false);
 
-    // Another Yellow is prepared differently, so its instructions follow.
-    await page.locator('device-card[value="ha-yellow-cm4"]').click();
-    await nextFromDevice(page);
+    // Another module is prepared differently, so its instructions follow.
+    await pickModule(page, "yellow-cm4");
     await expect(
       page.locator("ha-hardware-connect-instructions")
     ).toContainText("USB flash drive");
+
+    await back(page).click();
+    await back(page).click();
+    await expect(
+      page.locator('device-card[value="ha-yellow"]')
+    ).toHaveJSProperty("checked", true);
 
     await cancel(page).click();
     await expect(page.locator("welcome-view")).toBeVisible();
