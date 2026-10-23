@@ -693,27 +693,28 @@ describe("app-shell", () => {
       );
     });
 
-    it("asks before reinstalling the hardware picked, and stays on Go back", async () => {
-      await enterSbcFlow(el);
-      wizardState.startFlow("ha-hardware");
-      await el.updateComplete;
-      await waitUntil(() => view().shadowRoot?.querySelector("device-card"));
-      // Rendered once a device is chosen
-      const question = () =>
-        view().shadowRoot!.querySelector<InfoDialog>("info-dialog");
+    // Each on a fresh pick: picked again while the question still animates
+    // out, the question that closed would close the new one too
+    for (const [answer, step] of [
+      ["dialog-secondary", "device"],
+      ["dialog-primary", "drive"],
+    ] as const) {
+      it(`asks before reinstalling the hardware picked, and ${answer === "dialog-primary" ? "goes on on Reinstall" : "stays on Go back"}`, async () => {
+        await enterSbcFlow(el);
+        wizardState.startFlow("ha-hardware");
+        await el.updateComplete;
+        await waitUntil(() => view().shadowRoot?.querySelector("device-card"));
+        // Rendered once a device is chosen
+        const question = () =>
+          view().shadowRoot!.querySelector<InfoDialog>("info-dialog");
 
-      card('device-card[value="ha-green"]').click();
-      await waitUntil(() => question()?.open, "never asked");
-      fire(question()!, "dialog-secondary");
-      await settle();
-      expect(wizardState.currentStep!.id).to.equal("device");
-
-      card('device-card[value="ha-green"]').click();
-      await waitUntil(() => question()!.open, "never asked again");
-      fire(question()!, "dialog-primary");
-      await settle();
-      expect(wizardState.currentStep!.id).to.equal("drive");
-    });
+        card('device-card[value="ha-green"]').click();
+        await waitUntil(() => question()?.open, "never asked");
+        fire(question()!, answer);
+        await settle();
+        expect(wizardState.currentStep!.id).to.equal(step);
+      });
+    }
   });
 
   describe("selected drive check before erasing", () => {

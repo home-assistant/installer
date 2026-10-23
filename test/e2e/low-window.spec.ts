@@ -43,7 +43,10 @@ test("a low window leaves more of its height to the step", async ({ page }) => {
   expect(narrow.footer - zoomed.footer).toBeGreaterThanOrEqual(16);
   expect(zoomed.content).toBeGreaterThan(375 / 2);
 
-  // Back, Cancel and Next lose at most the space around their text
+  // Back, Cancel and Next lose at most the space around their text. Picking
+  // a board goes on, to the drive step with its Next.
+  await page.locator("device-card").first().click();
+  await expect(page.locator("drive-selection-view")).toBeVisible();
   for (const name of ["Back", "Cancel", "Next"]) {
     const button = page.getByRole("button", { name, exact: name !== "Back" });
     expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(32);
