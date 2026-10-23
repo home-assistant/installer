@@ -5,13 +5,16 @@ import {
   html,
   waitUntil,
 } from "@open-wc/testing";
-import { LitElement } from "lit";
+import { LitElement, nothing } from "lit";
 import { property } from "lit/decorators.js";
 import {
   ViewAccessibility,
   LiveStatus,
 } from "../../../src/utils/view-accessibility.js";
 import "../../../src/views/sbc/success-view.js";
+import { findByRole, fullA11ySnapshot, type AXNode } from "../helpers/a11y.js";
+
+type FocusedAXNode = AXNode & { focused?: boolean; children?: FocusedAXNode[] };
 
 class StatusTestView extends LitElement {
   @property({ attribute: "stage-title" }) stageTitle = "";
@@ -25,7 +28,7 @@ class StatusTestView extends LitElement {
         ${this._status.ready && !this.error ? this.stageTitle : ""}
       </p>
       ${this.error
-        ? html`<p role="alert">${this.error}</p>`
+        ? html`<p data-focus-alert>${this.error}</p>`
         : html`<h2>Installing</h2>`}`;
   }
 }
@@ -37,7 +40,7 @@ class FocusTestView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   render() {
     return html`${this.loading ? "Loading" : html`<h2>Step heading</h2>`}
-      ${this.error ? html`<p role="alert">${this.error}</p>` : ""}
+      ${this.error ? html`<p data-focus-alert>${this.error}</p>` : ""}
       <input aria-label="Name" />`;
   }
 }
@@ -50,13 +53,49 @@ class RetryTestView extends LitElement {
   render() {
     return html`<h2>Step heading</h2>
       ${this.error
-        ? html`<p role="alert">${this.error}</p>
+        ? html`<p data-focus-alert>${this.error}</p>
             <button class="retry">Try again</button>`
         : html`<button class="refresh">Refresh</button>`}
       <input aria-label="Name" />`;
   }
 }
 customElements.define("retry-test-view", RetryTestView);
+
+/** Errors of separate lookups, which can show at the same time. */
+class ErrorsTestView extends LitElement {
+  @property() storage = "";
+  @property() bridges = "";
+  /** As alerts rather than marked, like views not moved to the marker */
+  @property({ type: Boolean }) alerts = false;
+  protected readonly _accessibility = new ViewAccessibility(this);
+  private _error(name: string, text: string) {
+    return text
+      ? html`<p
+          class=${name}
+          role=${this.alerts ? "alert" : nothing}
+          ?data-focus-alert=${!this.alerts}
+        >
+          ${text}
+        </p>`
+      : "";
+  }
+  render() {
+    return html`<h2>Step heading</h2>
+      ${this._error("storage", this.storage)}
+      <input aria-label="Name" />
+      ${this._error("bridges", this.bridges)}`;
+  }
+}
+customElements.define("errors-test-view", ErrorsTestView);
+
+/** The node that has the focus, as Chrome exposes it. */
+function focusedNode(node: FocusedAXNode): FocusedAXNode | undefined {
+  for (const child of node.children ?? []) {
+    const focused = focusedNode(child);
+    if (focused) return focused;
+  }
+  return node.focused && node.role !== "RootWebArea" ? node : undefined;
+}
 
 describe("view accessibility", () => {
   it("can prime after removal before its first render", async () => {
@@ -107,7 +146,7 @@ describe("view accessibility", () => {
     el.error = "Failed";
     await el.updateComplete;
     expect(el.shadowRoot!.activeElement).to.equal(
-      el.shadowRoot!.querySelector('[role="alert"]')
+      el.shadowRoot!.querySelector("[data-focus-alert]")
     );
     input.focus();
     el.requestUpdate();
@@ -116,8 +155,65 @@ describe("view accessibility", () => {
     el.error = "Different failure";
     await el.updateComplete;
     expect(el.shadowRoot!.activeElement).to.equal(
-      el.shadowRoot!.querySelector('[role="alert"]')
+      el.shadowRoot!.querySelector("[data-focus-alert]")
     );
+  });
+
+  it("reads out a new error once, as the name of what has the focus", async () => {
+    const el = await fixture<FocusTestView>(
+      html`<focus-test-view></focus-test-view>`
+    );
+    el.shadowRoot!.querySelector("input")!.focus();
+    el.error = "Could not reach the server";
+    await el.updateComplete;
+
+    const tree = (await fullA11ySnapshot()) as FocusedAXNode;
+    expect(focusedNode(tree)?.name).to.equal("Could not reach the server");
+    // An alert would read it out a second time
+    expect(findByRole(tree, "alert")).to.have.length(0);
+  });
+
+  for (const alerts of [false, true]) {
+    const kind = alerts ? "alert" : "marked error";
+    it(`focuses each new ${kind} of several, not one left when another goes`, async () => {
+      const el = await fixture<ErrorsTestView>(
+        html`<errors-test-view ?alerts=${alerts}></errors-test-view>`
+      );
+      const root = el.shadowRoot!;
+      const input = root.querySelector("input")!;
+      input.focus();
+      el.storage = "No storage";
+      await el.updateComplete;
+      expect(root.activeElement === root.querySelector(".storage")).to.be.true;
+
+      input.focus();
+      el.bridges = "No bridges";
+      await el.updateComplete;
+      // New as well, although an earlier one still shows
+      expect(root.activeElement === root.querySelector(".bridges")).to.be.true;
+
+      input.focus();
+      el.storage = "";
+      await el.updateComplete;
+      // The one left was read out already
+      expect(root.activeElement === input).to.be.true;
+
+      el.bridges = "Still no bridges";
+      await el.updateComplete;
+      expect(root.activeElement === root.querySelector(".bridges")).to.be.true;
+    });
+  }
+
+  it("focuses the first of several errors that show at once", async () => {
+    const el = await fixture<ErrorsTestView>(
+      html`<errors-test-view></errors-test-view>`
+    );
+    const root = el.shadowRoot!;
+    root.querySelector("input")!.focus();
+    el.storage = "No storage";
+    el.bridges = "No bridges";
+    await el.updateComplete;
+    expect(root.activeElement === root.querySelector(".storage")).to.be.true;
   });
 
   it("lets a view continue from its own control after an error left with the focus", async () => {
@@ -193,7 +289,7 @@ describe("view accessibility", () => {
 
     el.error = "Failed";
     await el.updateComplete;
-    const alert = el.shadowRoot!.querySelector('[role="alert"]');
+    const alert = el.shadowRoot!.querySelector("[data-focus-alert]");
     expect(el.shadowRoot!.activeElement === alert).to.be.false;
 
     dialog.close();
@@ -268,9 +364,8 @@ describe("view accessibility", () => {
     await el.updateComplete;
     expect(el.shadowRoot!.querySelector('[role="status"]')).to.equal(status);
     expect(status.textContent?.trim()).to.equal("");
-    expect(el.shadowRoot!.activeElement?.getAttribute("role")).to.equal(
-      "alert"
-    );
+    expect(el.shadowRoot!.activeElement?.hasAttribute("data-focus-alert")).to.be
+      .true;
     el.error = null;
     await el.updateComplete;
     expect(el.shadowRoot!.querySelector('[role="status"]')).to.equal(status);
@@ -278,7 +373,7 @@ describe("view accessibility", () => {
     expect(el.shadowRoot!.activeElement?.tagName).to.equal("H2");
   });
 
-  it("exposes completion as an alert and focus target", async () => {
+  it("reads out completion once, by focusing its heading", async () => {
     const el = await fixture<LitElement>(html`<success-view></success-view>`);
     // The shared success layout owns the heading and its focus
     const success =
@@ -287,6 +382,6 @@ describe("view accessibility", () => {
     const focused = success.shadowRoot!.activeElement;
     expect(focused?.textContent).to.equal("You're all set!");
     expect(focused?.tagName).to.equal("H2");
-    expect(focused?.parentElement?.getAttribute("role")).to.equal("alert");
+    expect(findByRole(await fullA11ySnapshot(), "alert")).to.have.length(0);
   });
 });

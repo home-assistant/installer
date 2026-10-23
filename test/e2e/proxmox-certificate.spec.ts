@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.js";
 
 for (const width of [1100, 390]) {
   test(`certificate approval precedes authentication at ${width}px`, async ({

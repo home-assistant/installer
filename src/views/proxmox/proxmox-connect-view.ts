@@ -4,6 +4,7 @@ import {
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
+import { dialogStyles } from "../../utils/dialog-styles.js";
 import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
@@ -41,6 +42,7 @@ export class ProxmoxConnectView extends LitElement {
     stepStyles,
     fieldErrorStyles,
     linkStyles,
+    dialogStyles,
     css`
       .connect-card {
         display: flex;
@@ -65,9 +67,6 @@ export class ProxmoxConnectView extends LitElement {
         margin-block-start: 0;
       }
 
-      wa-dialog {
-        --width: 34rem;
-      }
       wa-dialog p {
         margin: 0 0 1rem 0;
       }
@@ -608,7 +607,7 @@ export class ProxmoxConnectView extends LitElement {
 
   private _renderError() {
     return html`
-      <div class="status-row" role="alert">
+      <div class="status-row" data-focus-alert>
         <div class="status-icon">
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path

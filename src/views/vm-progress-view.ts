@@ -1,10 +1,8 @@
-import { LitElement, css, html, type PropertyValues } from "lit";
+import { html } from "lit";
 import { state } from "lit/decorators.js";
 import { cancelVmInstall } from "../api/commands.js";
 import type { FlashProgress } from "../api/types.js";
 import { localize } from "../localization/localize.js";
-import { wizardState, type WizardState } from "../state/wizard-state.js";
-import { InstallDiagnostics, logFrontendError } from "../utils/diagnostics.js";
 import {
   haSetupProblemMessage,
   type HaSetupProgress,
@@ -13,7 +11,6 @@ import {
   installerError,
   type InstallerError,
 } from "../utils/installer-error.js";
-import { isCancelled, throwIfCancelled } from "../utils/polling.js";
 import {
   WAIT_STAGES,
   checkedAddress,
@@ -26,6 +23,7 @@ import {
   type WaitStage,
 } from "../utils/vm-wait.js";
 import "../components/install-progress.js";
+import { InstallProgressView } from "./install-progress-view.js";
 
 /** A flow's own stages from the download on, then the waits, then the end */
 export type VmInstallStage<Stage extends string> =
@@ -35,34 +33,15 @@ export type VmInstallStage<Stage extends string> =
   | "complete"
   | "error";
 
-/** A failure to show, in `message`'s words if given */
-export interface VmInstallFailure {
-  error: unknown;
-  message?: string;
-}
-
 /**
  * What the UTM and Proxmox install views share. Each runs its own steps up
  * to a running VM. This shows them and the waits for Home Assistant that
- * follow, and keeps what the shell relies on: whether the install can still
- * be stopped, whether the user can leave, and a retry after a failure.
+ * follow: a stop can end the install only until the VM is made, and the user
+ * can leave once it runs.
  */
-export abstract class VmProgressView<Stage extends string> extends LitElement {
-  static styles = css`
-    :host {
-      display: flex;
-      flex-direction: column;
-      min-height: 100%;
-    }
-    install-progress {
-      width: 100%;
-      flex: 1;
-    }
-  `;
-
-  @state()
-  protected _wizardState: WizardState = wizardState.getState();
-
+export abstract class VmProgressView<
+  Stage extends string,
+> extends InstallProgressView {
   @state()
   protected _stage: VmInstallStage<Stage> = "downloading";
 
@@ -75,40 +54,9 @@ export abstract class VmProgressView<Stage extends string> extends LitElement {
   @state()
   protected _totalBytes = 0;
 
-  @state()
-  protected _error: InstallerError | null = null;
-
   /** What Supervisor reports while it installs Home Assistant */
   @state()
   protected _setup: HaSetupProgress = { progress: null, problem: null };
-
-  @state()
-  private _isInstalling = false;
-
-  /** Whether the backend step that a stop can end runs */
-  @state()
-  private _inBackendStep = false;
-
-  @state()
-  protected _stopping = false;
-
-  /** Names the running backend step, so a late stop can never hit a retry. */
-  private _attempt = "";
-
-  /** What the shell last heard about `stoppable`. */
-  private _reportedStoppable?: boolean;
-
-  /** What the shell last heard about `leavable`. */
-  private _reportedLeavable?: boolean;
-
-  private _stageStartTime: number | null = null;
-  private _diagnostics?: InstallDiagnostics;
-  private _stageStartBytes: number = 0;
-  private _unsubscribe?: () => void;
-  private _abortController?: AbortController;
-
-  /** Names the flow in diagnostics */
-  protected abstract readonly _flow: "utm" | "proxmox";
 
   /** The flow's own stages, in order; the waits follow them */
   protected abstract readonly _stages: readonly ("downloading" | Stage)[];
@@ -119,201 +67,45 @@ export abstract class VmProgressView<Stage extends string> extends LitElement {
   /** The stages that report how far they are (0-100%) */
   protected abstract readonly _measurableStages: readonly string[];
 
-  /** What a stop left behind, said instead of a generic "cancelled" */
-  protected abstract _stoppedMessage(): string;
-
-  /** A title for one of the flow's own stages, like the waits have theirs */
-  protected abstract _stageTitle(stage: "downloading" | Stage): string;
-
-  protected abstract _stageDescription(stage: "downloading" | Stage): string;
-
-  /**
-   * What keeps an attempt from starting at all, if anything. It is shown at
-   * once, without running any step.
-   */
-  protected abstract _startFailure(): VmInstallFailure | undefined;
-
-  /**
-   * Run the flow's steps up to a running VM, then wait for Home Assistant on
-   * it. Resolves with what `install-complete` tells the shell.
-   */
-  protected abstract _install(
-    signal: AbortSignal
-  ): Promise<Record<string, unknown>>;
-
-  /** Whether the install operation has failed */
-  get hasError(): boolean {
-    return this._error !== null;
-  }
-
   /** Whether the user can leave with the VM running and nothing left to start */
   get leavable(): boolean {
-    // The VM runs and only Home Assistant is awaited, so leaving loses nothing
+    // The VM runs and only Home Assistant is awaited, so leaving loses
+    // nothing. A VM that exists but was never started would stay stopped.
     return this._error === null && isWaitStage(this._stage);
   }
 
   /** Whether `stop` can still end the install without leaving anything behind */
   get stoppable(): boolean {
-    return (
-      this._inBackendStep &&
-      !this._stopping &&
-      this._stoppableStages.includes(this._stage)
+    return super.stoppable && this._stoppableStages.includes(this._stage);
+  }
+
+  protected _cancel(attempt: string): Promise<void> {
+    return cancelVmInstall(attempt);
+  }
+
+  protected _resetProgress() {
+    this._stage = "downloading";
+    this._progress = 0;
+  }
+
+  protected _installerError(error: unknown): InstallerError {
+    return installerError(
+      error,
+      localize("common.vm.failed_to_create_virtual_machine")
     );
   }
 
-  /** Stop the install. It ends as a retryable `cancelled` error. */
-  stop(): void {
-    if (!this.stoppable) return;
-
-    this._stopping = true;
-    const attempt = this._attempt;
-    cancelVmInstall(attempt).catch((error: unknown) => {
-      logFrontendError(error);
-      // A late failure must not touch a retry that is stopping by now
-      if (attempt !== this._attempt || !this._inBackendStep) return;
-
-      // The install keeps going; show it as such again
-      this._stopping = false;
-    });
-  }
-
-  /**
-   * Retry the install operation.
-   *
-   * Steps that already succeeded are picked up from the wizard state instead
-   * of being run again - see each flow's `_install`.
-   */
-  retry(): void {
-    if (!this._error?.retryable) return;
-    this._error = null;
-    this._stage = "downloading";
-    this._progress = 0;
-    this._stageStartTime = null;
-    this._stageStartBytes = 0;
-    void this._startInstall();
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    this._wizardState = wizardState.getState();
-    // An install must not carry on into a flow started after it
-    const generation = wizardState.flowGeneration;
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-      if (wizardState.flowGeneration !== generation) this._cancelInstall();
-    });
-
-    void this._startInstall();
-  }
-
-  protected updated(changed: PropertyValues): void {
-    super.updated(changed);
-
-    // The shell offers the stop only while it can still work
-    if (this.stoppable !== this._reportedStoppable) {
-      this._reportedStoppable = this.stoppable;
-      this.dispatchEvent(
-        new CustomEvent("install-stoppable", {
-          detail: { stoppable: this.stoppable },
-          bubbles: true,
-          composed: true,
-        })
-      );
-    }
-    // And leaving only once the VM runs: a VM that exists but was never
-    // started would stay stopped
-    if (this.leavable !== this._reportedLeavable) {
-      this._reportedLeavable = this.leavable;
-      this.dispatchEvent(
-        new CustomEvent("install-leavable", {
-          detail: { leavable: this.leavable },
-          bubbles: true,
-          composed: true,
-        })
-      );
-    }
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this._unsubscribe?.();
-    // Stop the install pipeline. Without this its polling loops keep running
-    // after a cancel or a navigation and write wizard state and dispatch
-    // events from a component that is no longer in the document. A backend
-    // call runs to its end either way; its result is dropped.
-    this._cancelInstall();
-  }
-
-  private _cancelInstall() {
-    this._abortController?.abort();
-    this._abortController = undefined;
-    this._isInstalling = false;
-  }
-
-  private async _startInstall() {
-    if (this._isInstalling) return;
-    this._diagnostics = new InstallDiagnostics(this._flow);
-
-    const failure = this._startFailure();
-    if (failure) {
-      this._fail(failure.error, failure.message);
-      return;
-    }
-
-    const controller = new AbortController();
-    this._abortController = controller;
-    const { signal } = controller;
-
-    this._isInstalling = true;
-    this._error = null;
-
-    try {
-      const detail = await this._install(signal);
-      throwIfCancelled(signal);
-
-      // Complete
-      this._diagnostics?.advance("complete");
-      this._stage = "complete";
-      this._progress = 100;
-
-      // Dispatch event to advance wizard
-      this.dispatchEvent(
-        new CustomEvent("install-complete", {
-          bubbles: true,
-          composed: true,
-          detail,
-        })
-      );
-    } catch (error) {
-      if (isCancelled(error) || signal.aborted) {
-        // The view was detached mid-install, or its flow ended - leave the
-        // wizard alone
-        return;
-      }
-
-      // Say what a stop left behind, rather than a generic "cancelled"
-      const stopped =
-        this._stopping && installerError(error).code === "cancelled";
-      // Log a wait that ran out as a timeout, not by the words of its message
-      this._fail(
-        waitError(error),
-        stopped ? this._stoppedMessage() : undefined
-      );
-    } finally {
-      // A newer attempt may own the component by now (cancel, then retry)
-      if (this._abortController === controller) {
-        this._isInstalling = false;
-        this._abortController = undefined;
-        this._stopping = false;
-      }
-    }
+  protected _complete(detail: Record<string, unknown>) {
+    this._stage = "complete";
+    this._progress = 100;
+    super._complete(detail);
   }
 
   /**
    * Run the backend step a stop can end, from the download on. `step` starts
    * it under the name `stop` asks to end.
    */
-  protected async _runBackendStep<T>(
+  protected _runBackendStep<T>(
     step: (attempt: string) => Promise<T>
   ): Promise<T> {
     this._diagnostics?.advance("downloading");
@@ -321,14 +113,7 @@ export abstract class VmProgressView<Stage extends string> extends LitElement {
     this._progress = 0;
     this._stageStartTime = Date.now();
     this._stageStartBytes = 0;
-    this._attempt = crypto.randomUUID();
-    this._inBackendStep = true;
-
-    try {
-      return await step(this._attempt);
-    } finally {
-      this._inBackendStep = false;
-    }
+    return this._runStoppable(step);
   }
 
   /** Show what the backend reports, moving on to `stage` when it is new */
@@ -376,26 +161,14 @@ export abstract class VmProgressView<Stage extends string> extends LitElement {
     });
   }
 
-  /** Show a failure, in `message`'s words if given, and tell the shell */
   protected _fail(
     error: unknown,
     message?: string,
     detail: Record<string, unknown> = {}
   ) {
-    this._diagnostics?.fail(error);
     this._stage = "error";
-    const installer = installerError(
-      error,
-      localize("common.vm.failed_to_create_virtual_machine")
-    );
-    this._error = message ? { ...installer, message } : installer;
-    this.dispatchEvent(
-      new CustomEvent("install-error", {
-        detail: { retryable: this._error.retryable, ...detail },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    // Log a wait that ran out as a timeout, not by the words of its message
+    super._fail(waitError(error), message, detail);
   }
 
   render() {
@@ -474,5 +247,44 @@ export abstract class VmProgressView<Stage extends string> extends LitElement {
     return isWaitStage(stage)
       ? waitStageDescription(stage)
       : this._stageDescription(stage);
+  }
+
+  /**
+   * A title for one of the flow's own stages, like the waits have theirs.
+   * These are the stages both flows have; a flow adds the ones only it has.
+   */
+  protected _stageTitle(stage: "downloading" | Stage): string {
+    switch (stage) {
+      case "downloading":
+        return localize("common.install.downloading");
+      case "extracting":
+        return localize("common.install.extracting");
+      // UTM names its own stages; Proxmox's come from the backend
+      case "creating":
+      case "creating_vm":
+        return localize("common.vm.creating");
+      case "starting":
+      case "starting_vm":
+        return localize("common.vm.starting");
+      default:
+        return localize("common.install.installing");
+    }
+  }
+
+  protected _stageDescription(stage: "downloading" | Stage): string {
+    switch (stage) {
+      case "downloading":
+        return localize("common.vm.downloading_home_assistant_os");
+      case "extracting":
+        return localize("common.install.extracting_the_image");
+      case "creating":
+      case "creating_vm":
+        return localize("common.vm.creating_virtual_machine");
+      case "starting":
+      case "starting_vm":
+        return localize("common.vm.starting_home_assistant_os");
+      default:
+        return localize("common.install.installing_home_assistant");
+    }
   }
 }

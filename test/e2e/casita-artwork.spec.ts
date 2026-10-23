@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 for (const flow of ["sbc", "utm", "proxmox"]) {
   // These widths exercise browser responsiveness below the native 800px minimum.

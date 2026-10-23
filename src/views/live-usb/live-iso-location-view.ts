@@ -191,7 +191,7 @@ export class LiveIsoLocationView extends LitElement {
             </wa-button>
           </div>
           ${this._browseFailed
-            ? html`<p class="notice error" role="alert">
+            ? html`<p class="notice error" data-focus-alert>
                 ${localize(
                   "views.live_usb.live_iso_location_view.browse_failed"
                 )}
@@ -203,7 +203,9 @@ export class LiveIsoLocationView extends LitElement {
             @input=${this._onNameInput}
           ></wa-input>
           ${this._problem
-            ? html`<p class="notice error" role="alert">${this._problem}</p>`
+            ? html`<p class="notice error" data-focus-alert>
+                ${this._problem}
+              </p>`
             : ""}
         </div>
         <info-dialog

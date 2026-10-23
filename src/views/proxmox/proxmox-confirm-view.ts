@@ -100,13 +100,12 @@ export class ProxmoxConfirmView extends LitElement {
   }
 
   private _renderProxmoxIcon() {
-    // The icon the Proxmox option has on the path selection
+    // The icon the Proxmox option has on the path selection. The row's label
+    // says Proxmox server, so it needs no name of its own.
     return html`
       <svg
         class="proxmox-icon"
         viewBox="0 0 24 24"
-        role="img"
-        aria-label=${localize("views.proxmox.proxmox_confirm_view.proxmox")}
         xmlns="http://www.w3.org/2000/svg"
       >
         <path d=${mdiServer} />

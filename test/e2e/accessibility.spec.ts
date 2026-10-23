@@ -1,5 +1,9 @@
-import { expect, test } from "@playwright/test";
-import { approveProxmoxImport, skipWifiStep } from "./fixtures.js";
+import {
+  approveProxmoxImport,
+  skipWifiStep,
+  expect,
+  test,
+} from "./fixtures.js";
 
 // sRGB channels (0 to 1) of a computed colour, rgb() or color(srgb …), painted
 // over an opaque background
@@ -32,10 +36,10 @@ function contrast(foreground: string, ...backgrounds: string[]) {
   return (values[0] + 0.05) / (values[1] + 0.05);
 }
 
-for (const [flow, tag, flag] of [
-  ["sbc", "progress-view", "_flashError"],
-  ["proxmox", "proxmox-progress-view", "_vmInstallError"],
-  ["vm", "utm-progress-view", "_vmInstallError"],
+for (const [flow, tag] of [
+  ["sbc", "progress-view"],
+  ["proxmox", "proxmox-progress-view"],
+  ["vm", "utm-progress-view"],
 ] as const) {
   test(`${flow} footer retry restores the installation heading focus`, async ({
     page,
@@ -44,21 +48,22 @@ for (const [flow, tag, flag] of [
     // The app shell loads after locale detection, so wait for it to render.
     await page.locator("welcome-view").waitFor({ state: "attached" });
     await page.evaluate(
-      async ({ flow, tag, flag }) => {
+      async ({ flow, tag }) => {
         const statePath = "/src/state/wizard-state.ts";
         const { wizardState } = (await import(
           statePath
         )) as typeof import("../../src/state/wizard-state.js");
         const prototype = customElements.get(tag)!.prototype;
         // Never start an installation: exercise the real retry/render path only.
-        prototype._startFlashing = prototype._startInstall = async () => {};
+        prototype._startInstall = async () => {};
         const app = document.querySelector(
           "app-shell"
         )! as unknown as HTMLElement & {
           _currentView: string;
+          _installError: boolean;
           _installRetryable: boolean;
           updateComplete: Promise<unknown>;
-        } & Record<typeof flag, boolean>;
+        };
         wizardState.startFlow(flow);
         wizardState.goToStep(3);
         app._currentView = "wizard";
@@ -75,14 +80,14 @@ for (const [flow, tag, flag] of [
           retryable: true,
           details: {},
         };
-        app[flag] = true;
+        app._installError = true;
         // The shell only offers Try again for a retryable failure
         app._installRetryable = true;
         await progress.updateComplete;
       },
-      { flow, tag, flag }
+      { flow, tag }
     );
-    await expect(page.getByRole("alert")).toBeFocused();
+    await expect(page.locator("[data-focus-alert]")).toBeFocused();
     await page.getByRole("button", { name: "Try again", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(page.locator(`${tag} h2`)).toBeFocused();
@@ -132,7 +137,8 @@ for (const tag of [
     }, tag);
     const heading = page.getByRole("heading", { name: "You're all set!" });
     await expect(heading).toBeFocused();
-    await expect(page.getByRole("alert")).toContainText("You're all set!");
+    // The focus reads it out; an alert would read it out again
+    await expect(page.getByRole("alert")).toHaveCount(0);
     const list = page.getByRole("list", { name: "Next steps" });
     await expect(list).toBeVisible();
     expect(await list.getByRole("listitem").count()).toBeGreaterThan(0);
@@ -626,7 +632,6 @@ for (const tag of [
     const initialStatus = await page.evaluate(async (tag) => {
       document.querySelector("app-shell")!.remove();
       const progress = document.createElement(tag) as HTMLElement & {
-        _startFlashing: () => Promise<void>;
         _startInstall: () => Promise<void>;
         _progress: unknown;
         _stage: string;
@@ -635,7 +640,7 @@ for (const tag of [
         updateComplete: Promise<unknown>;
       };
       // Isolated rendered view: never begin an install or call native commands.
-      progress._startFlashing = progress._startInstall = async () => {};
+      progress._startInstall = async () => {};
       progress.style.height = "100vh";
       progress._stage = "downloading";
       progress._progress =
@@ -714,7 +719,7 @@ for (const tag of [
         details: {},
       };
     }, tag);
-    await expect(page.getByRole("alert")).toBeFocused();
+    await expect(page.locator("[data-focus-alert]")).toBeFocused();
     await expect(
       page.locator(`${tag} casita-mascot[mood="problem"] img`)
     ).toBeVisible();
@@ -749,9 +754,7 @@ test("disk installation keeps heading focus after the confirmation dialog closes
       .locator("success-view")
       .getByRole("heading", { name: "You're all set!" })
   ).toBeFocused({ timeout: 20000 });
-  await expect(page.locator("success-view").getByRole("alert")).toContainText(
-    "You're all set!"
-  );
+  await expect(page.locator("success-view").getByRole("alert")).toHaveCount(0);
 });
 
 // A keyboard can only scroll what it can focus. The step's area takes the

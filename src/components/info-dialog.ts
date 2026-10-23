@@ -1,12 +1,11 @@
 import { localize } from "../localization/localize.js";
-import { LitElement, html, css } from "lit";
+import { html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
+import { DialogBase } from "./dialog-base.js";
 
 /**
- * Informational dialog built on wa-dialog (focus trap, Escape, backdrop
- * dismiss, and role="dialog"/aria-modal come for free).
+ * Informational dialog built on DialogBase.
  *
  * Toggle `open`, set `heading` / `message` / `primaryLabel` / `secondaryLabel` /
  * `primaryVariant` / `emphasis`, and listen for `dialog-primary` /
@@ -15,61 +14,7 @@ import "@home-assistant/webawesome/dist/components/button/button.js";
  * `dialog-secondary` (dismiss).
  */
 @customElement("info-dialog")
-export class InfoDialog extends LitElement {
-  static styles = css`
-    :host {
-      display: none;
-    }
-
-    /* When open, occupy the viewport so the host is a real (if transparent)
-       box. wa-dialog renders a native modal in the top layer above this, which
-       handles all interaction; this just gives the host a layout box. */
-    :host([open]) {
-      display: block;
-      position: fixed;
-      inset: 0;
-    }
-
-    wa-dialog {
-      --width: 30rem;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      wa-dialog::part(dialog) {
-        animation: none !important;
-      }
-    }
-
-    .dialog-title {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.75rem;
-      color: var(--ha-text-color, #212121);
-    }
-
-    .info-icon {
-      width: 1.5rem;
-      height: 1.5rem;
-      flex-shrink: 0;
-    }
-
-    .info-icon svg {
-      width: 100%;
-      height: 100%;
-      fill: var(--ha-primary-color, #03a9f4);
-    }
-
-    .dialog-message {
-      font-size: 0.9375rem;
-      color: var(--ha-text-color, #212121);
-      line-height: 1.6;
-      margin: 0;
-    }
-  `;
-
-  @property({ type: Boolean, reflect: true })
-  open = false;
-
+export class InfoDialog extends DialogBase {
   @property({ type: String })
   heading = "";
 
@@ -82,7 +27,10 @@ export class InfoDialog extends LitElement {
   @property({ type: String, attribute: "secondary-label" })
   secondaryLabel = "";
 
-  /** "danger" when the primary button does something that can't be undone. */
+  /**
+   * "danger" when the primary button does something that can't be undone.
+   * The title then warns, as the erase dialog's does.
+   */
   @property({ type: String, attribute: "primary-variant" })
   primaryVariant: "brand" | "danger" = "brand";
 
@@ -93,85 +41,49 @@ export class InfoDialog extends LitElement {
   @property({ type: String })
   emphasis: "primary" | "secondary" = "primary";
 
-  render() {
+  protected readonly dismissEvent = "dialog-secondary";
+
+  protected renderContent() {
     const secondaryStandsOut = this.emphasis === "secondary";
 
     return html`
-      <wa-dialog
-        .open=${this.open}
-        light-dismiss
-        @wa-after-hide=${this._onAfterHide}
+      ${this.renderTitle(
+        this.heading,
+        this.primaryVariant === "danger" ? "warning" : "info"
+      )}
+
+      <p class="dialog-message">${this.message}</p>
+      <slot></slot>
+
+      ${this.secondaryLabel
+        ? html`
+            <wa-button
+              slot="footer"
+              variant=${secondaryStandsOut ? "brand" : "neutral"}
+              appearance=${secondaryStandsOut ? "accent" : "outlined"}
+              @click=${this._onSecondary}
+            >
+              ${this.secondaryLabel}
+            </wa-button>
+          `
+        : ""}
+      <wa-button
+        slot="footer"
+        variant=${secondaryStandsOut ? "neutral" : this.primaryVariant}
+        appearance=${secondaryStandsOut ? "outlined" : "accent"}
+        @click=${this._onPrimary}
       >
-        <span slot="label" class="dialog-title">
-          <span class="info-icon">
-            <svg viewBox="0 0 24 24">
-              <path
-                d="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"
-              />
-            </svg>
-          </span>
-          ${this.heading}
-        </span>
-
-        <p class="dialog-message">${this.message}</p>
-        <slot></slot>
-
-        ${this.secondaryLabel
-          ? html`
-              <wa-button
-                slot="footer"
-                variant=${secondaryStandsOut ? "brand" : "neutral"}
-                appearance=${secondaryStandsOut ? "accent" : "outlined"}
-                @click=${this._onSecondary}
-              >
-                ${this.secondaryLabel}
-              </wa-button>
-            `
-          : ""}
-        <wa-button
-          slot="footer"
-          variant=${secondaryStandsOut ? "neutral" : this.primaryVariant}
-          appearance=${secondaryStandsOut ? "outlined" : "accent"}
-          @click=${this._onPrimary}
-        >
-          ${this.primaryLabel}
-        </wa-button>
-      </wa-dialog>
+        ${this.primaryLabel}
+      </wa-button>
     `;
   }
 
-  // Fires after the dialog has fully closed (Escape / backdrop / header close
-  // button). Syncing here rather than on wa-hide avoids feeding open=false back
-  // into wa-dialog mid-animation, which would trigger a second close request.
-  private _onAfterHide(event: Event) {
-    // wa-after-hide bubbles and is composed, so ignore events re-dispatched
-    // from any nested Web Awesome overlay slotted into the dialog body.
-    if (event.eventPhase !== Event.AT_TARGET) {
-      return;
-    }
-    // open=false already means an action button or the consumer closed us,
-    // so this hide is not a user dismissal.
-    if (!this.open) {
-      return;
-    }
-    this.open = false;
-    this._dispatch("dialog-secondary");
-  }
-
   private _onSecondary() {
-    this.open = false;
-    this._dispatch("dialog-secondary");
+    this.choose("dialog-secondary");
   }
 
   private _onPrimary() {
-    this.open = false;
-    this._dispatch("dialog-primary");
-  }
-
-  private _dispatch(type: string) {
-    this.dispatchEvent(
-      new CustomEvent(type, { bubbles: true, composed: true })
-    );
+    this.choose("dialog-primary");
   }
 }
 

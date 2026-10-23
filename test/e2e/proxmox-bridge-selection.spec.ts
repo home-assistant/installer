@@ -1,5 +1,4 @@
-import { test, expect } from "@playwright/test";
-import { approveProxmoxImport } from "./fixtures.js";
+import { approveProxmoxImport, test, expect } from "./fixtures.js";
 
 test("holds Next until a restored bridge is verified for the current session", async ({
   page,

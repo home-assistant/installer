@@ -182,12 +182,15 @@ export function diagnosticText(data: Diagnostics): string {
 
 export const REPORT_URL_LIMIT = 7500;
 
+/** A new issue from the bug report template, without diagnostics */
+export const BUG_REPORT_URL =
+  "https://github.com/home-assistant/installer/issues/new?template=bug_report.yml";
+
 export function reportUrl(data: Diagnostics): {
   url: string;
   shortened: boolean;
 } {
-  const url = new URL("https://github.com/home-assistant/installer/issues/new");
-  url.searchParams.set("template", "bug_report.yml");
+  const url = new URL(BUG_REPORT_URL);
   const fields = diagnosticFields(data);
   for (const [key, value] of Object.entries(fields))
     url.searchParams.set(key, value);

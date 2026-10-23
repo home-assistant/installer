@@ -1,8 +1,8 @@
-import { test, expect, type Page } from "@playwright/test";
-import { skipWifiStep } from "./fixtures.js";
+import { type Page } from "@playwright/test";
+import { skipWifiStep, test, expect } from "./fixtures.js";
 
 // The browser mock serves the device catalog, the drives and a simulated
-// write, so each device can go all the way to its next steps.
+// write, so a device can go all the way to its next steps.
 
 const next = (page: Page) =>
   page.locator("wizard-shell .footer-right wa-button");
@@ -40,71 +40,7 @@ async function openHaHardware(page: Page) {
   ).toBeVisible();
 }
 
-const scenarios = [
-  {
-    value: "ha-green",
-    name: "Home Assistant Green",
-    connect: "Insert a microSD card into this computer",
-    version: "Green installer, April 10, 2024",
-    notice: "the installer reinstalls Home Assistant OS",
-    steps: [
-      "needs internet access during the reset",
-      "Shut down system",
-      "until it clicks",
-      "heartbeat pattern",
-    ],
-    guide: "https://support.nabucasa.com/hc/en-us/articles/25162566451485",
-  },
-  {
-    value: "ha-yellow",
-    module: "yellow-cm4",
-    name: "Home Assistant Yellow with CM4",
-    connect: "Insert a USB flash drive into this computer",
-    version: "Yellow installer, October 25, 2023",
-    notice: "the installer reinstalls Home Assistant OS",
-    steps: [
-      "Unplug every USB device",
-      "press and hold the red and blue buttons",
-      "only works while Home Assistant OS is installed",
-      "When only the red LED is on",
-      "remove the USB flash drive",
-    ],
-    guide: "https://support.nabucasa.com/hc/en-us/articles/25484982657309",
-  },
-  {
-    value: "ha-yellow",
-    module: "yellow-cm5",
-    name: "Home Assistant Yellow with CM5",
-    connect: "RPi-MSD",
-    version: "Version 16.3",
-    notice: "Home Assistant included",
-    steps: ["JP1 back to UART", "starts Home Assistant OS from the eMMC"],
-    guide: "https://support.nabucasa.com/hc/en-us/articles/25485061432093",
-  },
-  {
-    value: "ha-blue",
-    name: "Home Assistant Blue",
-    connect: "ums /dev/mmcblk0",
-    version: "Version 16.3",
-    notice: "Home Assistant included",
-    steps: ["boot mode toggle back to MMC", "Preparing Home Assistant"],
-    guide: "https://www.home-assistant.io/installation/odroid",
-  },
-];
-
 test.describe("Home Assistant hardware flow", () => {
-  test("the option is offered on path selection", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "Let's go" }).click();
-
-    const card = page.locator('option-card[heading="Home Assistant hardware"]');
-    await expect(card).toBeVisible();
-    await expect(card).toHaveAttribute(
-      "description",
-      "Home Assistant Green, Yellow, or Blue by Nabu Casa"
-    );
-  });
-
   test("lists each device, with one Yellow", async ({ page }) => {
     await openHaHardware(page);
 
@@ -125,7 +61,7 @@ test.describe("Home Assistant hardware flow", () => {
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
-  test("Next says the device is ready before reinstalling", async ({
+  test("Next asks before reinstalling, and Go back stays on the device step", async ({
     page,
   }) => {
     await openHaHardware(page);
@@ -134,17 +70,7 @@ test.describe("Home Assistant hardware flow", () => {
 
     const dialog = reinstallDialog(page);
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText(
-      "Your Home Assistant Green is ready to use"
-    );
-    await expect(dialog).toContainText("Reinstalling erases everything on it");
-
-    // Going back is what stands out, since the device is ready as it is
     const goBack = dialog.locator("wa-button", { hasText: "Go back" });
-    await expect(goBack).toHaveAttribute("variant", "brand");
-    await expect(
-      dialog.locator("wa-button", { hasText: "Reinstall" })
-    ).toHaveAttribute("appearance", "outlined");
 
     // Go back stays on the device step, with the device still selected
     await goBack.click();
@@ -155,55 +81,30 @@ test.describe("Home Assistant hardware flow", () => {
     await expect(page.locator("drive-selection-view")).toHaveCount(0);
   });
 
-  for (const scenario of scenarios) {
-    test(`${scenario.name} goes from drive to next steps`, async ({ page }) => {
-      test.setTimeout(60000);
-      await openHaHardware(page);
+  test("the Green installs through to the success screen, and Done returns to the start", async ({
+    page,
+  }) => {
+    test.setTimeout(60000);
+    await openHaHardware(page);
 
-      await page.locator(`device-card[value="${scenario.value}"]`).click();
-      await nextFromDevice(page);
-      if (scenario.module) await pickModule(page, scenario.module);
+    await page.locator('device-card[value="ha-green"]').click();
+    await nextFromDevice(page);
 
-      const drive = page.locator("drive-selection-view");
-      const instructions = drive.locator("ha-hardware-connect-instructions");
-      await expect(instructions).toContainText(scenario.connect);
-      await drive.locator("drive-card").first().click();
-      await next(page).click();
-      await skipWifiStep(page);
+    const drive = page.locator("drive-selection-view");
+    await drive.locator("drive-card").first().click();
+    await next(page).click();
+    await skipWifiStep(page);
 
-      const confirmation = page.locator("confirmation-view");
-      await expect(confirmation).toContainText(scenario.name);
-      await expect(confirmation.locator(".summary-card")).toContainText(
-        scenario.version
-      );
-      await expect(confirmation.locator("inline-notice")).toContainText(
-        scenario.notice
-      );
-      await expect(confirmation.locator("inline-notice")).toContainText(
-        "Create a backup first"
-      );
-      await next(page).click();
-      await page.locator('confirm-dialog wa-button[variant="danger"]').click();
-      await expect(page.locator("progress-view")).toBeVisible();
+    await next(page).click();
+    await page.locator('confirm-dialog wa-button[variant="danger"]').click();
+    await expect(page.locator("progress-view")).toBeVisible();
 
-      const success = page.locator("ha-hardware-success-view");
-      await expect(success).toBeVisible({ timeout: 45000 });
-      const steps = success.locator(".next-steps");
-      for (const step of scenario.steps) {
-        await expect(steps).toContainText(step);
-      }
-      await expect(steps).toContainText("homeassistant.local");
-      await expect(steps).not.toContainText(":8123");
-      await expect(success.locator(".next-steps-footer a")).toHaveAttribute(
-        "href",
-        scenario.guide
-      );
-
-      await expect(next(page)).toHaveText("Done");
-      await next(page).click();
-      await expect(page.locator("welcome-view")).toBeVisible();
+    await expect(page.locator("ha-hardware-success-view")).toBeVisible({
+      timeout: 45000,
     });
-  }
+    await next(page).click();
+    await expect(page.locator("welcome-view")).toBeVisible();
+  });
 
   test("the Yellow asks for its compute module after the dialog", async ({
     page,

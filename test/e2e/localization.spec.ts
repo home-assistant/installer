@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.js";
 
 for (const mode of ["native", "invalid", "rejected", "stalled"] as const) {
   test(`locale discovery ${mode} still starts the English UI`, async ({

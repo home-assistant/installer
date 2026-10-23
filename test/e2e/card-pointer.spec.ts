@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 // The option, device and drive cards light up under the pointer and give a
 // little when pressed, all the same; with reduced motion they hold still

@@ -575,7 +575,9 @@ describe("Proxmox bridge selection", () => {
       () => !!el.shadowRoot!.textContent?.includes("Network lookup failed")
     );
     failBridge = false;
-    await (el as unknown as { _loadStorage(): Promise<void> })._loadStorage();
+    await (
+      el as unknown as { _lookup: { loadStorage(): Promise<void> } }
+    )._lookup.loadStorage();
     await ready();
     await el.updateComplete;
     expect(el.shadowRoot!.textContent).not.to.contain("Network lookup failed");

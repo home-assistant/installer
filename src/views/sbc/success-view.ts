@@ -1,6 +1,6 @@
 import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { openExternalLink } from "../../utils/external-url.js";
 import { selectedWifi } from "../../utils/wifi.js";
@@ -51,6 +51,13 @@ export class SuccessView extends LitElement {
     }
   `;
 
+  /**
+   * Show the steps that fit any board, whatever device the selections still
+   * name, for a flow that lost track of which one it was installing.
+   */
+  @property({ type: Boolean })
+  generic = false;
+
   @state()
   private _wizardState: WizardState = wizardState.getState();
 
@@ -69,10 +76,11 @@ export class SuccessView extends LitElement {
   }
 
   render() {
-    const deviceName = this._wizardState.selections.deviceName;
-    const board = this._wizardState.selections.deviceConfig?.board ?? "";
+    const { selections } = this._wizardState;
+    const deviceName = this.generic ? undefined : selections.deviceName;
+    const board = this.generic ? "" : (selections.deviceConfig?.board ?? "");
     const isMiniPc = this._wizardState.currentFlow === "minipc";
-    const wifi = selectedWifi(this._wizardState.selections);
+    const wifi = selectedWifi(selections);
     const supportsDirectUsb = board === "odroid-n2" || board === "odroid-m1s";
     const guide = Object.prototype.hasOwnProperty.call(
       INSTALLATION_GUIDES,

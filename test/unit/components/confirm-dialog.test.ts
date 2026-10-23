@@ -38,6 +38,8 @@ describe("confirm-dialog", () => {
 
     const icon = el.shadowRoot!.querySelector(".warning-icon");
     expect(icon).to.exist;
+    // Decorative: the title says what it asks
+    expect(icon!.getAttribute("aria-hidden")).to.equal("true");
   });
 
   it("renders dialog with drive name in message", async () => {
@@ -146,6 +148,20 @@ describe("confirm-dialog", () => {
     button.click();
     button.click();
     expect(confirms).to.equal(1);
+  });
+
+  it("does not cancel twice while the dialog closes", async () => {
+    const el = await fixture<ConfirmDialog>(
+      html`<confirm-dialog open></confirm-dialog>`
+    );
+    let cancels = 0;
+    el.addEventListener("dialog-cancel", () => cancels++);
+    const button = el.shadowRoot!.querySelector<HTMLElement>(
+      "wa-button[appearance='outlined']"
+    )!;
+    button.click();
+    button.click();
+    expect(cancels).to.equal(1);
   });
 
   it("closes dialog when cancel button is clicked", async () => {
