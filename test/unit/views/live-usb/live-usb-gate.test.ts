@@ -79,6 +79,9 @@ describe("live-usb-gate", () => {
     expect(gate.shadowRoot!.querySelector("wa-button")).to.equal(retry);
     expect(retry.loading).to.equal(true);
     expect(gate.shadowRoot!.activeElement).to.equal(retry);
+    // Emptied while checking, so the same failure is read out again
+    const alert = gate.shadowRoot!.querySelector("[data-focus-alert]")!;
+    expect(alert.textContent!.trim()).to.equal("");
 
     checks[1].resolve({ hai_live_found: true, needs_admin: false });
     await settle();

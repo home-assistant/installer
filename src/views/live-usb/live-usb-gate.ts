@@ -138,9 +138,11 @@ export class LiveUsbGate extends LitElement {
 
   render() {
     if (this._error) {
+      // Empty while checking, like renderLoadError(): the same failure coming
+      // back is then new text, and read out again
       return html`
         <div class="notice error">
-          <p data-focus-alert>${this._error.message}</p>
+          <p data-focus-alert>${this._checking ? "" : this._error.message}</p>
           ${renderRetryButton(this._checking, () => this._check())}
         </div>
       `;
