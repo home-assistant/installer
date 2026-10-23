@@ -155,6 +155,66 @@ describe("view accessibility", () => {
     expect(getComputedStyle(heading).outlineStyle).to.equal("none");
   });
 
+  it("focuses a new view once the dialog that had the focus has closed", async () => {
+    // A modal leaves the rest of the page inert, the new view included
+    const dialog = document.createElement("dialog");
+    dialog.innerHTML = "<button>Stop</button>";
+    document.body.append(dialog);
+    dialog.showModal();
+    try {
+      const el = await fixture<FocusTestView>(
+        html`<focus-test-view></focus-test-view>`
+      );
+      const heading = el.shadowRoot!.querySelector("h2");
+      expect(el.shadowRoot!.activeElement === heading).to.be.false;
+
+      dialog.close();
+      // As wa-dialog says once it has closed and given back the focus
+      dialog.dispatchEvent(
+        new Event("wa-after-hide", { bubbles: true, composed: true })
+      );
+      expect(el.shadowRoot!.activeElement === heading).to.be.true;
+    } finally {
+      dialog.remove();
+    }
+  });
+
+  it("focuses an error after a dialog, over what the dialog gave back", async () => {
+    const el = await fixture<FocusTestView>(
+      html`<focus-test-view></focus-test-view>`
+    );
+    const input = el.shadowRoot!.querySelector("input")!;
+    input.focus();
+    const dialog = document.createElement("dialog");
+    dialog.innerHTML = "<button>Stop</button>";
+    el.parentElement!.append(dialog);
+    dialog.showModal();
+    dialog.querySelector("button")!.focus();
+
+    el.error = "Failed";
+    await el.updateComplete;
+    const alert = el.shadowRoot!.querySelector('[role="alert"]');
+    expect(el.shadowRoot!.activeElement === alert).to.be.false;
+
+    dialog.close();
+    // Back to what opened the dialog, the error not yet read out
+    input.focus();
+    dialog.dispatchEvent(
+      new Event("wa-after-hide", { bubbles: true, composed: true })
+    );
+    expect(el.shadowRoot!.activeElement === alert).to.be.true;
+
+    // Waits only for that dialog: later ones leave the focus alone
+    input.focus();
+    dialog.showModal();
+    dialog.close();
+    input.focus();
+    dialog.dispatchEvent(
+      new Event("wa-after-hide", { bubbles: true, composed: true })
+    );
+    expect(el.shadowRoot!.activeElement === input).to.be.true;
+  });
+
   it("does not steal focus when a delayed heading arrives", async () => {
     const el = await fixture<FocusTestView>(
       html`<focus-test-view .loading=${true}></focus-test-view>`

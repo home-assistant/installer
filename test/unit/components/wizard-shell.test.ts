@@ -192,6 +192,39 @@ describe("wizard-shell", () => {
     expect(step.shadowRoot!.activeElement === heading).to.be.true;
   });
 
+  it("moves the focus a dialog gives back to a hidden Cancel to the step's heading", async () => {
+    const step = document.createElement("div");
+    step.attachShadow({ mode: "open" }).innerHTML =
+      "<section><h2>Installing Home Assistant</h2></section>";
+    const el = await fixture<WizardShell>(html`
+      <wizard-shell hide-next>${step}</wizard-shell>
+    `);
+    const cancel = el.shadowRoot!.querySelector(
+      ".footer-left wa-button"
+    ) as HTMLElement & { updateComplete: Promise<unknown> };
+    await cancel.updateComplete;
+    cancel.focus();
+    // "Stop the installation?", opened from Cancel
+    const dialog = document.createElement("dialog");
+    dialog.innerHTML = "<button>Stop installation</button>";
+    el.parentElement!.append(dialog);
+    dialog.showModal();
+    dialog.querySelector("button")!.focus();
+
+    // Stopping hides the buttons while the dialog closes
+    el.hideFooter = true;
+    await el.updateComplete;
+    const heading = step.shadowRoot!.querySelector("h2")!;
+    expect(step.shadowRoot!.activeElement === heading).to.be.false;
+
+    dialog.close();
+    dialog.dispatchEvent(
+      new Event("wa-after-hide", { bubbles: true, composed: true })
+    );
+    expect(step.shadowRoot!.activeElement === heading).to.be.true;
+    dialog.remove();
+  });
+
   it("leaves the focus alone when the buttons hide without it", async () => {
     const step = document.createElement("div");
     step.attachShadow({ mode: "open" }).innerHTML =

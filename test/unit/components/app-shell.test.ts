@@ -1050,6 +1050,41 @@ describe("app-shell", () => {
       expect(wizardState.getState().selections.proxmoxVmResult).to.be.undefined;
     });
 
+    it("stops asking to leave once the install completed", async () => {
+      const calls: string[] = [];
+      await enterProxmoxInstall(() =>
+        mockTauriIpc((cmd) => {
+          calls.push(cmd);
+          if (cmd === "proxmox_create_vm") return { vm_id: 100, node: "pve" };
+          if (cmd === "proxmox_get_vm_status")
+            return { status: "running", ip_address: "192.0.2.50" };
+          // Home Assistant is still starting
+          if (cmd === "check_ha_ready") return new Promise(() => {});
+          throw new Error(`Unexpected IPC command: ${cmd}`);
+        })
+      );
+      await waitUntil(
+        () => calls.includes("check_ha_ready") && !shellOf(el).hideFooter,
+        "Cancel never came back once the VM existed"
+      );
+      const leaveDialog = el.shadowRoot!.querySelector(
+        "info-dialog.leave-dialog"
+      ) as InfoDialog;
+      fire(shellOf(el), "wizard-cancel");
+      await el.updateComplete;
+      expect(leaveDialog.open).to.be.true;
+
+      // Without waiting for the view to report it can no longer be left
+      fire(
+        el.shadowRoot!.querySelector("proxmox-progress-view")!,
+        "install-complete"
+      );
+      await el.updateComplete;
+      expect(leaveDialog.open).to.be.false;
+      expect(stopDialogOf(el).open).to.be.false;
+      expect(wizardState.currentStep?.id).to.equal("success");
+    });
+
     it("logs in again after the session expired, then waits for the VM it made", async () => {
       const calls: string[] = [];
       let expired = true;

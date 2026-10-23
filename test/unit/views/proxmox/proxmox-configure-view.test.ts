@@ -298,9 +298,44 @@ describe("proxmox-configure-view", () => {
   it("shows storage labels without template indentation", async () => {
     const el = await mount();
     const select = el.shadowRoot!.querySelectorAll("wa-select")[1];
-    // Decimal units: the 200 GiB mock storage is 214.7 GB
-    await waitUntil(() => select.displayLabel === "local (214.7 GB free)");
-    expect(select.displayInput.value).to.equal("local (214.7 GB free)");
+    // In the GB of the disk sizes: the 200 GiB mock storage is 200 GB
+    await waitUntil(() => select.displayLabel === "local (200 GB free)");
+    expect(select.displayInput.value).to.equal("local (200 GB free)");
+  });
+
+  // Proxmox makes a "32G" disk 32 GiB. Listed as 34 GB free in decimal
+  // units, "tight" seemed to have room for it until the check at Next.
+  it("lists free space in the GB the disk sizes are in", async () => {
+    const storage = (name: string, available: number): ProxmoxStorage => ({
+      name,
+      storage_type: "lvmthin",
+      active: true,
+      content: ["images"],
+      available,
+    });
+    mockTauriIpc((cmd) => {
+      switch (cmd) {
+        case "proxmox_list_bridges":
+          return [{ name: "vmbr0", network_type: "bridge", comments: null }];
+        case "proxmox_list_nodes":
+          return [{ name: "pve", status: "online" }];
+        case "proxmox_get_next_vm_id":
+          return 100;
+        case "proxmox_list_storage":
+          return [storage("large", 400 * 1024 ** 3), storage("tight", 34e9)];
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+
+    const el = await mount();
+
+    const options = [
+      ...el.shadowRoot!.querySelectorAll("#storage wa-option"),
+    ].map((option) => option.textContent!.trim());
+    expect(options).to.deep.equal([
+      "large (400 GB free)",
+      "tight (31.6 GB free)",
+    ]);
   });
 
   it("saves the defaults on a first visit", async () => {

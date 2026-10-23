@@ -29,7 +29,6 @@ import {
   proxmoxEnableStorageImport,
   proxmoxGetNextVmId,
   proxmoxCheckVmConfig,
-  formatBytes,
 } from "../../api/commands.js";
 import type {
   ProxmoxBridge,
@@ -49,6 +48,7 @@ import {
   proxmoxVmConfig,
 } from "../../state/vm-defaults.js";
 import { settingStyles } from "../../utils/setting-styles.js";
+import { formatFreeSpace } from "../../utils/format.js";
 import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 import {
   SESSION_EXPIRED,
@@ -990,7 +990,7 @@ export class ProxmoxConfigureView extends LitElement {
                         "views.proxmox.proxmox_configure_view.storage_free",
                         {
                           storage: storage.name,
-                          free: formatBytes(storage.available),
+                          free: formatFreeSpace(storage.available),
                         }
                       )}
                     </wa-option>
@@ -1003,7 +1003,7 @@ export class ProxmoxConfigureView extends LitElement {
                     "views.proxmox.proxmox_configure_view.import_can_be_enabled_on_storage",
                     {
                       storage: selected.name,
-                      free: formatBytes(selected.available),
+                      free: formatFreeSpace(selected.available),
                     }
                   )}
                 </p>`
@@ -1221,7 +1221,7 @@ export class ProxmoxConfigureView extends LitElement {
                             "views.proxmox.proxmox_configure_view.storage_free",
                             {
                               storage: storage.name,
-                              free: formatBytes(storage.available),
+                              free: formatFreeSpace(storage.available),
                             }
                           )}
                         </wa-option>

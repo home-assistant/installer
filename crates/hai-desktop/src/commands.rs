@@ -784,21 +784,64 @@ pub async fn proxmox_create_vm(
     let _awake = keep_awake("Installing Home Assistant on Proxmox").await;
     let callback = TauriProgressCallback::new(&progress_channel, "proxmox_install")
         .cancellable(job.cancelled());
+    callback
+        .operation
+        .finish(run_proxmox_install(&Backend, &session, &config, &callback).await)
+}
+
+/// Passes progress on, and notes when the install starts to create the VM.
+struct VmCreationWatch<'a, P> {
+    progress: &'a P,
+    creating: AtomicBool,
+}
+
+impl<P: ProgressCallback> ProgressCallback for VmCreationWatch<'_, P> {
+    fn on_progress(&self, progress: FlashProgress) {
+        if matches!(
+            progress.stage,
+            FlashStage::CreatingVm | FlashStage::StartingVm
+        ) {
+            self.creating.store(true, Ordering::Release);
+        }
+        self.progress.on_progress(progress);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.progress.is_cancelled()
+    }
+}
+
+/// Run a Proxmox install, and say whether trying it again is safe.
+async fn run_proxmox_install<B: ProxmoxBackend, P: ProgressCallback>(
+    backend: &B,
+    session: &ProxmoxSession,
+    config: &ProxmoxVmConfig,
+    progress: &P,
+) -> Result<ProxmoxVmResult, CommandError> {
+    let watch = VmCreationWatch {
+        progress,
+        creating: AtomicBool::new(false),
+    };
     // Fully qualified: `create_vm` is defined on both ProxmoxBackend and UtmBackend.
-    callback.operation.finish(
-        ProxmoxBackend::create_vm(&Backend, &session, &config, &callback)
-            .await
-            .map_err(|error| {
-                let mut error = CommandError::from(error);
-                // A lost response may leave a VM behind. This command cannot yet
-                // resume it safely, even when the underlying network error is transient.
-                // A stop never gets that far, so trying again is fine.
-                if error.code != "cancelled" {
-                    error.retryable = false;
-                }
-                error
-            }),
-    )
+    ProxmoxBackend::create_vm(backend, session, config, &watch)
+        .await
+        .map_err(|error| {
+            // Before the VM is being created, the install has only looked
+            // things up and uploaded an image under a name no other attempt
+            // uses, so it can be tried again like a lookup: after a lost
+            // connection, or once the user has freed the VM ID or storage.
+            if !watch.creating.load(Ordering::Acquire) {
+                return CommandError::from_query(error);
+            }
+            let mut error = CommandError::from(error);
+            // A lost response may leave a VM behind. This command cannot yet
+            // resume it safely, even when the underlying network error is transient.
+            // A stop never gets that far, so trying again is fine.
+            if error.code != "cancelled" {
+                error.retryable = false;
+            }
+            error
+        })
 }
 
 /// Stop the Proxmox install or UTM download that `attempt` names. It ends
@@ -1010,6 +1053,129 @@ mod tests {
             CommandError::from_query(hai_core::Error::ProxmoxApi("Access denied".to_string()));
         let value = tauri::ipc::InvokeError::from(denied).0;
         assert_eq!(value["code"], "proxmox_api");
+    }
+
+    /// Fails the install with `error` once it has reported `stages`
+    struct FailingProxmoxInstall {
+        stages: &'static [FlashStage],
+        error: fn() -> hai_core::Error,
+    }
+
+    impl ProxmoxBackend for FailingProxmoxInstall {
+        async fn authenticate(&self, _: &ProxmoxCredentials) -> hai_core::Result<ProxmoxSession> {
+            unreachable!()
+        }
+
+        async fn list_nodes(&self, _: &ProxmoxSession) -> hai_core::Result<Vec<ProxmoxNode>> {
+            unreachable!()
+        }
+
+        async fn list_bridges(
+            &self,
+            _: &ProxmoxSession,
+            _: &str,
+        ) -> hai_core::Result<Vec<ProxmoxBridge>> {
+            unreachable!()
+        }
+
+        async fn list_storage(
+            &self,
+            _: &ProxmoxSession,
+            _: &str,
+        ) -> hai_core::Result<Vec<ProxmoxStorage>> {
+            unreachable!()
+        }
+
+        async fn get_next_vm_id(&self, _: &ProxmoxSession) -> hai_core::Result<u32> {
+            unreachable!()
+        }
+
+        async fn create_vm<P: ProgressCallback>(
+            &self,
+            _: &ProxmoxSession,
+            _: &ProxmoxVmConfig,
+            progress: &P,
+        ) -> hai_core::Result<ProxmoxVmResult> {
+            for stage in self.stages {
+                progress.on_progress(FlashProgress {
+                    stage: stage.clone(),
+                    progress: 0,
+                    bytes_processed: 0,
+                    total_bytes: 0,
+                    message: String::new(),
+                });
+            }
+            Err((self.error)())
+        }
+    }
+
+    #[tokio::test]
+    async fn proxmox_install_keeps_its_retry_until_the_vm_is_being_created() {
+        use FlashStage::*;
+        let session = ProxmoxSession {
+            server_url: "https://proxmox.example:8006".into(),
+            ticket: "fixture".into(),
+            csrf_token: "fixture".into(),
+            certificate_sha256: None,
+        };
+        let config = ProxmoxVmConfig {
+            node: "pve".into(),
+            storage: "local-lvm".into(),
+            bridge: "vmbr0".into(),
+            vlan_tag: None,
+            vm_id: 100,
+            name: "homeassistant".into(),
+            cpu_cores: 2,
+            memory_mb: 4096,
+            disk_size_gb: 32,
+        };
+        let vm_id_taken: fn() -> hai_core::Error = || {
+            hai_core::Error::ProxmoxActionRequired(hai_core::message!(
+                "backend.proxmox.vm_id_unavailable",
+                vm_id = 100,
+            ))
+        };
+        let lost_download: fn() -> hai_core::Error =
+            || hai_core::Error::DownloadFailed("connection reset".into());
+        let lost_response: fn() -> hai_core::Error =
+            || hai_core::Error::ProxmoxApi("connection reset".into());
+        let expired: fn() -> hai_core::Error = || hai_core::Error::ProxmoxSessionExpired;
+        let cases: [(&'static [FlashStage], _, bool); 7] = [
+            // Taken by someone else between Confirm and the install's own check
+            (&[Downloading], vm_id_taken, true),
+            (&[Downloading], lost_download, true),
+            (&[Downloading, Extracting, Uploading], lost_response, true),
+            // Logging in again gets past this one, not trying again
+            (&[Downloading, Extracting, Uploading], expired, false),
+            // The VM may exist half way, unknown to the installer
+            (
+                &[Downloading, Extracting, Uploading, CreatingVm],
+                lost_response,
+                false,
+            ),
+            (
+                &[Downloading, Extracting, Uploading, CreatingVm],
+                vm_id_taken,
+                false,
+            ),
+            (
+                &[Downloading, Extracting, Uploading, CreatingVm, StartingVm],
+                lost_response,
+                false,
+            ),
+        ];
+
+        for (stages, error, retryable) in cases {
+            let backend = FailingProxmoxInstall { stages, error };
+            let error = run_proxmox_install(&backend, &session, &config, &hai_core::NoOpProgress)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.retryable, retryable,
+                "{} after {stages:?}",
+                error.code
+            );
+        }
     }
 
     #[test]

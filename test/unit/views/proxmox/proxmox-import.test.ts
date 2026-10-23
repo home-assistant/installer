@@ -154,8 +154,9 @@ describe("Proxmox import consent", () => {
   it("names the only candidate without an extra dropdown", async () => {
     const el = await mount();
     expect(importSelect(el)).to.be.null;
+    // Free space counts in the same GB as the storage for the VM disk
     expect(el.shadowRoot!.textContent).to.contain(
-      'Import can be enabled on "local"'
+      'Import can be enabled on "local" (93.1 GB free).'
     );
     await click(el, "Enable Import...");
     const dialog = el.shadowRoot!.querySelector("info-dialog") as InfoDialog;

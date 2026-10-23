@@ -12,6 +12,12 @@ import { reducedMotionStyles } from "../utils/view-accessibility.js";
  *
  * Extending `WaRadio` keeps the group's keyboard handling, roving tabindex
  * and ARIA; only the presentation is ours. See {@link DeviceCard}.
+ *
+ * The `value` is the device path, e.g. "/dev/sda" or "\\.\PhysicalDrive2",
+ * and the card shows it: it is the one thing that tells two identical sticks
+ * apart, and what the confirm step shows. It is on every card, not only on
+ * look-alikes, so a card and its accessible name don't change as other drives
+ * come and go.
  */
 @customElement("drive-card")
 export class DriveCard extends WaRadio {
@@ -102,9 +108,12 @@ export class DriveCard extends WaRadio {
         fill: var(--ha-primary-color, #03a9f4);
       }
 
+      /* A long name wraps, even mid-word, so the whole of it shows; so do
+         the vendor and model below it, which repeat its parts */
       .info {
         flex: 1;
         min-width: 0;
+        overflow-wrap: anywhere;
       }
 
       .name {
@@ -112,15 +121,20 @@ export class DriveCard extends WaRadio {
         font-weight: 500;
         color: var(--ha-text-color, #212121);
         margin: 0 0 0.25rem 0;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
       }
 
       .details {
         font-size: 0.8125rem;
         color: var(--ha-secondary-text-color, #727272);
         margin: 0;
+      }
+
+      .path {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.8125rem;
+        color: var(--ha-secondary-text-color, #727272);
+        margin: 0.125rem 0 0 0;
+        overflow-wrap: anywhere;
       }
 
       .size {
@@ -235,6 +249,7 @@ export class DriveCard extends WaRadio {
               ? this.disabledReason
               : this._getDetails()}
           </p>
+          ${this.value ? html`<p class="path">${this.value}</p>` : nothing}
         </div>
         <span class="size">${formatBytes(this.driveSize)}</span>
         ${this.checked

@@ -227,6 +227,61 @@ describe("proxmox-progress-view", () => {
     expect(el.hasError).to.be.true;
   });
 
+  // Before the VM is being created, the backend keeps the retry: nothing is
+  // left on the server that a new attempt would trip over
+  for (const [error, shown] of [
+    [
+      ipcError("download_failed", "Download failed: connection reset", true),
+      "could not be downloaded",
+    ],
+    [
+      // Taken by someone else after Confirm, and freed in Proxmox again
+      ipcError("proxmox_action_required", "VM ID 100 can't be used.", true, {
+        message_key: "backend.proxmox.vm_id_unavailable",
+        message_params: { vm_id: 100 },
+      }),
+      "VM ID 100 can't be used",
+    ],
+  ] as const) {
+    it(`tries ${error.code} before the VM exists again, with the same login and settings`, async () => {
+      const attempts: unknown[] = [];
+      mockTauriIpc((cmd, args) => {
+        switch (cmd) {
+          case "proxmox_create_vm": {
+            const { session, config } = args as Record<string, unknown>;
+            attempts.push({ session, config });
+            if (attempts.length === 1) return Promise.reject(error);
+            return { vm_id: 100, node: "pve" };
+          }
+          case "proxmox_get_vm_status":
+            return { status: "running", ip_address: "192.168.1.50" };
+          case "check_ha_ready":
+          case "check_ha_updated":
+            return true;
+        }
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+
+      const el = mount();
+      const failed = await oneEvent(el, "install-error");
+      await el.updateComplete;
+
+      expect(failed.detail.retryable).to.be.true;
+      expect(failed.detail.reconnect).to.be.false;
+      expect(errorText(el)).to.contain(shown);
+      const selections = wizardState.getState().selections;
+      expect(selections.proxmoxSession).to.exist;
+      expect(selections.proxmoxVmResult).to.be.undefined;
+
+      const completed = oneEvent(el, "install-complete");
+      el.retry();
+      await completed;
+
+      expect(attempts).to.have.length(2);
+      expect(attempts[1]).to.deep.equal(attempts[0]);
+    });
+  }
+
   it("waits for Home Assistant before advancing", async () => {
     const haReady = deferred<boolean>();
     const checked: string[] = [];

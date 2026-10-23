@@ -50,9 +50,12 @@ export const summaryStyles = css`
     fill: var(--ha-primary-color, #03a9f4);
   }
 
+  /* A long drive or VM name wraps, even mid-word, rather than being cut
+     off: this is where the user checks it before the install */
   .summary-info {
     flex: 1;
     min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .summary-label {
@@ -69,9 +72,6 @@ export const summaryStyles = css`
     font-weight: 500;
     color: var(--ha-text-color, #212121);
     margin: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .summary-detail {
