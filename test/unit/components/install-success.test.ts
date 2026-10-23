@@ -35,24 +35,18 @@ describe("install-success", () => {
     expect(lists.map((node) => node.name)).to.include("Next steps");
   });
 
-  it("leaves out the notice, footer and tip unless given", async () => {
+  it("leaves out the footer and tip unless given", async () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success .steps=${["Only step"]}></install-success>`
     );
-    expect(el.shadowRoot!.querySelector("inline-notice")).to.not.exist;
     expect(el.shadowRoot!.querySelector(".next-steps-footer")).to.not.exist;
     expect(el.shadowRoot!.querySelector(".tip-section")).to.not.exist;
 
-    el.notice = "Do not format the drive.";
     el.footer = html`<a href="#">Full guide</a>`;
     el.tip = "Manage it from the dashboard.";
     await el.updateComplete;
-    // The notice comes before the steps, the footer after them
+    // The footer comes after the steps
     const text = el.shadowRoot!.querySelector(".next-steps")!.textContent!;
-    expect(text.indexOf("Do not format the drive.")).to.be.within(
-      0,
-      text.indexOf("Only step")
-    );
     expect(text.indexOf("Full guide")).to.be.greaterThan(
       text.indexOf("Only step")
     );

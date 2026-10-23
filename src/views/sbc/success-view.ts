@@ -82,7 +82,6 @@ export class SuccessView extends LitElement {
     return html`
       <install-success
         .subtitle=${localize("common.success.subtitle")}
-        .notice=${localize("common.success.do_not_format")}
         .steps=${[
           localize("common.success.step_eject"),
           isMiniPc
