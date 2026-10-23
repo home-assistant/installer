@@ -9,7 +9,11 @@ import {
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "./step-indicator.js";
 import { pageHeaderStyles } from "../utils/page-header.js";
-import { srOnlyStyles } from "../utils/view-accessibility.js";
+import {
+  dialogHasFocus,
+  focusHeading,
+  srOnlyStyles,
+} from "../utils/view-accessibility.js";
 
 /** The first heading in `root`, also in the shadow roots of its parts. */
 function findHeading(root: ParentNode): HTMLElement | null {
@@ -147,20 +151,17 @@ export class WizardShell extends LitElement {
   protected willUpdate(changed: PropertyValues<this>) {
     // A button that hides with the focus in it drops the focus to the page,
     // and a screen reader starts over from the top. Continue from the
-    // heading of the step instead, as when it opened.
+    // heading of the step instead, as when it opened. A dialog gives the
+    // focus back to the button that opened it, like Cancel for "Stop the
+    // installation?", so the same goes for the focus in a dialog.
     if (
       changed.has("hideFooter") &&
       this.hideFooter &&
-      this.shadowRoot?.activeElement?.closest(".footer")
+      (this.shadowRoot?.activeElement?.closest(".footer") || dialogHasFocus())
     ) {
       const step = this.firstElementChild;
       const heading = step && findHeading(step.shadowRoot ?? step);
-      if (heading) {
-        // A heading isn't something to act on: no focus ring
-        heading.tabIndex = -1;
-        heading.style.outline = "none";
-        heading.focus();
-      }
+      if (heading) focusHeading(heading);
     }
   }
 

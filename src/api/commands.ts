@@ -883,6 +883,9 @@ async function simulateProxmoxInstall(
         message,
       });
 
+      if (stage === "downloading" && step === steps / 2) {
+        failMockOperation("proxmox-download");
+      }
       if (stage === "creating_vm" && step === 0) failMockOperation("proxmox");
 
       await new Promise((resolve) => setTimeout(resolve, delay));

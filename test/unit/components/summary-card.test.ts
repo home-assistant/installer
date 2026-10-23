@@ -6,6 +6,7 @@ import {
   renderHaosVersionRow,
   renderSummaryIcon,
   renderSummaryRow,
+  summaryStyles,
 } from "../../../src/components/summary-card.js";
 import { mdiMonitor } from "../../../src/utils/icons.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../tauri-ipc.js";
@@ -69,6 +70,46 @@ describe("summary-card", () => {
       "32 GB",
     ]);
   });
+
+  for (const value of [
+    "Realtek USB 3.0 Card Reader SD/MMC USB Device",
+    "HomeAssistantOnTheMiniPcInTheLivingRoom",
+  ]) {
+    it(`wraps ${value} instead of cutting it off`, () => {
+      // The content's width in the smallest window at 200% zoom. A plain
+      // container: fixture() would wait for a frame, which a background
+      // test page never paints
+      const host = document.createElement("div");
+      host.style.width = "368px";
+      const root = host.attachShadow({ mode: "open" });
+      root.adoptedStyleSheets = [summaryStyles.styleSheet!];
+      render(
+        html`<div class="summary-card">
+          ${renderSummaryRow(
+            renderSummaryIcon(mdiMonitor),
+            "Target drive",
+            value
+          )}
+        </div>`,
+        root
+      );
+      document.body.append(host);
+      try {
+        const card = root.querySelector(".summary-card")!;
+        const shown = root.querySelector<HTMLElement>(".summary-value")!;
+        const range = document.createRange();
+        range.selectNodeContents(shown);
+
+        expect(range.getClientRects().length).to.be.greaterThan(1);
+        expect(shown.scrollWidth).to.equal(shown.clientWidth);
+        expect(range.getBoundingClientRect().right).to.be.at.most(
+          card.getBoundingClientRect().right
+        );
+      } finally {
+        host.remove();
+      }
+    });
+  }
 
   it("leaves out details a row doesn't have", () => {
     const row = rendered(
