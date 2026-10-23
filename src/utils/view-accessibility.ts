@@ -3,6 +3,14 @@ import { css, type LitElement, type ReactiveController } from "lit";
 /** What `restoreFocus` focuses as it is, rather than like a heading. */
 const CONTROLS = "a[href], button, input, select, wa-button, wa-select";
 
+/**
+ * Errors that `ViewAccessibility` focuses when they appear, which is what
+ * reads them out. They carry `data-focus-alert`, not role="alert": an alert
+ * is read out on its own, and again when it takes the focus. Alerts are
+ * still followed, for views that haven't moved to the marker yet.
+ */
+const ALERTS = '[data-focus-alert], [role="alert"]';
+
 export function activeElement(): Element | null {
   let active = document.activeElement;
   while (active?.shadowRoot?.activeElement) {
@@ -68,7 +76,8 @@ export function focusHeading(heading: HTMLElement) {
 export class ViewAccessibility implements ReactiveController {
   private _headingFocused = false;
   private _initialFocus: Element | null = null;
-  private _alert = "";
+  /** Each error on show, with the text it was read out with */
+  private _alerts = new Map<HTMLElement, string>();
   /** The heading focused because an error went away with the focus in it */
   private _recovered: HTMLElement | null = null;
 
@@ -79,25 +88,36 @@ export class ViewAccessibility implements ReactiveController {
   hostConnected() {
     this._headingFocused = false;
     this._initialFocus = activeElement();
-    this._alert = "";
+    this._alerts = new Map();
     this._recovered = null;
   }
 
   hostUpdated() {
     if (!this.host.isConnected) return;
-    const alert =
-      this.host.renderRoot.querySelector<HTMLElement>('[role="alert"]');
-    const text = alert?.textContent?.trim() ?? "";
-    const recovering =
-      !!this._alert && !text && !this.host.matches(":focus-within");
+    const alerts = new Map<HTMLElement, string>();
+    for (const alert of this.host.renderRoot.querySelectorAll<HTMLElement>(
+      ALERTS
+    )) {
+      const text = alert.textContent?.trim() ?? "";
+      if (text) alerts.set(alert, text);
+    }
+    const cleared = [...this._alerts.keys()].some(
+      (alert) => !alerts.has(alert)
+    );
+    const recovering = cleared && !this.host.matches(":focus-within");
     if (recovering) {
       // Retry can remove a focused footer button outside this view. Remember
       // it so a delayed heading still won't interrupt subsequent navigation.
       this._headingFocused = false;
       this._initialFocus = activeElement();
     }
-    if (text && text !== this._alert) {
-      focusHeading(alert!.querySelector<HTMLElement>("h1, h2") ?? alert!);
+    // An error is new when it appears or says something else, never because
+    // another one went away. Of several at once, the first takes the focus.
+    const added = [...alerts.keys()].find(
+      (alert) => this._alerts.get(alert) !== alerts.get(alert)
+    );
+    if (added) {
+      focusHeading(added.querySelector<HTMLElement>("h1, h2") ?? added);
       this._headingFocused = true;
     } else if (!this._headingFocused) {
       const heading = this.host.renderRoot.querySelector<HTMLElement>("h1, h2");
@@ -112,7 +132,7 @@ export class ViewAccessibility implements ReactiveController {
         this._headingFocused = true;
       }
     }
-    this._alert = text;
+    this._alerts = alerts;
   }
 
   /**

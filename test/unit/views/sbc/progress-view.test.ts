@@ -208,6 +208,35 @@ describe("progress-view", () => {
     expect(errors).to.equal(1);
   });
 
+  it("starts a retry from zero, not from where the failed attempt got", async () => {
+    const { el, attempts } = mockFlash();
+    attempts[0].progressChannel.onmessage({
+      stage: "writing",
+      progress: 30,
+      bytes_processed: 300,
+      total_bytes: 1000,
+      message: "",
+    });
+    attempts[0].result.reject({
+      code: "device_busy",
+      message: "Write failed: I/O error",
+      retryable: true,
+      details: {},
+    });
+    await settle();
+    const layout = el.shadowRoot!.querySelector("install-progress")!;
+    expect(layout.bytesProcessed).to.equal(300);
+
+    el.retry();
+    await settle();
+    expect(layout.stage).to.equal("downloading");
+    expect(layout.progress).to.equal(0);
+    expect(layout.bytesProcessed).to.equal(0);
+    expect(layout.totalBytes).to.equal(0);
+    expect(layout.stageStartTime).to.be.null;
+    expect(layout.stageStartBytes).to.equal(0);
+  });
+
   describe("stopping", () => {
     for (const { stage, message } of [
       { stage: "extracting", message: "Nothing was written to the drive" },
