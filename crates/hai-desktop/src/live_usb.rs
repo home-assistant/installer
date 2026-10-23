@@ -178,8 +178,20 @@ async fn run_create_live_usb<P: ProgressCallback>(
     check_cancelled(callback)?;
     write_to_usb(&image, device_id, expected, callback).await?;
     drop(temp);
+    remove_downloads();
     report(callback, FlashStage::Complete, "USB stick ready");
     Ok(())
+}
+
+/// Made, so the downloads are no longer needed. Failing to remove them only costs
+/// disk space until the next start, which tries again.
+#[cfg(not(feature = "mock"))]
+fn remove_downloads() {
+    let removed = hai_core::ReleaseSource::cache_dir(&Backend)
+        .and_then(|cache| hai_core::live_usb::remove_cache(&cache));
+    if removed.is_err() {
+        crate::diagnostics::warning("live_usb_cache_cleanup_failed");
+    }
 }
 
 /// Writes `image` to the stick `device_id` with read-back verification.
@@ -294,6 +306,7 @@ async fn run_save_live_iso<P: ProgressCallback>(
         iso_target(folder, file_name, overwrite)?;
         publish_iso(&built, &target, overwrite)?;
         drop(temp);
+        remove_downloads();
         report(callback, FlashStage::Complete, "ISO saved");
         Ok(target)
     }

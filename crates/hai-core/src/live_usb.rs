@@ -15,6 +15,17 @@ use crate::{ProgressCallback, ReleaseSource};
 
 pub use downloads::{cache_dir, fetch_alpine, fetch_haos, Download, ALPINE_VERSION, HAOS_BOARD};
 
+/// Remove everything the live USB flow downloaded and unpacked into `cache`, the
+/// installer's cache folder. For after a stick or ISO is made, and at startup:
+/// people make one, so nothing is kept for a next time. During a session it stays,
+/// so trying again doesn't download it all again.
+pub fn remove_cache(cache: &Path) -> Result<()> {
+    match std::fs::remove_dir_all(cache.join(downloads::FOLDER)) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+        _ => Ok(()),
+    }
+}
+
 /// Everything that goes on the stick, ready to be written out.
 #[derive(Debug, Clone)]
 pub struct Contents {
@@ -284,6 +295,21 @@ mod tests {
         retitle_boot_menu(&grub_cfg).unwrap();
         assert_eq!(std::fs::read_to_string(&grub_cfg).unwrap(), config);
         retitle_boot_menu(&dir.path().join("missing.cfg")).unwrap();
+    }
+
+    #[test]
+    fn removing_the_cache_takes_only_the_live_usb_folder() {
+        let cache = tempfile::tempdir().unwrap();
+        let live = cache.path().join("live-usb");
+        std::fs::create_dir_all(live.join("haos").join("18.3")).unwrap();
+        std::fs::write(live.join("haos").join("18.3").join("haos.img.xz"), b"image").unwrap();
+        std::fs::write(cache.path().join("other"), b"other").unwrap();
+
+        remove_cache(cache.path()).unwrap();
+        assert!(!live.exists());
+        assert!(cache.path().join("other").exists());
+        // Nothing to remove is fine too
+        remove_cache(cache.path()).unwrap();
     }
 
     #[test]

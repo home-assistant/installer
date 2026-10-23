@@ -60,6 +60,10 @@ pub fn run() {
                 if hai_core::download::prune_cached_images(&cache).is_err() {
                     diagnostics::warning("cache_prune_failed");
                 }
+                // Left by a session that closed before its stick or ISO was made
+                if hai_core::live_usb::remove_cache(&cache).is_err() {
+                    diagnostics::warning("live_usb_cache_cleanup_failed");
+                }
             }
             Ok(())
         })

@@ -34,10 +34,13 @@ pub struct Download {
     pub sha256: String,
 }
 
+/// The live USB flow's folder inside the installer's cache folder.
+pub(crate) const FOLDER: &str = "live-usb";
+
 /// The live USB cache folder, created if missing.
 pub fn cache_dir<B: ReleaseSource>(backend: &B) -> Result<PathBuf> {
-    // A subfolder, so hai-desktop's startup cleanup (`prune_cached_images`) leaves it alone.
-    let dir = backend.cache_dir()?.join("live-usb");
+    // A folder of its own, so `remove_cache` can take it away as a whole
+    let dir = backend.cache_dir()?.join(FOLDER);
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
