@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import { localize } from "../localization/localize.js";
 import { openExternalLink } from "../utils/external-url.js";
 import { linkStyles } from "../utils/link-styles.js";
+import { panelStyles } from "../utils/panel-styles.js";
 import { sectionLabelStyles } from "../utils/section-label-styles.js";
 import { getPlatform } from "../utils/platform.js";
 import { renderCasitaHappy } from "./install-mascot.js";
@@ -121,21 +122,18 @@ export class InstallSuccess extends LitElement {
         overflow-wrap: anywhere;
       }
 
+      /* Its heading as close to the links as the next steps' heading is
+         to the steps */
       .companion-section {
-        width: 100%;
-        box-sizing: border-box;
-        max-width: 500px;
-        padding: 1.5rem;
-        background-color: var(--ha-card-background, #ffffff);
-        border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-card-border-radius, 12px);
+        ${panelStyles}
+        gap: 1rem;
       }
 
       .companion-title {
         font-size: 1rem;
         font-weight: 500;
         color: var(--ha-text-color, #212121);
-        margin: 0 0 1rem 0;
+        margin: 0;
       }
 
       .app-links {

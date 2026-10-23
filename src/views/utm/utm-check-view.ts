@@ -17,6 +17,7 @@ import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/ha-svg-icon.js";
 import "../../components/casita-mascot.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import { panelStyles } from "../../utils/panel-styles.js";
 import {
   renderRetryButton,
   renderStatusRow,
@@ -37,18 +38,12 @@ export class UtmCheckView extends LitElement {
     statusRowStyles,
     linkStyles,
     css`
+      /* Casita over one status and the buttons that go with it, closer
+         together than the fields and rows of other panels */
       .status-card {
-        display: flex;
-        flex-direction: column;
+        ${panelStyles}
         align-items: center;
         gap: 1rem;
-        padding: 1.25rem;
-        background-color: var(--ha-card-background, #ffffff);
-        border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-card-border-radius, 12px);
-        width: 100%;
-        box-sizing: border-box;
-        max-width: 500px;
       }
 
       casita-mascot {

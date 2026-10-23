@@ -11,6 +11,7 @@ import type WaSwitch from "@home-assistant/webawesome/dist/components/switch/swi
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import "@home-assistant/webawesome/dist/components/switch/switch.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import { panelStyles } from "../../utils/panel-styles.js";
 import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 
 /** Optional step for boards with built-in Wi-Fi: the network to join. */
@@ -22,16 +23,7 @@ export class WifiView extends LitElement {
     fieldErrorStyles,
     css`
       .wifi-card {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        padding: 1.5rem;
-        background-color: var(--ha-card-background, #ffffff);
-        border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-card-border-radius, 12px);
-        width: 100%;
-        box-sizing: border-box;
-        max-width: 500px;
+        ${panelStyles}
       }
 
       .note {

@@ -14,6 +14,7 @@ import {
 import type { WizardSelections } from "../state/wizard-state.js";
 import { fieldError } from "./field-error.js";
 import { mdiLabelOutline } from "./icons.js";
+import { panelStyles } from "./panel-styles.js";
 
 /** The name and resources a configure step saves for the VM */
 export type VmSettingValues = Required<
@@ -37,16 +38,7 @@ export interface VmSettingsOptions {
 /** The card the configure steps show their settings in */
 export const configCardStyles = css`
   .config-card {
-    display: flex;
-    flex-direction: column;
-    gap: 1.75rem;
-    padding: 1rem 1.25rem;
-    background-color: var(--ha-card-background, #ffffff);
-    border: 1px solid var(--ha-border-color, #e0e0e0);
-    border-radius: var(--ha-card-border-radius, 12px);
-    width: 100%;
-    box-sizing: border-box;
-    max-width: 500px;
+    ${panelStyles}
   }
 `;
 

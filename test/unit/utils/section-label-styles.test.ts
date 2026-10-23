@@ -101,6 +101,7 @@ describe("section label styles", () => {
       marginTop: "0px",
       marginBottom: "16px",
     });
+    // The panel's gap sets it apart from the app links
     expect(pick(root.querySelector("h3.companion-title")!, LOOK)).to.deep.equal(
       {
         fontSize: "16px",
@@ -108,7 +109,7 @@ describe("section label styles", () => {
         textTransform: "none",
         letterSpacing: "normal",
         marginTop: "0px",
-        marginBottom: "16px",
+        marginBottom: "0px",
       }
     );
   });

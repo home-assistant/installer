@@ -10,6 +10,7 @@ import { localize, localizeContent } from "../localization/localize.js";
 import { logFrontendError } from "./diagnostics.js";
 import { formatDiskSize, formatRam } from "./format.js";
 import { homeAssistantLogo, mdiHarddisk, mdiMonitor } from "./icons.js";
+import { panelStyles } from "./panel-styles.js";
 import { sectionLabelStyles } from "./section-label-styles.js";
 
 /** The card the confirm steps sum up an install in, one row per part. */
@@ -17,16 +18,7 @@ export const summaryStyles = css`
   ${sectionLabelStyles}
 
   .summary-card {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 1.5rem;
-    background-color: var(--ha-card-background, #ffffff);
-    border: 1px solid var(--ha-border-color, #e0e0e0);
-    border-radius: var(--ha-card-border-radius, 12px);
-    width: 100%;
-    box-sizing: border-box;
-    max-width: 500px;
+    ${panelStyles}
   }
 
   .summary-row {

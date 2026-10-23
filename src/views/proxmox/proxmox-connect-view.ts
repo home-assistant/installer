@@ -22,6 +22,7 @@ import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import { panelStyles } from "../../utils/panel-styles.js";
 import { renderStatusRow, statusRowStyles } from "../../utils/load-state.js";
 
 /** The fields that say what to fix in them */
@@ -64,16 +65,7 @@ export class ProxmoxConnectView extends LitElement {
     dialogStyles,
     css`
       .connect-card {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-        padding: 1.5rem;
-        background-color: var(--ha-card-background, #ffffff);
-        border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-card-border-radius, 12px);
-        width: 100%;
-        box-sizing: border-box;
-        max-width: 500px;
+        ${panelStyles}
       }
 
       /* The address reads left to right in any language, not its label */
