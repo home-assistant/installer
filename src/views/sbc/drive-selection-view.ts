@@ -472,24 +472,29 @@ export class DriveSelectionView extends LitElement {
    */
   private _renderNoUsableDrive(config?: HaosConfig) {
     const count = this._drives.length;
-    const tooSmall = this._drives.some(
+    // Any other drive has a capacity, or a board minimum, that is unknown.
+    // One drive too small is enough to know the minimum.
+    const tooSmall = this._drives.filter(
       (drive) => getDriveFit(drive.size, config) === "too-small"
-    );
+    ).length;
+    const size = tooSmall ? formatBytes(config!.minimum_storage_bytes) : "";
     return html`
       <inline-notice>
         <p class="no-usable-drive">
-          ${tooSmall
+          ${tooSmall === count
             ? localize(
                 "views.sbc.drive_selection_view.no_usable_drive_minimum",
-                {
-                  count,
-                  size: formatBytes(config!.minimum_storage_bytes),
-                }
+                { count, size }
               )
-            : localize(
-                "views.sbc.drive_selection_view.no_usable_drive_unavailable",
-                { count }
-              )}
+            : tooSmall
+              ? localize(
+                  "views.sbc.drive_selection_view.no_usable_drive_minimum_or_unknown",
+                  { size }
+                )
+              : localize(
+                  "views.sbc.drive_selection_view.no_usable_drive_unavailable",
+                  { count }
+                )}
         </p>
       </inline-notice>
     `;

@@ -553,6 +553,27 @@ describe("drive-selection-view", () => {
     }
   });
 
+  it("names both reasons when one drive is too small and another's capacity is unknown", async () => {
+    const scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve([
+        drive({ id: "small", size: 8_000_000_000 }),
+        drive({ id: "unknown", size: 0 }),
+      ]);
+      await waitUntil(() => el.shadowRoot!.querySelector(".no-usable-drive"));
+      expect(
+        el.shadowRoot!.querySelector(".no-usable-drive")!.textContent!.trim()
+      ).to.equal(
+        "None of these drives can be used. You need a drive of at least 16 GB whose capacity can be read. Connect one and select Refresh."
+      );
+    } finally {
+      scan.restore();
+    }
+  });
+
   it("keeps the selection through a failed scan, and holds Next until one confirms it", async () => {
     storeDriveSelection(CONNECTED);
     const root = (el: DriveSelectionView) => el.shadowRoot!;
