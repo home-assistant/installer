@@ -46,7 +46,7 @@ test("writes a bootable USB stick", async ({ page }) => {
   );
 
   await expect(page.locator("live-usb-success-view")).toContainText(
-    "Your USB stick is ready.",
+    "Your USB stick is ready",
     { timeout: 20000 }
   );
   await expect(page.locator("live-usb-success-view")).toContainText(
@@ -84,7 +84,7 @@ test("saves an ISO file without the erase confirmation", async ({ page }) => {
   await expect(page.locator("confirm-dialog")).not.toHaveAttribute("open");
 
   const success = page.locator("live-usb-success-view");
-  await expect(success).toContainText("Your ISO file is saved.", {
+  await expect(success).toContainText("Your ISO file is saved", {
     timeout: 20000,
   });
   await expect(success).toContainText("my-stick.iso");
@@ -184,7 +184,7 @@ test("a failed write can be tried again", async ({ page }) => {
   await page.getByRole("button", { name: "Try again", exact: true }).click();
 
   await expect(page.locator("live-usb-success-view")).toContainText(
-    "Your USB stick is ready.",
+    "Your USB stick is ready",
     { timeout: 20000 }
   );
 });
@@ -209,7 +209,7 @@ test("stopping a USB stick asks first and can be tried again", async ({
   await expect(progress).toContainText("Stopped.");
   await page.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.locator("live-usb-success-view")).toContainText(
-    "Your USB stick is ready.",
+    "Your USB stick is ready",
     { timeout: 20000 }
   );
 });
