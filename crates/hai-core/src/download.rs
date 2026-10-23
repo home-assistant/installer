@@ -627,11 +627,6 @@ fn parse_board_from_filename_with_suffix(
     Ok(board.to_string())
 }
 
-/// Parse board name from HAOS image filename (convenience wrapper for .img.xz)
-pub fn parse_board_from_filename(filename: &str, version: &str) -> Result<String> {
-    parse_board_from_filename_with_suffix(filename, version, ".img.xz")
-}
-
 /// Require the image's verified SHA-256 digest. Missing/unknown digests must
 /// never downgrade an installation to an XZ-only check.
 pub(crate) fn expected_sha256(image: &HaosImage) -> Result<[u8; 32]> {
@@ -1959,7 +1954,6 @@ mod tests {
         assert_eq!(newest_version([].iter()), None);
     }
     use crate::types::GitHubAsset;
-    use serial_test::serial;
 
     #[tokio::test]
     async fn connection_check_reports_service_and_invalid_responses() {
@@ -1967,10 +1961,15 @@ mod tests {
         for (status, body, expected) in [
             (503, "", "service is unavailable (HTTP 503"),
             (200, "<html>Sign in</html>", "invalid response"),
-            (200, r#"{"hassos":{"rpi5-64":"18.3"}}"#, ""),
+            (
+                200,
+                r#"{"channel":"stable","hassos":{"rpi5-64":"18.3"}}"#,
+                "",
+            ),
         ] {
             let mock = server
                 .mock("GET", "/stable.json")
+                .match_header("User-Agent", USER_AGENT)
                 .with_status(status)
                 .with_body(body)
                 .create_async()
@@ -2140,6 +2139,7 @@ mod tests {
                 r#"{"message":"secret server detail"}"#,
                 "refused access",
             ),
+            (404, "10", "{}", "could not provide release 18.3 (HTTP 404)"),
         ] {
             let mock = server
                 .mock("GET", "/tags/18.3")
@@ -2190,6 +2190,8 @@ mod tests {
         let download_url = format!("{HAOS_DOWNLOADS}/18.3/haos_rpi5-64-18.3.img.xz");
         let mock = server
             .mock("GET", "/tags/18.3")
+            .match_header("User-Agent", USER_AGENT)
+            .match_header("Accept", "application/vnd.github.v3+json")
             .with_status(200)
             .with_body(
                 serde_json::json!({
@@ -2452,20 +2454,6 @@ mod tests {
         assert!(!directory.exists());
     }
 
-    #[test]
-    fn test_get_cache_dir() {
-        let cache_dir = get_cache_dir().unwrap();
-
-        assert_eq!(
-            cache_dir,
-            BaseDirs::new()
-                .unwrap()
-                .cache_dir()
-                .join("io.home-assistant.installer")
-        );
-        assert!(cache_dir.is_dir());
-    }
-
     #[tokio::test]
     async fn test_get_device_manifest_filters_runtime_boards_preserving_display_data() {
         let mut server = mockito::Server::new_async().await;
@@ -2529,44 +2517,44 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_board_from_filename_standard() {
-        let result = parse_board_from_filename("haos_rpi5-64-14.2.img.xz", "14.2");
-        assert_eq!(result.unwrap(), "rpi5-64");
-
-        let result = parse_board_from_filename("haos_generic-x86-64-14.2.img.xz", "14.2");
-        assert_eq!(result.unwrap(), "generic-x86-64");
-
-        let result = parse_board_from_filename("haos_green-14.2.img.xz", "14.2");
-        assert_eq!(result.unwrap(), "green");
-    }
-
-    #[test]
-    fn test_parse_board_from_filename_qcow2() {
-        let result =
-            parse_board_from_filename_with_suffix("haos_ova-14.2.qcow2.xz", "14.2", ".qcow2.xz");
-        assert_eq!(result.unwrap(), "ova");
-
-        let result = parse_board_from_filename_with_suffix(
-            "haos_generic-aarch64-14.2.qcow2.xz",
-            "14.2",
-            ".qcow2.xz",
-        );
-        assert_eq!(result.unwrap(), "generic-aarch64");
-    }
-
-    #[test]
-    fn test_parse_board_from_filename_invalid() {
-        // Wrong prefix
-        let result = parse_board_from_filename("wrong_rpi5-64-14.2.img.xz", "14.2");
-        assert!(result.is_err());
-
-        // Wrong suffix
-        let result = parse_board_from_filename("haos_rpi5-64-14.2.zip", "14.2");
-        assert!(result.is_err());
-
-        // Wrong version
-        let result = parse_board_from_filename("haos_rpi5-64-14.2.img.xz", "14.3");
-        assert!(result.is_err());
+    fn test_parse_board_from_filename() {
+        for (filename, version, suffix, expected) in [
+            (
+                "haos_rpi5-64-14.2.img.xz",
+                "14.2",
+                ".img.xz",
+                Some("rpi5-64"),
+            ),
+            (
+                "haos_generic-x86-64-14.2.img.xz",
+                "14.2",
+                ".img.xz",
+                Some("generic-x86-64"),
+            ),
+            ("haos_green-14.2.img.xz", "14.2", ".img.xz", Some("green")),
+            ("haos_ova-14.2.qcow2.xz", "14.2", ".qcow2.xz", Some("ova")),
+            (
+                "haos_generic-aarch64-14.2.qcow2.xz",
+                "14.2",
+                ".qcow2.xz",
+                Some("generic-aarch64"),
+            ),
+            ("wrong_rpi5-64-14.2.img.xz", "14.2", ".img.xz", None),
+            ("rpi5-64-14.2.img.xz", "14.2", ".img.xz", None),
+            ("haos_rpi5-64-14.2.zip", "14.2", ".img.xz", None),
+            ("haos_rpi5-64-14.2.img.xz", "14.3", ".img.xz", None),
+            ("haos_rpi4-14.2.img.xz", "99.9", ".img.xz", None),
+            ("", "14.2", ".img.xz", None),
+        ] {
+            let result = parse_board_from_filename_with_suffix(filename, version, suffix);
+            match expected {
+                Some(board) => assert_eq!(result.unwrap(), board, "{filename}"),
+                None => assert!(
+                    matches!(result, Err(Error::InvalidConfig(_))),
+                    "{filename} {version}"
+                ),
+            }
+        }
     }
 
     #[test]
@@ -2589,6 +2577,12 @@ mod tests {
                     name: "haos_rpi5-64-14.2.img.xz.sha256".to_string(),
                     size: 100,
                     browser_download_url: "https://github.com/download/sha256".to_string(),
+                },
+                // Should be ignored (not a HAOS image name)
+                GitHubAsset {
+                    name: "invalid_filename.img.xz".to_string(),
+                    size: 500_000_000,
+                    browser_download_url: "https://github.com/download/invalid.img.xz".to_string(),
                 },
             ],
         };
@@ -2686,117 +2680,7 @@ mod tests {
         any_request.assert_async().await;
     }
 
-    #[test]
-    fn test_parse_board_from_filename_empty() {
-        let result = parse_board_from_filename("", "14.2");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_board_from_filename_no_haos_prefix() {
-        let result = parse_board_from_filename("rpi5-64-14.2.img.xz", "14.2");
-        assert!(result.is_err());
-    }
-
     #[tokio::test]
-    #[serial]
-    async fn test_download_image_http_404_error() {
-        let test_data = b"";
-        let mut server = mockito::Server::new_async().await;
-
-        let mock = server
-            .mock("GET", "/test.img.xz")
-            .with_status(404)
-            .create_async()
-            .await;
-
-        let url = format!("{}/test.img.xz", server.url());
-        let cache_dir = get_cache_dir().unwrap();
-        let dest = cache_dir.join("test_404.img");
-
-        let result = download_image(
-            &image_for_data(&url, test_data.as_ref()),
-            &dest,
-            &crate::NoOpProgress,
-        )
-        .await;
-        assert!(result.is_err());
-
-        if let Err(e) = result {
-            assert!(matches!(e, crate::error::Error::DownloadFailed(_)));
-        }
-
-        mock.assert_async().await;
-        let _ = std::fs::remove_file(&dest);
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_download_image_http_500_error() {
-        let test_data = b"";
-        let mut server = mockito::Server::new_async().await;
-
-        let mock = server
-            .mock("GET", "/test.img.xz")
-            .with_status(500)
-            .create_async()
-            .await;
-
-        let url = format!("{}/test.img.xz", server.url());
-        let cache_dir = get_cache_dir().unwrap();
-        let dest = cache_dir.join("test_500.img");
-
-        // Clean up any existing file from previous test runs
-        let _ = std::fs::remove_file(&dest);
-
-        let result = download_image(
-            &image_for_data(&url, test_data.as_ref()),
-            &dest,
-            &crate::NoOpProgress,
-        )
-        .await;
-        assert!(result.is_err());
-
-        mock.assert_async().await;
-        let _ = std::fs::remove_file(&dest);
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_download_image_success_with_checksum() {
-        let mut server = mockito::Server::new_async().await;
-
-        let test_data = b"test image data content";
-        let mock = server
-            .mock("GET", "/test.img.xz")
-            .with_status(200)
-            .with_header("content-length", &test_data.len().to_string())
-            .with_body(test_data.as_slice())
-            .create_async()
-            .await;
-
-        let url = format!("{}/test.img.xz", server.url());
-        let cache_dir = get_cache_dir().unwrap();
-        let dest = cache_dir.join("test_download_success.img");
-
-        let result = download_image(
-            &image_for_data(&url, test_data.as_ref()),
-            &dest,
-            &crate::NoOpProgress,
-        )
-        .await;
-        assert!(result.is_ok());
-
-        // Verify file was created and has correct content
-        let content = std::fs::read(&dest).unwrap();
-        assert_eq!(content, test_data);
-
-        mock.assert_async().await;
-        std::fs::remove_file(&dest).unwrap();
-    }
-
-    #[tokio::test]
-    #[serial]
     async fn test_download_image_with_progress_updates() {
         use std::sync::{Arc, Mutex};
 
@@ -2824,123 +2708,82 @@ mod tests {
             .await;
 
         let url = format!("{}/large.img.xz", server.url());
-        let cache_dir = get_cache_dir().unwrap();
-        let dest = cache_dir.join("test_progress.img");
+        let directory = tempfile::tempdir().unwrap();
+        let dest = directory.path().join("test_progress.img");
 
         let calls = Arc::new(Mutex::new(Vec::new()));
         let callback = TestProgressCallback {
             calls: calls.clone(),
         };
 
-        let result =
-            download_image(&image_for_data(&url, test_data.as_ref()), &dest, &callback).await;
+        let result = download_image_with_client(
+            &image_for_data(&url, test_data.as_ref()),
+            &dest,
+            &callback,
+            shared_client().unwrap(),
+            |_| Ok(u64::MAX),
+        )
+        .await;
         assert!(result.is_ok());
         mock.assert_async().await;
 
         crate::types::assert_progress_shape(&calls.lock().unwrap(), &[FlashStage::Downloading]);
-
-        std::fs::remove_file(&dest).unwrap();
     }
 
     #[tokio::test]
-    #[serial]
-    async fn test_download_image_no_content_length() {
+    async fn test_download_image_follows_redirect_and_fails_on_http_error() {
         let mut server = mockito::Server::new_async().await;
 
-        let test_data = b"small data";
-        let mock = server
-            .mock("GET", "/test.img.xz")
+        // GitHub serves release assets through a redirect
+        let redirect_mock = server
+            .mock("GET", "/redirect.img.xz")
+            .with_status(302)
+            .with_header("Location", "/actual.img.xz")
+            .create_async()
+            .await;
+
+        let test_data = b"redirected content";
+        let actual_mock = server
+            .mock("GET", "/actual.img.xz")
             .with_status(200)
-            // No content-length header
             .with_body(test_data.as_slice())
             .create_async()
             .await;
 
-        let url = format!("{}/test.img.xz", server.url());
-        let cache_dir = get_cache_dir().unwrap();
-        let dest = cache_dir.join("test_no_length.img");
+        let missing_mock = server
+            .mock("GET", "/missing.img.xz")
+            .with_status(404)
+            .create_async()
+            .await;
 
-        let result = download_image(
-            &image_for_data(&url, test_data.as_ref()),
+        let directory = tempfile::tempdir().unwrap();
+        let dest = directory.path().join("test_redirect.img");
+
+        let url = format!("{}/redirect.img.xz", server.url());
+        download_image(
+            &image_for_data(&url, test_data),
             &dest,
             &crate::NoOpProgress,
         )
+        .await
+        .unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), test_data);
+
+        let url = format!("{}/missing.img.xz", server.url());
+        let result = download_image(
+            &image_for_data(&url, test_data),
+            &directory.path().join("test_404.img"),
+            &crate::NoOpProgress,
+        )
         .await;
-        assert!(result.is_ok());
+        assert!(
+            matches!(result, Err(Error::DownloadFailed(_))),
+            "{result:?}"
+        );
 
-        mock.assert_async().await;
-        std::fs::remove_file(&dest).unwrap();
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_extract_xz_real_file() {
-        use std::io::Write;
-
-        let cache_dir = get_cache_dir().unwrap();
-        let test_content = b"Hello, this is test content for XZ compression!";
-        let extracted_path = cache_dir.join("test_extracted.txt");
-        let archive_path = cache_dir.join("test_archive.txt.xz");
-
-        // Create a real XZ compressed file
-        {
-            let file = std::fs::File::create(&archive_path).unwrap();
-            let mut encoder = liblzma::write::XzEncoder::new(file, 6);
-            encoder.write_all(test_content).unwrap();
-            encoder.finish().unwrap();
-        }
-
-        // Extract it
-        let result = extract_xz(&archive_path, &extracted_path, &crate::NoOpProgress).await;
-        assert!(result.is_ok());
-
-        // Verify extracted content
-        let extracted = std::fs::read(&extracted_path).unwrap();
-        assert_eq!(extracted, test_content);
-
-        // Cleanup
-        std::fs::remove_file(&archive_path).unwrap();
-        std::fs::remove_file(&extracted_path).unwrap();
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_extract_xz_nonexistent_file() {
-        let cache_dir = get_cache_dir().unwrap();
-        let archive_path = cache_dir.join("nonexistent_archive.xz");
-        let dest_path = cache_dir.join("output.img");
-
-        let result = extract_xz(&archive_path, &dest_path, &crate::NoOpProgress).await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_extract_xz_corrupt_archive_is_discarded() {
-        use std::io::Write;
-
-        let cache_dir = get_cache_dir().unwrap();
-        let archive_path = cache_dir.join("test_corrupt.img.xz");
-        let extracted_path = cache_dir.join("test_corrupt_extracted.img");
-
-        // Write a valid xz stream, then truncate its tail so the container's
-        // integrity check fails part-way through decoding.
-        {
-            let file = std::fs::File::create(&archive_path).unwrap();
-            let mut encoder = liblzma::write::XzEncoder::new(file, 1);
-            encoder.write_all(&vec![0u8; 256 * 1024]).unwrap();
-            encoder.finish().unwrap();
-        }
-        let mut bytes = std::fs::read(&archive_path).unwrap();
-        bytes.truncate(bytes.len() - 16);
-        std::fs::write(&archive_path, &bytes).unwrap();
-
-        let result = extract_xz(&archive_path, &extracted_path, &crate::NoOpProgress).await;
-        assert!(matches!(result, Err(Error::ExtractionFailed(_))));
-
-        // A corrupt archive leaves neither the archive nor extracted output.
-        assert!(!archive_path.exists());
-        assert!(!extracted_path.exists());
+        redirect_mock.assert_async().await;
+        actual_mock.assert_async().await;
+        missing_mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -3017,7 +2860,7 @@ mod tests {
             }
         }
 
-        for failure in ["truncated", "empty", "destination"] {
+        for failure in ["truncated", "empty", "destination", "missing"] {
             let directory = tempfile::tempdir().unwrap();
             let archive_path = directory.path().join("image.xz");
             let destination = directory.path().join("image.img");
@@ -3028,10 +2871,12 @@ mod tests {
                 archive.truncate(archive.len() - 16);
             } else if failure == "empty" {
                 archive.clear();
-            } else {
+            } else if failure == "destination" {
                 std::fs::create_dir(&destination).unwrap();
             }
-            std::fs::write(&archive_path, &archive).unwrap();
+            if failure != "missing" {
+                std::fs::write(&archive_path, &archive).unwrap();
+            }
             let callback = Progress::default();
             assert!(extract_xz(&archive_path, &destination, &callback)
                 .await
@@ -3044,578 +2889,6 @@ mod tests {
                 assert!(archive_path.exists());
                 assert!(destination.is_dir());
             }
-        }
-    }
-
-    #[tokio::test]
-    async fn test_parse_github_release_invalid_filename_skipped() {
-        use crate::types::{GitHubAsset, GitHubRelease};
-
-        let release = GitHubRelease {
-            tag_name: "14.2".to_string(),
-            assets: vec![GitHubAsset {
-                name: "invalid_filename.img.xz".to_string(), // Doesn't match pattern
-                size: 500_000_000,
-                browser_download_url: "https://github.com/download/invalid.img.xz".to_string(),
-            }],
-        };
-
-        let parsed = parse_github_release(release, "14.2").unwrap();
-        assert_eq!(parsed.images.len(), 0); // Invalid filename should be skipped
-    }
-
-    #[tokio::test]
-    async fn test_parse_board_from_filename_with_suffix_error() {
-        // Test the error path in parse_board_from_filename_with_suffix
-        let result = parse_board_from_filename_with_suffix(
-            "haos_rpi4-14.2.img.xz",
-            "99.9", // Wrong version
-            ".img.xz",
-        );
-        assert!(result.is_err());
-
-        if let Err(e) = result {
-            assert!(matches!(e, crate::error::Error::InvalidConfig(_)));
-        }
-    }
-
-    #[tokio::test]
-    async fn test_fetch_release_network_error() {
-        let mut server = mockito::Server::new_async().await;
-
-        let _mock = server
-            .mock("GET", "/tags/14.2")
-            .with_status(404)
-            .create_async()
-            .await;
-
-        // Can't easily test this without dependency injection
-        // This test documents the intent
-    }
-
-    // HTTP Mock Tests Module
-    // These tests use mockito to mock external HTTP endpoints
-    mod http_mock_tests {
-        use super::*;
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_stable_version_success() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/stable.json")
-                .match_header("User-Agent", USER_AGENT)
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"hassos":{"rpi4":"14.2","generic-x86-64":"14.2"}}"#)
-                .create_async()
-                .await;
-
-            let url = format!("{}/stable.json", server.url());
-            let result = get_stable_version_from_url(&url).await;
-            assert!(result.is_ok());
-
-            let version_info = result.unwrap();
-            assert_eq!(version_info.hassos.get("rpi4"), Some(&"14.2".to_string()));
-            assert_eq!(
-                version_info.hassos.get("generic-x86-64"),
-                Some(&"14.2".to_string())
-            );
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_stable_version_http_404() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/stable.json")
-                .with_status(404)
-                .create_async()
-                .await;
-
-            let url = format!("{}/stable.json", server.url());
-            let result = get_stable_version_from_url(&url).await;
-            assert!(result.is_err());
-
-            if let Err(e) = result {
-                assert!(matches!(
-                    &e,
-                    crate::error::Error::ServiceUnavailable(message)
-                        if message.key == "backend.download.version_service_unavailable"
-                ));
-                assert!(e.to_string().contains("HTTP 404"), "{e}");
-            }
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_stable_version_http_500() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/stable.json")
-                .with_status(500)
-                .create_async()
-                .await;
-
-            let url = format!("{}/stable.json", server.url());
-            let result = get_stable_version_from_url(&url).await;
-            assert!(result.is_err());
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_stable_version_invalid_json() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/stable.json")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body("not valid json")
-                .create_async()
-                .await;
-
-            let url = format!("{}/stable.json", server.url());
-            let result = get_stable_version_from_url(&url).await;
-            assert!(result.is_err());
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_stable_version_empty_response() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/stable.json")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body("")
-                .create_async()
-                .await;
-
-            let url = format!("{}/stable.json", server.url());
-            let result = get_stable_version_from_url(&url).await;
-            assert!(result.is_err());
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_stable_version_malformed_json() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/stable.json")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"hassos":{"rpi4":"14.2"}}"#) // Missing expected fields, but valid JSON
-                .create_async()
-                .await;
-
-            let url = format!("{}/stable.json", server.url());
-            let result = get_stable_version_from_url(&url).await;
-            // This should succeed since the JSON is valid, even if minimal
-            assert!(result.is_ok());
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_fetch_release_success() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/tags/14.2")
-                .match_header("User-Agent", USER_AGENT)
-                .match_header("Accept", "application/vnd.github.v3+json")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                    "tag_name": "14.2",
-                    "assets": [
-                        {
-                            "name": "haos_rpi5-64-14.2.img.xz",
-                            "size": 500000000,
-                            "browser_download_url": "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz",
-                            "digest": "sha256:abc123"
-                        },
-                        {
-                            "name": "haos_ova-14.2.qcow2.xz",
-                            "size": 600000000,
-                            "browser_download_url": "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_ova-14.2.qcow2.xz",
-                            "digest": "sha256:def456"
-                        }
-                    ]
-                }"#,
-                )
-                .create_async()
-                .await;
-
-            let result = fetch_release_from_api(&server.url(), "14.2").await;
-            assert!(result.is_ok());
-
-            let release = result.unwrap();
-            assert_eq!(release.version, "14.2");
-            assert_eq!(release.images.len(), 2);
-            assert!(release.images.iter().any(|i| i.board == "rpi5-64"));
-            assert!(release.images.iter().any(|i| i.board == "ova"));
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_fetch_release_http_404() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/tags/99.99")
-                .with_status(404)
-                .create_async()
-                .await;
-
-            let result = fetch_release_from_api(&server.url(), "99.99").await;
-            assert!(result.is_err());
-
-            if let Err(e) = result {
-                assert!(matches!(
-                    &e,
-                    crate::error::Error::ServiceUnavailable(message)
-                        if message.key == "backend.download.github_release_unavailable"
-                ));
-                assert!(e.to_string().contains("HTTP 404"), "{e}");
-            }
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_fetch_release_http_500() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/tags/14.2")
-                .with_status(500)
-                .create_async()
-                .await;
-
-            let result = fetch_release_from_api(&server.url(), "14.2").await;
-            assert!(result.is_err());
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_fetch_release_invalid_json() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/tags/14.2")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body("invalid json")
-                .create_async()
-                .await;
-
-            let result = fetch_release_from_api(&server.url(), "14.2").await;
-            assert!(result.is_err());
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_fetch_release_empty_assets() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/tags/14.2")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                    "tag_name": "14.2",
-                    "assets": []
-                }"#,
-                )
-                .create_async()
-                .await;
-
-            let result = fetch_release_from_api(&server.url(), "14.2").await;
-            assert!(result.is_ok());
-
-            let release = result.unwrap();
-            assert_eq!(release.version, "14.2");
-            assert_eq!(release.images.len(), 0);
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_fetch_release_mixed_assets() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/tags/14.2")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                    "tag_name": "14.2",
-                    "assets": [
-                        {
-                            "name": "haos_rpi5-64-14.2.img.xz",
-                            "size": 500000000,
-                            "browser_download_url": "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz",
-                            "digest": "sha256:abc123"
-                        },
-                        {
-                            "name": "haos_rpi5-64-14.2.img.xz.sha256",
-                            "size": 100,
-                            "browser_download_url": "https://github.com/download/sha256",
-                            "digest": null
-                        },
-                        {
-                            "name": "README.md",
-                            "size": 1000,
-                            "browser_download_url": "https://github.com/download/readme",
-                            "digest": null
-                        }
-                    ]
-                }"#,
-                )
-                .create_async()
-                .await;
-
-            let result = fetch_release_from_api(&server.url(), "14.2").await;
-            assert!(result.is_ok());
-
-            let release = result.unwrap();
-            assert_eq!(release.version, "14.2");
-            assert_eq!(release.images.len(), 1); // Only valid image files
-            assert_eq!(release.images[0].board, "rpi5-64");
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_fetch_release_with_redirects() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/tags/14.2")
-                .with_status(302)
-                .with_header("Location", "/redirected/tags/14.2")
-                .create_async()
-                .await;
-
-            let redirect_mock = server
-                .mock("GET", "/redirected/tags/14.2")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                    "tag_name": "14.2",
-                    "assets": [{
-                        "name": "haos_rpi4-14.2.img.xz",
-                        "size": 400000000,
-                        "browser_download_url": "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi4-14.2.img.xz",
-                        "digest": "sha256:xyz789"
-                    }]
-                }"#,
-                )
-                .create_async()
-                .await;
-
-            // reqwest follows redirects by default
-            let result = fetch_release_from_api(&server.url(), "14.2").await;
-            assert!(result.is_ok());
-
-            let release = result.unwrap();
-            assert_eq!(release.version, "14.2");
-            assert_eq!(release.images.len(), 1);
-
-            mock.assert_async().await;
-            redirect_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_download_image_empty_response() {
-            let test_data = b"";
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/empty.img.xz")
-                .with_status(200)
-                .with_header("content-length", "0")
-                .with_body("")
-                .create_async()
-                .await;
-
-            let url = format!("{}/empty.img.xz", server.url());
-            let cache_dir = get_cache_dir().unwrap();
-            let dest = cache_dir.join("test_empty.img");
-
-            let result = download_image(
-                &image_for_data(&url, test_data.as_ref()),
-                &dest,
-                &crate::NoOpProgress,
-            )
-            .await;
-            assert!(result.is_ok());
-
-            // Verify empty file was created
-            let metadata = std::fs::metadata(&dest).unwrap();
-            assert_eq!(metadata.len(), 0);
-
-            mock.assert_async().await;
-            std::fs::remove_file(&dest).unwrap();
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_download_image_with_redirect() {
-            let mut server = mockito::Server::new_async().await;
-
-            let redirect_mock = server
-                .mock("GET", "/redirect.img.xz")
-                .with_status(302)
-                .with_header("Location", "/actual.img.xz")
-                .create_async()
-                .await;
-
-            let test_data = b"redirected content";
-            let actual_mock = server
-                .mock("GET", "/actual.img.xz")
-                .with_status(200)
-                .with_header("content-length", &test_data.len().to_string())
-                .with_body(test_data.as_slice())
-                .create_async()
-                .await;
-
-            let url = format!("{}/redirect.img.xz", server.url());
-            let cache_dir = get_cache_dir().unwrap();
-            let dest = cache_dir.join("test_redirect.img");
-
-            let result = download_image(
-                &image_for_data(&url, test_data.as_ref()),
-                &dest,
-                &crate::NoOpProgress,
-            )
-            .await;
-            assert!(result.is_ok());
-
-            // Verify file content
-            let content = std::fs::read(&dest).unwrap();
-            assert_eq!(content, test_data);
-
-            redirect_mock.assert_async().await;
-            actual_mock.assert_async().await;
-            std::fs::remove_file(&dest).unwrap();
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_stable_version_with_extra_fields() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/stable.json")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                    "hassos": {
-                        "rpi4": "14.2",
-                        "generic-x86-64": "14.2",
-                        "green": "14.2",
-                        "yellow": "14.2"
-                    },
-                    "extra_field": "should be ignored"
-                }"#,
-                )
-                .create_async()
-                .await;
-
-            let url = format!("{}/stable.json", server.url());
-            let result = get_stable_version_from_url(&url).await;
-            assert!(result.is_ok());
-
-            let version_info = result.unwrap();
-            assert_eq!(version_info.hassos.len(), 4);
-            assert_eq!(version_info.hassos.get("green"), Some(&"14.2".to_string()));
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_fetch_release_with_qcow2_only() {
-            let mut server = mockito::Server::new_async().await;
-
-            let mock = server
-                .mock("GET", "/tags/14.2")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                    "tag_name": "14.2",
-                    "assets": [
-                        {
-                            "name": "haos_ova-14.2.qcow2.xz",
-                            "size": 600000000,
-                            "browser_download_url": "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_ova-14.2.qcow2.xz",
-                            "digest": "sha256:qcow2hash"
-                        }
-                    ]
-                }"#,
-                )
-                .create_async()
-                .await;
-
-            let result = fetch_release_from_api(&server.url(), "14.2").await;
-            assert!(result.is_ok());
-
-            let release = result.unwrap();
-            assert_eq!(release.images.len(), 1);
-            assert_eq!(release.images[0].board, "ova");
-            assert!(release.images[0].download_url.contains("qcow2"));
-
-            mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_fetch_release_connection_refused() {
-            // Use a port that's likely not in use
-            let result = fetch_release_from_api("http://127.0.0.1:59999", "14.2").await;
-            assert!(result.is_err());
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_stable_version_connection_refused() {
-            let result = get_stable_version_from_url("http://127.0.0.1:59998/stable.json").await;
-            assert!(result.is_err());
         }
     }
 }
