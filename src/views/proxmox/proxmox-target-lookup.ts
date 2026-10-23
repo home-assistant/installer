@@ -32,7 +32,7 @@ import {
  * Where a lookup was started from, if from a button that would otherwise
  * vanish while it runs. That part stays, busy.
  */
-export type ReloadFrom = "import" | "bridges" | "storage";
+export type ReloadFrom = "import" | "nodes" | "bridges" | "storage";
 
 /** What the lookup needs from the view whose form it fills */
 export interface ProxmoxTargetForm {
@@ -149,7 +149,7 @@ export class ProxmoxTargetLookup implements ReactiveController {
     this.requestUpdate();
   }
 
-  async loadNodes(from?: "bridges") {
+  async loadNodes(from?: "nodes") {
     this.loadingNodes = true;
     this.reloadFrom = from;
     this.askedFrom = from;
@@ -338,7 +338,9 @@ export class ProxmoxTargetLookup implements ReactiveController {
       // A newer lookup is still running and owns the loading state
       if (isLatest()) {
         this.loadingStorage = false;
-        this.reloadFrom = undefined;
+        // The node lookup this one is part of still runs, and clears it once
+        // done; the part it started from would vanish in between
+        if (!this.loadingNodes) this.reloadFrom = undefined;
         this.importStorage.busy = false;
         this.requestUpdate();
         if (this.connected && isCurrentSession()) this._form.save();

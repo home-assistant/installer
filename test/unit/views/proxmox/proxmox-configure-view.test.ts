@@ -233,6 +233,63 @@ describe("proxmox-configure-view", () => {
       .false;
   });
 
+  it("gives every field the same size, the VLAN tag included", async () => {
+    const el = await mount();
+    const fields = [
+      ...el.shadowRoot!.querySelectorAll("wa-input, wa-select"),
+    ].map(
+      (field) => `${field.id || field.localName} ${field.getAttribute("size")}`
+    );
+    expect(fields).to.include("vlan-tag s");
+    expect(fields.filter((field) => !field.endsWith(" s"))).to.deep.equal([]);
+  });
+
+  it("says each row is loading while the nodes are looked up", async () => {
+    const nodes = deferred<unknown>();
+    mockTauriIpc((cmd) => {
+      switch (cmd) {
+        case "proxmox_list_bridges":
+          return [{ name: "vmbr0", network_type: "bridge", comments: null }];
+        case "proxmox_list_nodes":
+          return nodes.promise;
+        case "proxmox_get_next_vm_id":
+          return 100;
+        case "proxmox_list_storage":
+          return [
+            {
+              name: "local-lvm",
+              active: true,
+              content: ["images"],
+              available: 100,
+            },
+          ];
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+    const el = await fixture<ProxmoxConfigureView>(html`
+      <proxmox-configure-view></proxmox-configure-view>
+    `);
+
+    // Not an empty storage dropdown next to the others' loading text
+    expect(el.shadowRoot!.querySelectorAll("wa-select")).to.have.length(0);
+    expect(
+      [...el.shadowRoot!.querySelectorAll(".loading-text")].map((text) =>
+        text.textContent!.trim()
+      )
+    ).to.deep.equal([
+      "Loading nodes...",
+      "Loading storage...",
+      "Loading network bridges...",
+    ]);
+
+    nodes.resolve([{ name: "pve", status: "online" }]);
+    await waitUntil(
+      () => el.shadowRoot!.querySelectorAll("wa-select").length === 3,
+      "the dropdowns never replaced the loading text"
+    );
+    expect(el.shadowRoot!.querySelector(".loading-text")).to.be.null;
+  });
+
   it("keeps the VM ID as typed and only saves one Proxmox accepts", async () => {
     const el = await mount();
     const vmId = el.shadowRoot!.querySelector<WaInput>(

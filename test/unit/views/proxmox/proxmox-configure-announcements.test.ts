@@ -259,6 +259,31 @@ describe("proxmox-configure-view announcements", () => {
     });
   }
 
+  it("takes the focus to say what the node row's Try again found once more, and says it only there", async () => {
+    const said = "No online Proxmox nodes found.";
+    const hinted = "Next is unavailable until a Proxmox node is online.";
+    nodes = () => [];
+    const el = await mount();
+    const message = el.shadowRoot!.querySelector<HTMLElement>(".error-text")!;
+    expect(message.textContent).to.contain(said);
+    expect(message.hasAttribute("data-focus-alert")).to.be.false;
+    expect(status(el).textContent).to.contain(hinted);
+
+    const retry = el.shadowRoot!.querySelector<HTMLElement>(".node-retry")!;
+    retry.focus();
+    retry.click();
+    await waitUntil(
+      () =>
+        focused(el)?.classList.contains("error-text") &&
+        focused(el)!.textContent!.includes(said),
+      "what Try again found never took the focus"
+    );
+    expect(focused(el)!.hasAttribute("data-focus-alert")).to.be.true;
+    await el.updateComplete;
+    expect(hint(el).textContent).to.contain(hinted);
+    expect(status(el).textContent!.trim()).to.equal("");
+  });
+
   it("keeps the focus on Refresh storage, and says again what Next needs", async () => {
     storages = () => [directory, disk];
     const el = await mount();

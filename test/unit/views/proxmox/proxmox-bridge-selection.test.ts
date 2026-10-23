@@ -5,6 +5,7 @@ import { findByRole, fullA11ySnapshot } from "../../helpers/a11y.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import type { ProxmoxConfigureView } from "../../../../src/views/proxmox/proxmox-configure-view.js";
 import "../../../../src/views/proxmox/proxmox-configure-view.js";
+import type { ProxmoxTargetLookup } from "../../../../src/views/proxmox/proxmox-target-lookup.js";
 import {
   deferred,
   mockTauriIpc,
@@ -372,7 +373,7 @@ describe("Proxmox bridge selection", () => {
     );
   });
 
-  it("keeps Try again in place through node discovery and the bridges after it", async () => {
+  it("keeps the node row's Try again in place through node discovery and the bridges after it", async () => {
     let nodes = deferred<unknown>();
     nodes.resolve([]);
     const bridges = deferred<ProxmoxBridge[]>();
@@ -391,12 +392,18 @@ describe("Proxmox bridge selection", () => {
       throw new Error(`Unexpected command: ${cmd}`);
     });
     const el = await mount();
-    await waitUntil(() => !!el.shadowRoot!.querySelector(".bridge-retry"));
-    const retry = el.shadowRoot!.querySelector(
-      ".bridge-retry"
-    ) as HTMLElement & {
+    await waitUntil(() => !!el.shadowRoot!.querySelector(".node-retry"));
+    const retry = el.shadowRoot!.querySelector(".node-retry") as HTMLElement & {
       loading: boolean;
     };
+    // Every render until the lookup is done, even those between its parts
+    const lookup = (el as unknown as { _lookup: ProxmoxTargetLookup })._lookup;
+    let goneWhileLooking = false;
+    el.addController({
+      hostUpdated: () => {
+        if (!retry.isConnected && lookup.loadingNodes) goneWhileLooking = true;
+      },
+    });
 
     nodes = deferred<unknown>();
     retry.focus();
@@ -418,9 +425,10 @@ describe("Proxmox bridge selection", () => {
     await ready();
     await settle();
     await el.updateComplete;
+    expect(goneWhileLooking).to.be.false;
+    // Try again went with the message: the focus goes on to the node found
     expect(
-      el.shadowRoot!.activeElement ===
-        el.shadowRoot!.querySelector("#network-bridge")
+      el.shadowRoot!.activeElement === el.shadowRoot!.querySelector("#node")
     ).to.be.true;
   });
 
@@ -466,13 +474,25 @@ describe("Proxmox bridge selection", () => {
       });
       const el = await mount();
       await waitUntil(() => !!el.shadowRoot!.querySelector(".error-text"));
-      expect(
-        el.shadowRoot!.querySelector(".error-text")!.textContent
-      ).to.contain("No online Proxmox nodes found.");
+      // Said at the node, the one thing missing, and only there
+      const messages = el.shadowRoot!.querySelectorAll(".error-text");
+      expect(messages).to.have.length(1);
+      expect(messages[0].textContent).to.contain(
+        "No online Proxmox nodes found."
+      );
+      expect(messages[0].closest(".setting-row")!.querySelector("#node")).to
+        .exist;
+      // Nothing to choose from, and no storage or bridge without a node
+      for (const id of ["node", "storage", "network-bridge"]) {
+        expect(
+          el.shadowRoot!.querySelector<HTMLSelectElement>(`#${id}`)!.disabled,
+          id
+        ).to.be.true;
+      }
       expect(wizardState.getState().selections.proxmoxBridgeReady).to.be.false;
       expect(networkRequests).to.equal(0);
       online = true;
-      el.shadowRoot!.querySelector<HTMLElement>("wa-button")!.click();
+      el.shadowRoot!.querySelector<HTMLElement>(".node-retry")!.click();
       await ready();
       expect(nodeRequests).to.equal(2);
       expect(networkRequests).to.equal(1);

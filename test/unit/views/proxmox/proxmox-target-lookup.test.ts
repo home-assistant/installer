@@ -227,8 +227,8 @@ describe("ProxmoxTargetLookup", () => {
     await lookup.loadStorage();
     expect(lookup.askedFrom).to.be.undefined;
 
-    await lookup.loadNodes("bridges");
-    expect(lookup.askedFrom).to.equal("bridges");
+    await lookup.loadNodes("nodes");
+    expect(lookup.askedFrom).to.equal("nodes");
   });
 
   for (const [name, accepted, ready] of [

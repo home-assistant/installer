@@ -208,6 +208,8 @@ export class ProxmoxConfigureView extends LitElement {
   // Where focus continues after a lookup hid the button that started it
   @query(".enable-import") private _enableImportButton?: HTMLElement;
   @query(".refresh-storage") private _refreshStorageButton?: HTMLElement;
+  @query(".node-retry") private _nodeRetryButton?: HTMLElement;
+  @query("#node") private _nodeSelect?: HTMLElement;
   @query(".bridge-retry") private _bridgeRetryButton?: HTMLElement;
   @query("#network-bridge") private _bridgeSelect?: HTMLElement;
   @query(".storage-retry") private _storageRetryButton?: HTMLElement;
@@ -331,10 +333,13 @@ export class ProxmoxConfigureView extends LitElement {
     );
   }
 
+  private async _retryNodes() {
+    await this._lookup.loadNodes("nodes");
+    await this._restoreFocus(() => this._nodeRetryButton ?? this._nodeSelect);
+  }
+
   private async _retryBridges() {
-    await (this._lookup.selectedNode
-      ? this._lookup.loadStorage("bridges")
-      : this._lookup.loadNodes("bridges"));
+    await this._lookup.loadStorage("bridges");
     await this._restoreFocus(
       () => this._bridgeRetryButton ?? this._bridgeSelect
     );
@@ -526,7 +531,7 @@ export class ProxmoxConfigureView extends LitElement {
         <div class="setting-row">
           <div class="setting-icon">${renderIcon(mdiServer)}</div>
           <div class="setting-content">
-            ${lookup.loadingNodes
+            ${lookup.loadingNodes && lookup.reloadFrom !== "nodes"
               ? html`<span class="loading-text"
                   >${localize(
                     "views.proxmox.proxmox_configure_view.loading_nodes"
@@ -534,13 +539,16 @@ export class ProxmoxConfigureView extends LitElement {
                 >`
               : html`
                   <wa-select
+                    id="node"
                     label=${localize(
                       "views.proxmox.proxmox_configure_view.node"
                     )}
                     size="s"
                     .value=${lookup.selectedNode}
                     @change=${this._onNodeChange}
-                    ?disabled=${lookup.importStorage.busy}
+                    ?disabled=${lookup.nodes.length === 0 ||
+                    lookup.loadingNodes ||
+                    lookup.importStorage.busy}
                   >
                     ${lookup.nodes.map(
                       (node) => html`
@@ -567,6 +575,28 @@ export class ProxmoxConfigureView extends LitElement {
             <p class="setting-description">
               ${localize("views.proxmox.proxmox_configure_view.node_hint")}
             </p>
+            ${lookup.reloadFrom === "nodes" ||
+            (lookup.loaded && !lookup.selectedNode)
+              ? // Storage and bridges come from a node, so this row says
+                // there is none. Like the rows below, it takes the focus
+                // only when Try again finds it, and is empty while trying
+                // again, so the same result is read out again.
+                html`<p
+                    class="error-text"
+                    ?data-focus-alert=${lookup.askedFrom === "nodes"}
+                  >
+                    ${lookup.reloadFrom === "nodes"
+                      ? ""
+                      : localize(
+                          "views.proxmox.proxmox_configure_view.no_online_proxmox_nodes_found"
+                        )}
+                  </p>
+                  ${renderRetryButton(
+                    lookup.reloadFrom === "nodes",
+                    () => this._retryNodes(),
+                    { className: "node-retry" }
+                  )}`
+              : ""}
           </div>
         </div>
 
@@ -574,7 +604,8 @@ export class ProxmoxConfigureView extends LitElement {
         <div class="setting-row">
           <div class="setting-icon">${renderIcon(mdiDatabase)}</div>
           <div class="setting-content">
-            ${lookup.loadingStorage && lookup.reloadFrom !== "storage"
+            ${(lookup.loadingStorage || lookup.loadingNodes) &&
+            lookup.reloadFrom !== "storage"
               ? html`<span class="loading-text"
                   >${localize(
                     "views.proxmox.proxmox_configure_view.loading_storage"
@@ -587,7 +618,8 @@ export class ProxmoxConfigureView extends LitElement {
                     size="s"
                     .value=${lookup.selectedStorage}
                     @change=${this._onStorageChange}
-                    ?disabled=${lookup.storages.length === 0}
+                    ?disabled=${!lookup.selectedNode ||
+                    lookup.storages.length === 0}
                   >
                     ${lookup.storages.map(
                       (storage) => html`
@@ -656,7 +688,8 @@ export class ProxmoxConfigureView extends LitElement {
                     size="s"
                     .value=${lookup.selectedBridge}
                     @change=${this._onBridgeChange}
-                    ?disabled=${lookup.bridges.length === 0}
+                    ?disabled=${!lookup.selectedNode ||
+                    lookup.bridges.length === 0}
                   >
                     ${lookup.bridges.map(
                       (bridge) => html`
@@ -673,10 +706,12 @@ export class ProxmoxConfigureView extends LitElement {
                     )}
                   </wa-select>
                   ${lookup.reloadFrom === "bridges" ||
-                  (lookup.bridges.length === 0 &&
+                  (lookup.selectedNode &&
+                    lookup.bridges.length === 0 &&
                     lookup.bridgesNode === lookup.selectedNode &&
                     !lookup.error)
-                    ? // A lookup error already offers its own retry above.
+                    ? // A lookup error already offers its own retry above,
+                      // and the node row says when there is no node.
                       // Like the storage one, it takes the focus only when
                       // Try again finds it, and is empty while trying again,
                       // so the same result is read out again.
@@ -686,13 +721,9 @@ export class ProxmoxConfigureView extends LitElement {
                         >
                           ${lookup.reloadFrom === "bridges"
                             ? ""
-                            : lookup.selectedNode
-                              ? localize(
-                                  "views.proxmox.proxmox_configure_view.no_bridges"
-                                )
-                              : localize(
-                                  "views.proxmox.proxmox_configure_view.no_online_proxmox_nodes_found"
-                                )}
+                            : localize(
+                                "views.proxmox.proxmox_configure_view.no_bridges"
+                              )}
                         </p>
                         ${renderRetryButton(
                           lookup.reloadFrom === "bridges",
@@ -746,6 +777,7 @@ export class ProxmoxConfigureView extends LitElement {
             "views.proxmox.proxmox_configure_view.vlan_tag_optional"
           )}
           inputmode="numeric"
+          size="s"
           .value=${this._vlanTag}
           @input=${this._onVlanInput}
           ${fieldError(this._vlanError)}
@@ -778,16 +810,13 @@ export class ProxmoxConfigureView extends LitElement {
     const lookup = this._lookup;
     if (!lookup.loaded) return [];
     const node = lookup.selectedNode;
-    // The bridge row's Try again, whose row also says when no node is online
-    const bridgeRetried =
-      lookup.askedFrom === "bridges" && lookup.bridgesNode === node;
     if (!node) {
       return [
         {
           text: localize(
             "views.proxmox.proxmox_configure_view.next_hint_no_node"
           ),
-          focused: bridgeRetried,
+          focused: lookup.askedFrom === "nodes",
         },
       ];
     }
@@ -807,7 +836,7 @@ export class ProxmoxConfigureView extends LitElement {
           "views.proxmox.proxmox_configure_view.next_hint_no_bridge",
           { node }
         ),
-        focused: bridgeRetried,
+        focused: lookup.askedFrom === "bridges",
       });
     }
     if (lookup.storagesNode === node && !lookup.importStorage.ready) {
