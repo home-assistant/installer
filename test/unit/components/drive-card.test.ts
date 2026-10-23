@@ -15,6 +15,31 @@ describe("drive-card", () => {
     expect(name!.textContent).to.equal("My USB Drive");
   });
 
+  for (const name of [
+    "SanDisk Cruzer Blade USB Device",
+    "GenericSTORAGEDEVICEMultiCardReaderUSB",
+  ]) {
+    it(`wraps ${name} instead of cutting it off`, async () => {
+      // The drive list's width in the smallest window at 200% zoom
+      const el = await fixture<DriveCard>(html`
+        <drive-card
+          style="width: 368px"
+          name=${name}
+          drive-size="32000000000"
+        ></drive-card>
+      `);
+
+      const shown = el.shadowRoot!.querySelector<HTMLElement>(".name")!;
+      const range = document.createRange();
+      range.selectNodeContents(shown);
+      expect(range.getClientRects().length).to.be.greaterThan(1);
+      expect(shown.scrollWidth).to.equal(shown.clientWidth);
+      expect(range.getBoundingClientRect().right).to.be.at.most(
+        el.shadowRoot!.querySelector(".size")!.getBoundingClientRect().left
+      );
+    });
+  }
+
   it("renders with formatted size", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test" drive-size="32000000000"></drive-card>

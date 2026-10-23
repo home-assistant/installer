@@ -101,9 +101,8 @@ export class DriveCard extends WaRadio {
         font-weight: 500;
         color: var(--ha-text-color, #212121);
         margin: 0 0 0.25rem 0;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        /* Wrap a long name, even mid-word, so the whole of it shows */
+        overflow-wrap: anywhere;
       }
 
       .details {
