@@ -201,7 +201,8 @@ export class WelcomeView extends LitElement {
           size="l"
           @click=${this._onLetsGo}
         >
-          ${localize("views.welcome_view.let_s_go")} <span slot="end">→</span>
+          ${localize("views.welcome_view.let_s_go")}
+          <span slot="end" aria-hidden="true">→</span>
         </wa-button>
       </main>
 

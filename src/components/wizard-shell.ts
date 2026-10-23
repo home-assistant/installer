@@ -245,7 +245,8 @@ export class WizardShell extends LitElement {
           ?disabled=${this.hideBack}
           style=${this.hideBack ? "visibility: hidden" : ""}
         >
-          <span slot="start">←</span> ${localize("common.back")}
+          <span slot="start" aria-hidden="true">←</span>
+          ${localize("common.back")}
         </wa-button>
 
         <div class="header-center">

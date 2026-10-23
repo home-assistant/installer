@@ -68,7 +68,9 @@ describe("page gutter", () => {
     for (const [name, template] of SCREENS.slice(1, 4)) {
       const el = await fixture<HTMLElement>(template);
       const back = el.shadowRoot!.querySelector(".header wa-button");
-      expect(back?.textContent?.trim(), name).to.equal("← Back");
+      expect(back?.textContent?.replace(/\s+/g, " ").trim(), name).to.equal(
+        "← Back"
+      );
       expect(back!.getAttribute("appearance"), name).to.equal("plain");
     }
   });

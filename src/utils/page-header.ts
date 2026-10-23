@@ -35,7 +35,8 @@ export function renderBackHeader(onBack: (event: MouseEvent) => void) {
   return html`
     <div class="header">
       <wa-button appearance="plain" @click=${onBack}>
-        <span slot="start">←</span> ${localize("common.back")}
+        <span slot="start" aria-hidden="true">←</span>
+        ${localize("common.back")}
       </wa-button>
     </div>
   `;

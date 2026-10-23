@@ -385,7 +385,8 @@ export class DriveSelectionView extends LitElement {
             @click=${this._loadDrives}
             style="margin-top: 1rem;"
           >
-            <span slot="start">↻</span> ${localize("common.refresh")}
+            <span slot="start" aria-hidden="true">↻</span>
+            ${localize("common.refresh")}
           </wa-button>
         </div>
       `;
@@ -403,7 +404,8 @@ export class DriveSelectionView extends LitElement {
           @click=${this._loadDrives}
           ?loading=${this._loading}
         >
-          <span slot="start">↻</span> ${localize("common.refresh")}
+          <span slot="start" aria-hidden="true">↻</span>
+          ${localize("common.refresh")}
         </wa-button>
       </div>
 
