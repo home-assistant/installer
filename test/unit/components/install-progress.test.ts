@@ -136,6 +136,32 @@ describe("install-progress", () => {
     }
   });
 
+  it("announces the stage in a live region that is mounted empty first", async () => {
+    const el = fixtureSync<InstallProgress>(
+      html`<install-progress
+        stage="downloading"
+        stage-title="Downloading"
+      ></install-progress>`
+    );
+    await el.updateComplete;
+    const region = el.shadowRoot!.querySelector('.sr-only[role="status"]')!;
+    expect(region.textContent?.trim()).to.equal("");
+
+    await waitUntil(
+      () => region.textContent?.trim() === "Downloading",
+      "the stage was never announced",
+      { timeout: 3000 }
+    );
+
+    // It stays through an error, so a retry is announced too
+    el.error = "Cannot write this drive";
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('.sr-only[role="status"]')).to.equal(
+      region
+    );
+    expect(region.textContent?.trim()).to.equal("");
+  });
+
   it("announces a problem in a warning region that is mounted empty first", async () => {
     // Set from the start, as a view could
     const el = fixtureSync<InstallProgress>(
@@ -233,6 +259,9 @@ describe("install-progress", () => {
       .exist;
     expect(dots[0].classList.contains("complete")).to.be.true;
     expect(dots[1].classList.contains("active")).to.be.true;
+    expect(el.shadowRoot!.querySelector("casita-mascot")!.mood).to.equal(
+      "focusing"
+    );
     el.stage = "complete";
     await el.updateComplete;
     expect(
@@ -241,6 +270,9 @@ describe("install-progress", () => {
     expect(el.shadowRoot!.querySelectorAll("li .sr-only").length).to.equal(3);
     expect(el.shadowRoot!.querySelector("[aria-current]")).to.not.exist;
     expect(el.shadowRoot!.querySelector(".thinking-cloud")).to.not.exist;
+    expect(el.shadowRoot!.querySelector("casita-mascot")!.mood).to.equal(
+      "happy"
+    );
   });
 
   it("draws each stage state as its own shape, not only its own color", async () => {
@@ -327,6 +359,9 @@ describe("install-progress", () => {
     expect(el.shadowRoot!.querySelector(".error-message b")).to.not.exist;
     expect(el.shadowRoot!.querySelector("progress-bar")).to.not.exist;
     expect(el.shadowRoot!.querySelector("button")).to.not.exist;
+    expect(el.shadowRoot!.querySelector("casita-mascot")!.mood).to.equal(
+      "problem"
+    );
   });
 
   it("names the progress bar after the current stage", async () => {

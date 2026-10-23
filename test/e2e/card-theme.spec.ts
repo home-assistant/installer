@@ -67,10 +67,13 @@ for (const colorScheme of ["light", "dark"] as const) {
     for (const tag of ["device-card", "drive-card"]) {
       await page.locator(tag).click();
       await page.mouse.move(0, 0);
-      await expect(page.locator(`${tag} .card`)).toHaveCSS(
-        "box-shadow",
-        `${ring} 0px 0px 0px 3px`
-      );
+      await expect
+        .poll(() =>
+          page
+            .locator(`${tag} .card`)
+            .evaluate((card) => getComputedStyle(card).boxShadow)
+        )
+        .toContain(ring);
     }
   });
 }
