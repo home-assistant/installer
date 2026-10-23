@@ -3,7 +3,7 @@ import { css, type LitElement, type ReactiveController } from "lit";
 /** What `restoreFocus` focuses as it is, rather than like a heading. */
 const CONTROLS = "a[href], button, input, select, wa-button, wa-select";
 
-function activeElement(): Element | null {
+export function activeElement(): Element | null {
   let active = document.activeElement;
   while (active?.shadowRoot?.activeElement) {
     active = active.shadowRoot.activeElement;

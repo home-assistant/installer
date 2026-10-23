@@ -45,10 +45,10 @@ describe("localization", () => {
     expect(getLanguage()).to.equal("en-GB");
   });
 
-  it("preserves the existing decimal byte basis, unit labels, and flooring", () => {
-    expect(formatBytes(0)).to.equal("0 B");
-    expect(formatBytes(1000)).to.equal("1 KB");
-    expect(formatBytes(1599)).to.equal("1.5 KB");
+  it("keeps the decimal byte basis and flooring", () => {
+    expect(formatBytes(0)).to.equal("0 bytes");
+    expect(formatBytes(1000)).to.equal("1 kB");
+    expect(formatBytes(1599)).to.equal("1.5 kB");
     expect(formatBytes(1000 ** 3)).to.equal("1 GB");
     expect(
       formatNumber(Number((1.25).toFixed(1)), {

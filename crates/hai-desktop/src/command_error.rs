@@ -105,6 +105,9 @@ impl From<Error> for CommandError {
                 result.details = json!({ "written": written, "image_size": image_size, "drive_size": drive_size });
                 return result;
             }
+            Error::LiveUsbInvalidHaiLive => ("hai_live_invalid", "The program for the USB stick (hai-live) is not the Linux build. Rebuild it for x86_64-unknown-linux-musl, then try again.", true),
+            Error::LiveUsbReleaseUnusable(_) => ("release_unavailable", "The latest Home Assistant OS release can't be used right now. Try again later.", true),
+            Error::LiveUsbBuild(_) => ("image_build_failed", "The bootable media could not be built. Check available storage, then try again.", true),
         };
         Self::new(code, message, retryable)
     }
@@ -155,6 +158,7 @@ mod tests {
         for error in [
             Error::ProxmoxApi("password=secret ticket=secret".into()),
             Error::DownloadFailed("https://user:secret@example.com/?token=secret".into()),
+            Error::LiveUsbBuild(r"ISO: C:\Users\secret\x.iso".into()),
         ] {
             assert!(!serde_json::to_string(&CommandError::from(error))
                 .unwrap()

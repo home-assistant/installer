@@ -18,6 +18,12 @@ import "../views/ha-hardware/module-selection-view.js";
 import "../views/ha-hardware/success-view.js";
 import "../views/minipc/setup-method-view.js";
 import "../views/minipc/architecture-selection-view.js";
+import "../views/minipc/media-view.js";
+import "../views/live-usb/live-usb-gate.js";
+import "../views/live-usb/live-iso-location-view.js";
+import "../views/live-usb/live-usb-summary-view.js";
+import "../views/live-usb/live-usb-progress-view.js";
+import "../views/live-usb/live-usb-success-view.js";
 import "../views/utm/utm-check-view.js";
 import "../views/utm/utm-configure-view.js";
 import "../views/utm/utm-confirm-view.js";
@@ -190,9 +196,7 @@ export class AppShell extends LitElement {
         class="stop-dialog"
         ?open=${this._showStopDialog}
         .heading=${localize("components.app_shell.stop_installation_title")}
-        .message=${wizardState.currentStep?.id === "flash"
-          ? localize("components.app_shell.stop_installation_message")
-          : localize("components.app_shell.stop_vm_installation_message")}
+        .message=${this._stopDialogMessage()}
         .primaryLabel=${localize("components.app_shell.stop_installation")}
         .secondaryLabel=${localize("components.app_shell.keep_installing")}
         primary-variant="danger"
@@ -229,6 +233,20 @@ export class AppShell extends LitElement {
     `;
   }
 
+  private _stopDialogMessage(): string {
+    if (wizardState.currentStep?.id !== "flash") {
+      return localize("components.app_shell.stop_vm_installation_message");
+    }
+    const selections = this._wizardState.selections;
+    if (
+      selections.installMethod === "usb-boot" &&
+      selections.liveMedia === "iso"
+    ) {
+      return localize("components.app_shell.stop_iso_message");
+    }
+    return localize("components.app_shell.stop_installation_message");
+  }
+
   private _renderView() {
     switch (this._currentView) {
       case "connection-check":
@@ -261,7 +279,11 @@ export class AppShell extends LitElement {
   private _renderWizard() {
     const currentStep = wizardState.currentStep;
     const flow = this._wizardState.currentFlow;
-    const step = wizardStep(flow, currentStep?.id);
+    const step = wizardStep(
+      flow,
+      currentStep?.id,
+      this._wizardState.selections
+    );
     const nextDisabled = !this._isReady(step);
     const nextLabel = this._getNextLabel(currentStep?.id);
     // What Next waits for. It says so and keeps the focus: disabled, it
@@ -301,6 +323,7 @@ export class AppShell extends LitElement {
       flashRunning ||
       vmRunning ||
       currentStep?.id === "method" ||
+      currentStep?.id === "media" ||
       (currentStep?.id === "install" && this._installStuck());
 
     return html`
@@ -330,10 +353,14 @@ export class AppShell extends LitElement {
   }
 
   private _getNextLabel(stepId: string | undefined): string {
+    const selections = this._wizardState.selections;
+    const liveUsb = selections.installMethod === "usb-boot";
     if (stepId === "flash" && this._flashError) {
       return this._installRetryable
         ? localize("common.try_again")
-        : localize("components.app_shell.choose_another_drive");
+        : liveUsb && selections.liveMedia === "iso"
+          ? localize("components.app_shell.choose_another_location")
+          : localize("components.app_shell.choose_another_drive");
     }
     if (stepId === "install" && this._vmInstallError) {
       return this._installReconnect
@@ -341,7 +368,7 @@ export class AppShell extends LitElement {
         : localize("common.try_again");
     }
     if (stepId === "confirm") {
-      return localize("common.install");
+      return liveUsb ? localize("common.create") : localize("common.install");
     }
     if (stepId === "success") {
       return localize("common.done");
@@ -481,7 +508,14 @@ export class AppShell extends LitElement {
     if (currentStep?.id === "flash" && this._flashError) {
       this._flashError = false;
       if (!this._installRetryable) {
-        this._goToStep("drive");
+        // The ISO path has a save location where the other paths have a drive
+        const selections = this._wizardState.selections;
+        this._goToStep(
+          selections.installMethod === "usb-boot" &&
+            selections.liveMedia === "iso"
+            ? "location"
+            : "drive"
+        );
         return;
       }
       this._stepView?.retry?.();
@@ -502,7 +536,11 @@ export class AppShell extends LitElement {
       return;
     }
 
-    const step = wizardStep(flow, currentStep?.id);
+    const step = wizardStep(
+      flow,
+      currentStep?.id,
+      this._wizardState.selections
+    );
     if (step?.beforeNext) {
       // Next takes no clicks while it isn't ready or is busy, but the step
       // must never proceed meanwhile, whatever triggered the event
@@ -521,10 +559,14 @@ export class AppShell extends LitElement {
     }
 
     // Show confirmation dialog before proceeding from confirm step (only for
-    // the flows that write a drive)
+    // the flows that write a drive; saving an ISO erases nothing)
+    const savingIso =
+      this._wizardState.selections.installMethod === "usb-boot" &&
+      this._wizardState.selections.liveMedia === "iso";
     if (
       currentStep?.id === "confirm" &&
-      (flow === "sbc" || flow === "minipc" || flow === "ha-hardware")
+      (flow === "sbc" || flow === "minipc" || flow === "ha-hardware") &&
+      !savingIso
     ) {
       // Next is busy with this already, whatever else sent the event
       if (this._verifyingDrive) return;

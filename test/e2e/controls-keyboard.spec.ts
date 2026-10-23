@@ -35,10 +35,12 @@ test("Mini PC choices work with Tab, Space, and arrow keys", async ({
     page.getByRole("button", { name: "I need to boot from USB" }),
     "Space"
   );
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Write to a USB stick", exact: false })
+  ).toBeVisible();
   await activate(
     page,
-    page.getByRole("button", { name: "Go back", exact: true })
+    page.getByRole("button", { name: "Back", exact: false })
   );
   await activate(
     page,

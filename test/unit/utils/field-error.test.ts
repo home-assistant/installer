@@ -82,7 +82,8 @@ describe("fieldError", () => {
     expect(getComputedStyle(hint).color).to.equal(ERROR_COLOR);
     expect(border()).to.equal(ERROR_COLOR);
     expect(icon().content).to.equal('""');
-    expect(icon().maskImage).to.contain("data:image/svg+xml");
+    // A file, not a data: URL, which the app's CSP blocks
+    expect(icon().maskImage).to.contain("/assets/icons/alert-circle.svg");
     expect(icon().backgroundColor).to.equal(ERROR_COLOR);
   });
 

@@ -1,5 +1,5 @@
 import { expect } from "@open-wc/testing";
-import { wizardState } from "../../../src/state/wizard-state.js";
+import { MINIPC_STEPS, wizardState } from "../../../src/state/wizard-state.js";
 
 describe("wizard-state", () => {
   beforeEach(() => {
@@ -49,6 +49,26 @@ describe("wizard-state", () => {
 
     expect(state.currentFlow).to.equal("minipc");
     expect(state.steps[0].id).to.equal("method");
+  });
+
+  it("swaps the mini PC steps without losing position or selections", () => {
+    wizardState.startFlow("minipc");
+    wizardState.setSelection("installMethod", "usb-boot");
+    wizardState.setSteps(MINIPC_STEPS.usb);
+    wizardState.nextStep();
+
+    wizardState.setSteps(MINIPC_STEPS.iso);
+    const state = wizardState.getState();
+    expect(state.currentStepIndex).to.equal(1);
+    expect(state.steps.map((step) => step.id)).to.deep.equal([
+      "method",
+      "media",
+      "location",
+      "confirm",
+      "flash",
+      "success",
+    ]);
+    expect(state.selections.installMethod).to.equal("usb-boot");
   });
 
   it("navigates to next step", () => {
