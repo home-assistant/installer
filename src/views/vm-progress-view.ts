@@ -62,10 +62,10 @@ export abstract class VmProgressView<
   protected abstract readonly _stages: readonly ("downloading" | Stage)[];
 
   /** The stages a stop can still end without leaving anything behind */
-  protected abstract readonly _stoppableStages: readonly string[];
+  protected abstract readonly _stoppableStages: readonly VmInstallStage<Stage>[];
 
   /** The stages that report how far they are (0-100%) */
-  protected abstract readonly _measurableStages: readonly string[];
+  protected abstract readonly _measurableStages: readonly VmInstallStage<Stage>[];
 
   /** Whether the user can leave with the VM running and nothing left to start */
   get leavable(): boolean {
@@ -76,7 +76,15 @@ export abstract class VmProgressView<
 
   /** Whether `stop` can still end the install without leaving anything behind */
   get stoppable(): boolean {
-    return super.stoppable && this._stoppableStages.includes(this._stage);
+    return super.stoppable && this._atStoppableStage;
+  }
+
+  /**
+   * Whether the install is at one of `_stoppableStages`. Unlike `stoppable`,
+   * this holds between steps too, like right after one failed.
+   */
+  protected get _atStoppableStage(): boolean {
+    return this._stoppableStages.includes(this._stage);
   }
 
   protected _cancel(attempt: string): Promise<void> {

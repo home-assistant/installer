@@ -34,6 +34,14 @@ function isBackendStage(stage: FlashStage): stage is BackendStage {
   return (BACKEND_STAGES as readonly FlashStage[]).includes(stage);
 }
 
+/** A missing session, answered like an expired one: by logging in again */
+const NO_SESSION = {
+  code: SESSION_EXPIRED,
+  message: "",
+  retryable: false,
+  details: {},
+};
+
 /**
  * Whether a failed VM status request cannot succeed by asking again.
  *
@@ -54,13 +62,13 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
   protected readonly _stages = BACKEND_STAGES;
 
   /** Past these, the VM exists, and the install runs to the end */
-  protected readonly _stoppableStages = [
+  protected readonly _stoppableStages: readonly BackendStage[] = [
     "downloading",
     "extracting",
     "uploading",
   ];
 
-  protected readonly _measurableStages = [
+  protected readonly _measurableStages: readonly BackendStage[] = [
     "downloading",
     "extracting",
     "uploading",
@@ -75,14 +83,8 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
   protected _startFailure() {
     if (this._wizardState.selections.proxmoxSession) return undefined;
 
-    // Answered like an expired one: by logging in again
     return {
-      error: {
-        code: SESSION_EXPIRED,
-        message: "",
-        retryable: false,
-        details: {},
-      },
+      error: NO_SESSION,
       message: localize(
         "views.proxmox.proxmox_progress_view.no_proxmox_session_available"
       ),
@@ -91,8 +93,10 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
 
   protected async _install(signal: AbortSignal) {
     const selections = this._wizardState.selections;
-    // `_startFailure` holds back an install without one
-    const session = selections.proxmoxSession!;
+    const session = selections.proxmoxSession;
+    // `_startFailure` holds back an install without one; one that goes
+    // missing anyway is answered the same way, by logging in again
+    if (!session) throw NO_SESSION;
     const config = proxmoxVmConfig(selections);
 
     // Skipped when an earlier attempt already created the VM: running it
@@ -171,7 +175,7 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
     // installer: a new install would find its VM ID taken, or leave it
     // behind under another one.
     const halfMade =
-      !this._stoppableStages.includes(this._stage) &&
+      !this._atStoppableStage &&
       !wizardState.getState().selections.proxmoxVmResult;
     const reconnect = needsReconnect(error) && !halfMade;
     if (needsReconnect(error) && halfMade) {

@@ -56,9 +56,15 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
   ];
 
   /** Past these, UTM creates the VM, and the install runs to the end */
-  protected readonly _stoppableStages = ["downloading", "extracting"];
+  protected readonly _stoppableStages: readonly UtmStage[] = [
+    "downloading",
+    "extracting",
+  ];
 
-  protected readonly _measurableStages = ["downloading", "extracting"];
+  protected readonly _measurableStages: readonly UtmStage[] = [
+    "downloading",
+    "extracting",
+  ];
 
   protected _stoppedMessage(): string {
     return localize("views.utm.utm_progress_view.stopped_nothing_created");
@@ -89,7 +95,14 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
       let vmId = selections.vmId;
       if (!vmId) {
         const pending = selections.utmCreation;
-        imagePath = pending ? undefined : await this._downloadImage(signal);
+        let image: string;
+        if (pending) {
+          // A creation an earlier attempt started has its image already
+          image = pending.config.image_path;
+        } else {
+          imagePath = await this._downloadImage(signal);
+          image = imagePath;
+        }
         throwIfCancelled(signal);
         // A stop that landed as the download finished still holds back the VM
         if (this._stopping) throw STOPPED;
@@ -97,7 +110,7 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
 
         const config: UtmVmConfig = {
           ...utmVmConfig(selections),
-          image_path: pending?.config.image_path ?? imagePath!,
+          image_path: image,
         };
 
         vmId = await this._createVm(config, flowGeneration);

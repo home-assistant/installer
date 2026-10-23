@@ -33,8 +33,8 @@ class TestProgressView extends VmProgressView<TestStage> {
     "downloading",
     "building",
   ];
-  protected readonly _stoppableStages = ["downloading"];
-  protected readonly _measurableStages = ["downloading"];
+  protected readonly _stoppableStages: readonly TestStage[] = ["downloading"];
+  protected readonly _measurableStages: readonly TestStage[] = ["downloading"];
 
   steps: Steps = () => new Promise(() => {});
   startFailure?: InstallFailure;
@@ -129,6 +129,16 @@ describe("vm-progress-view", () => {
   afterEach(() => {
     wizardState.reset();
     restoreTauriIpc();
+  });
+
+  it("rejects a stage the flow doesn't have at build time", () => {
+    abstract class Misspelled extends VmProgressView<TestStage> {
+      // @ts-expect-error: misspelled stage
+      protected readonly _stoppableStages = ["downloadng"] as const;
+      // @ts-expect-error: misspelled stage
+      protected readonly _measurableStages = ["buildng"] as const;
+    }
+    expect(Misspelled).to.be.a("function");
   });
 
   it("completes with what the flow's steps resolve to", async () => {

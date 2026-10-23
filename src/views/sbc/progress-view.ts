@@ -10,6 +10,7 @@ import {
   cancelFlash,
   flashImage,
   type FlashProgress,
+  type FlashStage,
 } from "../../api/index.js";
 import { readDriveSelection } from "../../utils/drive-selection.js";
 import { selectedWifi } from "../../utils/wifi.js";
@@ -29,6 +30,22 @@ const FIXED_ON_THIS_COMPUTER = [
   "permission_denied",
   "disk_service_unavailable",
 ];
+
+/** The stages a flash goes through, in order */
+const STAGES: readonly FlashStage[] = [
+  "downloading",
+  "extracting",
+  "writing",
+  "verifying",
+  "finalizing",
+];
+
+/** Why a flash cannot start: an earlier step left no drive or board */
+function missingTarget(): Error {
+  return new Error(
+    localize("views.sbc.progress_view.missing_drive_or_device_configuration")
+  );
+}
 
 @customElement("progress-view")
 export class ProgressView extends InstallProgressView {
@@ -53,19 +70,17 @@ export class ProgressView extends InstallProgressView {
     if (readDriveSelection(selections) && selections.deviceConfig) {
       return undefined;
     }
-    return {
-      error: localize(
-        "views.sbc.progress_view.missing_drive_or_device_configuration"
-      ),
-    };
+    return { error: missingTarget() };
   }
 
   protected async _install() {
     this._reachedDrive = false;
     const selections = this._wizardState.selections;
-    // `_startFailure` holds back a flash without them
-    const drive = readDriveSelection(selections)!;
-    const deviceConfig = selections.deviceConfig!;
+    const drive = readDriveSelection(selections);
+    const deviceConfig = selections.deviceConfig;
+    // `_startFailure` holds back a flash without them; should one go missing
+    // anyway, it fails the same way
+    if (!drive || !deviceConfig) throw missingTarget();
 
     await this._runStoppable((attempt) =>
       flashImage(
@@ -129,13 +144,10 @@ export class ProgressView extends InstallProgressView {
     const stage = this._progress?.stage || "downloading";
     return html`
       <install-progress
-        .stages=${[
-          "downloading",
-          "extracting",
-          "writing",
-          "verifying",
-          "finalizing",
-        ].map((id) => ({ id, label: this._getStageDescription(id) }))}
+        .stages=${STAGES.map((id) => ({
+          id,
+          label: this._getStageDescription(id),
+        }))}
         .stage=${stage}
         .stageTitle=${this._stopping
           ? localize("common.install.stopping")
@@ -154,7 +166,7 @@ export class ProgressView extends InstallProgressView {
     `;
   }
 
-  private _getStageTitle(stage: string): string {
+  private _getStageTitle(stage: FlashStage): string {
     switch (stage) {
       case "downloading":
         return localize("common.install.downloading");
@@ -175,7 +187,7 @@ export class ProgressView extends InstallProgressView {
     }
   }
 
-  private _getStageDescription(stage: string): string {
+  private _getStageDescription(stage: FlashStage): string {
     const installer = !!findInstaller(
       this._wizardState.selections.deviceConfig?.board
     );
