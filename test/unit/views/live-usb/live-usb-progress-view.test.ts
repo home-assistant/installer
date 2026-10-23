@@ -226,6 +226,8 @@ describe("live-usb-progress-view", () => {
     ["usb", "io", false],
     ["usb", "json", false],
     ["iso", "file_exists", true],
+    ["iso", "file_name_not_portable", true],
+    ["iso", "folder_in_cache", true],
     ["iso", "io", true],
     ["iso", "json", false],
   ] as const) {

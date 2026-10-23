@@ -24,6 +24,8 @@ import { InstallProgressView } from "../install-progress-view.js";
  */
 const LOCATION_FAILURES = [
   "file_exists",
+  "file_name_not_portable",
+  "folder_in_cache",
   "folder_name_taken",
   "folder_not_found",
   "invalid_file_name",
