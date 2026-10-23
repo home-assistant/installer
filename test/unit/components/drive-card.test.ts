@@ -167,6 +167,44 @@ describe("drive-card", () => {
     expect(details!.textContent!.trim()).to.equal("USB drive");
   });
 
+  it("shows the device path in quiet monospace below the details", async () => {
+    const el = await fixture<DriveCard>(html`
+      <drive-card name="Test" model="Ultra" drive-path="/dev/sdb"></drive-card>
+    `);
+
+    const details = el.shadowRoot!.querySelector(".details")!;
+    const path = el.shadowRoot!.querySelector(".path")!;
+    expect(path.textContent).to.equal("/dev/sdb");
+    expect(details.nextElementSibling).to.equal(path);
+    expect(getComputedStyle(path).fontFamily).to.contain("monospace");
+    expect(getComputedStyle(path).color).to.equal(
+      getComputedStyle(details).color
+    );
+  });
+
+  it("keeps the path on a drive that can't be picked", async () => {
+    const el = await fixture<DriveCard>(html`
+      <drive-card
+        name="Test"
+        drive-path="/dev/sdb"
+        disabled
+        disabled-reason="Drive is too small"
+      ></drive-card>
+    `);
+
+    expect(el.shadowRoot!.querySelector(".path")!.textContent).to.equal(
+      "/dev/sdb"
+    );
+  });
+
+  it("leaves out the path line without a path", async () => {
+    const el = await fixture<DriveCard>(html`
+      <drive-card name="Test"></drive-card>
+    `);
+
+    expect(el.shadowRoot!.querySelector(".path")).to.be.null;
+  });
+
   it("has the correct structure", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test"></drive-card>
@@ -299,6 +337,32 @@ describe("drive-card", () => {
 
       expect(groups).to.have.length(1);
       expect(groups[0]!.name).to.equal("Target drive");
+    });
+
+    it("tells identical drives apart by path in their accessible names", async () => {
+      const root = fixtureSync<HTMLElement>(html`
+        <wa-radio-group radio-tag="drive-card" aria-label="Target drive">
+          ${["/dev/sdb", "/dev/sdc"].map(
+            (path) => html`
+              <drive-card
+                .value=${path}
+                .name=${"Flash Disk"}
+                .drivePath=${path}
+                .driveSize=${32e9}
+              ></drive-card>
+            `
+          )}
+        </wa-radio-group>
+      `);
+      await (root as HTMLElement & { updateComplete: Promise<unknown> })
+        .updateComplete;
+      await Promise.all(cards(root).map((c) => c.updateComplete));
+
+      const radios = findByRole(await fullA11ySnapshot(), "radio");
+
+      expect(radios).to.have.length(2);
+      expect(radios[0]!.name).to.contain("Flash Disk").and.contain("/dev/sdb");
+      expect(radios[1]!.name).to.contain("Flash Disk").and.contain("/dev/sdc");
     });
 
     it("keeps a disabled drive out of the tab order", async () => {

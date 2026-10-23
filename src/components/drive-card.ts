@@ -112,6 +112,14 @@ export class DriveCard extends WaRadio {
         margin: 0;
       }
 
+      .path {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.8125rem;
+        color: var(--ha-secondary-text-color, #727272);
+        margin: 0.125rem 0 0 0;
+        overflow-wrap: anywhere;
+      }
+
       .size {
         font-size: 1rem;
         font-weight: 500;
@@ -175,6 +183,15 @@ export class DriveCard extends WaRadio {
   @property({ type: String })
   vendor = "";
 
+  /**
+   * Device path, e.g. "/dev/sda" or "\\.\PhysicalDrive2": the one thing that
+   * tells two identical sticks apart, and what the confirm step shows. Shown
+   * on every card, not only on look-alikes, so a card and its accessible name
+   * don't change as other drives come and go.
+   */
+  @property({ type: String, attribute: "drive-path" })
+  drivePath = "";
+
   @property({ type: String, attribute: "disabled-reason" })
   disabledReason = "";
 
@@ -192,6 +209,9 @@ export class DriveCard extends WaRadio {
               ? this.disabledReason
               : this._getDetails()}
           </p>
+          ${this.drivePath
+            ? html`<p class="path">${this.drivePath}</p>`
+            : nothing}
         </div>
         <span class="size">${formatBytes(this.driveSize)}</span>
         ${this.checked

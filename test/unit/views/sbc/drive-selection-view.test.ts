@@ -355,6 +355,29 @@ describe("drive-selection-view", () => {
     }
   });
 
+  it("shows each drive's path, so two identical sticks can be told apart", async () => {
+    const scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve([drive({ id: "/dev/sdb" }), drive({ id: "/dev/sdc" })]);
+      await waitUntil(
+        () => el.shadowRoot!.querySelectorAll("drive-card").length === 2
+      );
+      const cards = [...el.shadowRoot!.querySelectorAll("drive-card")];
+      for (const card of cards) await card.updateComplete;
+
+      expect(
+        cards.map(
+          (card) => card.shadowRoot!.querySelector(".path")!.textContent
+        )
+      ).to.deep.equal(["/dev/sdb", "/dev/sdc"]);
+    } finally {
+      scan.restore();
+    }
+  });
+
   it("keeps undersized drives visible and disables them with the board minimum", async () => {
     const scan = holdDeviceScan();
     try {
