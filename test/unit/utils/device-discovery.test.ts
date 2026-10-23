@@ -140,6 +140,19 @@ describe("device-discovery", () => {
       expect(await finder.find(signal)).to.equal("192.0.2.50");
     });
 
+    it("leaves out what a lookup saw once it answered past the first minute", async () => {
+      let lookups = 0;
+      mockTauriIpc(() => {
+        // The lookup starts in time, and answers after the device started
+        if (lookups++ === 0) clockOffset += 61 * 1000;
+        return [landingPage("device")];
+      });
+      const finder = new DeviceFinder();
+
+      expect(await finder.find(signal)).to.be.null;
+      expect(await finder.find(signal)).to.equal("192.0.2.50");
+    });
+
     it("still leaves out what answered in time", async () => {
       let lookups = 0;
       mockTauriIpc(() => {

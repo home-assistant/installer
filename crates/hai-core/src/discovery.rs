@@ -89,7 +89,9 @@ fn announcement(resolved: Resolved) -> Option<HaAnnouncement> {
 
 /// The address to reach it at: the one its `internal_url` names when it
 /// announces that one too, else the lowest. Those only Home Assistant OS
-/// itself can reach, like its Docker networks', never count.
+/// itself can reach, like its Docker networks', never count. Without any
+/// other, the one its `internal_url` names still does: Windows resolves a
+/// single address, which can be one of those.
 fn preferred_address(resolved: &Resolved) -> Option<Ipv4Addr> {
     let mut reachable: Vec<_> = resolved
         .addresses
@@ -98,12 +100,15 @@ fn preferred_address(resolved: &Resolved) -> Option<Ipv4Addr> {
         .filter(|ip| is_reachable_vm_address(*ip))
         .collect();
     reachable.sort();
-    resolved
+    let internal = resolved
         .properties
         .get("internal_url")
         .and_then(|url| url_ip(url))
-        .filter(|ip| reachable.contains(ip))
-        .or_else(|| reachable.first().copied())
+        .filter(|ip| is_reachable_vm_address(*ip));
+    match internal {
+        Some(ip) if reachable.is_empty() || reachable.contains(&ip) => Some(ip),
+        _ => reachable.first().copied(),
+    }
 }
 
 /// The IPv4 address an `http://<address>[:port][/path]` URL names
@@ -206,6 +211,32 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(announced.address, "10.0.0.5");
+    }
+
+    #[test]
+    fn internal_url_stands_in_when_no_announced_address_is_reachable() {
+        // An older landing page, of which Windows resolved only its
+        // Supervisor network's address
+        let announced = announcement(resolved(
+            8123,
+            &["172.30.32.1"],
+            &[
+                ("version", "0.0.0"),
+                ("internal_url", "http://192.168.1.50:8123"),
+            ],
+        ))
+        .unwrap();
+        assert_eq!(announced.address, "192.168.1.50:8123");
+
+        // Not when that one is out of reach too
+        assert_eq!(
+            announcement(resolved(
+                80,
+                &["172.30.32.1"],
+                &[("internal_url", "http://172.30.32.1")],
+            )),
+            None
+        );
     }
 
     #[test]

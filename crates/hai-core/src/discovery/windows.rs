@@ -276,6 +276,29 @@ mod tests {
     }
 
     #[test]
+    fn a_single_unreachable_address_gives_way_to_internal_url() {
+        // An older landing page, which also announces its Docker networks
+        let mut name = wide("homeassistant-1._home-assistant._tcp.local");
+        let mut keys = [wide("version"), wide("internal_url")];
+        let mut values = [wide("0.0.0"), wide("http://192.168.1.50:8123")];
+        let mut key_pointers = keys.each_mut().map(|key| key.as_mut_ptr());
+        let mut value_pointers = values.each_mut().map(|value| value.as_mut_ptr());
+        let mut ip = u32::from_ne_bytes([172, 30, 32, 1]);
+        let instance = DNS_SERVICE_INSTANCE {
+            pszInstanceName: name.as_mut_ptr(),
+            ip4Address: &mut ip,
+            wPort: 8123,
+            dwPropertyCount: 2,
+            keys: key_pointers.as_mut_ptr(),
+            values: value_pointers.as_mut_ptr(),
+            ..Default::default()
+        };
+        let announced = super::super::announcement(unsafe { resolved(&instance) }).unwrap();
+        assert_eq!(announced.address, "192.168.1.50:8123");
+        assert!(announced.landing_page);
+    }
+
+    #[test]
     fn a_late_callback_finds_no_lookup() {
         let _turn = TURN.lock().unwrap_or_else(PoisonError::into_inner);
         // Nothing to resolve for, and nothing that would be written to

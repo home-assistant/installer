@@ -45,12 +45,14 @@ export class DeviceFinder {
   private _surveyed = 0;
   private _device?: string;
 
+  /** Whether it is still too early for the device to have started */
+  private get _early(): boolean {
+    return Date.now() - this._started < SURVEY_TIME_MS;
+  }
+
   /** Whether lookups still note what is there */
   private get _surveying(): boolean {
-    return (
-      this._surveyed < SURVEY_LOOKUPS &&
-      Date.now() - this._started < SURVEY_TIME_MS
-    );
+    return this._surveyed < SURVEY_LOOKUPS && this._early;
   }
 
   /**
@@ -61,7 +63,11 @@ export class DeviceFinder {
     while (this._surveying) {
       // No lookup after the wait ended
       throwIfCancelled(signal);
-      for (const { id } of await findHomeAssistants()) this._known.add(id);
+      const found = await findHomeAssistants();
+      // One that only answered once the device could have started might
+      // see it already
+      if (!this._early) return;
+      for (const { id } of found) this._known.add(id);
       this._surveyed++;
     }
   }

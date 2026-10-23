@@ -97,9 +97,15 @@ export class StepIndicator extends LitElement {
           margin-inline: 2px;
         }
 
-        .step-connector,
-        :host([compact]) .step-connector {
+        .step-connector {
           width: 8px;
+        }
+
+        /* With only the current name shown, the dots alone say how far the
+           steps are, and the lines between them would leave the name too
+           little room */
+        :host([compact]) .step-connector {
+          display: none;
         }
       }
     `,
