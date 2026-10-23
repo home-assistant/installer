@@ -54,14 +54,36 @@ describe("device-card", () => {
     expect(el.value).to.equal("rpi5");
   });
 
-  it("is a button reachable with Tab", async () => {
+  it("is a button reachable with Tab, which focusing the card reaches", async () => {
     const el = await fixture<DeviceCard>(html`
       <device-card value="rpi5" name="Raspberry Pi 5"></device-card>
     `);
 
-    expect(el.getAttribute("role")).to.equal("button");
-    expect(el.tabIndex).to.equal(0);
+    const button = el.shadowRoot!.querySelector<HTMLElement>(".card")!;
+    expect(button.getAttribute("role")).to.equal("button");
+    expect(button.tabIndex).to.equal(0);
+    el.focus();
+    expect(el.shadowRoot!.activeElement).to.equal(button);
   });
+
+  for (const [key, type] of [
+    ["Enter", "keydown"],
+    [" ", "keyup"],
+  ] as const) {
+    it(`is picked with ${key === " " ? "Space" : key}, as a button is`, async () => {
+      const el = await fixture<DeviceCard>(html`
+        <device-card value="rpi5" name="Raspberry Pi 5"></device-card>
+      `);
+      const button = el.shadowRoot!.querySelector<HTMLElement>(".card")!;
+      let clicks = 0;
+      el.addEventListener("click", () => clicks++);
+
+      button.dispatchEvent(new KeyboardEvent("keydown", { key }));
+      expect(clicks).to.equal(type === "keydown" ? 1 : 0);
+      button.dispatchEvent(new KeyboardEvent("keyup", { key }));
+      expect(clicks).to.equal(1);
+    });
+  }
 
   it("is named by the device alone", async () => {
     await fixture<DeviceCard>(html`

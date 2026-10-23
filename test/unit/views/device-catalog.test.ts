@@ -175,9 +175,9 @@ describe("runtime device catalog selections", () => {
       });
 
       card(view, first)!.click();
-      card(view, second)!.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Enter" })
-      );
+      card(view, second)!
+        .shadowRoot!.querySelector('[role="button"]')!
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
       expect(picked).to.deep.equal([first, second]);
     });
   }

@@ -67,16 +67,23 @@ export class DeviceCard extends CardButton {
 
   render() {
     return html`
-      <div class="card">
+      <div
+        class="card"
+        role="button"
+        tabindex="0"
+        aria-labelledby="name"
+        @keydown=${this._onKeyDown}
+        @keyup=${this._onKeyUp}
+        @blur=${this._onBlur}
+      >
         <div class="image-container">${this._renderImage()}</div>
-        <p class="name">${this.name}</p>
+        <p class="name" id="name">${this.name}</p>
       </div>
     `;
   }
 
-  // The card itself carries role="button", so its accessible name is
-  // computed from its contents. The visible name below already supplies that;
-  // giving the image an alt would have screen readers announce it twice.
+  // The name labels the card, so an alt would only have screen readers
+  // announce the device twice when they read the card's contents.
   private _renderImage() {
     if (this.image) {
       return html`<img src=${this.image} alt="" />`;

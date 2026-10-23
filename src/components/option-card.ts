@@ -1,7 +1,11 @@
-import { html, css } from "lit";
+import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { styleMap } from "lit/directives/style-map.js";
-import { reducedMotionStyles } from "../utils/view-accessibility.js";
+import { localize } from "../localization/localize.js";
+import {
+  reducedMotionStyles,
+  srOnlyStyles,
+} from "../utils/view-accessibility.js";
 import { selectableCardStyles } from "../utils/card-styles.js";
 import { mdiServer } from "../utils/icons.js";
 import { CardButton } from "./card-button.js";
@@ -69,6 +73,7 @@ function hasIcon<T extends object>(
 export class OptionCard extends CardButton {
   static styles = [
     reducedMotionStyles,
+    srOnlyStyles,
     selectableCardStyles,
     css`
       /* Fills a stretched grid cell, so cards in one row end level */
@@ -183,22 +188,50 @@ export class OptionCard extends CardButton {
   @property({ type: String })
   icon: OptionCardIcon = "others";
 
-  // More under the description goes in the default slot
+  /**
+   * Opens a page in the browser rather than going on in the app, so it is a
+   * link, and says that it opens in the browser.
+   */
+  @property({ type: Boolean })
+  external = false;
+
+  // A link takes only Enter, and Space scrolls
+  protected get _spaceActs() {
+    return !this.external;
+  }
+
+  // More under the description goes in the default slot, and describes the
+  // card with it
   render() {
     return html`
-      <div class="card">
+      <div
+        class="card"
+        role=${this.external ? "link" : "button"}
+        tabindex="0"
+        aria-labelledby="title"
+        aria-describedby=${this.external
+          ? "external description more"
+          : "description more"}
+        @keydown=${this._onKeyDown}
+        @keyup=${this._onKeyUp}
+        @blur=${this._onBlur}
+      >
         <div class="icon-container">${this._renderIcon()}</div>
-        <p class="title">${this.heading}</p>
-        <p class="description">${this.description}</p>
-        <slot></slot>
+        <p class="title" id="title">${this.heading}</p>
+        ${this.external
+          ? html`<span class="sr-only" id="external"
+              >${localize("components.option_card.opens_in_browser")}</span
+            >`
+          : nothing}
+        <p class="description" id="description">${this.description}</p>
+        <slot id="more"></slot>
         <slot name="end"></slot>
       </div>
     `;
   }
 
-  // The card itself carries role="button", so its accessible name is
-  // computed from its contents. The visible name below already supplies that;
-  // giving the image an alt would have screen readers announce it twice.
+  // The heading names the card, so an alt would only have screen readers
+  // announce the option twice when they read the card's contents.
   private _renderIcon() {
     const icon: string = this.icon;
     if (icon === "sbc") {

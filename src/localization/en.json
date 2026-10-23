@@ -75,6 +75,7 @@
   "components.drive_card.storage_device": "Storage device",
   "components.drive_card.usb_drive": "USB drive",
   "components.info_dialog.ok": "OK",
+  "components.option_card.opens_in_browser": "Opens in your browser.",
   "components.install_progress.installation_stages": "Installation stages",
   "components.install_progress.checking_address": "Checking Home Assistant at {address}.",
   "components.install_progress.completed": "(completed)",

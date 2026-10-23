@@ -155,15 +155,16 @@ describe("minipc-architecture-selection-view choices", () => {
     expect(selections.deviceConfig!.board).to.equal("generic-aarch64");
   });
 
-  it("keeps the processor logos from screen readers", async () => {
+  it("names each processor, describes it with its examples, and keeps the logos from screen readers", async () => {
     const el = await renderChoices();
     await Promise.all(cards(el).map((card) => card.updateComplete));
     const tree = await fullA11ySnapshot();
 
     expect(findByRole(tree, "image")).to.deep.equal([]);
-    expect(findByRole(tree, "button")[0]!.name).to.contain(
-      "Intel/AMD (x86-64)"
-    );
+    const [x86] = findByRole(tree, "button");
+    expect(x86!.name).to.equal("Intel/AMD (x86-64)");
+    expect(x86!.description).to.contain("Standard PC architecture");
+    expect(x86!.description).to.contain("Intel NUC");
   });
 
   // Apple silicon Macs also report "Intel Mac OS X"
