@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 // Below the native 800px minimum, in a padded page; install-progress's unit
 // tests measure the bare layout from 320 to 639px

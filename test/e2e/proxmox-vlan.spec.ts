@@ -1,5 +1,4 @@
-import { test, expect } from "@playwright/test";
-import { approveProxmoxImport } from "./fixtures.js";
+import { approveProxmoxImport, test, expect } from "./fixtures.js";
 
 for (const width of [1100, 390]) {
   test(`optional VLAN validation and persistence at ${width}px`, async ({

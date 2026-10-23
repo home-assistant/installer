@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 // The device and drive cards extend Web Awesome's radio, but should look like
 // the option and summary cards next to them: Web Awesome's own dark surface is

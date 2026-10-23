@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 // The smallest window, 800 by 750, zoomed to 200% is 400 by 375. There, as on
 // a regular window, Back, the content and Cancel and Next keep one distance

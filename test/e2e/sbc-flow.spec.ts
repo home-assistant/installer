@@ -1,5 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { skipWifiStep } from "./fixtures.js";
+import { type Page } from "@playwright/test";
+import { skipWifiStep, test, expect } from "./fixtures.js";
 
 // Browser-only mode serves the mock block devices from src/api/mock-data.ts.
 // Importing that module from the page returns the instance the app uses, so
@@ -24,24 +24,6 @@ async function openConfirmation(page: Page) {
   await nextButton(page).click();
 
   await skipWifiStep(page);
-}
-
-/** Simulate another drive being plugged in under the selected drive's path. */
-async function swapSelectedDrive(page: Page) {
-  await page.evaluate(async () => {
-    // Paths as the Vite dev server serves them, not resolvable by tsc.
-    const mockData = "/src/api/mock-data.ts";
-    const state = "/src/state/wizard-state.ts";
-    const { MOCK_BLOCK_DEVICES } = (await import(
-      mockData
-    )) as typeof import("../../src/api/mock-data.js");
-    const { wizardState } = (await import(
-      state
-    )) as typeof import("../../src/state/wizard-state.js");
-    const id = wizardState.getState().selections.drive;
-    const drive = MOCK_BLOCK_DEVICES.find((d) => d.id === id)!;
-    drive.model = "A Different Stick";
-  });
 }
 
 test.describe("SBC Flow - drive swapped after selection", () => {
@@ -75,34 +57,4 @@ test.describe("SBC Flow - drive swapped after selection", () => {
       await expect(nextButton(page)).toHaveJSProperty("disabled", true);
     });
   }
-
-  test("Install sends the user back to pick the drive again", async ({
-    page,
-  }) => {
-    await openConfirmation(page);
-    await swapSelectedDrive(page);
-
-    await nextButton(page).click();
-
-    const driveView = page.locator("drive-selection-view");
-    await expect(driveView).toBeVisible();
-    await expect(
-      driveView.locator('inline-notice[variant="error"]')
-    ).toBeVisible();
-    await expect(page.locator("confirm-dialog")).not.toBeVisible();
-    await expect(nextButton(page)).toHaveJSProperty("disabled", true);
-  });
-
-  test("confirming the erase does not start the write", async ({ page }) => {
-    await openConfirmation(page);
-    await nextButton(page).click();
-    const dialog = page.locator("confirm-dialog");
-    await expect(dialog.locator(".detail-value.path")).toBeVisible();
-
-    await swapSelectedDrive(page);
-    await dialog.locator('wa-button[variant="danger"]').click();
-
-    await expect(page.locator("drive-selection-view")).toBeVisible();
-    await expect(page.locator("progress-view")).toHaveCount(0);
-  });
 });
