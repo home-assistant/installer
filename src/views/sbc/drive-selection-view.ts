@@ -385,7 +385,6 @@ export class DriveSelectionView extends LitElement {
               <drive-card
                 .value=${drive.id}
                 .name=${drive.name}
-                .drivePath=${drive.id}
                 .driveSize=${drive.size}
                 .deviceType=${drive.device_type}
                 .model=${drive.model || ""}

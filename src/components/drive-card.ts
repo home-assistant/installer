@@ -12,6 +12,12 @@ import { reducedMotionStyles } from "../utils/view-accessibility.js";
  *
  * Extending `WaRadio` keeps the group's keyboard handling, roving tabindex
  * and ARIA; only the presentation is ours. See {@link DeviceCard}.
+ *
+ * The `value` is the device path, e.g. "/dev/sda" or "\\.\PhysicalDrive2",
+ * and the card shows it: it is the one thing that tells two identical sticks
+ * apart, and what the confirm step shows. It is on every card, not only on
+ * look-alikes, so a card and its accessible name don't change as other drives
+ * come and go.
  */
 @customElement("drive-card")
 export class DriveCard extends WaRadio {
@@ -183,15 +189,6 @@ export class DriveCard extends WaRadio {
   @property({ type: String })
   vendor = "";
 
-  /**
-   * Device path, e.g. "/dev/sda" or "\\.\PhysicalDrive2": the one thing that
-   * tells two identical sticks apart, and what the confirm step shows. Shown
-   * on every card, not only on look-alikes, so a card and its accessible name
-   * don't change as other drives come and go.
-   */
-  @property({ type: String, attribute: "drive-path" })
-  drivePath = "";
-
   @property({ type: String, attribute: "disabled-reason" })
   disabledReason = "";
 
@@ -209,9 +206,7 @@ export class DriveCard extends WaRadio {
               ? this.disabledReason
               : this._getDetails()}
           </p>
-          ${this.drivePath
-            ? html`<p class="path">${this.drivePath}</p>`
-            : nothing}
+          ${this.value ? html`<p class="path">${this.value}</p>` : nothing}
         </div>
         <span class="size">${formatBytes(this.driveSize)}</span>
         ${this.checked

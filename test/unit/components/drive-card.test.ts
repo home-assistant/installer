@@ -169,7 +169,7 @@ describe("drive-card", () => {
 
   it("shows the device path in quiet monospace below the details", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test" model="Ultra" drive-path="/dev/sdb"></drive-card>
+      <drive-card name="Test" model="Ultra" value="/dev/sdb"></drive-card>
     `);
 
     const details = el.shadowRoot!.querySelector(".details")!;
@@ -186,7 +186,7 @@ describe("drive-card", () => {
     const el = await fixture<DriveCard>(html`
       <drive-card
         name="Test"
-        drive-path="/dev/sdb"
+        value="/dev/sdb"
         disabled
         disabled-reason="Drive is too small"
       ></drive-card>
@@ -347,7 +347,6 @@ describe("drive-card", () => {
               <drive-card
                 .value=${path}
                 .name=${"Flash Disk"}
-                .drivePath=${path}
                 .driveSize=${32e9}
               ></drive-card>
             `
