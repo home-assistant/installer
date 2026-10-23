@@ -232,7 +232,9 @@ export class OptionCard extends LitElement {
       if (!e.repeat) this.click();
     } else if (e.key === " " && !this.external) {
       e.preventDefault();
-      this._spacePressed = true;
+      // A repeat belongs to a press that began where the key went down,
+      // perhaps on another card before the focus moved here
+      if (!e.repeat) this._spacePressed = true;
     }
   }
 

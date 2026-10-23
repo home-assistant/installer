@@ -97,10 +97,12 @@ test("Space acts when it comes up, and only once when held", async ({
   await page.keyboard.up("Space");
   await expect(first).toHaveAttribute("data-clicks", "1");
 
-  // Moving on with Space still down cancels it
+  // Moving on with Space still down cancels it, and its repeats on the next
+  // card leave that one alone too
   await page.keyboard.down("Space");
   await page.keyboard.press("Tab");
   await expect(second).toBeFocused();
+  await page.keyboard.down("Space");
   await page.keyboard.up("Space");
   await expect(first).toHaveAttribute("data-clicks", "1");
   await expect(second).toHaveAttribute("data-clicks", "0");

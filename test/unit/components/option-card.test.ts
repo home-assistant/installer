@@ -250,6 +250,16 @@ describe("option-card", () => {
       expect(clicks.count).to.equal(0);
     });
 
+    it("leaves a held Space that began elsewhere alone", async () => {
+      const { el, clicks } = await countedCard();
+
+      // Without scrolling the page while it is held
+      expect(press(el, "keydown", { key: " ", repeat: true }).defaultPrevented)
+        .to.be.true;
+      press(el, "keyup", { key: " " });
+      expect(clicks.count).to.equal(0);
+    });
+
     it("leaves Space to scroll when external, as a link does", async () => {
       const { el, clicks } = await countedCard(true);
 
