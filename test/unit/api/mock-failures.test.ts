@@ -14,6 +14,7 @@ describe("browser mock failures", () => {
     ["flash-permission", "flash", "permission_denied", false],
     ["proxmox-install", "proxmox", "proxmox_api", false],
     ["utm-create", "utm", "utm", true],
+    ["update-install", "update", "update_failed", true],
   ] as const) {
     it(`rejects ${scenario} once like a native command error`, () => {
       sessionStorage.setItem("hai:mock-failure", scenario);

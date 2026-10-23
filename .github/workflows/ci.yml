@@ -225,7 +225,7 @@ jobs:
           npm run localization:check
           npm run test:localization
 
-      - name: Test the release version script
+      - name: Test the release scripts
         run: npm run test:release
 
       - name: Check formatting
@@ -540,11 +540,14 @@ jobs:
     # the DMG they upload can be opened without Gatekeeper warnings. The Apple
     # credentials live in the protected `release` environment, which only main
     # may deploy to, so pull request builds never see them and stay unsigned.
-    environment: ${{ matrix.os == 'macos-latest' && github.event_name != 'pull_request' && 'release' || '' }}
+    # Release runs also sign the updates the installer updates itself with,
+    # on every platform, with the update key from the same environment.
+    environment: ${{ (github.event_name == 'workflow_dispatch' || (matrix.os == 'macos-latest' && github.event_name != 'pull_request')) && 'release' || '' }}
     env:
       BUILD_TARGET: ${{ matrix.target }}
       BUNDLE_DIR: target/${{ matrix.target }}/release/bundle
       SIGN_MACOS: ${{ matrix.os == 'macos-latest' && github.event_name != 'pull_request' }}
+      SIGN_UPDATES: ${{ github.event_name == 'workflow_dispatch' }}
     strategy:
       fail-fast: false
       matrix:
@@ -663,12 +666,39 @@ jobs:
             exit 1
           fi
 
+      # Like the Apple credentials below, the update key is only ever in the
+      # environment of the bundler. Tauri signs each update with it, and
+      # refuses a key that doesn't match the public key in tauri.conf.json.
+      - name: Check the update signing key
+        if: env.SIGN_UPDATES == 'true'
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::The secret $name is not set in the release environment"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      # Only release runs build the updates, as only they have the key to sign
+      # them; tauri.conf.json leaves them off for every other build.
       - name: Bundle
         if: env.SIGN_MACOS != 'true'
         shell: bash
-        run: npm run tauri bundle -- --target "$BUILD_TARGET"
+        run: |
+          args=(--target "$BUILD_TARGET")
+          if [[ "$SIGN_UPDATES" == true ]]; then
+            args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+          fi
+          npm run tauri bundle -- "${args[@]}"
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ""
+          TAURI_SIGNING_PRIVATE_KEY: ${{ github.event_name == 'workflow_dispatch' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
 
       # Tauri skips signing when APPLE_CERTIFICATE is missing and silently
       # skips notarization when the API key is, so check up front rather than
@@ -708,9 +738,15 @@ jobs:
       # APPLE_SIGNING_IDENTITY, which catches an export of the wrong identity.
       - name: Bundle (signed)
         if: env.SIGN_MACOS == 'true'
-        run: npm run tauri bundle -- --target "$BUILD_TARGET"
+        run: |
+          args=(--target "$BUILD_TARGET")
+          if [[ "$SIGN_UPDATES" == true ]]; then
+            args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+          fi
+          npm run tauri bundle -- "${args[@]}"
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ""
+          TAURI_SIGNING_PRIVATE_KEY: ${{ github.event_name == 'workflow_dispatch' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -745,8 +781,8 @@ jobs:
           fi
           xcrun stapler staple "${dmg[0]}"
 
-      # Tauri deletes the .app once it is in the DMG, as only the DMG is a
-      # bundle target. Check the app inside the DMG: that is what users get.
+      # Check the app inside the DMG, which is what users get, and the one
+      # inside the update, which is what installs update to.
       - name: Verify the signature and notarization
         if: env.SIGN_MACOS == 'true'
         run: |
@@ -768,13 +804,23 @@ jobs:
           xcrun stapler validate "${app[0]}"
           spctl --assess --type execute --verbose=2 "${app[0]}"
 
+          if [[ "$SIGN_UPDATES" == true ]]; then
+            update=$(mktemp -d)
+            tar -xzf "$BUNDLE_DIR"/macos/*.app.tar.gz -C "$update"
+            app=("$update"/*.app)
+            codesign --verify --deep --strict --verbose=2 "${app[0]}"
+            xcrun stapler validate "${app[0]}"
+            spctl --assess --type execute --verbose=2 "${app[0]}"
+          fi
+
       - name: Remove the notarization API key
         if: always() && env.SIGN_MACOS == 'true'
         run: rm -f "$RUNNER_TEMP/AuthKey.p8"
 
       # Uploads every installer as its own artifact, named after the file
       # itself, unarchived so users download the installer directly instead
-      # of a zip. Fails if any expected bundle format is missing.
+      # of a zip. Fails if any expected bundle format is missing. A release
+      # run's updates and signatures go up the same way.
       - name: Upload installers
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
@@ -791,8 +837,14 @@ jobs:
               macOS: ['dmg/*.dmg'],
               Windows: ['nsis/*.exe'],
             }[process.env.RUNNER_OS]
+            // The updates and their signatures, which only release runs build
+            const updates = process.env.SIGN_UPDATES !== 'true' ? [] : {
+              Linux: ['deb/*.deb.sig', 'rpm/*.rpm.sig', 'appimage/*.AppImage.sig'],
+              macOS: ['macos/*.app.tar.gz', 'macos/*.app.tar.gz.sig'],
+              Windows: ['nsis/*.exe.sig'],
+            }[process.env.RUNNER_OS]
 
-            for (const format of formats) {
+            for (const format of [...formats, ...updates]) {
               const files = await (await glob.create(`${process.env.BUNDLE_DIR}/${format}`)).glob()
               if (files.length !== 1) {
                 core.setFailed(`Expected exactly one installer for ${format}, found ${files.length}: ${files.join(', ')}`)
@@ -845,10 +897,31 @@ jobs:
           pattern: Home Assistant Installer*
           merge-multiple: true
 
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # latest.json tells installers where the update for their platform is,
+      # and its signature; the update check finds it by the release's tag.
+      # GitHub would turn the spaces in the file names into dots on upload,
+      # so they get those names first, for latest.json to point at.
+      - name: Write the update manifest
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          INSTALLERS: ${{ runner.temp }}/installers
+        run: |
+          shopt -s nullglob
+          for file in "$INSTALLERS"/*\ *; do
+            name=$(basename "$file")
+            mv "$file" "$INSTALLERS/${name// /.}"
+          done
+          node scripts/updater-manifest.mjs "$GITHUB_REPOSITORY" "$VERSION" "$INSTALLERS" > "$RUNNER_TEMP/latest.json"
+          cat "$RUNNER_TEMP/latest.json"
+          mv "$RUNNER_TEMP/latest.json" "$INSTALLERS/latest.json"
+
       # Provenance for every installer, tying it to this workflow run and
       # commit. Users check it with `gh attestation verify`, which matches by
-      # content, so it doesn't matter that GitHub turns the spaces in the file
-      # names into dots on upload. GitHub also lists each asset's SHA-256.
+      # content. GitHub also lists each asset's SHA-256.
       - name: Attest build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:

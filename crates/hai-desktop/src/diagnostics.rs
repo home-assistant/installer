@@ -278,6 +278,7 @@ pub enum ErrorCategory {
     TemporaryImageUnavailable,
     OperationInProgress,
     Internal,
+    UpdateFailed,
     /// A problem Supervisor reported held up installing Home Assistant: the
     /// frontend's `home_assistant_` codes, one per `HaSetupProblem`.
     HomeAssistantNoInternet,
@@ -479,7 +480,8 @@ mod tests {
 
     #[test]
     fn every_command_error_code_has_a_category() {
-        // The codes in command_error.rs and the ones commands.rs creates itself
+        // The codes in command_error.rs and the ones commands.rs and
+        // updates.rs create themselves
         for code in [
             "network",
             "io",
@@ -511,6 +513,7 @@ mod tests {
             "temporary_image_unavailable",
             "operation_in_progress",
             "internal",
+            "update_failed",
         ] {
             let category = serde_json::from_value::<ErrorCategory>(code.into()).unwrap();
             assert!(

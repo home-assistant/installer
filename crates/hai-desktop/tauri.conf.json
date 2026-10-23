@@ -33,7 +33,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "nsis", "deb", "rpm", "appimage"],
+    "targets": ["app", "dmg", "nsis", "deb", "rpm", "appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -65,6 +65,12 @@
       "rpm": {
         "depends": ["udisks2"]
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI0MzAxOUQyNDFDRjIxQzMKUldUREljOUIwaGt3dEdPVExQMmYybWxSK09ZRllqTU13a0c1a3BEeE9mR3VyMUVhTjQ0NklrWmEK",
+      "requireSignedVersion": true
     }
   }
 }

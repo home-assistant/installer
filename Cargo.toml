@@ -25,6 +25,7 @@ thiserror = "2"
 
 # HTTP client
 reqwest = { version = "0.13", features = ["stream", "json", "multipart", "form"] }
+semver = "1"
 
 # Async utilities
 futures-util = "0.3"
@@ -87,6 +88,9 @@ tauri-plugin-opener = "2"
 tauri-plugin-os = "=2.4.0"
 tauri-plugin-single-instance = "2"
 tauri-plugin-log = "2"
+# The updater's own rustls-tls feature would add ring next to the aws-lc-rs
+# that reqwest already uses for TLS, as hai-core and hai-desktop build it.
+tauri-plugin-updater = { version = "2", default-features = false }
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder"] }
 log = "0.4"

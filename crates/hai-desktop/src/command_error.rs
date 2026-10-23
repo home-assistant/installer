@@ -39,6 +39,12 @@ impl CommandError {
         }
     }
 
+    /// Log the error under `diagnostic`, a finer code than the public one.
+    pub fn with_diagnostic(mut self, diagnostic: &'static str) -> Self {
+        self.diagnostic = diagnostic;
+        self
+    }
+
     /// A read-only query can be repeated after the user restores access or service.
     pub fn from_query(error: Error) -> Self {
         let mut error = Self::from(error);

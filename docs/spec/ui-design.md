@@ -338,27 +338,37 @@ The Open Home Foundation Toolbox (https://toolbox.openhomefoundation.org/) is ac
 
 ## Update Banner
 
-Deferred, not implemented. Installer updates are currently manual; the app does not check for updates or display an update banner.
-
-When a new version is available:
+When a newer version of the installer is out, the welcome screen shows a
+banner above the logo. It checks once per run of the app, and stays quiet
+when the check fails. It only sits on the welcome screen, where no
+installation is running that the restart would cut short.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  ℹ️ A new version is available (v1.2.0)        [ Download ]  [ ✕ ] │
+│  A new version of the installer is available: 2026.12.0  What's new │
+│                                   [ Update and restart ]  [ Not now ]│
 ├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
 │                      [Normal app content]                           │
-│                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-Beta version banner (for users who opted in):
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  🧪 Beta available (v1.3.0-beta.1)             [ Download ]  [ ✕ ] │
-├─────────────────────────────────────────────────────────────────────┤
-```
+**Behavior:**
+- **What's new** opens the release page in the system browser
+- **Update and restart** stays where it is and shows a spinner while the
+  update downloads (with its percentage), installs (where the system may ask
+  for a password) and the app restarts into the new version. Screen readers
+  hear each step, not each percent
+- The app only installs and restarts while the welcome screen shows. If the
+  user went on to a flow meanwhile, or the app is still there 10 seconds
+  after it should have restarted, the banner says the update is ready and
+  offers **Restart now**; while an installation runs, it asks to finish it
+  first
+- If updating fails, the banner says so and offers **Try again** and
+  **Download**, which opens the release page
+- On macOS, an installer run from the DMG, or not yet moved out of the
+  download folder, can't replace itself: the banner asks to move it to the
+  Applications folder first and offers **Download**
+- **Not now** hides the banner until the next start
 
 ---
 

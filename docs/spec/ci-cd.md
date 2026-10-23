@@ -31,7 +31,8 @@ the jobs and their steps; in short:
 - **Build** produces the installers for each platform and uploads each one as
   an unarchived workflow artifact. On pushes to `main` and in release runs,
   the macOS build is signed and notarized (see
-  [Required Secrets](#required-secrets)).
+  [Required Secrets](#required-secrets)). Release runs also build the
+  updates the installer updates itself with, and sign them.
 
 A new push to a pull request cancels the run for the push before it. Only
 runs on `main` save the cargo and apt caches; pull requests restore them but
@@ -92,7 +93,14 @@ A release run differs from a push to `main` in these ways:
 - **Version:** the `version` job picks the version once, and each build job
   writes it into `Cargo.toml` and checks that Cargo picked it up before it
   builds anything.
-- **Release job:** downloads the installers the build jobs uploaded, creates a
+- **Updates:** each build job also builds the update for its platform (the
+  macOS app as a `.app.tar.gz`, the NSIS installer, the `.deb`, the `.rpm`
+  and the AppImage) and signs it with the update key from the `release`
+  environment, so the Windows and Linux build jobs bind to that environment
+  too. Other builds leave the updates out, as `tauri.conf.json` does.
+- **Release job:** downloads the installers the build jobs uploaded, writes
+  `latest.json` (`scripts/updater-manifest.mjs`), which lists the update and
+  signature of each platform for the installers' update check, creates a
   signed [SLSA build provenance](https://slsa.dev/provenance/) attestation for
   each installer with `actions/attest`, and creates the release with
   `gh release create`. There is no `SHA256SUMS` file: GitHub records the
@@ -130,8 +138,9 @@ a published release can still be edited; its files and tag can't.
 
 ### Assets
 
-A release contains the following. GitHub turns the spaces in the bundle names
-into dots when they are uploaded.
+A release contains the following. GitHub would turn the spaces in the bundle
+names into dots on upload, so the release job does that first, and
+`latest.json` can name the files as they are.
 
 | File | Platform |
 |------|----------|
@@ -140,8 +149,23 @@ into dots when they are uploaded.
 | `Home.Assistant.Installer_<version>_amd64.deb` | Linux |
 | `Home.Assistant.Installer-<version>-1.x86_64.rpm` | Linux |
 | `Home.Assistant.Installer_<version>_amd64.AppImage` | Linux |
+| `Home.Assistant.Installer.app.tar.gz` | macOS update: the signed, notarized app |
+| `*.sig` | The update signature of the `.app.tar.gz`, `.exe`, `.deb`, `.rpm` and `.AppImage` |
+| `latest.json` | The updates and their signatures, for the installers' update check |
 
-Linux packages are not signed; the provenance attestation covers them.
+Linux packages are not signed; the provenance attestation covers them. The
+`.sig` files are the update key's signatures, which the installer checks
+before it installs an update; they are not a signature an operating system
+checks.
+
+### Updates
+
+The installer finds updates by listing the repository's tags through the
+GitHub API (see [App Updates](backend.md#app-updates)), and a release only
+gets its tag when it's published. So publishing a draft is also what offers it to the installers
+already out there: alphas reach alphas, betas reach alphas and betas, and
+stable releases reach everyone. Each update installs on top of the existing
+installation.
 
 ---
 
@@ -236,6 +260,18 @@ Pull request builds don't reference the environment and stay unsigned.
 | `APPLE_API_ISSUER` | App Store Connect API issuer ID (a UUID) |
 | `APPLE_API_KEY` | App Store Connect API key ID |
 | `APPLE_API_PRIVATE_KEY` | Contents of the `AuthKey_<key id>.p8` file |
+| `TAURI_SIGNING_PRIVATE_KEY` | The update key: contents of the private key file `tauri signer generate` writes |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The password of the update key |
+
+The update key is a minisign key of its own, apart from the Apple
+certificate. Its public key is `plugins.updater.pubkey` in
+`tauri.conf.json`, and installers only install updates signed with it. Keep
+a copy of the private key and its password outside GitHub: without them, no
+installation out there can be updated again. Replacing the key takes a
+release signed with the old key that carries the new public key. Release runs
+bind every build job to the `release` environment, for the update key; the
+build jobs check that both secrets are set before bundling, and Tauri refuses
+a key that doesn't match the public key.
 
 The App Store Connect API key only needs the Developer role; it is used for
 notarization alone. The job compiles with `tauri build --no-bundle` and only
@@ -245,8 +281,8 @@ itself: it imports the certificate into a temporary keychain, signs the app
 with the hardened runtime, notarizes and staples it, and signs the DMG. The
 workflow then notarizes and staples the DMG too, since Gatekeeper assesses the
 disk image when a download is opened, and verifies both with `codesign`,
-`stapler` and `spctl`, the app from inside the mounted DMG, since Tauri
-deletes its own copy after packing it.
+`stapler` and `spctl`: the app from inside the mounted DMG, and in release
+runs the one inside the update.
 
 ---
 
@@ -259,7 +295,9 @@ deletes its own copy after packing it.
 3. Finish the draft: add the release image, review the notes and assets, and
    check that the macOS DMG opens without warnings
 4. Publish it (creates the tag and makes the release immutable): anyone with
-   write access for an alpha, an admin for a beta or stable release
+   write access for an alpha, an admin for a beta or stable release. From
+   then on, installers on its channel or a less stable one offer it as an
+   update
 
 The workspace `Cargo.toml` is the only place the app version lives, and a
 release run is the only thing that sets it:

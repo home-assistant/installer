@@ -2,7 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 
 /** One-shot failures for browser development and E2E tests, never native IPC. */
 export function failMockOperation(
-  operation: "flash" | "proxmox" | "proxmox-download" | "utm"
+  operation: "flash" | "proxmox" | "proxmox-download" | "utm" | "update"
 ) {
   if (!import.meta.env.DEV || isTauri()) return;
 
@@ -61,6 +61,12 @@ export function failMockOperation(
         message_key: "backend.utm.automation_denied",
         message_params: {},
       },
+    },
+    "update-install": {
+      operation: "update",
+      code: "update_failed",
+      message: "The update could not be installed.",
+      retryable: true,
     },
   };
   const failure = scenario ? failures[scenario] : undefined;

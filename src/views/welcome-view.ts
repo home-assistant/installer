@@ -9,6 +9,7 @@ import { customElement, state } from "lit/decorators.js";
 import { openExternalLink } from "../utils/external-url.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../components/diagnostics-actions.js";
+import "../components/update-banner.js";
 
 @customElement("welcome-view")
 export class WelcomeView extends LitElement {
@@ -165,6 +166,8 @@ export class WelcomeView extends LitElement {
 
   render() {
     return html`
+      <update-banner></update-banner>
+
       <h1 class="logo-container" @click=${this._onLogoClick}>
         <img
           class="logo logo-light"

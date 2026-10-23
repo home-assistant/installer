@@ -66,6 +66,81 @@ export async function quitAnyway(): Promise<void> {
   return invoke<void>("quit_anyway");
 }
 
+/** A newer version of the installer, as `checkForUpdate` found it. */
+export interface AvailableUpdate {
+  version: string;
+  /** The release's page, to download it by hand */
+  release_url: string;
+  /**
+   * Whether the app can replace itself: not from a read-only volume, such as
+   * the DMG, or where macOS translocated it to
+   */
+  installable: boolean;
+}
+
+/** How far downloading an update got, in bytes. */
+export interface UpdateProgress {
+  downloaded: number;
+  total: number | null;
+}
+
+/**
+ * Look for a newer installer on the channel of the running version. Resolves
+ * to null when there is none, and in any build that isn't a release.
+ */
+export async function checkForUpdate(): Promise<AvailableUpdate | null> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    // E2E tests offer an update by naming its version
+    const version = sessionStorage.getItem("hai:mock-update");
+    return version
+      ? {
+          version,
+          release_url: `https://github.com/home-assistant/installer/releases/tag/${version}`,
+          installable: true,
+        }
+      : null;
+  }
+  return invoke<AvailableUpdate | null>("check_for_update");
+}
+
+/** Download the update `checkForUpdate` found, and verify its signature. */
+export async function downloadUpdate(
+  onProgress: (progress: UpdateProgress) => void
+): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    const total = 8 * 1024 * 1024;
+    for (let downloaded = 0; downloaded <= total; downloaded += total / 4) {
+      onProgress({ downloaded, total });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    failMockOperation("update");
+    return;
+  }
+  const channel = new Channel<UpdateProgress>();
+  channel.onmessage = onProgress;
+  return invoke<void>("download_update", { progress: channel });
+}
+
+/**
+ * Install the downloaded update. Refused while an installation runs. On
+ * Windows the app exits for the installer; elsewhere the update starts with
+ * `restartAfterUpdate`.
+ */
+export async function installUpdate(): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return;
+  }
+  return invoke<void>("install_update");
+}
+
+/** Restart into the installed update. Refused while an installation runs. */
+export async function restartAfterUpdate(): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return;
+  }
+  return invoke<void>("restart_after_update");
+}
+
 // A string check rather than `isTauri()`, so CI can find the browser mock in a
 // production bundle.
 function isBrowserOnly(): boolean {

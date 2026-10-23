@@ -44,6 +44,11 @@ pub(crate) fn running_job() -> RunningJob {
     RUNNING_JOBS.start()
 }
 
+/// Whether a job runs, which restarting the app would also cut short.
+pub(crate) fn job_running() -> bool {
+    RUNNING_JOBS.any()
+}
+
 /// Window event handler: hold back a close request while a job runs.
 pub(crate) fn on_window_event(window: &Window, event: &WindowEvent) {
     let WindowEvent::CloseRequested { api, .. } = event else {

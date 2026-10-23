@@ -88,7 +88,7 @@ It helps users install Home Assistant OS on various hardware platforms.
 ## Important Notes
 - Mock backend available for testing: `npm run tauri dev -- --features mock`
 - Manifest data comes from version.home-assistant.io
-- No auto-update or version check; installer updates are manual
+- The installer updates itself from its GitHub releases (`crates/hai-desktop/src/updates.rs`); builds that aren't releases report `0.0.0` and never check
 - Release installers come with GitHub build provenance attestations; GitHub records each asset's SHA-256
 ```
 
