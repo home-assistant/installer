@@ -1,7 +1,6 @@
 import { localize } from "../../localization/localize.js";
 import {
   installerError,
-  renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
@@ -11,7 +10,7 @@ import {
   reducedMotionStyles,
 } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import { getManifest, type HaosConfig } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import {
@@ -26,12 +25,18 @@ import { clearDriveSelection } from "../../utils/drive-selection.js";
 import "../../components/device-card.js";
 import "../../components/info-dialog.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import {
+  loadStateStyles,
+  renderLoadError,
+  renderLoading,
+} from "../../utils/load-state.js";
 
 @customElement("ha-hardware-device-selection-view")
 export class HaHardwareDeviceSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     stepStyles,
+    loadStateStyles,
     reducedMotionStyles,
     linkStyles,
     css`
@@ -46,50 +51,6 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
         gap: 1.5rem;
       }
-
-      .loading {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 3rem;
-        color: var(--ha-secondary-text-color, #727272);
-      }
-
-      .loading-spinner {
-        width: 40px;
-        height: 40px;
-        border: 3px solid var(--ha-border-color, #e0e0e0);
-        border-top-color: var(--ha-primary-color, #03a9f4);
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin-bottom: 1rem;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .error {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 2rem;
-        text-align: center;
-      }
-
-      .error-icon {
-        font-size: 3rem;
-        margin-bottom: 1rem;
-      }
-
-      .error-message {
-        color: var(--ha-error-color, #db4437);
-        margin-bottom: 1rem;
-      }
-
       .reinstall-note {
         margin: 1rem 0 0 0;
         font-size: 0.9375rem;
@@ -117,6 +78,10 @@ export class HaHardwareDeviceSelectionView extends LitElement {
   @state()
   private _error: InstallerError | null = null;
 
+  /** Try again while an error offers it, else the heading of the list */
+  @query(".error wa-button, h2")
+  private _continueFrom?: HTMLElement;
+
   @state()
   private _selectedDeviceId: string | null = null;
 
@@ -141,8 +106,8 @@ export class HaHardwareDeviceSelectionView extends LitElement {
   }
 
   private async _loadDevices() {
+    // An error stays, with Try again busy, until this result replaces it
     this._loading = true;
-    this._error = null;
     if (wizardState.getState().selections.deviceCatalogReady) {
       wizardState.setSelection("deviceCatalogReady", false);
     }
@@ -172,9 +137,11 @@ export class HaHardwareDeviceSelectionView extends LitElement {
           haHardware: undefined,
         });
       }
+      this._error = null;
       wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
-      if (this.isConnected) new InstallDiagnostics("flash").fail(err);
+      if (!this.isConnected) return;
+      new InstallDiagnostics("flash").fail(err);
       this._error = installerError(
         err,
         localize("common.failed_to_load_devices")
@@ -182,41 +149,20 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     } finally {
       this._loading = false;
     }
+    // The list can take the place of Try again, which had the focus
+    await this.updateComplete;
+    this._accessibility.restoreFocus(this._continueFrom);
   }
 
   render() {
-    if (this._loading) {
-      return html`
-        <div class="loading">
-          <div class="loading-spinner"></div>
-          <span>${localize("common.loading_devices")}</span>
-        </div>
-      `;
+    if (this._error) {
+      return renderLoadError(this._error, this._loading, () =>
+        this._loadDevices()
+      );
     }
 
-    if (this._error) {
-      return html`
-        <div class="error">
-          <span class="error-icon">⚠️</span>
-          <p
-            class="error-message"
-            role="alert"
-            style="overflow-wrap: anywhere;"
-          >
-            ${this._error?.message}
-          </p>
-          ${renderErrorHelp()}
-          ${this._error.retryable
-            ? html`<wa-button
-                variant="brand"
-                appearance="outlined"
-                @click=${this._loadDevices}
-              >
-                ${localize("common.try_again")}
-              </wa-button>`
-            : ""}
-        </div>
-      `;
+    if (this._loading) {
+      return renderLoading(localize("common.loading_devices"));
     }
 
     return html`

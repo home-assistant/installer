@@ -70,8 +70,8 @@ for (const [width, height, gutter] of [
       page.getByRole("heading", { name: "Unable to connect" })
     ).toBeVisible();
     await expectGutter("connection-check-view");
-    // Below the header it scrolls, rather than cutting off Retry
-    const retry = page.getByRole("button", { name: "Retry", exact: true });
+    // Below the header it scrolls, rather than cutting off Try again
+    const retry = page.getByRole("button", { name: "Try again", exact: true });
     await retry.scrollIntoViewIfNeeded();
     await expect(retry).toBeInViewport();
     await page.screenshot({

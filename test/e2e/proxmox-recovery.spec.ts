@@ -102,17 +102,35 @@ async function connect(page: Page) {
   await expect(page.locator("proxmox-configure-view")).toBeVisible();
 }
 
-async function finishRecovery(page: Page) {
+async function finishRecovery(page: Page, { retried = false } = {}) {
   const view = page.locator("proxmox-configure-view");
   const next = page.getByRole("button", { name: "Next", exact: true });
   await page.waitForFunction(
     () => typeof (window as TestWindow).resumeLookup === "function"
   );
-  await expect(view.getByRole("alert")).toHaveCount(0);
-  await expect(view).toContainText(/Loading (nodes|storage)/);
+  if (retried) {
+    // Try again stays, busy and focused, until the lookups are back; the
+    // alert is empty meanwhile, so the same failure would be read out again
+    const retry = view.getByRole("button", { name: "Try again", exact: true });
+    await expect(view.locator("wa-button.load-retry")).toHaveAttribute(
+      "loading",
+      ""
+    );
+    await expect(retry).toBeFocused();
+    await expect(view.getByRole("alert")).toHaveText("");
+  } else {
+    await expect(view.getByRole("alert")).toHaveCount(0);
+    await expect(view).toContainText(/Loading (nodes|storage)/);
+  }
   await expect(next).toBeDisabled();
   await page.evaluate(() => (window as TestWindow).resumeLookup());
   await expect(next).toBeEnabled();
+  if (retried) {
+    // The settings took its place, so the focus goes on from their heading
+    await expect(
+      view.getByRole("heading", { name: "Configure virtual machine" })
+    ).toBeFocused();
+  }
   await next.click();
   const confirmation = page.locator("proxmox-confirm-view");
   await expect(confirmation).toBeVisible();
@@ -151,7 +169,7 @@ test.describe("Proxmox configuration recovery", () => {
       await view
         .getByRole("button", { name: "Try again", exact: true })
         .click();
-      await finishRecovery(page);
+      await finishRecovery(page, { retried: true });
       expect(
         await page.evaluate(() => (window as TestWindow).connectionCount)
       ).toBe(1);
