@@ -2138,7 +2138,7 @@ impl ProxmoxBackend for Backend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
+    use crate::message;
 
     // Version parsing tests
     #[test]
@@ -2198,29 +2198,6 @@ mod tests {
         assert!(!version_meets_minimum((8, 4, 0), (8, 4, 1)));
     }
 
-    // NOTE: HTTPS URL validation tests are not included here because the validation
-    // is disabled in test builds (#[cfg(not(test))]) to allow mockito HTTP mocking.
-    // The HTTPS requirement is enforced in production builds only.
-
-    // create_client() tests
-    #[test]
-    fn test_create_client_valid_timeout() {
-        let result = tls::client("https://pve.example:8006", None, 30);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_create_client_zero_timeout() {
-        let result = tls::client("https://pve.example:8006", None, 0);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_create_client_large_timeout() {
-        let result = tls::client("https://pve.example:8006", None, 1800);
-        assert!(result.is_ok());
-    }
-
     #[test]
     fn test_version_meets_minimum_major_version_boundary() {
         // 9.0.0 should meet 8.99.99
@@ -2237,29 +2214,13 @@ mod tests {
         assert!(!version_meets_minimum((8, 4, 99), (8, 5, 0)));
     }
 
-    #[test]
-    fn test_proxmox_node_fields() {
-        let node = ProxmoxNode {
-            name: "pve".to_string(),
-            status: "online".to_string(),
-            cpu_usage: Some(0.5),
-            cpu_count: Some(4),
-        };
-        assert_eq!(node.name, "pve");
-        assert_eq!(node.status, "online");
-    }
-
-    #[test]
-    fn test_proxmox_storage_fields() {
-        let storage = ProxmoxStorage {
-            name: "local".to_string(),
-            storage_type: "dir".to_string(),
-            content: vec!["images".to_string()],
-            available: 100_000_000_000,
-            active: true,
-        };
-        assert_eq!(storage.name, "local");
-        assert!(storage.active);
+    /// The message of an `Error::ProxmoxActionRequired`, or a panic naming what came instead.
+    #[track_caller]
+    fn action_required<T: std::fmt::Debug>(result: Result<T>) -> crate::Message {
+        match result {
+            Err(Error::ProxmoxActionRequired(message)) => message,
+            other => panic!("expected ProxmoxActionRequired, got {other:?}"),
+        }
     }
 
     fn storage(name: &str, active: bool, content: &[&str]) -> ProxmoxStorage {
@@ -2287,48 +2248,43 @@ mod tests {
             available: 20 * 1024 * 1024 * 1024,
             ..storage("local-lvm", true, &["images"])
         }];
-        match check_disk_storage(&storage_list, "local-lvm", 32) {
-            Err(Error::ProxmoxActionRequired(msg)) => {
-                assert!(msg.to_string().contains("Not enough free space"), "{}", msg);
-                assert!(msg.to_string().contains("32 GB"), "{}", msg);
-                assert!(msg.to_string().contains("20 GB free"), "{}", msg);
-            }
-            other => panic!("Expected not-enough-space error, got {:?}", other),
-        }
+        assert_eq!(
+            action_required(check_disk_storage(&storage_list, "local-lvm", 32)),
+            message!(
+                "backend.proxmox.storage_too_small",
+                storage = "local-lvm",
+                size_gb = 32,
+                free_gb = 20,
+            )
+        );
     }
 
     #[test]
     fn test_check_disk_storage_rejects_missing_storage() {
         let storage_list = vec![storage("local-lvm", true, &["images"])];
-        match check_disk_storage(&storage_list, "ceph-pool", 32) {
-            Err(Error::ProxmoxActionRequired(msg)) => {
-                assert!(msg.to_string().contains("not found"), "{}", msg)
-            }
-            other => panic!("Expected not-found error, got {:?}", other),
-        }
+        assert_eq!(
+            action_required(check_disk_storage(&storage_list, "ceph-pool", 32)),
+            message!("backend.proxmox.storage_not_found", storage = "ceph-pool")
+        );
     }
 
     #[test]
     fn test_check_disk_storage_rejects_inactive_storage() {
         let storage_list = vec![storage("local-lvm", false, &["images"])];
-        match check_disk_storage(&storage_list, "local-lvm", 32) {
-            Err(Error::ProxmoxActionRequired(msg)) => {
-                assert!(msg.to_string().contains("not active"), "{}", msg)
-            }
-            other => panic!("Expected inactive error, got {:?}", other),
-        }
+        assert_eq!(
+            action_required(check_disk_storage(&storage_list, "local-lvm", 32)),
+            message!("backend.proxmox.storage_inactive", storage = "local-lvm")
+        );
     }
 
     #[test]
     fn test_check_disk_storage_rejects_storage_without_images() {
         // The import storage is a common wrong pick: it's active but can't hold VM disks.
         let storage_list = vec![storage("local", true, &["iso", "import"])];
-        match check_disk_storage(&storage_list, "local", 32) {
-            Err(Error::ProxmoxActionRequired(msg)) => {
-                assert!(msg.to_string().contains("Disk image"), "{}", msg)
-            }
-            other => panic!("Expected missing-images error, got {:?}", other),
-        }
+        assert_eq!(
+            action_required(check_disk_storage(&storage_list, "local", 32)),
+            message!("backend.proxmox.storage_no_disk_images", storage = "local")
+        );
     }
 
     #[test]
@@ -2363,12 +2319,10 @@ mod tests {
             },
         ];
 
-        match select_import_storage(&storage_list, 0) {
-            Err(Error::ProxmoxActionRequired(msg)) => {
-                assert!(msg.to_string().contains("import"), "{}", msg)
-            }
-            other => panic!("Expected no-import-storage error, got {:?}", other),
-        }
+        assert_eq!(
+            action_required(select_import_storage(&storage_list, 0)),
+            message!("backend.proxmox.no_import_storage")
+        );
     }
 
     #[test]
@@ -2406,13 +2360,14 @@ mod tests {
             available: 500_000_000,
             ..storage("small-import", true, &["import"])
         }];
-        match select_import_storage(&storage_list, 1_000_000_000) {
-            Err(Error::ProxmoxActionRequired(msg)) => {
-                assert!(msg.to_string().contains("Not enough free space"), "{}", msg);
-                assert!(msg.to_string().contains("small-import"), "{}", msg);
-            }
-            other => panic!("Expected not-enough-space error, got {:?}", other),
-        }
+        assert_eq!(
+            action_required(select_import_storage(&storage_list, 1_000_000_000)),
+            message!(
+                "backend.proxmox.import_storage_too_small",
+                size_mb = 1000,
+                storages = "small-import",
+            )
+        );
     }
 
     #[test]
@@ -2424,14 +2379,18 @@ mod tests {
 
         assert!(ensure_privileges(&granted, "/vms/100", &["VM.Allocate"]).is_ok());
 
-        match ensure_privileges(&granted, "/vms/100", &["VM.Allocate", "VM.Config.CPU"]) {
-            Err(Error::ProxmoxActionRequired(msg)) => {
-                assert!(msg.to_string().contains("VM.Config.CPU"), "{}", msg);
-                assert!(msg.to_string().contains("/vms/100"), "{}", msg);
-                assert!(!msg.to_string().contains("VM.Allocate"), "{}", msg);
-            }
-            other => panic!("Expected missing-privilege error, got {:?}", other),
-        }
+        assert_eq!(
+            action_required(ensure_privileges(
+                &granted,
+                "/vms/100",
+                &["VM.Allocate", "VM.Config.CPU"]
+            )),
+            message!(
+                "backend.proxmox.missing_privileges",
+                privileges = "VM.Config.CPU",
+                path = "/vms/100",
+            )
+        );
     }
 
     fn node(name: &str, status: &str) -> ProxmoxNode {
@@ -2453,13 +2412,10 @@ mod tests {
             node("unknown", "online"),
         ];
         assert!(check_node_cores(&nodes, "pve", 4).is_ok());
-        match check_node_cores(&nodes, "pve", 6) {
-            Err(Error::ProxmoxActionRequired(msg)) => {
-                assert_eq!(msg.key, "backend.proxmox.too_many_cores");
-                assert!(msg.to_string().contains("CPU count (4)"), "{}", msg);
-            }
-            other => panic!("Expected too-many-cores error, got {:?}", other),
-        }
+        assert_eq!(
+            action_required(check_node_cores(&nodes, "pve", 6)),
+            message!("backend.proxmox.too_many_cores", node = "pve", cpus = 4)
+        );
         // Without a CPU count only Proxmox can tell
         assert!(check_node_cores(&nodes, "unknown", 16).is_ok());
     }
@@ -2496,23 +2452,19 @@ mod tests {
     #[test]
     fn test_check_node_online_rejects_offline_node() {
         let nodes = vec![node("pve", "online"), node("pve2", "offline")];
-        match check_node_online(&nodes, "pve2") {
-            Err(Error::ProxmoxActionRequired(msg)) => {
-                assert!(msg.to_string().contains("offline"), "{}", msg)
-            }
-            other => panic!("Expected offline error, got {:?}", other),
-        }
+        assert_eq!(
+            action_required(check_node_online(&nodes, "pve2")),
+            message!("backend.proxmox.node_offline", node = "pve2")
+        );
     }
 
     #[test]
     fn test_check_node_online_rejects_missing_node() {
         let nodes = vec![node("pve", "online")];
-        match check_node_online(&nodes, "pve3") {
-            Err(Error::ProxmoxActionRequired(msg)) => {
-                assert!(msg.to_string().contains("not found"), "{}", msg)
-            }
-            other => panic!("Expected not-found error, got {:?}", other),
-        }
+        assert_eq!(
+            action_required(check_node_online(&nodes, "pve3")),
+            message!("backend.proxmox.node_not_found", node = "pve3")
+        );
     }
 
     // =========================================================================
@@ -2521,93 +2473,221 @@ mod tests {
 
     mod http_mock_tests {
         use super::*;
-        use mockito::{Matcher, Server};
+        use mockito::{Matcher, Mock, Server};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Mutex;
 
-        // Test progress callback for tests that need progress updates
-        struct TestProgressCallback {
-            updates: std::sync::Arc<std::sync::Mutex<Vec<FlashProgress>>>,
+        const UPID: &str = "UPID:pve:00000001:00000002:00000003:test:root@pam:";
+        const TASK_OK: &str = r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#;
+        /// A login Proxmox accepts, without a second factor.
+        const LOGIN: &str = r#"{"data":{"ticket":"PVE:root@pam:12345678::abcdef","CSRFPreventionToken":"12345678:csrf-token"}}"#;
+
+        fn session(server_url: String) -> ProxmoxSession {
+            ProxmoxSession {
+                server_url,
+                ticket: "test-ticket".into(),
+                csrf_token: "test-csrf".into(),
+                certificate_sha256: None,
+            }
         }
 
-        impl TestProgressCallback {
-            fn new() -> Self {
-                Self {
-                    updates: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-                }
+        fn credentials(server: &Server) -> ProxmoxCredentials {
+            ProxmoxCredentials {
+                server_url: server.url(),
+                username: "root@pam".into(),
+                password: "password".into(),
+                totp: None,
+                certificate_sha256: None,
             }
+        }
 
-            #[allow(dead_code)]
-            fn get_updates(&self) -> Vec<FlashProgress> {
+        fn vm_config() -> ProxmoxVmConfig {
+            ProxmoxVmConfig {
+                vm_id: 100,
+                name: "homeassistant".into(),
+                node: "pve".into(),
+                storage: "local-lvm".into(),
+                bridge: "vmbr0".into(),
+                vlan_tag: None,
+                cpu_cores: 2,
+                memory_mb: 4096,
+                disk_size_gb: 32,
+            }
+        }
+
+        /// Where the status of task `upid` on node pve is read.
+        fn task_path(upid: &str) -> String {
+            format!(
+                "/api2/json/nodes/pve/tasks/{}/status",
+                urlencoding::encode(upid)
+            )
+        }
+
+        async fn mock_task(server: &mut Server, upid: &str, body: &str) -> Mock {
+            server
+                .mock("GET", task_path(upid).as_str())
+                .with_body(body)
+                .create_async()
+                .await
+        }
+
+        /// Answers one connection per response with its raw bytes and hangs up.
+        /// Resolves to whether no further connection came, as a retry would.
+        async fn raw_server(responses: Vec<String>) -> (String, tokio::task::JoinHandle<bool>) {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                for response in responses {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let _ = stream.read(&mut [0; 4096]).await.unwrap();
+                    stream.write_all(response.as_bytes()).await.unwrap();
+                }
+                let next = listener.accept();
+                tokio::time::timeout(std::time::Duration::from_millis(200), next)
+                    .await
+                    .is_err()
+            });
+            (url, server)
+        }
+
+        /// A raw response that promises all of `body`; `cut_off` sends half of it.
+        fn raw_response(status: &str, body: &str, cut_off: bool) -> String {
+            let sent = if cut_off {
+                &body[..body.len() / 2]
+            } else {
+                body
+            };
+            format!(
+                "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{sent}",
+                body.len()
+            )
+        }
+
+        /// Records progress, and stops once `stop` is called, like the desktop callback.
+        #[derive(Default)]
+        struct TestProgress {
+            updates: Mutex<Vec<FlashProgress>>,
+            stopped: AtomicBool,
+        }
+
+        impl TestProgress {
+            fn updates(&self) -> Vec<FlashProgress> {
                 self.updates.lock().unwrap().clone()
             }
+
+            fn stop(&self) {
+                self.stopped.store(true, Ordering::Relaxed);
+            }
         }
 
-        impl ProgressCallback for TestProgressCallback {
+        impl ProgressCallback for TestProgress {
             fn on_progress(&self, progress: FlashProgress) {
                 self.updates.lock().unwrap().push(progress);
             }
+
+            fn is_cancelled(&self) -> bool {
+                self.stopped.load(Ordering::Relaxed)
+            }
+        }
+
+        /// Offers one OVA image, and downloads it only when it has a cache.
+        struct OvaRelease {
+            image: HaosImage,
+            cache: Option<tempfile::TempDir>,
+        }
+
+        impl ReleaseSource for OvaRelease {
+            async fn check_connection(&self) -> Result<()> {
+                unreachable!()
+            }
+            async fn get_device_manifest(&self) -> Result<crate::DeviceManifest> {
+                unreachable!()
+            }
+            async fn get_haos_release(&self, _: &str) -> Result<HaosRelease> {
+                unreachable!("must use OVA's board-specific release")
+            }
+            async fn get_latest_haos_release_for_board(&self, board: &str) -> Result<HaosRelease> {
+                assert_eq!(board, "ova");
+                Ok(HaosRelease {
+                    version: "18.2".into(),
+                    images: vec![self.image.clone()],
+                })
+            }
+            async fn download_image<P: ProgressCallback>(
+                &self,
+                image: &HaosImage,
+                dest: &std::path::Path,
+                callback: &P,
+            ) -> Result<()> {
+                assert!(self.cache.is_some(), "must not download");
+                assert_eq!(image.board, "ova");
+                assert_eq!(image.format, ImageFormat::Qcow2);
+                Backend.download_image(image, dest, callback).await
+            }
+            async fn extract_xz<P: ProgressCallback>(
+                &self,
+                _: &std::path::Path,
+                _: &std::path::Path,
+                _: &P,
+            ) -> Result<()> {
+                unreachable!("must not extract")
+            }
+            fn cache_dir(&self) -> Result<std::path::PathBuf> {
+                let cache = self.cache.as_ref().expect("must not download");
+                Ok(cache.path().to_path_buf())
+            }
+        }
+
+        /// How a table row expects a call to end.
+        #[derive(Debug)]
+        enum Outcome {
+            /// Success, with this debug text
+            Returns(&'static str),
+            /// `Error::ProxmoxApi`, with text containing this
+            Api(&'static str),
+            Action(crate::Message),
+            SessionExpired,
+        }
+        use Outcome::*;
+
+        #[track_caller]
+        fn assert_outcome<T: std::fmt::Debug>(row: &str, result: Result<T>, expected: &Outcome) {
+            let matched = match (&result, expected) {
+                (Ok(value), Returns(text)) => format!("{value:?}") == *text,
+                (Err(Error::ProxmoxApi(message)), Api(part)) => message.contains(part),
+                (Err(Error::ProxmoxActionRequired(message)), Action(want)) => message == want,
+                (Err(Error::ProxmoxSessionExpired), SessionExpired) => true,
+                _ => false,
+            };
+            assert!(matched, "{row}: expected {expected:?}, got {result:?}");
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_authenticate_success() {
             let mut server = Server::new_async().await;
-
-            // Mock authentication endpoint
-            let auth_mock = server
+            let ticket = server
                 .mock("POST", "/api2/json/access/ticket")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "ticket": "PVE:root@pam:12345678::abcdef...",
-                            "CSRFPreventionToken": "12345678:csrf-token-here",
-                            "username": "root@pam"
-                        }
-                    }"#,
-                )
+                .with_body(LOGIN)
                 .create_async()
                 .await;
-
-            // Mock version endpoint
-            let version_mock = server
+            let version = server
                 .mock("GET", "/api2/json/version")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "version": "8.4.1",
-                            "release": "8.4",
-                            "repoid": "abcd1234"
-                        }
-                    }"#,
-                )
+                .with_body(r#"{"data":{"version":"8.4.1","release":"8.4","repoid":"abcd1234"}}"#)
                 .create_async()
                 .await;
 
-            let credentials = ProxmoxCredentials {
-                certificate_sha256: None,
-                server_url: server.url(),
-                username: "root@pam".to_string(),
-                password: "password".to_string(),
-                totp: None,
-            };
-
-            let result = authenticate(&credentials).await;
-            assert!(result.is_ok());
-
-            let session = result.unwrap();
-            assert!(session.ticket.contains("PVE:root@pam"));
-            assert!(session.csrf_token.contains("csrf-token"));
+            let session = authenticate(&credentials(&server)).await.unwrap();
+            assert_eq!(session.ticket, "PVE:root@pam:12345678::abcdef");
+            assert_eq!(session.csrf_token, "12345678:csrf-token");
             assert_eq!(session.server_url, server.url());
 
-            auth_mock.assert_async().await;
-            version_mock.assert_async().await;
+            ticket.assert_async().await;
+            version.assert_async().await;
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_authenticate_two_factor() {
             let challenge = format!(
                 "PVE:!tfa!{}:12345678::signature",
@@ -2622,6 +2702,8 @@ mod tests {
                 "CSRFPreventionToken": "final-csrf",
             });
             let partial = serde_json::json!({"ticket": challenge, "NeedTFA": 1});
+            let no_totp = || Some(message!("backend.proxmox.two_factor_totp_unavailable"));
+            let incomplete = || Some(message!("backend.proxmox.two_factor_incomplete"));
 
             for (initial, code, second_status, second_data, error) in [
                 (
@@ -2629,14 +2711,14 @@ mod tests {
                     None,
                     200,
                     complete.clone(),
-                    Some("requires an authenticator"),
+                    Some(message!("backend.proxmox.two_factor_code_required")),
                 ),
                 (
                     partial.clone(),
                     Some("abc123"),
                     200,
                     complete.clone(),
-                    Some("valid numeric"),
+                    Some(message!("backend.proxmox.two_factor_code_invalid")),
                 ),
                 (partial.clone(), Some("123456"), 200, complete.clone(), None),
                 (
@@ -2651,81 +2733,82 @@ mod tests {
                     None,
                     200,
                     complete.clone(),
-                    Some("did not offer TOTP"),
+                    no_totp(),
                 ),
                 (
                     serde_json::json!({"NeedTFA": 1, "ticket": unsupported}),
                     Some("123456"),
                     200,
                     complete.clone(),
-                    Some("not supported"),
+                    no_totp(),
                 ),
                 (
                     serde_json::json!({"ticket": "PVE:!tfa!malformed:time::sig"}),
                     Some("123456"),
                     200,
                     complete.clone(),
-                    Some("did not offer TOTP"),
+                    no_totp(),
                 ),
                 (
                     partial.clone(),
                     Some("123456"),
                     401,
                     serde_json::Value::Null,
-                    Some("rejected"),
+                    Some(message!("backend.proxmox.two_factor_rejected")),
                 ),
                 (
                     partial.clone(),
                     Some("123456"),
                     503,
                     serde_json::Value::Null,
-                    Some("HTTP 503"),
+                    Some(message!(
+                        "backend.proxmox.two_factor_http_error",
+                        status = 503
+                    )),
                 ),
                 (
                     partial.clone(),
                     Some("123456"),
                     200,
                     partial.clone(),
-                    Some("incomplete"),
+                    incomplete(),
                 ),
                 (
                     partial.clone(),
                     Some("123456"),
                     200,
                     serde_json::json!({"ticket": challenge}),
-                    Some("incomplete"),
+                    incomplete(),
                 ),
                 (
                     serde_json::json!({"NeedTFA": 1, "ticket": "PVE:root@pam:time::partial", "CSRFPreventionToken": "partial-csrf"}),
                     None,
                     200,
                     complete.clone(),
-                    Some("did not offer TOTP"),
+                    no_totp(),
                 ),
             ] {
                 let mut server = Server::new_async().await;
                 let first = server
                     .mock("POST", "/api2/json/access/ticket")
-                    .match_body(mockito::Matcher::AllOf(vec![
-                        mockito::Matcher::UrlEncoded("username".into(), "root@pam".into()),
-                        mockito::Matcher::UrlEncoded("password".into(), "password".into()),
-                        mockito::Matcher::UrlEncoded("new-format".into(), "1".into()),
+                    .match_body(Matcher::AllOf(vec![
+                        Matcher::UrlEncoded("username".into(), "root@pam".into()),
+                        Matcher::UrlEncoded("password".into(), "password".into()),
+                        Matcher::UrlEncoded("new-format".into(), "1".into()),
                     ]))
-                    .with_header("content-type", "application/json")
                     .with_body(serde_json::json!({"data": initial}).to_string())
                     .create_async()
                     .await;
                 let sends_code = initial["ticket"] == challenge && code == Some("123456");
                 let second = server
                     .mock("POST", "/api2/json/access/ticket")
-                    .match_header("cookie", mockito::Matcher::Missing)
-                    .match_body(mockito::Matcher::AllOf(vec![
-                        mockito::Matcher::UrlEncoded("username".into(), "root@pam".into()),
-                        mockito::Matcher::UrlEncoded("password".into(), "totp:123456".into()),
-                        mockito::Matcher::UrlEncoded("tfa-challenge".into(), challenge.clone()),
+                    .match_header("cookie", Matcher::Missing)
+                    .match_body(Matcher::AllOf(vec![
+                        Matcher::UrlEncoded("username".into(), "root@pam".into()),
+                        Matcher::UrlEncoded("password".into(), "totp:123456".into()),
+                        Matcher::UrlEncoded("tfa-challenge".into(), challenge.clone()),
                     ]))
                     .with_status(second_status)
-                    .with_header("content-type", "application/json")
                     .with_body(serde_json::json!({"data": second_data}).to_string())
                     .expect(usize::from(sends_code))
                     .create_async()
@@ -2733,7 +2816,6 @@ mod tests {
                 let version = server
                     .mock("GET", "/api2/json/version")
                     .match_header("cookie", "PVEAuthCookie=PVE:root@pam:12345678::complete")
-                    .with_header("content-type", "application/json")
                     .with_body(r#"{"data":{"version":"8.4.1"}}"#)
                     .expect(usize::from(error.is_none()))
                     .create_async()
@@ -2746,23 +2828,19 @@ mod tests {
                     .create_async()
                     .await;
                 let credentials = ProxmoxCredentials {
-                    server_url: server.url(),
-                    username: "root@pam".into(),
-                    password: "password".into(),
                     totp: code.map(str::to_string),
-                    certificate_sha256: None,
+                    ..credentials(&server)
                 };
-                let result = authenticate(&credentials).await;
-                if let Some(expected) = error {
-                    let err = result.unwrap_err();
-                    assert!(matches!(err, Error::ProxmoxTwoFactor(_)), "{err}");
-                    assert!(err.to_string().contains(expected), "{err}");
-                    assert!(!err.to_string().contains("signature"));
-                    assert!(!err.to_string().contains("123456"));
-                } else {
-                    let session = result.unwrap();
-                    assert_eq!(session.ticket, complete["ticket"]);
-                    assert_eq!(session.csrf_token, "final-csrf");
+                // The whole message also shows that neither ticket nor code leaks into it
+                match (authenticate(&credentials).await, error) {
+                    (Err(Error::ProxmoxTwoFactor(message)), Some(expected)) => {
+                        assert_eq!(message, expected)
+                    }
+                    (Ok(session), None) => {
+                        assert_eq!(session.ticket, complete["ticket"]);
+                        assert_eq!(session.csrf_token, "final-csrf");
+                    }
+                    (result, expected) => panic!("expected {expected:?}, got {result:?}"),
                 }
                 first.assert_async().await;
                 second.assert_async().await;
@@ -2772,141 +2850,112 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
-        async fn test_authenticate_wrong_credentials() {
-            let mut server = Server::new_async().await;
-
-            // Mock 401 response for wrong credentials
-            let auth_mock = server
-                .mock("POST", "/api2/json/access/ticket")
-                .with_status(401)
-                .with_body("authentication failure")
-                .create_async()
-                .await;
-
-            let credentials = ProxmoxCredentials {
-                certificate_sha256: None,
-                server_url: server.url(),
-                username: "root@pam".to_string(),
-                password: "wrong-password".to_string(),
-                totp: None,
-            };
-
-            let result = authenticate(&credentials).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxActionRequired(msg)) = result {
-                assert!(msg.to_string().contains("Authentication failed"));
-            } else {
-                panic!("Expected ProxmoxApi error for 401");
+        async fn test_authenticate_failures() {
+            let too_old = message!(
+                "backend.proxmox.unsupported_version",
+                version = "7.4.0",
+                minimum = "8.4.1",
+            );
+            // (row, login answer, version answer if asked, outcome)
+            for (row, (login_status, login_body), version, expected) in [
+                (
+                    "wrong password",
+                    (401, "authentication failure"),
+                    None,
+                    Action(message!("backend.proxmox.authentication_failed")),
+                ),
+                (
+                    "access denied",
+                    (403, "access denied"),
+                    None,
+                    Action(message!("backend.proxmox.access_denied")),
+                ),
+                (
+                    "login server error",
+                    (500, "Internal Server Error"),
+                    None,
+                    Api("Server returned error: 500"),
+                ),
+                (
+                    "login not JSON",
+                    (200, "not json"),
+                    None,
+                    Api("Failed to parse server response"),
+                ),
+                (
+                    "login without data",
+                    (200, "{}"),
+                    None,
+                    Api("missing 'data' field"),
+                ),
+                (
+                    "login without ticket",
+                    (200, r#"{"data":{"username":"root@pam"}}"#),
+                    None,
+                    Api("missing 'ticket' field"),
+                ),
+                (
+                    "login without CSRF token",
+                    (
+                        200,
+                        r#"{"data":{"ticket":"PVE:root@pam:12345678::abcdef"}}"#,
+                    ),
+                    None,
+                    Api("missing 'CSRFPreventionToken' field"),
+                ),
+                (
+                    "version server error",
+                    (200, LOGIN),
+                    Some((500, "")),
+                    Api("Failed to get Proxmox version: 500"),
+                ),
+                (
+                    "version missing",
+                    (200, LOGIN),
+                    Some((200, r#"{"data":{"release":"8.4"}}"#)),
+                    Api("Failed to get Proxmox version from response"),
+                ),
+                (
+                    "version unreadable",
+                    (200, LOGIN),
+                    Some((200, r#"{"data":{"version":"invalid"}}"#)),
+                    Api("Failed to parse Proxmox version: invalid"),
+                ),
+                (
+                    "version too old",
+                    (200, LOGIN),
+                    Some((200, r#"{"data":{"version":"7.4.0","release":"7.4"}}"#)),
+                    Action(too_old),
+                ),
+            ] {
+                let mut server = Server::new_async().await;
+                let login = server
+                    .mock("POST", "/api2/json/access/ticket")
+                    .with_status(login_status)
+                    .with_body(login_body)
+                    .create_async()
+                    .await;
+                let (version_status, version_body) = version.unwrap_or((200, ""));
+                let version_mock = server
+                    .mock("GET", "/api2/json/version")
+                    .with_status(version_status)
+                    .with_body(version_body)
+                    .expect(usize::from(version.is_some()))
+                    .create_async()
+                    .await;
+                assert_outcome(row, authenticate(&credentials(&server)).await, &expected);
+                assert!(login.matched_async().await, "{row}: login");
+                assert!(version_mock.matched_async().await, "{row}: version");
             }
-
-            auth_mock.assert_async().await;
         }
 
         #[tokio::test]
-        #[serial]
-        async fn test_authenticate_access_denied() {
-            let mut server = Server::new_async().await;
-
-            // Mock 403 response for insufficient permissions
-            let auth_mock = server
-                .mock("POST", "/api2/json/access/ticket")
-                .with_status(403)
-                .with_body("access denied")
-                .create_async()
-                .await;
-
-            let credentials = ProxmoxCredentials {
-                certificate_sha256: None,
-                server_url: server.url(),
-                username: "user@pam".to_string(),
-                password: "password".to_string(),
-                totp: None,
-            };
-
-            let result = authenticate(&credentials).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxActionRequired(msg)) = result {
-                assert!(msg.to_string().contains("Access denied"));
-            } else {
-                panic!("Expected ProxmoxApi error for 403");
-            }
-
-            auth_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_authenticate_old_proxmox_version() {
-            let mut server = Server::new_async().await;
-
-            // Mock successful auth
-            let auth_mock = server
-                .mock("POST", "/api2/json/access/ticket")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "ticket": "PVE:root@pam:12345678::abcdef...",
-                            "CSRFPreventionToken": "csrf-token",
-                            "username": "root@pam"
-                        }
-                    }"#,
-                )
-                .create_async()
-                .await;
-
-            // Mock old version (below 8.4.1)
-            let version_mock = server
-                .mock("GET", "/api2/json/version")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "version": "7.4.0",
-                            "release": "7.4"
-                        }
-                    }"#,
-                )
-                .create_async()
-                .await;
-
-            let credentials = ProxmoxCredentials {
-                certificate_sha256: None,
-                server_url: server.url(),
-                username: "root@pam".to_string(),
-                password: "password".to_string(),
-                totp: None,
-            };
-
-            let result = authenticate(&credentials).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxActionRequired(msg)) = result {
-                assert!(msg.to_string().contains("not supported"));
-                assert!(msg.to_string().contains("8.4.1"));
-            } else {
-                panic!("Expected ProxmoxApi error for old version");
-            }
-
-            auth_mock.assert_async().await;
-            version_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
         async fn test_list_nodes_success() {
             let mut server = Server::new_async().await;
 
             let nodes_mock = server
                 .mock("GET", "/api2/json/nodes")
                 .match_header("Cookie", Matcher::Regex("PVEAuthCookie=.*".to_string()))
-                .with_status(200)
-                .with_header("content-type", "application/json")
                 .with_body(
                     r#"{
                         "data": [
@@ -2931,17 +2980,7 @@ mod tests {
                 .create_async()
                 .await;
 
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = list_nodes(&session).await;
-            assert!(result.is_ok());
-
-            let nodes = result.unwrap();
+            let nodes = list_nodes(&session(server.url())).await.unwrap();
             assert_eq!(nodes.len(), 2);
             assert_eq!(nodes[0].name, "pve");
             assert_eq!(nodes[0].status, "online");
@@ -2954,105 +2993,11 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
-        async fn test_list_nodes_auth_expired() {
-            let mut server = Server::new_async().await;
-
-            let nodes_mock = server
-                .mock("GET", "/api2/json/nodes")
-                .with_status(401)
-                .with_body("authentication required")
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "expired-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = list_nodes(&session).await;
-            assert!(matches!(result, Err(Error::ProxmoxSessionExpired)));
-
-            nodes_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_storage_and_vm_id_auth_expired() {
-            let mut server = Server::new_async().await;
-            let storage_mock = server
-                .mock("GET", "/api2/json/nodes/pve/storage")
-                .with_status(401)
-                .create_async()
-                .await;
-            let vm_id_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .with_status(401)
-                .create_async()
-                .await;
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "expired-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            assert!(matches!(
-                list_storage(&session, "pve").await,
-                Err(Error::ProxmoxSessionExpired)
-            ));
-            assert!(matches!(
-                get_next_vm_id(&session).await,
-                Err(Error::ProxmoxSessionExpired)
-            ));
-            storage_mock.assert_async().await;
-            vm_id_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_vm_id_and_privilege_checks_auth_expired() {
-            let mut server = Server::new_async().await;
-            let vm_id_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .match_query(Matcher::UrlEncoded("vmid".to_string(), "100".to_string()))
-                .with_status(401)
-                .create_async()
-                .await;
-            let permissions_mock = server
-                .mock("GET", "/api2/json/access/permissions")
-                .match_query(Matcher::UrlEncoded(
-                    "path".to_string(),
-                    "/vms/100".to_string(),
-                ))
-                .with_status(401)
-                .create_async()
-                .await;
-            let session = test_session(&server);
-
-            assert!(matches!(
-                ensure_vm_id_free(&session, 100).await,
-                Err(Error::ProxmoxSessionExpired)
-            ));
-            assert!(matches!(
-                fetch_privileges(&session, "/vms/100").await,
-                Err(Error::ProxmoxSessionExpired)
-            ));
-            vm_id_mock.assert_async().await;
-            permissions_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
         async fn test_list_storage_success() {
             let mut server = Server::new_async().await;
 
             let storage_mock = server
                 .mock("GET", "/api2/json/nodes/pve/storage")
-                .with_status(200)
-                .with_header("content-type", "application/json")
                 .with_body(
                     r#"{
                         "data": [
@@ -3078,17 +3023,7 @@ mod tests {
                 .create_async()
                 .await;
 
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = list_storage(&session, "pve").await;
-            assert!(result.is_ok());
-
-            let storage = result.unwrap();
+            let storage = list_storage(&session(server.url()), "pve").await.unwrap();
             assert_eq!(storage.len(), 2);
             assert_eq!(storage[0].name, "local");
             assert_eq!(storage[0].storage_type, "dir");
@@ -3098,153 +3033,198 @@ mod tests {
             storage_mock.assert_async().await;
         }
 
+        /// How each read-only call handles one answer from Proxmox.
         #[tokio::test]
-        #[serial]
-        async fn test_list_storage_empty() {
-            let mut server = Server::new_async().await;
+        async fn test_lookup_answers() {
+            #[derive(Clone, Copy)]
+            enum Lookup {
+                Nodes,
+                Storage,
+                NextId,
+                VmIdFree,
+                Privileges,
+                VmStatus,
+            }
+            use Lookup::*;
 
-            let storage_mock = server
-                .mock("GET", "/api2/json/nodes/pve/storage")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": []}"#)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = list_storage(&session, "pve").await;
-            assert!(result.is_ok());
-
-            let storage = result.unwrap();
-            assert!(storage.is_empty());
-
-            storage_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_ensure_vm_id_free_uses_generic_message_without_reason() {
-            let mut server = Server::new_async().await;
-
-            let nextid_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .match_query(Matcher::UrlEncoded("vmid".to_string(), "101".to_string()))
-                .with_status(400)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": null}"#)
-                .create_async()
-                .await;
-
-            match ensure_vm_id_free(&test_session(&server), 101).await {
-                Err(Error::ProxmoxActionRequired(msg)) => {
-                    assert_eq!(
-                        msg.to_string(),
-                        "VM ID 101 can't be used. Choose a different ID."
-                    );
+            let vm_id_taken = || Action(message!("backend.proxmox.vm_id_unavailable", vm_id = 101));
+            // (row, call, status, body, outcome)
+            for (row, lookup, status, body, expected) in [
+                ("nodes 401", Nodes, 401, "", SessionExpired),
+                (
+                    "nodes 403",
+                    Nodes,
+                    403,
+                    "",
+                    Action(message!("backend.proxmox.list_nodes_denied")),
+                ),
+                (
+                    "nodes 500",
+                    Nodes,
+                    500,
+                    "",
+                    Api("Proxmox server returned error: 500 Internal Server Error"),
+                ),
+                (
+                    "nodes not JSON",
+                    Nodes,
+                    200,
+                    "not json",
+                    Api("Failed to parse Proxmox response"),
+                ),
+                (
+                    "nodes without data",
+                    Nodes,
+                    200,
+                    "{}",
+                    Api("missing node data"),
+                ),
+                ("storage 401", Storage, 401, "", SessionExpired),
+                (
+                    "storage on a missing node",
+                    Storage,
+                    404,
+                    "node not found",
+                    Api("Failed to list storage: 404"),
+                ),
+                ("no storage", Storage, 200, r#"{"data": []}"#, Returns("[]")),
+                (
+                    "storage not JSON",
+                    Storage,
+                    200,
+                    "not json",
+                    Api("Failed to parse storage list"),
+                ),
+                (
+                    "storage without data",
+                    Storage,
+                    200,
+                    "{}",
+                    Api("missing 'data' array"),
+                ),
+                ("next ID 401", NextId, 401, "", SessionExpired),
+                (
+                    "next ID 500",
+                    NextId,
+                    500,
+                    "",
+                    Api("Failed to get next VM ID: 500"),
+                ),
+                // Proxmox answers with a string, some versions with a number
+                ("next ID", NextId, 200, r#"{"data": "100"}"#, Returns("100")),
+                (
+                    "next ID as number",
+                    NextId,
+                    200,
+                    r#"{"data": 105}"#,
+                    Returns("105"),
+                ),
+                (
+                    "next ID not a number",
+                    NextId,
+                    200,
+                    r#"{"data": "not-a-number"}"#,
+                    Api("Invalid VM ID format: not-a-number"),
+                ),
+                (
+                    "next ID an object",
+                    NextId,
+                    200,
+                    r#"{"data": {"invalid": "object"}}"#,
+                    Api("Unexpected VM ID type"),
+                ),
+                (
+                    "next ID without data",
+                    NextId,
+                    200,
+                    "{}",
+                    Api("missing 'data' field"),
+                ),
+                (
+                    "VM ID free",
+                    VmIdFree,
+                    200,
+                    r#"{"data": "101"}"#,
+                    Returns("()"),
+                ),
+                // Proxmox's reason is not passed on
+                (
+                    "VM ID taken",
+                    VmIdFree,
+                    400,
+                    r#"{"data": null}"#,
+                    vm_id_taken(),
+                ),
+                (
+                    "VM ID taken, with a reason",
+                    VmIdFree,
+                    400,
+                    r#"{"errors": {"vmid": "VM 101 already exists"}, "data": null}"#,
+                    vm_id_taken(),
+                ),
+                ("VM ID check 401", VmIdFree, 401, "", SessionExpired),
+                (
+                    "VM ID check 500",
+                    VmIdFree,
+                    500,
+                    "Internal Server Error",
+                    Api("Failed to check VM ID: 500"),
+                ),
+                ("privileges 401", Privileges, 401, "", SessionExpired),
+                // The frontend polls VM status and stops on these, instead of
+                // waiting for an address that can never be fetched
+                ("VM status 401", VmStatus, 401, "", SessionExpired),
+                (
+                    "VM status 403",
+                    VmStatus,
+                    403,
+                    "",
+                    Action(message!("backend.proxmox.vm_status_denied")),
+                ),
+                (
+                    "VM status 500",
+                    VmStatus,
+                    500,
+                    "",
+                    Api("Failed to get VM status: 500"),
+                ),
+            ] {
+                let mut server = Server::new_async().await;
+                let path = match lookup {
+                    Nodes => "/api2/json/nodes",
+                    Storage => "/api2/json/nodes/pve/storage",
+                    NextId => "/api2/json/cluster/nextid",
+                    VmIdFree => "/api2/json/cluster/nextid?vmid=101",
+                    Privileges => "/api2/json/access/permissions?path=%2Fvms%2F100",
+                    VmStatus => VM_STATUS_PATH,
+                };
+                let mock = server
+                    .mock("GET", path)
+                    .with_status(status)
+                    .with_body(body)
+                    .create_async()
+                    .await;
+                let session = session(server.url());
+                match lookup {
+                    Nodes => assert_outcome(row, list_nodes(&session).await, &expected),
+                    Storage => assert_outcome(row, list_storage(&session, "pve").await, &expected),
+                    NextId => assert_outcome(row, get_next_vm_id(&session).await, &expected),
+                    VmIdFree => {
+                        assert_outcome(row, ensure_vm_id_free(&session, 101).await, &expected)
+                    }
+                    Privileges => {
+                        let privileges = fetch_privileges(&session, "/vms/100").await;
+                        assert_outcome(row, privileges, &expected)
+                    }
+                    VmStatus => {
+                        assert_outcome(row, vm_status(&session, "pve", 100).await, &expected)
+                    }
                 }
-                other => panic!("Expected taken-ID error, got {:?}", other),
-            }
-
-            nextid_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_ensure_vm_id_free_rejects_taken_id() {
-            let mut server = Server::new_async().await;
-
-            let nextid_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .match_query(Matcher::UrlEncoded("vmid".to_string(), "101".to_string()))
-                .with_status(400)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"errors": {"vmid": "VM 101 already exists"}, "data": null}"#)
-                .create_async()
-                .await;
-
-            match ensure_vm_id_free(&test_session(&server), 101).await {
-                Err(Error::ProxmoxActionRequired(msg)) => {
-                    assert!(msg.to_string().contains("101"), "{}", msg);
-                    assert!(msg.to_string().contains("Choose a different ID"), "{}", msg);
-                    assert!(!msg.to_string().contains("already exists"), "{}", msg);
-                }
-                other => panic!("Expected taken-ID error, got {:?}", other),
-            }
-
-            nextid_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_ensure_vm_id_free_accepts_free_id() {
-            let mut server = Server::new_async().await;
-
-            let nextid_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .match_query(Matcher::UrlEncoded("vmid".to_string(), "102".to_string()))
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": "102"}"#)
-                .create_async()
-                .await;
-
-            let result = ensure_vm_id_free(&test_session(&server), 102).await;
-            assert!(result.is_ok(), "unexpected error: {:?}", result.err());
-
-            nextid_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_ensure_vm_id_free_server_error() {
-            let mut server = Server::new_async().await;
-
-            let nextid_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .match_query(Matcher::UrlEncoded("vmid".to_string(), "100".to_string()))
-                .with_status(500)
-                .with_body("Internal Server Error")
-                .create_async()
-                .await;
-
-            match ensure_vm_id_free(&test_session(&server), 100).await {
-                Err(Error::ProxmoxApi(msg)) => assert!(msg.contains("500"), "{}", msg),
-                other => panic!("Expected server error, got {:?}", other),
-            }
-
-            nextid_mock.assert_async().await;
-        }
-
-        fn test_session(server: &mockito::ServerGuard) -> ProxmoxSession {
-            ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
+                assert!(mock.matched_async().await, "{row}: not asked once");
             }
         }
 
-        fn vm_config() -> ProxmoxVmConfig {
-            ProxmoxVmConfig {
-                vm_id: 100,
-                name: "homeassistant".to_string(),
-                node: "pve".to_string(),
-                storage: "local-lvm".to_string(),
-                bridge: "vmbr0".to_string(),
-                vlan_tag: None,
-                cpu_cores: 2,
-                memory_mb: 4096,
-                disk_size_gb: 32,
-            }
-        }
-
-        async fn mock_bridges(server: &mut Server, data: serde_json::Value) -> mockito::Mock {
+        async fn mock_bridges(server: &mut Server, data: serde_json::Value) -> Mock {
             server
                 .mock("GET", "/api2/json/nodes/pve/network")
                 .match_query(Matcher::UrlEncoded(
@@ -3252,13 +3232,12 @@ mod tests {
                     "any_bridge".to_string(),
                 ))
                 .match_header("Cookie", "PVEAuthCookie=test-ticket")
-                .with_header("content-type", "application/json")
                 .with_body(serde_json::json!({"data": data}).to_string())
                 .create_async()
                 .await
         }
 
-        async fn mock_default_bridge(server: &mut Server) -> mockito::Mock {
+        async fn mock_default_bridge(server: &mut Server) -> Mock {
             mock_bridges(
                 server,
                 serde_json::json!([{"iface":"vmbr0", "type":"bridge"}]),
@@ -3279,7 +3258,7 @@ mod tests {
                 ]),
             )
             .await;
-            let bridges = list_bridges(&test_session(&server), "pve").await.unwrap();
+            let bridges = list_bridges(&session(server.url()), "pve").await.unwrap();
             assert_eq!(
                 bridges.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(),
                 ["lan", "vmbr0", "vmbr1"]
@@ -3293,19 +3272,14 @@ mod tests {
         async fn test_list_bridges_empty_or_permission_filtered() {
             let mut server = Server::new_async().await;
             let network = mock_bridges(&mut server, serde_json::json!([])).await;
-            assert!(list_bridges(&test_session(&server), "pve")
+            assert!(list_bridges(&session(server.url()), "pve")
                 .await
                 .unwrap()
                 .is_empty());
-            let error = ensure_bridge_available(&test_session(&server), &vm_config())
-                .await
-                .unwrap_err();
-            let Error::ProxmoxActionRequired(message) = error else {
-                panic!("{error:?}");
-            };
+            let result = ensure_bridge_available(&session(server.url()), &vm_config()).await;
             assert_eq!(
-                message,
-                crate::message!(
+                action_required(result),
+                message!(
                     "backend.proxmox.bridge_unavailable",
                     bridge = "vmbr0",
                     node = "pve",
@@ -3335,7 +3309,7 @@ mod tests {
                     .with_body(body)
                     .create_async()
                     .await;
-                let error = list_bridges(&test_session(&server), "pve")
+                let error = list_bridges(&session(server.url()), "pve")
                     .await
                     .unwrap_err();
                 // An expired session offers reconnecting, like the other lookups
@@ -3363,21 +3337,17 @@ mod tests {
             ] {
                 let mut config = vm_config();
                 config.bridge = name.to_string();
-                let error = create_vm_with_disk(
-                    &test_session(&server),
+                let result = create_vm_with_disk(
+                    &session(server.url()),
                     &config,
                     "image.qcow2",
                     "local",
                     &mut false,
                 )
-                .await
-                .unwrap_err();
-                let Error::ProxmoxActionRequired(message) = error else {
-                    panic!("{error:?}");
-                };
+                .await;
                 assert_eq!(
-                    message,
-                    crate::message!(
+                    action_required(result),
+                    message!(
                         "backend.proxmox.bridge_unavailable",
                         bridge = name,
                         node = "pve",
@@ -3398,7 +3368,7 @@ mod tests {
                 mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr1", &["SDN.Use"]).await;
             let mut config = vm_config();
             config.bridge = "vmbr1".to_string();
-            ensure_bridge_access(&test_session(&server), &config)
+            ensure_bridge_access(&session(server.url()), &config)
                 .await
                 .unwrap();
             network.assert_async().await;
@@ -3458,7 +3428,6 @@ mod tests {
                 let networks = mock_bridges(&mut server, serde_json::json!([network])).await;
                 let vnet = server
                     .mock("GET", "/api2/json/cluster/sdn/vnets/vmbr0")
-                    .with_header("content-type", "application/json")
                     .with_body(r#"{"data":{"zone":"home"}}"#)
                     .expect(usize::from(supported && zone == "home"))
                     .create_async()
@@ -3480,12 +3449,15 @@ mod tests {
                 .await;
                 let mut config = vm_config();
                 config.vlan_tag = Some(42);
-                let result = ensure_bridge_access(&test_session(&server), &config).await;
-                assert_eq!(result.is_ok(), supported, "{result:?}");
+                let result = ensure_bridge_access(&session(server.url()), &config).await;
                 if supported {
+                    assert!(result.is_ok(), "{result:?}");
                     permissions.assert_async().await;
                 } else {
-                    assert!(result.unwrap_err().to_string().contains("VLAN tag support"));
+                    assert_eq!(
+                        action_required(result),
+                        message!("backend.proxmox.bridge_not_vlan_aware", bridge = "vmbr0")
+                    );
                 }
                 networks.assert_async().await;
                 parent.assert_async().await;
@@ -3511,19 +3483,18 @@ mod tests {
                 let mut config = vm_config();
                 config.vlan_tag = Some(tag);
                 let mut source_unused = false;
-                let error = create_vm_with_disk(
-                    &test_session(&server),
+                let result = create_vm_with_disk(
+                    &session(server.url()),
                     &config,
                     "image.qcow2",
                     "local",
                     &mut source_unused,
                 )
-                .await
-                .unwrap_err();
+                .await;
                 // Shown to the user as is, not replaced by generic API guidance
-                assert!(
-                    matches!(&error, Error::ProxmoxActionRequired(message) if message.to_string().contains("between 1 and 4094")),
-                    "{error}"
+                assert_eq!(
+                    action_required(result),
+                    message!("backend.proxmox.vlan_tag_out_of_range")
                 );
                 assert!(source_unused);
                 network.assert_async().await;
@@ -3539,16 +3510,18 @@ mod tests {
             let mut config = vm_config();
             config.vlan_tag = Some(42);
             let mut source_unused = false;
-            let error = create_vm_with_disk(
-                &test_session(&server),
+            let result = create_vm_with_disk(
+                &session(server.url()),
                 &config,
                 "image.qcow2",
                 "local",
                 &mut source_unused,
             )
-            .await
-            .unwrap_err();
-            assert!(error.to_string().contains("VLAN tag support"));
+            .await;
+            assert_eq!(
+                action_required(result),
+                message!("backend.proxmox.bridge_not_vlan_aware", bridge = "vmbr0")
+            );
             assert!(source_unused);
             network.assert_async().await;
             create.assert_async().await;
@@ -3572,44 +3545,49 @@ mod tests {
                             "net0".to_string(),
                             format!("virtio,bridge=vmbr0,tag={tag}"),
                         ))
-                        .with_header("content-type", "application/json")
-                        .with_body(
-                            r#"{"data":"UPID:pve:00000001:00000002:00000003:qmcreate:root@pam:"}"#,
-                        )
+                        .with_body(serde_json::json!({ "data": UPID }).to_string())
                         .expect(usize::from(allowed))
                         .create_async()
                         .await;
-                    let task = server.mock("GET", "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Aqmcreate%3Aroot%40pam%3A/status")
-                        .with_header("content-type", "application/json")
-                        .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
-                        .expect(usize::from(allowed)).create_async().await;
+                    let task = server
+                        .mock("GET", task_path(UPID).as_str())
+                        .with_body(TASK_OK)
+                        .expect(usize::from(allowed))
+                        .create_async()
+                        .await;
                     let resize = server
                         .mock("PUT", "/api2/json/nodes/pve/qemu/100/resize")
-                        .with_header("content-type", "application/json")
                         .with_body(r#"{"data":"resize-task"}"#)
                         .expect(usize::from(allowed))
                         .create_async()
                         .await;
                     let resize_task = server
-                        .mock("GET", "/api2/json/nodes/pve/tasks/resize-task/status")
-                        .with_header("content-type", "application/json")
-                        .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
+                        .mock("GET", task_path("resize-task").as_str())
+                        .with_body(TASK_OK)
                         .expect(usize::from(allowed))
                         .create_async()
                         .await;
                     let mut config = vm_config();
                     config.vlan_tag = Some(tag);
                     let result = create_vm_with_disk(
-                        &test_session(&server),
+                        &session(server.url()),
                         &config,
                         "image.qcow2",
                         "local",
                         &mut false,
                     )
                     .await;
-                    assert_eq!(result.is_ok(), allowed, "{result:?}");
-                    if !allowed {
-                        assert!(result.unwrap_err().to_string().contains("SDN.Use"));
+                    if allowed {
+                        assert!(result.is_ok(), "{result:?}");
+                    } else {
+                        assert_eq!(
+                            action_required(result),
+                            message!(
+                                "backend.proxmox.missing_privileges",
+                                privileges = "SDN.Use",
+                                path = format!("/sdn/zones/localnetwork/vmbr0/{tag}"),
+                            )
+                        );
                     }
                     network.assert_async().await;
                     permissions.assert_async().await;
@@ -3618,25 +3596,6 @@ mod tests {
                     resize.assert_async().await;
                     resize_task.assert_async().await;
                 }
-            }
-        }
-
-        #[test]
-        fn test_vlan_deserialization_rejects_non_integer_tags() {
-            let mut config = serde_json::to_value(vm_config()).unwrap();
-            config.as_object_mut().unwrap().remove("vlan_tag");
-            assert!(serde_json::from_value::<ProxmoxVmConfig>(config.clone())
-                .unwrap()
-                .vlan_tag
-                .is_none());
-            for tag in [
-                serde_json::json!(-1),
-                serde_json::json!(1.5),
-                serde_json::json!("42"),
-                serde_json::json!(65536),
-            ] {
-                config["vlan_tag"] = tag;
-                assert!(serde_json::from_value::<ProxmoxVmConfig>(config.clone()).is_err());
             }
         }
 
@@ -3667,7 +3626,7 @@ mod tests {
                     mock_privileges(&mut server, "/sdn/zones/home/lan", &privileges).await;
                 let mut config = vm_config();
                 config.bridge = "lan".to_string();
-                let result = ensure_bridge_access(&test_session(&server), &config).await;
+                let result = ensure_bridge_access(&session(server.url()), &config).await;
                 assert_eq!(result.is_ok(), privileges.contains(&"SDN.Use"));
                 network.assert_async().await;
                 vnet.assert_async().await;
@@ -3693,21 +3652,14 @@ mod tests {
                     .await;
                 let mut config = vm_config();
                 config.bridge = "lan".to_string();
-                let error = ensure_bridge_access(&test_session(&server), &config)
-                    .await
-                    .unwrap_err();
+                let result = ensure_bridge_access(&session(server.url()), &config).await;
                 match status {
-                    401 => assert!(matches!(error, Error::ProxmoxSessionExpired)),
-                    403 => {
-                        let Error::ProxmoxActionRequired(message) = error else {
-                            panic!("{error:?}");
-                        };
-                        assert_eq!(
-                            message,
-                            crate::message!("backend.proxmox.missing_sdn_audit", vnet = "lan")
-                        );
-                    }
-                    _ => assert!(matches!(error, Error::ProxmoxApi(_))),
+                    401 => assert!(matches!(result, Err(Error::ProxmoxSessionExpired))),
+                    403 => assert_eq!(
+                        action_required(result),
+                        message!("backend.proxmox.missing_sdn_audit", vnet = "lan")
+                    ),
+                    _ => assert!(matches!(result, Err(Error::ProxmoxApi(_)))),
                 }
                 network.assert_async().await;
                 vnet.assert_async().await;
@@ -3739,7 +3691,7 @@ mod tests {
                 let mut config = vm_config();
                 config.bridge = "lan".to_string();
                 let error = create_vm_with_disk(
-                    &test_session(&server),
+                    &session(server.url()),
                     &config,
                     "image.qcow2",
                     "local",
@@ -3754,11 +3706,7 @@ mod tests {
         }
 
         /// Mock `/access/permissions` for one path, in the shape Proxmox returns.
-        async fn mock_privileges(
-            server: &mut mockito::ServerGuard,
-            path: &str,
-            privileges: &[&str],
-        ) -> mockito::Mock {
+        async fn mock_privileges(server: &mut Server, path: &str, privileges: &[&str]) -> Mock {
             let granted: serde_json::Map<String, serde_json::Value> = privileges
                 .iter()
                 .map(|privilege| (privilege.to_string(), serde_json::json!(1)))
@@ -3766,22 +3714,15 @@ mod tests {
             server
                 .mock("GET", "/api2/json/access/permissions")
                 .match_query(Matcher::UrlEncoded("path".to_string(), path.to_string()))
-                .with_status(200)
-                .with_header("content-type", "application/json")
                 .with_body(serde_json::json!({ "data": { path: granted } }).to_string())
                 .create_async()
                 .await
         }
 
-        async fn mock_import_config(
-            server: &mut mockito::ServerGuard,
-            data: serde_json::Value,
-        ) -> mockito::Mock {
+        async fn mock_import_config(server: &mut Server, data: serde_json::Value) -> Mock {
             server
                 .mock("GET", "/api2/json/storage/local")
                 .match_header("Cookie", "PVEAuthCookie=test-ticket")
-                .with_status(200)
-                .with_header("content-type", "application/json")
                 .with_body(serde_json::json!({ "data": data }).to_string())
                 .create_async()
                 .await
@@ -3796,21 +3737,15 @@ mod tests {
             })
         }
 
-        async fn mock_import_availability(
-            server: &mut mockito::ServerGuard,
-            entries: serde_json::Value,
-        ) -> mockito::Mock {
+        async fn mock_import_availability(server: &mut Server, entries: serde_json::Value) -> Mock {
             server
                 .mock("GET", "/api2/json/nodes/pve/storage")
-                .with_status(200)
-                .with_header("content-type", "application/json")
                 .with_body(serde_json::json!({ "data": entries }).to_string())
                 .create_async()
                 .await
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_enable_storage_import_preserves_config_and_guards_update() {
             let mut outcomes = Vec::new();
             for (status, body) in [
@@ -3843,12 +3778,15 @@ mod tests {
                     // Exact body also proves unrelated configuration is not rewritten.
                     .match_body("content=images%2Ciso%2Cbackup%2Csnippets%2Cimport&digest=0123456789abcdef0123456789abcdef01234567")
                     .with_status(status).with_body(body).expect(1).create_async().await;
-                let result = enable_storage_import(&test_session(&server), "pve", "local").await;
+                let result = enable_storage_import(&session(server.url()), "pve", "local").await;
                 outcomes.push((status, body, result.as_ref().is_ok_and(|changed| *changed)));
                 if status == 401 {
                     assert!(matches!(result.unwrap_err(), Error::ProxmoxSessionExpired));
                 } else if status != 200 {
-                    assert!(result.unwrap_err().to_string().contains("Refresh storage"));
+                    assert_eq!(
+                        action_required(result),
+                        message!("backend.proxmox.import_not_enabled", storage = "local")
+                    );
                 }
                 config.assert_async().await;
                 available.assert_async().await;
@@ -3864,7 +3802,6 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_enable_storage_import_already_enabled_does_not_write() {
             let mut server = Server::new_async().await;
             let config = mock_import_config(&mut server, import_config("iso,import,backup")).await;
@@ -3881,7 +3818,7 @@ mod tests {
                 .create_async()
                 .await;
             assert!(
-                !enable_storage_import(&test_session(&server), "pve", "local")
+                !enable_storage_import(&session(server.url()), "pve", "local")
                     .await
                     .unwrap()
             );
@@ -3891,7 +3828,6 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_enable_storage_import_replaces_none_content_marker() {
             let mut server = Server::new_async().await;
             let config = mock_import_config(&mut server, import_config("none")).await;
@@ -3907,12 +3843,11 @@ mod tests {
             let update = server
                 .mock("PUT", "/api2/json/storage/local")
                 .match_body("content=import&digest=0123456789abcdef0123456789abcdef01234567")
-                .with_status(200)
                 .with_body(r#"{"data":null}"#)
                 .create_async()
                 .await;
             assert!(
-                enable_storage_import(&test_session(&server), "pve", "local")
+                enable_storage_import(&session(server.url()), "pve", "local")
                     .await
                     .unwrap()
             );
@@ -3923,7 +3858,6 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_enable_storage_import_rejects_unsuitable_node_storage() {
             for entries in [
                 serde_json::json!([]),
@@ -3939,12 +3873,15 @@ mod tests {
                     .expect(0)
                     .create_async()
                     .await;
-                let error = enable_storage_import(&test_session(&server), "pve", "local")
-                    .await
-                    .unwrap_err();
-                assert!(error
-                    .to_string()
-                    .contains("active directory storage on node \"pve\""));
+                let result = enable_storage_import(&session(server.url()), "pve", "local").await;
+                assert_eq!(
+                    action_required(result),
+                    message!(
+                        "backend.proxmox.storage_not_directory",
+                        storage = "local",
+                        node = "pve",
+                    )
+                );
                 config.assert_async().await;
                 available.assert_async().await;
                 update.assert_async().await;
@@ -3952,7 +3889,6 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_enable_storage_import_requires_global_configuration_permission() {
             let mut server = Server::new_async().await;
             let config = mock_import_config(&mut server, import_config("iso")).await;
@@ -3974,10 +3910,15 @@ mod tests {
                 .expect(0)
                 .create_async()
                 .await;
-            let error = enable_storage_import(&test_session(&server), "pve", "local")
-                .await
-                .unwrap_err();
-            assert!(error.to_string().contains("Datastore.Allocate on /storage"));
+            let result = enable_storage_import(&session(server.url()), "pve", "local").await;
+            assert_eq!(
+                action_required(result),
+                message!(
+                    "backend.proxmox.missing_privileges",
+                    privileges = "Datastore.Allocate",
+                    path = "/storage",
+                )
+            );
             config.assert_async().await;
             available.assert_async().await;
             permission.assert_async().await;
@@ -3985,7 +3926,6 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_enable_storage_import_rejects_invalid_config_without_writing() {
             let mut invalid_configs = vec![serde_json::Value::Null, serde_json::json!({})];
             for (field, value) in [
@@ -4007,7 +3947,7 @@ mod tests {
                     .expect(0)
                     .create_async()
                     .await;
-                let error = enable_storage_import(&test_session(&server), "pve", "local")
+                let error = enable_storage_import(&session(server.url()), "pve", "local")
                     .await
                     .unwrap_err();
                 assert!(error.to_string().contains("Invalid storage configuration"));
@@ -4017,7 +3957,6 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_enable_storage_import_read_denied_or_session_expired() {
             for status in [401, 403, 404, 500] {
                 let mut server = Server::new_async().await;
@@ -4031,15 +3970,20 @@ mod tests {
                     .expect(0)
                     .create_async()
                     .await;
-                let error = enable_storage_import(&test_session(&server), "pve", "local")
-                    .await
-                    .unwrap_err();
+                let result = enable_storage_import(&session(server.url()), "pve", "local").await;
                 match status {
-                    401 => assert!(matches!(error, Error::ProxmoxSessionExpired)),
-                    403 => assert!(error
-                        .to_string()
-                        .contains("missing Datastore.Allocate on /storage/local")),
-                    _ => assert!(error.to_string().contains(&status.to_string())),
+                    401 => assert!(matches!(result, Err(Error::ProxmoxSessionExpired))),
+                    403 => assert_eq!(
+                        action_required(result),
+                        message!(
+                            "backend.proxmox.missing_datastore_allocate",
+                            storage = "local"
+                        )
+                    ),
+                    _ => assert!(
+                        matches!(&result, Err(Error::ProxmoxApi(m)) if m.contains(&status.to_string())),
+                        "{result:?}"
+                    ),
                 }
                 config.assert_async().await;
                 update.assert_async().await;
@@ -4047,7 +3991,6 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_ensure_user_can_create_vm_allowed() {
             let mut server = Server::new_async().await;
             let _network = mock_default_bridge(&mut server).await;
@@ -4056,7 +3999,7 @@ mod tests {
             let bridge_mock =
                 mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"]).await;
 
-            let result = ensure_user_can_create_vm(&test_session(&server), &vm_config()).await;
+            let result = ensure_user_can_create_vm(&session(server.url()), &vm_config()).await;
             assert!(result.is_ok(), "unexpected error: {:?}", result.err());
 
             vm_mock.assert_async().await;
@@ -4064,27 +4007,26 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_ensure_user_can_create_vm_denied() {
             let mut server = Server::new_async().await;
 
             // A read-only user can log in fine but only has audit rights.
             let vm_mock = mock_privileges(&mut server, "/vms/100", &["VM.Audit"]).await;
 
-            match ensure_user_can_create_vm(&test_session(&server), &vm_config()).await {
-                Err(Error::ProxmoxActionRequired(msg)) => {
-                    assert!(msg.to_string().contains("VM.Allocate"), "{}", msg);
-                    assert!(msg.to_string().contains("VM.PowerMgmt"), "{}", msg);
-                    assert!(!msg.to_string().contains("VM.Audit"), "{}", msg);
-                }
-                other => panic!("Expected permission error, got {:?}", other),
-            }
+            let result = ensure_user_can_create_vm(&session(server.url()), &vm_config()).await;
+            assert_eq!(
+                action_required(result),
+                message!(
+                    "backend.proxmox.missing_privileges",
+                    privileges = VM_CREATE_PRIVILEGES.join(", "),
+                    path = "/vms/100",
+                )
+            );
 
             vm_mock.assert_async().await;
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_ensure_user_can_create_vm_needs_bridge_access() {
             let mut server = Server::new_async().await;
             let _network = mock_default_bridge(&mut server).await;
@@ -4093,20 +4035,21 @@ mod tests {
             let bridge_mock =
                 mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &[]).await;
 
-            match ensure_user_can_create_vm(&test_session(&server), &vm_config()).await {
-                Err(Error::ProxmoxActionRequired(msg)) => {
-                    assert!(msg.to_string().contains("SDN.Use"), "{}", msg);
-                    assert!(msg.to_string().contains("vmbr0"), "{}", msg);
-                }
-                other => panic!("Expected bridge permission error, got {:?}", other),
-            }
+            let result = ensure_user_can_create_vm(&session(server.url()), &vm_config()).await;
+            assert_eq!(
+                action_required(result),
+                message!(
+                    "backend.proxmox.missing_privileges",
+                    privileges = "SDN.Use",
+                    path = "/sdn/zones/localnetwork/vmbr0",
+                )
+            );
 
             vm_mock.assert_async().await;
             bridge_mock.assert_async().await;
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_uploadable_import_storages_skips_storage_without_upload_permission() {
             let mut server = Server::new_async().await;
 
@@ -4133,7 +4076,7 @@ mod tests {
                 storage("local-lvm", true, &["images"]),
             ];
 
-            let result = uploadable_import_storages(&test_session(&server), &storage_list)
+            let result = uploadable_import_storages(&session(server.url()), &storage_list)
                 .await
                 .unwrap();
             let names: Vec<&str> = result.iter().map(|s| s.name.as_str()).collect();
@@ -4145,7 +4088,6 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_uploadable_import_storages_reports_when_none_allowed() {
             let mut server = Server::new_async().await;
 
@@ -4154,83 +4096,29 @@ mod tests {
 
             let storage_list = vec![storage("local", true, &["iso", "import"])];
 
-            match uploadable_import_storages(&test_session(&server), &storage_list).await {
-                Err(Error::ProxmoxActionRequired(msg)) => {
-                    assert!(
-                        msg.to_string().contains("Datastore.AllocateTemplate"),
-                        "{}",
-                        msg
-                    );
-                    assert!(msg.to_string().contains("local"), "{}", msg);
-                }
-                other => panic!("Expected upload permission error, got {:?}", other),
-            }
+            let result = uploadable_import_storages(&session(server.url()), &storage_list).await;
+            assert_eq!(
+                action_required(result),
+                message!("backend.proxmox.import_storage_denied", storages = "local")
+            );
 
             denied_mock.assert_async().await;
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_create_vm_digest_failure_after_healthy_preflight() {
             let mut server = Server::new_async().await;
             let _network = mock_default_bridge(&mut server).await;
 
-            struct ImageSource {
-                cache: tempfile::TempDir,
-                url: String,
-            }
-            impl ReleaseSource for ImageSource {
-                async fn check_connection(&self) -> Result<()> {
-                    unreachable!("must not check connectivity during VM creation")
-                }
-
-                async fn get_device_manifest(&self) -> Result<crate::DeviceManifest> {
-                    unreachable!()
-                }
-                async fn get_haos_release(&self, _: &str) -> Result<HaosRelease> {
-                    unreachable!("must use OVA's board-specific release")
-                }
-                async fn get_latest_haos_release_for_board(
-                    &self,
-                    board: &str,
-                ) -> Result<HaosRelease> {
-                    assert_eq!(board, "ova");
-                    Ok(HaosRelease {
-                        version: "18.2".into(),
-                        images: vec![HaosImage {
-                            board: "ova".into(),
-                            format: ImageFormat::Qcow2,
-                            download_url: self.url.clone(),
-                            size: 8,
-                            digest: Some(format!("sha256:{}", "0".repeat(64))),
-                        }],
-                    })
-                }
-                async fn download_image<P: ProgressCallback>(
-                    &self,
-                    image: &HaosImage,
-                    dest: &std::path::Path,
-                    callback: &P,
-                ) -> Result<()> {
-                    assert_eq!(image.board, "ova");
-                    assert_eq!(image.format, ImageFormat::Qcow2);
-                    Backend.download_image(image, dest, callback).await
-                }
-                async fn extract_xz<P: ProgressCallback>(
-                    &self,
-                    _: &std::path::Path,
-                    _: &std::path::Path,
-                    _: &P,
-                ) -> Result<()> {
-                    panic!("unverified image reached extraction")
-                }
-                fn cache_dir(&self) -> Result<std::path::PathBuf> {
-                    Ok(self.cache.path().to_path_buf())
-                }
-            }
-            let backend = ImageSource {
-                cache: tempfile::tempdir().unwrap(),
-                url: format!("{}/image.xz", server.url()),
+            let backend = OvaRelease {
+                image: HaosImage {
+                    board: "ova".into(),
+                    format: ImageFormat::Qcow2,
+                    download_url: format!("{}/image.xz", server.url()),
+                    size: 8,
+                    digest: Some(format!("sha256:{}", "0".repeat(64))),
+                },
+                cache: Some(tempfile::tempdir().unwrap()),
             };
             let asset_mock = server
                 .mock("GET", "/image.xz")
@@ -4245,8 +4133,6 @@ mod tests {
 
             let nodes_mock = server
                 .mock("GET", "/api2/json/nodes")
-                .with_status(200)
-                .with_header("content-type", "application/json")
                 .with_body(r#"{"data": [{"node": "pve", "status": "online"}]}"#)
                 .create_async()
                 .await;
@@ -4270,8 +4156,6 @@ mod tests {
 
             let storage_mock = server
                 .mock("GET", "/api2/json/nodes/pve/storage")
-                .with_status(200)
-                .with_header("content-type", "application/json")
                 .with_body(
                     r#"{
                         "data": [
@@ -4288,28 +4172,14 @@ mod tests {
             let nextid_mock = server
                 .mock("GET", "/api2/json/cluster/nextid")
                 .match_query(Matcher::UrlEncoded("vmid".to_string(), "100".to_string()))
-                .with_status(200)
-                .with_header("content-type", "application/json")
                 .with_body(r#"{"data": "100"}"#)
                 .create_async()
                 .await;
 
-            let config = ProxmoxVmConfig {
-                vm_id: 100,
-                name: "homeassistant".to_string(),
-                node: "pve".to_string(),
-                storage: "local-lvm".to_string(),
-                bridge: "vmbr0".to_string(),
-                vlan_tag: None,
-                cpu_cores: 2,
-                memory_mb: 4096,
-                disk_size_gb: 32,
-            };
-
             let result = create_vm(
                 &backend,
-                &test_session(&server),
-                &config,
+                &session(server.url()),
+                &vm_config(),
                 &crate::NoOpProgress,
             )
             .await;
@@ -4317,7 +4187,8 @@ mod tests {
                 matches!(result, Err(Error::ChecksumMismatch { .. })),
                 "unexpected result: {result:?}"
             );
-            assert_eq!(std::fs::read_dir(backend.cache.path()).unwrap().count(), 0);
+            let cache = backend.cache.unwrap();
+            assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
             asset_mock.assert_async().await;
             no_upload.assert_async().await;
 
@@ -4330,14 +4201,11 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_pre_install_checks_stop_at_offline_node() {
             let mut server = Server::new_async().await;
 
             let nodes_mock = server
                 .mock("GET", "/api2/json/nodes")
-                .with_status(200)
-                .with_header("content-type", "application/json")
                 .with_body(r#"{"data": [{"node": "pve", "status": "offline"}]}"#)
                 .create_async()
                 .await;
@@ -4350,24 +4218,11 @@ mod tests {
                 .create_async()
                 .await;
 
-            let config = ProxmoxVmConfig {
-                vm_id: 100,
-                name: "homeassistant".to_string(),
-                node: "pve".to_string(),
-                storage: "local-lvm".to_string(),
-                bridge: "vmbr0".to_string(),
-                vlan_tag: None,
-                cpu_cores: 2,
-                memory_mb: 4096,
-                disk_size_gb: 32,
-            };
-
-            match pre_install_checks(&test_session(&server), &config, 400_000_000).await {
-                Err(Error::ProxmoxActionRequired(msg)) => {
-                    assert!(msg.to_string().contains("offline"), "{}", msg)
-                }
-                other => panic!("Expected offline node error, got {:?}", other),
-            }
+            let session = session(server.url());
+            assert_eq!(
+                action_required(pre_install_checks(&session, &vm_config(), 400_000_000).await),
+                message!("backend.proxmox.node_offline", node = "pve")
+            );
 
             nodes_mock.assert_async().await;
             permissions_mock.assert_async().await;
@@ -4375,517 +4230,124 @@ mod tests {
 
         // The check before confirming runs the install's checks, and nothing past them.
         #[tokio::test]
-        #[serial]
         async fn test_check_install_runs_the_install_checks_without_downloading() {
-            struct ReleaseOnly(HaosRelease);
-            impl ReleaseSource for ReleaseOnly {
-                async fn check_connection(&self) -> Result<()> {
-                    unreachable!()
-                }
-                async fn get_device_manifest(&self) -> Result<crate::DeviceManifest> {
-                    unreachable!()
-                }
-                async fn get_haos_release(&self, _: &str) -> Result<HaosRelease> {
-                    unreachable!()
-                }
-                async fn get_latest_haos_release_for_board(&self, _: &str) -> Result<HaosRelease> {
-                    Ok(self.0.clone())
-                }
-                async fn download_image<P: ProgressCallback>(
-                    &self,
-                    _: &HaosImage,
-                    _: &std::path::Path,
-                    _: &P,
-                ) -> Result<()> {
-                    unreachable!("the check must not download")
-                }
-                async fn extract_xz<P: ProgressCallback>(
-                    &self,
-                    _: &std::path::Path,
-                    _: &std::path::Path,
-                    _: &P,
-                ) -> Result<()> {
-                    unreachable!("the check must not extract")
-                }
-                fn cache_dir(&self) -> Result<std::path::PathBuf> {
-                    unreachable!()
-                }
-            }
-
             let mut server = Server::new_async().await;
             let nodes_mock = server
                 .mock("GET", "/api2/json/nodes")
-                .with_status(200)
-                .with_header("content-type", "application/json")
                 .with_body(r#"{"data": [{"node": "pve", "status": "offline"}]}"#)
                 .create_async()
                 .await;
-            let release = ReleaseOnly(HaosRelease {
-                version: "18.2".into(),
-                images: vec![HaosImage {
+            let release = OvaRelease {
+                image: HaosImage {
                     board: "ova".into(),
                     format: ImageFormat::Qcow2,
                     download_url: format!("{}/image.xz", server.url()),
                     size: 400_000_000,
                     digest: None,
-                }],
-            });
+                },
+                cache: None,
+            };
 
-            let result = check_install(&release, &test_session(&server), &vm_config()).await;
-            assert!(
-                matches!(&result, Err(Error::ProxmoxActionRequired(msg)) if msg.to_string().contains("offline")),
-                "unexpected result: {result:?}"
+            let result = check_install(&release, &session(server.url()), &vm_config()).await;
+            assert_eq!(
+                action_required(result),
+                message!("backend.proxmox.node_offline", node = "pve")
             );
             nodes_mock.assert_async().await;
         }
 
+        /// How waiting for a task handles each answer to its status check.
         #[tokio::test]
-        #[serial]
-        async fn test_get_next_vm_id_success() {
-            let mut server = Server::new_async().await;
-
-            let vmid_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": "100"}"#)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = get_next_vm_id(&session).await;
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 100);
-
-            vmid_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_next_vm_id_as_number() {
-            let mut server = Server::new_async().await;
-
-            // Some Proxmox versions return the ID as a number
-            let vmid_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": 105}"#)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = get_next_vm_id(&session).await;
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 105);
-
-            vmid_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_next_vm_id_high_number() {
-            let mut server = Server::new_async().await;
-
-            let vmid_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": "999"}"#)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = get_next_vm_id(&session).await;
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 999);
-
-            vmid_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_list_nodes_server_error() {
-            let mut server = Server::new_async().await;
-
-            let nodes_mock = server
-                .mock("GET", "/api2/json/nodes")
-                .with_status(500)
-                .with_body("Internal Server Error")
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = list_nodes(&session).await;
-            assert!(result.is_err());
-
-            nodes_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_authenticate_missing_ticket_in_response() {
-            let mut server = Server::new_async().await;
-
-            let auth_mock = server
-                .mock("POST", "/api2/json/access/ticket")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "username": "root@pam"
-                        }
-                    }"#,
-                )
-                .create_async()
-                .await;
-
-            let credentials = ProxmoxCredentials {
-                certificate_sha256: None,
-                server_url: server.url(),
-                username: "root@pam".to_string(),
-                password: "password".to_string(),
-                totp: None,
-            };
-
-            let result = authenticate(&credentials).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("ticket"));
-            } else {
-                panic!("Expected ProxmoxApi error for missing ticket");
+        async fn test_wait_for_task_answers() {
+            let warnings = r#"{"data":{"status":"stopped","exitstatus":"WARNINGS: 1"}}"#;
+            let failed = r#"{"data":{"status":"stopped","exitstatus":"ERROR"}}"#;
+            let no_such_task = r#"{"errors":{"upid":"no such task"},"data":null}"#;
+            let retries = MAX_TASK_POLL_FAILURES as usize;
+            // (row, status, body, status checks, task stopped, outcome)
+            for (row, status, body, polls, stopped, expected) in [
+                ("done", 200, TASK_OK, 1, true, Returns("()")),
+                // Proxmox shows a task that ended with warnings as succeeded
+                ("done with warnings", 200, warnings, 1, true, Returns("()")),
+                (
+                    "task failed",
+                    200,
+                    failed,
+                    1,
+                    true,
+                    Api("Task failed with status: ERROR"),
+                ),
+                // A busy API may answer next time, but it isn't asked forever
+                (
+                    "server error",
+                    500,
+                    "",
+                    retries,
+                    false,
+                    Api("(500 Internal Server Error)"),
+                ),
+                // Asking again won't change a rejection, so it says what Proxmox said
+                (
+                    "no such task",
+                    400,
+                    no_such_task,
+                    1,
+                    false,
+                    Api(r#"(400 Bad Request): {"errors":{"upid":"no such task"}"#),
+                ),
+                ("401", 401, "", 1, false, Api("(401 Unauthorized)")),
+                ("403", 403, "", 1, false, Api("(403 Forbidden)")),
+                ("404", 404, "", 1, false, Api("(404 Not Found)")),
+                (
+                    "without data",
+                    200,
+                    "{}",
+                    1,
+                    false,
+                    Api("Invalid task status response"),
+                ),
+                // A complete answer that isn't JSON won't parse the next time either
+                (
+                    "not JSON",
+                    200,
+                    "not json",
+                    1,
+                    false,
+                    Api("Failed to parse task status"),
+                ),
+            ] {
+                let mut server = Server::new_async().await;
+                let task = server
+                    .mock("GET", task_path(UPID).as_str())
+                    .with_status(status)
+                    .with_body(body)
+                    .expect(polls)
+                    .create_async()
+                    .await;
+                let mut task_stopped = false;
+                let session = session(server.url());
+                let result =
+                    wait_for_task_completion(&session, "pve", UPID, 10, &mut task_stopped).await;
+                assert_outcome(row, result, &expected);
+                assert_eq!(task_stopped, stopped, "{row}: task stopped");
+                assert!(task.matched_async().await, "{row}: not asked {polls} times");
             }
-
-            auth_mock.assert_async().await;
         }
 
         #[tokio::test]
-        #[serial]
-        async fn test_authenticate_missing_csrf_in_response() {
-            let mut server = Server::new_async().await;
-
-            let auth_mock = server
-                .mock("POST", "/api2/json/access/ticket")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "ticket": "PVE:root@pam:12345678::abcdef...",
-                            "username": "root@pam"
-                        }
-                    }"#,
-                )
-                .create_async()
-                .await;
-
-            let credentials = ProxmoxCredentials {
-                certificate_sha256: None,
-                server_url: server.url(),
-                username: "root@pam".to_string(),
-                password: "password".to_string(),
-                totp: None,
-            };
-
-            let result = authenticate(&credentials).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("CSRFPreventionToken"));
-            } else {
-                panic!("Expected ProxmoxApi error for missing CSRF token");
-            }
-
-            auth_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_list_storage_node_not_found() {
-            let mut server = Server::new_async().await;
-
-            let storage_mock = server
-                .mock("GET", "/api2/json/nodes/nonexistent/storage")
-                .with_status(404)
-                .with_body("node not found")
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = list_storage(&session, "nonexistent").await;
-            assert!(result.is_err());
-
-            storage_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_next_vm_id_invalid_format() {
-            let mut server = Server::new_async().await;
-
-            let vmid_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": "not-a-number"}"#)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = get_next_vm_id(&session).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("Invalid VM ID"));
-            } else {
-                panic!("Expected ProxmoxApi error for invalid VM ID");
-            }
-
-            vmid_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_list_nodes_permission_denied() {
-            let mut server = Server::new_async().await;
-
-            let nodes_mock = server
-                .mock("GET", "/api2/json/nodes")
-                .with_status(403)
-                .with_body("permission denied")
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = list_nodes(&session).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxActionRequired(msg)) = result {
-                assert!(
-                    msg.to_string().contains("Access denied")
-                        || msg.to_string().contains("permission")
-                );
-            } else {
-                panic!("Expected ProxmoxApi error for 403");
-            }
-
-            nodes_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_wait_for_task_success() {
-            let mut server = Server::new_async().await;
-
-            let task_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
-                )
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "status": "stopped",
-                            "exitstatus": "OK"
-                        }
-                    }"#,
-                )
-                .expect_at_least(1)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = wait_for_task(
-                &session,
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-            )
-            .await;
-            assert!(result.is_ok());
-
-            task_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_wait_for_task_failure() {
-            let mut server = Server::new_async().await;
-
-            let task_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
-                )
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "status": "stopped",
-                            "exitstatus": "ERROR"
-                        }
-                    }"#,
-                )
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = wait_for_task(
-                &session,
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-            )
-            .await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("Task failed"));
-            } else {
-                panic!("Expected ProxmoxApi error for failed task");
-            }
-
-            task_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
         async fn test_wait_for_task_timeout() {
             let mut server = Server::new_async().await;
-
             let task_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
-                )
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "status": "running"
-                        }
-                    }"#,
-                )
+                .mock("GET", task_path(UPID).as_str())
+                .with_body(r#"{"data": {"status": "running"}}"#)
                 .expect_at_least(1)
                 .create_async()
                 .await;
 
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = wait_for_task(
-                &session,
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                1, // 1 second timeout
-            )
-            .await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("timed out"));
-            } else {
-                panic!("Expected ProxmoxApi error for timeout");
-            }
-
-            task_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_wait_for_task_http_error() {
-            let mut server = Server::new_async().await;
-
-            // A server error is retried, but not forever.
-            let task_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
-                )
-                .with_status(500)
-                .expect(MAX_TASK_POLL_FAILURES as usize)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = wait_for_task(
-                &session,
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-            )
-            .await;
-            assert!(result.is_err());
+            let result = wait_for_task(&session(server.url()), "pve", UPID, 1).await;
+            assert!(
+                matches!(&result, Err(Error::ProxmoxApi(msg)) if msg.contains("timed out")),
+                "{result:?}"
+            );
 
             task_mock.assert_async().await;
         }
@@ -4903,7 +4365,6 @@ mod tests {
         /// In a cluster the task can run on another node than the one the
         /// request went to; its status only exists on the node in the UPID.
         #[tokio::test]
-        #[serial]
         async fn test_wait_for_task_polls_the_node_from_the_upid() {
             let mut server = Server::new_async().await;
 
@@ -4912,21 +4373,12 @@ mod tests {
                     "GET",
                     "/api2/json/nodes/pve2/tasks/UPID%3Apve2%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
                 )
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": {"status": "stopped", "exitstatus": "OK"}}"#)
+                .with_body(TASK_OK)
                 .create_async()
                 .await;
 
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
             let result = wait_for_task(
-                &session,
+                &session(server.url()),
                 "pve1",
                 "UPID:pve2:00000001:00000002:00000003:test:root@pam:",
                 10,
@@ -4938,137 +4390,19 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
-        async fn test_wait_for_task_error_includes_what_proxmox_said() {
-            let mut server = Server::new_async().await;
-
-            // Asking again won't make a task exist, so it isn't retried.
-            let task_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
-                )
-                .with_status(400)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"errors":{"upid":"no such task"},"data":null}"#)
-                .expect(1)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = wait_for_task(
-                &session,
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-            )
-            .await;
-
-            match result {
-                Err(Error::ProxmoxApi(msg)) => {
-                    assert!(msg.contains("400"), "{msg}");
-                    assert!(msg.contains("no such task"), "{msg}");
-                }
-                other => panic!("Expected ProxmoxApi error, got {other:?}"),
-            }
-
-            task_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_wait_for_task_client_errors_are_not_retried() {
-            for status in [401, 403, 404] {
-                let mut server = Server::new_async().await;
-                let task_mock = server
-                    .mock(
-                        "GET",
-                        "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
-                    )
-                    .with_status(status)
-                    .expect(1)
-                    .create_async()
-                    .await;
-
-                let result = wait_for_task(
-                    &test_session(&server),
-                    "pve",
-                    "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                    10,
-                )
-                .await;
-                assert!(result.is_err(), "{status}");
-
-                task_mock.assert_async().await;
-            }
-        }
-
-        /// Proxmox shows a task that ended with warnings as succeeded.
-        #[tokio::test]
-        #[serial]
-        async fn test_wait_for_task_with_warnings_succeeds() {
-            let mut server = Server::new_async().await;
-            let task_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
-                )
-                .with_body(r#"{"data":{"status":"stopped","exitstatus":"WARNINGS: 1"}}"#)
-                .create_async()
-                .await;
-
-            let mut stopped = false;
-            let result = wait_for_task_completion(
-                &test_session(&server),
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-                &mut stopped,
-            )
-            .await;
-            assert!(result.is_ok(), "{result:?}");
-            assert!(stopped);
-
-            task_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
         async fn test_wait_for_task_survives_a_few_server_errors() {
             let mut server = Server::new_async().await;
 
             // mockito serves the first mock until its expected hits are used up.
             let failing = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
-                )
+                .mock("GET", task_path(UPID).as_str())
                 .with_status(503)
                 .expect(MAX_TASK_POLL_FAILURES as usize - 1)
                 .create_async()
                 .await;
-            let done = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
-                )
-                .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
-                .create_async()
-                .await;
+            let done = mock_task(&mut server, UPID, TASK_OK).await;
 
-            let result = wait_for_task(
-                &test_session(&server),
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-            )
-            .await;
+            let result = wait_for_task(&session(server.url()), "pve", UPID, 10).await;
             assert!(result.is_ok(), "{result:?}");
 
             failing.assert_async().await;
@@ -5078,43 +4412,32 @@ mod tests {
         /// Failures only count while they're in a row; a good poll in
         /// between starts the count over.
         #[tokio::test]
-        #[serial]
         async fn test_wait_for_task_resets_failures_after_a_good_poll() {
             let mut server = Server::new_async().await;
-            let path = "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status";
+            let path = task_path(UPID);
             let below_limit = MAX_TASK_POLL_FAILURES as usize - 1;
 
             let first_failures = server
-                .mock("GET", path)
+                .mock("GET", path.as_str())
                 .with_status(500)
                 .expect(below_limit)
                 .create_async()
                 .await;
             let running = server
-                .mock("GET", path)
+                .mock("GET", path.as_str())
                 .with_body(r#"{"data":{"status":"running"}}"#)
                 .expect(1)
                 .create_async()
                 .await;
             let second_failures = server
-                .mock("GET", path)
+                .mock("GET", path.as_str())
                 .with_status(500)
                 .expect(below_limit)
                 .create_async()
                 .await;
-            let done = server
-                .mock("GET", path)
-                .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
-                .create_async()
-                .await;
+            let done = mock_task(&mut server, UPID, TASK_OK).await;
 
-            let result = wait_for_task(
-                &test_session(&server),
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-            )
-            .await;
+            let result = wait_for_task(&session(server.url()), "pve", UPID, 10).await;
             assert!(result.is_ok(), "{result:?}");
 
             first_failures.assert_async().await;
@@ -5126,178 +4449,46 @@ mod tests {
         /// A dropped connection is a network error, the same path a request
         /// timeout takes, without waiting 30 seconds for one.
         #[tokio::test]
-        #[serial]
         async fn test_wait_for_task_survives_a_dropped_connection() {
-            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let (url, server) =
+                raw_server(vec![String::new(), raw_response("200 OK", TASK_OK, false)]).await;
 
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let address = listener.local_addr().unwrap();
-            let server = tokio::spawn(async move {
-                let (dropped, _) = listener.accept().await.unwrap();
-                drop(dropped);
-
-                let (mut stream, _) = listener.accept().await.unwrap();
-                let mut request = [0; 4096];
-                let _ = stream.read(&mut request).await.unwrap();
-                let body = r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#;
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-                stream.write_all(response.as_bytes()).await.unwrap();
-            });
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: format!("http://{address}"),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-            let result = wait_for_task(
-                &session,
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-            )
-            .await;
+            let result = wait_for_task(&session(url), "pve", UPID, 10).await;
             assert!(result.is_ok(), "{result:?}");
-
-            server.await.unwrap();
+            assert!(server.await.unwrap(), "asked again after the task was done");
         }
 
         /// The headers can arrive and the connection still drop before the
         /// whole body does. That is the same hiccup, so it is retried too.
         #[tokio::test]
-        #[serial]
         async fn test_wait_for_task_survives_a_cut_off_body() {
-            use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let address = listener.local_addr().unwrap();
-            let server = tokio::spawn(async move {
-                let body = r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#;
-                let mut request = [0; 4096];
-
-                // Promises the whole body, sends half of it and hangs up
-                let (mut cut_off, _) = listener.accept().await.unwrap();
-                let _ = cut_off.read(&mut request).await.unwrap();
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
-                    body.len(),
-                    &body[..body.len() / 2]
-                );
-                cut_off.write_all(response.as_bytes()).await.unwrap();
-                drop(cut_off);
-
-                let (mut stream, _) = listener.accept().await.unwrap();
-                let _ = stream.read(&mut request).await.unwrap();
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-                stream.write_all(response.as_bytes()).await.unwrap();
-            });
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: format!("http://{address}"),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-            let result = wait_for_task(
-                &session,
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-            )
+            let (url, server) = raw_server(vec![
+                raw_response("200 OK", TASK_OK, true),
+                raw_response("200 OK", TASK_OK, false),
+            ])
             .await;
-            assert!(result.is_ok(), "{result:?}");
 
-            server.await.unwrap();
+            let result = wait_for_task(&session(url), "pve", UPID, 10).await;
+            assert!(result.is_ok(), "{result:?}");
+            assert!(server.await.unwrap(), "asked again after the task was done");
         }
 
         /// A rejection stays a rejection when its body gets cut off, and the
         /// error still names the status.
         #[tokio::test]
-        #[serial]
         async fn test_wait_for_task_cut_off_rejection_is_not_retried() {
-            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let body = r#"{"errors":{"upid":"no such task"},"data":null}"#;
+            let (url, server) = raw_server(vec![raw_response("404 Not Found", body, true)]).await;
 
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let address = listener.local_addr().unwrap();
-            let server = tokio::spawn(async move {
-                let body = r#"{"errors":{"upid":"no such task"},"data":null}"#;
-                let mut request = [0; 4096];
-
-                let (mut cut_off, _) = listener.accept().await.unwrap();
-                let _ = cut_off.read(&mut request).await.unwrap();
-                let response = format!(
-                    "HTTP/1.1 404 Not Found\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
-                    body.len(),
-                    &body[..body.len() / 2]
-                );
-                cut_off.write_all(response.as_bytes()).await.unwrap();
-                drop(cut_off);
-
-                // A retry would land here, and must not happen
-                tokio::time::timeout(std::time::Duration::from_millis(200), listener.accept())
-                    .await
-                    .is_err()
-            });
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: format!("http://{address}"),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-            let result = wait_for_task(
-                &session,
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-            )
-            .await;
+            let result = wait_for_task(&session(url), "pve", UPID, 10).await;
             assert!(
                 matches!(&result, Err(Error::ProxmoxApi(message)) if message.contains("404")),
                 "{result:?}"
             );
-
             assert!(server.await.unwrap(), "the rejection was retried");
         }
 
-        /// A complete answer that isn't JSON won't parse the next time either.
         #[tokio::test]
-        #[serial]
-        async fn test_wait_for_task_malformed_status_is_not_retried() {
-            let mut server = Server::new_async().await;
-            let task_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
-                )
-                .with_body("not json")
-                .expect(1)
-                .create_async()
-                .await;
-
-            let result = wait_for_task(
-                &test_session(&server),
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-            )
-            .await;
-            assert!(
-                matches!(&result, Err(Error::ProxmoxApi(message)) if message.contains("Failed to parse task status")),
-                "{result:?}"
-            );
-
-            task_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
         async fn test_create_vm_with_disk_success() {
             for disk_size_gb in [32, 64, 128, 256, 512] {
                 check_create_vm_with_disk_size(disk_size_gb).await;
@@ -5306,7 +4497,7 @@ mod tests {
 
         async fn check_create_vm_with_disk_size(disk_size_gb: u32) {
             let mut server = Server::new_async().await;
-            let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let requests = std::sync::Arc::new(Mutex::new(Vec::new()));
             let network = mock_bridges(
                 &mut server,
                 serde_json::json!([{"iface":"vmbr1", "type":"bridge"}]),
@@ -5332,28 +4523,16 @@ mod tests {
                     // The success screen promises the VM starts with the host
                     Matcher::UrlEncoded("onboot".to_string(), "1".to_string()),
                 ]))
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": "UPID:pve:00000001:00000002:00000003:qmcreate:root@pam:"
-                    }"#,
-                )
+                .with_body(serde_json::json!({ "data": UPID }).to_string())
                 .create_async()
                 .await;
 
-            // Mock task completion
             let create_requests = requests.clone();
             let task_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Aqmcreate%3Aroot%40pam%3A/status",
-                )
-                .with_status(200)
-                .with_header("content-type", "application/json")
+                .mock("GET", task_path(UPID).as_str())
                 .with_body_from_request(move |_| {
                     create_requests.lock().unwrap().push("import complete");
-                    r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#.into()
+                    TASK_OK.into()
                 })
                 .expect_at_least(1)
                 .create_async()
@@ -5368,7 +4547,6 @@ mod tests {
                     Matcher::UrlEncoded("disk".into(), "scsi0".into()),
                     Matcher::UrlEncoded("size".into(), format!("{}G", disk_size_gb)),
                 ]))
-                .with_header("content-type", "application/json")
                 .with_body_from_request(move |_| {
                     resize_requests.lock().unwrap().push("resize requested");
                     r#"{"data":"resize-task"}"#.into()
@@ -5377,46 +4555,28 @@ mod tests {
                 .await;
             let resize_task_requests = requests.clone();
             let resize_task_mock = server
-                .mock("GET", "/api2/json/nodes/pve/tasks/resize-task/status")
-                .with_header("content-type", "application/json")
+                .mock("GET", task_path("resize-task").as_str())
                 .with_body_from_request(move |_| {
                     resize_task_requests.lock().unwrap().push("resize complete");
-                    r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#.into()
+                    TASK_OK.into()
                 })
                 .create_async()
                 .await;
 
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
             let config = ProxmoxVmConfig {
-                vm_id: 100,
-                name: "test-vm".to_string(),
-                node: "pve".to_string(),
-                storage: "local-lvm".to_string(),
-                bridge: "vmbr0".to_string(),
-                vlan_tag: None,
-                cpu_cores: 2,
-                memory_mb: 2048,
+                bridge: "vmbr1".into(),
                 disk_size_gb,
+                ..vm_config()
             };
-
             let result = create_vm_with_disk(
-                &session,
-                &ProxmoxVmConfig {
-                    bridge: "vmbr1".to_string(),
-                    ..config
-                },
+                &session(server.url()),
+                &config,
                 "test-image.qcow2",
                 "local-import",
                 &mut false,
             )
             .await;
-            assert!(result.is_ok());
+            assert!(result.is_ok(), "{result:?}");
 
             vm_create_mock.assert_async().await;
             network.assert_async().await;
@@ -5430,54 +4590,26 @@ mod tests {
             );
         }
 
-        fn disk_test_config(disk_size_gb: u32) -> ProxmoxVmConfig {
-            ProxmoxVmConfig {
-                vm_id: 100,
-                name: "test-vm".into(),
-                node: "pve".into(),
-                storage: "local-lvm".into(),
-                cpu_cores: 2,
-                memory_mb: 2048,
-                disk_size_gb,
-                bridge: "vmbr0".into(),
-                vlan_tag: None,
-            }
-        }
-
         #[tokio::test]
         async fn test_disk_minimum_rejected_before_download_or_creation() {
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: "http://127.0.0.1:1".into(),
-                ticket: "test-ticket".into(),
-                csrf_token: "test-csrf".into(),
-            };
+            let session = session("http://127.0.0.1:1".into());
             for size in [0, 1, 31] {
-                let config = disk_test_config(size);
+                let config = ProxmoxVmConfig {
+                    disk_size_gb: size,
+                    ..vm_config()
+                };
+                let too_small = message!("backend.proxmox.disk_too_small", size = 32);
+                let result = create_vm(&Backend, &session, &config, &crate::NoOpProgress).await;
+                assert_eq!(action_required(result), too_small);
                 // The check before confirming rejects it the same way
-                for error in [
-                    create_vm(&Backend, &session, &config, &crate::NoOpProgress)
-                        .await
-                        .unwrap_err(),
-                    Backend
-                        .check_vm_config(&session, &config)
-                        .await
-                        .unwrap_err(),
-                ] {
-                    let Error::ProxmoxActionRequired(message) = error else {
-                        panic!("{error:?}");
-                    };
-                    assert_eq!(
-                        message,
-                        crate::message!("backend.proxmox.disk_too_small", size = 32)
-                    );
-                }
+                let result = Backend.check_vm_config(&session, &config).await;
+                assert_eq!(action_required(result), too_small);
             }
         }
 
         #[test]
         fn test_disk_resize_keeps_a_certificate_change() {
-            let config = disk_test_config(32);
+            let config = vm_config();
             assert!(matches!(
                 resize_error(&config, Error::ProxmoxCertificateChanged),
                 Error::ProxmoxCertificateChanged
@@ -5486,10 +4618,13 @@ mod tests {
                 Error::ProxmoxApi("HTTP 500".into()),
                 Error::ProxmoxSessionExpired,
             ] {
-                let error = resize_error(&config, error);
-                assert!(
-                    matches!(&error, Error::ProxmoxActionRequired(message) if message.to_string().contains("Delete VM 100 in Proxmox")),
-                    "{error}"
+                assert_eq!(
+                    action_required::<()>(Err(resize_error(&config, error))),
+                    message!(
+                        "backend.proxmox.vm_created_resize_failed",
+                        vm_id = 100,
+                        size_gb = 32,
+                    )
                 );
             }
         }
@@ -5511,26 +4646,16 @@ mod tests {
             ] {
                 let mut server = Server::new_async().await;
                 // Creating the VM first rechecks the selected bridge
-                let _network = mock_bridges(
-                    &mut server,
-                    serde_json::json!([{"iface":"vmbr0", "type":"bridge"}]),
-                )
-                .await;
+                let _network = mock_default_bridge(&mut server).await;
                 let _permissions =
                     mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"])
                         .await;
                 let create_mock = server
                     .mock("POST", "/api2/json/nodes/pve/qemu")
-                    .with_header("content-type", "application/json")
                     .with_body(r#"{"data":"create-task"}"#)
                     .create_async()
                     .await;
-                let create_task = server
-                    .mock("GET", "/api2/json/nodes/pve/tasks/create-task/status")
-                    .with_header("content-type", "application/json")
-                    .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
-                    .create_async()
-                    .await;
+                let create_task = mock_task(&mut server, "create-task", TASK_OK).await;
                 let resize_mock = server
                     .mock("PUT", "/api2/json/nodes/pve/qemu/100/resize")
                     .with_status(status)
@@ -5538,8 +4663,7 @@ mod tests {
                     .create_async()
                     .await;
                 let resize_task = server
-                    .mock("GET", "/api2/json/nodes/pve/tasks/resize-task/status")
-                    .with_header("content-type", "application/json")
+                    .mock("GET", task_path("resize-task").as_str())
                     .with_body(
                         serde_json::json!({
                             "data": {"status": "stopped", "exitstatus": task_status}
@@ -5549,12 +4673,6 @@ mod tests {
                     .expect(usize::from(task_status.is_some()))
                     .create_async()
                     .await;
-                let session = ProxmoxSession {
-                    certificate_sha256: None,
-                    server_url: server.url(),
-                    ticket: "test-ticket".into(),
-                    csrf_token: "test-csrf".into(),
-                };
                 let delete = server
                     .mock(
                         "DELETE",
@@ -5563,19 +4681,22 @@ mod tests {
                     .with_status(500)
                     .create_async()
                     .await;
-                let error = import_and_cleanup_image(
-                    &session,
-                    &disk_test_config(32),
+                let result = import_and_cleanup_image(
+                    &session(server.url()),
+                    &vm_config(),
                     "haos.qcow2",
                     "local",
                 )
-                .await
-                .unwrap_err();
+                .await;
                 // Every resize failure leaves the VM behind, so each one tells
                 // the user to remove it, without the server's response
                 assert_eq!(
-                    error.to_string(),
-                    "VM 100 was created, but its disk couldn't be resized to 32 GB. Delete VM 100 in Proxmox, then install again."
+                    action_required(result),
+                    message!(
+                        "backend.proxmox.vm_created_resize_failed",
+                        vm_id = 100,
+                        size_gb = 32,
+                    )
                 );
                 create_mock.assert_async().await;
                 create_task.assert_async().await;
@@ -5590,23 +4711,17 @@ mod tests {
             for body in [r#"{"data":null}"#, r#"{"data":"create-task"}"#] {
                 let mut server = Server::new_async().await;
                 // Creating the VM first rechecks the selected bridge
-                let _network = mock_bridges(
-                    &mut server,
-                    serde_json::json!([{"iface":"vmbr0", "type":"bridge"}]),
-                )
-                .await;
+                let _network = mock_default_bridge(&mut server).await;
                 let _permissions =
                     mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"])
                         .await;
                 let create_mock = server
                     .mock("POST", "/api2/json/nodes/pve/qemu")
-                    .with_header("content-type", "application/json")
                     .with_body(body)
                     .create_async()
                     .await;
                 let create_task = server
-                    .mock("GET", "/api2/json/nodes/pve/tasks/create-task/status")
-                    .with_header("content-type", "application/json")
+                    .mock("GET", task_path("create-task").as_str())
                     .with_body(r#"{"data":{"status":"stopped","exitstatus":"import failed"}}"#)
                     .expect(usize::from(body.contains("create-task")))
                     .create_async()
@@ -5616,148 +4731,160 @@ mod tests {
                     .expect(0)
                     .create_async()
                     .await;
-                let session = ProxmoxSession {
-                    certificate_sha256: None,
-                    server_url: server.url(),
-                    ticket: "test-ticket".into(),
-                    csrf_token: "test-csrf".into(),
+                let config = ProxmoxVmConfig {
+                    disk_size_gb: 64,
+                    ..vm_config()
                 };
-                assert!(create_vm_with_disk(
-                    &session,
-                    &disk_test_config(64),
-                    "haos.qcow2",
-                    "local",
-                    &mut false,
-                )
-                .await
-                .is_err());
+                let session = session(server.url());
+                let result =
+                    create_vm_with_disk(&session, &config, "haos.qcow2", "local", &mut false).await;
+                assert!(result.is_err());
                 create_mock.assert_async().await;
                 create_task.assert_async().await;
                 resize_mock.assert_async().await;
             }
         }
 
+        /// A write call whose answer can't be used never waits for a task.
         #[tokio::test]
-        #[serial]
-        async fn test_create_vm_with_disk_error() {
-            let mut server = Server::new_async().await;
-            let _network = mock_default_bridge(&mut server).await;
-            let _permissions =
-                mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"]).await;
+        async fn test_write_answers_without_a_task() {
+            #[derive(Clone, Copy)]
+            enum Call {
+                Upload,
+                Start,
+                Create,
+                Delete,
+            }
+            use Call::*;
 
-            let vm_create_mock = server
-                .mock("POST", "/api2/json/nodes/pve/qemu")
-                .with_status(500)
-                .with_body("Internal server error")
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let config = ProxmoxVmConfig {
-                vm_id: 100,
-                name: "test-vm".to_string(),
-                node: "pve".to_string(),
-                storage: "local-lvm".to_string(),
-                bridge: "vmbr0".to_string(),
-                vlan_tag: None,
-                cpu_cores: 2,
-                memory_mb: 2048,
-                disk_size_gb: 32,
-            };
-
-            let result =
-                create_vm_with_disk(&session, &config, "test-image.qcow2", "local", &mut false)
-                    .await;
-            assert!(result.is_err());
-
-            vm_create_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_create_vm_with_disk_auth_expired_marks_source_unused() {
-            let mut server = Server::new_async().await;
-            let _network = mock_default_bridge(&mut server).await;
-            let _permissions =
-                mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"]).await;
-            let vm_create_mock = server
-                .mock("POST", "/api2/json/nodes/pve/qemu")
-                .with_status(401)
-                .create_async()
-                .await;
-
-            let mut source_unused = false;
-            let result = create_vm_with_disk(
-                &test_session(&server),
-                &vm_config(),
-                "test-image.qcow2",
-                "local",
-                &mut source_unused,
-            )
-            .await;
-
-            assert!(matches!(result, Err(Error::ProxmoxSessionExpired)));
-            // Rejected before any import started, so the uploaded image can go
-            assert!(source_unused);
-            vm_create_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        async fn delete_import_image_requires_a_task_upid() {
-            for response in ["{}", r#"{"data":null}"#, r#"{"data":""}"#, r#"{"data":42}"#] {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let image = temp_dir.path().join("image.qcow2");
+            std::fs::write(&image, b"test image content").unwrap();
+            let no_upid = || Api("Import deletion response missing task UPID");
+            // (row, call, status, body, outcome)
+            for (row, call, status, body, expected) in [
+                (
+                    "upload 500",
+                    Upload,
+                    500,
+                    "Internal Server Error",
+                    Api("Failed to upload image to Proxmox (500 Internal Server Error)"),
+                ),
+                ("upload 401", Upload, 401, "", SessionExpired),
+                (
+                    "upload not JSON",
+                    Upload,
+                    200,
+                    "not json",
+                    Api("Failed to parse upload response"),
+                ),
+                (
+                    "upload without UPID",
+                    Upload,
+                    200,
+                    r#"{"data": null}"#,
+                    Api("Upload response missing task UPID"),
+                ),
+                (
+                    "start 500",
+                    Start,
+                    500,
+                    "Failed to start VM",
+                    Api("Failed to start VM (500 Internal Server Error): Failed to start VM"),
+                ),
+                ("start 401", Start, 401, "", SessionExpired),
+                (
+                    "create 500",
+                    Create,
+                    500,
+                    "Internal server error",
+                    Api("Failed to create VM (500 Internal Server Error)"),
+                ),
+                ("create 401", Create, 401, "", SessionExpired),
+                ("delete without data", Delete, 200, "{}", no_upid()),
+                (
+                    "delete without UPID",
+                    Delete,
+                    200,
+                    r#"{"data":null}"#,
+                    no_upid(),
+                ),
+                (
+                    "delete with empty UPID",
+                    Delete,
+                    200,
+                    r#"{"data":""}"#,
+                    no_upid(),
+                ),
+                (
+                    "delete with a number",
+                    Delete,
+                    200,
+                    r#"{"data":42}"#,
+                    no_upid(),
+                ),
+            ] {
                 let mut server = Server::new_async().await;
-                let delete = server
-                    .mock("DELETE", "/api2/json/nodes/pve/storage/local-import/content/local-import%3Aimport%2Fhai-image-unique.qcow2")
-                    .with_body(response)
+                if matches!(call, Create) {
+                    // Creating the VM first rechecks the selected bridge
+                    mock_default_bridge(&mut server).await;
+                    mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"])
+                        .await;
+                }
+                let (method, path) = match call {
+                    Upload => ("POST", "/api2/json/nodes/pve/storage/local/upload"),
+                    Start => ("POST", "/api2/json/nodes/pve/qemu/100/status/start"),
+                    Create => ("POST", "/api2/json/nodes/pve/qemu"),
+                    Delete => (
+                        "DELETE",
+                        "/api2/json/nodes/pve/storage/local/content/local%3Aimport%2Fimage.qcow2",
+                    ),
+                };
+                let request = server
+                    .mock(method, path)
+                    .with_status(status)
+                    .with_body(body)
                     .create_async()
                     .await;
                 let task = server
-                    .mock("GET", Matcher::Any)
+                    .mock("GET", Matcher::Regex("/tasks/".into()))
                     .expect(0)
                     .create_async()
                     .await;
-                let session = ProxmoxSession {
-                    server_url: server.url(),
-                    ticket: "test-ticket".into(),
-                    csrf_token: "test-csrf".into(),
-                    certificate_sha256: None,
-                };
-                let error =
-                    delete_import_image(&session, "pve", "local-import", "hai-image-unique.qcow2")
+                let session = session(server.url());
+                let result = match call {
+                    Upload => upload_image_to_proxmox(
+                        &session,
+                        "pve",
+                        &image,
+                        &crate::NoOpProgress,
+                        "local",
+                    )
+                    .await
+                    .map(drop),
+                    Start => start_vm(&session, "pve", 100).await,
+                    Create => {
+                        create_vm_with_disk(
+                            &session,
+                            &vm_config(),
+                            "image.qcow2",
+                            "local",
+                            &mut false,
+                        )
                         .await
-                        .unwrap_err();
-                assert!(error
-                    .to_string()
-                    .contains("Import deletion response missing task UPID"));
-                delete.assert_async().await;
-                task.assert_async().await;
-            }
-        }
-
-        /// Stops once the user asked for it, like the desktop callback does.
-        #[derive(Default)]
-        struct StoppableProgress {
-            stopped: std::sync::atomic::AtomicBool,
-        }
-
-        impl ProgressCallback for StoppableProgress {
-            fn on_progress(&self, _: FlashProgress) {}
-
-            fn is_cancelled(&self) -> bool {
-                self.stopped.load(std::sync::atomic::Ordering::Relaxed)
+                    }
+                    Delete => delete_import_image(&session, "pve", "local", "image.qcow2").await,
+                };
+                assert_outcome(row, result, &expected);
+                assert!(request.matched_async().await, "{row}: not sent once");
+                assert!(task.matched_async().await, "{row}: waited for a task");
             }
         }
 
         #[tokio::test]
         async fn stop_after_upload_deletes_the_image() {
             let mut server = Server::new_async().await;
-            let session = test_session(&server);
+            let session = session(server.url());
 
             // Without a stop, nothing is deleted
             let untouched = server
@@ -5765,7 +4892,7 @@ mod tests {
                 .expect(0)
                 .create_async()
                 .await;
-            let progress = StoppableProgress::default();
+            let progress = TestProgress::default();
             discard_upload_if_stopped(&session, "pve", "local-import", "hai.qcow2", &progress)
                 .await
                 .unwrap();
@@ -5781,23 +4908,18 @@ mod tests {
                 .with_status(500)
                 .create_async()
                 .await;
-            progress
-                .stopped
-                .store(true, std::sync::atomic::Ordering::Relaxed);
-            let error =
+            progress.stop();
+            let result =
                 discard_upload_if_stopped(&session, "pve", "local-import", "hai.qcow2", &progress)
-                    .await
-                    .unwrap_err();
-            let Error::ProxmoxActionRequired(message) = error else {
-                panic!("expected a cleanup warning, got {error:?}");
-            };
-            assert!(
-                message
-                    .to_string()
-                    .contains("local-import:import/hai.qcow2"),
-                "{message}"
+                    .await;
+            assert_eq!(
+                action_required(result),
+                message!(
+                    "backend.proxmox.leftover_import_image",
+                    volume = "local-import:import/hai.qcow2",
+                    node = "pve",
+                )
             );
-            assert!(message.to_string().contains("node pve"), "{message}");
             delete.assert_async().await;
             delete.remove_async().await;
 
@@ -5807,17 +4929,10 @@ mod tests {
                     "DELETE",
                     "/api2/json/nodes/pve/storage/local-import/content/local-import%3Aimport%2Fhai.qcow2",
                 )
-                .with_body(r#"{"data":"UPID:pve:00000001:00000002:00000003:imgdel:root@pam:"}"#)
+                .with_body(serde_json::json!({ "data": UPID }).to_string())
                 .create_async()
                 .await;
-            let task = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Aimgdel%3Aroot%40pam%3A/status",
-                )
-                .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
-                .create_async()
-                .await;
+            let task = mock_task(&mut server, UPID, TASK_OK).await;
             let error =
                 discard_upload_if_stopped(&session, "pve", "local-import", "hai.qcow2", &progress)
                     .await
@@ -5832,16 +4947,11 @@ mod tests {
             use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: format!("http://{}", listener.local_addr().unwrap()),
-                ticket: "test-ticket".into(),
-                csrf_token: "test-csrf".into(),
-            };
+            let session = session(format!("http://{}", listener.local_addr().unwrap()));
             let temp_dir = tempfile::tempdir().unwrap();
             let path = temp_dir.path().join("hai.qcow2");
             std::fs::write(&path, vec![0; 1024 * 1024]).unwrap();
-            let progress = StoppableProgress::default();
+            let progress = TestProgress::default();
 
             let server = async {
                 let mut task_polled = false;
@@ -5869,20 +4979,15 @@ mod tests {
                         // the stop lands well before its answer does
                         let mut upload = vec![0; content_length];
                         socket.read_exact(&mut upload).await.unwrap();
-                        progress
-                            .stopped
-                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        progress.stop();
                         tokio::time::sleep(std::time::Duration::from_millis(600)).await;
                         r#"{"data":"UPID:pve:00000001:00000002:00000003:imgcopy:root@pam:"}"#
                     } else {
                         assert!(request_line.contains("imgcopy"), "{request_line}");
                         task_polled = true;
-                        r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#
+                        TASK_OK
                     };
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                        body.len()
-                    );
+                    let response = raw_response("200 OK", body, false);
                     socket.write_all(response.as_bytes()).await.unwrap();
                 }
             };
@@ -5902,19 +5007,14 @@ mod tests {
             use tokio::io::AsyncReadExt;
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: format!("http://{}", listener.local_addr().unwrap()),
-                ticket: "test-ticket".into(),
-                csrf_token: "test-csrf".into(),
-            };
+            let session = session(format!("http://{}", listener.local_addr().unwrap()));
             let temp_dir = tempfile::tempdir().unwrap();
             let path = temp_dir.path().join("large.qcow2");
             std::fs::File::create(&path)
                 .unwrap()
                 .set_len(128 * 1024 * 1024)
                 .unwrap();
-            let progress = StoppableProgress::default();
+            let progress = TestProgress::default();
 
             let server = async {
                 let (mut socket, _) = listener.accept().await.unwrap();
@@ -5926,9 +5026,7 @@ mod tests {
 
                 // Stall without ever answering; only the stop can end this.
                 // Reading nothing for a while keeps most of the body unsent.
-                progress
-                    .stopped
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                progress.stop();
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 while socket.read(&mut buffer).await.unwrap_or(0) > 0 {}
             };
@@ -5945,7 +5043,7 @@ mod tests {
         async fn failed_bridge_recheck_deletes_unused_import_without_creating_vm() {
             for bridge_removed in [true, false] {
                 let mut server = Server::new_async().await;
-                let session = test_session(&server);
+                let session = session(server.url());
                 let config = vm_config();
                 let initial_network = mock_default_bridge(&mut server).await;
                 let initial_permissions =
@@ -5978,27 +5076,28 @@ mod tests {
                     .match_header("cookie", "PVEAuthCookie=test-ticket")
                     .match_header("CSRFPreventionToken", "test-csrf")
                     .with_body(r#"{"data":"delete-task"}"#).create_async().await;
-                let cleanup_task = server
-                    .mock("GET", "/api2/json/nodes/pve/tasks/delete-task/status")
-                    .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
-                    .create_async()
-                    .await;
-                let error = import_and_cleanup_image(
+                let cleanup_task = mock_task(&mut server, "delete-task", TASK_OK).await;
+                let result = import_and_cleanup_image(
                     &session,
                     &config,
                     "hai-image-unique.qcow2",
                     "local-import",
                 )
-                .await
-                .unwrap_err();
-                assert!(
-                    error.to_string().contains(if bridge_removed {
-                        "no longer available"
-                    } else {
-                        "SDN.Use"
-                    }),
-                    "{error}"
-                );
+                .await;
+                let expected = if bridge_removed {
+                    message!(
+                        "backend.proxmox.bridge_unavailable",
+                        bridge = "vmbr0",
+                        node = "pve",
+                    )
+                } else {
+                    message!(
+                        "backend.proxmox.missing_privileges",
+                        privileges = "SDN.Use",
+                        path = "/sdn/zones/localnetwork/vmbr0",
+                    )
+                };
+                assert_eq!(action_required(result), expected);
                 network.assert_async().await;
                 if !bridge_removed {
                     permissions.assert_async().await;
@@ -6011,10 +5110,7 @@ mod tests {
 
         #[tokio::test]
         async fn import_cleanup_waits_for_completion_and_preserves_install_result() {
-            use std::sync::{
-                atomic::{AtomicBool, Ordering},
-                Arc,
-            };
+            use std::sync::Arc;
             for cleanup_status in [200, 403, 500] {
                 let mut server = Server::new_async().await;
                 let network = mock_default_bridge(&mut server).await;
@@ -6029,10 +5125,10 @@ mod tests {
                     .create_async()
                     .await;
                 let task = server
-                    .mock("GET", "/api2/json/nodes/pve/tasks/import-task/status")
+                    .mock("GET", task_path("import-task").as_str())
                     .with_chunked_body(move |writer| {
                         task_completed.store(true, Ordering::SeqCst);
-                        writer.write_all(br#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
+                        writer.write_all(TASK_OK.as_bytes())
                     })
                     .create_async()
                     .await;
@@ -6041,11 +5137,7 @@ mod tests {
                     .with_body(r#"{"data":"resize-task"}"#)
                     .create_async()
                     .await;
-                let resize_task = server
-                    .mock("GET", "/api2/json/nodes/pve/tasks/resize-task/status")
-                    .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
-                    .create_async()
-                    .await;
+                let resize_task = mock_task(&mut server, "resize-task", TASK_OK).await;
                 let delete = server.mock("DELETE", "/api2/json/nodes/pve/storage/local-import/content/local-import%3Aimport%2Fhai-image-unique.qcow2")
                     .match_header("cookie", "PVEAuthCookie=test-ticket")
                     .match_header("CSRFPreventionToken", "test-csrf")
@@ -6055,31 +5147,14 @@ mod tests {
                         writer.write_all(br#"{"data":"delete-task"}"#)
                     }).create_async().await;
                 let cleanup_task = server
-                    .mock("GET", "/api2/json/nodes/pve/tasks/delete-task/status")
-                    .with_body(r#"{"data":{"status":"stopped","exitstatus":"OK"}}"#)
+                    .mock("GET", task_path("delete-task").as_str())
+                    .with_body(TASK_OK)
                     .expect(if cleanup_status == 200 { 1 } else { 0 })
                     .create_async()
                     .await;
-                let session = ProxmoxSession {
-                    server_url: server.url(),
-                    ticket: "test-ticket".into(),
-                    csrf_token: "test-csrf".into(),
-                    certificate_sha256: None,
-                };
-                let config = ProxmoxVmConfig {
-                    vm_id: 100,
-                    name: "test-vm".into(),
-                    node: "pve".into(),
-                    storage: "local-lvm".into(),
-                    bridge: "vmbr0".into(),
-                    vlan_tag: None,
-                    cpu_cores: 2,
-                    memory_mb: 2048,
-                    disk_size_gb: 32,
-                };
                 import_and_cleanup_image(
-                    &session,
-                    &config,
+                    &session(server.url()),
+                    &vm_config(),
                     "hai-image-unique.qcow2",
                     "local-import",
                 )
@@ -6102,6 +5177,8 @@ mod tests {
                 (200, r#"{"data":null}"#, 200, "{}", 0),
                 (200, r#"{"data":""}"#, 200, "{}", 0),
                 (200, r#"{"data":"import-task"}"#, 503, "unavailable", 0),
+                // A rejected session started no import, so the image goes
+                (401, "", 200, "{}", 1),
                 (403, "denied", 200, "{}", 1),
                 (500, "unknown", 200, "{}", 0),
                 (408, "timeout", 200, "{}", 0),
@@ -6125,7 +5202,7 @@ mod tests {
                     .create_async()
                     .await;
                 server
-                    .mock("GET", "/api2/json/nodes/pve/tasks/import-task/status")
+                    .mock("GET", task_path("import-task").as_str())
                     .with_status(task_status)
                     .with_body(task_body)
                     .create_async()
@@ -6136,26 +5213,9 @@ mod tests {
                     .expect(deletes)
                     .create_async()
                     .await;
-                let session = ProxmoxSession {
-                    server_url: server.url(),
-                    ticket: "test-ticket".into(),
-                    csrf_token: "test-csrf".into(),
-                    certificate_sha256: None,
-                };
-                let config = ProxmoxVmConfig {
-                    vm_id: 100,
-                    name: "test-vm".into(),
-                    node: "pve".into(),
-                    storage: "local-lvm".into(),
-                    bridge: "vmbr0".into(),
-                    vlan_tag: None,
-                    cpu_cores: 2,
-                    memory_mb: 2048,
-                    disk_size_gb: 32,
-                };
                 assert!(import_and_cleanup_image(
-                    &session,
-                    &config,
+                    &session(server.url()),
+                    &vm_config(),
                     "hai-image-unique.qcow2",
                     "local-import"
                 )
@@ -6168,103 +5228,36 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_start_vm_success() {
             let mut server = Server::new_async().await;
 
             let start_mock = server
                 .mock("POST", "/api2/json/nodes/pve/qemu/100/status/start")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": "UPID:pve:00000001:00000002:00000003:qmstart:root@pam:"
-                    }"#,
-                )
+                .with_body(serde_json::json!({ "data": UPID }).to_string())
                 .create_async()
                 .await;
+            let task_mock = mock_task(&mut server, UPID, TASK_OK).await;
 
-            // Mock task completion
-            let task_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Aqmstart%3Aroot%40pam%3A/status",
-                )
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "status": "stopped",
-                            "exitstatus": "OK"
-                        }
-                    }"#,
-                )
-                .expect_at_least(1)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = start_vm(&session, "pve", 100).await;
-            assert!(result.is_ok());
+            let result = start_vm(&session(server.url()), "pve", 100).await;
+            assert!(result.is_ok(), "{result:?}");
 
             start_mock.assert_async().await;
             task_mock.assert_async().await;
         }
 
         #[tokio::test]
-        #[serial]
-        async fn test_start_vm_error() {
-            let mut server = Server::new_async().await;
-
-            let start_mock = server
-                .mock("POST", "/api2/json/nodes/pve/qemu/100/status/start")
-                .with_status(500)
-                .with_body("Failed to start VM")
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = start_vm(&session, "pve", 100).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("Failed to start VM"));
-            } else {
-                panic!("Expected ProxmoxApi error");
-            }
-
-            start_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
         async fn test_node_name_is_encoded_in_every_request() {
             let mut server = Server::new_async().await;
-            let session = vm_session(&server);
+            let session = session(server.url());
             let node = "pve/node";
 
             let storage_mock = server
                 .mock("GET", "/api2/json/nodes/pve%2Fnode/storage")
-                .with_header("content-type", "application/json")
                 .with_body(r#"{"data": []}"#)
                 .create_async()
                 .await;
             let start_mock = server
                 .mock("POST", "/api2/json/nodes/pve%2Fnode/qemu/100/status/start")
-                .with_header("content-type", "application/json")
                 .with_body(
                     r#"{"data": "UPID:pve/node:00000001:00000002:00000003:qmstart:100:root@pam:"}"#,
                 )
@@ -6275,13 +5268,11 @@ mod tests {
                     "GET",
                     "/api2/json/nodes/pve%2Fnode/tasks/UPID%3Apve%2Fnode%3A00000001%3A00000002%3A00000003%3Aqmstart%3A100%3Aroot%40pam%3A/status",
                 )
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": {"status": "stopped", "exitstatus": "OK"}}"#)
+                .with_body(TASK_OK)
                 .create_async()
                 .await;
             let status_mock = server
                 .mock("GET", "/api2/json/nodes/pve%2Fnode/qemu/100/status/current")
-                .with_header("content-type", "application/json")
                 .with_body(r#"{"data": {"status": "stopped"}}"#)
                 .create_async()
                 .await;
@@ -6299,23 +5290,9 @@ mod tests {
         const VM_STATUS_PATH: &str = "/api2/json/nodes/pve/qemu/100/status/current";
         const VM_AGENT_PATH: &str = "/api2/json/nodes/pve/qemu/100/agent/network-get-interfaces";
 
-        fn vm_session(server: &mockito::ServerGuard) -> ProxmoxSession {
-            ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            }
-        }
-
-        async fn mock_vm_run_status(
-            server: &mut mockito::ServerGuard,
-            status: &str,
-        ) -> mockito::Mock {
+        async fn mock_vm_run_status(server: &mut Server, status: &str) -> Mock {
             server
                 .mock("GET", VM_STATUS_PATH)
-                .with_status(200)
-                .with_header("content-type", "application/json")
                 .with_body(format!(r#"{{"data": {{"status": "{}"}}}}"#, status))
                 .expect_at_least(1)
                 .create_async()
@@ -6323,14 +5300,11 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_vm_status_running_with_ip() {
             let mut server = Server::new_async().await;
             let status_mock = mock_vm_run_status(&mut server, "running").await;
             let agent_mock = server
                 .mock("GET", VM_AGENT_PATH)
-                .with_status(200)
-                .with_header("content-type", "application/json")
                 .with_body(
                     r#"{"data": {"result": [
                         {"name": "lo", "ip-addresses": []},
@@ -6342,7 +5316,7 @@ mod tests {
                 .create_async()
                 .await;
 
-            let status = vm_status(&vm_session(&server), "pve", 100).await.unwrap();
+            let status = vm_status(&session(server.url()), "pve", 100).await.unwrap();
             assert_eq!(status.status, "running");
             assert_eq!(status.ip_address.as_deref(), Some("192.168.1.100"));
 
@@ -6351,10 +5325,9 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_vm_status_no_ip_while_agent_is_not_up() {
             let mut server = Server::new_async().await;
-            let session = vm_session(&server);
+            let session = session(server.url());
             let _status_mock = mock_vm_run_status(&mut server, "running").await;
 
             // What Proxmox answers while the guest agent is not running yet
@@ -6372,7 +5345,6 @@ mod tests {
 
             let unreadable_mock = server
                 .mock("GET", VM_AGENT_PATH)
-                .with_status(200)
                 .with_body("not json")
                 .create_async()
                 .await;
@@ -6382,7 +5354,6 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
         async fn test_vm_status_stopped_does_not_ask_the_agent() {
             let mut server = Server::new_async().await;
             let _status_mock = mock_vm_run_status(&mut server, "stopped").await;
@@ -6392,55 +5363,11 @@ mod tests {
                 .create_async()
                 .await;
 
-            let status = vm_status(&vm_session(&server), "pve", 100).await.unwrap();
+            let status = vm_status(&session(server.url()), "pve", 100).await.unwrap();
             assert_eq!(status.status, "stopped");
             assert_eq!(status.ip_address, None);
 
             agent_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_vm_status_fails_when_proxmox_does() {
-            let mut server = Server::new_async().await;
-            let _status_mock = server
-                .mock("GET", VM_STATUS_PATH)
-                .with_status(500)
-                .create_async()
-                .await;
-
-            let result = vm_status(&vm_session(&server), "pve", 100).await;
-            assert!(matches!(result, Err(Error::ProxmoxApi(_))));
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_vm_status_reports_an_expired_session() {
-            let mut server = Server::new_async().await;
-            let _status_mock = server
-                .mock("GET", VM_STATUS_PATH)
-                .with_status(401)
-                .create_async()
-                .await;
-
-            // The frontend stops polling on this, instead of waiting for an
-            // address that an expired session can never fetch
-            let result = vm_status(&vm_session(&server), "pve", 100).await;
-            assert!(matches!(result, Err(Error::ProxmoxSessionExpired)));
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_vm_status_reports_a_permission_problem() {
-            let mut server = Server::new_async().await;
-            let _status_mock = server
-                .mock("GET", VM_STATUS_PATH)
-                .with_status(403)
-                .create_async()
-                .await;
-
-            let result = vm_status(&vm_session(&server), "pve", 100).await;
-            assert!(matches!(result, Err(Error::ProxmoxActionRequired(_))));
         }
 
         #[test]
@@ -6508,562 +5435,9 @@ mod tests {
         }
 
         #[tokio::test]
-        #[serial]
-        async fn test_authenticate_missing_data() {
-            let mut server = Server::new_async().await;
-
-            let auth_mock = server
-                .mock("POST", "/api2/json/access/ticket")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{}"#)
-                .create_async()
-                .await;
-
-            let credentials = ProxmoxCredentials {
-                certificate_sha256: None,
-                server_url: server.url(),
-                username: "root@pam".to_string(),
-                password: "password".to_string(),
-                totp: None,
-            };
-
-            let result = authenticate(&credentials).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("data"));
-            } else {
-                panic!("Expected ProxmoxApi error for missing data");
-            }
-
-            auth_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_authenticate_invalid_json() {
-            let mut server = Server::new_async().await;
-
-            let auth_mock = server
-                .mock("POST", "/api2/json/access/ticket")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body("not json")
-                .create_async()
-                .await;
-
-            let credentials = ProxmoxCredentials {
-                certificate_sha256: None,
-                server_url: server.url(),
-                username: "root@pam".to_string(),
-                password: "password".to_string(),
-                totp: None,
-            };
-
-            let result = authenticate(&credentials).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("parse"));
-            } else {
-                panic!("Expected ProxmoxApi error for invalid JSON");
-            }
-
-            auth_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_authenticate_version_check_error() {
-            let mut server = Server::new_async().await;
-
-            let auth_mock = server
-                .mock("POST", "/api2/json/access/ticket")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "ticket": "PVE:root@pam:12345678::abcdef...",
-                            "CSRFPreventionToken": "csrf-token",
-                            "username": "root@pam"
-                        }
-                    }"#,
-                )
-                .create_async()
-                .await;
-
-            let version_mock = server
-                .mock("GET", "/api2/json/version")
-                .with_status(500)
-                .create_async()
-                .await;
-
-            let credentials = ProxmoxCredentials {
-                certificate_sha256: None,
-                server_url: server.url(),
-                username: "root@pam".to_string(),
-                password: "password".to_string(),
-                totp: None,
-            };
-
-            let result = authenticate(&credentials).await;
-            assert!(result.is_err());
-
-            auth_mock.assert_async().await;
-            version_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_authenticate_version_missing_version_field() {
-            let mut server = Server::new_async().await;
-
-            let auth_mock = server
-                .mock("POST", "/api2/json/access/ticket")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "ticket": "PVE:root@pam:12345678::abcdef...",
-                            "CSRFPreventionToken": "csrf-token",
-                            "username": "root@pam"
-                        }
-                    }"#,
-                )
-                .create_async()
-                .await;
-
-            let version_mock = server
-                .mock("GET", "/api2/json/version")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "release": "8.4"
-                        }
-                    }"#,
-                )
-                .create_async()
-                .await;
-
-            let credentials = ProxmoxCredentials {
-                certificate_sha256: None,
-                server_url: server.url(),
-                username: "root@pam".to_string(),
-                password: "password".to_string(),
-                totp: None,
-            };
-
-            let result = authenticate(&credentials).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("version"));
-            } else {
-                panic!("Expected ProxmoxApi error for missing version");
-            }
-
-            auth_mock.assert_async().await;
-            version_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_authenticate_invalid_version_string() {
-            let mut server = Server::new_async().await;
-
-            let auth_mock = server
-                .mock("POST", "/api2/json/access/ticket")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "ticket": "PVE:root@pam:12345678::abcdef...",
-                            "CSRFPreventionToken": "csrf-token",
-                            "username": "root@pam"
-                        }
-                    }"#,
-                )
-                .create_async()
-                .await;
-
-            let version_mock = server
-                .mock("GET", "/api2/json/version")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(
-                    r#"{
-                        "data": {
-                            "version": "invalid",
-                            "release": "8.4"
-                        }
-                    }"#,
-                )
-                .create_async()
-                .await;
-
-            let credentials = ProxmoxCredentials {
-                certificate_sha256: None,
-                server_url: server.url(),
-                username: "root@pam".to_string(),
-                password: "password".to_string(),
-                totp: None,
-            };
-
-            let result = authenticate(&credentials).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("parse") && msg.contains("version"));
-            } else {
-                panic!("Expected ProxmoxApi error for invalid version");
-            }
-
-            auth_mock.assert_async().await;
-            version_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_authenticate_server_error() {
-            let mut server = Server::new_async().await;
-
-            let auth_mock = server
-                .mock("POST", "/api2/json/access/ticket")
-                .with_status(500)
-                .with_body("Internal Server Error")
-                .create_async()
-                .await;
-
-            let credentials = ProxmoxCredentials {
-                certificate_sha256: None,
-                server_url: server.url(),
-                username: "root@pam".to_string(),
-                password: "password".to_string(),
-                totp: None,
-            };
-
-            let result = authenticate(&credentials).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("error") && msg.contains("500"));
-            } else {
-                panic!("Expected ProxmoxApi error for server error");
-            }
-
-            auth_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_next_vm_id_unexpected_type() {
-            let mut server = Server::new_async().await;
-
-            let vmid_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": {"invalid": "object"}}"#)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = get_next_vm_id(&session).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("Unexpected VM ID type"));
-            } else {
-                panic!("Expected ProxmoxApi error for unexpected type");
-            }
-
-            vmid_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_next_vm_id_missing_data() {
-            let mut server = Server::new_async().await;
-
-            let vmid_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{}"#)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = get_next_vm_id(&session).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("data"));
-            } else {
-                panic!("Expected ProxmoxApi error for missing data");
-            }
-
-            vmid_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_get_next_vm_id_server_error() {
-            let mut server = Server::new_async().await;
-
-            let vmid_mock = server
-                .mock("GET", "/api2/json/cluster/nextid")
-                .with_status(500)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = get_next_vm_id(&session).await;
-            assert!(result.is_err());
-
-            vmid_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_list_storage_invalid_json() {
-            let mut server = Server::new_async().await;
-
-            let storage_mock = server
-                .mock("GET", "/api2/json/nodes/pve/storage")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body("not json")
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = list_storage(&session, "pve").await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("parse"));
-            } else {
-                panic!("Expected ProxmoxApi error for invalid JSON");
-            }
-
-            storage_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_list_storage_missing_data() {
-            let mut server = Server::new_async().await;
-
-            let storage_mock = server
-                .mock("GET", "/api2/json/nodes/pve/storage")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{}"#)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = list_storage(&session, "pve").await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("data"));
-            } else {
-                panic!("Expected ProxmoxApi error for missing data");
-            }
-
-            storage_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_list_nodes_invalid_json() {
-            let mut server = Server::new_async().await;
-
-            let nodes_mock = server
-                .mock("GET", "/api2/json/nodes")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body("not json")
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = list_nodes(&session).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("parse"));
-            } else {
-                panic!("Expected ProxmoxApi error for invalid JSON");
-            }
-
-            nodes_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_list_nodes_missing_data() {
-            let mut server = Server::new_async().await;
-
-            let nodes_mock = server
-                .mock("GET", "/api2/json/nodes")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{}"#)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = list_nodes(&session).await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("Unexpected") || msg.contains("data"));
-            } else {
-                panic!("Expected ProxmoxApi error for missing data");
-            }
-
-            nodes_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_wait_for_task_missing_data() {
-            let mut server = Server::new_async().await;
-
-            let task_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
-                )
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{}"#)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = wait_for_task(
-                &session,
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-            )
-            .await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("Invalid task status"));
-            } else {
-                panic!("Expected ProxmoxApi error for missing data");
-            }
-
-            task_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_wait_for_task_invalid_json() {
-            let mut server = Server::new_async().await;
-
-            let task_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Atest%3Aroot%40pam%3A/status",
-                )
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body("not json")
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let result = wait_for_task(
-                &session,
-                "pve",
-                "UPID:pve:00000001:00000002:00000003:test:root@pam:",
-                10,
-            )
-            .await;
-            assert!(result.is_err());
-
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("parse"));
-            } else {
-                panic!("Expected ProxmoxApi error for invalid JSON");
-            }
-
-            task_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
         async fn test_upload_image_to_proxmox_success() {
             let mut server = Server::new_async().await;
 
-            // Create a temp file to upload
             let temp_dir = tempfile::tempdir().unwrap();
             let temp_file = temp_dir.path().join("test-image.qcow2");
             std::fs::write(&temp_file, b"test image content").unwrap();
@@ -7084,42 +5458,23 @@ mod tests {
                         && String::from_utf8_lossy(body).contains("filename=\"test-image.qcow2\"")
                         && String::from_utf8_lossy(body).contains("\r\n\r\nimport\r\n")
                 })
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": "UPID:pve:00000001:00000002:00000003:imgup:root@pam:"}"#)
+                .with_body(serde_json::json!({ "data": UPID }).to_string())
                 .create_async()
                 .await;
+            let task_mock = mock_task(&mut server, UPID, TASK_OK).await;
 
-            // Mock the task status endpoint (task completes immediately)
-            let task_mock = server
-                .mock(
-                    "GET",
-                    "/api2/json/nodes/pve/tasks/UPID%3Apve%3A00000001%3A00000002%3A00000003%3Aimgup%3Aroot%40pam%3A/status",
-                )
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": {"status": "stopped", "exitstatus": "OK"}}"#)
-                .create_async()
-                .await;
+            let callback = TestProgress::default();
+            let result = upload_image_to_proxmox(
+                &session(server.url()),
+                "pve",
+                &temp_file,
+                &callback,
+                "local-import",
+            )
+            .await;
+            assert_eq!(result.unwrap(), "test-image.qcow2");
 
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let callback = TestProgressCallback::new();
-            let result =
-                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local-import")
-                    .await;
-
-            assert!(result.is_ok(), "Upload should succeed: {:?}", result.err());
-            let filename = result.unwrap();
-            assert_eq!(filename, "test-image.qcow2");
-
-            // Verify progress updates were sent
-            let updates = callback.get_updates();
+            let updates = callback.updates();
             assert!(updates.iter().any(|update| {
                 update.bytes_processed == 18 && update.message.starts_with("Uploading ")
             }));
@@ -7134,17 +5489,12 @@ mod tests {
             use tokio::io::AsyncReadExt;
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: format!("http://{}", listener.local_addr().unwrap()),
-                ticket: "test-ticket".into(),
-                csrf_token: "test-csrf".into(),
-            };
+            let session = session(format!("http://{}", listener.local_addr().unwrap()));
             let temp_dir = tempfile::tempdir().unwrap();
             let path = temp_dir.path().join("large.qcow2");
             let size = 128 * 1024 * 1024;
             std::fs::File::create(&path).unwrap().set_len(size).unwrap();
-            let callback = TestProgressCallback::new();
+            let callback = TestProgress::default();
 
             let server = async {
                 let (mut socket, _) = listener.accept().await.unwrap();
@@ -7157,7 +5507,7 @@ mod tests {
                 }
                 // Stop consuming the body, leaving most of the file unsent.
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                let updates = callback.get_updates();
+                let updates = callback.updates();
                 let live: Vec<_> = updates
                     .iter()
                     .filter(|update| update.bytes_processed > 0)
@@ -7179,7 +5529,7 @@ mod tests {
             assert!(
                 matches!(result, Err(Error::ProxmoxApi(message)) if message.contains("Failed to upload image"))
             );
-            let updates = callback.get_updates();
+            let updates = callback.updates();
             assert!(updates.iter().all(|update| update.progress < 100));
             assert!(updates.windows(2).all(|pair| {
                 pair[0].bytes_processed <= pair[1].bytes_processed
@@ -7210,12 +5560,7 @@ mod tests {
                 .expect(0)
                 .create_async()
                 .await;
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".into(),
-                csrf_token: "test-csrf".into(),
-            };
+            let session = session(server.url());
             let temp_dir = tempfile::tempdir().unwrap();
             let path = temp_dir.path().join("short.qcow2");
             std::fs::write(&path, b"test image content").unwrap();
@@ -7236,206 +5581,38 @@ mod tests {
         #[tokio::test]
         async fn test_upload_image_to_proxmox_read_error() {
             let server = Server::new_async().await;
-            let session = ProxmoxSession {
-                server_url: server.url(),
-                ticket: "test-ticket".into(),
-                csrf_token: "test-csrf".into(),
-                certificate_sha256: None,
-            };
+            let session = session(server.url());
             // Linux can open a directory as a file, but reading it fails.
             let temp_dir = tempfile::tempdir().unwrap();
             std::fs::write(temp_dir.path().join("image.qcow2"), b"image").unwrap();
             let path = temp_dir.path().to_path_buf();
-            let callback = TestProgressCallback::new();
+            let callback = TestProgress::default();
             let error = upload_image_to_proxmox(&session, "pve", &path, &callback, "local")
                 .await
                 .unwrap_err();
             let cause = std::io::Error::from_raw_os_error(libc::EISDIR).to_string();
             assert!(error.to_string().contains(&cause), "{error}");
             assert!(callback
-                .get_updates()
+                .updates()
                 .iter()
                 .all(|update| update.progress < 100));
         }
 
         #[tokio::test]
-        #[serial]
-        async fn test_upload_image_to_proxmox_http_error() {
-            let mut server = Server::new_async().await;
-
-            // Create a temp file to upload
-            let temp_dir = tempfile::tempdir().unwrap();
-            let temp_file = temp_dir.path().join("test-image.qcow2");
-            std::fs::write(&temp_file, b"test image content").unwrap();
-
-            // Mock the upload endpoint with a 500 error
-            let upload_mock = server
-                .mock("POST", "/api2/json/nodes/pve/storage/local/upload")
-                .with_status(500)
-                .with_body("Internal Server Error")
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let callback = TestProgressCallback::new();
-            let result =
-                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local").await;
-
-            assert!(result.is_err());
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("500"));
-            } else {
-                panic!("Expected ProxmoxApi error");
-            }
-
-            upload_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_upload_and_start_auth_expired() {
-            let mut server = Server::new_async().await;
-
-            let temp_dir = tempfile::tempdir().unwrap();
-            let temp_file = temp_dir.path().join("test-image.qcow2");
-            std::fs::write(&temp_file, b"test image content").unwrap();
-
-            let upload_mock = server
-                .mock("POST", "/api2/json/nodes/pve/storage/local/upload")
-                .with_status(401)
-                .create_async()
-                .await;
-            let start_mock = server
-                .mock("POST", "/api2/json/nodes/pve/qemu/100/status/start")
-                .with_status(401)
-                .create_async()
-                .await;
-            let session = test_session(&server);
-
-            let callback = TestProgressCallback::new();
-            assert!(matches!(
-                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local").await,
-                Err(Error::ProxmoxSessionExpired)
-            ));
-            assert!(matches!(
-                start_vm(&session, "pve", 100).await,
-                Err(Error::ProxmoxSessionExpired)
-            ));
-            upload_mock.assert_async().await;
-            start_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_upload_image_to_proxmox_invalid_response() {
-            let mut server = Server::new_async().await;
-
-            // Create a temp file to upload
-            let temp_dir = tempfile::tempdir().unwrap();
-            let temp_file = temp_dir.path().join("test-image.qcow2");
-            std::fs::write(&temp_file, b"test image content").unwrap();
-
-            // Mock the upload endpoint with invalid JSON
-            let upload_mock = server
-                .mock("POST", "/api2/json/nodes/pve/storage/local/upload")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body("not json")
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let callback = TestProgressCallback::new();
-            let result =
-                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local").await;
-
-            assert!(result.is_err());
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("parse"));
-            } else {
-                panic!("Expected ProxmoxApi error");
-            }
-
-            upload_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn test_upload_image_to_proxmox_missing_upid() {
-            let mut server = Server::new_async().await;
-
-            // Create a temp file to upload
-            let temp_dir = tempfile::tempdir().unwrap();
-            let temp_file = temp_dir.path().join("test-image.qcow2");
-            std::fs::write(&temp_file, b"test image content").unwrap();
-
-            // Mock the upload endpoint without UPID in response
-            let upload_mock = server
-                .mock("POST", "/api2/json/nodes/pve/storage/local/upload")
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(r#"{"data": null}"#)
-                .create_async()
-                .await;
-
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
-            let callback = TestProgressCallback::new();
-            let result =
-                upload_image_to_proxmox(&session, "pve", &temp_file, &callback, "local").await;
-
-            assert!(result.is_err());
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("UPID"));
-            } else {
-                panic!("Expected ProxmoxApi error");
-            }
-
-            upload_mock.assert_async().await;
-        }
-
-        #[tokio::test]
-        #[serial]
         async fn test_upload_image_to_proxmox_file_not_found() {
             let server = Server::new_async().await;
 
-            let session = ProxmoxSession {
-                certificate_sha256: None,
-                server_url: server.url(),
-                ticket: "test-ticket".to_string(),
-                csrf_token: "test-csrf".to_string(),
-            };
-
             let nonexistent_file = std::path::PathBuf::from("/nonexistent/path/to/image.qcow2");
 
-            let callback = TestProgressCallback::new();
+            let session = session(server.url());
+            let progress = crate::NoOpProgress;
             let result =
-                upload_image_to_proxmox(&session, "pve", &nonexistent_file, &callback, "local")
+                upload_image_to_proxmox(&session, "pve", &nonexistent_file, &progress, "local")
                     .await;
-
-            assert!(result.is_err());
-            if let Err(Error::ProxmoxApi(msg)) = result {
-                assert!(msg.contains("open") || msg.contains("Failed"));
-            } else {
-                panic!("Expected ProxmoxApi error");
-            }
+            assert!(
+                matches!(&result, Err(Error::ProxmoxApi(msg)) if msg.contains("Failed to open image file")),
+                "{result:?}"
+            );
         }
     }
 }
