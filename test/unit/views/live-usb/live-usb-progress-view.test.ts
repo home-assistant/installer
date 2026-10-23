@@ -136,6 +136,38 @@ describe("live-usb-progress-view", () => {
     expect(completed).to.equal(0);
   });
 
+  it("starts a retry from zero, not from where the failed attempt got", async () => {
+    wizardState.setSelection("liveMedia", "usb");
+    storeDriveSelection(MOCK_BLOCK_DEVICES[0]);
+    const calls = mockCommands();
+    const el = fixtureSync<LiveUsbProgressView>(
+      html`<live-usb-progress-view></live-usb-progress-view>`
+    );
+    await settle();
+    calls[0].args.progressChannel.onmessage({
+      stage: "writing",
+      progress: 30,
+      bytes_processed: 300,
+      total_bytes: 1000,
+      message: "",
+    });
+    calls[0].result.reject(
+      ipcError("device_busy", "The drive is in use.", true)
+    );
+    await settle();
+    const layout = el.shadowRoot!.querySelector("install-progress")!;
+    expect(layout.bytesProcessed).to.equal(300);
+
+    el.retry();
+    await settle();
+    expect(layout.stage).to.equal("downloading");
+    expect(layout.progress).to.equal(0);
+    expect(layout.bytesProcessed).to.equal(0);
+    expect(layout.totalBytes).to.equal(0);
+    expect(layout.stageStartTime).to.be.null;
+    expect(layout.stageStartBytes).to.equal(0);
+  });
+
   it("shows a backend error and reports whether it can be retried", async () => {
     wizardState.setSelection("liveMedia", "usb");
     storeDriveSelection(MOCK_BLOCK_DEVICES[0]);

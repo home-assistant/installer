@@ -85,7 +85,18 @@ export abstract class VmProgressView<
 
   protected _resetProgress() {
     this._stage = "downloading";
+    this._clearProgress();
+  }
+
+  /**
+   * Forget how far the step before got, so its percent, byte counts and
+   * Supervisor report are not shown next to the one that starts.
+   */
+  private _clearProgress() {
     this._progress = 0;
+    this._bytesProcessed = 0;
+    this._totalBytes = 0;
+    this._setup = { progress: null, problem: null };
   }
 
   protected _installerError(error: unknown): InstallerError {
@@ -110,7 +121,7 @@ export abstract class VmProgressView<
   ): Promise<T> {
     this._diagnostics?.advance("downloading");
     this._stage = "downloading";
-    this._progress = 0;
+    this._clearProgress();
     this._stageStartTime = Date.now();
     this._stageStartBytes = 0;
     return this._runStoppable(step);
@@ -138,11 +149,8 @@ export abstract class VmProgressView<
   protected _startStage(stage: VmInstallStage<Stage>) {
     this._diagnostics?.advance(stage);
     this._stage = stage;
-    this._progress = 0;
+    this._clearProgress();
     this._stageStartTime = null;
-    this._bytesProcessed = 0;
-    this._totalBytes = 0;
-    this._setup = { progress: null, problem: null };
   }
 
   /** Wait for Home Assistant on the running VM, and return its address */
