@@ -67,9 +67,20 @@ export class DriveCard extends WaRadio {
         box-shadow: var(--ha-card-selected-shadow);
       }
 
+      /* Fade what marks the drive as unavailable, but not the reason it is:
+       * that line is all the explanation the user gets, so it keeps its
+       * contrast */
       :host(:state(disabled)) .card {
-        opacity: 0.5;
+        border-color: color-mix(
+          in srgb,
+          var(--ha-border-color, #e0e0e0) 50%,
+          transparent
+        );
         pointer-events: none;
+      }
+
+      :host(:state(disabled)) :is(.icon-container, .name, .size) {
+        opacity: 0.5;
       }
 
       .icon-container {
