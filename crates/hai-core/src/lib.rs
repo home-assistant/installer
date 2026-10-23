@@ -308,23 +308,3 @@ impl ProgressCallback for NoOpProgress {
         // Intentionally empty - used when progress is not needed
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_noop_progress_callback() {
-        let callback = NoOpProgress;
-        let progress = FlashProgress {
-            stage: FlashStage::Downloading,
-            progress: 50,
-            bytes_processed: 1000,
-            total_bytes: 2000,
-            message: "Test".to_string(),
-        };
-
-        // Should not panic
-        callback.on_progress(progress);
-    }
-}

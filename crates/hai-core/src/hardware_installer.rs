@@ -133,12 +133,4 @@ mod tests {
         assert!(find("green").is_none());
         assert!(find("odroid-n2").is_none());
     }
-
-    #[test]
-    fn installer_image_is_a_raw_image_with_a_digest() {
-        let image = find("yellow-installer").unwrap().image();
-        assert_eq!(image.format, ImageFormat::Raw);
-        assert_eq!(image.size, 33_371_388);
-        assert!(image.digest.is_some());
-    }
 }

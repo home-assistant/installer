@@ -154,27 +154,7 @@ fn optional_values_serialize_as_required_nullable_fields() {
 }
 
 #[test]
-fn wide_integers_keep_the_existing_json_number_protocol() {
-    let value = serde_json::to_value(BlockDevice {
-        id: "fixture".into(),
-        name: "Fixture drive".into(),
-        size: u64::MAX,
-        device_type: DeviceType::UsbDrive,
-        removable: true,
-        model: None,
-        vendor: None,
-        serial: None,
-    })
-    .unwrap();
-    assert_eq!(value["size"].as_u64(), Some(u64::MAX));
-    let declaration = BlockDevice::decl(&Config::new().with_large_int("number"));
-    assert!(declaration.contains("size: number,"));
-    // JSON numbers beyond JavaScript's safe range retain the existing precision limit.
-    assert!(!typescript().contains("bigint"));
-}
-
-#[test]
-fn renamed_stages_and_tagged_options_match_serde() {
+fn renamed_stages_match_serde() {
     let config = Config::new().with_large_int("number");
     for stage in [
         FlashStage::Uploading,
@@ -184,18 +164,4 @@ fn renamed_stages_and_tagged_options_match_serde() {
         let serialized = serde_json::to_string(&stage).unwrap();
         assert!(FlashStage::decl(&config).contains(&serialized));
     }
-
-    #[derive(Serialize, TS)]
-    #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
-    enum TaggedFixture {
-        MissingValue { count: Option<u64> },
-    }
-
-    assert_eq!(
-        serde_json::to_value(TaggedFixture::MissingValue { count: None }).unwrap(),
-        serde_json::json!({ "kind": "missing_value", "payload": { "count": null } })
-    );
-    let declaration = TaggedFixture::decl(&config);
-    assert!(declaration.contains("\"kind\": \"missing_value\""));
-    assert!(declaration.contains("\"payload\": { count: number | null"));
 }

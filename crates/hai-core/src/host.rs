@@ -301,69 +301,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_check_ha_ready_success() {
-        let mut server = Server::new_async().await;
-        let mock = server
-            .mock("GET", "/")
-            .with_status(200)
-            .create_async()
-            .await;
+    async fn test_check_ha_ready_and_updated() {
+        // "/" is the ready check, "/manifest.json" the updated one
+        for (path, status, expected) in [
+            ("/", 200, true),
+            ("/", 404, true),
+            ("/", 502, false),
+            ("/manifest.json", 200, true),
+            ("/manifest.json", 404, false),
+        ] {
+            let mut server = Server::new_async().await;
+            let mock = server
+                .mock("GET", path)
+                .with_status(status)
+                .create_async()
+                .await;
 
-        assert!(check_ha_ready(&server.host_with_port()).await);
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_check_ha_ready_404_is_ready() {
-        let mut server = Server::new_async().await;
-        let mock = server
-            .mock("GET", "/")
-            .with_status(404)
-            .create_async()
-            .await;
-
-        assert!(check_ha_ready(&server.host_with_port()).await);
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_check_ha_ready_5xx_is_not_ready() {
-        let mut server = Server::new_async().await;
-        let mock = server
-            .mock("GET", "/")
-            .with_status(502)
-            .create_async()
-            .await;
-
-        assert!(!check_ha_ready(&server.host_with_port()).await);
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_check_ha_updated_success() {
-        let mut server = Server::new_async().await;
-        let mock = server
-            .mock("GET", "/manifest.json")
-            .with_status(200)
-            .with_body(r#"{"version": "2023.12.0"}"#)
-            .create_async()
-            .await;
-
-        assert!(check_ha_updated(&server.host_with_port()).await);
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_check_ha_updated_404_is_not_updated() {
-        let mut server = Server::new_async().await;
-        let mock = server
-            .mock("GET", "/manifest.json")
-            .with_status(404)
-            .create_async()
-            .await;
-
-        assert!(!check_ha_updated(&server.host_with_port()).await);
-        mock.assert_async().await;
+            let host = server.host_with_port();
+            let answer = match path {
+                "/" => check_ha_ready(&host).await,
+                _ => check_ha_updated(&host).await,
+            };
+            assert_eq!(answer, expected, "{path} {status}");
+            mock.assert_async().await;
+        }
     }
 
     /// Answer a landing page path with a Supervisor reply holding `data`.

@@ -633,25 +633,6 @@ mod tests {
     }
 
     #[test]
-    fn test_unmount_disk_nonexistent() {
-        // Test unmounting a disk that doesn't exist
-        let result = unmount_disk("disk999");
-        // This should either succeed (if disk not mounted) or fail with I/O error
-        assert!(result.is_ok() || result.is_err());
-    }
-
-    #[test]
-    fn test_eject_disk_nonexistent() {
-        // Test ejecting a disk that doesn't exist
-        let result = eject_disk("disk999");
-        // This should fail because the disk doesn't exist
-        assert!(result.is_err());
-        if let Err(Error::DeviceBusy(_, msg)) = result {
-            assert!(!msg.is_empty());
-        }
-    }
-
-    #[test]
     fn test_device_geometry_of_the_boot_disk_is_plausible() {
         // disk0 always exists and is only read here.
         let (block_size, device_size) = device_geometry("disk0");
