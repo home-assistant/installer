@@ -14,7 +14,7 @@ use hai_core::download::TemporaryImage;
 use hai_core::keep_awake::KeepAwake;
 use hai_core::{
     BlockDevice, DeviceBackend, DeviceManifest, ExpectedDevice, FlashProgress, FlashRequest,
-    FlashResult, FlashStage, HaSetupStatus, HaosRelease, HostBackend, ImageFormat,
+    FlashResult, FlashStage, HaSetupStatus, HaosImage, HaosRelease, HostBackend, ImageFormat,
     ProgressCallback, ProxmoxBackend, ProxmoxBridge, ProxmoxCredentials, ProxmoxNode,
     ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, ReleaseSource, SystemInfo,
     UtmBackend, VmStatusInfo,
@@ -39,6 +39,91 @@ impl PendingUtmImages {
     fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, TemporaryImage>> {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
+}
+
+/// The compressed image of the latest flash, kept while the installer runs so a
+/// retry doesn't download it again. Cleared once an install succeeds; startup
+/// cleanup removes it once the installer has closed. Clones share the one slot,
+/// so a flash running as its own task can hold it.
+#[derive(Clone, Default)]
+pub struct SessionDownload(Arc<std::sync::Mutex<Option<(String, TemporaryImage)>>>);
+
+impl SessionDownload {
+    /// The kept download, if it is of `image`.
+    fn of(&self, image: &HaosImage) -> Option<TemporaryImage> {
+        let key = download_key(image);
+        self.lock()
+            .as_ref()
+            .filter(|(kept, _)| *kept == key)
+            .map(|(_, download)| download.clone())
+    }
+
+    /// Keep `download` of `image`, in place of any earlier one.
+    fn keep(&self, image: &HaosImage, download: TemporaryImage) {
+        *self.lock() = Some((download_key(image), download));
+    }
+
+    fn clear(&self) {
+        self.lock().take();
+    }
+
+    /// Replacing or clearing the one value can't leave it half-changed after a panic.
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<(String, TemporaryImage)>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// The same address and digest is the same file.
+fn download_key(image: &HaosImage) -> String {
+    format!(
+        "{} {}",
+        image.download_url,
+        image.digest.as_deref().unwrap_or_default()
+    )
+}
+
+/// Put the kept download of `image` at `path`, if there is one and it is still
+/// intact. Whether it did.
+async fn reuse_download<P: ProgressCallback>(
+    downloads: &SessionDownload,
+    image: &HaosImage,
+    path: &std::path::Path,
+    callback: &P,
+) -> Result<bool, CommandError> {
+    let Some(kept) = downloads.of(image) else {
+        return Ok(false);
+    };
+    // It sat in the cache folder since the last attempt, so check it again
+    match hai_core::download::is_downloaded(image, &kept.archive_path(), callback).await {
+        Ok(true) if link_or_copy(&kept.archive_path(), path).is_ok() => Ok(true),
+        Err(hai_core::Error::Cancelled) => Err(hai_core::Error::Cancelled.into()),
+        _ => {
+            downloads.clear();
+            Ok(false)
+        }
+    }
+}
+
+/// Keep the download of `image` at `path` for a retry, in a folder of its own so
+/// it outlives this attempt's. Not keeping it only means a retry downloads again.
+fn keep_download(
+    downloads: &SessionDownload,
+    cache_dir: &std::path::Path,
+    image: &HaosImage,
+    path: &std::path::Path,
+) {
+    let Ok(kept) = TemporaryImage::new(cache_dir, ImageFormat::Raw) else {
+        return;
+    };
+    if link_or_copy(path, &kept.archive_path()).is_ok() {
+        downloads.keep(image, kept);
+    }
+}
+
+/// A hard link costs neither time nor space; a copy is the fallback where the
+/// file system has none.
+fn link_or_copy(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::hard_link(from, to).or_else(|_| std::fs::copy(from, to).map(drop))
 }
 
 // =============================================================================
@@ -207,7 +292,9 @@ pub async fn flash_image(
     attempt: String,
     progress_channel: Channel<FlashProgress>,
     state: tauri::State<'_, FlashState>,
+    downloads: tauri::State<'_, SessionDownload>,
 ) -> Result<FlashResult, CommandError> {
+    let downloads = downloads.inner().clone();
     state
         .run(attempt, |cancelled| async move {
             let _running = running_job();
@@ -216,7 +303,7 @@ pub async fn flash_image(
                 TauriProgressCallback::new(&progress_channel, "flash").cancellable(cancelled);
             callback
                 .operation
-                .finish(run_flash(&Backend, &request, &callback).await)
+                .finish(run_flash(&Backend, &request, &callback, &downloads).await)
         })
         .await
 }
@@ -236,7 +323,8 @@ pub(crate) fn check_cancelled<P: ProgressCallback>(callback: &P) -> Result<(), C
     Ok(())
 }
 
-/// Download, extract, and write the image for `request`.
+/// Download, extract, and write the image for `request`. A retry reuses the
+/// download in `downloads` instead of downloading the same image again.
 ///
 /// Generic over the backend so the whole flow can be exercised against
 /// `BackendMock`.
@@ -244,6 +332,7 @@ async fn run_flash<B, P>(
     backend: &B,
     request: &FlashRequest,
     callback: &P,
+    downloads: &SessionDownload,
 ) -> Result<FlashResult, CommandError>
 where
     B: ReleaseSource + DeviceBackend,
@@ -310,10 +399,13 @@ where
         TemporaryImage::new(&cache_dir, ImageFormat::Raw).map_err(CommandError::from)?;
     let compressed_path = temporary_image.archive_path();
 
-    backend
-        .download_image(&image, &compressed_path, callback)
-        .await
-        .map_err(CommandError::from)?;
+    if !reuse_download(downloads, &image, &compressed_path, callback).await? {
+        backend
+            .download_image(&image, &compressed_path, callback)
+            .await
+            .map_err(CommandError::from)?;
+        keep_download(downloads, &cache_dir, &image, &compressed_path);
+    }
 
     // Extract the image
     let extracted_path = temporary_image.path();
@@ -364,6 +456,8 @@ where
         .map_err(CommandError::from)?;
 
     drop(temporary_image);
+    // Installed: there is no retry to keep it for anymore
+    downloads.clear();
 
     let duration = start_time.elapsed();
 
@@ -1805,9 +1899,14 @@ mod tests {
                 }),
             };
             let backend = PreflightBackend { check: || Ok(()) };
-            let error = run_flash(&backend, &request, &NoProgressExpected)
-                .await
-                .unwrap_err();
+            let error = run_flash(
+                &backend,
+                &request,
+                &NoProgressExpected,
+                &SessionDownload::default(),
+            )
+            .await
+            .unwrap_err();
             assert_eq!(error.code, "invalid_config", "{board}: {error}");
         }
     }
@@ -1929,15 +2028,24 @@ mod mock_tests {
             if outcome == "oversized" {
                 request.expected_device.size = Some(4);
             }
+            let downloads = SessionDownload::default();
             let result = if outcome == "suspend" {
-                let flash = run_flash(&backend, &request, &NoOpProgress);
+                let flash = run_flash(&backend, &request, &NoOpProgress, &downloads);
                 tokio::pin!(flash);
                 tokio::select! {
                     _ = backend.write_started.notified() => None,
                     result = &mut flash => Some(result),
                 }
             } else {
-                Some(run_flash(&backend, &request, &NoOpProgress).await)
+                Some(
+                    run_flash(
+                        &backend,
+                        &request,
+                        &NoOpProgress,
+                        &SessionDownload::default(),
+                    )
+                    .await,
+                )
             };
             match outcome {
                 "success" => {
@@ -1955,11 +2063,165 @@ mod mock_tests {
                 }
                 _ => assert!(result.unwrap().is_err()),
             }
+            // The attempt's own folder, with the extracted image, is always gone
             let path = backend.extracted.lock().unwrap().clone().unwrap();
             assert!(!path.exists(), "{outcome}");
             assert!(!path.parent().unwrap().exists(), "{outcome}");
+            // A download kept for a retry goes with the session
+            drop(downloads);
             assert_eq!(std::fs::read_dir(backend.cache.path()).unwrap().count(), 0);
         }
+    }
+
+    /// The compressed archive [`RetryBackend`] serves, and its SHA-256.
+    const RETRY_ARCHIVE: &[u8] = b"archive";
+    const RETRY_ARCHIVE_SHA256: &str =
+        "0eb3e36bfb24dcd9bb1d1bece1531216b59539a8fde17ee80224af0653c92aa3";
+
+    /// Counts downloads, and fails the write while `write_fails` is set.
+    struct RetryBackend {
+        cache: tempfile::TempDir,
+        downloads: std::sync::atomic::AtomicUsize,
+        write_fails: AtomicBool,
+    }
+
+    impl RetryBackend {
+        fn new() -> Self {
+            Self {
+                cache: tempfile::tempdir().unwrap(),
+                downloads: Default::default(),
+                write_fails: AtomicBool::new(true),
+            }
+        }
+
+        fn downloads(&self) -> usize {
+            self.downloads.load(Ordering::SeqCst)
+        }
+
+        /// Folders left in the cache folder: the attempts' and the kept download's.
+        fn folders(&self) -> usize {
+            std::fs::read_dir(self.cache.path()).unwrap().count()
+        }
+    }
+
+    impl ReleaseSource for RetryBackend {
+        async fn check_connection(&self) -> hai_core::Result<()> {
+            panic!("must not check connectivity during installation");
+        }
+        async fn get_device_manifest(&self) -> hai_core::Result<DeviceManifest> {
+            BackendMock.get_device_manifest().await
+        }
+        async fn get_haos_release(&self, version: &str) -> hai_core::Result<HaosRelease> {
+            BackendMock.get_haos_release(version).await
+        }
+        async fn get_latest_haos_release_for_board(
+            &self,
+            board: &str,
+        ) -> hai_core::Result<HaosRelease> {
+            let mut release = BackendMock.get_latest_haos_release_for_board(board).await?;
+            for image in &mut release.images {
+                image.size = RETRY_ARCHIVE.len() as u64;
+                image.digest = Some(format!("sha256:{RETRY_ARCHIVE_SHA256}"));
+            }
+            Ok(release)
+        }
+        async fn download_image<P: ProgressCallback>(
+            &self,
+            _: &hai_core::HaosImage,
+            dest: &std::path::Path,
+            _: &P,
+        ) -> hai_core::Result<()> {
+            self.downloads.fetch_add(1, Ordering::SeqCst);
+            std::fs::write(dest, RETRY_ARCHIVE)?;
+            Ok(())
+        }
+        async fn extract_xz<P: ProgressCallback>(
+            &self,
+            archive: &std::path::Path,
+            dest: &std::path::Path,
+            _: &P,
+        ) -> hai_core::Result<()> {
+            assert_eq!(std::fs::read(archive).unwrap(), RETRY_ARCHIVE);
+            std::fs::write(dest, b"image")?;
+            Ok(())
+        }
+        fn cache_dir(&self) -> hai_core::Result<std::path::PathBuf> {
+            Ok(self.cache.path().to_path_buf())
+        }
+    }
+
+    impl DeviceBackend for RetryBackend {
+        async fn list_devices(&self) -> hai_core::Result<Vec<BlockDevice>> {
+            BackendMock.list_devices().await
+        }
+        async fn write_image<P: ProgressCallback>(
+            &self,
+            _: &hai_core::disk::Image,
+            _: &str,
+            _: &hai_core::ExpectedDevice,
+            _: bool,
+            _: &P,
+        ) -> hai_core::Result<()> {
+            if self.write_fails.load(Ordering::SeqCst) {
+                return Err(hai_core::Error::Io(std::io::Error::other(
+                    "test write failure",
+                )));
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_retry_reuses_the_download_until_the_install_succeeds() {
+        let backend = RetryBackend::new();
+        let downloads = SessionDownload::default();
+        let request = request("mock-sd-card-32gb", "rpi5-64").await;
+
+        run_flash(&backend, &request, &NoOpProgress, &downloads)
+            .await
+            .unwrap_err();
+        assert_eq!(backend.downloads(), 1);
+        // Only the kept download is left, not the failed attempt's folder
+        assert_eq!(backend.folders(), 1);
+
+        run_flash(&backend, &request, &NoOpProgress, &downloads)
+            .await
+            .unwrap_err();
+        assert_eq!(backend.downloads(), 1, "the retry downloaded again");
+
+        backend.write_fails.store(false, Ordering::SeqCst);
+        run_flash(&backend, &request, &NoOpProgress, &downloads)
+            .await
+            .unwrap();
+        assert_eq!(backend.downloads(), 1);
+        // Installed: nothing is kept anymore
+        assert_eq!(backend.folders(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_damaged_kept_download_is_downloaded_again() {
+        let backend = RetryBackend::new();
+        let downloads = SessionDownload::default();
+        let request = request("mock-sd-card-32gb", "rpi5-64").await;
+
+        run_flash(&backend, &request, &NoOpProgress, &downloads)
+            .await
+            .unwrap_err();
+        let kept = std::fs::read_dir(backend.cache.path())
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path()
+            .join("download.xz");
+        std::fs::write(&kept, b"damaged").unwrap();
+
+        backend.write_fails.store(false, Ordering::SeqCst);
+        run_flash(&backend, &request, &NoOpProgress, &downloads)
+            .await
+            .unwrap();
+        assert_eq!(backend.downloads(), 2);
+        assert_eq!(backend.folders(), 0);
     }
 
     #[tokio::test]
@@ -2454,6 +2716,7 @@ mod mock_tests {
             &backend,
             &request("mock-sd-card-32gb", "rpi5-64").await,
             &NoOpProgress,
+            &SessionDownload::default(),
         )
         .await
         .unwrap_err();
@@ -2475,6 +2738,7 @@ mod mock_tests {
 
         let app = tauri::test::mock_app();
         app.manage(FlashState::default());
+        app.manage(SessionDownload::default());
         let started = Arc::new(tokio::sync::Notify::new());
         let progress = Channel::new({
             let started = Arc::clone(&started);
@@ -2488,6 +2752,7 @@ mod mock_tests {
             "first".into(),
             progress,
             app.state(),
+            app.state(),
         );
         tokio::pin!(first);
         tokio::select! {
@@ -2499,6 +2764,7 @@ mod mock_tests {
             request("mock-sd-card-64gb", "rpi5-64").await,
             "second".into(),
             Channel::new(|_| panic!("A second flash must not start")),
+            app.state(),
             app.state(),
         )
         .await
@@ -2516,6 +2782,7 @@ mod mock_tests {
             &BackendMock,
             &request("mock-sd-card-32gb", "rpi5-64").await,
             &NoOpProgress,
+            &SessionDownload::default(),
         )
         .await
         .unwrap();
@@ -2530,9 +2797,14 @@ mod mock_tests {
             ssid: "Home".into(),
             password: "12345678".into(),
         });
-        run_flash(&BackendMock, &request, &NoOpProgress)
-            .await
-            .unwrap();
+        run_flash(
+            &BackendMock,
+            &request,
+            &NoOpProgress,
+            &SessionDownload::default(),
+        )
+        .await
+        .unwrap();
     }
 
     /// Delegates to the mock, but fails any release lookup and records what
@@ -2627,6 +2899,7 @@ mod mock_tests {
                 &backend,
                 &request("mock-usb-drive-128gb", installer.board).await,
                 &NoOpProgress,
+                &SessionDownload::default(),
             )
             .await
             .unwrap();
@@ -2647,6 +2920,7 @@ mod mock_tests {
             &BackendMock,
             &request("mock-sd-card-32gb", "rpi5-64").await,
             &callback,
+            &SessionDownload::default(),
         )
         .await
         .unwrap_err();
@@ -2666,6 +2940,7 @@ mod mock_tests {
             &BackendMock,
             &request("mock-sd-card-32gb", "no-such-board").await,
             &NoOpProgress,
+            &SessionDownload::default(),
         )
         .await
         .unwrap_err();
@@ -2679,6 +2954,7 @@ mod mock_tests {
             &BackendMock,
             &request("mock-nvme-500gb", "rpi5-64").await,
             &NoOpProgress,
+            &SessionDownload::default(),
         )
         .await
         .unwrap_err();
@@ -2690,9 +2966,14 @@ mod mock_tests {
     async fn run_flash_rejects_swapped_device() {
         let mut request = request("mock-sd-card-32gb", "rpi5-64").await;
         request.expected_device.size = Some(64 * 1024 * 1024 * 1024);
-        let err = run_flash(&BackendMock, &request, &NoOpProgress)
-            .await
-            .unwrap_err();
+        let err = run_flash(
+            &BackendMock,
+            &request,
+            &NoOpProgress,
+            &SessionDownload::default(),
+        )
+        .await
+        .unwrap_err();
         assert!(err.message.contains("no longer the one you selected"));
     }
 

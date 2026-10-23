@@ -5,11 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
-use sha2::{Digest, Sha256};
-
-use crate::download::{expected_sha256, parse_version};
+use crate::download::{expected_sha256, file_matches, parse_version};
 use crate::error::{Error, Result};
-use crate::{FlashProgress, FlashStage, HaosImage, ImageFormat, ProgressCallback, ReleaseSource};
+use crate::{HaosImage, ImageFormat, ProgressCallback, ReleaseSource};
 
 /// Pinned Alpine release. Bumping it means updating the name, URL, checksum and size below.
 pub const ALPINE_VERSION: &str = "3.24.2";
@@ -110,7 +108,7 @@ async fn fetch<B: ReleaseSource, P: ProgressCallback>(
     sha256: &str,
     progress: &P,
 ) -> Result<()> {
-    if is_cached(path, image.size, sha256, progress).await? {
+    if file_matches(path, image.size, sha256, progress).await? {
         return Ok(());
     }
     if let Some(dir) = path.parent() {
@@ -121,152 +119,9 @@ async fn fetch<B: ReleaseSource, P: ProgressCallback>(
     Ok(())
 }
 
-/// Whether `path` exists with exactly `size` bytes and the given SHA-256.
-async fn is_cached<P: ProgressCallback>(
-    path: &Path,
-    size: u64,
-    sha256: &str,
-    progress: &P,
-) -> Result<bool> {
-    match std::fs::metadata(path) {
-        Ok(meta) if meta.len() == size => {}
-        Ok(_) => return Ok(false),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.into()),
-    }
-    let actual = sha256_with_progress(path, size, progress).await?;
-    Ok(actual.eq_ignore_ascii_case(sha256))
-}
-
-/// Hashing a cached HAOS image takes several seconds, so it reports progress like a download
-/// and stops with `Error::Cancelled` when asked to.
-async fn sha256_with_progress<P: ProgressCallback>(
-    path: &Path,
-    size: u64,
-    progress: &P,
-) -> Result<String> {
-    use tokio::io::AsyncReadExt;
-    const REPORT_EVERY: u64 = 32 * 1024 * 1024;
-
-    let report = |done: u64| {
-        progress.on_progress(FlashProgress {
-            stage: FlashStage::Downloading,
-            progress: (done.saturating_mul(100) / size.max(1)).min(100) as u8,
-            bytes_processed: done,
-            total_bytes: size,
-            message: "Checking the earlier download...".to_string(),
-        });
-    };
-    let mut file = tokio::fs::File::open(path).await?;
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0; 1024 * 1024];
-    let (mut done, mut next_report) = (0u64, 0u64);
-    loop {
-        if progress.is_cancelled() {
-            return Err(Error::Cancelled);
-        }
-        if done >= next_report {
-            report(done);
-            next_report = done + REPORT_EVERY;
-        }
-        let read = file.read(&mut buffer).await?;
-        if read == 0 {
-            report(done);
-            return Ok(hex::encode(hasher.finalize()));
-        }
-        hasher.update(&buffer[..read]);
-        done += read as u64;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::NoOpProgress;
-    use std::sync::Mutex;
-
-    const HELLO_SHA256: &str = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
-
-    #[tokio::test]
-    async fn cached_file_with_matching_size_and_hash_is_reused() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("file");
-        std::fs::write(&path, b"hello").unwrap();
-        assert!(is_cached(&path, 5, HELLO_SHA256, &NoOpProgress)
-            .await
-            .unwrap());
-        assert!(
-            is_cached(&path, 5, &HELLO_SHA256.to_uppercase(), &NoOpProgress)
-                .await
-                .unwrap()
-        );
-    }
-
-    #[tokio::test]
-    async fn cached_file_is_not_reused_on_mismatch() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("file");
-        std::fs::write(&path, b"hellO").unwrap();
-        assert!(
-            !is_cached(&path, 5, HELLO_SHA256, &NoOpProgress)
-                .await
-                .unwrap(),
-            "wrong hash"
-        );
-        assert!(
-            !is_cached(&path, 6, HELLO_SHA256, &NoOpProgress)
-                .await
-                .unwrap(),
-            "wrong size"
-        );
-        assert!(
-            !is_cached(&dir.path().join("missing"), 5, HELLO_SHA256, &NoOpProgress)
-                .await
-                .unwrap()
-        );
-    }
-
-    struct Recorder(Mutex<Vec<(u64, u64)>>);
-
-    impl ProgressCallback for Recorder {
-        fn on_progress(&self, progress: FlashProgress) {
-            let mut seen = self.0.lock().unwrap();
-            seen.push((progress.bytes_processed, progress.total_bytes));
-        }
-    }
-
-    #[tokio::test]
-    async fn checking_a_cached_file_reports_progress_up_to_its_size() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("file");
-        std::fs::write(&path, b"hello").unwrap();
-        let recorder = Recorder(Mutex::new(Vec::new()));
-        assert!(is_cached(&path, 5, HELLO_SHA256, &recorder).await.unwrap());
-        let seen = recorder.0.into_inner().unwrap();
-        assert_eq!(seen.first(), Some(&(0, 5)));
-        assert_eq!(seen.last(), Some(&(5, 5)));
-    }
-
-    struct Cancelled;
-
-    impl ProgressCallback for Cancelled {
-        fn on_progress(&self, _: FlashProgress) {}
-
-        fn is_cancelled(&self) -> bool {
-            true
-        }
-    }
-
-    #[tokio::test]
-    async fn checking_a_cached_file_stops_when_cancelled() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("file");
-        std::fs::write(&path, b"hello").unwrap();
-        let error = is_cached(&path, 5, HELLO_SHA256, &Cancelled)
-            .await
-            .unwrap_err();
-        assert!(matches!(error, Error::Cancelled), "{error:?}");
-    }
 
     #[test]
     fn only_versions_that_are_safe_folder_names_are_accepted() {
