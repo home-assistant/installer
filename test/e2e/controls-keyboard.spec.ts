@@ -91,10 +91,9 @@ test("Home Assistant hardware can be picked with the keyboard, past the reinstal
   await start(page, "Home Assistant hardware");
   await activate(
     page,
-    page.getByRole("radio", { name: "Home Assistant Green", exact: true }),
+    page.getByRole("button", { name: "Home Assistant Green", exact: true }),
     "Space"
   );
-  await next(page);
   await activate(
     page,
     page

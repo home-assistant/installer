@@ -207,9 +207,8 @@ for (const colorScheme of ["light", "dark"] as const) {
         "device selection"
       );
       await page
-        .getByRole("radio", { name: "Raspberry Pi 5", exact: true })
+        .getByRole("button", { name: "Raspberry Pi 5", exact: true })
         .click();
-      await next(page).click();
       await startWrite(page);
 
       const progress = page.locator("progress-view");
@@ -247,9 +246,8 @@ for (const colorScheme of ["light", "dark"] as const) {
       });
       await start(page, "Raspberry Pi & other boards");
       await page
-        .getByRole("radio", { name: "Raspberry Pi 5", exact: true })
+        .getByRole("button", { name: "Raspberry Pi 5", exact: true })
         .click();
-      await next(page).click();
       await startWrite(page);
       const progress = page.locator("progress-view");
       await expect(progress.locator(".error-message")).toContainText(
@@ -266,7 +264,6 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expect(devices.locator("device-card").first()).toBeVisible();
       await expectAccessible(page, devices, "device selection");
       await devices.locator('device-card[value="ha-green"]').click();
-      await next(page).click();
       const reinstall = devices.locator("info-dialog");
       await expectAccessible(
         page,
@@ -292,7 +289,6 @@ for (const colorScheme of ["light", "dark"] as const) {
       await start(page, "Home Assistant hardware");
       const devices = page.locator("ha-hardware-device-selection-view");
       await devices.locator('device-card[value="ha-yellow"]').click();
-      await next(page).click();
       await devices
         .locator("info-dialog")
         .getByRole("button", { name: /^(Reinstall|Install)$/ })
@@ -318,8 +314,7 @@ for (const colorScheme of ["light", "dark"] as const) {
         page.locator("minipc-architecture-selection-view"),
         "processor"
       );
-      await page.getByRole("radio", { name: "Intel/AMD" }).click();
-      await next(page).click();
+      await page.getByRole("button", { name: "Intel/AMD (x86-64)" }).click();
       await startWrite(page);
       await expectAccessible(page, page.locator("progress-view"), "progress");
       await expect(page.locator("success-view")).toBeVisible({
