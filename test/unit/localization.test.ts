@@ -1,6 +1,5 @@
 import { expect } from "@open-wc/testing";
 import { html, render } from "lit";
-import { formatBytes } from "../../src/api/commands.js";
 import { detectLanguage } from "../../src/localization/initialize.js";
 import {
   type Catalog,
@@ -11,6 +10,7 @@ import {
   localizeContent,
   setLanguage,
 } from "../../src/localization/localize.js";
+import { formatBytes } from "../../src/utils/format.js";
 
 // Stands in for the catalogs shipped next to en.json
 const shipped: Record<string, Catalog> = {

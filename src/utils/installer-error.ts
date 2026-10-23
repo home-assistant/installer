@@ -1,6 +1,6 @@
 import { html } from "lit";
 import { localize, localizeBackend } from "../localization/localize.js";
-import { formatBytes } from "../api/commands.js";
+import { formatBytes } from "./format.js";
 import { openExternalLink } from "./external-url.js";
 import "../components/diagnostics-actions.js";
 

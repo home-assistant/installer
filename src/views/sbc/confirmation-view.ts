@@ -4,7 +4,8 @@ import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { customElement } from "lit/decorators.js";
 import type { WizardState } from "../../state/wizard-state.js";
 import { WizardStateController } from "../../state/wizard-state-controller.js";
-import { formatBytes, getHaosRelease } from "../../api/commands.js";
+import { getHaosRelease } from "../../api/commands.js";
+import { formatBytes } from "../../utils/format.js";
 import { selectedWifi } from "../../utils/wifi.js";
 import { renderDriveIcon } from "../../components/drive-icon.js";
 import {

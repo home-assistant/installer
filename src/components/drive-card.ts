@@ -2,7 +2,7 @@ import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import WaRadio from "@home-assistant/webawesome/dist/components/radio/radio.js";
 import type { DeviceType } from "../api/types.js";
-import { formatBytes } from "../api/commands.js";
+import { formatBytes } from "../utils/format.js";
 import { localize } from "../localization/localize.js";
 import { renderDriveIcon } from "./drive-icon.js";
 import { reducedMotionStyles } from "../utils/view-accessibility.js";

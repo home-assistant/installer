@@ -22,6 +22,33 @@ function formatGb(gb: number, round = (size: number) => size): string {
     : formatSize(round(gb), "gigabyte");
 }
 
+/**
+ * Format bytes, or bytes per second, using decimal units, matching storage
+ * manufacturers.
+ */
+export function formatBytes(bytes: number, perSecond = false): string {
+  if (!Number.isFinite(bytes) || bytes < 0)
+    return localize("common.unknown_size");
+
+  const k = 1000;
+  const units = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte"];
+  const i = Math.max(
+    0,
+    Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(k)))
+  );
+
+  // Do not round a drive just below a capacity threshold up to that threshold.
+  const value = Math.floor((bytes / Math.pow(k, i)) * 10) / 10;
+  return formatNumber(value, {
+    style: "unit",
+    unit: perSecond ? `${units[i]}-per-second` : units[i],
+    // English's short form is "500 byte"
+    unitDisplay: i === 0 ? "long" : "short",
+    // Grouping would turn the oversized "1000 TB" clamp into "1,000 TB".
+    useGrouping: false,
+  });
+}
+
 /** A VM's memory in GB, as its slider shows it */
 export function formatMemory(mb: number): string {
   return formatSize(mb / 1024, "gigabyte");

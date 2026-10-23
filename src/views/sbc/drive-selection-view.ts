@@ -17,11 +17,11 @@ import {
 import { recordFailure } from "../../utils/diagnostics.js";
 import { customElement, query, state } from "lit/decorators.js";
 import {
-  formatBytes,
   listBlockDevices,
   type BlockDevice,
   type HaosConfig,
 } from "../../api/index.js";
+import { formatBytes } from "../../utils/format.js";
 import { wizardState } from "../../state/wizard-state.js";
 import {
   clearDriveSelection,

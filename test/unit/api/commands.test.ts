@@ -2,7 +2,6 @@ import { expect } from "@open-wc/testing";
 import {
   downloadUtmImage,
   flashImage,
-  formatBytes,
   proxmoxCreateVm,
 } from "../../../src/api/commands.js";
 import type { FlashProgress } from "../../../src/api/types.js";
@@ -179,53 +178,6 @@ describe("api/commands", () => {
         .map((step) => (step as { wait: number }).wait);
       expect(Math.max(...processing)).to.be.greaterThan(stepWait);
       expectNoMessages(progressOf(steps));
-    });
-  });
-
-  describe("formatBytes", () => {
-    it("formats 0 bytes", () => {
-      expect(formatBytes(0)).to.equal("0 bytes");
-    });
-
-    it("formats bytes", () => {
-      expect(formatBytes(500)).to.equal("500 bytes");
-    });
-
-    it("formats kilobytes", () => {
-      expect(formatBytes(1000)).to.equal("1 kB");
-      expect(formatBytes(1500)).to.equal("1.5 kB");
-    });
-
-    it("formats megabytes", () => {
-      expect(formatBytes(1000000)).to.equal("1 MB");
-      expect(formatBytes(1500000)).to.equal("1.5 MB");
-    });
-
-    it("formats gigabytes", () => {
-      expect(formatBytes(1000000000)).to.equal("1 GB");
-      expect(formatBytes(16000000000)).to.equal("16 GB");
-      expect(formatBytes(32000000000)).to.equal("32 GB");
-    });
-
-    it("formats terabytes", () => {
-      expect(formatBytes(1000000000000)).to.equal("1 TB");
-    });
-
-    it("does not round a drive up to a capacity threshold", () => {
-      expect(formatBytes(16_000_000_000 - 1)).to.equal("15.9 GB");
-      expect(formatBytes(32_000_000_000 - 1)).to.equal("31.9 GB");
-    });
-
-    it("formats speeds", () => {
-      expect(formatBytes(500, true)).to.equal("500 bytes per second");
-      expect(formatBytes(1500000, true)).to.equal("1.5 MB/s");
-    });
-
-    it("handles invalid and oversized input without an undefined unit", () => {
-      for (const invalid of [NaN, Infinity, -1]) {
-        expect(formatBytes(invalid)).to.equal("Unknown size");
-      }
-      expect(formatBytes(1_000_000_000_000_000)).to.equal("1000 TB");
     });
   });
 });

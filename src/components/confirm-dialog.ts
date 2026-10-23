@@ -2,7 +2,7 @@ import { localize, localizeContent } from "../localization/localize.js";
 import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
-import { formatBytes } from "../api/index.js";
+import { formatBytes } from "../utils/format.js";
 import { getPlatform } from "../utils/platform.js";
 import { DialogBase } from "./dialog-base.js";
 

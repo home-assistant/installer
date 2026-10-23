@@ -6,7 +6,7 @@ import {
   localizeContent,
 } from "../localization/localize.js";
 import { customElement, property } from "lit/decorators.js";
-import { formatBytes } from "../api/index.js";
+import { formatBytes } from "../utils/format.js";
 import {
   renderCasitaThinking,
   renderCasitaHappy,
