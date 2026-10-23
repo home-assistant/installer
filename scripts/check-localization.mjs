@@ -7,14 +7,12 @@ import ts from "typescript";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 // Tests pass a temporary catalog so negative checks never modify source files.
-const catalog = JSON.parse(
-  fs.readFileSync(
-    process.argv[2] ?? path.join(root, "src/localization/en.json"),
-    "utf8"
-  )
-);
-const parameters = new Map();
-for (const [key, message] of Object.entries(catalog)) {
+// Its translations are the other JSON files in the same folder.
+const catalogPath =
+  process.argv[2] ?? path.join(root, "src/localization/en.json");
+const read = (filename) => JSON.parse(fs.readFileSync(filename, "utf8"));
+
+function placeholders(key, message) {
   assert.equal(typeof message, "string", `${key}: messages must be plain text`);
   assert(
     !/<\/?[a-z][^>]*>/i.test(message),
@@ -28,18 +26,58 @@ for (const [key, message] of Object.entries(catalog)) {
         Object.values(element.options).forEach((option) => visit(option.value));
     }
   }
-  visit(
-    new IntlMessageFormat(message, "en", undefined, {
+  let ast;
+  try {
+    ast = new IntlMessageFormat(message, "en", undefined, {
       ignoreTag: true,
-    }).getAst()
-  );
+    }).getAst();
+  } catch (error) {
+    assert.fail(`${key}: ${error.message}`);
+  }
+  visit(ast);
+  return [...names].sort();
+}
+
+const parameters = new Map();
+for (const [key, message] of Object.entries(read(catalogPath))) {
+  const names = placeholders(key, message);
   for (const name of names) {
     assert(
       !/^value\d+$/.test(name),
       `${key}: name the {${name}} placeholder after what it holds`
     );
   }
-  parameters.set(key, [...names].sort());
+  parameters.set(key, names);
+}
+
+// A translation may lack keys, but every message it has must fit the English
+for (const filename of fs.readdirSync(path.dirname(catalogPath))) {
+  if (!filename.endsWith(".json") || filename === path.basename(catalogPath))
+    continue;
+  // The app looks a catalog up by its canonical tag, like pt-BR
+  const language = path.basename(filename, ".json");
+  let tag;
+  try {
+    tag = new Intl.Locale(language).baseName;
+  } catch {
+    // Reported below
+  }
+  assert.equal(
+    tag,
+    language,
+    `${filename}: name a catalog after its language tag, like pt-BR.json`
+  );
+  const translation = read(path.join(path.dirname(catalogPath), filename));
+  for (const [key, message] of Object.entries(translation)) {
+    assert(parameters.has(key), `${filename}: unknown key ${key}`);
+    // An export can list untranslated keys with empty text
+    if (typeof message === "string" && !message.trim()) continue;
+    assert.deepEqual(
+      placeholders(`${filename}: ${key}`, message),
+      parameters.get(key),
+      `${filename}: ${key} placeholder mismatch`
+    );
+  }
 }
 
 // A key under a file's namespace (views.sbc.success_view.title for
