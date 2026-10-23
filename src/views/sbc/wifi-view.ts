@@ -13,6 +13,7 @@ import "@home-assistant/webawesome/dist/components/switch/switch.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 import { panelStyles } from "../../utils/panel-styles.js";
 import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
+import { nextOnEnter } from "../../components/wizard-steps.js";
 
 /** Optional step for boards with built-in Wi-Fi: the network to join. */
 @customElement("wifi-view")
@@ -76,6 +77,7 @@ export class WifiView extends LitElement {
                 .value=${wifi.ssid}
                 @input=${this._onSsidInput}
                 @blur=${this._onSsidBlur}
+                @keydown=${this._onKeyDown}
                 ${fieldError(ssidError)}
               >
                 <!-- In the hint slot, so the field describes itself with it.
@@ -94,6 +96,7 @@ export class WifiView extends LitElement {
                 .value=${wifi.password}
                 @input=${this._onPasswordInput}
                 @blur=${this._onPasswordBlur}
+                @keydown=${this._onKeyDown}
                 ${fieldError(passwordError)}
               >
                 <!-- In the hint slot and not role="alert", like the network
@@ -161,6 +164,15 @@ export class WifiView extends LitElement {
 
   private _onPasswordBlur() {
     this._passwordLeft = true;
+  }
+
+  private _onKeyDown(e: KeyboardEvent) {
+    // Enter says the fields are done, as leaving them does: if Next can't go
+    // on yet, their errors say why
+    if (nextOnEnter(e)) {
+      this._ssidLeft = true;
+      this._passwordLeft = true;
+    }
   }
 
   private _onSsidInput(e: Event) {

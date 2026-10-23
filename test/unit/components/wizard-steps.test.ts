@@ -1,8 +1,9 @@
-import { expect } from "@open-wc/testing";
+import { expect, fixtureSync, html } from "@open-wc/testing";
 import { render } from "lit";
 import {
   LIVE_USB_STEPS,
   WIZARD_STEPS,
+  nextOnEnter,
   wizardStep,
   type WizardStepView,
 } from "../../../src/components/wizard-steps.js";
@@ -364,6 +365,50 @@ describe("wizard-steps", () => {
         }) as unknown as WizardStepView;
         expect(await beforeNext.run(view)).to.equal(answer);
       }
+    });
+  });
+
+  describe("nextOnEnter", () => {
+    /**
+     * A field like wa-input, with its own input and button in its shadow
+     * root, inside a step that counts the Next requests reaching it.
+     */
+    function field() {
+      const step = fixtureSync<HTMLElement>(html`<div><div></div></div>`);
+      const host = step.firstElementChild as HTMLElement;
+      host.attachShadow({ mode: "open" }).innerHTML =
+        "<input><button>Show password</button>";
+      const sent = { next: 0, returned: [] as boolean[] };
+      host.addEventListener("keydown", (e) =>
+        sent.returned.push(nextOnEnter(e))
+      );
+      step.addEventListener("wizard-next", () => sent.next++);
+      const [input, button] = host.shadowRoot!.children;
+      return { input, button, sent };
+    }
+
+    const key = (key: string, init: KeyboardEventInit = {}) =>
+      new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        composed: true,
+        ...init,
+      });
+
+    it("asks for Next on Enter in the field's input", () => {
+      const { input, sent } = field();
+      input.dispatchEvent(key("Enter"));
+      expect(sent.next).to.equal(1);
+      expect(sent.returned).to.deep.equal([true]);
+    });
+
+    it("leaves Enter on the field's own buttons, other keys and compositions alone", () => {
+      const { input, button, sent } = field();
+      button.dispatchEvent(key("Enter"));
+      input.dispatchEvent(key("a"));
+      input.dispatchEvent(key("Enter", { isComposing: true }));
+      expect(sent.next).to.equal(0);
+      expect(sent.returned).to.deep.equal([false, false, false]);
     });
   });
 });

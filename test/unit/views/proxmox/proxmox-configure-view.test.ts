@@ -233,6 +233,36 @@ describe("proxmox-configure-view", () => {
       .false;
   });
 
+  it("asks for Next on Enter in a text field, not on a select", async () => {
+    const el = await mount();
+    const root = el.shadowRoot!;
+    await Promise.all(
+      [...root.querySelectorAll<WaSelect>("wa-select")].map(
+        (select) => select.updateComplete
+      )
+    );
+    const sent: string[] = [];
+    el.addEventListener("wizard-next", (e) =>
+      sent.push((e.composedPath()[0] as HTMLElement).id || "name")
+    );
+    const enter = () =>
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        composed: true,
+      });
+
+    for (const select of root.querySelectorAll<WaSelect>("wa-select")) {
+      select.displayInput.dispatchEvent(enter());
+    }
+    expect(sent).to.deep.equal([]);
+
+    for (const input of root.querySelectorAll<WaInput>("wa-input")) {
+      input.input.dispatchEvent(enter());
+    }
+    expect(sent).to.deep.equal(["name", "vm-id", "vlan-tag"]);
+  });
+
   it("gives every field the same size, the VLAN tag included", async () => {
     const el = await mount();
     const fields = [

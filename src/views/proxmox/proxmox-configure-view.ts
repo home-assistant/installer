@@ -23,6 +23,7 @@ import {
   type WizardState,
 } from "../../state/wizard-state.js";
 import { proxmoxCheckVmConfig } from "../../api/commands.js";
+import { nextOnEnter } from "../../components/wizard-steps.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/details/details.js";
 import {
@@ -812,6 +813,7 @@ export class ProxmoxConfigureView extends LitElement {
               required
               .value=${this._vmIdText}
               @input=${this._onVmIdChange}
+              @keydown=${nextOnEnter}
               min=${MIN_VM_ID}
               max=${MAX_VM_ID}
               ${fieldError(vmIdError)}
@@ -844,6 +846,7 @@ export class ProxmoxConfigureView extends LitElement {
           size="s"
           .value=${this._vlanTag}
           @input=${this._onVlanInput}
+          @keydown=${nextOnEnter}
           ${fieldError(this._vlanError)}
         >
           <!-- Not role="alert": ViewAccessibility focuses a new alert, which

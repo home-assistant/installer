@@ -9,7 +9,7 @@ import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
 import { LatestRequest } from "../../utils/latest-request.js";
-import { fireEvent } from "../../utils/fire-event.js";
+import { nextOnEnter } from "../../components/wizard-steps.js";
 import { customElement, queryAll, state } from "lit/decorators.js";
 import {
   proxmoxCertificateFingerprint,
@@ -410,24 +410,6 @@ export class ProxmoxConnectView extends LitElement {
     }
   }
 
-  private _onKeyDown(e: KeyboardEvent) {
-    // wa-input's own buttons (the password toggle) send their keydown through
-    // the host too, and Enter there should reveal the password, not connect.
-    // Enter that confirms an input method composition isn't a submit either.
-    const fromTextField = e.composedPath()[0] instanceof HTMLInputElement;
-
-    if (
-      e.key === "Enter" &&
-      fromTextField &&
-      !e.isComposing &&
-      !this._connecting
-    ) {
-      // Same path as the Next button, so the app shell's connecting guard
-      // applies and a successful login moves on to the next step.
-      fireEvent(this, "wizard-next");
-    }
-  }
-
   render() {
     // The fields are read-only while connecting, not disabled: that would
     // take the focus from the one Enter was pressed in
@@ -452,7 +434,7 @@ export class ProxmoxConnectView extends LitElement {
           required
           .value=${this._serverUrl}
           @input=${this._onServerUrlChange}
-          @keydown=${this._onKeyDown}
+          @keydown=${nextOnEnter}
           ?readonly=${this._connecting}
           ${fieldError(this._fieldErrors.serverUrl)}
         >
@@ -479,7 +461,7 @@ export class ProxmoxConnectView extends LitElement {
           required
           .value=${this._username}
           @input=${this._onUsernameChange}
-          @keydown=${this._onKeyDown}
+          @keydown=${nextOnEnter}
           ?readonly=${this._connecting}
           ${fieldError(this._fieldErrors.username)}
         >
@@ -498,7 +480,7 @@ export class ProxmoxConnectView extends LitElement {
           required
           .value=${this._password}
           @input=${this._onPasswordChange}
-          @keydown=${this._onKeyDown}
+          @keydown=${nextOnEnter}
           ?readonly=${this._connecting}
           ${fieldError(this._fieldErrors.password)}
         >
@@ -522,7 +504,7 @@ export class ProxmoxConnectView extends LitElement {
           ?required=${this._codeRequired}
           .value=${this._totp}
           @input=${this._onTotpChange}
-          @keydown=${this._onKeyDown}
+          @keydown=${nextOnEnter}
           ?readonly=${this._connecting}
           ${fieldError(this._fieldErrors.totp)}
         >

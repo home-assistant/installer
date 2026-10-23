@@ -4,6 +4,7 @@ import type WaInput from "@home-assistant/webawesome/dist/components/input/input
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import "../components/vm-resources.js";
 import type { VmResourceValues } from "../components/vm-resources.js";
+import { nextOnEnter } from "../components/wizard-steps.js";
 import { localize } from "../localization/localize.js";
 import {
   DEFAULT_CPU_CORES,
@@ -130,6 +131,7 @@ export class VmSettings {
           required
           .value=${this._values.vmName}
           @input=${this._onNameInput}
+          @keydown=${nextOnEnter}
           placeholder=${this._options.defaultName}
           maxlength=${ifDefined(this._options.maxNameLength)}
           ${fieldError(error)}

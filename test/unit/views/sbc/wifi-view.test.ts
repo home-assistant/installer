@@ -38,6 +38,16 @@ const hintOf = (input: WaInput) =>
 
 const invalid = (input: WaInput) => input.validity.customError;
 
+const enter = () =>
+  new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true });
+
+/** Count the Next requests the view sends to the wizard. */
+function countNext(el: WifiView) {
+  const counter = { next: 0 };
+  el.addEventListener("wizard-next", () => counter.next++);
+  return counter;
+}
+
 describe("wifi-view", () => {
   afterEach(() => wizardState.reset());
 
@@ -230,5 +240,34 @@ describe("wifi-view", () => {
     expect(password.input.getAttribute("aria-invalid")).to.equal("false");
     expect(getComputedStyle(hint).color).not.to.equal(ERROR_COLOR);
     expect(icon().content).to.equal("none");
+  });
+
+  it("asks for Next on Enter in a field, not on the switch or the password toggle", async () => {
+    const { el, toggle, ssid, password } = await mountOn();
+    const counter = countNext(el);
+
+    toggle.shadowRoot!.querySelector("input")!.dispatchEvent(enter());
+    password
+      .shadowRoot!.querySelector(".password-toggle")!
+      .dispatchEvent(enter());
+    expect(counter.next).to.equal(0);
+
+    ssid.input.dispatchEvent(enter());
+    password.input.dispatchEvent(enter());
+    expect(counter.next).to.equal(2);
+  });
+
+  it("says what holds Next back once Enter is pressed", async () => {
+    const { ssid, password } = await mountOn();
+    // Neither field was left, so nothing is wrong yet
+    await type(password, "1234567");
+    expect(hintOf(ssid)).to.equal("");
+    expect(invalid(password)).to.be.false;
+
+    password.input.dispatchEvent(enter());
+    await settle();
+    expect(hintOf(ssid)).to.equal("Enter the network name.");
+    expect(hintOf(password)).to.equal("Use at least 8 characters.");
+    expect(invalid(password)).to.be.true;
   });
 });
