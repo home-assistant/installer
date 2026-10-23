@@ -120,6 +120,35 @@ for (const tag of ["confirm-dialog", "info-dialog"]) {
   });
 }
 
+// WebKit drops list semantics with list-style: none unless role="list" is set
+test("success-view preserves next-step list and completion semantics", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await page.locator("welcome-view").waitFor({ state: "attached" });
+  await page.evaluate(() => {
+    document.querySelector("app-shell")!.remove();
+    document.body.append(document.createElement("success-view"));
+  });
+  const heading = page.getByRole("heading", { name: "You're all set!" });
+  await expect(heading).toBeFocused();
+  // The focus reads it out; an alert would read it out again
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const list = page.getByRole("list", { name: "Next steps" });
+  await expect(list).toBeVisible();
+  expect(await list.getByRole("listitem").count()).toBeGreaterThan(0);
+  expect(await list.ariaSnapshot()).toContain("listitem");
+  await expect
+    .poll(() =>
+      page
+        .locator("success-view svg")
+        .first()
+        .evaluate((svg) => (svg as SVGSVGElement).animationsPaused())
+    )
+    .toBe(true);
+});
+
 test("reduced motion reaches card shadow roots", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
