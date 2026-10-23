@@ -74,7 +74,7 @@ test("a flash that fails while asking to stop continues from the error", async (
   await askToStop(page);
 
   // Cancel stays, but the error was never read out
-  const error = page.locator("progress-view").getByRole("alert");
+  const error = page.locator("progress-view [data-focus-alert]");
   await expect(error).toBeFocused({ timeout: 30000 });
   await expect(error).toHaveText(
     "The drive is in use. Close any applications using it, then try again."

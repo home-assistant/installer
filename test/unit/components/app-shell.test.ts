@@ -37,8 +37,7 @@ interface WizardShell extends HTMLElement {
 }
 
 interface ErrorFlags {
-  _flashError: boolean;
-  _vmInstallError: boolean;
+  _installError: boolean;
 }
 
 function fire(target: Element, type: string, detail?: unknown) {
@@ -351,7 +350,7 @@ describe("app-shell", () => {
         () =>
           !!el
             .shadowRoot!.querySelector("connection-check-view")
-            ?.shadowRoot?.querySelector('[role="alert"]')
+            ?.shadowRoot?.querySelector("[data-focus-alert]")
       );
       const gate = el.shadowRoot!.querySelector("connection-check-view")!;
       expect(wizardState.getState().currentFlow).to.equal(null);
@@ -869,7 +868,7 @@ describe("app-shell", () => {
     it("drops the password once it is on the drive", async () => {
       wizardState.setSelection("wifi", { ssid: "Home", password: "12345678" });
       await goToStep(el, "flash");
-      fire(shellOf(el), "flash-complete");
+      fire(shellOf(el), "install-complete");
       await el.updateComplete;
       expect(wizardState.currentStep?.id).to.equal("success");
       expect(wizardState.getState().selections.wifi).to.deep.equal({
@@ -982,7 +981,7 @@ describe("app-shell", () => {
       expect(wizardState.currentStep?.id).to.equal("confirm");
       expect(shellOf(el).querySelector("progress-view")).to.equal(null);
       expect(shellOf(el).nextLabel).to.equal("Install");
-      expect((el as unknown as ErrorFlags)._flashError).to.be.false;
+      expect((el as unknown as ErrorFlags)._installError).to.be.false;
 
       fire(shellOf(el), "wizard-next");
       await waitForDialogOpen(el);
@@ -1007,7 +1006,7 @@ describe("app-shell", () => {
 
       await clickBack(el);
       expect(wizardState.currentStep?.id).to.equal("confirm");
-      expect((el as unknown as ErrorFlags)._flashError).to.be.false;
+      expect((el as unknown as ErrorFlags)._installError).to.be.false;
     });
   });
 
@@ -1181,7 +1180,7 @@ describe("app-shell", () => {
         () => !!shellOf(el).querySelector("proxmox-connect-view"),
         "Reconnect did not open the connect step"
       );
-      expect((el as unknown as ErrorFlags)._vmInstallError).to.be.false;
+      expect((el as unknown as ErrorFlags)._installError).to.be.false;
 
       expired = false;
       Object.assign(shellOf(el).querySelector("proxmox-connect-view")!, {
@@ -1282,13 +1281,11 @@ describe("app-shell", () => {
 
     it("is cleared for every flow when a new path is chosen", async () => {
       const flags = el as unknown as ErrorFlags;
-      flags._flashError = true;
-      flags._vmInstallError = true;
+      flags._installError = true;
 
       await enterSbcFlow(el);
 
-      expect(flags._flashError).to.be.false;
-      expect(flags._vmInstallError).to.be.false;
+      expect(flags._installError).to.be.false;
     });
   });
 
@@ -1379,8 +1376,8 @@ describe("app-shell", () => {
     });
 
     for (const [flow, step, ended] of [
-      ["sbc", "flash", "flash-complete"],
-      ["sbc", "flash", "flash-error"],
+      ["sbc", "flash", "install-complete"],
+      ["sbc", "flash", "install-error"],
       ["vm", "install", "install-complete"],
       ["vm", "install", "install-error"],
     ] as const) {

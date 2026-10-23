@@ -108,7 +108,7 @@ describe("device-selection-view", () => {
         ? Promise.reject(ipcError("network", "offline", true))
         : reload.promise
     );
-    const alert = el.shadowRoot!.querySelector('[role="alert"]')!;
+    const alert = el.shadowRoot!.querySelector("[data-focus-alert]")!;
     expect(alert.textContent).to.contain("Could not connect");
     expect(cards(el)).to.have.length(0);
 
@@ -129,7 +129,7 @@ describe("device-selection-view", () => {
     reload.resolve(MOCK_MANIFEST);
     await waitUntil(() => cards(el).length > 0, "catalog never reloaded");
     expect(attempts).to.equal(2);
-    expect(el.shadowRoot!.querySelector('[role="alert"]')).to.not.exist;
+    expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.not.exist;
     expect(wizardState.getState().selections.deviceCatalogReady).to.equal(true);
     // The list took its place, so the focus goes on from its heading
     await waitUntil(

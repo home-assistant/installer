@@ -260,9 +260,7 @@ export class InstallSuccess extends LitElement {
           ${renderCasitaHappy()}
         </div>
         <div class="heading">
-          <div role="alert">
-            <h2>${title}</h2>
-          </div>
+          <h2>${title}</h2>
           <p class="subtitle">${this.subtitle}</p>
         </div>
         <div class="details">

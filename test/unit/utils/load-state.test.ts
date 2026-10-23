@@ -45,7 +45,7 @@ describe("load state", () => {
       html`<div>${renderLoadError(failure(true), false, noop)}</div>`
     );
     expect(
-      el.querySelector(".error-message[role=alert]")!.textContent!.trim()
+      el.querySelector(".error-message[data-focus-alert]")!.textContent!.trim()
     ).to.equal("Could not connect.");
     expect(
       el.querySelector(".error-icon")!.getAttribute("aria-hidden")
@@ -55,12 +55,12 @@ describe("load state", () => {
     expect(retry.hasAttribute("loading")).to.be.false;
   });
 
-  it("keeps Try again, busy, and empties the alert while it retries", () => {
+  it("keeps Try again, busy, and empties the message while it retries", () => {
     const el = fixtureSync(
       html`<div>${renderLoadError(failure(true), true, noop)}</div>`
     );
     expect(
-      el.querySelector(".error-message[role=alert]")!.textContent!.trim()
+      el.querySelector(".error-message[data-focus-alert]")!.textContent!.trim()
     ).to.equal("");
     expect(el.querySelector(".error wa-button")!.hasAttribute("loading")).to.be
       .true;

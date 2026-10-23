@@ -127,8 +127,8 @@ export class LiveUsbGate extends LitElement {
   render() {
     if (this._error) {
       return html`
-        <div class="notice error" role="alert">
-          <p>${this._error.message}</p>
+        <div class="notice error">
+          <p data-focus-alert>${this._error.message}</p>
           <wa-button appearance="outlined" @click=${this._check}>
             ${localize("common.try_again")}
           </wa-button>
@@ -143,7 +143,7 @@ export class LiveUsbGate extends LitElement {
         <h2>
           ${localize("views.live_usb.live_usb_gate.hai_live_missing_title")}
         </h2>
-        <div class="notice error" role="alert">
+        <div class="notice error" data-focus-alert>
           <p>${localize("views.live_usb.live_usb_gate.hai_live_missing")}</p>
           <p>
             <code
@@ -164,7 +164,7 @@ export class LiveUsbGate extends LitElement {
           <p>${localize("views.live_usb.live_usb_gate.admin_needed")}</p>
           <p>${localize("views.live_usb.live_usb_gate.admin_restart_note")}</p>
           ${this._relaunchError
-            ? html`<p role="alert">${this._relaunchError}</p>`
+            ? html`<p data-focus-alert>${this._relaunchError}</p>`
             : ""}
           <div class="actions">
             <wa-button variant="brand" @click=${this._relaunch}>

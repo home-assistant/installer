@@ -166,7 +166,7 @@ describe("wizard-steps", () => {
       ...Object.entries(LIVE_USB_STEPS).map(
         ([id, step]) => [`minipc/usb/${id}`, step] as const
       ),
-    ].flatMap(([path, step]) => (step.goesOnWhenPicked ? [path] : []));
+    ].flatMap(([path, step]) => (step.pickToContinue ? [path] : []));
 
     expect(picked).to.deep.equal([
       "sbc/device",
@@ -176,6 +176,44 @@ describe("wizard-steps", () => {
       "minipc/architecture",
       "minipc/usb/media",
     ]);
+  });
+
+  // The shell offers Cancel, Try again and Back on these from what the view
+  // reports through the install-* events
+  it("marks the steps whose view runs an install, and only those", () => {
+    for (const [name, steps] of [
+      ...Object.entries(WIZARD_STEPS),
+      ["live-usb", LIVE_USB_STEPS] as const,
+    ]) {
+      for (const [id, step] of Object.entries(steps)) {
+        const container = document.createElement("div");
+        render(step.render(), container);
+        expect(!!step.install, `${name}/${id}`).to.equal(
+          container.firstElementChild!.localName.endsWith("progress-view")
+        );
+      }
+    }
+  });
+
+  it("goes back from a failed install only where a choice can change", () => {
+    for (const flow of ["sbc", "ha-hardware", "minipc"] as const) {
+      const flash = wizardStep(flow, "flash")!.install!;
+      expect(flash.backAfterError, flow).to.be.true;
+      expect(flash.changeChoice?.({})).to.deep.equal({
+        step: "drive",
+        label: "Choose another drive",
+      });
+    }
+    // A VM made by then can't take other settings
+    for (const flow of ["vm", "proxmox"] as const) {
+      const install = wizardStep(flow, "install")!.install!;
+      expect(install.backAfterError, flow).to.be.undefined;
+      expect(install.changeChoice, flow).to.be.undefined;
+    }
+    expect(wizardStep("vm", "install")!.install!.reconnect).to.be.undefined;
+    expect(
+      wizardStep("proxmox", "install")!.install!.reconnect!()
+    ).to.deep.equal({ step: "connection", label: "Reconnect" });
   });
 
   it("leaves the hardware device step only when the reinstall is confirmed", async () => {
@@ -251,6 +289,28 @@ describe("wizard-steps", () => {
       expect(ready("location", { ...location, liveIsoFolder: "  " })).to.be
         .false;
       expect(ready("location", { ...location, liveIsoName: "" })).to.be.false;
+    });
+
+    it("asks before erasing the stick, but not before saving an ISO", () => {
+      const confirm = liveStep("confirm")!;
+      expect(confirm.erasesDrive!({ ...usbBoot, liveMedia: "usb" })).to.be.true;
+      expect(confirm.erasesDrive!({ ...usbBoot, liveMedia: "iso" })).to.be
+        .false;
+      expect(confirm.nextLabel!()).to.equal("Create");
+      expect(wizardStep("minipc", "confirm")!.erasesDrive!({})).to.be.true;
+    });
+
+    it("says what stopping leaves, and leads a failure back to the target", () => {
+      const flash = liveStep("flash")!.install!;
+      const iso = { ...usbBoot, liveMedia: "iso" } as const;
+      const usb = { ...usbBoot, liveMedia: "usb" } as const;
+      expect(flash.stopMessage(iso)).to.contain("ISO file won't be saved");
+      expect(flash.stopMessage(usb)).to.contain("drive will not be ready");
+      expect(flash.changeChoice!(iso)).to.deep.equal({
+        step: "location",
+        label: "Choose another location",
+      });
+      expect(flash.changeChoice!(usb).step).to.equal("drive");
     });
 
     it("checks the save location before leaving it", async () => {
