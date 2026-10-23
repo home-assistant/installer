@@ -368,6 +368,17 @@ fn iso_target(folder: &Path, file_name: &str, overwrite: bool) -> Result<PathBuf
             false,
         ));
     }
+    // The installer clears its own downloads there, and the system may empty its
+    // cache folder at any time: no place for a file to keep
+    let in_cache =
+        hai_core::ReleaseSource::cache_dir(&Backend).is_ok_and(|cache| is_inside(folder, &cache));
+    if in_cache {
+        return Err(CommandError::new(
+            "folder_in_cache",
+            "This is the installer's own cache folder, which gets cleared. Choose another folder, such as Downloads.",
+            false,
+        ));
+    }
     let target = folder.join(name);
     if target.is_dir() {
         return Err(CommandError::new(
@@ -380,6 +391,15 @@ fn iso_target(folder: &Path, file_name: &str, overwrite: bool) -> Result<PathBuf
         return Err(file_exists());
     }
     Ok(target)
+}
+
+/// Whether `folder` is `cache` or inside it, also when a symlink leads there.
+fn is_inside(folder: &Path, cache: &Path) -> bool {
+    match (folder.canonicalize(), cache.canonicalize()) {
+        (Ok(folder), Ok(cache)) => folder.starts_with(cache),
+        // A cache folder that can't be resolved doesn't exist, so nothing is in it
+        _ => false,
+    }
 }
 
 /// Whether Windows accepts `name` (checked everywhere, since the ISO may be copied there):
@@ -528,6 +548,40 @@ mod mock {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_folder_inside_the_cache_is_recognized_also_through_a_symlink() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = root.path().join("cache");
+        let live_usb = cache.join("live-usb").join("haos");
+        std::fs::create_dir_all(&live_usb).unwrap();
+        let elsewhere = root.path().join("Downloads");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+
+        assert!(is_inside(&cache, &cache));
+        assert!(is_inside(&live_usb, &cache));
+        assert!(!is_inside(&elsewhere, &cache));
+        // A sibling whose name starts the same is not inside
+        let sibling = root.path().join("cache-copy");
+        std::fs::create_dir_all(&sibling).unwrap();
+        assert!(!is_inside(&sibling, &cache));
+        // Nothing is inside a cache folder that isn't there
+        assert!(!is_inside(&elsewhere, &root.path().join("missing")));
+
+        #[cfg(unix)]
+        {
+            let link = root.path().join("shortcut");
+            std::os::unix::fs::symlink(&live_usb, &link).unwrap();
+            assert!(is_inside(&link, &cache));
+        }
+    }
+
+    #[test]
+    fn iso_target_refuses_the_installers_own_cache_folder() {
+        let cache = hai_core::ReleaseSource::cache_dir(&Backend).unwrap();
+        let error = iso_target(&cache, "stick.iso", false).unwrap_err();
+        assert_eq!(error.code, "folder_in_cache");
+    }
 
     #[test]
     fn iso_target_refuses_bad_names_and_replaces_files_only_when_asked() {
