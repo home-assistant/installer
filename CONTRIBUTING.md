@@ -110,7 +110,7 @@ these fields are not gated by command permissions. Other OS commands,
 including hostname, are not permitted by this capability.
 
 Use `formatNumber` or ICU number placeholders for displayed numbers, and
-`Intl` units for sizes, so each language gets its own unit labels. Byte
+`Intl` units for sizes and durations, so each language gets its own unit labels. Byte
 formatting uses decimal units (1000 bytes is 1 kB). IDs, version strings,
 URLs, filenames, IPC names, state keys, and device names are data, not messages.
 
