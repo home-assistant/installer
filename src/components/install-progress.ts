@@ -40,14 +40,29 @@ export class InstallProgress extends LitElement {
     reducedMotionStyles,
     linkStyles,
     css`
+      /* Its own width, not the window's, decides between the layouts */
       :host {
         display: flex;
         flex-direction: column;
-        align-items: center;
         justify-content: center;
         min-height: 100%;
-        padding-top: 110px;
-        box-sizing: border-box;
+        container-type: inline-size;
+      }
+
+      /* Narrow, Casita stands above the details, with room for the cloud and
+         the 5px its top bump rises above it */
+      .layout {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 115px;
+      }
+
+      .details {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
       }
 
       .mascot-container {
@@ -220,14 +235,13 @@ export class InstallProgress extends LitElement {
         z-index: 1;
       }
 
-      @media (max-width: 600px) {
-        .thinking-cloud {
-          right: -40px;
+      /* Too narrow for the cloud beside Casita, which takes 510px: stack it
+         above instead, clear of the roof */
+      @container (max-width: 520px) {
+        .layout {
+          padding-top: 5px;
         }
-      }
 
-      /* Too narrow for the cloud beside Casita: stack it above instead */
-      @media (max-width: 520px) {
         .mascot-container.with-bubble {
           margin-left: 0;
           margin-top: 130px;
@@ -235,6 +249,7 @@ export class InstallProgress extends LitElement {
 
         .thinking-cloud {
           top: -130px;
+          right: -40px;
         }
       }
 
@@ -355,6 +370,49 @@ export class InstallProgress extends LitElement {
         margin: 0 0 1.5rem 0;
         text-align: center;
       }
+
+      /* Wide enough, Casita and the cloud stand beside the details, under the
+         heading, so the artwork doesn't push the progress down and out of
+         view */
+      @container (min-width: 640px) {
+        .layout {
+          flex-flow: row wrap;
+          justify-content: center;
+          gap: 1rem 3rem;
+          padding-top: 0;
+        }
+
+        /* Casita is hidden from assistive technology, so moving the heading
+           above it leaves the reading order as it was */
+        h2 {
+          order: -1;
+          flex-basis: 100%;
+        }
+
+        /* No basis, so the details share Casita's line even where they have
+           to narrow to fit */
+        .details {
+          align-items: stretch;
+          flex: 1 1 0;
+          max-width: 400px;
+          min-width: 0;
+        }
+
+        .mascot-container {
+          flex-shrink: 0;
+          margin-bottom: 0;
+        }
+
+        /* The margins make the room the cloud takes above and beside Casita */
+        .mascot-container.with-bubble {
+          margin: 110px 175px 0 0;
+        }
+
+        .address,
+        .stage-description {
+          text-align: start;
+        }
+      }
     `,
   ];
 
@@ -401,12 +459,18 @@ export class InstallProgress extends LitElement {
   private _renderContent() {
     if (this.error) {
       return html`
-        <div class="mascot-container" aria-hidden="true">
-          ${renderCasitaSad()}
+        <div class="layout">
+          <div class="mascot-container" aria-hidden="true">
+            ${renderCasitaSad()}
+          </div>
+          <h2>
+            ${localize("components.install_progress.installation_failed")}
+          </h2>
+          <div class="details">
+            <p class="error-message" role="alert">${this.error}</p>
+            ${renderErrorHelp()}
+          </div>
         </div>
-        <h2>${localize("components.install_progress.installation_failed")}</h2>
-        <p class="error-message" role="alert">${this.error}</p>
-        ${renderErrorHelp()}
       `;
     }
     const hasBubble = this.stage !== "complete" && this.stage !== "error";
@@ -416,123 +480,132 @@ export class InstallProgress extends LitElement {
       (stage) => stage.id === this.stage
     );
     return html`
-      <div
-        class="mascot-container ${hasBubble ? "with-bubble" : ""}"
-        aria-hidden="true"
-      >
-        ${this.stage === "complete"
-          ? renderCasitaHappy()
-          : this.stage === "error"
-            ? renderCasitaSad()
-            : renderCasitaThinking(this.stageTitle)}
-      </div>
-      <h2>${this.description}</h2>
-      <ol
-        class="stages-indicator"
-        aria-label=${localize(
-          "components.install_progress.installation_stages"
-        )}
-      >
-        ${this.stages.map(
-          (stage, index) => html`
-            <li
-              class="stage"
-              aria-current=${index === currentIndex ? "step" : nothing}
-            >
-              <span
-                class="stage-dot ${this.stage === "complete" ||
-                index < currentIndex
-                  ? "complete"
-                  : index === currentIndex
-                    ? "active"
-                    : ""}"
-                aria-hidden="true"
-              ></span>
-              <span class="stage-label"
-                >${stage.label}${this.stage === "complete" ||
-                index < currentIndex
-                  ? html`<span class="sr-only"
-                      >${` ${localize("components.install_progress.completed")}`}</span
-                    >`
-                  : nothing}</span
-              >
-            </li>
-          `
-        )}
-      </ol>
-      <div class="progress-section">
-        <progress-bar
-          .progress=${this.progress}
-          ?indeterminate=${this.indeterminate}
-          .label=${this.stageTitle}
-        ></progress-bar>
-        ${this.measurable || !this.hideEmptyDetails
-          ? html`
-              <div class="progress-details">
-                <div class="progress-left">
-                  <span class="bytes-info"
-                    >${this.showUnknownBytes && this.indeterminate
-                      ? formatBytes(this.bytesProcessed)
-                      : this.measurable && this.totalBytes > 0
-                        ? this.stage === "extracting"
-                          ? localize(
-                              "components.install_progress.byte_progress_compressed",
-                              {
-                                completed: formatBytes(this.bytesProcessed),
-                                total: formatBytes(this.totalBytes),
-                              }
-                            )
-                          : localize("format.byte_progress", {
-                              completed: formatBytes(this.bytesProcessed),
-                              total: formatBytes(this.totalBytes),
+      <div class="layout">
+        <div
+          class="mascot-container ${hasBubble ? "with-bubble" : ""}"
+          aria-hidden="true"
+        >
+          ${this.stage === "complete"
+            ? renderCasitaHappy()
+            : this.stage === "error"
+              ? renderCasitaSad()
+              : renderCasitaThinking(this.stageTitle)}
+        </div>
+        <h2>${this.description}</h2>
+        <div class="details">
+          <ol
+            class="stages-indicator"
+            aria-label=${localize(
+              "components.install_progress.installation_stages"
+            )}
+          >
+            ${this.stages.map(
+              (stage, index) => html`
+                <li
+                  class="stage"
+                  aria-current=${index === currentIndex ? "step" : nothing}
+                >
+                  <span
+                    class="stage-dot ${this.stage === "complete" ||
+                    index < currentIndex
+                      ? "complete"
+                      : index === currentIndex
+                        ? "active"
+                        : ""}"
+                    aria-hidden="true"
+                  ></span>
+                  <span class="stage-label"
+                    >${stage.label}${this.stage === "complete" ||
+                    index < currentIndex
+                      ? html`<span class="sr-only"
+                          >${` ${localize("components.install_progress.completed")}`}</span
+                        >`
+                      : nothing}</span
+                  >
+                </li>
+              `
+            )}
+          </ol>
+          <div class="progress-section">
+            <progress-bar
+              .progress=${this.progress}
+              ?indeterminate=${this.indeterminate}
+              .label=${this.stageTitle}
+            ></progress-bar>
+            ${this.measurable || !this.hideEmptyDetails
+              ? html`
+                  <div class="progress-details">
+                    <div class="progress-left">
+                      <span class="bytes-info"
+                        >${this.showUnknownBytes && this.indeterminate
+                          ? formatBytes(this.bytesProcessed)
+                          : this.measurable && this.totalBytes > 0
+                            ? this.stage === "extracting"
+                              ? localize(
+                                  "components.install_progress.byte_progress_compressed",
+                                  {
+                                    completed: formatBytes(this.bytesProcessed),
+                                    total: formatBytes(this.totalBytes),
+                                  }
+                                )
+                              : localize("format.byte_progress", {
+                                  completed: formatBytes(this.bytesProcessed),
+                                  total: formatBytes(this.totalBytes),
+                                })
+                            : ""}</span
+                      >
+                      <span class="speed"
+                        >${this.measurable && this.totalBytes > 0
+                          ? this._calculateSpeed()
+                          : ""}</span
+                      >
+                    </div>
+                    <div class="progress-right">
+                      <span class="percentage"
+                        >${this.measurable
+                          ? formatNumber(this.progress / 100, {
+                              style: "percent",
+                              maximumFractionDigits: 20,
                             })
-                        : ""}</span
-                  >
-                  <span class="speed"
-                    >${this.measurable && this.totalBytes > 0
-                      ? this._calculateSpeed()
-                      : ""}</span
-                  >
-                </div>
-                <div class="progress-right">
-                  <span class="percentage"
-                    >${this.measurable
-                      ? formatNumber(this.progress / 100, {
-                          style: "percent",
-                          maximumFractionDigits: 20,
-                        })
-                      : ""}</span
-                  >
-                  <span class="eta"
-                    >${this.measurable && this.totalBytes > 0
-                      ? this._calculateEta() ||
-                        localize("components.install_progress.calculating")
-                      : ""}</span
-                  >
-                </div>
-              </div>
-            `
-          : ""}
+                          : ""}</span
+                      >
+                      <span class="eta"
+                        >${this.measurable && this.totalBytes > 0
+                          ? this._calculateEta() ||
+                            localize("components.install_progress.calculating")
+                          : ""}</span
+                      >
+                    </div>
+                  </div>
+                `
+              : ""}
+          </div>
+          <div class="warning" role="status">
+            ${warning
+              ? html`<inline-notice><p>${warning}</p></inline-notice>`
+              : nothing}
+          </div>
+          ${this.address
+            ? html`<p class="address">
+                ${localizeContent(
+                  "components.install_progress.checking_address",
+                  {
+                    address: html`<a
+                      href=${this.address}
+                      @click=${openExternalLink}
+                      >${this.address}</a
+                    >`,
+                  }
+                )}
+              </p>`
+            : nothing}
+          ${this.leavable
+            ? nothing
+            : html`<p class="stage-description">
+                ${localize("components.install_progress.keep_window_open")}
+              </p>`}
+        </div>
       </div>
-      <div class="warning" role="status">
-        ${warning
-          ? html`<inline-notice><p>${warning}</p></inline-notice>`
-          : nothing}
-      </div>
-      ${this.address
-        ? html`<p class="address">
-            ${localizeContent("components.install_progress.checking_address", {
-              address: html`<a href=${this.address} @click=${openExternalLink}
-                >${this.address}</a
-              >`,
-            })}
-          </p>`
-        : nothing}
-      ${this.leavable
-        ? nothing
-        : html`<p class="stage-description">
-            ${localize("components.install_progress.keep_window_open")}
-          </p>`}
     `;
   }
 

@@ -1,4 +1,10 @@
-import { expect, fixture, html } from "@open-wc/testing";
+import {
+  expect,
+  fixture,
+  fixtureSync,
+  html,
+  waitUntil,
+} from "@open-wc/testing";
 import "../../../src/components/install-success.js";
 import type { InstallSuccess } from "../../../src/components/install-success.js";
 import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
@@ -24,6 +30,41 @@ describe("install-success", () => {
   // The stub shadows the prototype getter; deleting it restores the real UA.
   afterEach(() => {
     delete (window.navigator as { userAgent?: string }).userAgent;
+  });
+
+  it("puts Casita beside the next steps under the heading when wide, and above it when narrow", async () => {
+    const container = fixtureSync<HTMLDivElement>(html`
+      <div style="width: 736px">
+        <install-success
+          .subtitle=${"Installed on the fixture."}
+          .steps=${["Power it on", "Log in"]}
+        ></install-success>
+      </div>
+    `);
+    const el = container.querySelector("install-success")!;
+    await el.updateComplete;
+    const bounds = (selector: string) =>
+      el.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+
+    // The smallest window leaves 736px: the next steps fit beside Casita,
+    // and the heading spans both
+    expect(bounds(".mascot-container").right).to.be.at.most(
+      bounds(".details").left
+    );
+    expect(bounds(".heading").bottom).to.be.at.most(
+      bounds(".mascot-container").top
+    );
+    expect(bounds(".heading").bottom).to.be.at.most(bounds(".details").top);
+    expect(bounds(".mascot-container").width).to.equal(140);
+    expect(bounds(".details").right).to.be.at.most(
+      container.getBoundingClientRect().right
+    );
+
+    container.style.width = "500px";
+    await waitUntil(
+      () => bounds(".mascot-container").bottom <= bounds("h2").top,
+      "Casita should stand above the heading"
+    );
   });
 
   it("numbers the next steps in a labelled list", async () => {
