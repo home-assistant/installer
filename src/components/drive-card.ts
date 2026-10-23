@@ -186,7 +186,10 @@ export class DriveCard extends WaRadio {
   render() {
     return html`
       <div class="card">
-        <div class="icon-container">${renderDriveIcon(this.deviceType)}</div>
+        <!-- A picture of the drive's kind; the details name the drive -->
+        <div class="icon-container" aria-hidden="true">
+          ${renderDriveIcon(this.deviceType)}
+        </div>
         <div class="info">
           <p class="name">${this.name}</p>
           <p class="details">

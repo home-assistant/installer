@@ -470,7 +470,7 @@ export class InstallProgress extends LitElement {
             ${localize("components.install_progress.installation_failed")}
           </h2>
           <div class="details">
-            <p class="error-message" role="alert">${this.error}</p>
+            <p class="error-message" data-focus-alert>${this.error}</p>
             ${renderErrorHelp()}
           </div>
         </div>

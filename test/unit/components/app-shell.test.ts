@@ -344,7 +344,7 @@ describe("app-shell", () => {
         () =>
           !!el
             .shadowRoot!.querySelector("connection-check-view")
-            ?.shadowRoot?.querySelector('[role="alert"]')
+            ?.shadowRoot?.querySelector("[data-focus-alert]")
       );
       const gate = el.shadowRoot!.querySelector("connection-check-view")!;
       expect(wizardState.getState().currentFlow).to.equal(null);

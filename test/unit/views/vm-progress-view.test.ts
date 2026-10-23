@@ -197,6 +197,57 @@ describe("vm-progress-view", () => {
     expect(stages).to.deep.equal(["downloading", "downloading"]);
   });
 
+  it("clears what the failed attempt got through when it is tried again", async () => {
+    let runs = 0;
+    const el = mount(async (view) => {
+      if (++runs > 1) return new Promise(() => {});
+      await view.runBackendStep(() => Promise.resolve());
+      view.showProgress("downloading", progress(30));
+      view.showProgress("building", { ...progress(60), stage: "creating_vm" });
+      throw ipcError("test_failure", "Test failure", true);
+    });
+    await oneEvent(el, "install-error");
+    await el.updateComplete;
+    const layout = layoutOf(el);
+    expect(layout.bytesProcessed).to.equal(600);
+    expect(layout.totalBytes).to.equal(1000);
+    expect(layout.stageStartBytes).to.equal(600);
+
+    // The new attempt has not reported anything yet
+    el.retry();
+    await el.updateComplete;
+    expect(layout.stage).to.equal("downloading");
+    expect(layout.progress).to.equal(0);
+    expect(layout.bytesProcessed).to.equal(0);
+    expect(layout.totalBytes).to.equal(0);
+    expect(layout.stageStartTime).to.be.null;
+    expect(layout.stageStartBytes).to.equal(0);
+    el.remove();
+  });
+
+  it("starts each backend step with no counts from the one before", async () => {
+    const first = deferred<void>();
+    const el = mount(async (view) => {
+      await view.runBackendStep(() => first.promise);
+      await view.runBackendStep(() => new Promise(() => {}));
+      return {};
+    });
+    await el.updateComplete;
+    el.showProgress("downloading", progress(30));
+    await el.updateComplete;
+    const layout = layoutOf(el);
+    expect(layout.bytesProcessed).to.equal(300);
+
+    first.resolve();
+    await settle();
+    await el.updateComplete;
+    expect(layout.stage).to.equal("downloading");
+    expect(layout.progress).to.equal(0);
+    expect(layout.bytesProcessed).to.equal(0);
+    expect(layout.totalBytes).to.equal(0);
+    el.remove();
+  });
+
   it("tells the shell when the install can be stopped, and when left", async () => {
     const download = deferred<void>();
     const ready = deferred<boolean>();

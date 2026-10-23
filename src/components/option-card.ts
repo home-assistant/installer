@@ -1,7 +1,11 @@
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { styleMap } from "lit/directives/style-map.js";
-import { reducedMotionStyles } from "../utils/view-accessibility.js";
+import { localize } from "../localization/localize.js";
+import {
+  reducedMotionStyles,
+  srOnlyStyles,
+} from "../utils/view-accessibility.js";
 import { selectableCardStyles } from "../utils/card-styles.js";
 import { mdiServer } from "../utils/icons.js";
 
@@ -55,8 +59,17 @@ function hasIcon<T extends object>(
 
 @customElement("option-card")
 export class OptionCard extends LitElement {
+  // The card in the shadow root takes the role, so that its heading can name
+  // it and its description describe it: a reference from the host can't
+  // reach into the shadow root. Focusing the host focuses the card.
+  static shadowRootOptions = {
+    ...LitElement.shadowRootOptions,
+    delegatesFocus: true,
+  };
+
   static styles = [
     reducedMotionStyles,
+    srOnlyStyles,
     selectableCardStyles,
     css`
       /* Fills a stretched grid cell, so cards in one row end level */
@@ -171,41 +184,74 @@ export class OptionCard extends LitElement {
   @property({ type: String })
   icon: OptionCardIcon = "others";
 
-  connectedCallback() {
-    super.connectedCallback();
-    this.setAttribute("role", "button");
-    this.setAttribute("tabindex", "0");
-    this.addEventListener("keydown", this._onKeyDown);
-  }
+  /**
+   * Opens a page in the browser rather than going on in the app, so it is a
+   * link, and says that it opens in the browser.
+   */
+  @property({ type: Boolean })
+  external = false;
 
-  disconnectedCallback() {
-    this.removeEventListener("keydown", this._onKeyDown);
-    super.disconnectedCallback();
-  }
-
-  // The views attach `@click` to the host, so activating by keyboard just
-  // re-dispatches a click rather than adding a second event to wire up.
-  private _onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      this.click();
-    }
-  };
+  /** Space went down on the card, and comes up to act */
+  private _spacePressed = false;
 
   render() {
     return html`
-      <div class="card">
+      <div
+        class="card"
+        role=${this.external ? "link" : "button"}
+        tabindex="0"
+        aria-labelledby="title"
+        aria-describedby=${this.external
+          ? "external description"
+          : "description"}
+        @keydown=${this._onKeyDown}
+        @keyup=${this._onKeyUp}
+        @blur=${this._onBlur}
+      >
         <div class="icon-container">${this._renderIcon()}</div>
-        <p class="title">${this.heading}</p>
-        <p class="description">${this.description}</p>
+        <p class="title" id="title">${this.heading}</p>
+        ${this.external
+          ? html`<span class="sr-only" id="external"
+              >${localize("components.option_card.opens_in_browser")}</span
+            >`
+          : nothing}
+        <p class="description" id="description">${this.description}</p>
         <slot name="end"></slot>
       </div>
     `;
   }
 
-  // The card itself carries role="button", so its accessible name is
-  // computed from its contents. The visible name below already supplies that;
-  // giving the image an alt would have screen readers announce it twice.
+  // The views attach `@click` to the host, so activating by keyboard just
+  // re-dispatches a click rather than adding a second event to wire up.
+  // As on a native button, Enter acts when it goes down and Space when it
+  // comes up; a link takes only Enter, and Space scrolls. A held key acts
+  // once: repeats would open an external page again and again.
+  private _onKeyDown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (!e.repeat) this.click();
+    } else if (e.key === " " && !this.external) {
+      e.preventDefault();
+      // A repeat belongs to a press that began where the key went down,
+      // perhaps on another card before the focus moved here
+      if (!e.repeat) this._spacePressed = true;
+    }
+  }
+
+  private _onKeyUp(e: KeyboardEvent) {
+    if (e.key === " " && this._spacePressed) {
+      this._spacePressed = false;
+      this.click();
+    }
+  }
+
+  // Moving on with Space still down cancels it, as on a native button
+  private _onBlur() {
+    this._spacePressed = false;
+  }
+
+  // The heading names the card, so an alt would only have screen readers
+  // announce the option twice when they read the card's contents.
   private _renderIcon() {
     const icon: string = this.icon;
     if (icon === "sbc") {

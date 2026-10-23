@@ -12,6 +12,7 @@ import "../../../src/views/utm/utm-confirm-view.js";
 import "../../../src/views/proxmox/proxmox-confirm-view.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../tauri-ipc.js";
 import { expectReadsLeftToRight } from "../helpers/bidi.js";
+import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
 
 describe("installation confirmation views", () => {
   afterEach(() => {
@@ -88,6 +89,32 @@ describe("installation confirmation views", () => {
       restoreTauriIpc();
     }
   });
+
+  // Each row's label says what its picture shows, and the device's name is
+  // next to its photo
+  for (const flow of ["sbc", "vm", "proxmox"] as const) {
+    it(`keeps the ${flow} summary's pictures from screen readers`, async () => {
+      const device = MOCK_MANIFEST.devices[0];
+      wizardState.startFlow(flow);
+      storeDriveSelection(MOCK_BLOCK_DEVICES[0]);
+      wizardState.setSelection("deviceName", device.name);
+      wizardState.setSelection("deviceImage", device.image_url!);
+      wizardState.setSelection("deviceConfig", device.haos);
+      mockTauriIpc(() => MOCK_HAOS_RELEASE);
+      fixtureSync(
+        flow === "sbc"
+          ? html`<confirmation-view></confirmation-view>`
+          : flow === "vm"
+            ? html`<utm-confirm-view></utm-confirm-view>`
+            : html`<proxmox-confirm-view></proxmox-confirm-view>`
+      );
+      await settle();
+      const tree = await fullA11ySnapshot();
+
+      expect(findByRole(tree, "image")).to.deep.equal([]);
+      expect(findByRole(tree, "heading")[0]!.name).to.equal("Ready to install");
+    });
+  }
 
   it("lists the Wi-Fi network only for a board that can use it", async () => {
     for (const [board, listed] of [
