@@ -139,14 +139,18 @@ test("success-view preserves next-step list and completion semantics", async ({
   await expect(list).toBeVisible();
   expect(await list.getByRole("listitem").count()).toBeGreaterThan(0);
   expect(await list.ariaSnapshot()).toContain("listitem");
-  await expect
-    .poll(() =>
-      page
-        .locator("success-view svg")
-        .first()
-        .evaluate((svg) => (svg as SVGSVGElement).animationsPaused())
+  // Reduced-motion CSS can't stop SMIL animation, so its artwork has none
+  const svgs = page.locator("success-view svg");
+  await expect(svgs.first()).toBeAttached();
+  expect(
+    await svgs.evaluateAll((all) =>
+      all.flatMap((svg) =>
+        [...svg.querySelectorAll("*")]
+          .map((element) => element.localName)
+          .filter((name) => /^(animate\w*|set)$/.test(name))
+      )
     )
-    .toBe(true);
+  ).toEqual([]);
 });
 
 test("reduced motion reaches card shadow roots", async ({ page }) => {
