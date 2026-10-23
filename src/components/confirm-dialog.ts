@@ -1,14 +1,13 @@
 import { localize, localizeContent } from "../localization/localize.js";
-import { LitElement, html, css, nothing } from "lit";
+import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import { formatBytes } from "../api/index.js";
 import { getPlatform } from "../utils/platform.js";
+import { DialogBase } from "./dialog-base.js";
 
 /**
- * Destructive confirmation dialog built on wa-dialog (focus trap, Escape,
- * backdrop dismiss, and role="dialog"/aria-modal come for free).
+ * Destructive confirmation dialog built on DialogBase.
  *
  * Toggle `open`, describe the target with `driveName` / `drivePath` /
  * `driveModel` / `driveSize`, and listen for `dialog-confirm` /
@@ -20,91 +19,54 @@ import { getPlatform } from "../utils/platform.js";
  * apart at the point of no return.
  */
 @customElement("confirm-dialog")
-export class ConfirmDialog extends LitElement {
-  static styles = css`
-    :host {
-      display: none;
-    }
-
-    /* When open, occupy the viewport so the host is a real (if transparent)
-       box. wa-dialog renders a native modal in the top layer above this, which
-       handles all interaction; this just gives the host a layout box. */
-    :host([open]) {
-      display: block;
-      position: fixed;
-      inset: 0;
-    }
-
-    wa-dialog {
-      --width: 32rem;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      wa-dialog::part(dialog) {
-        animation: none !important;
+export class ConfirmDialog extends DialogBase {
+  static styles = [
+    DialogBase.styles,
+    css`
+      .dialog-message {
+        margin: 0 0 1rem 0;
       }
-    }
 
-    .dialog-title {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.75rem;
-      color: var(--ha-error-color, #db4437);
-    }
+      .drive-name {
+        font-weight: 600;
+      }
 
-    .warning-icon {
-      font-size: 1.5rem;
-    }
+      .drive-details {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.375rem 1rem;
+        padding: 0.75rem 1rem;
+        margin: 0 0 1rem 0;
+        background-color: var(--ha-card-background, #ffffff);
+        border: 1px solid var(--ha-border-color, #e0e0e0);
+        border-radius: var(--ha-small-border-radius, 8px);
+        font-size: 0.875rem;
+      }
 
-    .dialog-message {
-      font-size: 0.9375rem;
-      color: var(--ha-text-color, #212121);
-      line-height: 1.6;
-      margin: 0 0 1rem 0;
-    }
+      .detail-label {
+        color: var(--ha-secondary-text-color, #727272);
+        margin: 0;
+      }
 
-    .drive-name {
-      font-weight: 600;
-    }
+      .detail-value {
+        color: var(--ha-text-color, #212121);
+        margin: 0;
+        font-weight: 500;
+        overflow-wrap: anywhere;
+      }
 
-    .drive-details {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      gap: 0.375rem 1rem;
-      padding: 0.75rem 1rem;
-      margin: 0 0 1rem 0;
-      background-color: var(--ha-card-background, #ffffff);
-      border: 1px solid var(--ha-border-color, #e0e0e0);
-      border-radius: var(--ha-small-border-radius, 8px);
-      font-size: 0.875rem;
-    }
+      .detail-value.path {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
 
-    .detail-label {
-      color: var(--ha-secondary-text-color, #727272);
-      margin: 0;
-    }
-
-    .detail-value {
-      color: var(--ha-text-color, #212121);
-      margin: 0;
-      font-weight: 500;
-      overflow-wrap: anywhere;
-    }
-
-    .detail-value.path {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
-
-    .password-note {
-      font-size: 0.875rem;
-      color: var(--ha-secondary-text-color, #727272);
-      line-height: 1.5;
-      margin: 0;
-    }
-  `;
-
-  @property({ type: Boolean, reflect: true })
-  open = false;
+      .password-note {
+        font-size: 0.875rem;
+        color: var(--ha-secondary-text-color, #727272);
+        line-height: 1.5;
+        margin: 0;
+      }
+    `,
+  ];
 
   @property({ type: String, attribute: "drive-name" })
   driveName = "";
@@ -120,46 +82,41 @@ export class ConfirmDialog extends LitElement {
   @property({ type: Number, attribute: "drive-size" })
   driveSize?: number;
 
-  render() {
+  protected readonly dismissEvent = "dialog-cancel";
+
+  protected renderContent() {
     return html`
-      <wa-dialog
-        .open=${this.open}
-        light-dismiss
-        @wa-after-hide=${this._onAfterHide}
+      ${this.renderTitle(
+        localize("components.confirm_dialog.erase_drive_and_install"),
+        "warning"
+      )}
+
+      <p class="dialog-message">
+        ${this.driveName
+          ? localizeContent("components.confirm_dialog.erase_warning", {
+              drive: html`<span class="drive-name">${this.driveName}</span>`,
+            })
+          : localize("components.confirm_dialog.erase_warning_unknown")}
+      </p>
+
+      ${this._renderDriveDetails()}
+      ${this._promptsForPassword()
+        ? html`<p class="password-note">
+            ${localize("components.confirm_dialog.password_notice")}
+          </p>`
+        : ""}
+
+      <wa-button slot="footer" appearance="outlined" @click=${this._onCancel}>
+        ${localize("common.cancel")}
+      </wa-button>
+      <wa-button
+        slot="footer"
+        variant="danger"
+        appearance="accent"
+        @click=${this._onConfirm}
       >
-        <span slot="label" class="dialog-title">
-          <span class="warning-icon">⚠️</span> ${localize(
-            "components.confirm_dialog.erase_drive_and_install"
-          )}
-        </span>
-
-        <p class="dialog-message">
-          ${this.driveName
-            ? localizeContent("components.confirm_dialog.erase_warning", {
-                drive: html`<span class="drive-name">${this.driveName}</span>`,
-              })
-            : localize("components.confirm_dialog.erase_warning_unknown")}
-        </p>
-
-        ${this._renderDriveDetails()}
-        ${this._promptsForPassword()
-          ? html`<p class="password-note">
-              ${localize("components.confirm_dialog.password_notice")}
-            </p>`
-          : ""}
-
-        <wa-button slot="footer" appearance="outlined" @click=${this._onCancel}>
-          ${localize("common.cancel")}
-        </wa-button>
-        <wa-button
-          slot="footer"
-          variant="danger"
-          appearance="accent"
-          @click=${this._onConfirm}
-        >
-          ${localize("components.confirm_dialog.erase_and_install")}
-        </wa-button>
-      </wa-dialog>
+        ${localize("components.confirm_dialog.erase_and_install")}
+      </wa-button>
     `;
   }
 
@@ -196,39 +153,12 @@ export class ConfirmDialog extends LitElement {
     `;
   }
 
-  // Fires after the dialog has fully closed (Escape / backdrop / header close
-  // button). Syncing here rather than on wa-hide avoids feeding open=false back
-  // into wa-dialog mid-animation, which would trigger a second close request.
-  private _onAfterHide(event: Event) {
-    // wa-after-hide bubbles and is composed, so ignore events re-dispatched
-    // from any nested Web Awesome overlay in the dialog body.
-    if (event.eventPhase !== Event.AT_TARGET) {
-      return;
-    }
-    // open=false already means an action button or the consumer closed us,
-    // so this hide is not a user dismissal.
-    if (!this.open) {
-      return;
-    }
-    this.open = false;
-    this._dispatch("dialog-cancel");
-  }
-
   private _onCancel() {
-    this.open = false;
-    this._dispatch("dialog-cancel");
+    this.choose("dialog-cancel");
   }
 
   private _onConfirm() {
-    if (!this.open) return;
-    this.open = false;
-    this._dispatch("dialog-confirm");
-  }
-
-  private _dispatch(type: string) {
-    this.dispatchEvent(
-      new CustomEvent(type, { bubbles: true, composed: true })
-    );
+    this.choose("dialog-confirm");
   }
 
   // macOS asks for admin credentials via Authorization Services; Linux raises

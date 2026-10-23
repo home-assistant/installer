@@ -10,57 +10,65 @@ import {
   reportUrl,
   type Diagnostics,
 } from "../utils/diagnostics.js";
+import { dialogStyles } from "../utils/dialog-styles.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 
 @customElement("diagnostics-actions")
 export class DiagnosticsActions extends LitElement {
-  static styles = css`
-    /* It sits in text: after "Installation help · " under an error, and in
-       the welcome footer. So it looks like a link in that text (as in
-       link-styles.ts), in its font and on its baseline, not like a button of
-       its own. The welcome footer gives it its own quieter color. */
-    .launcher {
-      padding: 0;
-      border: 0;
-      background: none;
-      font: inherit;
-      color: var(--diagnostics-link-color, var(--ha-primary-color, #006787));
-      text-decoration: underline;
-      cursor: pointer;
-    }
-    .launcher:focus-visible {
-      outline: 2px solid var(--wa-color-focus, currentColor);
-      outline-offset: 2px;
-      border-radius: 2px;
-    }
-    wa-dialog {
-      --width: 36rem;
-    }
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      margin-top: 1rem;
-    }
-    textarea {
-      box-sizing: border-box;
-      width: 100%;
-      height: 12rem;
-      font: 0.8125rem monospace;
-      color: var(--ha-text-color);
-      background: var(--ha-background-color);
-      border: 1px solid var(--ha-border-color, #ccc);
-      border-radius: var(--wa-form-control-border-radius);
-      padding: 0.5rem;
-    }
-    p {
-      line-height: 1.5;
-    }
-    .version {
-      font-size: 0.875rem;
-    }
-  `;
+  static styles = [
+    dialogStyles,
+    css`
+      /* It sits in text: after "Installation help · " under an error, and in
+         the welcome footer. So it looks like a link in that text (as in
+         link-styles.ts), in its font and on its baseline, not like a button
+         of its own. The welcome footer gives it its own quieter color. */
+      .launcher {
+        padding: 0;
+        border: 0;
+        background: none;
+        font: inherit;
+        color: var(--diagnostics-link-color, var(--ha-primary-color, #006787));
+        text-decoration: underline;
+        cursor: pointer;
+      }
+      .launcher:focus-visible {
+        outline: 2px solid var(--wa-color-focus, currentColor);
+        outline-offset: 2px;
+        border-radius: 2px;
+      }
+      /* The dialog would take the look of the text the launcher sits in,
+         which differs between the welcome footer and an error */
+      wa-dialog {
+        text-align: start;
+        font-size: 1rem;
+        color: var(--ha-text-color, #212121);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 1rem;
+      }
+      textarea {
+        box-sizing: border-box;
+        width: 100%;
+        height: 12rem;
+        font: 0.8125rem monospace;
+        color: var(--ha-text-color);
+        background: var(--ha-background-color);
+        border: 1px solid var(--ha-border-color, #ccc);
+        border-radius: var(--wa-form-control-border-radius);
+        padding: 0.5rem;
+      }
+      p {
+        line-height: 1.5;
+      }
+      .version {
+        font-size: 0.875rem;
+      }
+    `,
+  ];
 
   @state() private _open = false;
   @state() private _version = "";
@@ -135,6 +143,7 @@ export class DiagnosticsActions extends LitElement {
         ${localize("components.diagnostics_actions.report_a_problem")}
       </button>
       <wa-dialog
+        class="wide"
         label=${localize("components.diagnostics_actions.report_a_problem")}
         .open=${this._open}
         @wa-after-hide=${this._onAfterHide}
@@ -173,12 +182,15 @@ export class DiagnosticsActions extends LitElement {
               "components.diagnostics_actions.report_a_problem"
             )}</wa-button
           >
-          <wa-button ?disabled=${!this._data} @click=${this._copy}
+          <wa-button
+            appearance="outlined"
+            ?disabled=${!this._data}
+            @click=${this._copy}
             >${localize(
               "components.diagnostics_actions.copy_diagnostics"
             )}</wa-button
           >
-          <wa-button @click=${this._openLogs}
+          <wa-button appearance="outlined" @click=${this._openLogs}
             >${localize(
               "components.diagnostics_actions.open_logs_folder"
             )}</wa-button

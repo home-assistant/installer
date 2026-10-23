@@ -26,6 +26,8 @@ async function startFlash(page: Page) {
   await page
     .getByRole("button", { name: "Erase and install", exact: true })
     .click();
+  // The question animates out first, its own Cancel with it
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(cancel(page)).toBeVisible();
 }
 
