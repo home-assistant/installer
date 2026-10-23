@@ -1,4 +1,4 @@
-import { LitElement, css, type PropertyValues } from "lit";
+import { LitElement, css, type PropertyValues, type CSSResultGroup } from "lit";
 import { state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../state/wizard-state.js";
 import { WizardStateController } from "../state/wizard-state-controller.js";
@@ -30,7 +30,7 @@ export interface InstallFailure {
  *   differently can, like another drive
  */
 export abstract class InstallProgressView extends LitElement {
-  static styles = css`
+  static styles: CSSResultGroup = css`
     :host {
       display: flex;
       flex-direction: column;
