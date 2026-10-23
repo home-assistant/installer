@@ -627,6 +627,7 @@
   "backend.proxmox.vm_status_denied": "Access denied. Your Proxmox user may not have permission to see this VM's status.",
   "backend.proxmox.vm_created_resize_failed": "VM {vm_id} was created, but its disk couldn't be resized to {size_gb, number, ::unit/gigabyte}. Delete VM {vm_id} in Proxmox, then install again.",
   "backend.proxmox.leftover_import_image": "Installation stopped, but the uploaded image could not be removed. Delete {volume} from node {node} in Proxmox.",
+  "backend.proxmox.create_failed_image_left": "Proxmox didn't create VM {vm_id}, and the uploaded image couldn't be removed. Delete {volume} from node {node} in Proxmox, then install again.",
   "backend.proxmox.upload_unconfirmed": "Proxmox didn't confirm that it stored the uploaded image. If {volume} is on node {node}, delete it in Proxmox, then install again.",
   "backend.proxmox.vm_creation_unconfirmed": "Proxmox didn't confirm that VM {vm_id} was created. If VM {vm_id} exists in Proxmox, delete it, then install again.",
   "backend.proxmox.vm_created_start_failed": "VM {vm_id} was created, but Proxmox couldn't start it. Start VM {vm_id} in Proxmox; its task log says what went wrong.",

@@ -1282,8 +1282,8 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
         ),
     });
 
-    // Upload to Proxmox using multipart form, with a longer timeout for large uploads
-    let api = Api::new(session, 1800)?; // 30 minutes
+    // Upload to Proxmox using multipart form
+    let api = Api::new(session, upload_timeout(file_size))?;
     let url = api.node_url(
         node,
         &format!("/storage/{}/upload", urlencoding::encode(storage_name)),
@@ -1405,6 +1405,16 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     Ok(filename)
 }
 
+/// The slowest upload still worth waiting for, in bytes per second: 1 Mbit/s.
+const SLOWEST_UPLOAD: u64 = 125_000;
+
+/// How long uploading `size` bytes may take, in seconds. Never under half an
+/// hour, and longer for a big image over a slow link, like a VPN to a remote
+/// node. A stop ends it any time before that.
+fn upload_timeout(size: u64) -> u64 {
+    (size / SLOWEST_UPLOAD).max(1800)
+}
+
 /// Proxmox accepted the upload, but didn't confirm it stored the image. A
 /// lost session or changed certificate keeps its own error, so the user is
 /// offered to log in again. Anything else names the image that may be left
@@ -1436,8 +1446,13 @@ async fn create_vm_with_disk(
     storage_name: &str,
     source_unused: &mut bool,
 ) -> Result<()> {
-    // Networks and ACLs can change during the download/upload.
-    if let Err(error) = ensure_bridge_access(session, config).await {
+    // Networks, ACLs and free VM IDs can all change during the download and
+    // upload, which take long enough for someone to create a VM meanwhile.
+    let still_possible = async {
+        ensure_vm_id_free(session, config.vm_id).await?;
+        ensure_bridge_access(session, config).await
+    };
+    if let Err(error) = still_possible.await {
         // No create request was sent, so the uploaded source is unused.
         *source_unused = true;
         return Err(error);
@@ -1628,7 +1643,7 @@ async fn import_and_cleanup_image(
     )
     .await;
     // Creation was prevented/rejected or the import task stopped. Cleanup is
-    // best effort and must never replace the original installation result.
+    // best effort and must never hide why the installation failed.
     if source_unused {
         if let Err(error) =
             delete_import_image(session, &config.node, storage_name, image_filename).await
@@ -1637,6 +1652,17 @@ async fn import_and_cleanup_image(
                 "Temporary import cleanup for VM {} failed: {error}",
                 config.vm_id
             );
+            // Proxmox's own rejection tells the user nothing to act on, the
+            // image left behind does. Installer guidance and reconnecting keep
+            // their own error.
+            if matches!(result, Err(Error::ProxmoxApi(_))) {
+                return Err(Error::ProxmoxActionRequired(crate::message!(
+                    "backend.proxmox.create_failed_image_left",
+                    vm_id = config.vm_id,
+                    volume = format!("{storage_name}:import/{image_filename}"),
+                    node = config.node,
+                )));
+            }
         }
     }
     result
@@ -3129,6 +3155,16 @@ mod tests {
                 .await
         }
 
+        /// Proxmox says VM ID 100 is still free; creating a VM checks that again.
+        async fn mock_vm_id_free(server: &mut Server) -> Mock {
+            server
+                .mock("GET", "/api2/json/cluster/nextid")
+                .match_query(Matcher::UrlEncoded("vmid".to_string(), "100".to_string()))
+                .with_body(r#"{"data": "100"}"#)
+                .create_async()
+                .await
+        }
+
         async fn mock_default_bridge(server: &mut Server) -> Mock {
             mock_bridges(
                 server,
@@ -3183,6 +3219,7 @@ mod tests {
         #[tokio::test]
         async fn test_bridge_validation_rejects_net0_and_path_injection_before_create() {
             let mut server = Server::new_async().await;
+            mock_vm_id_free(&mut server).await;
             mock_default_bridge(&mut server).await;
             for name in [
                 "",
@@ -3327,6 +3364,7 @@ mod tests {
         async fn test_invalid_vlan_and_changed_capability_never_create_vm() {
             for tag in [0, 4095, u16::MAX] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 let network = server
                     .mock("GET", "/api2/json/nodes/pve/network")
                     .match_query(Matcher::Any)
@@ -3359,6 +3397,7 @@ mod tests {
                 create.assert_async().await;
             }
             let mut server = Server::new_async().await;
+            mock_vm_id_free(&mut server).await;
             let network = mock_default_bridge(&mut server).await;
             let create = server
                 .mock("POST", "/api2/json/nodes/pve/qemu")
@@ -3390,6 +3429,7 @@ mod tests {
             for tag in [1, 42, 4094] {
                 for allowed in [false, true] {
                     let mut server = Server::new_async().await;
+                    mock_vm_id_free(&mut server).await;
                     let network = mock_bridges(&mut server, serde_json::json!([{"iface":"vmbr0","type":"bridge","bridge_vlan_aware":1}])).await;
                     let permissions = mock_privileges(
                         &mut server,
@@ -3535,6 +3575,7 @@ mod tests {
                 "localnetwork",
             ] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 let network = mock_bridges(
                     &mut server,
                     serde_json::json!([{"iface":"lan", "type":"vnet"}]),
@@ -4356,6 +4397,7 @@ mod tests {
 
         async fn check_create_vm_with_disk_size(disk_size_gb: u32) {
             let mut server = Server::new_async().await;
+            mock_vm_id_free(&mut server).await;
             let requests = std::sync::Arc::new(Mutex::new(Vec::new()));
             let network = mock_bridges(
                 &mut server,
@@ -4504,6 +4546,7 @@ mod tests {
                 ),
             ] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 // Creating the VM first rechecks the selected bridge
                 let _network = mock_default_bridge(&mut server).await;
                 let _permissions =
@@ -4569,6 +4612,7 @@ mod tests {
         async fn test_disk_resize_requires_successful_import() {
             for body in [r#"{"data":null}"#, r#"{"data":"create-task"}"#] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 // Creating the VM first rechecks the selected bridge
                 let _network = mock_default_bridge(&mut server).await;
                 let _permissions =
@@ -4692,6 +4736,7 @@ mod tests {
                 ),
             ] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 if matches!(call, Create) {
                     // Creating the VM first rechecks the selected bridge
                     mock_default_bridge(&mut server).await;
@@ -4910,6 +4955,7 @@ mod tests {
         async fn failed_bridge_recheck_deletes_unused_import_without_creating_vm() {
             for bridge_removed in [true, false] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 let session = session(server.url());
                 let config = vm_config();
                 let initial_network = mock_default_bridge(&mut server).await;
@@ -4976,10 +5022,103 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn vm_id_taken_during_the_upload_deletes_the_image_without_creating_a_vm() {
+            let mut server = Server::new_async().await;
+            let session = session(server.url());
+            // Someone created VM 100 while the image was being uploaded
+            let vm_id = server
+                .mock("GET", "/api2/json/cluster/nextid")
+                .match_query(Matcher::UrlEncoded("vmid".to_string(), "100".to_string()))
+                .with_status(400)
+                .with_body(r#"{"errors": {"vmid": "VM 100 already exists"}, "data": null}"#)
+                .create_async()
+                .await;
+            let create = server
+                .mock("POST", "/api2/json/nodes/pve/qemu")
+                .expect(0)
+                .create_async()
+                .await;
+            let delete = server
+                .mock(
+                    "DELETE",
+                    "/api2/json/nodes/pve/storage/local-import/content/local-import%3Aimport%2Fhai.qcow2",
+                )
+                .with_body(r#"{"data":"delete-task"}"#)
+                .create_async()
+                .await;
+            let cleanup_task = mock_task(&mut server, "delete-task", TASK_OK).await;
+
+            let result =
+                import_and_cleanup_image(&session, &vm_config(), "hai.qcow2", "local-import").await;
+            assert_eq!(
+                action_required(result),
+                message!("backend.proxmox.vm_id_unavailable", vm_id = 100)
+            );
+            vm_id.assert_async().await;
+            create.assert_async().await;
+            delete.assert_async().await;
+            cleanup_task.assert_async().await;
+        }
+
+        #[tokio::test]
+        async fn a_rejected_create_names_the_image_it_could_not_remove() {
+            // (row, create status, outcome)
+            for (row, status, expected) in [
+                // Proxmox's rejection says nothing to act on; the image does
+                (
+                    "rejected",
+                    400,
+                    Action(message!(
+                        "backend.proxmox.create_failed_image_left",
+                        vm_id = 100,
+                        volume = "local-import:import/hai.qcow2",
+                        node = "pve",
+                    )),
+                ),
+                // Logging in again is offered instead
+                ("session expired", 401, SessionExpired),
+            ] {
+                let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
+                mock_default_bridge(&mut server).await;
+                mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"]).await;
+                server
+                    .mock("POST", "/api2/json/nodes/pve/qemu")
+                    .with_status(status)
+                    .create_async()
+                    .await;
+                let delete = server
+                    .mock("DELETE", Matcher::Any)
+                    .with_status(500)
+                    .create_async()
+                    .await;
+
+                let result = import_and_cleanup_image(
+                    &session(server.url()),
+                    &vm_config(),
+                    "hai.qcow2",
+                    "local-import",
+                )
+                .await;
+                assert_outcome(row, result, &expected);
+                assert!(delete.matched_async().await, "{row}: no cleanup tried");
+            }
+        }
+
+        #[test]
+        fn a_slow_link_gets_more_time_for_a_big_image() {
+            assert_eq!(upload_timeout(0), 1800);
+            assert_eq!(upload_timeout(100_000_000), 1800);
+            // A 1 GB image at 1 Mbit/s takes over two hours
+            assert_eq!(upload_timeout(1_000_000_000), 8000);
+        }
+
+        #[tokio::test]
         async fn import_cleanup_waits_for_completion_and_preserves_install_result() {
             use std::sync::Arc;
             for cleanup_status in [200, 403, 500] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 let network = mock_default_bridge(&mut server).await;
                 let permissions =
                     mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"])
@@ -5058,6 +5197,7 @@ mod tests {
                 ),
             ] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 let network = mock_default_bridge(&mut server).await;
                 let permissions =
                     mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"])
@@ -5435,6 +5575,7 @@ mod tests {
                 ("session expired", 401, "", SessionExpired),
             ] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 mock_default_bridge(&mut server).await;
                 mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"]).await;
                 server
