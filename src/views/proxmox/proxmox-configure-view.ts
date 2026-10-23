@@ -113,13 +113,13 @@ export class ProxmoxConfigureView extends LitElement {
 
       .loading-text {
         font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #9e9e9e);
+        color: var(--ha-secondary-text-color);
         font-style: italic;
       }
 
       .error-text {
         font-size: 0.875rem;
-        color: var(--ha-error-color, #db4437);
+        color: var(--ha-error-color);
       }
 
       /* Last on the step, and at its foot when the step is short, so it is
@@ -133,7 +133,7 @@ export class ProxmoxConfigureView extends LitElement {
         margin-top: auto;
         font-size: 0.875rem;
         line-height: 1.4;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         overflow-wrap: anywhere;
       }
 

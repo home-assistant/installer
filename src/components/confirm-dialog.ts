@@ -37,19 +37,19 @@ export class ConfirmDialog extends DialogBase {
         gap: 0.375rem 1rem;
         padding: 0.75rem 1rem;
         margin: 0 0 1rem 0;
-        background-color: var(--ha-card-background, #ffffff);
-        border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-small-border-radius, 8px);
+        background-color: var(--ha-card-background);
+        border: 1px solid var(--ha-border-color);
+        border-radius: var(--ha-small-border-radius);
         font-size: 0.875rem;
       }
 
       .detail-label {
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         margin: 0;
       }
 
       .detail-value {
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         margin: 0;
         font-weight: 500;
         overflow-wrap: anywhere;
@@ -61,7 +61,7 @@ export class ConfirmDialog extends DialogBase {
 
       .password-note {
         font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         line-height: 1.5;
         margin: 0;
       }

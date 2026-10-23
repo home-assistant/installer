@@ -25,12 +25,12 @@ export class HaHardwareConnectInstructions extends LitElement {
 
       .instructions {
         padding: 1rem 1.25rem;
-        background-color: var(--ha-card-background, #ffffff);
-        border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-card-border-radius, 12px);
+        background-color: var(--ha-card-background);
+        border: 1px solid var(--ha-border-color);
+        border-radius: var(--ha-card-border-radius);
         font-size: 0.875rem;
         line-height: 1.5;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
       }
 
       h3 {

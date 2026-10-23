@@ -24,7 +24,7 @@ export class ProxmoxConfirmView extends LitElement {
     summaryStyles,
     css`
       .icon-container .proxmox-icon {
-        fill: var(--ha-primary-color, #03a9f4);
+        fill: var(--ha-primary-color);
       }
     `,
   ];

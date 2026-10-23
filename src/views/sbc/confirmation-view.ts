@@ -54,7 +54,7 @@ export class ConfirmationView extends LitElement {
         display: flex;
         align-items: center;
         justify-content: center;
-        background-color: var(--ha-border-color, #e0e0e0);
+        background-color: var(--ha-border-color);
         border-radius: 8px;
       }
 

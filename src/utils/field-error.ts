@@ -54,8 +54,8 @@ const errorIcon = css`url("/assets/icons/alert-circle.svg")`;
 export const fieldErrorStyles = css`
   wa-input[custom-error],
   wa-select[custom-error] {
-    --wa-form-control-border-color: var(--ha-error-color, #b30532);
-    --wa-form-control-hint-color: var(--ha-error-color, #b30532);
+    --wa-form-control-border-color: var(--ha-error-color);
+    --wa-form-control-hint-color: var(--ha-error-color);
   }
 
   wa-input[custom-error] > [slot="hint"]::before,

@@ -39,7 +39,7 @@ const PANELS: {
   },
 ];
 
-/** The box, in a column wider than it, without the app's theme */
+/** The box, in a column wider than it, in the light theme */
 const PANEL = {
   display: "flex",
   flexDirection: "column",

@@ -12,9 +12,9 @@ export const panelStyles = css`
   flex-direction: column;
   gap: 1.5rem;
   padding: 1.5rem;
-  background-color: var(--ha-card-background, #ffffff);
-  border: 1px solid var(--ha-border-color, #e0e0e0);
-  border-radius: var(--ha-card-border-radius, 12px);
+  background-color: var(--ha-card-background);
+  border: 1px solid var(--ha-border-color);
+  border-radius: var(--ha-card-border-radius);
   width: 100%;
   box-sizing: border-box;
   max-width: 500px;

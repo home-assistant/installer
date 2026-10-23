@@ -21,7 +21,7 @@ export const settingStyles = css`
   .setting-icon svg {
     width: 22px;
     height: 22px;
-    fill: var(--ha-secondary-text-color, #727272);
+    fill: var(--ha-secondary-text-color);
   }
 
   .setting-content {
@@ -45,20 +45,20 @@ export const settingStyles = css`
   .setting-label {
     font-size: 0.9375rem;
     font-weight: 500;
-    color: var(--ha-text-color, #212121);
+    color: var(--ha-text-color);
   }
 
   .setting-value {
     font-size: 0.9375rem;
     font-weight: 600;
-    color: var(--ha-primary-color, #03a9f4);
+    color: var(--ha-primary-color);
     min-width: 70px;
     text-align: end;
   }
 
   .setting-description {
     font-size: 0.75rem;
-    color: var(--ha-secondary-text-color, #9e9e9e);
+    color: var(--ha-secondary-text-color);
     margin: 0;
     line-height: 1.3;
   }

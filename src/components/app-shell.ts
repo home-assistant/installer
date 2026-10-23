@@ -83,7 +83,7 @@ export class AppShell extends LitElement {
       flex-direction: column;
       width: 100%;
       height: 100vh;
-      background-color: var(--ha-background-color, #ffffff);
+      background-color: var(--ha-background-color);
       position: relative;
     }
 

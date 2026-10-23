@@ -44,7 +44,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         margin: 1rem 0 0 0;
         font-size: 0.9375rem;
         line-height: 1.6;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
       }
     `,
   ];

@@ -33,14 +33,14 @@ export class MiniPCMediaView extends LitElement {
     h2 {
       font-size: 1.5rem;
       font-weight: 400;
-      color: var(--ha-text-color, #212121);
+      color: var(--ha-text-color);
       margin: 0 0 0.5rem 0;
       text-align: center;
     }
 
     .subtitle {
       font-size: 1rem;
-      color: var(--ha-secondary-text-color, #727272);
+      color: var(--ha-secondary-text-color);
       margin: 0 0 2rem 0;
       text-align: center;
       max-width: 500px;

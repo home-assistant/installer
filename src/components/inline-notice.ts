@@ -20,19 +20,19 @@ export class InlineNotice extends LitElement {
       max-width: 500px;
       box-sizing: border-box;
       padding: 1rem;
-      background-color: var(--ha-warning-background, rgba(255, 152, 0, 0.1));
-      border: 1px solid var(--ha-warning-border, rgba(255, 152, 0, 0.3));
-      border-radius: var(--ha-small-border-radius, 8px);
+      background-color: var(--ha-warning-background);
+      border: 1px solid var(--ha-warning-border);
+      border-radius: var(--ha-small-border-radius);
       font-size: 0.875rem;
       line-height: 1.5;
-      color: var(--ha-text-color, #212121);
+      color: var(--ha-text-color);
       text-align: start;
       overflow-wrap: anywhere;
     }
 
     :host([variant="error"]) {
-      background-color: var(--ha-error-background, rgba(219, 68, 55, 0.1));
-      border-color: var(--ha-error-border, rgba(219, 68, 55, 0.3));
+      background-color: var(--ha-error-background);
+      border-color: var(--ha-error-border);
     }
 
     .icon {

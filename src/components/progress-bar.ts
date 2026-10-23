@@ -21,8 +21,8 @@ export class ProgressBar extends LitElement {
 
     wa-progress-bar {
       --track-height: 8px;
-      --indicator-color: var(--ha-primary-color, #03a9f4);
-      --track-color: var(--ha-border-color, #e0e0e0);
+      --indicator-color: var(--ha-primary-color);
+      --track-color: var(--ha-border-color);
     }
 
     /* Web Awesome has no reduced-motion rule of its own */

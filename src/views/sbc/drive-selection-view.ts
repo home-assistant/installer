@@ -90,7 +90,7 @@ export class DriveSelectionView extends LitElement {
         align-items: center;
         padding: 2rem;
         text-align: center;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
       }
 
       casita-mascot {
@@ -100,7 +100,7 @@ export class DriveSelectionView extends LitElement {
       .empty-title {
         font-size: 1.125rem;
         font-weight: 500;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         margin: 0 0 0.5rem 0;
       }
 

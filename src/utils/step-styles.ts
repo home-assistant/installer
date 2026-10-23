@@ -16,7 +16,7 @@ export const stepStyles = css`
   h2 {
     font-size: 1.5rem;
     font-weight: 400;
-    color: var(--ha-text-color, #212121);
+    color: var(--ha-text-color);
     margin: 0 0 0.5rem 0;
     text-align: center;
   }
@@ -24,7 +24,7 @@ export const stepStyles = css`
   /* As wide as the column most steps put below it */
   .subtitle {
     font-size: 1rem;
-    color: var(--ha-secondary-text-color, #727272);
+    color: var(--ha-secondary-text-color);
     margin: 0 0 1.5rem 0;
     text-align: center;
     max-width: 500px;

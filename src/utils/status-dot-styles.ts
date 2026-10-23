@@ -14,17 +14,17 @@ export const statusDotStyles = css`
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    border: 2px solid var(--ha-inactive-color, #8c8c8c);
+    border: 2px solid var(--ha-inactive-color);
   }
 
   .status-dot.active,
   .status-dot.completed {
-    border-color: var(--ha-primary-color, #03a9f4);
-    background-color: var(--ha-primary-color, #03a9f4);
+    border-color: var(--ha-primary-color);
+    background-color: var(--ha-primary-color);
   }
 
   .status-dot.active {
-    outline: 2px solid var(--ha-primary-color, #03a9f4);
+    outline: 2px solid var(--ha-primary-color);
     outline-offset: 2px;
   }
 

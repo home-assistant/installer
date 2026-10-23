@@ -39,7 +39,7 @@ export class DeviceCard extends CardButton {
       .image-placeholder {
         width: 80px;
         height: 80px;
-        background-color: var(--ha-primary-color, #03a9f4);
+        background-color: var(--ha-primary-color);
         border-radius: 12px;
         opacity: 0.2;
       }
@@ -47,7 +47,7 @@ export class DeviceCard extends CardButton {
       .name {
         font-size: 0.875rem;
         font-weight: 500;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         text-align: center;
         margin: 0;
         line-height: 1.3;

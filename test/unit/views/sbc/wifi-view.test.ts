@@ -6,7 +6,7 @@ import type { WifiView } from "../../../../src/views/sbc/wifi-view.js";
 import { findByRole, fullA11ySnapshot } from "../../helpers/a11y.js";
 import { settle } from "../../tauri-ipc.js";
 
-/** The error colour without the app's theme, which the unit tests don't load */
+/** The theme's error colour, in light mode like every unit test */
 const ERROR_COLOR = "rgb(179, 5, 50)";
 
 /** The view with the switch turned on, and its two fields. */

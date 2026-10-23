@@ -22,11 +22,11 @@ export class LiveUsbSummaryView extends LitElement {
         gap: 0.5rem 1rem;
       }
       dt {
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
       }
       dd {
         margin: 0;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         overflow-wrap: anywhere;
       }
     `,

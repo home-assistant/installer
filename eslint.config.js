@@ -47,6 +47,30 @@ export default [
     },
   },
   {
+    // styles.css sets every --ha-* theme token, and every page loads it, unit
+    // tests included. A fallback would never show, so nothing would notice it
+    // going stale, as the old HA blue had. --ha-icon-display is no theme
+    // token but ha-svg-icon's own hook, which nothing sets by default.
+    files: ["src/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "TemplateElement[value.raw=/var\\(\\s*--ha-(?!icon-display\\s*,)[\\w-]+\\s*,/]",
+          message:
+            "Use var(--ha-…) without a fallback: src/styles.css sets every theme token.",
+        },
+        {
+          selector:
+            "Literal[value=/var\\(\\s*--ha-(?!icon-display\\s*,)[\\w-]+\\s*,/]",
+          message:
+            "Use var(--ha-…) without a fallback: src/styles.css sets every theme token.",
+        },
+      ],
+    },
+  },
+  {
     // State is what views read and write, so it can't depend on them, not even
     // for a type: the dependency would run both ways.
     files: ["src/state/**/*.ts"],

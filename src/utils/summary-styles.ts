@@ -40,11 +40,11 @@ export const summaryStyles = css`
   .icon-container svg {
     width: 36px;
     height: 36px;
-    fill: var(--ha-secondary-text-color, #727272);
+    fill: var(--ha-secondary-text-color);
   }
 
   .icon-container .ha-icon {
-    fill: var(--ha-primary-color, #03a9f4);
+    fill: var(--ha-primary-color);
   }
 
   /* A long drive or VM name wraps, even mid-word, rather than being cut
@@ -63,19 +63,19 @@ export const summaryStyles = css`
   .summary-value {
     font-size: 1rem;
     font-weight: 500;
-    color: var(--ha-text-color, #212121);
+    color: var(--ha-text-color);
     margin: 0;
   }
 
   .summary-detail {
     font-size: 0.875rem;
-    color: var(--ha-secondary-text-color, #727272);
+    color: var(--ha-secondary-text-color);
     margin: 0.25rem 0 0 0;
   }
 
   .divider {
     height: 1px;
-    background-color: var(--ha-border-color, #e0e0e0);
+    background-color: var(--ha-border-color);
     margin: 0;
   }
 `;

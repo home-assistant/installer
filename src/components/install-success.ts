@@ -62,13 +62,13 @@ export class InstallSuccess extends LitElement {
       h2 {
         font-size: 2rem;
         font-weight: 500;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         margin: 0 0 0.5rem 0;
       }
 
       .subtitle {
         font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         margin: 0 0 2rem 0;
       }
 
@@ -106,8 +106,8 @@ export class InstallSuccess extends LitElement {
         width: 24px;
         height: 24px;
         border-radius: 50%;
-        background-color: var(--ha-primary-fill, #006787);
-        color: white;
+        background-color: var(--ha-primary-fill);
+        color: var(--wa-color-brand-on-loud);
         font-size: 0.875rem;
         font-weight: 500;
         display: flex;
@@ -118,7 +118,7 @@ export class InstallSuccess extends LitElement {
 
       .step-text {
         font-size: 1rem;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         line-height: 1.5;
         padding-top: 2px;
         min-width: 0;
@@ -135,7 +135,7 @@ export class InstallSuccess extends LitElement {
       .companion-title {
         font-size: 1rem;
         font-weight: 500;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         margin: 0;
       }
 
@@ -151,10 +151,10 @@ export class InstallSuccess extends LitElement {
         align-items: center;
         gap: 0.5rem;
         padding: 0.625rem 1rem;
-        background-color: var(--ha-background-color, #f5f5f5);
-        border: 1px solid var(--ha-control-border-color, #e0e0e0);
-        border-radius: var(--ha-small-border-radius, 8px);
-        color: var(--ha-text-color, #212121);
+        background-color: var(--ha-background-color);
+        border: 1px solid var(--ha-control-border-color);
+        border-radius: var(--ha-small-border-radius);
+        color: var(--ha-text-color);
         text-decoration: none;
         font-size: 0.875rem;
         font-weight: 500;
@@ -162,19 +162,19 @@ export class InstallSuccess extends LitElement {
       }
 
       .app-link:hover {
-        background-color: var(--ha-primary-fill, #006787);
-        border-color: var(--ha-primary-color, #03a9f4);
-        color: white;
+        background-color: var(--ha-primary-fill);
+        border-color: var(--ha-primary-color);
+        color: var(--wa-color-brand-on-loud);
       }
 
       .app-link:hover svg {
-        fill: white;
+        fill: var(--wa-color-brand-on-loud);
       }
 
       .app-link svg {
         width: 20px;
         height: 20px;
-        fill: var(--ha-text-color, #212121);
+        fill: var(--ha-text-color);
         transition: fill 0.2s ease;
       }
 
@@ -185,9 +185,9 @@ export class InstallSuccess extends LitElement {
         margin-bottom: 2rem;
         padding: 1rem;
         background-color: rgba(3, 169, 244, 0.1);
-        border-radius: var(--ha-small-border-radius, 8px);
+        border-radius: var(--ha-small-border-radius);
         font-size: 0.875rem;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         text-align: start;
       }
 
@@ -196,7 +196,7 @@ export class InstallSuccess extends LitElement {
       }
 
       .tip-section strong {
-        color: var(--ha-primary-color, #03a9f4);
+        color: var(--ha-primary-color);
       }
 
       /* Wide enough, Casita stands beside the next steps, under the heading,

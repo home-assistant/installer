@@ -18,7 +18,7 @@ import {
   settle,
 } from "../../tauri-ipc.js";
 
-/** The error colour without the app's theme, which the unit tests don't load */
+/** The theme's error colour, in light mode like every unit test */
 const ERROR_COLOR = "rgb(179, 5, 50)";
 
 /** The cores, memory and disk sliders, in the shared resources component */
