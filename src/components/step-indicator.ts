@@ -7,12 +7,14 @@ import {
   reducedMotionStyles,
   srOnlyStyles,
 } from "../utils/view-accessibility.js";
+import { statusDotStyles } from "../utils/status-dot-styles.js";
 
 @customElement("step-indicator")
 export class StepIndicator extends LitElement {
   static styles = [
     srOnlyStyles,
     reducedMotionStyles,
+    statusDotStyles,
     css`
       :host {
         display: block;
@@ -32,27 +34,9 @@ export class StepIndicator extends LitElement {
         gap: 0.5rem;
       }
 
-      /* Each state has its own shape, not only its own color: upcoming is an
-         empty ring, completed a filled dot, current a filled dot in a ring */
-      .step-dot {
+      .status-dot {
         flex-shrink: 0;
-        box-sizing: border-box;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        border: 2px solid var(--ha-inactive-color, #8c8c8c);
         transition: all 0.2s ease;
-      }
-
-      .step-dot.active,
-      .step-dot.completed {
-        border-color: var(--ha-primary-color, #03a9f4);
-        background-color: var(--ha-primary-color, #03a9f4);
-      }
-
-      .step-dot.active {
-        outline: 2px solid var(--ha-primary-color, #03a9f4);
-        outline-offset: 2px;
       }
 
       .step-label {
@@ -78,24 +62,8 @@ export class StepIndicator extends LitElement {
         background-color: var(--ha-primary-color, #03a9f4);
       }
 
-      /* Forced colors would paint the fills like the page, leaving the
-         completed dots as empty as the upcoming ones */
+      /* Forced colors would paint the lines like the page, out of sight */
       @media (forced-colors: active) {
-        .step-dot {
-          border-color: GrayText;
-        }
-
-        .step-dot.completed {
-          border-color: CanvasText;
-          background-color: CanvasText;
-        }
-
-        .step-dot.active {
-          border-color: Highlight;
-          background-color: Highlight;
-          outline-color: Highlight;
-        }
-
         .step-connector {
           background-color: GrayText;
         }
@@ -125,7 +93,7 @@ export class StepIndicator extends LitElement {
         }
 
         /* Its ring reaches as far as the gap, and would touch the lines */
-        .step-dot.active {
+        .status-dot.active {
           margin-inline: 2px;
         }
 
@@ -250,7 +218,7 @@ export class StepIndicator extends LitElement {
         aria-current=${ifDefined(isActive ? "step" : undefined)}
       >
         <span
-          class="step-dot ${isActive ? "active" : ""} ${isCompleted
+          class="status-dot ${isActive ? "active" : ""} ${isCompleted
             ? "completed"
             : ""}"
           aria-hidden="true"

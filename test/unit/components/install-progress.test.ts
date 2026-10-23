@@ -233,7 +233,7 @@ describe("install-progress", () => {
         stage="writing"
       ></install-progress>`
     );
-    const dots = el.shadowRoot!.querySelectorAll(".stage-dot");
+    const dots = el.shadowRoot!.querySelectorAll(".status-dot");
     const stages = el.shadowRoot!.querySelectorAll(".stage");
     expect(
       el.shadowRoot!.querySelector("ol")!.getAttribute("aria-label")
@@ -257,7 +257,7 @@ describe("install-progress", () => {
     ).to.be.true;
     expect(el.shadowRoot!.querySelector(".stages-indicator [tabindex]")).to.not
       .exist;
-    expect(dots[0].classList.contains("complete")).to.be.true;
+    expect(dots[0].classList.contains("completed")).to.be.true;
     expect(dots[1].classList.contains("active")).to.be.true;
     expect(el.shadowRoot!.querySelector("casita-mascot")!.mood).to.equal(
       "focusing"
@@ -265,7 +265,7 @@ describe("install-progress", () => {
     el.stage = "complete";
     await el.updateComplete;
     expect(
-      el.shadowRoot!.querySelectorAll(".stage-dot.complete").length
+      el.shadowRoot!.querySelectorAll(".status-dot.completed").length
     ).to.equal(3);
     expect(el.shadowRoot!.querySelectorAll("li .sr-only").length).to.equal(3);
     expect(el.shadowRoot!.querySelector("[aria-current]")).to.not.exist;
@@ -287,7 +287,7 @@ describe("install-progress", () => {
       ></install-progress>`
     );
     const [complete, current, pending] = [
-      ...el.shadowRoot!.querySelectorAll(".stage-dot"),
+      ...el.shadowRoot!.querySelectorAll(".status-dot"),
     ].map((dot) => getComputedStyle(dot));
     const empty = "rgba(0, 0, 0, 0)";
 

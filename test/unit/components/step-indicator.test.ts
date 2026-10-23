@@ -127,7 +127,7 @@ describe("step-indicator", () => {
     // The next line follows the longest line of the name, as it follows a dot
     const end = Math.max(...lines().map((line) => line.right));
     const connector = el.shadowRoot!.querySelector(".step-connector")!;
-    const dot = el.shadowRoot!.querySelectorAll(".step-dot")[1];
+    const dot = el.shadowRoot!.querySelectorAll(".status-dot")[1];
     expect(connector.getBoundingClientRect().left - end).to.be.closeTo(
       dot.getBoundingClientRect().left -
         connector.getBoundingClientRect().right,
@@ -148,7 +148,7 @@ describe("step-indicator", () => {
       <step-indicator .steps=${mockSteps} .currentIndex=${1}></step-indicator>
     `);
 
-    const dots = el.shadowRoot!.querySelectorAll(".step-dot");
+    const dots = el.shadowRoot!.querySelectorAll(".status-dot");
     expect(dots[0].classList.contains("completed")).to.be.true;
     expect(dots[1].classList.contains("active")).to.be.true;
     expect(dots[2].classList.contains("active")).to.be.false;
@@ -167,7 +167,7 @@ describe("step-indicator", () => {
       <step-indicator .steps=${mockSteps} .currentIndex=${2}></step-indicator>
     `);
 
-    const dots = el.shadowRoot!.querySelectorAll(".step-dot");
+    const dots = el.shadowRoot!.querySelectorAll(".status-dot");
     expect(dots[0].classList.contains("completed")).to.be.true;
     expect(dots[1].classList.contains("completed")).to.be.true;
     expect(dots[2].classList.contains("active")).to.be.true;
@@ -178,7 +178,7 @@ describe("step-indicator", () => {
       <step-indicator .steps=${mockSteps} .currentIndex=${1}></step-indicator>
     `);
     const [completed, current, upcoming] = [
-      ...el.shadowRoot!.querySelectorAll(".step-dot"),
+      ...el.shadowRoot!.querySelectorAll(".status-dot"),
     ].map((dot) => getComputedStyle(dot));
     const empty = "rgba(0, 0, 0, 0)";
 

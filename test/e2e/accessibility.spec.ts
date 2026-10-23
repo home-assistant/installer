@@ -472,7 +472,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     const box = await indicator.boundingBox();
     expect(box!.x + box!.width).toBeLessThanOrEqual(390);
     await expect(indicator.getByRole("listitem")).toHaveCount(5);
-    await expect(indicator.locator(".step-dot").first()).toHaveCSS(
+    await expect(indicator.locator(".status-dot").first()).toHaveCSS(
       "transition-duration",
       "0s"
     );
@@ -546,7 +546,7 @@ test("forced colors keep step states apart", async ({ page }, testInfo) => {
   });
   const transparent = /^rgba\(.*, 0\)$/;
 
-  const dots = page.locator("step-indicator .step-dot");
+  const dots = page.locator("step-indicator .status-dot");
   // Completed: a filled dot
   await expect(dots.nth(0)).toHaveCSS("background-color", system.canvasText);
   await expect(dots.nth(0)).toHaveCSS("outline-style", "none");
@@ -581,7 +581,7 @@ test("forced colors keep step states apart", async ({ page }, testInfo) => {
     document.body.append(progress);
     await progress.updateComplete;
   });
-  const stageDots = page.locator("install-progress .stage-dot");
+  const stageDots = page.locator("install-progress .status-dot");
   await expect(stageDots.nth(0)).toHaveCSS(
     "background-color",
     system.canvasText
@@ -620,7 +620,7 @@ for (const tag of [
       document.body.append(progress);
       await progress.updateComplete;
     }, tag);
-    await expect(page.locator(".stage-dot.active")).toHaveCSS(
+    await expect(page.locator("install-progress .status-dot.active")).toHaveCSS(
       "animation-name",
       "none"
     );

@@ -88,10 +88,10 @@ describe("shared install layouts", () => {
               : ""
           );
           expect(
-            layout.shadowRoot!.querySelectorAll(".stage-dot.complete").length
+            layout.shadowRoot!.querySelectorAll(".status-dot.completed").length
           ).to.equal(stage === "extracting" ? 1 : 0);
           expect(
-            layout.shadowRoot!.querySelectorAll(".stage-dot.active").length
+            layout.shadowRoot!.querySelectorAll(".status-dot.active").length
           ).to.equal(1);
         }
       }

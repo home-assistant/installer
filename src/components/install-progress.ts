@@ -11,12 +11,14 @@ import {
   renderCasitaThinking,
   renderCasitaHappy,
   renderCasitaSad,
+  thinkingCloudStyles,
 } from "./install-mascot.js";
 import "./progress-bar.js";
 import "./inline-notice.js";
 import { renderErrorHelp } from "../utils/installer-error.js";
 import { openExternalLink } from "../utils/external-url.js";
 import { linkStyles } from "../utils/link-styles.js";
+import { statusDotStyles } from "../utils/status-dot-styles.js";
 import {
   LiveStatus,
   ViewAccessibility,
@@ -38,6 +40,8 @@ export class InstallProgress extends LitElement {
     srOnlyStyles,
     reducedMotionStyles,
     linkStyles,
+    statusDotStyles,
+    thinkingCloudStyles,
     css`
       /* Its own width, not the window's, decides between the layouts */
       :host {
@@ -176,27 +180,15 @@ export class InstallProgress extends LitElement {
         font-weight: 600;
       }
 
-      /* Shaped like the step indicator's dots: pending is an empty ring,
-         complete a filled dot, the current stage a filled dot in a ring */
-      .stage-dot {
-        box-sizing: border-box;
+      /* Smaller than the step indicator's, and as wide as their column */
+      .status-dot {
         width: 8px;
         height: 8px;
-        border-radius: 50%;
-        border: 2px solid var(--ha-inactive-color, #8c8c8c);
         transition: background-color 0.3s ease;
       }
 
-      .stage-dot.active,
-      .stage-dot.complete {
-        border-color: var(--ha-primary-color, #03a9f4);
-        background-color: var(--ha-primary-color, #03a9f4);
-      }
-
       /* The ring stays while the dot pulses empty and back */
-      .stage-dot.active {
-        outline: 2px solid var(--ha-primary-color, #03a9f4);
-        outline-offset: 2px;
+      .status-dot.active {
         animation: pulse-dot 1s ease-in-out infinite;
       }
 
@@ -206,34 +198,12 @@ export class InstallProgress extends LitElement {
         }
       }
 
-      /* Forced colors would paint the fills like the page, and the pulse too */
+      /* Forced colors would paint the pulse like the page, so the dot holds
+         still */
       @media (forced-colors: active) {
-        .stage-dot {
-          border-color: GrayText;
-        }
-
-        .stage-dot.complete {
-          border-color: CanvasText;
-          background-color: CanvasText;
-        }
-
-        .stage-dot.active {
-          border-color: Highlight;
-          background-color: Highlight;
-          outline-color: Highlight;
+        .status-dot.active {
           animation: none;
         }
-      }
-
-      /* Right of Casita in either direction: the artwork's bubbles rise that
-         way */
-      .thinking-cloud {
-        position: absolute;
-        top: -110px;
-        right: -175px;
-        width: 200px;
-        height: 120px;
-        z-index: 1;
       }
 
       /* Too narrow for the cloud beside Casita, which takes 510px: stack it
@@ -252,98 +222,6 @@ export class InstallProgress extends LitElement {
           top: -130px;
           right: -40px;
         }
-      }
-
-      .thinking-cloud .cloud-text {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        color: white;
-        font-size: 1.25rem;
-        font-weight: 500;
-        white-space: nowrap;
-        z-index: 2;
-      }
-
-      .thinking-cloud .cloud-bump {
-        position: absolute;
-        background-color: #18bcf2;
-        border-radius: 50%;
-      }
-
-      /* Build cloud shape from overlapping circles - like a real thought bubble */
-      /* Left bump */
-      .thinking-cloud .bump-1 {
-        width: 70px;
-        height: 70px;
-        top: 30px;
-        left: 0;
-      }
-
-      /* Top left bump */
-      .thinking-cloud .bump-2 {
-        width: 80px;
-        height: 80px;
-        top: 0;
-        left: 25px;
-      }
-
-      /* Top center bump */
-      .thinking-cloud .bump-3 {
-        width: 90px;
-        height: 85px;
-        top: -5px;
-        left: 70px;
-      }
-
-      /* Top right bump */
-      .thinking-cloud .bump-4 {
-        width: 75px;
-        height: 75px;
-        top: 5px;
-        right: 10px;
-      }
-
-      /* Right bump */
-      .thinking-cloud .bump-5 {
-        width: 65px;
-        height: 65px;
-        top: 40px;
-        right: 0;
-      }
-
-      /* Bottom right bump */
-      .thinking-cloud .bump-6 {
-        width: 70px;
-        height: 70px;
-        bottom: 0;
-        right: 20px;
-      }
-
-      /* Bottom center bump */
-      .thinking-cloud .bump-7 {
-        width: 80px;
-        height: 75px;
-        bottom: -5px;
-        left: 60px;
-      }
-
-      /* Bottom left bump */
-      .thinking-cloud .bump-8 {
-        width: 65px;
-        height: 65px;
-        bottom: 5px;
-        left: 10px;
-      }
-
-      /* Center fill */
-      .thinking-cloud .bump-center {
-        width: 140px;
-        height: 80px;
-        border-radius: 50%;
-        top: 20px;
-        left: 30px;
       }
 
       /* Always there, as a live region, but takes no room while empty */
@@ -508,9 +386,9 @@ export class InstallProgress extends LitElement {
                   aria-current=${index === currentIndex ? "step" : nothing}
                 >
                   <span
-                    class="stage-dot ${this.stage === "complete" ||
+                    class="status-dot ${this.stage === "complete" ||
                     index < currentIndex
-                      ? "complete"
+                      ? "completed"
                       : index === currentIndex
                         ? "active"
                         : ""}"
