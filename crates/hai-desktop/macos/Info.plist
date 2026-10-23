@@ -6,6 +6,10 @@
 	<string>Home Assistant Installer needs permission to control UTM to create and start your Home Assistant virtual machine.</string>
 	<!-- TCC checks the responsible process, so the elevated authopen helper
 	     still needs this application's removable-volumes access. -->
+	<!-- Asked before the installer looks for the new Home Assistant on the
+	     network, and before it checks one at its address. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Home Assistant Installer looks for your new Home Assistant on your local network, so it can show you where to open it once it has started.</string>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>Home Assistant Installer needs access to removable volumes so it can write the Home Assistant image to the SD card or USB drive you select.</string>
 </dict>

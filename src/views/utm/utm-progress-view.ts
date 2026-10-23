@@ -125,7 +125,7 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
       const app = "UTM";
       await this._waitForHomeAssistant(
         {
-          vmAddress: async () => (await getUtmVmStatus(startedVmId)).ip_address,
+          address: async () => (await getUtmVmStatus(startedVmId)).ip_address,
           stopOn: failsEveryTime,
           messages: {
             noAddress: localize("common.vm.no_ip_address", { app }),

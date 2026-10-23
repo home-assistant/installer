@@ -399,3 +399,20 @@ supervisor_update_progress: number | null,
 problems: Array<HaSetupProblem>, };
 
 export type HaSetupProblem = "no_internet" | "free_space" | "docker_ratelimit" | "update_failed";
+
+export type HaAnnouncement = {
+/**
+ * Tells it apart from the others: its `uuid`, or its service name when
+ * it announces none. A landing page announces a new one each time it
+ * starts.
+ */
+id: string,
+/**
+ * Where it answers: an IPv4 address, with the port unless that is 80.
+ */
+address: string,
+/**
+ * Whether it is the page Home Assistant OS shows while it installs
+ * Home Assistant, rather than Home Assistant itself.
+ */
+landing_page: boolean, };

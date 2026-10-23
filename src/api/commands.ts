@@ -8,6 +8,7 @@ import type {
   FlashProgress,
   FlashRequest,
   FlashResult,
+  HaAnnouncement,
   HaSetupStatus,
   HaosRelease,
   ProxmoxCredentials,
@@ -477,6 +478,10 @@ export async function getUtmVmStatus(vmId: string): Promise<VmStatusInfo> {
   return invoke<VmStatusInfo>("get_utm_vm_status", { vmId });
 }
 
+/** Where the simulated device answers, and how far its download got */
+const MOCK_DEVICE_ADDRESS = "192.168.1.101";
+let mockDeviceDownload = 0;
+
 /**
  * Check if Home Assistant webserver is ready at the given IP address.
  * @param ipAddress The IP address to check
@@ -496,7 +501,8 @@ export async function checkHaReady(ipAddress: string): Promise<boolean> {
  */
 export async function checkHaUpdated(ipAddress: string): Promise<boolean> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
-    return true;
+    // The simulated device is done once its landing page reported it all
+    return ipAddress !== MOCK_DEVICE_ADDRESS || mockDeviceDownload > 100;
   }
   return invoke<boolean>("check_ha_updated", { ipAddress });
 }
@@ -512,9 +518,41 @@ export async function getHaSetupStatus(
   ipAddress: string
 ): Promise<HaSetupStatus | null> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
-    return null;
+    // A VM's Home Assistant is ready at once; the device's downloads first
+    if (ipAddress !== MOCK_DEVICE_ADDRESS) return null;
+    const progress = Math.min(mockDeviceDownload, 100);
+    mockDeviceDownload += 20;
+    return {
+      core_install_progress: progress,
+      supervisor_update_progress: null,
+      problems: [],
+    };
   }
   return invoke<HaSetupStatus | null>("get_ha_setup_status", { ipAddress });
+}
+
+/** Counts the simulated lookups, so each finds a new landing page */
+let mockLookups = 0;
+
+/**
+ * The Home Assistants that announce themselves on the local network, as far
+ * as they answer within a few seconds.
+ */
+export async function findHomeAssistants(): Promise<HaAnnouncement[]> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    // A landing page the last lookup didn't find, as a device that just
+    // started announces. It has yet to download Home Assistant.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    mockDeviceDownload = 0;
+    return [
+      {
+        id: `mock-landing-page-${mockLookups++}`,
+        address: MOCK_DEVICE_ADDRESS,
+        landing_page: true,
+      },
+    ];
+  }
+  return invoke<HaAnnouncement[]>("find_home_assistants");
 }
 
 // ============================================================================

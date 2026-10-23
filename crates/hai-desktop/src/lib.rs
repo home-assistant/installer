@@ -19,11 +19,11 @@ use tauri::Manager;
 use commands::{
     cancel_flash, cancel_vm_install, check_connection, check_ha_ready, check_ha_updated,
     check_utm_automation, check_utm_status, create_utm_vm, discard_utm_image, download_utm_image,
-    flash_image, get_ha_setup_status, get_haos_release, get_manifest, get_system_info,
-    get_utm_haos_release, get_utm_vm_status, list_block_devices, proxmox_certificate_fingerprint,
-    proxmox_check_vm_config, proxmox_connect, proxmox_create_vm, proxmox_enable_storage_import,
-    proxmox_get_next_vm_id, proxmox_get_vm_status, proxmox_list_bridges, proxmox_list_nodes,
-    proxmox_list_storage, start_utm_vm, utm_supported,
+    find_home_assistants, flash_image, get_ha_setup_status, get_haos_release, get_manifest,
+    get_system_info, get_utm_haos_release, get_utm_vm_status, list_block_devices,
+    proxmox_certificate_fingerprint, proxmox_check_vm_config, proxmox_connect, proxmox_create_vm,
+    proxmox_enable_storage_import, proxmox_get_next_vm_id, proxmox_get_vm_status,
+    proxmox_list_bridges, proxmox_list_nodes, proxmox_list_storage, start_utm_vm, utm_supported,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -97,6 +97,7 @@ pub fn run() {
             check_ha_ready,
             check_ha_updated,
             get_ha_setup_status,
+            find_home_assistants,
             // Proxmox commands
             proxmox_certificate_fingerprint,
             proxmox_connect,

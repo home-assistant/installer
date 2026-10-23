@@ -75,13 +75,8 @@ pub fn setup_status(status: &hai_core::HaSetupStatus) {
         quarter(status.core_install_progress),
         status.problems
     );
-    if let Ok(mut last) = LAST_SETUP_STATUS.lock() {
-        if last.as_ref() == Some(&line) {
-            return;
-        }
-        *last = Some(line.clone());
-    }
-    record(
+    record_change(
+        &LAST_SETUP_STATUS,
         if status.problems.is_empty() {
             log::Level::Info
         } else {
@@ -89,6 +84,41 @@ pub fn setup_status(status: &hai_core::HaSetupStatus) {
         },
         line,
     );
+}
+
+/// The lookup outcome last recorded, as the success step looks every few seconds.
+static LAST_LOOKUP: Mutex<Option<String>> = Mutex::new(None);
+
+/// Record how a lookup of Home Assistant on the network went, when that
+/// changes. Only how many answered reaches the log, never who or where.
+pub fn lookup<E: Categorized>(result: &Result<Vec<hai_core::HaAnnouncement>, E>) {
+    match result {
+        Ok(found) => record_change(
+            &LAST_LOOKUP,
+            log::Level::Info,
+            format!(
+                "home_assistant_lookup found={} landing_pages={}",
+                found.len(),
+                found.iter().filter(|found| found.landing_page).count()
+            ),
+        ),
+        Err(error) => record_change(
+            &LAST_LOOKUP,
+            log::Level::Warn,
+            format!("home_assistant_lookup failed {}", error.category()),
+        ),
+    }
+}
+
+/// Record `line`, unless it is the one `last` holds from the time before.
+fn record_change(last: &Mutex<Option<String>>, level: log::Level, line: String) {
+    if let Ok(mut last) = last.lock() {
+        if last.as_ref() == Some(&line) {
+            return;
+        }
+        *last = Some(line.clone());
+    }
+    record(level, line);
 }
 
 /// Preserve a useful failure category without persisting arbitrary error text.
@@ -449,6 +479,50 @@ mod tests {
                 "supervisor self_update=none core_install=100% problems=[]",
             ]
         );
+    }
+
+    #[test]
+    // Other tests clear the shared tail
+    #[serial_test::serial]
+    fn lookup_records_its_changes_but_never_who_answered() {
+        use hai_core::HaAnnouncement;
+
+        clear_test_log_tail();
+        let core = HaAnnouncement {
+            id: "private-core-uuid".into(),
+            address: "192.168.1.20:8123".into(),
+            landing_page: false,
+        };
+        let landing_page = HaAnnouncement {
+            id: "private-landing-page-uuid".into(),
+            address: "192.168.1.50".into(),
+            landing_page: true,
+        };
+
+        lookup::<String>(&Ok(vec![core.clone()]));
+        // The same again adds nothing
+        lookup::<String>(&Ok(vec![core.clone()]));
+        lookup::<String>(&Ok(vec![core, landing_page]));
+        lookup::<String>(&Err("Network error: 192.168.1.9 unreachable".into()));
+
+        let tail = test_log_tail();
+        let lines: Vec<_> = tail
+            .iter()
+            .filter(|line| line.contains(" home_assistant_lookup "))
+            .map(|line| line.split_once(' ').unwrap().1)
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "home_assistant_lookup found=1 landing_pages=0",
+                "home_assistant_lookup found=2 landing_pages=1",
+                "home_assistant_lookup failed network_error",
+            ]
+        );
+        let tail = tail.join("\n");
+        for private in ["private", "192.168"] {
+            assert!(!tail.contains(private), "{tail}");
+        }
     }
 
     #[test]

@@ -54,7 +54,7 @@ describe("vm-wait", () => {
     const addresses: (string | undefined)[] = [];
 
     const ipAddress = await waitForHomeAssistant({
-      vmAddress: async () => {
+      address: async () => {
         addresses.push(wizardState.getState().selections.ipAddress);
         return "192.0.2.50";
       },
@@ -96,7 +96,7 @@ describe("vm-wait", () => {
     const reported: HaSetupProgress[] = [];
 
     await waitForHomeAssistant({
-      vmAddress: async () => "192.0.2.50",
+      address: async () => "192.0.2.50",
       stopOn: () => false,
       onStage: () => {},
       onSetup: (setup) => reported.push(setup),
@@ -113,7 +113,7 @@ describe("vm-wait", () => {
     const expired = ipcError("proxmox_session_expired", "Session expired");
     let asked = 0;
     const wait = waitForHomeAssistant({
-      vmAddress: async () => {
+      address: async () => {
         asked++;
         throw expired;
       },
@@ -128,6 +128,36 @@ describe("vm-wait", () => {
     await wait.catch((error) => (caught = error));
     expect(caught).to.equal(expired);
     expect(asked).to.equal(1);
+  });
+
+  it("waits for the address as long as it is told, and can stop asking", async () => {
+    mockTauriIpc(() => true);
+    const realNow = Date.now;
+    let clockOffset = 0;
+    Date.now = () => realNow.call(Date) + clockOffset;
+    const controller = new AbortController();
+    let asked: AbortSignal | undefined;
+    try {
+      const ipAddress = await waitForHomeAssistant({
+        address: async (signal) => {
+          asked = signal;
+          // Past a VM's five minutes
+          clockOffset += 6 * 60 * 1000;
+          return "192.0.2.50";
+        },
+        addressTimeout: 30 * 60 * 1000,
+        stopOn: () => false,
+        onStage: () => {},
+        onSetup: () => {},
+        messages,
+        signal: controller.signal,
+      });
+      expect(ipAddress).to.equal("192.0.2.50");
+      // So a lookup in steps can stop between them
+      expect(asked).to.equal(controller.signal);
+    } finally {
+      Date.now = realNow;
+    }
   });
 
   it("shows the checked address only while Home Assistant is checked", () => {

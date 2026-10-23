@@ -1,13 +1,9 @@
-import { localize, localizeContent } from "../../localization/localize.js";
+import { localize } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { WizardState } from "../../state/wizard-state.js";
 import { WizardStateController } from "../../state/wizard-state-controller.js";
 import { renderExternalLink } from "../../utils/external-link.js";
-import {
-  HOME_ASSISTANT_HOST,
-  homeAssistantUrl,
-} from "../../utils/external-url.js";
 import {
   GENERIC_AARCH64_GUIDE_URL,
   GENERIC_X86_GUIDE_URL,
@@ -19,6 +15,7 @@ import {
 } from "../../utils/urls.js";
 import { selectedWifi } from "../../utils/wifi.js";
 
+import "../../components/home-assistant-status.js";
 import "../../components/install-success.js";
 
 const INSTALLATION_GUIDES: Record<string, string> = {
@@ -33,21 +30,6 @@ const INSTALLATION_GUIDES: Record<string, string> = {
   "generic-x86-64": GENERIC_X86_GUIDE_URL,
   "generic-aarch64": GENERIC_AARCH64_GUIDE_URL,
 };
-
-/** The last step after any write: where to find Home Assistant. */
-export function renderOpenHomeAssistantStep() {
-  return html`${localizeContent("views.sbc.success_view.step_open", {
-    // The step already says it opens in the browser
-    url: renderExternalLink(homeAssistantUrl(), HOME_ASSISTANT_HOST, {
-      hint: false,
-    }),
-    ip_url: html`<code dir="ltr"
-      >http://&lt;<bdi>${localize(
-        "views.sbc.success_view.ip_address"
-      )}</bdi>&gt;</code
-    >`,
-  })}`;
-}
 
 @customElement("success-view")
 export class SuccessView extends LitElement {
@@ -117,10 +99,9 @@ export class SuccessView extends LitElement {
                 network: wifi.ssid,
               })
             : localize("common.success.step_connect_ethernet_and_power"),
-          renderOpenHomeAssistantStep(),
           wifi
-            ? localize("common.success.step_preparing_page_wifi")
-            : localize("common.success.step_preparing_page"),
+            ? localize("common.success.step_follow_wifi")
+            : localize("common.success.step_follow"),
         ]}
         .footer=${renderExternalLink(
           guide,
@@ -134,7 +115,9 @@ export class SuccessView extends LitElement {
                   "views.sbc.success_view.your_device_installation_guide"
                 )
         )}
-      ></install-success>
+      >
+        <home-assistant-status></home-assistant-status>
+      </install-success>
     `;
   }
 }

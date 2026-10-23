@@ -64,6 +64,9 @@ fatfs = { version = "0.3", default-features = false, features = ["std", "alloc"]
 # URL encoding
 urlencoding = "2"
 
+# mDNS lookup of Home Assistant on the local network (Windows uses its own)
+mdns-sd = { version = "0.21", default-features = false }
+
 # Testing
 tempfile = "3"
 serial_test = "4"
@@ -86,6 +89,7 @@ libc = "0.2"
 windows-sys = { version = "0.61", features = [
   "Win32_Devices_DeviceAndDriverInstallation",
   "Win32_Foundation",
+  "Win32_NetworkManagement_Dns",
   "Win32_Security",
   "Win32_Storage_FileSystem",
   "Win32_System_IO",

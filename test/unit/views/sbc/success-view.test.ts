@@ -3,6 +3,7 @@ import { wizardState } from "../../../../src/state/wizard-state.js";
 import type { WizardFlow } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/sbc/success-view.js";
 import type { SuccessView } from "../../../../src/views/sbc/success-view.js";
+import type { HomeAssistantStatus } from "../../../../src/components/home-assistant-status.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../../tauri-ipc.js";
 
 async function renderSuccess(board = "rpi5-64", flow: WizardFlow = "sbc") {
@@ -42,8 +43,9 @@ describe("success-view next steps", () => {
     expect(text(el)).to.contain("Ethernet cable to the same network");
     expect(text(el)).to.contain("with internet access");
     expect(text(el)).to.contain("Then connect power");
-    expect(text(el)).to.contain("Preparing Home Assistant page downloads");
-    expect(text(el)).to.contain("Allow about 20 minutes");
+    expect(text(el)).to.contain("Keep this window open");
+    expect(text(el)).to.contain("installs its latest version");
+    expect(text(el)).to.contain("about 20 minutes");
     expect(text(el)).to.contain("Keep power and Ethernet connected");
     expect(text(el)).not.to.contain("Wait a few minutes");
   });
@@ -58,19 +60,26 @@ describe("success-view next steps", () => {
     expect(text(el)).not.to.contain("Keep power and Ethernet connected");
   });
 
-  it("offers hostname and IP access without requiring discovery", async () => {
+  it("follows the device below the steps, and says how to find it without that", async () => {
     const el = await renderSuccess();
-    const link = content(el).querySelector<HTMLAnchorElement>(".step-text a")!;
+    // The next steps no longer send anyone looking themselves
+    expect(content(el).querySelector(".step-text a")).to.be.null;
+    const status = el.shadowRoot!.querySelector<HomeAssistantStatus>(
+      "install-success > home-assistant-status"
+    )!;
+    await status.updateComplete;
+    const panel = status.shadowRoot!;
+    expect(panel.textContent).to.contain(
+      "Looking for your device on the network"
+    );
+    const link = panel.querySelector<HTMLAnchorElement>(
+      ".status-description a"
+    )!;
     expect(link.href).to.equal("http://homeassistant.local/");
-    expect(link.textContent).to.equal("homeassistant.local");
-    expect(text(el)).to.contain(
-      "IP address in your router or on an attached display"
+    expect(panel.textContent!.replace(/\s+/g, " ")).to.contain(
+      "IP address in your router or on an attached display, then open http://<IP address>"
     );
-    expect(text(el)).to.contain("http://<IP address>");
-    expect(text(el)).not.to.contain(":8123");
-    expect(text(el)).to.contain(
-      "If it still does not open after a few minutes"
-    );
+    expect(panel.textContent).not.to.contain(":8123");
   });
 
   it("asks for manual ejection without claiming native ejection succeeded", async () => {

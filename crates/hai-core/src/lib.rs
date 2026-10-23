@@ -13,6 +13,7 @@
 // `Send` bound the lint warns about therefore cannot bite us.
 #![allow(async_fn_in_trait)]
 
+mod discovery;
 pub mod disk;
 pub mod download;
 pub mod error;
@@ -255,6 +256,10 @@ pub trait HostBackend {
     /// What Supervisor reports while it installs Core at `ip`, or `None`
     /// without a full answer from a landing page there.
     async fn ha_setup_status(&self, ip: &str) -> Option<HaSetupStatus>;
+
+    /// The Home Assistants that announce themselves on the local network,
+    /// as far as they answer within a few seconds.
+    async fn find_home_assistants(&self) -> Result<Vec<HaAnnouncement>>;
 }
 
 /// hai-core's production backend.

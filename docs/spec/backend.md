@@ -326,6 +326,10 @@ pub trait HostBackend {
     /// What Supervisor reports while it installs Core: the Core download's
     /// progress and problems that hold it up (`None` without a full answer)
     async fn ha_setup_status(&self, ip: &str) -> Option<HaSetupStatus>;
+
+    /// The Home Assistants that announce `_home-assistant._tcp` on the local
+    /// network within a few seconds (discovery.rs)
+    async fn find_home_assistants(&self) -> Result<Vec<HaAnnouncement>>;
 }
 ```
 
@@ -341,6 +345,19 @@ wait for `manifest.json`. They end the wait when a problem lasts 10 minutes
 while neither download moves, unless Core is already downloaded: then
 Supervisor stops the landing page to start Core. Diagnostics record the
 status as fixed categories only, never Supervisor's logs or text.
+
+The success step of a written drive waits the same way for the device that
+starts from it. Since 2026.6 the landing page announces itself over mDNS as
+`_home-assistant._tcp` with `landingpage=True` and a new `uuid` each time it
+starts; older ones announce `version=0.0.0` and no `uuid`. The step first
+notes what announces itself already, then takes the first landing page that
+wasn't there for the device, and follows it at the address it announces.
+Home Assistant itself is never taken for it. `find_home_assistants` listens
+for three seconds: on Windows through the system's DNS-SD
+(`DnsServiceBrowse` and `DnsServiceResolve`), whose mDNS traffic Windows
+Firewall lets through, elsewhere with `mdns-sd`, which sends its own queries.
+Addresses only Home Assistant OS itself can reach, like its Docker networks',
+are left out. Diagnostics record how many answered, never which or where.
 
 ---
 

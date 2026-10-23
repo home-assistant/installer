@@ -113,7 +113,7 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
     const app = "Proxmox";
     await this._waitForHomeAssistant(
       {
-        vmAddress: async () =>
+        address: async () =>
           (await proxmoxGetVmStatus(session, node, vm_id)).ip_address,
         stopOn: needsUserAction,
         messages: {

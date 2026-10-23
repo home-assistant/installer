@@ -76,11 +76,11 @@ class TestProgressView extends VmProgressView<TestStage> {
 
   waitForHomeAssistant(
     signal: AbortSignal,
-    vmAddress = async (): Promise<string | null> => "192.0.2.50"
+    address = async (): Promise<string | null> => "192.0.2.50"
   ) {
     return this._waitForHomeAssistant(
       {
-        vmAddress,
+        address,
         stopOn: () => false,
         messages: {
           noAddress: "No address",

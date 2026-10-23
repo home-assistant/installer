@@ -14,7 +14,7 @@ use hai_core::download::TemporaryImage;
 use hai_core::keep_awake::KeepAwake;
 use hai_core::{
     BlockDevice, DeviceBackend, DeviceManifest, ExpectedDevice, FlashProgress, FlashRequest,
-    FlashResult, FlashStage, HaSetupStatus, HaosRelease, HostBackend, ImageFormat,
+    FlashResult, FlashStage, HaAnnouncement, HaSetupStatus, HaosRelease, HostBackend, ImageFormat,
     ProgressCallback, ProxmoxBackend, ProxmoxBridge, ProxmoxCredentials, ProxmoxNode,
     ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, ReleaseSource, SystemInfo,
     UtmBackend, VmStatusInfo,
@@ -660,6 +660,17 @@ pub async fn get_ha_setup_status(ip_address: String) -> Option<HaSetupStatus> {
         crate::diagnostics::setup_status(status);
     }
     status
+}
+
+/// The Home Assistants that announce themselves on the local network
+#[tauri::command]
+pub async fn find_home_assistants() -> Result<Vec<HaAnnouncement>, CommandError> {
+    let found = Backend
+        .find_home_assistants()
+        .await
+        .map_err(CommandError::from_query);
+    crate::diagnostics::lookup(&found);
+    found
 }
 
 // =============================================================================

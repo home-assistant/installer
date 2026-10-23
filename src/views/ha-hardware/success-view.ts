@@ -11,14 +11,16 @@ import {
   YELLOW_CM5_GUIDE_URL,
 } from "../../utils/urls.js";
 import { selectedWifi } from "../../utils/wifi.js";
-import { renderOpenHomeAssistantStep } from "../sbc/success-view.js";
 import {
   findHaHardware,
   haHardwareName,
   type HaHardwareId,
 } from "../../state/ha-hardware.js";
 
+import "../../components/home-assistant-status.js";
 import "../../components/install-success.js";
+// The steps that fit any device, without one picked
+import "../sbc/success-view.js";
 
 const GUIDES: Record<HaHardwareId, string> = {
   green: GREEN_GUIDE_URL,
@@ -62,14 +64,9 @@ export class HaHardwareSuccessView extends LitElement {
         .steps=${[
           localize("common.success.step_eject"),
           ...this._steps(hardware),
-          renderOpenHomeAssistantStep(),
-          ...(writesHaos
-            ? [
-                selectedWifi(this._wizardState.selections)
-                  ? localize("common.success.step_preparing_page_wifi")
-                  : localize("common.success.step_preparing_page"),
-              ]
-            : []),
+          selectedWifi(this._wizardState.selections)
+            ? localize("common.success.step_follow_wifi")
+            : localize("common.success.step_follow"),
         ]}
         .footer=${renderExternalLink(
           guide,
@@ -77,7 +74,9 @@ export class HaHardwareSuccessView extends LitElement {
             device: haHardwareName(hardware),
           })
         )}
-      ></install-success>
+      >
+        <home-assistant-status></home-assistant-status>
+      </install-success>
     `;
   }
 

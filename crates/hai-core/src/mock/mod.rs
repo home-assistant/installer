@@ -161,6 +161,38 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    // Lookups start the device's download over
+    #[serial_test::serial(mock_device)]
+    async fn each_lookup_finds_a_landing_page_the_last_one_did_not() {
+        use crate::HostBackend;
+
+        let first = BackendMock.find_home_assistants().await.unwrap();
+        let second = BackendMock.find_home_assistants().await.unwrap();
+        assert!(first.iter().chain(&second).all(|found| found.landing_page));
+        assert!(second
+            .iter()
+            .all(|found| first.iter().all(|seen| seen.id != found.id)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    // Lookups start the device's download over
+    #[serial_test::serial(mock_device)]
+    async fn the_device_found_installs_home_assistant_first() {
+        use crate::HostBackend;
+
+        let device = &BackendMock.find_home_assistants().await.unwrap()[0].address;
+        let mut reported = Vec::new();
+        while !BackendMock.check_ha_updated(device).await {
+            let status = BackendMock.ha_setup_status(device).await.unwrap();
+            reported.push(status.core_install_progress.unwrap());
+        }
+        assert_eq!(reported, [0.0, 20.0, 40.0, 60.0, 80.0, 100.0]);
+        // A VM's is ready at once
+        assert!(BackendMock.check_ha_updated("192.168.1.100").await);
+        assert_eq!(BackendMock.ha_setup_status("192.168.1.100").await, None);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn proxmox_install_stops_until_the_vm_is_being_created() {
         for (stop_at, stopped) in [
             (FlashStage::Uploading, true),

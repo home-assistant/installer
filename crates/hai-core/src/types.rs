@@ -556,6 +556,21 @@ pub enum HaSetupProblem {
     UpdateFailed,
 }
 
+/// A Home Assistant that announces itself on the local network
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct HaAnnouncement {
+    /// Tells it apart from the others: its `uuid`, or its service name when
+    /// it announces none. A landing page announces a new one each time it
+    /// starts.
+    pub id: String,
+    /// Where it answers: an IPv4 address, with the port unless that is 80.
+    pub address: String,
+    /// Whether it is the page Home Assistant OS shows while it installs
+    /// Home Assistant, rather than Home Assistant itself.
+    pub landing_page: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

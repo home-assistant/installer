@@ -102,3 +102,56 @@ test("a Wi-Fi network set on its own step replaces the cable step", async ({
   await expect(steps).not.toContainText("Ethernet cable to the same network");
   await expect(steps).not.toContainText("Keep power and Ethernet connected");
 });
+
+// The browser mock's device starts right away, and its landing page reports
+// the download in steps, as the VM installs wait for theirs
+test("follows the device the drive starts until Home Assistant is ready", async ({
+  page,
+}) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Let's go" }).click();
+  await page
+    .locator('option-card[heading="Raspberry Pi & other boards"]')
+    .click();
+  await page.locator('device-card[value="rpi5"]').click();
+  await page.locator("drive-selection-view drive-card").first().click();
+  await next(page).click();
+  await skipWifiStep(page);
+  await next(page).click();
+  await page.locator('confirm-dialog wa-button[variant="danger"]').click();
+
+  const status = page.locator("success-view home-assistant-status");
+  const stages = status.getByRole("list", {
+    name: "Starting your Home Assistant",
+  });
+  await expect(stages).toBeVisible({ timeout: 45000 });
+  await expect(page.locator("success-view .next-steps")).toContainText(
+    "Keep this window open"
+  );
+  await expect(stages.locator('[aria-current="step"]')).toContainText(
+    "Looking for your device on the network"
+  );
+  await expect(
+    status.getByRole("link", { name: /homeassistant\.local/ })
+  ).toBeVisible();
+
+  await expect(stages.locator('[aria-current="step"]')).toContainText(
+    "Installing latest Home Assistant",
+    { timeout: 20000 }
+  );
+  await expect(status.getByRole("progressbar")).toBeVisible();
+  await expect(status).toContainText("follow along at http://192.168.1.101");
+
+  await expect(status).toContainText("Your Home Assistant is ready", {
+    timeout: 30000,
+  });
+  await expect(
+    status.getByRole("link", { name: /Open Home Assistant/ })
+  ).toHaveAttribute("href", "http://192.168.1.101");
+  // As wide as the next steps, within the window
+  const bounds = await status.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+});

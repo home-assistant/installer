@@ -163,7 +163,7 @@ export abstract class VmProgressView<
 
   /** Wait for Home Assistant on the running VM, and return its address */
   protected _waitForHomeAssistant(
-    wait: Pick<HomeAssistantWait, "vmAddress" | "stopOn" | "messages">,
+    wait: Pick<HomeAssistantWait, "address" | "stopOn" | "messages">,
     signal: AbortSignal
   ): Promise<string> {
     return waitForHomeAssistant({

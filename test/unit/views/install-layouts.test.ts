@@ -125,6 +125,8 @@ describe("shared install layouts", () => {
       wizardState.setSelection("ipAddress", "192.0.2.50");
       const opened: string[] = [];
       mockTauriIpc((cmd, args) => {
+        // A written drive's next steps look for the device that starts from it
+        if (cmd === "find_home_assistants") return [];
         expect(cmd).to.equal("plugin:opener|open_url");
         opened.push((args as { url: string }).url);
       });
@@ -139,7 +141,7 @@ describe("shared install layouts", () => {
       const layout = view.shadowRoot!.querySelector("install-success")!;
       const content = layout.shadowRoot!;
       expect(content.querySelectorAll(".step-item").length).to.equal(
-        flow === "sbc" ? 5 : 3
+        flow === "sbc" ? 4 : 3
       );
       expect(content.querySelector(".subtitle")!.textContent).to.contain(
         flow === "sbc" ? "written to your storage device" : "My home"
@@ -152,7 +154,17 @@ describe("shared install layouts", () => {
           "pve-test"
         );
       }
-      const link = content.querySelector<HTMLAnchorElement>(".step-text a")!;
+      // Where to find the device without the installer, beside its progress
+      const link =
+        flow === "sbc"
+          ? view
+              .shadowRoot!.querySelector(
+                "install-success > home-assistant-status"
+              )!
+              .shadowRoot!.querySelector<HTMLAnchorElement>(
+                ".status-description a"
+              )!
+          : content.querySelector<HTMLAnchorElement>(".step-text a")!;
       link.click();
       for (const appLink of content.querySelectorAll<HTMLAnchorElement>(
         ".app-link"

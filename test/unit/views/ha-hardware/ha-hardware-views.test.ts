@@ -679,7 +679,7 @@ describe("Home Assistant hardware views", () => {
         [
           "boot mode toggle back to MMC",
           "put the eMMC module back",
-          "Preparing Home Assistant page",
+          "Keep power and Ethernet connected",
         ],
         "https://www.home-assistant.io/installation/odroid/",
       ],
@@ -696,8 +696,14 @@ describe("Home Assistant hardware views", () => {
         for (const part of expected) {
           expect(content).to.contain(part);
         }
-        expect(content).to.contain("homeassistant.local");
+        // Followed below the steps, rather than looked for
+        expect(content).to.contain("Keep this window open");
         expect(content).not.to.contain(":8123");
+        expect(
+          el.shadowRoot!.querySelector(
+            "install-success > home-assistant-status"
+          )
+        ).to.exist;
         expect(
           success.shadowRoot!.querySelector<HTMLAnchorElement>(
             ".next-steps-footer a"

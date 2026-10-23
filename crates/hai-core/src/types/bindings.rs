@@ -34,6 +34,7 @@ fn typescript() -> String {
         VmStatusInfo::decl(&config),
         HaSetupStatus::decl(&config),
         HaSetupProblem::decl(&config),
+        HaAnnouncement::decl(&config),
     ];
     let mut output = String::from(
         "// Generated from hai-core Rust wire types by ts-rs. Do not edit.\n\

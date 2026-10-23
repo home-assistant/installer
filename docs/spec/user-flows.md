@@ -142,8 +142,14 @@ leaving a running VM install also return to the path selection.
 │   1. Insert the SD card into your Raspberry Pi 5            │
 │   2. Connect ethernet (recommended) or prepare WiFi         │
 │   3. Power on the device                                    │
-│   4. Wait ~20 minutes for first boot                        │
-│   5. Visit http://homeassistant.local                       │
+│   4. Keep this window open and follow along below           │
+│                                                             │
+│   ┌───────────────────────────────────────────────────────┐ │
+│   │ ✓ Looking for your device on the network              │ │
+│   │ ✓ Waiting for Home Assistant                          │ │
+│   │ ◉ Installing latest Home Assistant      ████░░░  42%  │ │
+│   │   Follow along at http://192.168.1.50                 │ │
+│   └───────────────────────────────────────────────────────┘ │
 │                                                             │
 │                              [ Flash Another ] [ Done ]     │
 │                                                             │

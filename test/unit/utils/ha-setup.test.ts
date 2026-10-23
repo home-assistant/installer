@@ -2,6 +2,7 @@ import { expect } from "@open-wc/testing";
 import type { HaSetupStatus } from "../../../src/api/types.js";
 import {
   HaSetupStalledError,
+  haSetupProblemMessage,
   waitForHaSetup,
   type HaSetupProgress,
 } from "../../../src/utils/ha-setup.js";
@@ -285,5 +286,23 @@ describe("ha-setup", () => {
 
     expect(error).to.be.instanceOf(CancelledError);
     expect(reported).to.be.empty;
+  });
+
+  it("words the advice for what Home Assistant OS runs on", () => {
+    expect(haSetupProblemMessage("free_space")).to.contain(
+      "Give the virtual machine a larger disk."
+    );
+    expect(haSetupProblemMessage("free_space", "device")).to.contain(
+      "Install it on a larger drive."
+    );
+    // And so does a stall
+    expect(
+      new HaSetupStalledError("free_space", "http://192.0.2.50", "device")
+        .message
+    ).to.contain("Install it on a larger drive.");
+    // The rest is the same wherever it runs
+    expect(haSetupProblemMessage("no_internet", "device")).to.equal(
+      haSetupProblemMessage("no_internet")
+    );
   });
 });
