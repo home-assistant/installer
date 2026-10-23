@@ -135,7 +135,9 @@ describe("Home Assistant hardware views", () => {
         await el.updateComplete;
         expect(dialog.open).to.equal(true);
         expect(dialog.heading).to.equal(heading);
-        expect(dialog.message).to.contain("homeassistant.local");
+        expect(dialog.message).to.contain(
+          "then open homeassistant.local in a browser."
+        );
         expect(dialog.primaryLabel).to.equal(action);
         expect(dialog.emphasis).to.equal(emphasis);
         expect(dialog.textContent).to.contain(note);

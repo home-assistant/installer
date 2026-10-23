@@ -8,6 +8,7 @@ import {
 import { customElement, state } from "lit/decorators.js";
 import type { HaosConfig } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
+import { HOME_ASSISTANT_HOST } from "../../utils/external-url.js";
 import {
   HA_HARDWARE,
   YELLOW_DEVICE_ID,
@@ -167,9 +168,13 @@ export class HaHardwareDeviceSelectionView extends LitElement {
             })}
         message=${yellow
           ? localize(
-              "views.ha_hardware.device_selection_view.yellow_comes_installed"
+              "views.ha_hardware.device_selection_view.yellow_comes_installed",
+              { host: HOME_ASSISTANT_HOST }
             )
-          : localize("views.ha_hardware.device_selection_view.comes_installed")}
+          : localize(
+              "views.ha_hardware.device_selection_view.comes_installed",
+              { host: HOME_ASSISTANT_HOST }
+            )}
         primary-label=${yellow
           ? localize("common.install")
           : localize("views.ha_hardware.device_selection_view.reinstall")}
