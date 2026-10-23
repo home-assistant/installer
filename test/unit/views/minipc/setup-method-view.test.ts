@@ -7,11 +7,13 @@ import {
   wizardState,
 } from "../../../../src/state/wizard-state.js";
 
-async function renderMethod() {
+async function renderMethod({ shell = true } = {}) {
   wizardState.startFlow("minipc");
   const el = await fixture<MiniPCSetupMethodView>(
     html`<minipc-setup-method-view></minipc-setup-method-view>`
   );
+  // Stands in for the app shell, which takes the pick as Next
+  if (shell) el.addEventListener("wizard-next", () => wizardState.nextStep());
   const [connectDrive, usbBoot] =
     el.shadowRoot!.querySelectorAll<OptionCard>("option-card");
   return { el, connectDrive, usbBoot };
@@ -36,6 +38,28 @@ describe("minipc-setup-method-view", () => {
     expect(usbBoot.heading).to.equal("I need to boot from USB");
     expect(usbBoot.description).to.contain("bootable USB drive");
   });
+
+  for (const [card, method, steps] of [
+    ["connectDrive", "direct", MINIPC_STEPS.direct],
+    ["usbBoot", "usb-boot", MINIPC_STEPS.usb],
+  ] as const) {
+    it(`leaves moving on after ${method} to the app shell, once it is saved`, async () => {
+      const rendered = await renderMethod({ shell: false });
+      const sent: unknown[] = [];
+      rendered.el.addEventListener("wizard-next", (event) =>
+        sent.push({
+          reachesShell: event.bubbles && event.composed,
+          method: wizardState.getState().selections.installMethod,
+        })
+      );
+
+      rendered[card].click();
+
+      expect(sent).to.deep.equal([{ reachesShell: true, method }]);
+      expect(stepIds()).to.deep.equal(steps.map((step) => step.id));
+      expect(wizardState.currentStep!.id).to.equal("method");
+    });
+  }
 
   it("continues to the architecture step when the drive can be connected", async () => {
     const { connectDrive } = await renderMethod();

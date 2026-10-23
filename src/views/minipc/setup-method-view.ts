@@ -69,13 +69,21 @@ export class MiniPCSetupMethodView extends LitElement {
   private _onConnectDrive() {
     wizardState.setSteps(minipcDirectSteps(wizardState.getState().selections));
     wizardState.setSelection("installMethod", "direct");
-    wizardState.nextStep();
+    this._continue();
   }
 
   private _onUsbBoot() {
     wizardState.setSteps(MINIPC_STEPS.usb);
     wizardState.setSelection("installMethod", "usb-boot");
-    wizardState.nextStep();
+    this._continue();
+  }
+
+  // The pick stands in for Next, so it moves on the way Next does, through
+  // the app shell
+  private _continue() {
+    this.dispatchEvent(
+      new CustomEvent("wizard-next", { bubbles: true, composed: true })
+    );
   }
 }
 

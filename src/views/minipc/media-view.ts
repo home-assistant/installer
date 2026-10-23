@@ -103,7 +103,11 @@ export class MiniPCMediaView extends LitElement {
     );
     wizardState.setSteps(MINIPC_STEPS[media]);
     wizardState.setSelection("liveMedia", media);
-    wizardState.nextStep();
+    // The pick stands in for Next, so it moves on the way Next does, through
+    // the app shell
+    this.dispatchEvent(
+      new CustomEvent("wizard-next", { bubbles: true, composed: true })
+    );
   }
 }
 
