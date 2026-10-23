@@ -10,6 +10,7 @@ import {
   YELLOW_CM4_GUIDE_URL,
   YELLOW_CM5_GUIDE_URL,
 } from "../../utils/urls.js";
+import { DeviceSurvey } from "../../utils/device-discovery.js";
 import { selectedWifi } from "../../utils/wifi.js";
 import {
   findHaHardware,
@@ -17,7 +18,6 @@ import {
   type HaHardwareId,
 } from "../../state/ha-hardware.js";
 
-import "../../components/home-assistant-status.js";
 import "../../components/install-success.js";
 // The steps that fit any device, without one picked
 import "../sbc/success-view.js";
@@ -40,6 +40,9 @@ export class HaHardwareSuccessView extends LitElement {
 
   private readonly _wizard = new WizardStateController(this);
 
+  // Notes what is on the network before the device starts
+  protected readonly _survey = new DeviceSurvey(this);
+
   private get _wizardState(): WizardState {
     return this._wizard.state;
   }
@@ -57,16 +60,18 @@ export class HaHardwareSuccessView extends LitElement {
 
     return html`
       <install-success
+        .heading=${localize("common.success.almost_there")}
         .subtitle=${writesHaos
           ? localize("common.success.subtitle")
           : localize("views.ha_hardware.success_view.subtitle")}
         .formatWarning=${true}
+        .companion=${false}
         .steps=${[
           localize("common.success.step_eject"),
           ...this._steps(hardware),
           selectedWifi(this._wizardState.selections)
-            ? localize("common.success.step_follow_wifi")
-            : localize("common.success.step_follow"),
+            ? localize("common.success.step_next_wifi")
+            : localize("common.success.step_next"),
         ]}
         .footer=${renderExternalLink(
           guide,
@@ -74,9 +79,7 @@ export class HaHardwareSuccessView extends LitElement {
             device: haHardwareName(hardware),
           })
         )}
-      >
-        <home-assistant-status></home-assistant-status>
-      </install-success>
+      ></install-success>
     `;
   }
 

@@ -1,6 +1,12 @@
-import { expect } from "@open-wc/testing";
+import { expect, fixture, html, waitUntil } from "@open-wc/testing";
+import { LitElement } from "lit";
 import type { HaAnnouncement } from "../../../src/api/types.js";
-import { newLandingPageFinder } from "../../../src/utils/device-discovery.js";
+import { wizardState } from "../../../src/state/wizard-state.js";
+import {
+  DeviceFinder,
+  DeviceSurvey,
+  flowDeviceFinder,
+} from "../../../src/utils/device-discovery.js";
 import type { InstallerError } from "../../../src/utils/installer-error.js";
 import { isCancelled } from "../../../src/utils/polling.js";
 import { ipcError, mockTauriIpc, restoreTauriIpc } from "../tauri-ipc.js";
@@ -30,10 +36,19 @@ function answer(
   return () => asked;
 }
 
+/** A step that notes what is on the network, as the start step does */
+class SurveyingStep extends LitElement {
+  protected readonly _survey = new DeviceSurvey(this);
+}
+customElements.define("test-surveying-step", SurveyingStep);
+
 describe("device-discovery", () => {
   const signal = new AbortController().signal;
 
-  afterEach(restoreTauriIpc);
+  afterEach(() => {
+    restoreTauriIpc();
+    wizardState.reset();
+  });
 
   it("notes what is there first, then finds a landing page that wasn't", async () => {
     const asked = answer(
@@ -46,11 +61,11 @@ describe("device-discovery", () => {
         landingPage("device", "192.0.2.60"),
       ]
     );
-    const find = newLandingPageFinder();
+    const finder = new DeviceFinder();
 
-    expect(await find(signal)).to.be.null;
+    expect(await finder.find(signal)).to.be.null;
     expect(asked()).to.equal(2);
-    expect(await find(signal)).to.equal("192.0.2.60");
+    expect(await finder.find(signal)).to.equal("192.0.2.60");
   });
 
   it("checks on the device where it was found once, without looking again", async () => {
@@ -61,38 +76,38 @@ describe("device-discovery", () => {
       [landingPage("device")],
       [homeAssistant("new")]
     );
-    const find = newLandingPageFinder();
+    const finder = new DeviceFinder();
 
-    expect(await find(signal)).to.be.null;
-    expect(await find(signal)).to.equal("192.0.2.50");
-    expect(await find(signal)).to.equal("192.0.2.50");
+    expect(await finder.find(signal)).to.be.null;
+    expect(await finder.find(signal)).to.equal("192.0.2.50");
+    expect(await finder.find(signal)).to.equal("192.0.2.50");
     expect(asked()).to.equal(3);
   });
 
   it("never takes Home Assistant itself for the device", async () => {
     // One that was off while the first lookups ran
     answer([], [], [homeAssistant("back-on")]);
-    const find = newLandingPageFinder();
+    const finder = new DeviceFinder();
 
-    expect(await find(signal)).to.be.null;
-    expect(await find(signal)).to.be.null;
+    expect(await finder.find(signal)).to.be.null;
+    expect(await finder.find(signal)).to.be.null;
   });
 
-  it("notes what is there again when a first lookup failed", async () => {
+  it("asks again after a lookup that failed", async () => {
     const asked = answer(
       ipcError("io", "No network"),
       [landingPage("being-set-up")],
       [landingPage("being-set-up")],
       [landingPage("being-set-up"), landingPage("device")]
     );
-    const find = newLandingPageFinder();
+    const finder = new DeviceFinder();
 
     let caught: unknown;
-    await find(signal).catch((error) => (caught = error));
+    await finder.find(signal).catch((error: unknown) => (caught = error));
     expect(caught).to.deep.include({ code: "io" });
-    expect(await find(signal)).to.be.null;
+    expect(await finder.find(signal)).to.be.null;
     expect(asked()).to.equal(3);
-    expect(await find(signal)).to.equal("192.0.2.50");
+    expect(await finder.find(signal)).to.equal("192.0.2.50");
   });
 
   describe("after its first minute", () => {
@@ -115,14 +130,14 @@ describe("device-discovery", () => {
           ? [landingPage("device")]
           : Promise.reject(ipcError("io", "No network"))
       );
-      const find = newLandingPageFinder();
+      const finder = new DeviceFinder();
 
-      await find(signal).catch(() => {});
+      await finder.find(signal).catch(() => {});
       // By the time lookups answer, the device has started
       clockOffset += 61 * 1000;
       answering = true;
-      expect(await find(signal)).to.equal("192.0.2.50");
-      expect(await find(signal)).to.equal("192.0.2.50");
+      expect(await finder.find(signal)).to.equal("192.0.2.50");
+      expect(await finder.find(signal)).to.equal("192.0.2.50");
     });
 
     it("still leaves out what answered in time", async () => {
@@ -136,11 +151,11 @@ describe("device-discovery", () => {
           landingPage("device", "192.0.2.60"),
         ];
       });
-      const find = newLandingPageFinder();
+      const finder = new DeviceFinder();
 
-      await find(signal).catch(() => {});
+      await finder.find(signal).catch(() => {});
       clockOffset += 61 * 1000;
-      expect(await find(signal)).to.equal("192.0.2.60");
+      expect(await finder.find(signal)).to.equal("192.0.2.60");
     });
   });
 
@@ -152,14 +167,41 @@ describe("device-discovery", () => {
       return new Promise((resolve) => (resolveFirst = resolve));
     });
     const controller = new AbortController();
-    const looking = newLandingPageFinder()(controller.signal);
+    const looking = new DeviceFinder().find(controller.signal);
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     controller.abort();
     resolveFirst([]);
     let caught: unknown;
-    await looking.catch((error) => (caught = error));
+    await looking.catch((error: unknown) => (caught = error));
     expect(isCancelled(caught)).to.be.true;
     expect(asked).to.equal(1);
+  });
+
+  it("keeps one finder for the flow, and a new one for the next", () => {
+    wizardState.startFlow("sbc");
+    const finder = flowDeviceFinder();
+    expect(flowDeviceFinder()).to.equal(finder);
+
+    wizardState.startFlow("sbc");
+    expect(flowDeviceFinder()).not.to.equal(finder);
+  });
+
+  it("notes what is there while the step that says how to start is shown", async () => {
+    wizardState.startFlow("sbc");
+    const asked = answer(
+      [landingPage("being-set-up")],
+      [landingPage("being-set-up")],
+      [landingPage("being-set-up"), landingPage("device")]
+    );
+    const step = await fixture(
+      html`<test-surveying-step></test-surveying-step>`
+    );
+
+    await waitUntil(() => asked() === 2);
+    step.remove();
+    // What the waiting step finds next is new
+    expect(await flowDeviceFinder().find(signal)).to.equal("192.0.2.50");
+    expect(asked()).to.equal(3);
   });
 });

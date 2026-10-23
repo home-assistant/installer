@@ -56,7 +56,7 @@ test("a flash that ends while asking to stop continues from the success", async 
   // The flash finishes meanwhile, and Cancel goes with the step
   const heading = page
     .locator("success-view")
-    .getByRole("heading", { name: "You're all set!" });
+    .getByRole("heading", { name: "Almost there!" });
   await expect(heading).toBeFocused({ timeout: 30000 });
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(await focusOnPage(page)).toBe(false);

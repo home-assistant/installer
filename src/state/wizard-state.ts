@@ -8,6 +8,7 @@ import type {
   WifiConfig,
 } from "../api/types.js";
 import type { HaHardwareId, YellowModuleId } from "./ha-hardware.js";
+import type { DeviceFinder } from "../utils/device-discovery.js";
 import { supportsWifi } from "../utils/wifi.js";
 
 /** The way to install, as picked on the first screen. */
@@ -67,6 +68,13 @@ export interface WizardSelections {
 
   /** Address Home Assistant was reached on, if it was found. */
   ipAddress?: string;
+  /** Home Assistant at `ipAddress` finished installing. */
+  homeAssistantReady?: boolean;
+  /**
+   * Looks for the device a drive was written for. Made once the drive is
+   * done, so it notes what was on the network before the device started.
+   */
+  deviceFinder?: DeviceFinder;
 
   /** UTM was found on the requirements step. */
   utmInstalled?: boolean;
@@ -150,6 +158,17 @@ function localizedStep(
   };
 }
 
+/**
+ * After a drive is written: starting the device from it, waiting for Home
+ * Assistant on it, and where to find it. The write's own success screen
+ * says how to start the device, under the id the flows have always had.
+ */
+const DEVICE_STEPS: WizardStep[] = [
+  localizedStep("success", () => localize("state.wizard_state.start_device")),
+  localizedStep("setup", () => localize("state.wizard_state.set_up")),
+  localizedStep("done", () => localize("common.done")),
+];
+
 /** Wi-Fi is offered only for boards that have it. */
 const wifiStep = localizedStep(
   "wifi",
@@ -164,7 +183,7 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
     wifiStep,
     localizedStep("confirm", () => localize("common.confirm")),
     localizedStep("flash", () => localize("common.install")),
-    localizedStep("success", () => localize("common.done")),
+    ...DEVICE_STEPS,
   ],
   minipc: [
     localizedStep("method", () =>
@@ -177,7 +196,7 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
     wifiStep,
     localizedStep("confirm", () => localize("common.confirm")),
     localizedStep("flash", () => localize("common.install")),
-    localizedStep("success", () => localize("common.done")),
+    ...DEVICE_STEPS,
   ],
   "ha-hardware": [
     localizedStep("device", () => localize("state.wizard_state.select_device")),
@@ -191,7 +210,7 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
     wifiStep,
     localizedStep("confirm", () => localize("common.confirm")),
     localizedStep("flash", () => localize("common.install")),
-    localizedStep("success", () => localize("common.done")),
+    ...DEVICE_STEPS,
   ],
   proxmox: [
     localizedStep("connection", () =>
@@ -242,7 +261,7 @@ function liveUsbSteps(target: WizardStep): WizardStep[] {
     target,
     localizedStep("confirm", () => localize("common.confirm")),
     localizedStep("flash", () => localize("common.create")),
-    localizedStep("success", () => localize("common.done")),
+    ...DEVICE_STEPS,
   ];
 }
 

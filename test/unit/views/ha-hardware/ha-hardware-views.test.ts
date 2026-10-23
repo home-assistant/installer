@@ -696,14 +696,9 @@ describe("Home Assistant hardware views", () => {
         for (const part of expected) {
           expect(content).to.contain(part);
         }
-        // Followed below the steps, rather than looked for
-        expect(content).to.contain("Keep this window open");
+        // The steps after this one follow the device
+        expect(content).to.contain("Once the device is on, select Next");
         expect(content).not.to.contain(":8123");
-        expect(
-          el.shadowRoot!.querySelector(
-            "install-success > home-assistant-status"
-          )
-        ).to.exist;
         expect(
           success.shadowRoot!.querySelector<HTMLAnchorElement>(
             ".next-steps-footer a"

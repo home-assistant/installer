@@ -13,9 +13,9 @@ import {
   ODROID_N2_GUIDE_URL,
   RASPBERRY_PI_GUIDE_URL,
 } from "../../utils/urls.js";
+import { DeviceSurvey } from "../../utils/device-discovery.js";
 import { selectedWifi } from "../../utils/wifi.js";
 
-import "../../components/home-assistant-status.js";
 import "../../components/install-success.js";
 
 const INSTALLATION_GUIDES: Record<string, string> = {
@@ -49,6 +49,9 @@ export class SuccessView extends LitElement {
 
   private readonly _wizard = new WizardStateController(this);
 
+  // Notes what is on the network before the device starts
+  protected readonly _survey = new DeviceSurvey(this);
+
   private get _wizardState(): WizardState {
     return this._wizard.state;
   }
@@ -67,8 +70,10 @@ export class SuccessView extends LitElement {
 
     return html`
       <install-success
+        .heading=${localize("common.success.almost_there")}
         .subtitle=${localize("common.success.subtitle")}
         .formatWarning=${true}
+        .companion=${false}
         .steps=${[
           localize("common.success.step_eject"),
           isMiniPc
@@ -100,8 +105,8 @@ export class SuccessView extends LitElement {
               })
             : localize("common.success.step_connect_ethernet_and_power"),
           wifi
-            ? localize("common.success.step_follow_wifi")
-            : localize("common.success.step_follow"),
+            ? localize("common.success.step_next_wifi")
+            : localize("common.success.step_next"),
         ]}
         .footer=${renderExternalLink(
           guide,
@@ -115,9 +120,7 @@ export class SuccessView extends LitElement {
                   "views.sbc.success_view.your_device_installation_guide"
                 )
         )}
-      >
-        <home-assistant-status></home-assistant-status>
-      </install-success>
+      ></install-success>
     `;
   }
 }

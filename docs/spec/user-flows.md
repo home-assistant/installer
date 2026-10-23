@@ -130,31 +130,66 @@ leaving a running VM install also return to the path selection.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Step 5: Complete
+### Step 5: Start device
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │
-│   ✓  Installation complete                                  │
+│   Almost there!                                             │
+│   Home Assistant OS has been written to your storage device │
 │                                                             │
-│   Your SD card is ready. Next steps:                        │
+│   1. Eject the drive                                        │
+│   2. Insert it into your Raspberry Pi 5                     │
+│   3. Connect Ethernet and power                             │
+│   4. Once the device is on, select Next                     │
 │                                                             │
-│   1. Insert the SD card into your Raspberry Pi 5            │
-│   2. Connect ethernet (recommended) or prepare WiFi         │
-│   3. Power on the device                                    │
-│   4. Keep this window open and follow along below           │
-│                                                             │
-│   ┌───────────────────────────────────────────────────────┐ │
-│   │ ✓ Looking for your device on the network              │ │
-│   │ ✓ Waiting for Home Assistant                          │ │
-│   │ ◉ Installing latest Home Assistant      ████░░░  42%  │ │
-│   │   Follow along at http://192.168.1.50                 │ │
-│   └───────────────────────────────────────────────────────┘ │
-│                                                             │
-│                              [ Flash Another ] [ Done ]     │
+│   [ Cancel ]                                     [ Next ]   │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+No Back: the drive is written. This step already notes which Home
+Assistants announce themselves on the network, before the device can start.
+
+### Step 6: Set up
+
+The waits of a VM install, for the device: looking for it on the network
+(a landing page that wasn't there before), waiting for Home Assistant to
+answer, then the Core download its landing page reports. Skip goes on
+without it; while it looks, it says how to find the device without it.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│   Installing latest Home Assistant                          │
+│   ✓ Looking for your device on the network                  │
+│   ✓ Waiting for Home Assistant                              │
+│   ◉ Installing latest Home Assistant     ████████░░░  42%   │
+│   Checking Home Assistant at http://192.168.1.50            │
+│                                                             │
+│   [ Back ] [ Cancel ]                            [ Skip ]   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Step 7: Done
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│   ✓  You're all set!                                        │
+│   Home Assistant is ready on your device                    │
+│                                                             │
+│   1. Open http://192.168.1.50 in your browser               │
+│   2. Create your user account and start automating!         │
+│                                                             │
+│                                                  [ Done ]   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+After Skip, it adds how long to wait, and names homeassistant.local and the
+router when the device wasn't found.
 
 ---
 

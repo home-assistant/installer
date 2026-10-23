@@ -1,9 +1,8 @@
-import { expect, fixture, html } from "@open-wc/testing";
+import { expect, fixture, html, waitUntil } from "@open-wc/testing";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import type { WizardFlow } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/sbc/success-view.js";
 import type { SuccessView } from "../../../../src/views/sbc/success-view.js";
-import type { HomeAssistantStatus } from "../../../../src/components/home-assistant-status.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../../tauri-ipc.js";
 
 async function renderSuccess(board = "rpi5-64", flow: WizardFlow = "sbc") {
@@ -43,8 +42,8 @@ describe("success-view next steps", () => {
     expect(text(el)).to.contain("Ethernet cable to the same network");
     expect(text(el)).to.contain("with internet access");
     expect(text(el)).to.contain("Then connect power");
-    expect(text(el)).to.contain("Keep this window open");
-    expect(text(el)).to.contain("installs its latest version");
+    expect(text(el)).to.contain("Once the device is on, select Next");
+    expect(text(el)).to.contain("installs the latest Home Assistant");
     expect(text(el)).to.contain("about 20 minutes");
     expect(text(el)).to.contain("Keep power and Ethernet connected");
     expect(text(el)).not.to.contain("Wait a few minutes");
@@ -60,26 +59,24 @@ describe("success-view next steps", () => {
     expect(text(el)).not.to.contain("Keep power and Ethernet connected");
   });
 
-  it("follows the device below the steps, and says how to find it without that", async () => {
+  it("says how to start the device, and leaves the rest to the next steps", async () => {
+    const lookups: string[] = [];
+    mockTauriIpc((cmd) => {
+      lookups.push(cmd);
+      return [];
+    });
     const el = await renderSuccess();
-    // The next steps no longer send anyone looking themselves
+    // Home Assistant isn't there yet: the steps after this one find it
+    expect(text(el)).to.contain("Almost there!");
+    expect(text(el)).not.to.contain("You're all set!");
     expect(content(el).querySelector(".step-text a")).to.be.null;
-    const status = el.shadowRoot!.querySelector<HomeAssistantStatus>(
-      "install-success > home-assistant-status"
-    )!;
-    await status.updateComplete;
-    const panel = status.shadowRoot!;
-    expect(panel.textContent).to.contain(
-      "Looking for your device on the network"
-    );
-    const link = panel.querySelector<HTMLAnchorElement>(
-      ".status-description a"
-    )!;
-    expect(link.href).to.equal("http://homeassistant.local/");
-    expect(panel.textContent!.replace(/\s+/g, " ")).to.contain(
-      "IP address in your router or on an attached display, then open http://<IP address>"
-    );
-    expect(panel.textContent).not.to.contain(":8123");
+    expect(text(el)).not.to.contain("Companion App");
+    // Meanwhile, it notes what is on the network before the device starts
+    await waitUntil(() => lookups.length === 2);
+    expect(lookups).to.deep.equal([
+      "find_home_assistants",
+      "find_home_assistants",
+    ]);
   });
 
   it("asks for manual ejection without claiming native ejection succeeded", async () => {

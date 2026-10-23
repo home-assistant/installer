@@ -183,9 +183,16 @@ test.describe("SBC Success", () => {
       `Insert the written storage into ${selectedDeviceName}.`
     );
 
-    const wizardShell = page.locator("wizard-shell");
-    const doneButton = wizardShell.locator(".footer-right wa-button");
-    await doneButton.click();
+    const nextButton = page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button");
+    await nextButton.click();
+    await expect(page.locator("device-setup-view")).toBeVisible();
+    await expect(nextButton).toHaveText("Skip");
+    await nextButton.click();
+    await expect(page.locator("device-done-view")).toBeVisible();
+    await expect(nextButton).toHaveText("Done");
+    await nextButton.click();
 
     await expect(page.locator("path-selection-view")).toBeVisible();
   });

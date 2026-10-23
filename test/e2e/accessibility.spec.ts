@@ -131,7 +131,7 @@ test("success-view preserves next-step list and completion semantics", async ({
     document.querySelector("app-shell")!.remove();
     document.body.append(document.createElement("success-view"));
   });
-  const heading = page.getByRole("heading", { name: "You're all set!" });
+  const heading = page.getByRole("heading", { name: "Almost there!" });
   await expect(heading).toBeFocused();
   // The focus reads it out; an alert would read it out again
   await expect(page.getByRole("alert")).toHaveCount(0);
@@ -139,8 +139,12 @@ test("success-view preserves next-step list and completion semantics", async ({
   await expect(list).toBeVisible();
   expect(await list.getByRole("listitem").count()).toBeGreaterThan(0);
   expect(await list.ariaSnapshot()).toContain("listitem");
-  // Reduced-motion CSS can't stop SMIL animation, so its artwork has none
-  const svgs = page.locator("success-view svg");
+  // Reduced-motion CSS can't stop SMIL animation, so the artwork has none.
+  // The step that says where to find Home Assistant has the app links
+  await page.evaluate(() =>
+    document.body.append(document.createElement("device-done-view"))
+  );
+  const svgs = page.locator("device-done-view svg");
   await expect(svgs.first()).toBeAttached();
   expect(
     await svgs.evaluateAll((all) =>
@@ -667,9 +671,7 @@ test("disk installation keeps heading focus after the confirmation dialog closes
     page.locator("progress-view").getByRole("heading")
   ).toBeFocused();
   await expect(
-    page
-      .locator("success-view")
-      .getByRole("heading", { name: "You're all set!" })
+    page.locator("success-view").getByRole("heading", { name: "Almost there!" })
   ).toBeFocused({ timeout: 20000 });
   await expect(page.locator("success-view").getByRole("alert")).toHaveCount(0);
 });

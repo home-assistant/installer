@@ -5,7 +5,7 @@ import { wizardState } from "../../../src/state/wizard-state.js";
 import "../../../src/views/sbc/progress-view.js";
 import "../../../src/views/utm/utm-progress-view.js";
 import "../../../src/views/proxmox/proxmox-progress-view.js";
-import "../../../src/views/sbc/success-view.js";
+import "../../../src/views/device-done-view.js";
 import "../../../src/views/utm/utm-success-view.js";
 import "../../../src/views/proxmox/proxmox-success-view.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../tauri-ipc.js";
@@ -123,16 +123,15 @@ describe("shared install layouts", () => {
       wizardState.setSelection("proxmoxVmId", 123);
       wizardState.setSelection("proxmoxNode", "pve-test");
       wizardState.setSelection("ipAddress", "192.0.2.50");
+      wizardState.setSelection("homeAssistantReady", true);
       const opened: string[] = [];
       mockTauriIpc((cmd, args) => {
-        // A written drive's next steps look for the device that starts from it
-        if (cmd === "find_home_assistants") return [];
         expect(cmd).to.equal("plugin:opener|open_url");
         opened.push((args as { url: string }).url);
       });
       const view = fixtureSync(
         flow === "sbc"
-          ? html`<success-view></success-view>`
+          ? html`<device-done-view></device-done-view>`
           : flow === "utm"
             ? html`<utm-success-view></utm-success-view>`
             : html`<proxmox-success-view></proxmox-success-view>`
@@ -141,10 +140,10 @@ describe("shared install layouts", () => {
       const layout = view.shadowRoot!.querySelector("install-success")!;
       const content = layout.shadowRoot!;
       expect(content.querySelectorAll(".step-item").length).to.equal(
-        flow === "sbc" ? 4 : 3
+        flow === "sbc" ? 2 : 3
       );
       expect(content.querySelector(".subtitle")!.textContent).to.contain(
-        flow === "sbc" ? "written to your storage device" : "My home"
+        flow === "sbc" ? "ready on your device" : "My home"
       );
       if (flow === "proxmox") {
         expect(content.querySelector(".subtitle")!.textContent).to.contain(
@@ -154,17 +153,7 @@ describe("shared install layouts", () => {
           "pve-test"
         );
       }
-      // Where to find the device without the installer, beside its progress
-      const link =
-        flow === "sbc"
-          ? view
-              .shadowRoot!.querySelector(
-                "install-success > home-assistant-status"
-              )!
-              .shadowRoot!.querySelector<HTMLAnchorElement>(
-                ".status-description a"
-              )!
-          : content.querySelector<HTMLAnchorElement>(".step-text a")!;
+      const link = content.querySelector<HTMLAnchorElement>(".step-text a")!;
       link.click();
       for (const appLink of content.querySelectorAll<HTMLAnchorElement>(
         ".app-link"
@@ -172,7 +161,7 @@ describe("shared install layouts", () => {
         appLink.click();
       await settle();
       expect(opened).to.deep.equal([
-        flow === "sbc" ? "http://homeassistant.local" : "http://192.0.2.50",
+        "http://192.0.2.50",
         "https://apps.apple.com/app/home-assistant/id1099568401",
         "https://play.google.com/store/apps/details?id=io.homeassistant.companion.android",
       ]);

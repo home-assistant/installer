@@ -67,6 +67,8 @@ describe("wizard-state", () => {
       "confirm",
       "flash",
       "success",
+      "setup",
+      "done",
     ]);
     expect(state.selections.installMethod).to.equal("usb-boot");
   });

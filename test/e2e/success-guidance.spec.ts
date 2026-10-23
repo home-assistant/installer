@@ -105,11 +105,10 @@ test("a Wi-Fi network set on its own step replaces the cable step", async ({
 
 // The browser mock's device starts right away, and its landing page reports
 // the download in steps, as the VM installs wait for theirs
-test("follows the device the drive starts until Home Assistant is ready", async ({
+test("waits for the device the drive starts until Home Assistant is ready", async ({
   page,
 }) => {
   test.setTimeout(90000);
-  await page.setViewportSize({ width: 390, height: 850 });
   await page.goto("/");
   await page.getByRole("button", { name: "Let's go" }).click();
   await page
@@ -122,36 +121,35 @@ test("follows the device the drive starts until Home Assistant is ready", async 
   await next(page).click();
   await page.locator('confirm-dialog wa-button[variant="danger"]').click();
 
-  const status = page.locator("success-view home-assistant-status");
-  const stages = status.getByRole("list", {
-    name: "Starting your Home Assistant",
-  });
-  await expect(stages).toBeVisible({ timeout: 45000 });
-  await expect(page.locator("success-view .next-steps")).toContainText(
-    "Keep this window open"
-  );
-  await expect(stages.locator('[aria-current="step"]')).toContainText(
-    "Looking for your device on the network"
-  );
+  const start = page.locator("success-view");
   await expect(
-    status.getByRole("link", { name: /homeassistant\.local/ })
-  ).toBeVisible();
-
-  await expect(stages.locator('[aria-current="step"]')).toContainText(
-    "Installing latest Home Assistant",
-    { timeout: 20000 }
+    start.getByRole("heading", { name: "Almost there!" })
+  ).toBeVisible({ timeout: 45000 });
+  await expect(start.locator(".next-steps")).toContainText(
+    "Once the device is on, select Next"
   );
-  await expect(status.getByRole("progressbar")).toBeVisible();
-  await expect(status).toContainText("follow along at http://192.168.1.101");
+  await next(page).click();
 
-  await expect(status).toContainText("Your Home Assistant is ready", {
+  const setup = page.locator("device-setup-view");
+  await expect(setup).toBeVisible();
+  await expect(next(page)).toHaveText("Skip");
+  await expect(
+    setup
+      .getByRole("list", { name: "Installation stages" })
+      .locator('[aria-current="step"]')
+  ).toContainText("Installing latest Home Assistant", { timeout: 20000 });
+  await expect(setup.getByRole("progressbar")).toBeVisible();
+  await expect(setup).toContainText(
+    "Checking Home Assistant at http://192.168.1.101"
+  );
+
+  // Once it's ready, the last step links to it
+  const done = page.locator("device-done-view");
+  await expect(done).toContainText("Home Assistant is ready on your device", {
     timeout: 30000,
   });
   await expect(
-    status.getByRole("link", { name: /Open Home Assistant/ })
+    done.getByRole("link", { name: "http://192.168.1.101" })
   ).toHaveAttribute("href", "http://192.168.1.101");
-  // As wide as the next steps, within the window
-  const bounds = await status.boundingBox();
-  expect(bounds!.x).toBeGreaterThanOrEqual(0);
-  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  await expect(next(page)).toHaveText("Done");
 });

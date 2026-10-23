@@ -24,6 +24,8 @@ import "../views/live-usb/live-iso-location-view.js";
 import "../views/live-usb/live-usb-summary-view.js";
 import "../views/live-usb/live-usb-progress-view.js";
 import "../views/live-usb/live-usb-success-view.js";
+import "../views/device-setup-view.js";
+import "../views/device-done-view.js";
 import "../views/utm/utm-check-view.js";
 import "../views/utm/utm-configure-view.js";
 import "../views/utm/utm-confirm-view.js";
@@ -305,7 +307,9 @@ export class AppShell extends LitElement {
     // can still change. The flow ends on its last step.
     const last = wizardState.isLastStep;
     const hideBack =
-      last || (!!install && (running || !install.backAfterError));
+      last ||
+      !!step?.noBack ||
+      (!!install && (running || !install.backAfterError));
 
     // Done already leaves the flow, so Cancel would only repeat it
     const hideCancel = last;

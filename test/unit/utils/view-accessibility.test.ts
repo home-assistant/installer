@@ -380,7 +380,8 @@ describe("view accessibility", () => {
       el.shadowRoot!.querySelector<LitElement>("install-success")!;
     await success.updateComplete;
     const focused = success.shadowRoot!.activeElement;
-    expect(focused?.textContent).to.equal("You're all set!");
+    // The drive is written; the steps after it set the device up
+    expect(focused?.textContent).to.equal("Almost there!");
     expect(focused?.tagName).to.equal("H2");
     expect(findByRole(await fullA11ySnapshot(), "alert")).to.have.length(0);
   });

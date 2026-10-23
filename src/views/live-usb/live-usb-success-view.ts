@@ -4,9 +4,9 @@ import { customElement, state } from "lit/decorators.js";
 import { revealInFolder } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import { renderExternalLink } from "../../utils/external-link.js";
+import { DeviceSurvey } from "../../utils/device-discovery.js";
 import { GENERIC_X86_GUIDE_URL } from "../../utils/urls.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
-import "../../components/home-assistant-status.js";
 import "../../components/install-success.js";
 
 /** Next steps on the computer being installed, for a stick or for the saved ISO. */
@@ -18,6 +18,9 @@ export class LiveUsbSuccessView extends LitElement {
       min-height: 100%;
     }
   `;
+
+  // Notes what is on the network before the computer starts Home Assistant
+  protected readonly _survey = new DeviceSurvey(this);
 
   @state()
   private _revealFailed = false;
@@ -53,15 +56,17 @@ export class LiveUsbSuccessView extends LitElement {
             "views.live_usb.live_usb_success_view.iso_remove_and_restart"
           )
         : localize("views.live_usb.live_usb_success_view.remove_and_restart"),
-      localize("common.success.step_follow"),
+      localize("common.success.step_next"),
     ];
 
     return html`
       <install-success
+        .heading=${localize("common.success.almost_there")}
         .subtitle=${iso
           ? localize("views.live_usb.live_usb_success_view.iso_saved")
           : localize("views.live_usb.live_usb_success_view.usb_ready")}
         .formatWarning=${!iso}
+        .companion=${false}
         .steps=${iso
           ? [
               localize("views.live_usb.live_usb_success_view.write_the_iso"),
@@ -109,7 +114,6 @@ export class LiveUsbSuccessView extends LitElement {
                 : ""}
             </span>`
           : ""}
-        <home-assistant-status></home-assistant-status>
       </install-success>
     `;
   }

@@ -324,6 +324,8 @@ export class InstallProgress extends LitElement {
   @property({ attribute: false }) address: string | null = null;
   /** Leaving no longer stops anything, so the window may close */
   @property({ type: Boolean }) leavable = false;
+  /** What the error's heading says, if the install did not simply fail */
+  @property({ attribute: false }) errorHeading: string | null = null;
 
   render() {
     // The live region stays mounted through errors so a retry is announced
@@ -343,11 +345,13 @@ export class InstallProgress extends LitElement {
             ${renderCasitaSad()}
           </div>
           <h2>
-            ${localize("components.install_progress.installation_failed")}
+            ${this.errorHeading ??
+            localize("components.install_progress.installation_failed")}
           </h2>
           <div class="details">
             <p class="error-message" data-focus-alert>${this.error}</p>
             ${renderErrorHelp()}
+            <slot name="help"></slot>
           </div>
         </div>
       `;
@@ -373,8 +377,10 @@ export class InstallProgress extends LitElement {
         <h2>${this.description}</h2>
         <div class="details">
           <slot></slot>
+          <!-- WebKit drops list semantics with list-style: none -->
           <ol
             class="stages-indicator"
+            role="list"
             aria-label=${localize(
               "components.install_progress.installation_stages"
             )}
@@ -482,6 +488,7 @@ export class InstallProgress extends LitElement {
             : html`<p class="stage-description">
                 ${localize("components.install_progress.keep_window_open")}
               </p>`}
+          <slot name="help"></slot>
         </div>
       </div>
     `;

@@ -452,7 +452,7 @@ describe("app-shell", () => {
   for (const [action, event, step] of [
     ["Back leaves the first step", "wizard-exit", undefined],
     ["Cancel is chosen", "wizard-cancel", undefined],
-    ["Done is chosen", "wizard-next", "success"],
+    ["Done is chosen", "wizard-next", "done"],
   ] as const) {
     it(`returns to path selection when ${action}`, async () => {
       await enterSbcFlow(el);
@@ -473,9 +473,31 @@ describe("app-shell", () => {
     await enterSbcFlow(el);
     expect(shellOf(el).hideCancel).to.be.false;
 
-    await goToStep(el, "success");
+    await goToStep(el, "done");
     expect(shellOf(el).hideCancel).to.be.true;
     expect(shellOf(el).nextLabel).to.equal("Done");
+  });
+
+  // Back would write the drive again
+  it("offers no Back once the drive is written", async () => {
+    await enterSbcFlow(el);
+    await goToStep(el, "success");
+    expect(shellOf(el).hideBack).to.be.true;
+    expect(shellOf(el).hideCancel).to.be.false;
+    expect(shellOf(el).nextLabel).to.equal("Next");
+  });
+
+  it("skips the wait for Home Assistant to where to find it", async () => {
+    await enterSbcFlow(el);
+    await goToStep(el, "setup");
+    expect(shellOf(el).nextLabel).to.equal("Skip");
+    // Back to how to start the device, which can be read again
+    expect(shellOf(el).hideBack).to.be.false;
+
+    fire(shellOf(el), "wizard-next");
+    await el.updateComplete;
+    expect(wizardState.currentStep?.id).to.equal("done");
+    expect(shellOf(el).querySelector("device-done-view")).to.exist;
   });
 
   // The first click changes the screen, and the second lands on whatever the

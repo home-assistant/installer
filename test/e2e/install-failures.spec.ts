@@ -161,8 +161,14 @@ for (const scenario of [
     await expect(page.locator(`${prefix}success-view`)).toBeVisible({
       timeout: 45000,
     });
-    await expect(next(page)).toHaveText("Done");
-    await next(page).click();
+    if (scenario.flow === "sbc") {
+      // A written drive goes on to starting the device; Cancel still leaves
+      await expect(next(page)).toHaveText("Next");
+      await page.locator("wizard-shell .footer-left wa-button").click();
+    } else {
+      await expect(next(page)).toHaveText("Done");
+      await next(page).click();
+    }
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 }

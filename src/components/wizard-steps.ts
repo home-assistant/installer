@@ -82,6 +82,11 @@ export interface WizardStepDefinition {
   pickToContinue?: boolean;
   /** Whether Next erases the drive, which is checked and asked first */
   erasesDrive?(selections: WizardSelections): boolean;
+  /**
+   * The step before can't be done again, like writing a drive that is
+   * done, so there is no Back.
+   */
+  noBack?: boolean;
   /** The step's view runs an install, which the shell can stop and retry */
   install?: InstallStep;
 }
@@ -155,6 +160,24 @@ const flash: WizardStepDefinition = {
   },
 };
 
+/**
+ * After the drive is written: starting the device from it, which `success`
+ * says how to do, then waiting for Home Assistant on it, which can be
+ * skipped, and where to find it
+ */
+function deviceSteps(
+  success: () => TemplateResult
+): Record<string, WizardStepDefinition> {
+  return {
+    success: { render: success, noBack: true },
+    setup: {
+      render: () => html`<device-setup-view></device-setup-view>`,
+      nextLabel: () => localize("components.wizard_steps.skip"),
+    },
+    done: { render: () => html`<device-done-view></device-done-view>` },
+  };
+}
+
 /** Making and starting a VM, which can't take other settings once made */
 const vmInstall: InstallStep = {
   stopMessage: () =>
@@ -176,7 +199,7 @@ export const WIZARD_STEPS: Record<
     wifi,
     confirm: confirmation,
     flash,
-    success: { render: () => html`<success-view></success-view>` },
+    ...deviceSteps(() => html`<success-view></success-view>`),
   },
   // The SBC steps, with its own device picker and device-specific next steps
   "ha-hardware": {
@@ -204,9 +227,9 @@ export const WIZARD_STEPS: Record<
     wifi,
     confirm: confirmation,
     flash,
-    success: {
-      render: () => html`<ha-hardware-success-view></ha-hardware-success-view>`,
-    },
+    ...deviceSteps(
+      () => html`<ha-hardware-success-view></ha-hardware-success-view>`
+    ),
   },
   minipc: {
     method: {
@@ -223,7 +246,7 @@ export const WIZARD_STEPS: Record<
     wifi,
     confirm: confirmation,
     flash,
-    success: { render: () => html`<success-view></success-view>` },
+    ...deviceSteps(() => html`<success-view></success-view>`),
   },
   vm: {
     check: {
@@ -365,9 +388,7 @@ export const LIVE_USB_STEPS: Record<string, WizardStepDefinition> = {
           : chooseAnotherDrive(),
     },
   },
-  success: {
-    render: () => html`<live-usb-success-view></live-usb-success-view>`,
-  },
+  ...deviceSteps(() => html`<live-usb-success-view></live-usb-success-view>`),
 };
 
 export function wizardStep(

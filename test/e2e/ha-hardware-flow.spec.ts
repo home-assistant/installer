@@ -97,6 +97,11 @@ test.describe("Home Assistant hardware flow", () => {
     await expect(page.locator("ha-hardware-success-view")).toBeVisible({
       timeout: 45000,
     });
+    // Then the device starts, which can be skipped, and the flow is done
+    await next(page).click();
+    await expect(page.locator("device-setup-view")).toBeVisible();
+    await next(page).click();
+    await expect(page.locator("device-done-view")).toBeVisible();
     await next(page).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
   });

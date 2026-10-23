@@ -239,6 +239,16 @@ for (const colorScheme of ["light", "dark"] as const) {
         timeout: 45000,
       });
       await expectAccessible(page, page.locator("success-view"), "success");
+
+      // Then waiting for Home Assistant on the device, and where to find it
+      await next(page).click();
+      await expectAccessible(
+        page,
+        page.locator("device-setup-view"),
+        "waiting for Home Assistant"
+      );
+      await next(page, "Skip").click();
+      await expectAccessible(page, page.locator("device-done-view"), "done");
     });
 
     test("a write that fails", async ({ page }) => {

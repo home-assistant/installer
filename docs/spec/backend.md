@@ -346,15 +346,16 @@ while neither download moves, unless Core is already downloaded: then
 Supervisor stops the landing page to start Core. Diagnostics record the
 status as fixed categories only, never Supervisor's logs or text.
 
-The success step of a written drive waits the same way for the device that
-starts from it. Since 2026.6 the landing page announces itself over mDNS as
+After a drive is written, the Set up step waits the same way for the device
+that starts from it. Since 2026.6 the landing page announces itself over mDNS as
 `_home-assistant._tcp` with `landingpage=True` and a new `uuid` each time it
 starts; older ones announce `version=0.0.0` and no `uuid`. The step first
 notes what announces itself already, then takes the first landing page that
 wasn't there for the device, and follows it at the address it announces.
-Home Assistant itself is never taken for it. Only lookups in the step's first
-minute note what is there, before the device can have started; when none
-answered by then, any landing page is the device. `find_home_assistants` listens
+Home Assistant itself is never taken for it. The Start device step before it,
+which comes as soon as the drive is written, notes what is there. Only
+lookups in that first minute count, before the device can have started; when
+none answered by then, any landing page is the device. `find_home_assistants` listens
 for three seconds: on Windows through the system's DNS-SD
 (`DnsServiceBrowse` and `DnsServiceResolve`), whose mDNS traffic Windows
 Firewall lets through, elsewhere with `mdns-sd`, which sends its own queries.

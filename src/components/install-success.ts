@@ -236,6 +236,8 @@ export class InstallSuccess extends LitElement {
       }
     `,
   ];
+  /** What the heading says, if not that all is set */
+  @property({ attribute: false }) heading: string | null = null;
   @property({ attribute: false }) subtitle: string | TemplateResult = "";
   @property({ attribute: false }) steps: (string | TemplateResult)[] = [];
   @property({ attribute: false }) tip: string | TemplateResult = "";
@@ -243,9 +245,11 @@ export class InstallSuccess extends LitElement {
   @property({ attribute: false }) formatWarning = false;
   /** Shown below the steps, such as a link to further documentation. */
   @property({ attribute: false }) footer: string | TemplateResult = "";
+  /** Links to the companion app, once Home Assistant is there to use it */
+  @property({ type: Boolean }) companion = true;
 
   render() {
-    const title = localize("components.install_success.title");
+    const title = this.heading ?? localize("components.install_success.title");
     const platform = this.formatWarning && getPlatform();
     const notice =
       platform === "macos"
@@ -291,31 +295,37 @@ export class InstallSuccess extends LitElement {
           </div>
           <slot></slot>
           ${this.tip ? html`<div class="tip-section">${this.tip}</div>` : ""}
-          <!-- A heading of its own, so the app links don't read as part of
-               the next steps -->
-          <div class="companion-section">
-            <h3 class="companion-title">
-              ${localize("components.install_success.companion_app")}
-            </h3>
-            <div class="app-links">
-              ${renderExternalLink(
-                APP_STORE_URL,
-                html`${renderIcon(mdiApple)}
-                  <span
-                    >${localize("components.install_success.app_store")}</span
-                  >`,
-                { className: "app-link" }
-              )}
-              ${renderExternalLink(
-                GOOGLE_PLAY_URL,
-                html`${renderIcon(mdiGooglePlay)}
-                  <span
-                    >${localize("components.install_success.google_play")}</span
-                  >`,
-                { className: "app-link" }
-              )}
-            </div>
-          </div>
+          ${this.companion
+            ? html`<!-- A heading of its own, so the app links don't read as part of
+                 the next steps -->
+                <div class="companion-section">
+                  <h3 class="companion-title">
+                    ${localize("components.install_success.companion_app")}
+                  </h3>
+                  <div class="app-links">
+                    ${renderExternalLink(
+                      APP_STORE_URL,
+                      html`${renderIcon(mdiApple)}
+                        <span
+                          >${localize(
+                            "components.install_success.app_store"
+                          )}</span
+                        >`,
+                      { className: "app-link" }
+                    )}
+                    ${renderExternalLink(
+                      GOOGLE_PLAY_URL,
+                      html`${renderIcon(mdiGooglePlay)}
+                        <span
+                          >${localize(
+                            "components.install_success.google_play"
+                          )}</span
+                        >`,
+                      { className: "app-link" }
+                    )}
+                  </div>
+                </div>`
+            : ""}
         </div>
       </div>
     `;

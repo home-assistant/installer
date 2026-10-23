@@ -70,7 +70,7 @@ describe("live-usb-success-view", () => {
     }
   });
 
-  it("follows the computer below the steps, for a stick and an ISO alike", async () => {
+  it("leaves following the computer to the next steps, for a stick and an ISO alike", async () => {
     for (const media of ["usb", "iso"] as const) {
       wizardState.startFlow("minipc");
       wizardState.setSelection("liveMedia", media);
@@ -85,8 +85,9 @@ describe("live-usb-success-view", () => {
       const steps = [...layout.shadowRoot!.querySelectorAll(".step-text")].map(
         (step) => step.textContent!
       );
-      expect(steps[steps.length - 1]).to.contain("Keep this window open");
-      expect(layout.querySelector(":scope > home-assistant-status")).to.exist;
+      expect(steps[steps.length - 1]).to.contain(
+        "Once the device is on, select Next"
+      );
       wizardState.reset();
     }
   });
