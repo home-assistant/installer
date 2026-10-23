@@ -198,10 +198,14 @@ describe("localized view contracts", () => {
       expect(content.textContent).to.contain("Disk fixture");
       expect(content.textContent).not.to.contain("Pool fixture");
     }
+    const configure = view("proxmox-configure-view");
+    // Past the node lookup, which shows loading text in place of the fields
+    Object.assign((configure as unknown as { _lookup: object })._lookup, {
+      loadingNodes: false,
+      selectedNode: "pve",
+    });
     const labels = Array.from(
-      output(
-        view("proxmox-configure-view", { _loading: false })
-      ).querySelectorAll("[label]"),
+      output(configure).querySelectorAll("[label]"),
       (field) => field.getAttribute("label")
     );
     expect(labels).to.include("Pool fixture");
