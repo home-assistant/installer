@@ -1,6 +1,13 @@
 import { css, html, nothing } from "lit";
 import { localize } from "../localization/localize.js";
+import {
+  mdiAlert,
+  mdiAlertCircle,
+  mdiCheckCircle,
+  mdiCloseCircle,
+} from "./icons.js";
 import { renderErrorHelp, type InstallerError } from "./installer-error.js";
+import { renderIcon } from "./render-icon.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../components/loading-spinner.js";
 
@@ -95,9 +102,7 @@ export function renderLoadError(
 ) {
   return html`
     <div class="error">
-      <svg class="error-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M13,14H11V10H13M13,18H11V16H13M1,21H23L12,2L1,21Z" />
-      </svg>
+      ${renderIcon(mdiAlert, "error-icon")}
       <p class="error-message" data-focus-alert>
         ${retrying ? "" : error.message}
       </p>
@@ -110,15 +115,12 @@ export function renderLoadError(
 /** What a status row reports, which picks its icon and color. */
 export type StatusKind = "loading" | "success" | "warning" | "error";
 
-// mdi:check-circle, mdi:alert-circle and mdi:close-circle. The mark is cut
-// out of the circle, so it shows what is under it in either theme.
+// The mark is cut out of the circle, so it shows what is under it in either
+// theme.
 const statusIcons: Record<Exclude<StatusKind, "loading">, string> = {
-  success:
-    "M12 2C6.5 2 2 6.5 2 12S6.5 22 12 22 22 17.5 22 12 17.5 2 12 2M10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z",
-  warning:
-    "M13,13H11V7H13M13,17H11V15H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z",
-  error:
-    "M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z",
+  success: mdiCheckCircle,
+  warning: mdiAlertCircle,
+  error: mdiCloseCircle,
 };
 
 /**
@@ -222,9 +224,7 @@ export function renderStatusRow(
     <div class="status-row status-${kind}" ?data-focus-alert=${error}>
       ${kind === "loading"
         ? html`<loading-spinner aria-hidden="true"></loading-spinner>`
-        : html`<svg class="status-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d=${statusIcons[kind]} />
-          </svg>`}
+        : renderIcon(statusIcons[kind], "status-icon")}
       <div class="status-text">
         <p class="status-title">${title}</p>
         ${description

@@ -5,7 +5,8 @@ import type WaSlider from "@home-assistant/webawesome/dist/components/slider/sli
 import "@home-assistant/webawesome/dist/components/slider/slider.js";
 import { localize } from "../localization/localize.js";
 import { formatDiskSize, formatMemory } from "../utils/format.js";
-import { mdiDatabase } from "../utils/icons.js";
+import { mdiChip, mdiDatabase, mdiMemory } from "../utils/icons.js";
+import { renderIcon } from "../utils/render-icon.js";
 import { settingStyles } from "../utils/setting-styles.js";
 
 /** What a VM gets, as `resources-change` reports it */
@@ -66,23 +67,6 @@ function indexOf(options: number[], value: number): number {
   const below = options.filter((option) => option < value).length;
   return Math.max(below - 1, 0);
 }
-
-// MDI icons (https://materialdesignicons.com/)
-const cpuIcon = html`<svg viewBox="0 0 24 24">
-  <path
-    d="M6,4H18V5H21V7H18V9H21V11H18V13H21V15H18V17H21V19H18V20H6V19H3V17H6V15H3V13H6V11H3V9H6V7H3V5H6V4M11,15V18H12V15H11M13,15V18H14V15H13M15,15V18H16V15H15Z"
-  />
-</svg>`;
-
-const memoryIcon = html`<svg viewBox="0 0 24 24">
-  <path
-    d="M17,17H7V7H17M21,11V9H19V7C19,5.89 18.1,5 17,5H15V3H13V5H11V3H9V5H7C5.89,5 5,5.89 5,7V9H3V11H5V13H3V15H5V17A2,2 0 0,0 7,19H9V21H11V19H13V21H15V19H17A2,2 0 0,0 19,17V15H21V13H19V11M13,13H11V11H13M15,9H9V15H15V9Z"
-  />
-</svg>`;
-
-const diskIcon = html`<svg viewBox="0 0 24 24">
-  <path d=${mdiDatabase} />
-</svg>`;
 
 /**
  * The cores, memory and disk sliders of a VM, shared by the UTM and Proxmox
@@ -194,7 +178,7 @@ export class VmResources extends LitElement {
   render() {
     return html`
       ${this._renderSlider(
-        cpuIcon,
+        renderIcon(mdiChip),
         localize("components.vm_resources.cpu_cores"),
         this.coreOptions,
         this.cpuCores,
@@ -204,7 +188,7 @@ export class VmResources extends LitElement {
         this._formatCoresAt
       )}
       ${this._renderSlider(
-        memoryIcon,
+        renderIcon(mdiMemory),
         localize("components.vm_resources.memory"),
         this.memoryOptions,
         this.memoryMb,
@@ -214,7 +198,7 @@ export class VmResources extends LitElement {
         this._formatMemoryAt
       )}
       ${this._renderSlider(
-        diskIcon,
+        renderIcon(mdiDatabase),
         localize("components.vm_resources.disk_size"),
         this.diskOptions,
         this.diskSizeGb,

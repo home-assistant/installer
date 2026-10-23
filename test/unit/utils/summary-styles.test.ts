@@ -4,12 +4,12 @@ import type { HaosRelease } from "../../../src/api/types.js";
 import {
   HaosVersion,
   renderHaosVersionRow,
-  renderSummaryIcon,
   renderSummaryRow,
   renderVmSummaryRows,
   summaryStyles,
 } from "../../../src/utils/summary-styles.js";
 import { mdiMonitor } from "../../../src/utils/icons.js";
+import { renderIcon } from "../../../src/utils/render-icon.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../tauri-ipc.js";
 
 function rendered(template: unknown): HTMLDivElement {
@@ -47,7 +47,7 @@ describe("summary-styles", () => {
   it("renders a row's icon, label, value and details in order", () => {
     const container = rendered(
       renderSummaryRow(
-        renderSummaryIcon(mdiMonitor),
+        renderIcon(mdiMonitor),
         "Virtual machine",
         "Home Assistant",
         html`<p class="summary-detail">4 CPU cores</p>
@@ -87,11 +87,7 @@ describe("summary-styles", () => {
       root.adoptedStyleSheets = [summaryStyles.styleSheet!];
       render(
         html`<div class="summary-card">
-          ${renderSummaryRow(
-            renderSummaryIcon(mdiMonitor),
-            "Target drive",
-            value
-          )}
+          ${renderSummaryRow(renderIcon(mdiMonitor), "Target drive", value)}
         </div>`,
         root
       );

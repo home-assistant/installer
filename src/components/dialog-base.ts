@@ -2,6 +2,8 @@ import { LitElement, html, css, type CSSResultGroup } from "lit";
 import { property } from "lit/decorators.js";
 import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import { dialogStyles } from "../utils/dialog-styles.js";
+import { mdiInformation } from "../utils/icons.js";
+import { renderIcon } from "../utils/render-icon.js";
 
 /**
  * How a dialog was closed: with its main action, or any other way. Escape,
@@ -110,13 +112,9 @@ export abstract class DialogBase extends LitElement {
       <span slot="label" class="dialog-title ${tone}">
         ${tone === "warning"
           ? html`<span class="warning-icon" aria-hidden="true">⚠️</span>`
-          : html`<span class="info-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path
-                  d="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"
-                />
-              </svg>
-            </span>`}
+          : html`<span class="info-icon" aria-hidden="true"
+              >${renderIcon(mdiInformation)}</span
+            >`}
         ${heading}
       </span>
     `;

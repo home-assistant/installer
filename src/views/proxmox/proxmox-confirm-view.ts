@@ -13,6 +13,7 @@ import {
   summaryStyles,
 } from "../../utils/summary-styles.js";
 import { mdiServer } from "../../utils/icons.js";
+import { renderIcon } from "../../utils/render-icon.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 @customElement("proxmox-confirm-view")
@@ -92,15 +93,7 @@ export class ProxmoxConfirmView extends LitElement {
   private _renderProxmoxIcon() {
     // The icon the Proxmox option has on the path selection. The row's label
     // says Proxmox server, so it needs no name of its own.
-    return html`
-      <svg
-        class="proxmox-icon"
-        viewBox="0 0 24 24"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path d=${mdiServer} />
-      </svg>
-    `;
+    return renderIcon(mdiServer, "proxmox-icon");
   }
 }
 

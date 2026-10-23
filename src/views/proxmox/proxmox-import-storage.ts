@@ -11,6 +11,7 @@ import { InstallDiagnostics } from "../../utils/diagnostics.js";
 import { openExternalLink } from "../../utils/external-url.js";
 import { formatFreeSpace } from "../../utils/format.js";
 import { mdiDatabase } from "../../utils/icons.js";
+import { renderIcon } from "../../utils/render-icon.js";
 import {
   installerError,
   type InstallerError,
@@ -248,9 +249,7 @@ export class ProxmoxImportStorage {
 
     return html`
       <div class="setting-row">
-        <div class="setting-icon">
-          <svg viewBox="0 0 24 24"><path d=${mdiDatabase} /></svg>
-        </div>
+        <div class="setting-icon">${renderIcon(mdiDatabase)}</div>
         <div class="setting-content import-setting">
           <span class="setting-label"
             >${localize(

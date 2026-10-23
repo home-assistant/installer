@@ -13,6 +13,7 @@ import {
 } from "../state/vm-defaults.js";
 import type { WizardSelections } from "../state/wizard-state.js";
 import { fieldError } from "./field-error.js";
+import { renderIcon } from "./render-icon.js";
 import { mdiLabelOutline } from "./icons.js";
 
 /** The name and resources a configure step saves for the VM */
@@ -128,9 +129,7 @@ export class VmSettings {
   renderName() {
     const error = this.nameError;
     return html`<div class="setting-row">
-      <div class="setting-icon">
-        <svg viewBox="0 0 24 24"><path d=${mdiLabelOutline} /></svg>
-      </div>
+      <div class="setting-icon">${renderIcon(mdiLabelOutline)}</div>
       <div class="setting-content">
         <wa-input
           label=${localize("common.vm.display_name")}

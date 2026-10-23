@@ -11,7 +11,6 @@ import {
   HaosVersion,
   haIcon,
   renderHaosVersionRow,
-  renderSummaryIcon,
   renderSummaryRow,
   summaryStyles,
 } from "../../utils/summary-styles.js";
@@ -22,13 +21,12 @@ import {
 } from "../../state/ha-hardware.js";
 import "../../components/inline-notice.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import { mdiWifi } from "../../utils/icons.js";
+import { renderIcon } from "../../utils/render-icon.js";
 
 // A board, for a device without a picture
 const boardIcon =
   "M6 2C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V4C20 2.9 19.1 2 18 2H6ZM6 4H18V20H6V4ZM8 6V8H10V6H8ZM14 6V8H16V6H14ZM11 10V12H13V10H11ZM8 14V16H10V14H8ZM14 14V16H16V14H14Z";
-
-const mdiWifi =
-  "M12,21L15.6,16.2C14.6,15.45 13.35,15 12,15C10.65,15 9.4,15.45 8.4,16.2L12,21M12,3C7.95,3 4.21,4.34 1.2,6.6L3,9C5.5,7.12 8.62,6 12,6C15.38,6 18.5,7.12 21,9L22.8,6.6C19.79,4.34 16.05,3 12,3M12,9C9.3,9 6.81,9.89 4.8,11.4L6.6,13.8C8.1,12.67 9.97,12 12,12C14.03,12 15.9,12.67 17.4,13.8L19.2,11.4C17.19,9.89 14.7,9 12,9Z";
 
 @customElement("confirmation-view")
 export class ConfirmationView extends LitElement {
@@ -118,7 +116,7 @@ export class ConfirmationView extends LitElement {
                 alt=""
               />`
             : html`<div class="device-image-placeholder">
-                ${renderSummaryIcon(boardIcon)}
+                ${renderIcon(boardIcon)}
               </div>`,
           localize("common.device"),
           deviceName
@@ -191,7 +189,7 @@ export class ConfirmationView extends LitElement {
     return html`
       <div class="divider"></div>
       ${renderSummaryRow(
-        renderSummaryIcon(mdiWifi),
+        renderIcon(mdiWifi),
         localize("views.sbc.confirmation_view.wifi"),
         network
       )}
