@@ -1,4 +1,5 @@
 import { expect, fixtureSync, html } from "@open-wc/testing";
+import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/live-usb/live-iso-location-view.js";
 import type { LiveIsoLocationView } from "../../../../src/views/live-usb/live-iso-location-view.js";
@@ -62,6 +63,31 @@ describe("live-iso-location-view", () => {
     expect(await checking).to.equal(false);
     await settle();
     expect(el.shadowRoot!.querySelector(".notice.error")).to.not.exist;
+  });
+
+  it("asks for Next on Enter in the folder or the file name, not on Browse", async () => {
+    const el = fixtureSync<LiveIsoLocationView>(
+      html`<live-iso-location-view></live-iso-location-view>`
+    );
+    await settle();
+    let next = 0;
+    el.addEventListener("wizard-next", () => next++);
+    const enter = () =>
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        composed: true,
+      });
+
+    const browse = el.shadowRoot!.querySelector("wa-button")!;
+    await browse.updateComplete;
+    browse.shadowRoot!.querySelector("button")!.dispatchEvent(enter());
+    expect(next).to.equal(0);
+
+    const fields = [...el.shadowRoot!.querySelectorAll<WaInput>("wa-input")];
+    await Promise.all(fields.map((field) => field.updateComplete));
+    for (const field of fields) field.input.dispatchEvent(enter());
+    expect(next).to.equal(2);
   });
 
   it("settles a check that answers after the view was left", async () => {

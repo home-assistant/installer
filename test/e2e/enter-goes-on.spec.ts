@@ -121,3 +121,40 @@ test("Enter connects to Proxmox, then checks the settings and goes on, not from 
   await vmId.press("Enter");
   await expect(page.locator("proxmox-confirm-view")).toContainText("251");
 });
+
+test("Enter in the ISO location checks it, and goes on once it can be used", async ({
+  page,
+}) => {
+  await start(page, "Mini PC or other computer");
+  await page
+    .locator("minipc-setup-method-view option-card")
+    .filter({ hasText: "I need to boot from USB" })
+    .click();
+  await page
+    .locator("minipc-media-view option-card")
+    .filter({ hasText: "ISO file" })
+    .click();
+  const location = page.locator("live-iso-location-view");
+  const name = location.getByLabel("File name");
+  await expect(name).toHaveValue(/^hai-live-haos-.+\.iso$/);
+
+  // Without a name Next is off, and so is Enter
+  await name.fill("");
+  await name.press("Enter");
+  await expect(name).toBeFocused();
+  await expect(page.locator("live-usb-summary-view")).toHaveCount(0);
+
+  // The check Next runs first says what is wrong, and the step stays
+  await name.fill("sub/stick.iso");
+  await name.press("Enter");
+  await expect(location).toContainText(
+    "Enter a file name without folder separators."
+  );
+  await expect(page.locator("live-usb-summary-view")).toHaveCount(0);
+
+  await name.fill("my-stick.iso");
+  await name.press("Enter");
+  await expect(page.locator("live-usb-summary-view")).toContainText(
+    "my-stick.iso"
+  );
+});

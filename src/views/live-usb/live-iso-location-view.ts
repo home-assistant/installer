@@ -10,6 +10,7 @@ import {
 } from "../../api/index.js";
 import { installerError } from "../../utils/installer-error.js";
 import { wizardState } from "../../state/wizard-state.js";
+import { nextOnEnter } from "../../components/wizard-steps.js";
 import { liveUsbStyles } from "./live-usb-styles.js";
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
@@ -186,6 +187,7 @@ export class LiveIsoLocationView extends LitElement {
               label=${localize("views.live_usb.live_iso_location_view.folder")}
               .value=${this._folder}
               @input=${this._onFolderInput}
+              @keydown=${nextOnEnter}
             ></wa-input>
             <wa-button appearance="outlined" @click=${this._browse}>
               ${localize("views.live_usb.live_iso_location_view.browse")}
@@ -202,6 +204,7 @@ export class LiveIsoLocationView extends LitElement {
             label=${localize("views.live_usb.live_iso_location_view.file_name")}
             .value=${this._name}
             @input=${this._onNameInput}
+            @keydown=${nextOnEnter}
           ></wa-input>
           ${this._problem
             ? html`<p class="notice error" data-focus-alert>
