@@ -45,8 +45,14 @@ const vmbr0: ProxmoxBridge = {
   comments: null,
 };
 
+const needsImport =
+  "Next is unavailable until a storage on pve accepts Import.";
+
 const hint = (el: ProxmoxConfigureView) =>
   el.shadowRoot!.querySelector<HTMLElement>(".next-hint")!;
+/** The part of the hint that is read out politely */
+const status = (el: ProxmoxConfigureView) =>
+  el.shadowRoot!.querySelector<HTMLElement>(".next-hint [role=status]")!;
 const focused = (el: ProxmoxConfigureView) => el.shadowRoot!.activeElement;
 const lookupOf = (el: ProxmoxConfigureView) =>
   (el as unknown as { _lookup: ProxmoxTargetLookup })._lookup;
@@ -120,7 +126,7 @@ describe("proxmox-configure-view announcements", () => {
     [
       "storage that accepts Import",
       () => (storages = () => [directory, disk]),
-      "Next is unavailable until a storage on pve accepts Import.",
+      needsImport,
     ],
     [
       "storage for the VM disk",
@@ -151,18 +157,20 @@ describe("proxmox-configure-view announcements", () => {
       await name.updateComplete;
       name.focus();
       expect(focused(el)).to.equal(name);
-      expect(hint(el).textContent!.trim()).to.equal("");
+      // In place before it says anything
+      const live = status(el);
+      expect(live.textContent!.trim()).to.equal("");
 
       pending.resolve(answer());
       await waitUntil(
-        () => hint(el).textContent!.includes(said),
+        () => status(el).textContent!.includes(said),
         "the hint never said what Next needs"
       );
       await settle();
       await el.updateComplete;
 
       // A polite status, which doesn't take the focus to be read out
-      expect(hint(el).getAttribute("role")).to.equal("status");
+      expect(status(el)).to.equal(live);
       expect(focusAlerts(el)).to.have.length(0);
       expect(focused(el)).to.equal(name);
     });
@@ -186,25 +194,51 @@ describe("proxmox-configure-view announcements", () => {
     expect(hint(el).getBoundingClientRect().height).to.equal(0);
   });
 
-  for (const [retryClass, setUp, said] of [
+  it("says what Next needs through the same status once a failed lookup gives way to the form", async () => {
+    nodes = () => {
+      throw ipcError("proxmox_api", "denied", true);
+    };
+    const el = await mount();
+    expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.exist;
+    const live = status(el);
+    expect(live.textContent!.trim()).to.equal("");
+
+    nodes = () => [{ name: "pve", status: "online" }];
+    storages = () => [directory, disk];
+    el.shadowRoot!.querySelector<HTMLElement>(".load-retry")!.click();
+    await waitUntil(
+      () => status(el).textContent!.includes(needsImport),
+      "the hint never said what Next needs"
+    );
+    // Filled in place, so it is read out; one put in already filled may not be
+    expect(status(el)).to.equal(live);
+  });
+
+  for (const [retryClass, setUp, said, hinted] of [
     [
       ".storage-retry",
-      () => (storages = () => [withImport]),
+      () => (storages = () => [directory]),
       "No active storage on this node can hold the VM disk.",
+      "Next is unavailable until pve has storage that can hold the VM disk.",
     ],
     [
       ".bridge-retry",
-      () => (bridges = () => []),
+      () => {
+        storages = () => [directory, disk];
+        bridges = () => [];
+      },
       "No network bridges available on this node.",
+      "Next is unavailable until pve has a network bridge.",
     ],
   ] as const) {
-    it(`takes the focus to say what ${retryClass} found once more`, async () => {
+    it(`takes the focus to say what ${retryClass} found once more, and says it only there`, async () => {
       setUp();
       const el = await mount();
       const message = el.shadowRoot!.querySelector<HTMLElement>(".error-text")!;
       expect(message.textContent).to.contain(said);
-      // Nobody asked for the first lookup
+      // Nobody asked for the first lookup, so the status says it
       expect(message.hasAttribute("data-focus-alert")).to.be.false;
+      expect(status(el).textContent).to.contain(hinted);
 
       const retry = el.shadowRoot!.querySelector<HTMLElement>(retryClass)!;
       retry.focus();
@@ -216,14 +250,19 @@ describe("proxmox-configure-view announcements", () => {
         "what Try again found never took the focus"
       );
       expect(focused(el)!.hasAttribute("data-focus-alert")).to.be.true;
+      await el.updateComplete;
+      // Still shown next to Next, but out of the status, which says only
+      // what nothing took the focus for
+      expect(hint(el).textContent).to.contain(hinted);
+      expect(status(el).textContent).not.to.contain(hinted);
+      expect(status(el).textContent).to.contain(needsImport);
     });
   }
 
   it("keeps the focus on Refresh storage, and says again what Next needs", async () => {
     storages = () => [directory, disk];
     const el = await mount();
-    const said = "Next is unavailable until a storage on pve accepts Import.";
-    expect(hint(el).textContent).to.contain(said);
+    expect(status(el).textContent).to.contain(needsImport);
 
     const lookup = deferred<ProxmoxStorage[]>();
     storages = () => lookup.promise;
@@ -233,10 +272,10 @@ describe("proxmox-configure-view announcements", () => {
     refresh.click();
     await el.updateComplete;
     // Empty meanwhile, so the same result is read out again
-    expect(hint(el).textContent!.trim()).to.equal("");
+    expect(status(el).textContent!.trim()).to.equal("");
 
     lookup.resolve([directory, disk]);
-    await waitUntil(() => hint(el).textContent!.includes(said));
+    await waitUntil(() => status(el).textContent!.includes(needsImport));
     await settle();
     await el.updateComplete;
     expect(focused(el)).to.equal(refresh);
