@@ -29,7 +29,6 @@ import {
   proxmoxEnableStorageImport,
   proxmoxGetNextVmId,
   proxmoxCheckVmConfig,
-  formatBytes,
 } from "../../api/commands.js";
 import type {
   ProxmoxBridge,
@@ -49,6 +48,7 @@ import {
   proxmoxVmConfig,
 } from "../../state/vm-defaults.js";
 import { settingStyles } from "../../utils/setting-styles.js";
+import { VM_GB_BYTES, formatFreeSpace } from "../../utils/format.js";
 import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 import {
   SESSION_EXPIRED,
@@ -472,6 +472,7 @@ export class ProxmoxConfigureView extends LitElement {
         if (!storageStillAvailable) {
           this._selectedStorage = this._storages[0]?.name ?? "";
         }
+        this._fitDiskToStorage();
       } else {
         this._storages = [];
       }
@@ -832,6 +833,7 @@ export class ProxmoxConfigureView extends LitElement {
   private _onStorageChange(e: Event) {
     const select = e.target as WaSelect;
     this._selectedStorage = select.value as string;
+    this._fitDiskToStorage();
     this._saveSelections();
   }
 
@@ -900,8 +902,26 @@ export class ProxmoxConfigureView extends LitElement {
     return [2048, 4096, 6144, 8192, 12288, 16384, 24576, 32768];
   }
 
+  /** Sizes the selected storage has room for: the install stops on others. */
   private _getDiskSizeOptions(): number[] {
-    return [32, 64, 128, 256, 512];
+    const options = [32, 64, 128, 256, 512];
+    const available = this._storages.find(
+      (storage) => storage.name === this._selectedStorage
+    )?.available;
+    if (available === undefined) return options;
+    const fitting = options.filter((gb) => gb * VM_GB_BYTES <= available);
+    // Without room for any, the smallest stays and Next's check says why
+    return fitting.length ? fitting : options.slice(0, 1);
+  }
+
+  /** Lower a chosen or restored disk size to what the selected storage fits. */
+  private _fitDiskToStorage() {
+    const options = this._getDiskSizeOptions();
+    if (options.includes(this._diskSizeGb)) return;
+    this._diskSizeGb =
+      options.filter((gb) => gb <= this._diskSizeGb).pop() ??
+      options[0] ??
+      this._diskSizeGb;
   }
 
   // Icons
@@ -990,7 +1010,7 @@ export class ProxmoxConfigureView extends LitElement {
                         "views.proxmox.proxmox_configure_view.storage_free",
                         {
                           storage: storage.name,
-                          free: formatBytes(storage.available),
+                          free: formatFreeSpace(storage.available),
                         }
                       )}
                     </wa-option>
@@ -1003,7 +1023,7 @@ export class ProxmoxConfigureView extends LitElement {
                     "views.proxmox.proxmox_configure_view.import_can_be_enabled_on_storage",
                     {
                       storage: selected.name,
-                      free: formatBytes(selected.available),
+                      free: formatFreeSpace(selected.available),
                     }
                   )}
                 </p>`
@@ -1221,7 +1241,7 @@ export class ProxmoxConfigureView extends LitElement {
                             "views.proxmox.proxmox_configure_view.storage_free",
                             {
                               storage: storage.name,
-                              free: formatBytes(storage.available),
+                              free: formatFreeSpace(storage.available),
                             }
                           )}
                         </wa-option>

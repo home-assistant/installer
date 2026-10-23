@@ -1,6 +1,7 @@
 import { expect } from "@open-wc/testing";
 import {
   formatDiskSize,
+  formatFreeSpace,
   formatMemory,
   formatRam,
 } from "../../../src/utils/format.js";
@@ -31,6 +32,24 @@ describe("utils/format", () => {
   ] as const) {
     it(`shows a ${gb} GB disk as ${size}`, () => {
       expect(formatDiskSize(gb)).to.equal(size);
+    });
+  }
+
+  // Proxmox storage listed 34e9 bytes as 34 GB free, which has no room for
+  // a 32 GB disk: those are GiB
+  const GIB = 1024 ** 3;
+  for (const [bytes, free] of [
+    [0, "0 GB"],
+    [34e9, "31.6 GB"],
+    [32 * GIB - 1, "31.9 GB"],
+    [32 * GIB, "32 GB"],
+    [1000 * GIB, "1,000 GB"],
+    [1024 * GIB - 1, "1,023.9 GB"],
+    [1024 * GIB, "1 TB"],
+    [2 * 1024 * GIB - 1, "1.9 TB"],
+  ] as const) {
+    it(`shows ${bytes} bytes free as ${free}, like the disk sizes`, () => {
+      expect(formatFreeSpace(bytes)).to.equal(free);
     });
   }
 });
