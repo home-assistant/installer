@@ -268,6 +268,6 @@ describe("localized view contracts", () => {
     });
     expect(
       output(element).querySelector(".percentage")?.textContent?.trim()
-    ).to.equal("12.5%");
+    ).to.equal("13%");
   });
 });

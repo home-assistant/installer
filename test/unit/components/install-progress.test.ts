@@ -297,6 +297,43 @@ describe("install-progress", () => {
     );
   });
 
+  it("shows a whole percentage from 0 to 100", async () => {
+    const el = await fixture<InstallProgress>(
+      html`<install-progress .progress=${33.3333}></install-progress>`
+    );
+    const percentage = async (progress: number) => {
+      el.progress = progress;
+      await el.updateComplete;
+      return el.shadowRoot!.querySelector(".percentage")!.textContent;
+    };
+    expect(await percentage(33.3333)).to.equal("33%");
+    expect(await percentage(66.6666)).to.equal("67%");
+    expect(await percentage(99.4)).to.equal("99%");
+    expect(await percentage(150)).to.equal("100%");
+    expect(await percentage(-5)).to.equal("0%");
+  });
+
+  it("starts the bar afresh for a stage that counts from 0 again", async () => {
+    const el = await fixture<InstallProgress>(
+      html`<install-progress
+        stage="downloading"
+        .progress=${100}
+      ></install-progress>`
+    );
+    const inner = async () => {
+      await el.updateComplete;
+      const bar = el.shadowRoot!.querySelector("progress-bar")!;
+      await bar.updateComplete;
+      return bar.shadowRoot!.querySelector("wa-progress-bar")!;
+    };
+    const downloading = await inner();
+
+    el.stage = "extracting";
+    el.progress = 0;
+    // A new bar, with no width to slide back from
+    expect((await inner()) === downloading).to.be.false;
+  });
+
   it("rounds the ETA up to whole minutes before splitting off the hours", async () => {
     // 100 bytes a second over the last 100 seconds
     const eta = async (remainingSeconds: number) => {
