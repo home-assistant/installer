@@ -110,7 +110,7 @@ pub trait ReleaseSource {
 /// and capture its identity; real writers re-check that identity, including a
 /// known hardware serial, before writing.
 pub trait DeviceBackend {
-    /// Check process privileges before preparing an image, without opening a drive.
+    /// Check process privileges before listing drives, without opening one.
     /// Defaults to success for backends that authorize access during `write_image`.
     fn check_write_privileges(&self) -> Result<()> {
         Ok(())

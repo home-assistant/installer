@@ -176,10 +176,6 @@ export class InstallSuccess extends LitElement {
         text-align: left;
       }
 
-      inline-notice {
-        margin: 1.25rem 0;
-      }
-
       .next-steps-footer {
         margin: 1.25rem 0 0;
       }

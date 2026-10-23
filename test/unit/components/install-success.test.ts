@@ -61,7 +61,6 @@ describe("install-success", () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success .steps=${["Only step"]}></install-success>`
     );
-    expect(el.shadowRoot!.querySelector("inline-notice")).to.not.exist;
     expect(el.shadowRoot!.querySelector(".next-steps-footer")).to.not.exist;
     expect(el.shadowRoot!.querySelector(".tip-section")).to.not.exist;
 

@@ -59,7 +59,7 @@ for (const scenario of [
       sessionStorage.setItem("hai:mock-failure", failure);
     }, scenario.failure);
     await page.goto("/");
-    await page.locator("welcome-view wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     if (scenario.flow === "sbc") {
       await page
         .locator('option-card[heading="Raspberry Pi & other boards"]')

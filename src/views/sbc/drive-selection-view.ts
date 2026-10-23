@@ -1,7 +1,6 @@
-import { localize, localizeContent } from "../../localization/localize.js";
+import { localize } from "../../localization/localize.js";
 import {
   installerError,
-  renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
@@ -34,37 +33,23 @@ import "../../components/drive-card.js";
 import "../../components/casita-mascot.js";
 import "../../components/inline-notice.js";
 import "../ha-hardware/connect-instructions.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import {
+  loadStateStyles,
+  renderLoadError,
+  renderLoading,
+} from "../../utils/load-state.js";
 
 @customElement("drive-selection-view")
 export class DriveSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
+    loadStateStyles,
     srOnlyStyles,
     reducedMotionStyles,
     linkStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 1.5rem 0;
-        text-align: center;
-      }
-
       inline-notice {
         margin-bottom: 1.5rem;
       }
@@ -94,49 +79,6 @@ export class DriveSelectionView extends LitElement {
 
       .drives-list::part(form-control-input) {
         gap: 0.75rem;
-      }
-
-      .loading {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 3rem;
-        color: var(--ha-secondary-text-color, #727272);
-      }
-
-      .loading-spinner {
-        width: 40px;
-        height: 40px;
-        border: 3px solid var(--ha-border-color, #e0e0e0);
-        border-top-color: var(--ha-primary-color, #03a9f4);
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin-bottom: 1rem;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .error {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 2rem;
-        text-align: center;
-      }
-
-      .error-icon {
-        font-size: 3rem;
-        margin-bottom: 1rem;
-      }
-
-      .error-message {
-        color: var(--ha-error-color, #db4437);
-        margin-bottom: 1rem;
       }
 
       .empty-state {
@@ -314,24 +256,15 @@ export class DriveSelectionView extends LitElement {
 
   render() {
     return html`
-      <h2>${localize("views.sbc.drive_selection_view.select_your_drive")}</h2>
-      <p class="subtitle">${this._subtitle()}</p>
-
+      ${renderStepHeading(
+        localize("views.sbc.drive_selection_view.select_your_drive"),
+        this._subtitle()
+      )}
       ${this._isHaHardwareFlow()
         ? html`<ha-hardware-connect-instructions
             .hardware=${wizardState.getState().selections.haHardware}
           ></ha-hardware-connect-instructions>`
         : ""}
-
-      <inline-notice>
-        <p>
-          ${localizeContent("views.sbc.drive_selection_view.erase_warning", {
-            warning_prefix: html`<strong
-              >${localize("views.sbc.drive_selection_view.warning")}</strong
-            >`,
-          })}
-        </p>
-      </inline-notice>
 
       <!-- The live region stays in the DOM so that inserting the notice into
            it is announced; a region added together with its content often
@@ -361,43 +294,15 @@ export class DriveSelectionView extends LitElement {
     // shows the loading state on the button that started it, so the button
     // keeps focus.
     if (!this._scanned) {
-      return html`
-        <div class="loading">
-          <div class="loading-spinner"></div>
-          <span
-            >${localize(
-              "views.sbc.drive_selection_view.scanning_for_drives"
-            )}</span
-          >
-        </div>
-      `;
+      return renderLoading(
+        localize("views.sbc.drive_selection_view.scanning_for_drives")
+      );
     }
 
     if (this._error) {
-      return html`
-        <div class="error">
-          <span class="error-icon">⚠️</span>
-          <!-- Empty while trying again, so the same failure is read out again -->
-          <p
-            class="error-message"
-            role="alert"
-            style="overflow-wrap: anywhere;"
-          >
-            ${this._loading ? "" : this._error?.message}
-          </p>
-          ${renderErrorHelp()}
-          ${this._error.retryable
-            ? html`<wa-button
-                variant="brand"
-                appearance="outlined"
-                ?loading=${this._loading}
-                @click=${this._loadDrives}
-              >
-                ${localize("common.try_again")}
-              </wa-button>`
-            : ""}
-        </div>
-      `;
+      return renderLoadError(this._error, this._loading, () =>
+        this._loadDrives()
+      );
     }
 
     if (this._drives.length === 0) {

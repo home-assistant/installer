@@ -3,6 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import { checkConnection } from "../api/commands.js";
 import { localize } from "../localization/localize.js";
 import { installerError } from "../utils/installer-error.js";
+import { renderRetryButton } from "../utils/load-state.js";
 import { pageHeaderStyles, renderBackHeader } from "../utils/page-header.js";
 import { ViewAccessibility } from "../utils/view-accessibility.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
@@ -56,7 +57,7 @@ export class ConnectionCheckView extends LitElement {
 
   @state() private _checking = false;
   @state() private _error = "";
-  /** A check failed, so Retry stays, also while it checks again */
+  /** A check failed, so Try again stays, also while it checks again */
   @state() private _failed = false;
   private _request = 0;
 
@@ -117,12 +118,7 @@ export class ConnectionCheckView extends LitElement {
           <p role="alert">${this._error}</p>
         </div>
         ${this._failed
-          ? html`<wa-button
-              variant="brand"
-              ?loading=${this._checking}
-              @click=${this._check}
-              >${localize("views.connection_check_view.retry")}</wa-button
-            >`
+          ? renderRetryButton(this._checking, () => this._check())
           : ""}
       </div>
     `;

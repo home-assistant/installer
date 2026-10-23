@@ -74,8 +74,8 @@ describe("success-view next steps", () => {
 
   it("asks for manual ejection without claiming native ejection succeeded", async () => {
     const el = await renderSuccess();
-    expect(text(el)).to.contain("If the drive is still listed");
-    expect(text(el)).to.contain("eject option before disconnecting");
+    expect(text(el)).to.contain("If your computer still shows the drive");
+    expect(text(el)).to.contain("eject it before you disconnect it");
     expect(text(el)).not.to.contain("safely ejected");
     const success = el.shadowRoot!.querySelector("install-success")!;
     expect(success.formatWarning).to.equal(true);

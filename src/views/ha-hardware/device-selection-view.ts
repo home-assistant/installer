@@ -1,7 +1,6 @@
 import { localize } from "../../localization/localize.js";
 import {
   installerError,
-  renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
@@ -11,13 +10,16 @@ import {
   reducedMotionStyles,
 } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import { getManifest, type HaosConfig } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import {
   HA_HARDWARE,
+  YELLOW_DEVICE_ID,
+  haDeviceName,
   haHardwareName,
   installerConfig,
+  isYellow,
   type HaHardware,
 } from "./hardware.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
@@ -25,36 +27,22 @@ import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import { clearDriveSelection } from "../../utils/drive-selection.js";
 import "../../components/device-card.js";
 import "../../components/info-dialog.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import {
+  loadStateStyles,
+  renderLoadError,
+  renderLoading,
+} from "../../utils/load-state.js";
 
 @customElement("ha-hardware-device-selection-view")
 export class HaHardwareDeviceSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
+    loadStateStyles,
     reducedMotionStyles,
     linkStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 2rem 0;
-        text-align: center;
-      }
-
       .devices-grid {
         width: 100%;
         max-width: 700px;
@@ -66,68 +54,19 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
         gap: 1.5rem;
       }
-
-      .loading {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 3rem;
-        color: var(--ha-secondary-text-color, #727272);
-      }
-
-      .loading-spinner {
-        width: 40px;
-        height: 40px;
-        border: 3px solid var(--ha-border-color, #e0e0e0);
-        border-top-color: var(--ha-primary-color, #03a9f4);
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin-bottom: 1rem;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .error {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 2rem;
-        text-align: center;
-      }
-
-      .error-icon {
-        font-size: 3rem;
-        margin-bottom: 1rem;
-      }
-
-      .error-message {
-        color: var(--ha-error-color, #db4437);
-        margin-bottom: 1rem;
-      }
-
       .reinstall-note {
         margin: 1rem 0 0 0;
         font-size: 0.9375rem;
         line-height: 1.6;
         color: var(--ha-text-color, #212121);
       }
-
-      .hint {
-        max-width: 600px;
-        margin: 1.5rem 0 0 0;
-        font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #727272);
-        text-align: center;
-      }
     `,
   ];
 
-  /** Selectable hardware, each with the storage config its write uses. */
+  /**
+   * Selectable hardware, each with the storage config its write uses. Both
+   * Yellows share one card; the next step picks the compute module.
+   */
   @state()
   private _devices: { hardware: HaHardware; config: HaosConfig }[] = [];
 
@@ -136,6 +75,10 @@ export class HaHardwareDeviceSelectionView extends LitElement {
 
   @state()
   private _error: InstallerError | null = null;
+
+  /** Try again while an error offers it, else the heading of the list */
+  @query(".error wa-button, h2")
+  private _continueFrom?: HTMLElement;
 
   @state()
   private _selectedDeviceId: string | null = null;
@@ -161,8 +104,8 @@ export class HaHardwareDeviceSelectionView extends LitElement {
   }
 
   private async _loadDevices() {
+    // An error stays, with Try again busy, until this result replaces it
     this._loading = true;
-    this._error = null;
     if (wizardState.getState().selections.deviceCatalogReady) {
       wizardState.setSelection("deviceCatalogReady", false);
     }
@@ -190,11 +133,16 @@ export class HaHardwareDeviceSelectionView extends LitElement {
           device: undefined,
           deviceConfig: undefined,
           haHardware: undefined,
+          yellowModules: undefined,
         });
+      } else if (this._selectedDeviceId === YELLOW_DEVICE_ID) {
+        wizardState.setSelection("yellowModules", this._yellowModules());
       }
+      this._error = null;
       wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
-      if (this.isConnected) new InstallDiagnostics("flash").fail(err);
+      if (!this.isConnected) return;
+      new InstallDiagnostics("flash").fail(err);
       this._error = installerError(
         err,
         localize("common.failed_to_load_devices")
@@ -202,52 +150,29 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     } finally {
       this._loading = false;
     }
+    // The list can take the place of Try again, which had the focus
+    await this.updateComplete;
+    this._accessibility.restoreFocus(this._continueFrom);
   }
 
   render() {
-    if (this._loading) {
-      return html`
-        <div class="loading">
-          <div class="loading-spinner"></div>
-          <span>${localize("common.loading_devices")}</span>
-        </div>
-      `;
+    if (this._error) {
+      return renderLoadError(this._error, this._loading, () =>
+        this._loadDevices()
+      );
     }
 
-    if (this._error) {
-      return html`
-        <div class="error">
-          <span class="error-icon">⚠️</span>
-          <p
-            class="error-message"
-            role="alert"
-            style="overflow-wrap: anywhere;"
-          >
-            ${this._error?.message}
-          </p>
-          ${renderErrorHelp()}
-          ${this._error.retryable
-            ? html`<wa-button
-                variant="brand"
-                appearance="outlined"
-                @click=${this._loadDevices}
-              >
-                ${localize("common.try_again")}
-              </wa-button>`
-            : ""}
-        </div>
-      `;
+    if (this._loading) {
+      return renderLoading(localize("common.loading_devices"));
     }
 
     return html`
-      <h2>
-        ${localize(
+      ${renderStepHeading(
+        localize(
           "views.ha_hardware.device_selection_view.select_your_home_assistant_device"
-        )}
-      </h2>
-      <p class="subtitle">
-        ${localize("views.ha_hardware.device_selection_view.subtitle")}
-      </p>
+        ),
+        localize("views.ha_hardware.device_selection_view.subtitle")
+      )}
 
       <wa-radio-group
         class="devices-grid"
@@ -256,25 +181,30 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         .value=${this._selectedDeviceId ?? ""}
         @change=${this._onDeviceChange}
       >
-        ${this._devices.map(
-          ({ hardware }) => html`
+        ${this._cards().map(
+          (hardware) => html`
             <device-card
               .value=${hardware.deviceId}
-              .name=${haHardwareName(hardware.id)}
+              .name=${haDeviceName(hardware)}
               .image=${hardware.image}
             ></device-card>
           `
         )}
       </wa-radio-group>
 
-      <p class="hint">
-        ${localize(
-          "views.ha_hardware.device_selection_view.yellow_compute_module_hint"
-        )}
-      </p>
-
       ${this._renderReinstallDialog()}
     `;
+  }
+
+  /** One card per device, so the Yellow shows once whatever its module. */
+  private _cards(): HaHardware[] {
+    return this._devices
+      .map(({ hardware }) => hardware)
+      .filter(
+        (hardware, index, all) =>
+          all.findIndex(({ deviceId }) => deviceId === hardware.deviceId) ===
+          index
+      );
   }
 
   private _renderReinstallDialog() {
@@ -283,7 +213,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     );
     if (!hardware) return nothing;
     // A Yellow kit may come without a compute module, so nothing is on it yet
-    const yellow = hardware.id === "yellow-cm4" || hardware.id === "yellow-cm5";
+    const yellow = hardware.deviceId === YELLOW_DEVICE_ID;
     return html`
       <info-dialog
         ?open=${!!this._confirmReinstall}
@@ -357,15 +287,29 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     // so any change of device, including after a catalog refresh cleared the
     // previous one, must not keep the old drive.
     const previous = wizardState.getState().selections.haHardware;
+    const yellow = hardware.deviceId === YELLOW_DEVICE_ID;
+    // A compute module picked before still names the Yellow and its board
+    const keepModule = yellow && isYellow(previous);
     this._selectedDeviceId = hardware.deviceId;
     wizardState.setSelections({
       device: hardware.deviceId,
-      haHardware: hardware.id,
-      deviceName: haHardwareName(hardware.id),
       deviceImage: hardware.image,
-      deviceConfig: config,
+      // The Yellow's compute module is picked on a step of its own
+      yellowModules: yellow ? this._yellowModules() : undefined,
+      ...(!keepModule && {
+        haHardware: yellow ? undefined : hardware.id,
+        deviceName: haDeviceName(hardware),
+        deviceConfig: yellow ? undefined : config,
+      }),
     });
-    if (previous !== hardware.id) clearDriveSelection();
+    if (!keepModule && previous !== hardware.id) clearDriveSelection();
+  }
+
+  /** The Yellow's compute modules, for the step that picks one. */
+  private _yellowModules() {
+    return this._devices.flatMap(({ hardware: { id }, config }) =>
+      isYellow(id) ? [{ id, config }] : []
+    );
   }
 }
 

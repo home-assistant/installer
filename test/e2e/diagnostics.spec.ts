@@ -166,7 +166,9 @@ test("About shows native metadata and manual diagnostic actions", async ({
 }, testInfo) => {
   await page.goto("/");
   await mockDesktop(page);
-  await page.getByRole("button", { name: "About", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Report a problem", exact: true })
+    .click();
   const dialog = page.locator("diagnostics-actions wa-dialog");
   await expect(dialog).toContainText("Home Assistant Installer 0.1.0-test");
   await expect(
@@ -184,7 +186,7 @@ test("Proxmox connection failure exports only safe diagnostics", async ({
 }, testInfo) => {
   await page.goto("/");
   await mockDesktop(page, "proxmox_connect");
-  await page.locator("welcome-view wa-button").click();
+  await page.getByRole("button", { name: "Let's go" }).click();
   await page.locator('option-card[heading="Proxmox server"]').click();
   const view = page.locator("proxmox-connect-view");
   await view.locator("#server-url").fill("https://fake-host:8006");
@@ -234,7 +236,9 @@ test("frontend failures omit payloads and clipboard rejection keeps selectable t
       },
     });
   });
-  await page.getByRole("button", { name: "About", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Report a problem", exact: true })
+    .click();
   const dialog = page.locator("diagnostics-actions wa-dialog");
   const text = dialog.getByRole("textbox", { name: "Diagnostics" });
   await expect(text).toHaveValue(/error: frontend_error/);
@@ -258,7 +262,7 @@ test("flash failure keeps the failed stage in its report", async ({
 }, testInfo) => {
   await page.goto("/");
   await mockDesktop(page, "flash_image");
-  await page.locator("welcome-view wa-button").click();
+  await page.getByRole("button", { name: "Let's go" }).click();
   await page
     .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
@@ -291,7 +295,7 @@ test("UTM creation failure reports its stage", async ({ page }, testInfo) => {
   );
   await page.goto("/");
   await mockDesktop(page, "create_utm_vm");
-  await page.locator("welcome-view wa-button").click();
+  await page.getByRole("button", { name: "Let's go" }).click();
   await page.locator('option-card[heading="Virtual machine"]').click();
   await expect(page.locator("utm-check-view")).toContainText(
     "UTM is installed"

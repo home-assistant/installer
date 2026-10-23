@@ -7,6 +7,7 @@ import {
   waitUntil,
 } from "@open-wc/testing";
 import "../../../../src/views/ha-hardware/device-selection-view.js";
+import "../../../../src/views/ha-hardware/module-selection-view.js";
 import "../../../../src/views/ha-hardware/connect-instructions.js";
 import "../../../../src/views/ha-hardware/success-view.js";
 import "../../../../src/views/sbc/confirmation-view.js";
@@ -26,6 +27,7 @@ import {
 } from "../../../../src/api/mock-data.js";
 import type { FlashRequest } from "../../../../src/api/types.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
+import { wizardStep } from "../../../../src/components/wizard-steps.js";
 import {
   isEligibleFlashTarget,
   storeDriveSelection,
@@ -60,7 +62,7 @@ describe("Home Assistant hardware views", () => {
   });
 
   describe("device selection", () => {
-    it("offers the Green, both Yellows and the Blue", async () => {
+    it("offers the Green, one Yellow and the Blue", async () => {
       wizardState.startFlow("ha-hardware");
       const el = await fixture(
         html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
@@ -69,14 +71,12 @@ describe("Home Assistant hardware views", () => {
       const cards = [...el.shadowRoot!.querySelectorAll("device-card")];
       expect(cards.map((card) => card.value)).to.deep.equal([
         "ha-green",
-        "ha-yellow-cm4",
-        "ha-yellow-cm5",
+        "ha-yellow",
         "ha-blue",
       ]);
       expect(cards.map((card) => card.name)).to.deep.equal([
         "Home Assistant Green",
-        "Home Assistant Yellow with CM4",
-        "Home Assistant Yellow with CM5",
+        "Home Assistant Yellow",
         "Home Assistant Blue",
       ]);
     });
@@ -145,9 +145,6 @@ describe("Home Assistant hardware views", () => {
 
     for (const [value, id, board] of [
       ["ha-green", "green", "green-installer"],
-      ["ha-yellow-cm4", "yellow-cm4", "yellow-installer"],
-      // The installer only boots on a CM4; a CM5 gets Home Assistant OS
-      ["ha-yellow-cm5", "yellow-cm5", "yellow"],
       ["ha-blue", "blue", "odroid-n2"],
     ] as const) {
       it(`selecting ${value} stores the ${board} board`, async () => {
@@ -164,8 +161,90 @@ describe("Home Assistant hardware views", () => {
         expect(selections.haHardware).to.equal(id);
         expect(selections.deviceConfig!.board).to.equal(board);
         expect(selections.deviceCatalogReady).to.equal(true);
+        expect(
+          wizardState.getState().steps.map((step) => step.id)
+        ).not.to.include("module");
       });
     }
+
+    it("selecting the Yellow leaves its compute module to the next step", async () => {
+      wizardState.startFlow("ha-hardware");
+      const el = await fixture(
+        html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
+      );
+      await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
+      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
+      group.value = "ha-yellow";
+      group.dispatchEvent(new Event("change"));
+      const { selections, steps } = wizardState.getState();
+      expect(selections.device).to.equal("ha-yellow");
+      expect(selections.deviceName).to.equal("Home Assistant Yellow");
+      expect(selections.haHardware).to.equal(undefined);
+      expect(selections.deviceConfig).to.equal(undefined);
+      expect(selections.yellowModules!.map(({ id }) => id)).to.deep.equal([
+        "yellow-cm4",
+        "yellow-cm5",
+      ]);
+      expect(steps.map((step) => step.id).slice(0, 3)).to.deep.equal([
+        "device",
+        "module",
+        "drive",
+      ]);
+    });
+
+    it("keeps the compute module when the Yellow is picked again", async () => {
+      select("yellow-cm5", "Home Assistant Yellow with CM5");
+      storeDriveSelection(MOCK_BLOCK_DEVICES[2]);
+      const el = await fixture(
+        html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
+      );
+      await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
+      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
+      group.value = "ha-yellow";
+      group.dispatchEvent(new Event("change"));
+      const { selections } = wizardState.getState();
+      expect(selections.haHardware).to.equal("yellow-cm5");
+      expect(selections.deviceName).to.equal("Home Assistant Yellow with CM5");
+      expect(selections.drive).to.equal(MOCK_BLOCK_DEVICES[2].id);
+    });
+
+    it("asks for the compute module again after another device", async () => {
+      select("yellow-cm5", "Home Assistant Yellow with CM5");
+      const el = await fixture(
+        html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
+      );
+      await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
+      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
+      group.value = "ha-green";
+      group.dispatchEvent(new Event("change"));
+      expect(
+        wizardState.getState().steps.map((step) => step.id)
+      ).not.to.include("module");
+
+      group.value = "ha-yellow";
+      group.dispatchEvent(new Event("change"));
+      const { selections, steps } = wizardState.getState();
+      expect(selections.haHardware).to.equal(undefined);
+      expect(selections.deviceName).to.equal("Home Assistant Yellow");
+      expect(selections.deviceConfig).to.equal(undefined);
+      expect(steps.map((step) => step.id)).to.include("module");
+      expect(wizardStep("ha-hardware", "module")!.ready!(selections)).to.equal(
+        false
+      );
+    });
+
+    it("hands on the compute modules again when the catalog reloads", async () => {
+      // Back from the module step reloads the catalog, which may have changed
+      select("yellow-cm4", "Home Assistant Yellow with CM4");
+      wizardState.setSelection("yellowModules", []);
+      const el = await fixture(
+        html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
+      );
+      await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
+      expect(
+        wizardState.getState().selections.yellowModules!.map(({ id }) => id)
+      ).to.deep.equal(["yellow-cm4", "yellow-cm5"]);
+    });
 
     it("leaves out the Blue and the CM5 when the catalog lacks their boards", async () => {
       wizardState.startFlow("ha-hardware");
@@ -179,7 +258,13 @@ describe("Home Assistant hardware views", () => {
       const values = [...el.shadowRoot!.querySelectorAll("device-card")].map(
         (card) => card.value
       );
-      expect(values).to.deep.equal(["ha-green", "ha-yellow-cm4"]);
+      expect(values).to.deep.equal(["ha-green", "ha-yellow"]);
+      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
+      group.value = "ha-yellow";
+      group.dispatchEvent(new Event("change"));
+      expect(
+        wizardState.getState().selections.yellowModules!.map(({ id }) => id)
+      ).to.deep.equal(["yellow-cm4"]);
     });
 
     it("forgets the drive when switching to another device", async () => {
@@ -191,13 +276,13 @@ describe("Home Assistant hardware views", () => {
       await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
       const group = el.shadowRoot!.querySelector("wa-radio-group")!;
 
-      group.value = "ha-yellow-cm4";
+      group.value = "ha-yellow";
       group.dispatchEvent(new Event("change"));
       expect(wizardState.getState().selections.drive).to.equal(
         MOCK_BLOCK_DEVICES[2].id
       );
 
-      group.value = "ha-yellow-cm5";
+      group.value = "ha-green";
       group.dispatchEvent(new Event("change"));
       expect(wizardState.getState().selections.drive).to.equal(undefined);
     });
@@ -218,6 +303,140 @@ describe("Home Assistant hardware views", () => {
     });
   });
 
+  describe("compute module selection", () => {
+    /** Selections as the device step leaves them for the Yellow. */
+    function pickYellow() {
+      wizardState.startFlow("ha-hardware");
+      wizardState.setSelection("device", "ha-yellow");
+      wizardState.setSelection("deviceName", "Home Assistant Yellow");
+      wizardState.setSelection("yellowModules", [
+        { id: "yellow-cm4", config: configFor("yellow-cm4") },
+        { id: "yellow-cm5", config: configFor("yellow-cm5") },
+      ]);
+    }
+
+    it("offers the compute modules the device step handed on", async () => {
+      pickYellow();
+      const el = await fixture(
+        html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
+      );
+      const radios = [...el.shadowRoot!.querySelectorAll("wa-radio")];
+      expect(radios.map((radio) => radio.value)).to.deep.equal([
+        "yellow-cm4",
+        "yellow-cm5",
+      ]);
+      expect(text(el.shadowRoot!)).to.contain("Compute Module 4");
+      expect(text(el.shadowRoot!)).to.contain("Compute Module 5");
+      expect(text(el.shadowRoot!)).to.contain("4 or 5 inside");
+    });
+
+    for (const [id, name, board] of [
+      ["yellow-cm4", "Home Assistant Yellow with CM4", "yellow-installer"],
+      // The installer only boots on a CM4; a CM5 gets Home Assistant OS
+      ["yellow-cm5", "Home Assistant Yellow with CM5", "yellow"],
+    ] as const) {
+      it(`selecting ${id} stores the ${board} board`, async () => {
+        pickYellow();
+        const el = await fixture(
+          html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
+        );
+        const group = el.shadowRoot!.querySelector("wa-radio-group")!;
+        group.value = id;
+        group.dispatchEvent(new Event("change"));
+        const selections = wizardState.getState().selections;
+        expect(selections.device).to.equal("ha-yellow");
+        expect(selections.haHardware).to.equal(id);
+        expect(selections.deviceName).to.equal(name);
+        expect(selections.deviceConfig!.board).to.equal(board);
+      });
+    }
+
+    it("marks the chosen compute module with a check, not only a color", async () => {
+      pickYellow();
+      const el = await fixture(
+        html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
+      );
+      const radios = [...el.shadowRoot!.querySelectorAll("wa-radio")];
+      const checks = () =>
+        radios.map((radio) => !!radio.querySelector(".selected-indicator"));
+      expect(checks()).to.deep.equal([false, false]);
+
+      radios[1].click();
+      await waitUntil(() => checks()[1], "choice never marked");
+      expect(checks()).to.deep.equal([false, true]);
+      const check = radios[1].querySelector(".selected-indicator")!;
+      expect(check.getAttribute("aria-hidden")).to.equal("true");
+      // The check sits in the radio's corner, out of the centered content
+      const radioBox = radios[1].getBoundingClientRect();
+      const checkBox = check.getBoundingClientRect();
+      expect(checkBox.width).to.be.greaterThan(0);
+      expect(radioBox.right - checkBox.right).to.be.within(8, 10);
+      expect(checkBox.top - radioBox.top).to.be.within(8, 10);
+
+      radios[0].click();
+      await waitUntil(() => checks()[0], "new choice never marked");
+      expect(checks()).to.deep.equal([true, false]);
+    });
+
+    it("forgets the drive when switching to another compute module", async () => {
+      pickYellow();
+      const el = await fixture(
+        html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
+      );
+      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
+      group.value = "yellow-cm4";
+      group.dispatchEvent(new Event("change"));
+      storeDriveSelection(MOCK_BLOCK_DEVICES[2]);
+
+      group.value = "yellow-cm4";
+      group.dispatchEvent(new Event("change"));
+      expect(wizardState.getState().selections.drive).to.equal(
+        MOCK_BLOCK_DEVICES[2].id
+      );
+
+      group.value = "yellow-cm5";
+      group.dispatchEvent(new Event("change"));
+      expect(wizardState.getState().selections.drive).to.equal(undefined);
+    });
+
+    it("takes the compute module's storage from the reloaded catalog", async () => {
+      // Back on the device step, the catalog reloaded and changed the CM5's
+      pickYellow();
+      wizardState.setSelection("haHardware", "yellow-cm5");
+      wizardState.setSelection("deviceConfig", configFor("yellow-cm5"));
+      const reloaded = {
+        ...configFor("yellow-cm5"),
+        minimum_storage_bytes: 64_000_000_000,
+      };
+      wizardState.setSelection("yellowModules", [
+        { id: "yellow-cm4", config: configFor("yellow-cm4") },
+        { id: "yellow-cm5", config: reloaded },
+      ]);
+      const el = await fixture(
+        html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
+      );
+      expect(el.shadowRoot!.querySelector("wa-radio-group")!.value).to.equal(
+        "yellow-cm5"
+      );
+      expect(wizardState.getState().selections.deviceConfig).to.equal(reloaded);
+    });
+
+    it("drops a compute module the catalog no longer offers", async () => {
+      pickYellow();
+      wizardState.setSelection("haHardware", "yellow-cm5");
+      wizardState.setSelection("deviceConfig", configFor("yellow-cm5"));
+      wizardState.setSelection("yellowModules", [
+        { id: "yellow-cm4", config: configFor("yellow-cm4") },
+      ]);
+      await fixture(
+        html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
+      );
+      const selections = wizardState.getState().selections;
+      expect(selections.haHardware).to.equal(undefined);
+      expect(selections.deviceConfig).to.equal(undefined);
+    });
+  });
+
   it("accepts small drives for the installers only", () => {
     const smallCard = { ...MOCK_BLOCK_DEVICES[0], size: 2_000_000_000 };
     for (const hardware of HA_HARDWARE) {
@@ -229,6 +448,11 @@ describe("Home Assistant hardware views", () => {
   });
 
   describe("connect instructions", () => {
+    // The stub shadows the prototype getter; deleting it restores the real UA.
+    afterEach(() => {
+      delete (window.navigator as { userAgent?: string }).userAgent;
+    });
+
     for (const [id, expected] of [
       ["green", ["Connect a microSD card", "card reader"]],
       ["yellow-cm4", ["Connect a USB flash drive"]],
@@ -240,11 +464,7 @@ describe("Home Assistant hardware views", () => {
           "bridge JP2",
           "Only the red LED",
           "remove the JP2 bridge",
-          "sudo ./rpiboot -d mass-storage-gadget64",
-          "rpiboot-CM4-CM5 - Mass Storage Gadget",
-          "Rosetta",
           "RPi-MSD",
-          "format the disk",
         ],
       ],
       [
@@ -271,16 +491,58 @@ describe("Home Assistant hardware views", () => {
       });
     }
 
-    it("puts commands in code and links rpiboot", async () => {
+    for (const [platform, userAgent, code, shown, hidden] of [
+      [
+        "macos",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+        "sudo ./rpiboot -d mass-storage-gadget64",
+        ["In Terminal", "Rosetta", "choose Ignore"],
+        ["Start menu", "format"],
+      ],
+      [
+        "linux",
+        "Mozilla/5.0 (X11; Linux x86_64)",
+        "sudo ./rpiboot -d mass-storage-gadget64",
+        ["In a terminal"],
+        ["Rosetta", "Start menu", "Ignore", "format"],
+      ],
+      [
+        "windows",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "rpiboot-CM4-CM5 - Mass Storage Gadget",
+        ["Install rpiboot", "Start menu", "choose Cancel"],
+        ["sudo", "Rosetta", "Ignore"],
+      ],
+    ] as const) {
+      it(`tells ${platform} users how to run rpiboot`, async () => {
+        Object.defineProperty(window.navigator, "userAgent", {
+          value: userAgent,
+          configurable: true,
+        });
+        const el = await fixture<HaHardwareConnectInstructions>(
+          html`<ha-hardware-connect-instructions
+            .hardware=${"yellow-cm5"}
+          ></ha-hardware-connect-instructions>`
+        );
+        const codes = [...el.shadowRoot!.querySelectorAll("code")].map(
+          (node) => node.textContent
+        );
+        expect(codes).to.include(code);
+        for (const part of shown) {
+          expect(text(el.shadowRoot!)).to.contain(part);
+        }
+        for (const part of hidden) {
+          expect(text(el.shadowRoot!)).not.to.contain(part);
+        }
+      });
+    }
+
+    it("links rpiboot", async () => {
       const el = await fixture<HaHardwareConnectInstructions>(
         html`<ha-hardware-connect-instructions
           .hardware=${"yellow-cm5"}
         ></ha-hardware-connect-instructions>`
       );
-      const code = [...el.shadowRoot!.querySelectorAll("code")].map(
-        (node) => node.textContent
-      );
-      expect(code).to.include("sudo ./rpiboot -d mass-storage-gadget64");
       expect(el.shadowRoot!.querySelector("a")!.href).to.equal(
         "https://github.com/raspberrypi/usbboot"
       );
