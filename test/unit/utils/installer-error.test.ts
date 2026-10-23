@@ -220,11 +220,15 @@ describe("installer errors", () => {
     const el = fixtureSync(html`<div>${renderErrorHelp()}</div>`);
     const links = [...el.querySelectorAll("a")];
     expect(links.map((link) => link.textContent)).to.deep.equal([
-      "Installation help",
+      "Installation help Opens in your browser.",
     ]);
     // Reporting goes through the diagnostics dialog instead of a bare link
     expect(el.querySelector("diagnostics-actions")).to.exist;
-    for (const link of links) expect(new URL(link.href).search).to.equal("");
+    for (const link of links) {
+      expect(new URL(link.href).search).to.equal("");
+      expect(link.target).to.equal("_blank");
+      expect(link.rel).to.equal("noopener noreferrer");
+    }
   });
 
   describe("isDriveFailure", () => {

@@ -3,7 +3,13 @@ import { LitElement, html, css, type TemplateResult } from "lit";
 import { customElement } from "lit/decorators.js";
 import type { WizardState } from "../../state/wizard-state.js";
 import { WizardStateController } from "../../state/wizard-state-controller.js";
-import { openExternalLink } from "../../utils/external-url.js";
+import { renderExternalLink } from "../../utils/external-link.js";
+import {
+  GREEN_GUIDE_URL,
+  ODROID_GUIDE_URL,
+  YELLOW_CM4_GUIDE_URL,
+  YELLOW_CM5_GUIDE_URL,
+} from "../../utils/urls.js";
 import { selectedWifi } from "../../utils/wifi.js";
 import { renderOpenHomeAssistantStep } from "../sbc/success-view.js";
 import {
@@ -15,10 +21,10 @@ import {
 import "../../components/install-success.js";
 
 const GUIDES: Record<HaHardwareId, string> = {
-  green: "https://support.nabucasa.com/hc/en-us/articles/25162566451485",
-  "yellow-cm4": "https://support.nabucasa.com/hc/en-us/articles/25484982657309",
-  "yellow-cm5": "https://support.nabucasa.com/hc/en-us/articles/25485061432093",
-  blue: "https://www.home-assistant.io/installation/odroid",
+  green: GREEN_GUIDE_URL,
+  "yellow-cm4": YELLOW_CM4_GUIDE_URL,
+  "yellow-cm5": YELLOW_CM5_GUIDE_URL,
+  blue: ODROID_GUIDE_URL,
 };
 
 @customElement("ha-hardware-success-view")
@@ -65,15 +71,12 @@ export class HaHardwareSuccessView extends LitElement {
               ]
             : []),
         ]}
-        .footer=${html`<a
-          href=${guide}
-          target="_blank"
-          rel="noopener noreferrer"
-          @click=${openExternalLink}
-          >${localize("views.ha_hardware.success_view.full_instructions", {
+        .footer=${renderExternalLink(
+          guide,
+          localize("views.ha_hardware.success_view.full_instructions", {
             device: haHardwareName(hardware),
-          })}</a
-        >`}
+          })
+        )}
       ></install-success>
     `;
   }

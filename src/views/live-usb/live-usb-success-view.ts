@@ -3,15 +3,14 @@ import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { revealInFolder } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
+import { renderExternalLink } from "../../utils/external-link.js";
 import {
   HOME_ASSISTANT_HOST,
   homeAssistantUrl,
-  openExternalLink,
 } from "../../utils/external-url.js";
+import { GENERIC_X86_GUIDE_URL } from "../../utils/urls.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/install-success.js";
-
-const GUIDE = "https://www.home-assistant.io/installation/generic-x86-64/";
 
 /** Next steps on the computer being installed, for a stick or for the saved ISO. */
 @customElement("live-usb-success-view")
@@ -60,13 +59,10 @@ export class LiveUsbSuccessView extends LitElement {
       html`${localizeContent(
         "views.live_usb.live_usb_success_view.open_home_assistant",
         {
-          address: html`<a
-            href=${homeAssistantUrl()}
-            target="_blank"
-            rel="noopener noreferrer"
-            @click=${openExternalLink}
-            >${HOME_ASSISTANT_HOST}</a
-          >`,
+          // The step already says it opens in a browser
+          address: renderExternalLink(homeAssistantUrl(), HOME_ASSISTANT_HOST, {
+            hint: false,
+          }),
         }
       )}`,
     ];
@@ -89,15 +85,10 @@ export class LiveUsbSuccessView extends LitElement {
               ),
               ...boot,
             ]}
-        .footer=${html`<a
-          href=${GUIDE}
-          target="_blank"
-          rel="noopener noreferrer"
-          @click=${openExternalLink}
-          >${localize(
-            "views.live_usb.live_usb_success_view.installation_guide"
-          )}</a
-        >`}
+        .footer=${renderExternalLink(
+          GENERIC_X86_GUIDE_URL,
+          localize("views.live_usb.live_usb_success_view.installation_guide")
+        )}
       >
         ${iso
           ? html`<span

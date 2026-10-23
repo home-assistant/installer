@@ -1,8 +1,10 @@
 import { expect } from "@open-wc/testing";
 import {
+  createExternalLink,
   homeAssistantUrl,
   openExternalUrl,
 } from "../../../src/utils/external-url.js";
+import { captureOpenedUrls, restoreTauriIpc, settle } from "../tauri-ipc.js";
 
 describe("utils/external-url", () => {
   async function openedWithFallback(urls: string[]) {
@@ -63,5 +65,42 @@ describe("utils/external-url", () => {
     for (const address of [undefined, null, ""]) {
       expect(homeAssistantUrl(address)).to.equal("http://homeassistant.local");
     }
+  });
+
+  describe("createExternalLink", () => {
+    afterEach(() => {
+      restoreTauriIpc();
+    });
+
+    it("is an external link like the ones the views render", async () => {
+      const opened = captureOpenedUrls();
+      const link = createExternalLink(
+        "https://www.home-assistant.io/",
+        "Report a problem"
+      );
+      expect(link.getAttribute("href")).to.equal(
+        "https://www.home-assistant.io/"
+      );
+      expect(link.target).to.equal("_blank");
+      expect(link.rel).to.equal("noopener noreferrer");
+      expect(link.textContent).to.equal(
+        "Report a problem Opens in your browser."
+      );
+      // Hidden once it is on the page
+      document.body.append(link);
+      try {
+        expect(getComputedStyle(link.querySelector("span")!).position).to.equal(
+          "absolute"
+        );
+      } finally {
+        link.remove();
+      }
+
+      const click = new MouseEvent("click", { cancelable: true });
+      link.dispatchEvent(click);
+      await settle();
+      expect(click.defaultPrevented).to.be.true;
+      expect(opened).to.deep.equal(["https://www.home-assistant.io/"]);
+    });
   });
 });

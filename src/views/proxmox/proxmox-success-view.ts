@@ -12,15 +12,13 @@ import type {
 } from "../../state/wizard-state.js";
 import { WizardStateController } from "../../state/wizard-state-controller.js";
 import { proxmoxVmConfig } from "../../state/vm-defaults.js";
-import { openExternalLink } from "../../utils/external-url.js";
+import { renderExternalLink } from "../../utils/external-link.js";
 import { linkStyles } from "../../utils/link-styles.js";
+import { PROXMOX_DIRECTORY_STORAGE_URL } from "../../utils/urls.js";
 import { vmSuccessSteps, vmTipPrefix } from "../../utils/vm-success.js";
 
 import "../../components/inline-notice.js";
 import "../../components/install-success.js";
-
-const DIRECTORY_STORAGE_DOCS =
-  "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory";
 
 /**
  * The storages this installer enabled Import on, on the server it is
@@ -123,13 +121,10 @@ export class ProxmoxSuccessView extends LitElement {
         ${localize(
           "views.proxmox.proxmox_success_view.review_import_in_proxmox"
         )}
-        <a
-          href=${DIRECTORY_STORAGE_DOCS}
-          target="_blank"
-          rel="noopener noreferrer"
-          @click=${openExternalLink}
-          >${localize("common.proxmox.directory_storage_documentation")}</a
-        >
+        ${renderExternalLink(
+          PROXMOX_DIRECTORY_STORAGE_URL,
+          localize("common.proxmox.directory_storage_documentation")
+        )}
       </p>
     </inline-notice>`;
   }

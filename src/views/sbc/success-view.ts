@@ -3,42 +3,44 @@ import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { WizardState } from "../../state/wizard-state.js";
 import { WizardStateController } from "../../state/wizard-state-controller.js";
+import { renderExternalLink } from "../../utils/external-link.js";
 import {
   HOME_ASSISTANT_HOST,
   homeAssistantUrl,
-  openExternalLink,
 } from "../../utils/external-url.js";
+import {
+  GENERIC_AARCH64_GUIDE_URL,
+  GENERIC_X86_GUIDE_URL,
+  INSTALLATION_GUIDE_URL,
+  ODROID_GUIDE_URL,
+  ODROID_M1S_GUIDE_URL,
+  ODROID_N2_GUIDE_URL,
+  RASPBERRY_PI_GUIDE_URL,
+} from "../../utils/urls.js";
 import { selectedWifi } from "../../utils/wifi.js";
 
 import "../../components/install-success.js";
 
 const INSTALLATION_GUIDES: Record<string, string> = {
-  "rpi3-64": "https://www.home-assistant.io/installation/raspberrypi/",
-  "rpi4-64": "https://www.home-assistant.io/installation/raspberrypi/",
-  "rpi5-64": "https://www.home-assistant.io/installation/raspberrypi/",
-  "odroid-c2": "https://www.home-assistant.io/installation/odroid/",
-  "odroid-c4": "https://www.home-assistant.io/installation/odroid/",
-  "odroid-m1": "https://www.home-assistant.io/installation/odroid/",
-  "odroid-n2":
-    "https://www.home-assistant.io/installation/odroid/#flashing-an-odroid-n2",
-  "odroid-m1s":
-    "https://www.home-assistant.io/installation/odroid/#flashing-an-odroid-m1s",
-  "generic-x86-64":
-    "https://www.home-assistant.io/installation/generic-x86-64/",
-  "generic-aarch64":
-    "https://contributors.home-assistant.io/os/operating-system/generic/",
+  "rpi3-64": RASPBERRY_PI_GUIDE_URL,
+  "rpi4-64": RASPBERRY_PI_GUIDE_URL,
+  "rpi5-64": RASPBERRY_PI_GUIDE_URL,
+  "odroid-c2": ODROID_GUIDE_URL,
+  "odroid-c4": ODROID_GUIDE_URL,
+  "odroid-m1": ODROID_GUIDE_URL,
+  "odroid-n2": ODROID_N2_GUIDE_URL,
+  "odroid-m1s": ODROID_M1S_GUIDE_URL,
+  "generic-x86-64": GENERIC_X86_GUIDE_URL,
+  "generic-aarch64": GENERIC_AARCH64_GUIDE_URL,
 };
 
 /** The last step after any write: where to find Home Assistant. */
 export function renderOpenHomeAssistantStep() {
   return html`${localizeContent("views.sbc.success_view.step_open", {
-    url: html`<a
-      href=${homeAssistantUrl()}
-      target="_blank"
-      rel="noopener noreferrer"
-      @click=${openExternalLink}
-      >${HOME_ASSISTANT_HOST}</a
-    >`,
+    // The step already says it opens in the browser
+    url: renderExternalLink(homeAssistantUrl(), HOME_ASSISTANT_HOST, {
+      hint: false,
+    }),
     ip_url: html`<code dir="ltr"
       >http://&lt;<bdi>${localize(
         "views.sbc.success_view.ip_address"
@@ -76,12 +78,10 @@ export class SuccessView extends LitElement {
     const isMiniPc = this._wizardState.currentFlow === "minipc";
     const wifi = selectedWifi(selections);
     const supportsDirectUsb = board === "odroid-n2" || board === "odroid-m1s";
-    const guide = Object.prototype.hasOwnProperty.call(
-      INSTALLATION_GUIDES,
-      board
-    )
-      ? INSTALLATION_GUIDES[board]
-      : "https://www.home-assistant.io/installation/";
+    const guide =
+      (Object.prototype.hasOwnProperty.call(INSTALLATION_GUIDES, board)
+        ? INSTALLATION_GUIDES[board]
+        : undefined) ?? INSTALLATION_GUIDE_URL;
 
     return html`
       <install-success
@@ -122,12 +122,9 @@ export class SuccessView extends LitElement {
             ? localize("common.success.step_preparing_page_wifi")
             : localize("common.success.step_preparing_page"),
         ]}
-        .footer=${html`<a
-          href=${guide}
-          target="_blank"
-          rel="noopener noreferrer"
-          @click=${openExternalLink}
-          >${guide === "https://www.home-assistant.io/installation/"
+        .footer=${renderExternalLink(
+          guide,
+          guide === INSTALLATION_GUIDE_URL
             ? localize("views.sbc.success_view.installation_guide")
             : deviceName
               ? localize("views.sbc.success_view.device_installation_guide", {
@@ -135,8 +132,8 @@ export class SuccessView extends LitElement {
                 })
               : localize(
                   "views.sbc.success_view.your_device_installation_guide"
-                )}</a
-        >`}
+                )
+        )}
       ></install-success>
     `;
   }

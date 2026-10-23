@@ -10,7 +10,16 @@ import { linkStyles } from "../utils/link-styles.js";
 import { fireEvent } from "../utils/fire-event.js";
 import "../components/option-card.js";
 import type { OptionCardIcon } from "../components/option-card.js";
-import { openExternalLink, openExternalUrl } from "../utils/external-url.js";
+import { renderExternalLink } from "../utils/external-link.js";
+import { openExternalUrl } from "../utils/external-url.js";
+import {
+  DOCKER_GUIDE_URL,
+  INSTALLATION_TYPES_URL,
+  LINUX_GUIDE_URL,
+  QNAP_GUIDE_URL,
+  SYNOLOGY_GUIDE_URL,
+  WINDOWS_GUIDE_URL,
+} from "../utils/urls.js";
 
 interface OtherOption {
   title: string;
@@ -19,40 +28,37 @@ interface OtherOption {
   icon: OptionCardIcon;
 }
 
-const INSTALLATION_TYPES_URL =
-  "https://www.home-assistant.io/installation/#about-installation-types";
-
 // A function, so the text is localized when the view renders, not when the
 // module loads, and follows the language
 const otherOptions = (): OtherOption[] => [
   {
     title: localize("views.other_options_view.home_assistant_container"),
     description: localize("views.other_options_view.docker_description"),
-    url: "https://www.home-assistant.io/installation/linux#docker-compose",
+    url: DOCKER_GUIDE_URL,
     icon: "docker",
   },
   {
     title: localize("views.other_options_view.synology_nas"),
     description: localize("views.other_options_view.synology_description"),
-    url: "https://www.home-assistant.io/installation/alternative#synology-nas",
+    url: SYNOLOGY_GUIDE_URL,
     icon: "synology",
   },
   {
     title: localize("views.other_options_view.qnap_nas"),
     description: localize("views.other_options_view.qnap_description"),
-    url: "https://www.home-assistant.io/installation/alternative#qnap-nas",
+    url: QNAP_GUIDE_URL,
     icon: "qnap",
   },
   {
     title: localize("views.other_options_view.linux_virtual_machine"),
     description: localize("views.other_options_view.linux_description"),
-    url: "https://www.home-assistant.io/installation/linux",
+    url: LINUX_GUIDE_URL,
     icon: "linux",
   },
   {
     title: localize("views.other_options_view.windows_virtual_machine"),
     description: localize("views.other_options_view.windows_description"),
-    url: "https://www.home-assistant.io/installation/windows",
+    url: WINDOWS_GUIDE_URL,
     icon: "windows",
   },
 ];
@@ -85,15 +91,10 @@ export class OtherOptionsView extends LitElement {
         </h1>
         <p class="subtitle">
           ${localizeContent("views.other_options_view.subtitle", {
-            link: html`<a
-              href=${INSTALLATION_TYPES_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              @click=${openExternalLink}
-              >${localize(
-                "views.other_options_view.compare_installation_types"
-              )}</a
-            >`,
+            link: renderExternalLink(
+              INSTALLATION_TYPES_URL,
+              localize("views.other_options_view.compare_installation_types")
+            ),
           })}
         </p>
 

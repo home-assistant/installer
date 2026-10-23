@@ -75,7 +75,7 @@ describe("utils/startup-failure", () => {
     );
     // A message the catalog lacks stays English
     expect(document.querySelector("main a")?.textContent).to.equal(
-      "Report a problem on GitHub"
+      "Report a problem on GitHub Opens in your browser."
     );
   });
 });

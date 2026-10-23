@@ -217,8 +217,8 @@ describe("install-success", () => {
       ...el.shadowRoot!.querySelectorAll<HTMLAnchorElement>(".app-link"),
     ];
     expect(links.map((link) => link.textContent!.trim())).to.deep.equal([
-      "App Store",
-      "Google Play",
+      "App Store Opens in your browser.",
+      "Google Play Opens in your browser.",
     ]);
     for (const link of links) {
       expect(link.target).to.equal("_blank");

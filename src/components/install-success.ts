@@ -1,12 +1,13 @@
 import { LitElement, html, css, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { localize } from "../localization/localize.js";
-import { openExternalLink } from "../utils/external-url.js";
+import { renderExternalLink } from "../utils/external-link.js";
 import { linkStyles } from "../utils/link-styles.js";
 import { panelStyles } from "../utils/panel-styles.js";
 import { sectionLabelStyles } from "../utils/section-label-styles.js";
 import { getPlatform } from "../utils/platform.js";
 import { mdiApple, mdiGooglePlay } from "../utils/icons.js";
+import { APP_STORE_URL, GOOGLE_PLAY_URL } from "../utils/urls.js";
 import { renderIcon } from "../utils/render-icon.js";
 import { renderCasitaHappy } from "./install-mascot.js";
 import "./inline-notice.js";
@@ -297,28 +298,22 @@ export class InstallSuccess extends LitElement {
               ${localize("components.install_success.companion_app")}
             </h3>
             <div class="app-links">
-              <a
-                class="app-link"
-                href="https://apps.apple.com/app/home-assistant/id1099568401"
-                target="_blank"
-                rel="noopener noreferrer"
-                @click=${openExternalLink}
-              >
-                ${renderIcon(mdiApple)}
-                <span>${localize("components.install_success.app_store")}</span>
-              </a>
-              <a
-                class="app-link"
-                href="https://play.google.com/store/apps/details?id=io.homeassistant.companion.android"
-                target="_blank"
-                rel="noopener noreferrer"
-                @click=${openExternalLink}
-              >
-                ${renderIcon(mdiGooglePlay)}
-                <span
-                  >${localize("components.install_success.google_play")}</span
-                >
-              </a>
+              ${renderExternalLink(
+                APP_STORE_URL,
+                html`${renderIcon(mdiApple)}
+                  <span
+                    >${localize("components.install_success.app_store")}</span
+                  >`,
+                { className: "app-link" }
+              )}
+              ${renderExternalLink(
+                GOOGLE_PLAY_URL,
+                html`${renderIcon(mdiGooglePlay)}
+                  <span
+                    >${localize("components.install_success.google_play")}</span
+                  >`,
+                { className: "app-link" }
+              )}
             </div>
           </div>
         </div>

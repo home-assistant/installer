@@ -117,10 +117,14 @@ describe("install-progress", () => {
       await el.updateComplete;
       const address = el.shadowRoot!.querySelector(".address")!;
       expect(address.textContent).to.contain(
-        "Checking Home Assistant at http://192.0.2.50."
+        "Checking Home Assistant at http://192.0.2.50 Opens in your browser."
       );
       const link = address.querySelector("a")!;
-      expect(link.textContent).to.equal("http://192.0.2.50");
+      expect(link.textContent).to.equal(
+        "http://192.0.2.50 Opens in your browser."
+      );
+      expect(link.getAttribute("target")).to.equal("_blank");
+      expect(link.getAttribute("rel")).to.equal("noopener noreferrer");
       expectThemeLink(link);
       link.click();
       await settle();

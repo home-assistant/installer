@@ -681,7 +681,7 @@ describe("Home Assistant hardware views", () => {
           "put the eMMC module back",
           "Preparing Home Assistant page",
         ],
-        "https://www.home-assistant.io/installation/odroid",
+        "https://www.home-assistant.io/installation/odroid/",
       ],
     ] as const) {
       it(`gives the ${id} its own next steps`, async () => {

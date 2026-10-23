@@ -144,10 +144,14 @@ describe("Proxmox import consent", () => {
     expect(wizardState.getState().selections.proxmoxImportChanges).to.be
       .undefined;
     expect(el.shadowRoot!.textContent).to.contain("Installation is paused");
-    expect(
-      el.shadowRoot!.querySelector<HTMLAnchorElement>(".import-setting a")!.href
-    ).to.contain("pve.proxmox.com");
-    expectThemeLink(el.shadowRoot!.querySelector(".import-setting a")!);
+    const docs =
+      el.shadowRoot!.querySelector<HTMLAnchorElement>(".import-setting a")!;
+    expect(docs.href).to.equal(
+      "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory"
+    );
+    expect(docs.target).to.equal("_blank");
+    expect(docs.rel).to.equal("noopener noreferrer");
+    expectThemeLink(docs);
     expect(wizardState.getState().selections.proxmoxImportReady).to.be.false;
   });
 
@@ -606,7 +610,9 @@ describe("Proxmox import consent", () => {
     expect(reminder.textContent).to.contain("cluster-wide");
     expect(reminder.textContent).to.contain("no other");
     expect(reminder.textContent).to.contain("content types unchanged");
-    expect(reminder.querySelector("a")!.href).to.contain("#storage_directory");
+    expect(reminder.querySelector("a")!.href).to.equal(
+      "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory"
+    );
     expectThemeLink(reminder.querySelector("a")!);
     wizardState.setSelection("proxmoxSession", {
       ...session,

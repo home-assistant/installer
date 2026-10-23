@@ -6,7 +6,11 @@ import {
 } from "../utils/view-accessibility.js";
 import { logFrontendError } from "../utils/diagnostics.js";
 import { customElement, state } from "lit/decorators.js";
-import { openExternalLink } from "../utils/external-url.js";
+import { renderExternalLink } from "../utils/external-link.js";
+import {
+  INSTALLATION_GUIDE_URL,
+  OPEN_HOME_FOUNDATION_URL,
+} from "../utils/urls.js";
 import { fireEvent } from "../utils/fire-event.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../components/diagnostics-actions.js";
@@ -209,33 +213,25 @@ export class WelcomeView extends LitElement {
 
       <footer class="welcome-footer">
         <diagnostics-actions class="report"></diagnostics-actions>
-        <a
-          class="ohf-link"
-          href="https://www.openhomefoundation.org/"
-          target="_blank"
-          rel="noopener noreferrer"
-          @click=${openExternalLink}
-        >
-          <img
-            class="ohf-logo ohf-logo-light"
-            src="/assets/ohf-logo-light.svg"
-            alt=${localize("views.welcome_view.open_home_foundation")}
-          />
-          <img
-            class="ohf-logo ohf-logo-dark"
-            src="/assets/ohf-logo-dark.svg"
-            alt=${localize("views.welcome_view.open_home_foundation")}
-          />
-        </a>
-        <a
-          class="learn-more"
-          href="https://www.home-assistant.io/installation/"
-          target="_blank"
-          rel="noopener noreferrer"
-          @click=${openExternalLink}
-        >
-          ${localize("views.welcome_view.learn_more")}
-        </a>
+        ${renderExternalLink(
+          OPEN_HOME_FOUNDATION_URL,
+          html`<img
+              class="ohf-logo ohf-logo-light"
+              src="/assets/ohf-logo-light.svg"
+              alt=${localize("views.welcome_view.open_home_foundation")}
+            />
+            <img
+              class="ohf-logo ohf-logo-dark"
+              src="/assets/ohf-logo-dark.svg"
+              alt=${localize("views.welcome_view.open_home_foundation")}
+            />`,
+          { className: "ohf-link" }
+        )}
+        ${renderExternalLink(
+          INSTALLATION_GUIDE_URL,
+          localize("views.welcome_view.learn_more"),
+          { className: "learn-more" }
+        )}
       </footer>
     `;
   }

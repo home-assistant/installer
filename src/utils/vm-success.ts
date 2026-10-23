@@ -4,11 +4,8 @@
  */
 import { html } from "lit";
 import { localize, localizeContent } from "../localization/localize.js";
-import {
-  HOME_ASSISTANT_HOST,
-  homeAssistantUrl,
-  openExternalLink,
-} from "./external-url.js";
+import { renderExternalLink } from "./external-link.js";
+import { HOME_ASSISTANT_HOST, homeAssistantUrl } from "./external-url.js";
 
 /**
  * Wait for Home Assistant, open it at the VM's address, or at the name it
@@ -18,13 +15,12 @@ export function vmSuccessSteps(ipAddress: string | undefined) {
   return [
     localize("common.vm.step_wait"),
     html`${localizeContent("common.vm.step_open", {
-      url: html`<a
-        href=${homeAssistantUrl(ipAddress)}
-        target="_blank"
-        rel="noopener noreferrer"
-        @click=${openExternalLink}
-        >${ipAddress || HOME_ASSISTANT_HOST}</a
-      >`,
+      // The step already says it opens in the browser
+      url: renderExternalLink(
+        homeAssistantUrl(ipAddress),
+        ipAddress || HOME_ASSISTANT_HOST,
+        { hint: false }
+      ),
     })}`,
     localize("common.vm.step_onboard"),
   ];

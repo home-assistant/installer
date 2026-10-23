@@ -1,12 +1,11 @@
 import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import { openExternalLink } from "../../utils/external-url.js";
+import { renderExternalLink } from "../../utils/external-link.js";
 import { linkStyles } from "../../utils/link-styles.js";
 import { getPlatform } from "../../utils/platform.js";
+import { RPIBOOT_URL } from "../../utils/urls.js";
 import type { HaHardwareId } from "../../state/ha-hardware.js";
-
-const RPIBOOT_URL = "https://github.com/raspberrypi/usbboot";
 
 /**
  * How to make the storage of a Nabu Casa device show up as a drive on this
@@ -147,13 +146,7 @@ export class HaHardwareConnectInstructions extends LitElement {
 
   // How to run rpiboot, and what the OS asks when the drive shows up.
   private _yellowCm5PlatformSteps() {
-    const rpiboot = html`<a
-      href=${RPIBOOT_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      @click=${openExternalLink}
-      >rpiboot</a
-    >`;
+    const rpiboot = renderExternalLink(RPIBOOT_URL, "rpiboot");
     const command = html`<code>sudo ./rpiboot -d mass-storage-gadget64</code>`;
     const shortcut = html`<code>rpiboot-CM4-CM5 - Mass Storage Gadget</code>`;
     switch (getPlatform()) {

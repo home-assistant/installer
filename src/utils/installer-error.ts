@@ -1,7 +1,8 @@
 import { html } from "lit";
 import { localize, localizeBackend } from "../localization/localize.js";
 import { formatBytes } from "./format.js";
-import { openExternalLink } from "./external-url.js";
+import { renderExternalLink } from "./external-link.js";
+import { INSTALLATION_GUIDE_URL } from "./urls.js";
 import "../components/diagnostics-actions.js";
 
 export interface InstallerError {
@@ -132,13 +133,13 @@ export function isDriveFailure(code: string, reachedDrive: boolean): boolean {
 
 /** Fixed destinations only: error text, paths, and credentials never enter URLs. */
 export function renderErrorHelp() {
-  const help = "https://www.home-assistant.io/installation/";
   // Reporting goes through the diagnostics dialog, which shows exactly what
   // a public issue would contain before anything leaves the installer
   return html`<p class="error-help">
-    <a href=${help} @click=${openExternalLink}
-      >${localize("common.installation_help")}</a
-    >
+    ${renderExternalLink(
+      INSTALLATION_GUIDE_URL,
+      localize("common.installation_help")
+    )}
     <span aria-hidden="true"> · </span>
     <diagnostics-actions></diagnostics-actions>
   </p>`;

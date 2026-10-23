@@ -16,7 +16,7 @@ import {
 import "./progress-bar.js";
 import "./inline-notice.js";
 import { renderErrorHelp } from "../utils/installer-error.js";
-import { openExternalLink } from "../utils/external-url.js";
+import { renderExternalLink } from "../utils/external-link.js";
 import { linkStyles } from "../utils/link-styles.js";
 import { statusDotStyles } from "../utils/status-dot-styles.js";
 import {
@@ -472,11 +472,7 @@ export class InstallProgress extends LitElement {
                 ${localizeContent(
                   "components.install_progress.checking_address",
                   {
-                    address: html`<a
-                      href=${this.address}
-                      @click=${openExternalLink}
-                      >${this.address}</a
-                    >`,
+                    address: renderExternalLink(this.address, this.address),
                   }
                 )}
               </p>`

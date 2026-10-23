@@ -1,6 +1,6 @@
 import { localize } from "../localization/localize.js";
 import { BUG_REPORT_URL, logFrontendError } from "./diagnostics.js";
-import { openExternalLink } from "./external-url.js";
+import { createExternalLink } from "./external-url.js";
 
 /**
  * What the window shows when the app shell fails to load, instead of staying
@@ -23,11 +23,11 @@ export function showStartupFailure(error: unknown) {
   description.style.cssText =
     "margin: 0 0 1rem; color: var(--ha-secondary-text-color)";
 
-  const link = document.createElement("a");
-  link.href = BUG_REPORT_URL;
-  link.textContent = localize("utils.startup_failure.report");
+  const link = createExternalLink(
+    BUG_REPORT_URL,
+    localize("utils.startup_failure.report")
+  );
   link.style.color = "var(--ha-primary-color)";
-  link.addEventListener("click", (event) => void openExternalLink(event));
   const report = document.createElement("p");
   report.style.margin = "0";
   report.append(link);

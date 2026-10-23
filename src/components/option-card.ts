@@ -216,7 +216,7 @@ export class OptionCard extends CardButton {
         <p class="title" id="title">${this.heading}</p>
         ${this.external
           ? html`<span class="sr-only" id="external"
-              >${localize("components.option_card.opens_in_browser")}</span
+              >${localize("common.opens_in_browser")}</span
             >`
           : nothing}
         <p class="description" id="description">${this.description}</p>

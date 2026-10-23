@@ -56,7 +56,9 @@ describe("other-options-view", () => {
     const subtitle = el.shadowRoot!.querySelector(".subtitle")!;
     expect(subtitle.textContent).to.contain("not directly supported");
     const link = subtitle.querySelector("a")!;
-    expect(link.textContent).to.equal("Compare installation types");
+    expect(link.textContent).to.equal(
+      "Compare installation types Opens in your browser."
+    );
     expect(link.getAttribute("href")).to.equal(INSTALLATION_TYPES_URL);
     expect(link.getAttribute("target")).to.equal("_blank");
     expect(link.getAttribute("rel")).to.equal("noopener noreferrer");

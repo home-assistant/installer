@@ -8,8 +8,9 @@ import type { ProxmoxStorage } from "../../api/types.js";
 import { localize } from "../../localization/localize.js";
 import { wizardState } from "../../state/wizard-state.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { openExternalLink } from "../../utils/external-url.js";
+import { renderExternalLink } from "../../utils/external-link.js";
 import { formatFreeSpace } from "../../utils/format.js";
+import { PROXMOX_DIRECTORY_STORAGE_URL } from "../../utils/urls.js";
 import { mdiDatabase } from "../../utils/icons.js";
 import { renderIcon } from "../../utils/render-icon.js";
 import {
@@ -18,9 +19,6 @@ import {
 } from "../../utils/installer-error.js";
 import { needsReconnect } from "./proxmox-session.js";
 import type { ProxmoxTargetLookup } from "./proxmox-target-lookup.js";
-
-const DIRECTORY_STORAGE_DOCS =
-  "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory";
 
 /** The Import section's own rules, next to the view's setting rows */
 export const importStorageStyles = css`
@@ -347,9 +345,10 @@ export class ProxmoxImportStorage {
               )}
             </wa-button>
           </div>
-          <a href=${DIRECTORY_STORAGE_DOCS} @click=${openExternalLink}
-            >${localize("common.proxmox.directory_storage_documentation")}</a
-          >
+          ${renderExternalLink(
+            PROXMOX_DIRECTORY_STORAGE_URL,
+            localize("common.proxmox.directory_storage_documentation")
+          )}
         </div>
       </div>
       <info-dialog
