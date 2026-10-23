@@ -661,9 +661,7 @@ export class InstallProgress extends LitElement {
     const bytesPerSecond = bytesInStage / elapsed;
     if (bytesPerSecond <= 0 || !isFinite(bytesPerSecond)) return "";
 
-    return localize("components.install_progress.speed", {
-      speed: formatBytes(bytesPerSecond),
-    });
+    return formatBytes(bytesPerSecond, true);
   }
 }
 

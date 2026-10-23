@@ -175,16 +175,16 @@ describe("api/commands", () => {
 
   describe("formatBytes", () => {
     it("formats 0 bytes", () => {
-      expect(formatBytes(0)).to.equal("0 B");
+      expect(formatBytes(0)).to.equal("0 bytes");
     });
 
     it("formats bytes", () => {
-      expect(formatBytes(500)).to.equal("500 B");
+      expect(formatBytes(500)).to.equal("500 bytes");
     });
 
     it("formats kilobytes", () => {
-      expect(formatBytes(1000)).to.equal("1 KB");
-      expect(formatBytes(1500)).to.equal("1.5 KB");
+      expect(formatBytes(1000)).to.equal("1 kB");
+      expect(formatBytes(1500)).to.equal("1.5 kB");
     });
 
     it("formats megabytes", () => {
@@ -205,6 +205,11 @@ describe("api/commands", () => {
     it("does not round a drive up to a capacity threshold", () => {
       expect(formatBytes(16_000_000_000 - 1)).to.equal("15.9 GB");
       expect(formatBytes(32_000_000_000 - 1)).to.equal("31.9 GB");
+    });
+
+    it("formats speeds", () => {
+      expect(formatBytes(500, true)).to.equal("500 bytes per second");
+      expect(formatBytes(1500000, true)).to.equal("1.5 MB/s");
     });
 
     it("handles invalid and oversized input without an undefined unit", () => {

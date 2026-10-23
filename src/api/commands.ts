@@ -245,26 +245,29 @@ export async function getManifest(): Promise<DeviceManifest> {
 }
 
 /**
- * Format bytes using decimal units, matching storage manufacturers.
+ * Format bytes, or bytes per second, using decimal units, matching storage
+ * manufacturers.
  */
-export function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number, perSecond = false): string {
   if (!Number.isFinite(bytes) || bytes < 0)
     return localize("common.unknown_size");
-  if (bytes === 0) return localize("api.commands.0_b");
 
   const k = 1000;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const units = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte"];
   const i = Math.max(
     0,
-    Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)))
+    Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(k)))
   );
 
   // Do not round a drive just below a capacity threshold up to that threshold.
   const value = Math.floor((bytes / Math.pow(k, i)) * 10) / 10;
-  // Grouping would turn the oversized "1000 TB" clamp into "1,000 TB".
-  return localize("format.bytes", {
-    amount: formatNumber(value, { useGrouping: false }),
-    unit: sizes[i],
+  return formatNumber(value, {
+    style: "unit",
+    unit: perSecond ? `${units[i]}-per-second` : units[i],
+    // English's short form is "500 byte"
+    unitDisplay: i === 0 ? "long" : "short",
+    // Grouping would turn the oversized "1000 TB" clamp into "1,000 TB".
+    useGrouping: false,
   });
 }
 
