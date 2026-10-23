@@ -2,6 +2,7 @@ import { expect, fixture, html } from "@open-wc/testing";
 import { render } from "lit";
 import "../../../src/components/option-card.js";
 import type { OptionCard } from "../../../src/components/option-card.js";
+import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
 
 describe("option-card", () => {
   it("renders with title and description", async () => {
@@ -141,43 +142,132 @@ describe("option-card", () => {
     }
   });
 
-  describe("keyboard operability", () => {
-    it("exposes button semantics and is reachable with Tab", async () => {
-      const el = await fixture<OptionCard>(html`
-        <option-card heading="Proxmox"></option-card>
+  describe("accessible name and description", () => {
+    it("is a button named by its heading and described by its description", async () => {
+      await fixture<OptionCard>(html`
+        <option-card
+          heading="Proxmox server"
+          description="Create a VM on your Proxmox virtualization server"
+        ></option-card>
       `);
 
-      expect(el.getAttribute("role")).to.equal("button");
-      expect(el.getAttribute("tabindex")).to.equal("0");
+      const [button] = findByRole(await fullA11ySnapshot(), "button");
+      expect(button!.name).to.equal("Proxmox server");
+      expect(button!.description).to.equal(
+        "Create a VM on your Proxmox virtualization server"
+      );
     });
 
-    it("activates on Enter and Space", async () => {
+    it("is a link that says it opens in the browser when external", async () => {
+      await fixture<OptionCard>(html`
+        <option-card
+          external
+          heading="Synology NAS"
+          description="Run Home Assistant Container on your Synology NAS"
+        ></option-card>
+      `);
+
+      const snapshot = await fullA11ySnapshot();
+      expect(findByRole(snapshot, "button")).to.be.empty;
+      const [link] = findByRole(snapshot, "link");
+      expect(link!.name).to.equal("Synology NAS");
+      expect(link!.description).to.equal(
+        "Opens in your browser. Run Home Assistant Container on your Synology NAS"
+      );
+    });
+  });
+
+  describe("keyboard operability", () => {
+    function card(el: OptionCard) {
+      return el.shadowRoot!.querySelector<HTMLElement>(".card")!;
+    }
+
+    function press(el: OptionCard, type: string, init: KeyboardEventInit) {
+      const event = new KeyboardEvent(type, {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        ...init,
+      });
+      card(el).dispatchEvent(event);
+      return event;
+    }
+
+    async function countedCard(external = false) {
+      const el = await fixture<OptionCard>(html`
+        <option-card heading="Proxmox" ?external=${external}></option-card>
+      `);
+      const clicks = { count: 0 };
+      el.addEventListener("click", () => clicks.count++);
+      return { el, clicks };
+    }
+
+    it("is reachable with Tab, and focusing the host focuses the card", async () => {
       const el = await fixture<OptionCard>(html`
         <option-card heading="Proxmox"></option-card>
       `);
 
-      let clicks = 0;
-      el.addEventListener("click", () => clicks++);
+      expect(card(el).getAttribute("role")).to.equal("button");
+      expect(card(el).getAttribute("tabindex")).to.equal("0");
+      expect(el.hasAttribute("role")).to.be.false;
+      el.focus();
+      expect(el.shadowRoot!.activeElement).to.equal(card(el));
+    });
 
-      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-      expect(clicks).to.equal(1);
+    it("activates on Enter as it goes down, once while held", async () => {
+      const { el, clicks } = await countedCard();
 
-      el.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
-      expect(clicks).to.equal(2);
+      expect(press(el, "keydown", { key: "Enter" }).defaultPrevented).to.be
+        .true;
+      expect(clicks.count).to.equal(1);
+      press(el, "keydown", { key: "Enter", repeat: true });
+      press(el, "keydown", { key: "Enter", repeat: true });
+      press(el, "keyup", { key: "Enter" });
+      expect(clicks.count).to.equal(1);
+    });
+
+    it("activates on Space as it comes up, once while held", async () => {
+      const { el, clicks } = await countedCard();
+
+      // Without scrolling the page
+      expect(press(el, "keydown", { key: " " }).defaultPrevented).to.be.true;
+      press(el, "keydown", { key: " ", repeat: true });
+      press(el, "keydown", { key: " ", repeat: true });
+      expect(clicks.count).to.equal(0);
+      press(el, "keyup", { key: " " });
+      expect(clicks.count).to.equal(1);
+      // Only a press that started on the card counts
+      press(el, "keyup", { key: " " });
+      expect(clicks.count).to.equal(1);
+    });
+
+    it("drops a Space press when the focus moves on", async () => {
+      const { el, clicks } = await countedCard();
+
+      press(el, "keydown", { key: " " });
+      card(el).dispatchEvent(new FocusEvent("blur"));
+      press(el, "keyup", { key: " " });
+      expect(clicks.count).to.equal(0);
+    });
+
+    it("leaves Space to scroll when external, as a link does", async () => {
+      const { el, clicks } = await countedCard(true);
+
+      expect(press(el, "keydown", { key: " " }).defaultPrevented).to.be.false;
+      press(el, "keyup", { key: " " });
+      expect(clicks.count).to.equal(0);
+      press(el, "keydown", { key: "Enter" });
+      expect(clicks.count).to.equal(1);
     });
 
     it("ignores other keys", async () => {
-      const el = await fixture<OptionCard>(html`
-        <option-card heading="Proxmox"></option-card>
-      `);
+      const { el, clicks } = await countedCard();
 
-      let clicks = 0;
-      el.addEventListener("click", () => clicks++);
+      press(el, "keydown", { key: "a" });
+      press(el, "keydown", { key: "Tab" });
+      press(el, "keyup", { key: "a" });
 
-      el.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
-      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
-
-      expect(clicks).to.equal(0);
+      expect(clicks.count).to.equal(0);
     });
   });
 });

@@ -117,17 +117,18 @@ describe("other-options-view", () => {
     expect(event.detail).to.deep.equal({ view: "path-selection" });
   });
 
-  it("names each method as a button without the external-link arrow", async () => {
-    await fixture<OtherOptionsView>(
+  it("names each method as a link that opens in the browser", async () => {
+    const el = await fixture<OtherOptionsView>(
       html`<other-options-view></other-options-view>`
     );
-    const names = findByRole(await fullA11ySnapshot(), "button").map(
-      (button) => button.name ?? ""
-    );
-    for (const [title] of OPTIONS) {
-      const name = names.find((candidate) => candidate.startsWith(title));
-      expect(name, title).to.exist;
-      expect(name).not.to.contain("↗");
+    const links = findByRole(await fullA11ySnapshot(), "link");
+    for (const card of cards(el)) {
+      const link = links.find((candidate) => candidate.name === card.heading);
+      // Named without the external-link arrow
+      expect(link, card.heading).to.exist;
+      expect(link!.description).to.equal(
+        `Opens in your browser. ${card.description}`
+      );
     }
   });
 });
