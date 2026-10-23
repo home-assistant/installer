@@ -278,7 +278,7 @@ export const WIZARD_STEPS: Record<
         // The session expired: log in again, then wait for the VM made by then
         reconnect: () => ({
           step: "connection",
-          label: localize("proxmox.reconnect"),
+          label: localize("common.proxmox.reconnect"),
         }),
       },
     },

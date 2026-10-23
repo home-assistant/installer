@@ -71,5 +71,5 @@ export async function initializeLocalization(): Promise<void> {
   // Web views have either the newer method or the older getter
   document.documentElement.dir =
     (tag.getTextInfo?.() ?? tag.textInfo)?.direction ?? "ltr";
-  document.title = localize("app.title");
+  document.title = localize("common.app_title");
 }

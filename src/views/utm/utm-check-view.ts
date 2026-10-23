@@ -302,14 +302,14 @@ export class UtmCheckView extends LitElement {
     return renderStatusRow(
       "success",
       this._utmStatus?.version
-        ? localizeContent("utm.installed_with_version", {
+        ? localizeContent("views.utm.utm_check_view.installed_with_version", {
             version: html`<span class="version-info"
-              >${localize("utm.version", {
+              >${localize("views.utm.utm_check_view.version", {
                 version: this._utmStatus.version,
               })}</span
             >`,
           })
-        : localize("utm.installed"),
+        : localize("views.utm.utm_check_view.installed"),
       localize("views.utm.utm_check_view.ready")
     );
   }

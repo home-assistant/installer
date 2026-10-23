@@ -128,7 +128,7 @@ export class ProxmoxSuccessView extends LitElement {
           target="_blank"
           rel="noopener noreferrer"
           @click=${openExternalLink}
-          >${localize("proxmox.directory_storage_documentation")}</a
+          >${localize("common.proxmox.directory_storage_documentation")}</a
         >
       </p>
     </inline-notice>`;

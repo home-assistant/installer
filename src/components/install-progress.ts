@@ -552,10 +552,13 @@ export class InstallProgress extends LitElement {
                                     total: formatBytes(this.totalBytes),
                                   }
                                 )
-                              : localize("format.byte_progress", {
-                                  completed: formatBytes(this.bytesProcessed),
-                                  total: formatBytes(this.totalBytes),
-                                })
+                              : localize(
+                                  "components.install_progress.byte_progress",
+                                  {
+                                    completed: formatBytes(this.bytesProcessed),
+                                    total: formatBytes(this.totalBytes),
+                                  }
+                                )
                             : ""}</span
                       >
                       <span class="speed"

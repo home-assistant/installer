@@ -95,7 +95,7 @@ describe("localization", () => {
     setLanguage("de", {
       "common.next": "Weiter",
       "common.back": " ",
-      "app.title": 42,
+      "common.app_title": 42,
       "views.sbc.drive_selection_view.drives_found": "{count, plural",
       "common.vm.update_timeout": "Öffne {link}",
       "backend.proxmox.node_offline": "Knoten {node} ist offline",
@@ -103,7 +103,7 @@ describe("localization", () => {
     expect(localize("common.next")).to.equal("Weiter");
     expect(localize("common.cancel")).to.equal("Cancel");
     expect(localize("common.back")).to.equal("Back");
-    expect(localize("app.title")).to.equal("Home Assistant Installer");
+    expect(localize("common.app_title")).to.equal("Home Assistant Installer");
     expect(
       localize("views.sbc.drive_selection_view.drives_found", { count: 2 })
     ).to.equal("2 drives found");

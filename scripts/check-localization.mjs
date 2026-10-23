@@ -83,8 +83,17 @@ for (const filename of fs.readdirSync(path.dirname(catalogPath))) {
 // A key under a file's namespace (views.sbc.success_view.title for
 // src/views/sbc/success-view.ts) belongs to that file. In Lokalise the key is
 // a translator's main hint where a string appears; one shared by several
-// screens goes under common.* instead.
-const FILE_NAMESPACES = ["views.", "components.", "utils.", "api."];
+// screens goes under common.* instead, and the Rust code names backend.*.
+// Every key starts with one of these, so none escapes the rule.
+const FILE_NAMESPACES = ["views.", "components.", "utils.", "api.", "state."];
+for (const key of parameters.keys()) {
+  assert(
+    ["common.", "backend.", ...FILE_NAMESPACES].some((prefix) =>
+      key.startsWith(prefix)
+    ),
+    `${key}: unknown namespace. Use the namespace of the file that uses it, or common.* when several screens share it`
+  );
+}
 // Tests pass a temporary source folder to check a misplaced key.
 const sourceRoot = process.argv[3] ?? path.join(root, "src");
 function fileNamespace(filename) {

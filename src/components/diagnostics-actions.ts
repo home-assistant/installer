@@ -153,7 +153,7 @@ export class DiagnosticsActions extends LitElement {
             ? localize("components.diagnostics_actions.installer_version", {
                 version: this._version,
               })
-            : localize("app.title")}
+            : localize("common.app_title")}
         </p>
         <p>
           ${localize("components.diagnostics_actions.github_issues_are_public")}

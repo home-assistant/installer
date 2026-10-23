@@ -321,7 +321,7 @@ export class ProxmoxConnectView extends LitElement {
       wizardState.setSelection("proxmoxConnected", false);
       const failure = installerError(
         error,
-        localize("proxmox.connection_failed")
+        localize("views.proxmox.proxmox_connect_view.failed_to_connect")
       );
       // Said on the code's field, like a missing password on its own
       if (CODE_ERRORS.has(failure.details.message_key as string)) {
@@ -349,11 +349,11 @@ export class ProxmoxConnectView extends LitElement {
     try {
       parsed = new URL(url);
     } catch {
-      return localize("proxmox.validation.valid_url");
+      return localize("views.proxmox.proxmox_connect_view.enter_a_valid_url");
     }
     // Must be HTTPS for security
     if (parsed.protocol !== "https:") {
-      return localize("proxmox.validation.https_url");
+      return localize("views.proxmox.proxmox_connect_view.url_must_use_https");
     }
     if (
       parsed.username ||
@@ -475,7 +475,9 @@ export class ProxmoxConnectView extends LitElement {
             nothing else would read out its new error -->
           <span slot="hint" aria-live="polite"
             >${this._fieldErrors.serverUrl ??
-            localize("proxmox.server_url_hint")}</span
+            localize(
+              "views.proxmox.proxmox_connect_view.server_url_hint"
+            )}</span
           >
         </wa-input>
 
@@ -497,7 +499,7 @@ export class ProxmoxConnectView extends LitElement {
         >
           <span slot="hint" aria-live="polite"
             >${this._fieldErrors.username ??
-            localize("proxmox.username_hint")}</span
+            localize("views.proxmox.proxmox_connect_view.username_hint")}</span
           >
         </wa-input>
 

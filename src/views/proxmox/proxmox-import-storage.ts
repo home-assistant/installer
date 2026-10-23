@@ -283,7 +283,7 @@ export class ProxmoxImportStorage {
                 ${candidates.map(
                   (storage) => html`
                     <wa-option value=${storage.name}>
-                      ${localize("proxmox.storage_free", {
+                      ${localize("common.proxmox.storage_free", {
                         storage: storage.name,
                         free: formatFreeSpace(storage.available),
                       })}
@@ -349,7 +349,7 @@ export class ProxmoxImportStorage {
             </wa-button>
           </div>
           <a href=${DIRECTORY_STORAGE_DOCS} @click=${openExternalLink}
-            >${localize("proxmox.directory_storage_documentation")}</a
+            >${localize("common.proxmox.directory_storage_documentation")}</a
           >
         </div>
       </div>

@@ -184,12 +184,12 @@ export class WelcomeView extends LitElement {
           <img
             class="logo logo-light"
             src="/assets/home-assistant-logo-light.svg"
-            alt=${localize("brand.home_assistant")}
+            alt=${localize("views.welcome_view.home_assistant")}
           />
           <img
             class="logo logo-dark"
             src="/assets/home-assistant-logo-dark.svg"
-            alt=${localize("brand.home_assistant")}
+            alt=${localize("views.welcome_view.home_assistant")}
           />
         </h1>
 

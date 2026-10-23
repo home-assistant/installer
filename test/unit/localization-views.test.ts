@@ -166,8 +166,11 @@ describe("localized view contracts", () => {
   });
 
   it("lets the installed-version catalog own spacing, wrapping, and order", () => {
-    replace("utm.installed_with_version", "{version}: installed fixture");
-    replace("utm.version", "[release {version}]");
+    replace(
+      "views.utm.utm_check_view.installed_with_version",
+      "{version}: installed fixture"
+    );
+    replace("views.utm.utm_check_view.version", "[release {version}]");
     const element = view("utm-check-view", {
       _loading: false,
       _utmStatus: { installed: true, version: "4.7" },
@@ -186,9 +189,12 @@ describe("localized view contracts", () => {
   });
 
   it("keeps the VM name placeholder as data and separates disk from pool labels", () => {
-    replace("brand.home_assistant", "Brand translation fixture");
-    replace("proxmox.storage_pool", "Pool fixture");
-    replace("vm.disk_storage", "Disk fixture");
+    replace("views.welcome_view.home_assistant", "Brand translation fixture");
+    replace(
+      "views.proxmox.proxmox_configure_view.storage_pool",
+      "Pool fixture"
+    );
+    replace("utils.summary_styles.disk_storage", "Disk fixture");
     const utm = output(view("utm-configure-view"));
     expect(
       utm.querySelector("wa-input[placeholder]")?.getAttribute("placeholder")

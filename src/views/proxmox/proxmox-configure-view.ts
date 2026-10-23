@@ -503,7 +503,7 @@ export class ProxmoxConfigureView extends LitElement {
               variant="brand"
               @click=${this._reconnect}
             >
-              ${localize("proxmox.reconnect")}
+              ${localize("common.proxmox.reconnect")}
             </wa-button>`
           : error.retryable
             ? renderRetryButton(!!this._retrying, () => this._retry(), {
@@ -583,7 +583,9 @@ export class ProxmoxConfigureView extends LitElement {
               : html`
                   <wa-select
                     id="storage"
-                    label=${localize("proxmox.storage_pool")}
+                    label=${localize(
+                      "views.proxmox.proxmox_configure_view.storage_pool"
+                    )}
                     size="s"
                     .value=${lookup.selectedStorage}
                     @change=${this._onStorageChange}
@@ -592,7 +594,7 @@ export class ProxmoxConfigureView extends LitElement {
                     ${lookup.storages.map(
                       (storage) => html`
                         <wa-option value=${storage.name}>
-                          ${localize("proxmox.storage_free", {
+                          ${localize("common.proxmox.storage_free", {
                             storage: storage.name,
                             free: formatFreeSpace(storage.available),
                           })}

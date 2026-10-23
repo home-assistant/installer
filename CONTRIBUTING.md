@@ -100,7 +100,8 @@ A key lives under the namespace of the file that renders it, so
 that path is a translator's main hint where a string appears. A string shared
 by several screens goes under `common.*`, grouped by where it appears, like
 `common.install.*` for the progress of every flow or `common.vm.*` for UTM and
-Proxmox. `npm run localization:check` enforces both the namespace and the
+Proxmox. Only `backend.*` falls outside both, for the messages the Rust code
+sends. `npm run localization:check` enforces both the namespace and the
 placeholder names. No keys have been published to a translation service yet.
 
 Startup reads the OS locale through Tauri's locale-only command permission before

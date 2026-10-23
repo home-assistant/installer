@@ -153,6 +153,53 @@ test("catalog check keeps a key with the file that renders it", () => {
   }
 });
 
+test("catalog check keeps every key under a known namespace", () => {
+  const checker = fileURLToPath(
+    new URL("./check-localization.mjs", import.meta.url)
+  );
+  const catalogPath = fileURLToPath(
+    new URL("../src/localization/en.json", import.meta.url)
+  );
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "hai-localization-"));
+  try {
+    const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
+    const fixture = path.join(directory, "en.json");
+    const source = path.join(directory, "src");
+    fs.mkdirSync(path.join(source, "state"), { recursive: true });
+    const check = (key) => {
+      fs.writeFileSync(fixture, JSON.stringify({ ...catalog, [key]: "Title" }));
+      fs.writeFileSync(
+        path.join(source, "state", "first-state.ts"),
+        `const title = () => localize("${key}");\n`
+      );
+      return spawnSync(process.execPath, [checker, fixture, source], {
+        encoding: "utf8",
+      });
+    };
+
+    // A key outside every namespace, even though one file uses it
+    const stray = check("proxmox.title");
+    assert.equal(stray.status, 1);
+    assert.match(stray.stderr, /proxmox\.title: unknown namespace/);
+
+    // state.* belongs to a file, like views.*
+    const borrowed = check("state.second_state.title");
+    assert.equal(borrowed.status, 1);
+    assert.match(
+      borrowed.stderr,
+      /state\.second_state\.title belongs to another file/
+    );
+
+    // The unused catalog entries are what is left to fail
+    const own = check("state.first_state.title");
+    assert.equal(own.status, 1);
+    assert.doesNotMatch(own.stderr, /unknown namespace|belongs to another/);
+    assert.match(own.stderr, /Unused catalog messages/);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("catalog check holds translations to the English", () => {
   const checker = fileURLToPath(
     new URL("./check-localization.mjs", import.meta.url)

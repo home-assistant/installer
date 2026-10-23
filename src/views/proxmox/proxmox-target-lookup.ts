@@ -167,7 +167,7 @@ export class ProxmoxTargetLookup implements ReactiveController {
     if (!session) {
       this.setError({
         code: SESSION_EXPIRED,
-        message: localize("proxmox.session_expired"),
+        message: localize("common.proxmox.session_expired"),
         retryable: false,
         details: {},
       });

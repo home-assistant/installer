@@ -183,7 +183,7 @@ export function renderVmSummaryRows(
 
     ${renderSummaryRow(
       renderSummaryIcon(mdiHarddisk),
-      localize("vm.disk_storage"),
+      localize("utils.summary_styles.disk_storage"),
       formatDiskSize(config.disk_size_gb),
       html`<p class="summary-detail">
         ${localize("common.vm.virtual_disk_description")}
