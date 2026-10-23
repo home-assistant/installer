@@ -607,7 +607,7 @@ export class ProxmoxConnectView extends LitElement {
 
   private _renderError() {
     return html`
-      <div class="status-row" role="alert">
+      <div class="status-row" data-focus-alert>
         <div class="status-icon">
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path

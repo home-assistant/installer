@@ -171,7 +171,7 @@ describe("proxmox-connect-view", () => {
         "true"
       );
       // Nothing was tried yet, so it isn't a failed connection
-      expect(el.shadowRoot!.querySelector('[role="alert"]')).to.be.null;
+      expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.be.null;
     }
     expect(calls).to.deep.equal([]);
   });
@@ -192,7 +192,7 @@ describe("proxmox-connect-view", () => {
     expect(
       inputs.map((input) => nativeInput(input).getAttribute("aria-invalid"))
     ).to.deep.equal(["true", "true", "true", null]);
-    expect(el.shadowRoot!.querySelector('[role="alert"]')).to.be.null;
+    expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.be.null;
     expect(el.shadowRoot!.activeElement === inputs[0]).to.be.true;
 
     // Fixing a field takes its error away, the others stay until fixed

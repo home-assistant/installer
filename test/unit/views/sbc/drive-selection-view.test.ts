@@ -117,7 +117,7 @@ describe("drive-selection-view", () => {
     const failure = ipcError("io", "The drive scan failed.", true);
     const root = (el: DriveSelectionView) => el.shadowRoot!;
     const alertText = (el: DriveSelectionView) =>
-      root(el).querySelector("[role=alert]")?.textContent?.trim() ?? "";
+      root(el).querySelector("[data-focus-alert]")?.textContent?.trim() ?? "";
     let scan = holdDeviceScan();
     const rescan = async (el: DriveSelectionView, selector: string) => {
       const button = root(el).querySelector(selector) as HTMLElement;
@@ -141,8 +141,9 @@ describe("drive-selection-view", () => {
       expect(alertText(el)).to.equal("");
       scan.reject(failure as unknown as Error);
       await waitUntil(() => !!alertText(el));
-      expect(root(el).activeElement === root(el).querySelector("[role=alert]"))
-        .to.be.true;
+      expect(
+        root(el).activeElement === root(el).querySelector("[data-focus-alert]")
+      ).to.be.true;
 
       // Then nothing found: the empty state's Refresh takes over
       await rescan(el, ".error wa-button");
