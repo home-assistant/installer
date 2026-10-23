@@ -4,19 +4,12 @@ import {
   isDriveFailure,
   type InstallerError,
 } from "../../utils/installer-error.js";
-import { html } from "lit";
-import { customElement, state } from "lit/decorators.js";
-import {
-  cancelFlash,
-  flashImage,
-  type FlashProgress,
-  type FlashStage,
-} from "../../api/index.js";
+import { customElement } from "lit/decorators.js";
+import { cancelFlash, flashImage, type FlashStage } from "../../api/index.js";
 import { readDriveSelection } from "../../utils/drive-selection.js";
 import { selectedWifi } from "../../utils/wifi.js";
 import { findInstaller } from "../../state/ha-hardware.js";
-import "../../components/install-progress.js";
-import { InstallProgressView } from "../install-progress-view.js";
+import { FlashProgressView } from "../flash-progress-view.js";
 
 /**
  * Failures the user fixes on this computer: a cancelled password prompt or
@@ -47,21 +40,15 @@ function missingTarget(): Error {
 }
 
 @customElement("progress-view")
-export class ProgressView extends InstallProgressView {
+export class ProgressView extends FlashProgressView {
   protected readonly _flow = "flash";
-
-  @state()
-  private _progress: FlashProgress | null = null;
-
-  /** Whether this attempt got as far as the drive. */
-  private _reachedDrive = false;
 
   protected _cancel(attempt: string): Promise<void> {
     return cancelFlash(attempt);
   }
 
-  protected _resetProgress() {
-    this._progress = null;
+  protected _stages() {
+    return STAGES;
   }
 
   protected _startFailure() {
@@ -73,7 +60,6 @@ export class ProgressView extends InstallProgressView {
   }
 
   protected async _install() {
-    this._reachedDrive = false;
     const selections = this._wizardState.selections;
     const drive = readDriveSelection(selections);
     const deviceConfig = selections.deviceConfig;
@@ -97,20 +83,7 @@ export class ProgressView extends InstallProgressView {
           },
           wifi: selectedWifi(selections) ?? null,
         },
-        (progress) => {
-          this._diagnostics?.advance(progress.stage);
-          // Track stage changes for ETA calculation
-          const prevStage = this._progress?.stage;
-          if (prevStage !== progress.stage) {
-            this._stageStartTime = Date.now();
-            this._stageStartBytes = progress.bytes_processed;
-          }
-
-          this._progress = progress;
-          if (["writing", "verifying", "finalizing"].includes(progress.stage)) {
-            this._reachedDrive = true;
-          }
-        },
+        (progress) => this._onProgress(progress),
         attempt
       )
     );
@@ -138,33 +111,7 @@ export class ProgressView extends InstallProgressView {
     return localize("views.sbc.progress_view.stopped_nothing_written");
   }
 
-  render() {
-    const stage = this._progress?.stage || "downloading";
-    return html`
-      <install-progress
-        .stages=${STAGES.map((id) => ({
-          id,
-          label: this._getStageDescription(id),
-        }))}
-        .stage=${stage}
-        .stageTitle=${this._stopping
-          ? localize("common.install.stopping")
-          : this._getStageTitle(stage)}
-        .description=${this._getStageDescription(stage)}
-        .progress=${this._progress?.progress || 0}
-        .bytesProcessed=${this._progress?.bytes_processed || 0}
-        .totalBytes=${this._progress?.total_bytes || 0}
-        .stageStartTime=${this._stageStartTime}
-        .stageStartBytes=${this._stageStartBytes}
-        .indeterminate=${!this._progress?.total_bytes && stage !== "complete"}
-        .measurable=${!!this._progress?.total_bytes || stage === "complete"}
-        .showUnknownBytes=${true}
-        .error=${this._error?.message ?? null}
-      ></install-progress>
-    `;
-  }
-
-  private _getStageTitle(stage: FlashStage): string {
+  protected _stageTitle(stage: FlashStage): string {
     switch (stage) {
       case "downloading":
         return localize("common.install.downloading");
@@ -185,7 +132,7 @@ export class ProgressView extends InstallProgressView {
     }
   }
 
-  private _getStageDescription(stage: FlashStage): string {
+  protected _stageDescription(stage: FlashStage): string {
     const installer = !!findInstaller(
       this._wizardState.selections.deviceConfig?.board
     );

@@ -1,12 +1,13 @@
 import { localize } from "../../localization/localize.js";
-import { html, css } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { html, css, nothing } from "lit";
+import { customElement } from "lit/decorators.js";
 import { wizardState } from "../../state/wizard-state.js";
 import {
   cancelLiveUsb,
   createLiveUsb,
   saveLiveIso,
   type FlashProgress,
+  type FlashStage,
 } from "../../api/index.js";
 import { readDriveSelection } from "../../utils/drive-selection.js";
 import {
@@ -14,8 +15,7 @@ import {
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { throwIfCancelled } from "../../utils/polling.js";
-import "../../components/install-progress.js";
-import { InstallProgressView } from "../install-progress-view.js";
+import { FlashProgressView } from "../flash-progress-view.js";
 
 /**
  * Failures of the ISO's folder or file name, which another location fixes.
@@ -37,44 +37,34 @@ const LOCATION_FAILURES = [
  * The shell stops it, retries it and goes back from it like any install.
  */
 @customElement("live-usb-progress-view")
-export class LiveUsbProgressView extends InstallProgressView {
-  static styles = css`
-    :host {
-      display: flex;
-      flex-direction: column;
-      min-height: 100%;
-    }
-    install-progress {
-      width: 100%;
-      flex: 1;
-    }
-    .keep-plugged-in {
-      margin: 0 auto 1rem;
-      max-width: 500px;
-      padding: 0.75rem 1rem;
-      border-radius: 8px;
-      text-align: center;
-      font-weight: 500;
-      color: var(--ha-error-color, #db4437);
-      background-color: rgba(219, 68, 55, 0.1);
-      border: 1px solid rgba(219, 68, 55, 0.3);
-    }
-  `;
+export class LiveUsbProgressView extends FlashProgressView {
+  static styles = [
+    FlashProgressView.styles,
+    css`
+      .keep-plugged-in {
+        margin: 0 auto 1rem;
+        max-width: 500px;
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        text-align: center;
+        font-weight: 500;
+        color: var(--ha-error-color, #db4437);
+        background-color: rgba(219, 68, 55, 0.1);
+        border: 1px solid rgba(219, 68, 55, 0.3);
+      }
+    `,
+  ];
 
   protected readonly _flow = "flash";
-
-  @state()
-  private _progress: FlashProgress | null = null;
-
-  /** Whether this attempt got as far as the stick. */
-  private _reachedDrive = false;
 
   protected _cancel(attempt: string): Promise<void> {
     return cancelLiveUsb(attempt);
   }
 
-  protected _resetProgress() {
-    this._progress = null;
+  protected _stages(): readonly FlashStage[] {
+    return this._usb
+      ? ["downloading", "extracting", "writing", "verifying", "finalizing"]
+      : ["downloading", "extracting"];
   }
 
   private get _usb(): boolean {
@@ -82,25 +72,8 @@ export class LiveUsbProgressView extends InstallProgressView {
   }
 
   protected async _install(signal: AbortSignal) {
-    this._reachedDrive = false;
     const selections = wizardState.getState().selections;
-    const onProgress = (progress: FlashProgress) => {
-      this._diagnostics?.advance(progress.stage);
-      const previous = this._progress;
-      // The download stage covers two files; time each one on its own.
-      if (
-        previous?.stage !== progress.stage ||
-        previous.total_bytes !== progress.total_bytes ||
-        progress.bytes_processed < previous.bytes_processed
-      ) {
-        this._stageStartTime = Date.now();
-        this._stageStartBytes = progress.bytes_processed;
-      }
-      if (["writing", "verifying", "finalizing"].includes(progress.stage)) {
-        this._reachedDrive = true;
-      }
-      this._progress = progress;
-    };
+    const onProgress = (progress: FlashProgress) => this._onProgress(progress);
 
     if (this._usb) {
       const drive = readDriveSelection(selections);
@@ -158,39 +131,16 @@ export class LiveUsbProgressView extends InstallProgressView {
         );
   }
 
-  render() {
-    const stages = this._usb
-      ? ["downloading", "extracting", "writing", "verifying", "finalizing"]
-      : ["downloading", "extracting"];
-    const stage = this._progress?.stage || "downloading";
-    return html`
-      <install-progress
-        .stages=${stages.map((id) => ({ id, label: this._describe(id) }))}
-        .stage=${stage}
-        .stageTitle=${this._stopping
-          ? localize("common.install.stopping")
-          : this._title(stage)}
-        .description=${this._describe(stage)}
-        .progress=${this._progress?.progress || 0}
-        .bytesProcessed=${this._progress?.bytes_processed || 0}
-        .totalBytes=${this._progress?.total_bytes || 0}
-        .stageStartTime=${this._stageStartTime}
-        .stageStartBytes=${this._stageStartBytes}
-        .indeterminate=${!this._progress?.total_bytes && stage !== "complete"}
-        .measurable=${!!this._progress?.total_bytes || stage === "complete"}
-        .showUnknownBytes=${true}
-        .error=${this._error?.message ?? null}
-      >
-        ${this._usb && !this._error
-          ? html`<p class="keep-plugged-in">
-              ${localize("views.live_usb.live_usb_progress_view.do_not_remove")}
-            </p>`
-          : ""}
-      </install-progress>
-    `;
+  /** The stick is being written: pulling it out now leaves it unusable */
+  protected _renderNote() {
+    return this._usb && !this._error
+      ? html`<p class="keep-plugged-in">
+          ${localize("views.live_usb.live_usb_progress_view.do_not_remove")}
+        </p>`
+      : nothing;
   }
 
-  private _title(stage: string): string {
+  protected _stageTitle(stage: FlashStage): string {
     switch (stage) {
       case "downloading":
         return localize("common.install.downloading");
@@ -211,7 +161,7 @@ export class LiveUsbProgressView extends InstallProgressView {
     }
   }
 
-  private _describe(stage: string): string {
+  protected _stageDescription(stage: FlashStage): string {
     switch (stage) {
       case "downloading":
         return this._usb
