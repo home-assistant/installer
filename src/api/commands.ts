@@ -2,6 +2,7 @@ import { formatNumber, localize } from "../localization/localize.js";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { failMockOperation } from "./mock-failures.js";
+import { getPlatform } from "../utils/platform.js";
 import type {
   BlockDevice,
   DeviceManifest,
@@ -311,10 +312,10 @@ export async function getSystemInfo(): Promise<SystemInfo> {
 // UTM Commands (macOS only)
 // ============================================================================
 
-/** Whether this Mac can run a UTM install. Intel Macs can't. */
+/** Whether this computer can run a UTM install: only Apple silicon Macs can. */
 export async function isUtmSupported(): Promise<boolean> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
-    return true;
+    return getPlatform() === "macos";
   }
   return invoke<boolean>("utm_supported");
 }
