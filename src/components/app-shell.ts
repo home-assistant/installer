@@ -257,7 +257,6 @@ export class AppShell extends LitElement {
         ></connection-check-view>`;
       case "welcome":
         return html`<welcome-view
-          role="main"
           @navigate=${this._onNavigate}
         ></welcome-view>`;
       case "path-selection":
@@ -275,7 +274,6 @@ export class AppShell extends LitElement {
         return this._renderWizard();
       default:
         return html`<welcome-view
-          role="main"
           @navigate=${this._onNavigate}
         ></welcome-view>`;
     }

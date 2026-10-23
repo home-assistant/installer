@@ -26,6 +26,7 @@ import {
 const CONNECTED = MOCK_BLOCK_DEVICES[0];
 
 interface WizardShell extends HTMLElement {
+  flowTitle: string;
   nextLabel: string;
   nextDisabled: boolean;
   nextBusy: boolean;
@@ -319,6 +320,42 @@ describe("app-shell", () => {
       expect(shellOf(el).nextDisabled).to.equal(true);
     });
   }
+
+  it("names the flow in the wizard's main heading", async () => {
+    await enterSbcFlow(el);
+    for (const [flow, title] of [
+      ["sbc", "Raspberry Pi & other boards"],
+      ["minipc", "Mini PC or other computer"],
+      ["ha-hardware", "Home Assistant hardware"],
+      ["proxmox", "Proxmox server"],
+      ["vm", "Virtual machine"],
+    ] as const) {
+      wizardState.startFlow(flow);
+      await el.updateComplete;
+      expect(shellOf(el).flowTitle).to.equal(title);
+    }
+  });
+
+  it("puts each screen before a flow in the main landmark", async () => {
+    // The welcome screen has a footer of its own, outside it
+    const welcome = el.shadowRoot!.querySelector("welcome-view")!;
+    expect(welcome.shadowRoot!.querySelector("main h1")).to.exist;
+    expect(welcome.shadowRoot!.querySelector("main footer")).to.be.null;
+
+    fire(welcome, "navigate", { view: "path-selection" });
+    await el.updateComplete;
+    expect(
+      el.shadowRoot!.querySelector("path-selection-view")!.getAttribute("role")
+    ).to.equal("main");
+
+    fire(el.shadowRoot!.querySelector("path-selection-view")!, "navigate", {
+      view: "other-options",
+    });
+    await el.updateComplete;
+    expect(
+      el.shadowRoot!.querySelector("other-options-view")!.getAttribute("role")
+    ).to.equal("main");
+  });
 
   describe("connection gate", () => {
     it("starts the selected flow only after a successful retry", async () => {

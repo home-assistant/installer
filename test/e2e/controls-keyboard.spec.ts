@@ -110,6 +110,13 @@ test("the Home Assistant hardware flow works with the keyboard alone", async ({
     "Space"
   );
   await next(page);
+  await activate(
+    page,
+    page
+      .locator("ha-hardware-device-selection-view info-dialog")
+      .getByRole("button", { name: "Reinstall", exact: true })
+  );
+  await expect(page.locator("drive-selection-view")).toBeVisible();
   await activate(page, page.getByRole("radio").first(), "Space");
   await next(page);
   await activate(
@@ -121,7 +128,7 @@ test("the Home Assistant hardware flow works with the keyboard alone", async ({
     page.getByRole("button", { name: "Erase and install", exact: true })
   );
   await expect(page.locator("ha-hardware-success-view")).toBeVisible({
-    timeout: 45000,
+    timeout: 20000,
   });
 });
 

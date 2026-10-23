@@ -753,3 +753,53 @@ test("disk installation keeps heading focus after the confirmation dialog closes
     "You're all set!"
   );
 });
+
+// A keyboard can only scroll what it can focus. The step's area takes the
+// focus once the step grows past the window, also after it opened, and gives
+// it up again when it fits.
+test("a step that grows past the window can be scrolled with the keyboard", async ({
+  page,
+}) => {
+  const main = page.locator("wizard-shell main");
+  /** Adds a block as tall as `height` to the bottom of `step`, or removes it. */
+  const grow = (step: string, height: number) =>
+    page.locator(step).evaluate((element, height) => {
+      const root = element.shadowRoot!;
+      root.querySelector(".grown")?.remove();
+      if (!height) return;
+      const block = document.createElement("div");
+      block.className = "grown";
+      block.style.height = `${height}px`;
+      root.append(block);
+    }, height);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Let's go" }).click();
+  await page
+    .locator('option-card[heading="Mini PC or other computer"]')
+    .click();
+  // The shared step styles, and the media step's own
+  for (const step of ["minipc-setup-method-view", "minipc-media-view"]) {
+    await expect(page.locator(step)).toBeVisible();
+    await expect(main).not.toHaveAttribute("tabindex");
+
+    await grow(step, 2000);
+    await expect(main).toHaveAttribute("tabindex", "0");
+    await main.focus();
+    await page.keyboard.press("End");
+    await expect
+      .poll(() => main.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+
+    await grow(step, 0);
+    await expect(main).not.toHaveAttribute("tabindex");
+
+    if (step === "minipc-setup-method-view") {
+      await page
+        .locator(step)
+        .locator("option-card")
+        .filter({ hasText: "I need to boot from USB" })
+        .click();
+    }
+  }
+});

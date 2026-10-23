@@ -22,7 +22,8 @@ export class WelcomeView extends LitElement {
     reducedMotionStyles,
     css`
       /* The content centers in the space above the footer, and the footer
-         sits at the bottom. A window too low for both scrolls, footer last. */
+         sits at the bottom. A window too low for both scrolls, footer last.
+         The footer is the page's own, so it stays out of the main landmark. */
       :host {
         display: flex;
         flex-direction: column;
@@ -56,8 +57,17 @@ export class WelcomeView extends LitElement {
         }
       }
 
+      main {
+        flex: 1 0 auto;
+        align-self: stretch;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+
       .logo-container {
-        margin: auto 0 2rem;
+        margin: 0 0 2rem;
         font-size: inherit;
         line-height: 1;
       }
@@ -88,7 +98,6 @@ export class WelcomeView extends LitElement {
          in the middle however wide the two sides are */
       .welcome-footer {
         align-self: stretch;
-        margin-top: auto;
         padding-top: 2rem;
         display: grid;
         grid-template-columns: 1fr auto 1fr;
@@ -170,29 +179,31 @@ export class WelcomeView extends LitElement {
 
   render() {
     return html`
-      <h1 class="logo-container" @click=${this._onLogoClick}>
-        <img
-          class="logo logo-light"
-          src="/assets/home-assistant-logo-light.svg"
-          alt=${localize("brand.home_assistant")}
-        />
-        <img
-          class="logo logo-dark"
-          src="/assets/home-assistant-logo-dark.svg"
-          alt=${localize("brand.home_assistant")}
-        />
-      </h1>
+      <main>
+        <h1 class="logo-container" @click=${this._onLogoClick}>
+          <img
+            class="logo logo-light"
+            src="/assets/home-assistant-logo-light.svg"
+            alt=${localize("brand.home_assistant")}
+          />
+          <img
+            class="logo logo-dark"
+            src="/assets/home-assistant-logo-dark.svg"
+            alt=${localize("brand.home_assistant")}
+          />
+        </h1>
 
-      <p class="intro">${localize("views.welcome_view.subtitle")}</p>
+        <p class="intro">${localize("views.welcome_view.subtitle")}</p>
 
-      <wa-button
-        variant="brand"
-        appearance="accent"
-        size="l"
-        @click=${this._onLetsGo}
-      >
-        ${localize("views.welcome_view.let_s_go")} <span slot="end">→</span>
-      </wa-button>
+        <wa-button
+          variant="brand"
+          appearance="accent"
+          size="l"
+          @click=${this._onLetsGo}
+        >
+          ${localize("views.welcome_view.let_s_go")} <span slot="end">→</span>
+        </wa-button>
+      </main>
 
       <footer class="welcome-footer">
         <diagnostics-actions class="report"></diagnostics-actions>

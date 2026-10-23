@@ -1,6 +1,6 @@
 import { localize } from "../localization/localize.js";
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { customElement, property, query, state } from "lit/decorators.js";
 import {
   wizardState,
   type WizardState,
@@ -117,6 +117,12 @@ export class WizardShell extends LitElement {
 
   private _resizeObserver = new ResizeObserver(() => this._checkScrolling());
 
+  @query(".content")
+  private _content?: HTMLElement;
+
+  @query("slot")
+  private _slot?: HTMLSlotElement;
+
   /** What is being installed, as the page's main heading */
   @property({ type: String, attribute: "flow-title" })
   flowTitle = "";
@@ -151,6 +157,8 @@ export class WizardShell extends LitElement {
     this._unsubscribe = wizardState.subscribe((state) => {
       this._wizardState = state;
     });
+    // Put back in the page with the same step, the slot doesn't change
+    if (this.hasUpdated) this._observeContent();
   }
 
   disconnectedCallback() {
@@ -161,19 +169,25 @@ export class WizardShell extends LitElement {
 
   // A keyboard can only scroll what it can focus, and some steps have
   // nothing focusable in them. Only when they overflow, so it isn't an
-  // extra tab stop on every step.
-  private _observeContent(event: Event) {
-    const slot = event.target as HTMLSlotElement;
+  // extra tab stop on every step. A step is at least as tall as the content
+  // area and grows with what it shows, so its size and the area's say when.
+  private _observeContent() {
+    if (!this._content || !this._slot) return;
     this._resizeObserver.disconnect();
-    this._resizeObserver.observe(slot.parentElement!);
-    for (const element of slot.assignedElements()) {
+    this._resizeObserver.observe(this._content);
+    for (const element of this._slot.assignedElements()) {
       this._resizeObserver.observe(element);
     }
   }
 
   private _checkScrolling() {
-    const content = this.renderRoot.querySelector(".content");
-    this._scrolls = !!content && content.scrollHeight > content.clientHeight;
+    const content = this._content;
+    // Both are rounded, so at a fractional size the content can measure a
+    // pixel more than its box without scrolling
+    this._scrolls =
+      !!content &&
+      (content.scrollHeight - content.clientHeight > 1 ||
+        content.scrollWidth - content.clientWidth > 1);
   }
 
   protected willUpdate(changed: PropertyValues<this>) {
@@ -232,7 +246,9 @@ export class WizardShell extends LitElement {
       </header>
 
       <main class="content" tabindex=${this._scrolls ? "0" : nothing}>
-        <h1 class="sr-only">${this.flowTitle}</h1>
+        ${this.flowTitle
+          ? html`<h1 class="sr-only">${this.flowTitle}</h1>`
+          : nothing}
         <slot @slotchange=${this._observeContent}></slot>
       </main>
 
