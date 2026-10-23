@@ -6,6 +6,7 @@
 import { checkHaReady } from "../api/commands.js";
 import { localize } from "../localization/localize.js";
 import { wizardState } from "../state/wizard-state.js";
+import { homeAssistantUrl } from "./external-url.js";
 import { waitForHaSetup, type HaSetupProgress } from "./ha-setup.js";
 import { PollTimeoutError, pollUntil, throwIfCancelled } from "./polling.js";
 
@@ -118,7 +119,7 @@ export async function waitForHomeAssistant({
     interval: POLL_INTERVAL_MS,
     timeout: HA_UPDATED_TIMEOUT_MS,
     signal,
-    timeoutMessage: messages.notUpdated(`http://${ipAddress}`),
+    timeoutMessage: messages.notUpdated(homeAssistantUrl(ipAddress)),
     onProgress: onSetup,
   });
   throwIfCancelled(signal);
@@ -132,7 +133,7 @@ export function checkedAddress(
   ipAddress: string | undefined
 ): string | null {
   return ipAddress && (stage === "ready" || stage === "updating")
-    ? `http://${ipAddress}`
+    ? homeAssistantUrl(ipAddress)
     : null;
 }
 

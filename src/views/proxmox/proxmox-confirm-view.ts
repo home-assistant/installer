@@ -7,13 +7,11 @@ import { proxmoxVmConfig } from "../../state/vm-defaults.js";
 import { getHaosRelease } from "../../api/commands.js";
 import {
   HaosVersion,
-  renderHaosVersionRow,
-  renderSummaryIcon,
   renderSummaryRow,
+  renderVmSummaryRows,
   summaryStyles,
-} from "../../components/summary-card.js";
-import { formatDiskSize, formatRam } from "../../utils/format.js";
-import { mdiHarddisk, mdiMonitor, mdiServer } from "../../utils/icons.js";
+} from "../../utils/summary-styles.js";
+import { mdiServer } from "../../utils/icons.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 @customElement("proxmox-confirm-view")
@@ -89,38 +87,14 @@ export class ProxmoxConfirmView extends LitElement {
 
         <div class="divider"></div>
 
-        <!-- VM Configuration -->
-        ${renderSummaryRow(
-          renderSummaryIcon(mdiMonitor),
-          localize("common.virtual_machine"),
+        ${renderVmSummaryRows(
+          config,
+          this._haosVersion.version,
           localizeContent("views.proxmox.proxmox_confirm_view.name_and_id", {
             name: config.name,
             id: config.vm_id,
-          }),
-          html`<p class="summary-detail">
-            ${localizeContent("common.vm.cores_and_memory", {
-              cores: config.cpu_cores,
-              memory: formatRam(config.memory_mb),
-            })}
-          </p>`
+          })
         )}
-
-        <div class="divider"></div>
-
-        <!-- Disk Size -->
-        ${renderSummaryRow(
-          renderSummaryIcon(mdiHarddisk),
-          localize("vm.disk_storage"),
-          formatDiskSize(config.disk_size_gb),
-          html`<p class="summary-detail">
-            ${localize("common.vm.virtual_disk_description")}
-          </p>`
-        )}
-
-        <div class="divider"></div>
-
-        <!-- HAOS Version -->
-        ${renderHaosVersionRow(this._haosVersion.version)}
       </div>
     `;
   }

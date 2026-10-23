@@ -1,5 +1,16 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 
+/** The name Home Assistant announces itself by on the local network */
+export const HOME_ASSISTANT_HOST = "homeassistant.local";
+
+/**
+ * Where Home Assistant answers: at its address, or at the name it announces
+ * while the address isn't known.
+ */
+export function homeAssistantUrl(address?: string | null): string {
+  return `http://${address || HOME_ASSISTANT_HOST}`;
+}
+
 export async function openExternalUrl(url: string) {
   try {
     await openUrl(url);

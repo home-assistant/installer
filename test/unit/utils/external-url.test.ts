@@ -1,5 +1,8 @@
 import { expect } from "@open-wc/testing";
-import { openExternalUrl } from "../../../src/utils/external-url.js";
+import {
+  homeAssistantUrl,
+  openExternalUrl,
+} from "../../../src/utils/external-url.js";
 
 describe("utils/external-url", () => {
   async function openedWithFallback(urls: string[]) {
@@ -53,5 +56,12 @@ describe("utils/external-url", () => {
         "not a url",
       ])
     ).to.deep.equal([]);
+  });
+
+  it("points at Home Assistant's address, or its name while there is none", () => {
+    expect(homeAssistantUrl("192.0.2.50")).to.equal("http://192.0.2.50");
+    for (const address of [undefined, null, ""]) {
+      expect(homeAssistantUrl(address)).to.equal("http://homeassistant.local");
+    }
   });
 });

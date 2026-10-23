@@ -8,6 +8,7 @@
 import { checkHaUpdated, getHaSetupStatus } from "../api/commands.js";
 import type { HaSetupProblem } from "../api/types.js";
 import { localize } from "../localization/localize.js";
+import { homeAssistantUrl } from "./external-url.js";
 import type { InstallerError } from "./installer-error.js";
 import { pollUntil, throwIfCancelled } from "./polling.js";
 
@@ -139,7 +140,7 @@ export async function waitForHaSetup(
           !downloaded &&
           now - Math.max(problemSince, movedAt) >= HA_SETUP_STALL_MS
         ) {
-          throw new HaSetupStalledError(problem, `http://${ipAddress}`);
+          throw new HaSetupStalledError(problem, homeAssistantUrl(ipAddress));
         }
         return null;
       },

@@ -1,9 +1,9 @@
 import { LitElement, html, css } from "lit";
-import { localize, localizeContent } from "../../localization/localize.js";
+import { localizeContent } from "../../localization/localize.js";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { utmVmConfig } from "../../state/vm-defaults.js";
-import { openExternalLink } from "../../utils/external-url.js";
+import { vmSuccessSteps, vmTipPrefix } from "../../utils/vm-success.js";
 
 import "../../components/install-success.js";
 
@@ -36,11 +36,6 @@ export class UtmSuccessView extends LitElement {
   render() {
     const selections = this._wizardState.selections;
     const { name } = utmVmConfig(selections);
-    const ipAddress = selections.ipAddress;
-    const haUrl = ipAddress
-      ? `http://${ipAddress}`
-      : "http://homeassistant.local";
-    const displayUrl = ipAddress || "homeassistant.local";
 
     return html`
       <install-success
@@ -48,21 +43,9 @@ export class UtmSuccessView extends LitElement {
           "views.utm.utm_success_view.subtitle",
           { name }
         )}`}
-        .steps=${[
-          localize("common.vm.step_wait"),
-          html`${localizeContent("common.vm.step_open", {
-            url: html`<a
-              href=${haUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              @click=${openExternalLink}
-              >${displayUrl}</a
-            >`,
-          })}`,
-          localize("common.vm.step_onboard"),
-        ]}
+        .steps=${vmSuccessSteps(selections.ipAddress)}
         .tip=${html`${localizeContent("views.utm.utm_success_view.manage_tip", {
-          tip_prefix: html`<strong>${localize("common.vm.tip")}</strong>`,
+          tip_prefix: vmTipPrefix(),
         })}`}
       ></install-success>
     `;

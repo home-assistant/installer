@@ -5,6 +5,7 @@ import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import { proxmoxVmConfig } from "../../state/vm-defaults.js";
 import { openExternalLink } from "../../utils/external-url.js";
 import { linkStyles } from "../../utils/link-styles.js";
+import { vmSuccessSteps, vmTipPrefix } from "../../utils/vm-success.js";
 
 import "../../components/inline-notice.js";
 import "../../components/install-success.js";
@@ -48,11 +49,6 @@ export class ProxmoxSuccessView extends LitElement {
   render() {
     const selections = this._wizardState.selections;
     const { name, vm_id, node } = proxmoxVmConfig(selections);
-    const ipAddress = selections.ipAddress;
-    const haUrl = ipAddress
-      ? `http://${ipAddress}`
-      : "http://homeassistant.local";
-    const displayUrl = ipAddress || "homeassistant.local";
 
     return html`
       <install-success
@@ -61,23 +57,11 @@ export class ProxmoxSuccessView extends LitElement {
           id: vm_id,
           node,
         })}
-        .steps=${[
-          localize("common.vm.step_wait"),
-          html`${localizeContent("common.vm.step_open", {
-            url: html`<a
-              href=${haUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              @click=${openExternalLink}
-              >${displayUrl}</a
-            >`,
-          })}`,
-          localize("common.vm.step_onboard"),
-        ]}
+        .steps=${vmSuccessSteps(selections.ipAddress)}
         .tip=${html`${localizeContent(
           "views.proxmox.proxmox_success_view.manage_tip",
           {
-            tip_prefix: html`<strong>${localize("common.vm.tip")}</strong>`,
+            tip_prefix: vmTipPrefix(),
           }
         )}`}
         >${this._renderImportReminder()}</install-success

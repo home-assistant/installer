@@ -5,10 +5,11 @@ import {
   type ReactiveController,
   type ReactiveControllerHost,
 } from "lit";
-import type { HaosRelease } from "../api/types.js";
-import { localize } from "../localization/localize.js";
-import { logFrontendError } from "../utils/diagnostics.js";
-import { homeAssistantLogo } from "../utils/icons.js";
+import type { HaosRelease, UtmVmConfig } from "../api/types.js";
+import { localize, localizeContent } from "../localization/localize.js";
+import { logFrontendError } from "./diagnostics.js";
+import { formatDiskSize, formatRam } from "./format.js";
+import { homeAssistantLogo, mdiHarddisk, mdiMonitor } from "./icons.js";
 
 /** The card the confirm steps sum up an install in, one row per part. */
 export const summaryStyles = css`
@@ -149,6 +150,49 @@ export function renderHaosVersionRow(version: string | null | undefined) {
       ${localize("common.confirm.latest_stable_release")}
     </p>`
   );
+}
+
+/**
+ * The rows the UTM and Proxmox confirm steps share: the VM the install
+ * creates, its disk and the Home Assistant OS release. `name` is the VM's
+ * row value, for a flow that shows more than the name there.
+ */
+export function renderVmSummaryRows(
+  config: Pick<
+    UtmVmConfig,
+    "name" | "cpu_cores" | "memory_mb" | "disk_size_gb"
+  >,
+  version: string | null | undefined,
+  name: unknown = config.name
+) {
+  return html`
+    ${renderSummaryRow(
+      renderSummaryIcon(mdiMonitor),
+      localize("common.virtual_machine"),
+      name,
+      html`<p class="summary-detail">
+        ${localizeContent("common.vm.cores_and_memory", {
+          cores: config.cpu_cores,
+          memory: formatRam(config.memory_mb),
+        })}
+      </p>`
+    )}
+
+    <div class="divider"></div>
+
+    ${renderSummaryRow(
+      renderSummaryIcon(mdiHarddisk),
+      localize("vm.disk_storage"),
+      formatDiskSize(config.disk_size_gb),
+      html`<p class="summary-detail">
+        ${localize("common.vm.virtual_disk_description")}
+      </p>`
+    )}
+
+    <div class="divider"></div>
+
+    ${renderHaosVersionRow(version)}
+  `;
 }
 
 /**

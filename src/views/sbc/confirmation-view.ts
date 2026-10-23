@@ -13,7 +13,7 @@ import {
   renderSummaryIcon,
   renderSummaryRow,
   summaryStyles,
-} from "../../components/summary-card.js";
+} from "../../utils/summary-styles.js";
 import {
   findInstaller,
   installerName,

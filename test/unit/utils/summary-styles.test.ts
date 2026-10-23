@@ -6,8 +6,9 @@ import {
   renderHaosVersionRow,
   renderSummaryIcon,
   renderSummaryRow,
+  renderVmSummaryRows,
   summaryStyles,
-} from "../../../src/components/summary-card.js";
+} from "../../../src/utils/summary-styles.js";
 import { mdiMonitor } from "../../../src/utils/icons.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../tauri-ipc.js";
 
@@ -38,7 +39,7 @@ function host() {
   return result satisfies ReactiveControllerHost & { updates: number };
 }
 
-describe("summary-card", () => {
+describe("summary-styles", () => {
   afterEach(() => {
     restoreTauriIpc();
   });
@@ -136,6 +137,50 @@ describe("summary-card", () => {
       ]);
     });
   }
+
+  describe("renderVmSummaryRows", () => {
+    const config = {
+      name: "Home Assistant",
+      cpu_cores: 6,
+      memory_mb: 8192,
+      disk_size_gb: 128,
+    };
+
+    it("sums up the VM, its disk and the release, divided", () => {
+      const container = rendered(renderVmSummaryRows(config, "16.3"));
+      expect(
+        [...container.querySelectorAll(".summary-row")].map(lines)
+      ).to.deep.equal([
+        ["Virtual machine", "Home Assistant", "6 CPU cores, 8 GB RAM"],
+        ["Storage", "128 GB", "Virtual disk for Home Assistant data"],
+        [
+          "Home Assistant Operating System",
+          "Version 16.3",
+          "Latest stable release",
+        ],
+      ]);
+      expect(
+        [...container.children].map((child) => child.className)
+      ).to.deep.equal([
+        "summary-row",
+        "divider",
+        "summary-row",
+        "divider",
+        "summary-row",
+      ]);
+    });
+
+    it("shows the VM as the flow names it", () => {
+      const row = rendered(
+        renderVmSummaryRows(config, "16.3", "Home Assistant (ID: 105)")
+      ).querySelector(".summary-row")!;
+      expect(lines(row)).to.deep.equal([
+        "Virtual machine",
+        "Home Assistant (ID: 105)",
+        "6 CPU cores, 8 GB RAM",
+      ]);
+    });
+  });
 
   describe("HaosVersion", () => {
     const release: HaosRelease = { version: "16.3", images: [] };
