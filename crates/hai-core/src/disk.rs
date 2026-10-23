@@ -171,15 +171,38 @@ pub(super) fn normalize_serial(serial: Option<&str>) -> Option<String> {
 }
 
 fn check_identity(devices: &[BlockDevice], id: &str, expected: &ExpectedDevice) -> Result<()> {
-    if devices
+    let Some(device) = devices
         .iter()
-        .any(|device| device.id == id && expected.matches(device))
-    {
+        .find(|device| device.id == id && expected.matches(device))
+    else {
+        return Err(Error::DeviceNotFound(
+            "The selected drive changed or was disconnected. Select it again.".into(),
+        ));
+    };
+
+    // The app only offers removable drives. Refuse anything else here too, so
+    // a new caller or a regression in the app can never reach an internal disk.
+    if !device.removable {
+        return Err(Error::InvalidConfig(format!(
+            "{id} is not a removable drive and cannot be overwritten"
+        )));
+    }
+    Ok(())
+}
+
+/// The sector size every image is laid out for. The partition tables in the
+/// images count in 512-byte sectors, so on a drive with larger sectors the
+/// firmware looks for them in the wrong place.
+const SUPPORTED_SECTOR_SIZE: u64 = 512;
+
+/// Refuse a drive whose logical sectors aren't 512 bytes, before anything on
+/// it is touched.
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows", test))]
+fn ensure_supported_sector_size(sector_size: u64) -> Result<()> {
+    if sector_size == SUPPORTED_SECTOR_SIZE {
         Ok(())
     } else {
-        Err(Error::DeviceNotFound(
-            "The selected drive changed or was disconnected. Select it again.".into(),
-        ))
+        Err(Error::UnsupportedSectorSize(sector_size))
     }
 }
 
@@ -394,6 +417,66 @@ impl DeviceBackend for Backend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn usb_stick(removable: bool) -> BlockDevice {
+        BlockDevice {
+            id: "/dev/sdb".into(),
+            name: "SanDisk Ultra".into(),
+            size: 32_000_000_000,
+            device_type: crate::types::DeviceType::UsbDrive,
+            removable,
+            model: Some("Ultra".into()),
+            vendor: Some("SanDisk".into()),
+            serial: None,
+        }
+    }
+
+    fn expected(device: &BlockDevice) -> ExpectedDevice {
+        ExpectedDevice {
+            size: Some(device.size),
+            model: device.model.clone(),
+            vendor: device.vendor.clone(),
+            serial: device.serial.clone(),
+        }
+    }
+
+    #[test]
+    fn identity_check_accepts_the_selected_removable_drive() {
+        let stick = usb_stick(true);
+        assert!(
+            check_identity(std::slice::from_ref(&stick), "/dev/sdb", &expected(&stick)).is_ok()
+        );
+    }
+
+    #[test]
+    fn identity_check_refuses_a_drive_that_is_not_removable() {
+        let disk = usb_stick(false);
+        let error =
+            check_identity(std::slice::from_ref(&disk), "/dev/sdb", &expected(&disk)).unwrap_err();
+        assert!(matches!(error, Error::InvalidConfig(_)), "{error:?}");
+    }
+
+    #[test]
+    fn identity_check_refuses_a_different_or_missing_drive() {
+        let stick = usb_stick(true);
+        let mut other = stick.clone();
+        other.size += 1;
+        for devices in [vec![other], vec![]] {
+            let error = check_identity(&devices, "/dev/sdb", &expected(&stick)).unwrap_err();
+            assert!(matches!(error, Error::DeviceNotFound(_)), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn only_512_byte_sectors_are_supported() {
+        assert!(ensure_supported_sector_size(512).is_ok());
+        for size in [0, 4096, 1024, 2048] {
+            assert!(matches!(
+                ensure_supported_sector_size(size),
+                Err(Error::UnsupportedSectorSize(reported)) if reported == size
+            ));
+        }
+    }
 
     struct CancelledProgress;
 

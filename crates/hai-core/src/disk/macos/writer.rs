@@ -156,6 +156,8 @@ fn write_and_verify(
     progress_tx: mpsc::Sender<FlashProgress>,
 ) -> Result<()> {
     let (block_size, device_size) = device_geometry(disk_id);
+    // Before the password prompt, so the user isn't asked for nothing
+    ensure_supported_sector_size(block_size)?;
     let layout = Layout {
         total_size,
         block_size,
