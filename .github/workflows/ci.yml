@@ -58,12 +58,11 @@ jobs:
 
       # npm audit can't skip an advisory, so this reads its report and fails
       # on every advisory that isn't accepted below. Only accept one that has
-      # no fixed release yet, and say why it can't hurt us:
-      # - GHSA-vfj7-8cjw-p6xm: braces, through @web/test-runner, which only
-      #   expands the glob patterns in our own test config.
+      # no fixed release yet, and say here why it can't hurt us. Separate the
+      # IDs with spaces.
       - name: Audit npm dependencies
         env:
-          ACCEPTED_ADVISORIES: GHSA-vfj7-8cjw-p6xm
+          ACCEPTED_ADVISORIES: ""
         run: |
           npm audit --package-lock-only --json > "$RUNNER_TEMP/audit.json" || true
           jq -nr --arg accepted "$ACCEPTED_ADVISORIES" '
