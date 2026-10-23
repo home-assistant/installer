@@ -37,7 +37,6 @@ test("explains a list of drives that are all too small, and keeps the keyboard o
     .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
   await page.locator("device-selection-view device-card").first().click();
-  await page.locator("wizard-shell .footer-right wa-button").click();
 
   const view = page.locator("drive-selection-view");
   const why = view.locator(".no-usable-drive");
