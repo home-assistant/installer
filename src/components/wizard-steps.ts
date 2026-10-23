@@ -5,6 +5,7 @@ import type { WizardFlow, WizardSelections } from "../state/wizard-state.js";
 import { isValidWifi, selectedWifi } from "../utils/wifi.js";
 import { isYellow } from "../views/ha-hardware/hardware.js";
 import type { HaHardwareDeviceSelectionView } from "../views/ha-hardware/device-selection-view.js";
+import type { LiveIsoLocationView } from "../views/live-usb/live-iso-location-view.js";
 import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-view.js";
 import type { ProxmoxConnectView } from "../views/proxmox/proxmox-connect-view.js";
 
@@ -184,9 +185,48 @@ export const WIZARD_STEPS: Record<
   },
 };
 
+/** The Mini PC steps after choosing to boot from USB, where they differ. */
+export const LIVE_USB_STEPS: Record<string, WizardStepDefinition> = {
+  media: { render: () => html`<minipc-media-view></minipc-media-view>` },
+  drive: {
+    render: () =>
+      html`<live-usb-gate admin
+        ><drive-selection-view></drive-selection-view
+      ></live-usb-gate>`,
+    ready: (selections) => drive.ready!(selections) && !!selections.liveReady,
+  },
+  location: {
+    render: () => html`<live-iso-location-view></live-iso-location-view>`,
+    ready: (selections) =>
+      !!selections.liveReady &&
+      !!selections.liveIsoFolder?.trim() &&
+      !!selections.liveIsoName,
+    // Problems with the folder can still be fixed before the download
+    beforeNext: {
+      run: (view) => (view as LiveIsoLocationView).check(),
+      label: () => localize("components.wizard_steps.checking_location"),
+      until: "selections",
+    },
+  },
+  confirm: {
+    render: () => html`<live-usb-summary-view></live-usb-summary-view>`,
+  },
+  flash: {
+    render: () => html`<live-usb-progress-view></live-usb-progress-view>`,
+  },
+  success: {
+    render: () => html`<live-usb-success-view></live-usb-success-view>`,
+  },
+};
+
 export function wizardStep(
   flow: WizardFlow | null,
-  stepId: string | undefined
+  stepId: string | undefined,
+  selections?: WizardSelections
 ): WizardStepDefinition | undefined {
-  return flow && stepId ? WIZARD_STEPS[flow][stepId] : undefined;
+  if (!flow || !stepId) return undefined;
+  if (flow === "minipc" && selections?.installMethod === "usb-boot") {
+    return LIVE_USB_STEPS[stepId] ?? WIZARD_STEPS.minipc[stepId];
+  }
+  return WIZARD_STEPS[flow][stepId];
 }

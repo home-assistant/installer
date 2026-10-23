@@ -283,7 +283,7 @@ describe("install-progress", () => {
       ></install-progress>`
     );
     expect(el.shadowRoot!.querySelector(".speed")!.textContent).to.match(
-      /KB\/s$/
+      /kB\/s$/
     );
     expect(el.shadowRoot!.querySelector(".eta")!.textContent).to.equal(
       "Less than a minute remaining"

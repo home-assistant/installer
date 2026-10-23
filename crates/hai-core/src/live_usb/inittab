@@ -1,0 +1,11 @@
+# HAI live USB
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+::wait:/sbin/openrc default
+
+# Console 1 runs the installer, console 2 is a root shell for debugging.
+tty1::respawn:/usr/local/bin/hai-live
+tty2::respawn:/sbin/getty 38400 tty2
+
+::ctrlaltdel:/sbin/reboot
+::shutdown:/sbin/openrc shutdown

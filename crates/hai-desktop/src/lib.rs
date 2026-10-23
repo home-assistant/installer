@@ -8,8 +8,10 @@ mod close_guard;
 mod command_error;
 mod commands;
 mod diagnostics;
+mod elevation;
 mod flash_state;
 mod install_jobs;
+mod live_usb;
 
 #[cfg(desktop)]
 use tauri::Manager;
@@ -26,6 +28,7 @@ use commands::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    elevation::wait_for_previous_instance();
     #[cfg(target_os = "linux")]
     ignore_host_gio_modules();
 
@@ -46,10 +49,13 @@ pub fn run() {
         .manage(commands::PendingUtmImages::default())
         .manage(install_jobs::InstallJobs::default())
         .plugin(diagnostics::plugin())
-        .setup(|_app| {
+        .setup(|app| {
             diagnostics::init();
             #[cfg(target_os = "macos")]
-            close_guard::guard_app_termination(_app.handle());
+            close_guard::guard_app_termination(app.handle());
+            if let Ok(dir) = app.path().resource_dir() {
+                live_usb::set_resource_dir(dir);
+            }
             if let Ok(cache) = hai_core::ReleaseSource::cache_dir(&backend::Backend) {
                 if hai_core::download::prune_cached_images(&cache).is_err() {
                     diagnostics::warning("cache_prune_failed");
@@ -58,6 +64,7 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
         .on_window_event(close_guard::on_window_event)
         .invoke_handler(tauri::generate_handler![
@@ -96,7 +103,14 @@ pub fn run() {
             proxmox_get_next_vm_id,
             proxmox_get_vm_status,
             proxmox_check_vm_config,
-            proxmox_create_vm
+            proxmox_create_vm,
+            // Live USB commands (bootable stick or ISO for a mini PC)
+            live_usb::live_usb_status,
+            live_usb::create_live_usb,
+            live_usb::save_live_iso,
+            live_usb::check_iso_location,
+            live_usb::reveal_in_folder,
+            live_usb::relaunch_as_admin
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

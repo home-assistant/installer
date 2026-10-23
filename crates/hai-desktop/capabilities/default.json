@@ -7,10 +7,12 @@
     "core:app:allow-version",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
+    "core:path:allow-resolve-directory",
     "core:webview:allow-internal-toggle-devtools",
     "core:webview:allow-set-webview-zoom",
     "opener:allow-open-url",
     "opener:allow-default-urls",
+    "dialog:allow-open",
     "os:allow-locale"
   ]
 }

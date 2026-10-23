@@ -411,7 +411,7 @@ describe("progress-view", () => {
     await layout.updateComplete;
     expect(
       layout.shadowRoot!.querySelector(".bytes-info")!.textContent
-    ).to.equal("25 KB / 100 KB compressed");
+    ).to.equal("25 kB / 100 kB compressed");
     const bar = layout.shadowRoot!.querySelector("progress-bar")!;
     await bar.updateComplete;
     expect(bar.indeterminate).to.be.false;

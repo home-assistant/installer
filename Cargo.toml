@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/hai-core", "crates/hai-desktop"]
+members = ["crates/hai-core", "crates/hai-desktop", "crates/hai-live"]
 
 [workspace.package]
 version = "0.0.0"
@@ -39,6 +39,15 @@ rustls-platform-verifier = "0.7"
 # Static, so that the build never links a liblzma that users' machines lack
 # (pkg-config finds Homebrew's on the macOS runners).
 liblzma = { version = "0.4", features = ["static"] }
+# Pure Rust xz decoder, for hai-live's static Linux build (no C toolchain needed)
+lzma-rs = "0.3"
+
+# Live USB image building (hai-core's live-usb feature)
+fscommon = "0.1"
+flate2 = "1"
+gpt = "4"
+hadris-iso = { version = "=2.5.0", features = ["unstable-streaming"] }
+tar = "0.4"
 
 # File system
 directories = "6"
@@ -84,6 +93,7 @@ windows-sys = { version = "0.61", features = [
 tauri = { version = "~2.12.0", features = [] }
 tauri-build = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-dialog = "~2.8"
 tauri-plugin-os = "=2.4.0"
 tauri-plugin-single-instance = "2"
 tauri-plugin-log = "2"
