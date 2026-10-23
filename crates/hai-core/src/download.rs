@@ -146,9 +146,10 @@ pub(crate) fn parse_version(version: &str) -> Option<Vec<u64>> {
     parts.into_iter().map(|part| part.parse().ok()).collect()
 }
 
-/// Remove legacy stable archives and recover owned temporary directories
-/// after a process exit. Downloads are not retained between installs. Unknown
-/// names, prereleases, unowned directories, and symlinks are left alone.
+/// Remove images earlier installer versions left behind and recover owned
+/// temporary directories after a process exit. Downloads are not retained
+/// between installs. Other names, unowned directories, and symlinks are left
+/// alone.
 pub fn prune_cached_images(cache_dir: &Path) -> Result<()> {
     for entry in std::fs::read_dir(cache_dir)? {
         let entry = entry?;
@@ -159,30 +160,34 @@ pub fn prune_cached_images(cache_dir: &Path) -> Result<()> {
         if !entry.file_type()?.is_file() {
             continue;
         }
-        let name = entry.file_name();
-        let Some(name) = name.to_str().and_then(|name| name.strip_prefix("haos_")) else {
-            continue;
-        };
-        let Some((stem, _)) = [".img.xz", ".qcow2.xz"]
-            .iter()
-            .find_map(|suffix| name.strip_suffix(suffix).map(|stem| (stem, *suffix)))
-        else {
-            continue;
-        };
-        let Some((board, version)) = stem.rsplit_once('-') else {
-            continue;
-        };
-        let Some(_) = parse_version(version) else {
-            continue;
-        };
-        if !valid_board(board) {
+        if !is_left_behind_image(&entry.file_name().to_string_lossy()) {
             continue;
         }
         if let Err(error) = std::fs::remove_file(entry.path()) {
-            eprintln!("Could not remove legacy cached image: {error}");
+            eprintln!("Could not remove an image an earlier version left behind: {error}");
         }
     }
     Ok(())
+}
+
+/// Whether `name` is an image an earlier installer version kept directly in the
+/// cache folder: `haos_<board>[-<version>]` as a compressed archive or unpacked,
+/// any version including prereleases. Current versions only write inside their
+/// own temporary directories and `live-usb/`, never loose `haos_` files.
+fn is_left_behind_image(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix("haos_") else {
+        return false;
+    };
+    let Some(stem) = [".img.xz", ".qcow2.xz", ".img", ".qcow2"]
+        .iter()
+        .find_map(|suffix| rest.strip_suffix(suffix))
+    else {
+        return false;
+    };
+    !stem.is_empty()
+        && stem.bytes().all(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'-' | b'_' | b'.')
+        })
 }
 
 fn remove_abandoned_image(path: &Path) {
@@ -2315,38 +2320,62 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_removes_legacy_archives_and_preserves_unrecognized_files() {
+    fn cleanup_removes_left_behind_images_and_preserves_unrecognized_files() {
         let cache = tempfile::tempdir().unwrap();
         let retained = [
-            "haos_rpi5-64-18.0.rc1.img.xz",
-            "haos_rpi5-64.img.xz",
             "user-image.qcow2",
             "unfinished.part",
-            "haos_ova-17.0.qcow2",
+            "haos_notes.txt",
+            // No lowercase twin below: macOS file systems ignore case
+            "HAOS_odroid-n2.img",
+            "haos_.img",
+            "haos_rpi5 64.img",
         ];
-        for name in retained.iter().chain(
-            [
-                "haos_rpi5-64-17.9.img.xz",
-                "haos_rpi5-64-9.12.img.xz",
-                "haos_generic-x86-64-16.0.qcow2.xz",
-            ]
-            .iter(),
-        ) {
+        // What earlier versions left: compressed or unpacked, with or without
+        // a version, prereleases too
+        let removed = [
+            "haos_rpi5-64-17.9.img.xz",
+            "haos_rpi5-64-9.12.img.xz",
+            "haos_generic-x86-64-16.0.qcow2.xz",
+            "haos_rpi5-64-18.0.rc1.img.xz",
+            "haos_rpi5-64.img.xz",
+            "haos_ova-17.0.qcow2",
+            "haos_generic-aarch64-16.3.img",
+            "haos_generic-aarch64.qcow2",
+            "haos_rpi5-64.img",
+        ];
+        for name in retained.iter().chain(removed.iter()) {
             std::fs::write(cache.path().join(name), b"archive").unwrap();
         }
+        // The live USB flow keeps its files in a folder of its own
+        let live_usb = cache.path().join("live-usb").join("haos").join("18.3");
+        std::fs::create_dir_all(&live_usb).unwrap();
+        std::fs::write(live_usb.join("haos_generic-x86-64-18.3.img.xz"), b"live").unwrap();
         let active = TemporaryImage::new(cache.path(), ImageFormat::Raw).unwrap();
         std::fs::write(active.archive_path(), b"active").unwrap();
+
         prune_cached_images(cache.path()).unwrap();
         for name in retained {
             assert!(cache.path().join(name).exists(), "{name}");
         }
-        assert!(!cache.path().join("haos_rpi5-64-17.9.img.xz").exists());
-        assert!(!cache.path().join("haos_rpi5-64-9.12.img.xz").exists());
-        assert!(!cache
-            .path()
-            .join("haos_generic-x86-64-16.0.qcow2.xz")
-            .exists());
+        for name in removed {
+            assert!(!cache.path().join(name).exists(), "{name}");
+        }
+        assert!(live_usb.join("haos_generic-x86-64-18.3.img.xz").exists());
         assert!(active.archive_path().exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_leaves_a_symlink_named_like_an_image_alone() {
+        let cache = tempfile::tempdir().unwrap();
+        let target = tempfile::NamedTempFile::new().unwrap();
+        let link = cache.path().join("haos_rpi5-64.img");
+        std::os::unix::fs::symlink(target.path(), &link).unwrap();
+
+        prune_cached_images(cache.path()).unwrap();
+        assert!(std::fs::symlink_metadata(&link).is_ok());
+        assert!(target.path().exists());
     }
 
     #[test]
