@@ -200,7 +200,7 @@ describe("proxmox-connect-view", () => {
     await typeInto(el, inputs[1], "root@pam");
     await settled(inputs);
     expect(hints(inputs).slice(0, 3)).to.deep.equal([
-      "Full URL to your Proxmox server (for example, https://192.168.1.100:8006)",
+      "The address you open the Proxmox web interface on",
       "Usually root@pam for the default admin account",
       "Enter the password",
     ]);
@@ -211,6 +211,15 @@ describe("proxmox-connect-view", () => {
     // Next again goes to the field still to fix
     expect(await el.connect()).to.be.false;
     expect(el.shadowRoot!.activeElement === inputs[2]).to.be.true;
+  });
+
+  it("says who needs the authenticator app code", async () => {
+    const { inputs } = await renderView();
+
+    expect(inputs[3].hint).to.equal(
+      "Only if your Proxmox account uses two-factor authentication"
+    );
+    expect(inputs[2].placeholder).to.equal("");
   });
 
   it("says what is missing to screen readers on the field itself", async () => {
