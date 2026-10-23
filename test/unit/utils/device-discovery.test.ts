@@ -95,6 +95,55 @@ describe("device-discovery", () => {
     expect(await find(signal)).to.equal("192.0.2.50");
   });
 
+  describe("after its first minute", () => {
+    const realNow = Date.now;
+    let clockOffset = 0;
+
+    beforeEach(() => {
+      clockOffset = 0;
+      Date.now = () => realNow.call(Date) + clockOffset;
+    });
+
+    afterEach(() => {
+      Date.now = realNow;
+    });
+
+    it("follows a device that started before any lookup answered", async () => {
+      let answering = false;
+      mockTauriIpc(() =>
+        answering
+          ? [landingPage("device")]
+          : Promise.reject(ipcError("io", "No network"))
+      );
+      const find = newLandingPageFinder();
+
+      await find(signal).catch(() => {});
+      // By the time lookups answer, the device has started
+      clockOffset += 61 * 1000;
+      answering = true;
+      expect(await find(signal)).to.equal("192.0.2.50");
+      expect(await find(signal)).to.equal("192.0.2.50");
+    });
+
+    it("still leaves out what answered in time", async () => {
+      let lookups = 0;
+      mockTauriIpc(() => {
+        lookups++;
+        if (lookups === 1) return [landingPage("being-set-up")];
+        if (lookups === 2) return Promise.reject(ipcError("io", "No network"));
+        return [
+          landingPage("being-set-up"),
+          landingPage("device", "192.0.2.60"),
+        ];
+      });
+      const find = newLandingPageFinder();
+
+      await find(signal).catch(() => {});
+      clockOffset += 61 * 1000;
+      expect(await find(signal)).to.equal("192.0.2.60");
+    });
+  });
+
   it("asks nothing more once the wait ended", async () => {
     let resolveFirst!: (found: HaAnnouncement[]) => void;
     let asked = 0;

@@ -15,27 +15,25 @@ export const DEVICE_ADDRESS_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
  * Lookups that only note what is there already. The second notes a Home
- * Assistant whose answer the first missed. The device can't have started by
- * then: it is still waiting for the drive.
+ * Assistant whose answer the first missed.
  */
 const SURVEY_LOOKUPS = 2;
 
-/** The ids of the Home Assistants on the network now */
-async function survey(signal: AbortSignal): Promise<Set<string>> {
-  const known = new Set<string>();
-  for (let lookup = 0; lookup < SURVEY_LOOKUPS; lookup++) {
-    // No lookup after the wait ended
-    throwIfCancelled(signal);
-    for (const { id } of await findHomeAssistants()) known.add(id);
-  }
-  return known;
-}
+/**
+ * How long noting what is there is sure to miss the device: it is still
+ * waiting for the drive, and Home Assistant OS starts after it is put in.
+ */
+const SURVEY_TIME_MS = 60 * 1000;
 
 /**
- * Look for the device: the first call notes the Home Assistants already
+ * Look for the device: the first lookups note the Home Assistants already
  * there, and each one after gives the address of a landing page that
  * wasn't, or null while there is none. Home Assistants themselves never
- * count, as one that was off while the first call looked isn't new.
+ * count, as one that was off while the first lookups ran isn't new.
+ *
+ * Only lookups in the first minute note what is there: one that only
+ * answers later could take the device for one that was there all along.
+ * When none answered in time, any landing page is the device.
  *
  * Once found, the device is where a later call looks: a wait tried again
  * checks on it there, as Home Assistant may have replaced its landing page.
@@ -43,18 +41,27 @@ async function survey(signal: AbortSignal): Promise<Set<string>> {
 export function newLandingPageFinder(): (
   signal: AbortSignal
 ) => Promise<string | null> {
-  let known: Set<string> | undefined;
+  const started = Date.now();
+  const known = new Set<string>();
+  let surveyed = 0;
   let device: string | undefined;
+  const surveying = () =>
+    surveyed < SURVEY_LOOKUPS && Date.now() - started < SURVEY_TIME_MS;
+
   return async (signal) => {
     if (device) return device;
-    // A survey that failed is done again, as a whole
-    if (!known) {
-      known = await survey(signal);
+    if (surveying()) {
+      // A lookup that fails is asked again, by the next call
+      while (surveying()) {
+        // No lookup after the wait ended
+        throwIfCancelled(signal);
+        for (const { id } of await findHomeAssistants()) known.add(id);
+        surveyed++;
+      }
       return null;
     }
-    const before = known;
     device = (await findHomeAssistants()).find(
-      ({ id, landing_page }) => landing_page && !before.has(id)
+      ({ id, landing_page }) => landing_page && !known.has(id)
     )?.address;
     return device ?? null;
   };

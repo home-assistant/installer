@@ -83,6 +83,10 @@ describe("home-assistant-status", () => {
     const el = await render();
 
     expect(currentStage(el)).to.equal("Looking for your device on the network");
+    // WebKit drops list semantics without it
+    expect(el.shadowRoot!.querySelector("ol")!.getAttribute("role")).to.equal(
+      "list"
+    );
     expect(text(el)).to.contain(
       "Doesn't it show up? Open http://homeassistant.local"
     );
@@ -146,10 +150,10 @@ describe("home-assistant-status", () => {
   });
 
   it("says when the device didn't show up, and looks on when asked", async () => {
-    // The first lookup takes past the deadline
+    // The lookups that note what is there take past the deadline
     const { lookups } = device({
       onLookup: (lookup) => {
-        if (lookup === 0) clockOffset += 31 * MINUTE;
+        if (lookup === 1) clockOffset += 31 * MINUTE;
       },
     });
     const el = await render();
@@ -162,8 +166,17 @@ describe("home-assistant-status", () => {
     expect(announced(el)).to.equal("Your device didn't show up");
     expect(lookups()).to.equal(2);
 
-    el.shadowRoot!.querySelector<HTMLElement>("wa-button")!.click();
+    const retry = el.shadowRoot!.querySelector<HTMLElement>("wa-button")!;
+    retry.focus();
+    retry.click();
+    // Try again gives way to the stage it looks again at, which takes the focus
+    await waitUntil(() => el.shadowRoot!.activeElement?.closest(".stage"));
+    expect(el.shadowRoot!.activeElement!.textContent).to.contain(
+      "Looking for your device on the network"
+    );
     await waitUntil(() => text(el).includes("Your Home Assistant is ready"));
+    // And keeps it, as the stages move on
+    expect(el.shadowRoot!.activeElement?.closest(".stage")).to.exist;
     // It still knows what was there before: the next lookup finds the device
     expect(lookups()).to.equal(3);
   });

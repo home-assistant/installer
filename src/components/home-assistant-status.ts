@@ -1,5 +1,5 @@
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import {
   formatNumber,
   localize,
@@ -36,6 +36,8 @@ import { panelStyles } from "../utils/panel-styles.js";
 import { isCancelled } from "../utils/polling.js";
 import { statusDotStyles } from "../utils/status-dot-styles.js";
 import {
+  activeElement,
+  focusHeading,
   reducedMotionStyles,
   srOnlyStyles,
 } from "../utils/view-accessibility.js";
@@ -189,6 +191,10 @@ export class HomeAssistantStatus extends LitElement {
 
   private _controller?: AbortController;
 
+  /** The name of the stage it waits at, or finished at */
+  @query('[aria-current="step"] .stage-label')
+  private _currentStage?: HTMLElement | null;
+
   connectedCallback() {
     super.connectedCallback();
     void this._wait();
@@ -238,6 +244,19 @@ export class HomeAssistantStatus extends LitElement {
     }
   }
 
+  /**
+   * Wait again. Try again gives way to the stage it waits at, which can take
+   * many minutes, so whoever pressed it continues from that stage rather
+   * than from the top of the page.
+   */
+  private async _retry() {
+    void this._wait();
+    await this.updateComplete;
+    const active = activeElement();
+    if (active && active !== document.body) return;
+    if (this._currentStage) focusHeading(this._currentStage);
+  }
+
   render() {
     const address = this._wizard.state.selections.ipAddress;
     const url = address ? homeAssistantUrl(address) : "";
@@ -248,8 +267,10 @@ export class HomeAssistantStatus extends LitElement {
 
     return html`
       <div class="panel">
+        <!-- WebKit drops list semantics with list-style: none -->
         <ol
           class="stages"
+          role="list"
           aria-label=${localize("components.home_assistant_status.stages")}
         >
           ${WAIT_STAGES.map(
@@ -292,7 +313,7 @@ export class HomeAssistantStatus extends LitElement {
             )
           : nothing}
         ${this._error?.retryable
-          ? renderRetryButton(false, () => this._wait())
+          ? renderRetryButton(false, () => this._retry())
           : nothing}
         ${this._stage === "waiting" ? this._renderFindItYourself() : nothing}
         ${complete ? this._renderComplete(url) : nothing}

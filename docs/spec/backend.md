@@ -352,7 +352,9 @@ starts from it. Since 2026.6 the landing page announces itself over mDNS as
 starts; older ones announce `version=0.0.0` and no `uuid`. The step first
 notes what announces itself already, then takes the first landing page that
 wasn't there for the device, and follows it at the address it announces.
-Home Assistant itself is never taken for it. `find_home_assistants` listens
+Home Assistant itself is never taken for it. Only lookups in the step's first
+minute note what is there, before the device can have started; when none
+answered by then, any landing page is the device. `find_home_assistants` listens
 for three seconds: on Windows through the system's DNS-SD
 (`DnsServiceBrowse` and `DnsServiceResolve`), whose mDNS traffic Windows
 Firewall lets through, elsewhere with `mdns-sd`, which sends its own queries.
