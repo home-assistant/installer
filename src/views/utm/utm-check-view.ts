@@ -1,15 +1,11 @@
 import { localize, localizeContent } from "../../localization/localize.js";
 import {
   installerError,
-  renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
 import { LitElement, html, css, nothing } from "lit";
-import {
-  ViewAccessibility,
-  reducedMotionStyles,
-} from "../../utils/view-accessibility.js";
+import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
 import { customElement, query, state } from "lit/decorators.js";
 import { checkUtmAutomation, checkUtmStatus } from "../../api/commands.js";
@@ -20,7 +16,11 @@ import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/ha-svg-icon.js";
 import "../../components/casita-mascot.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
-import { renderRetryButton } from "../../utils/load-state.js";
+import {
+  renderRetryButton,
+  renderStatusRow,
+  statusRowStyles,
+} from "../../utils/load-state.js";
 
 // mdi:download
 const mdiDownload = "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z";
@@ -33,7 +33,7 @@ export class UtmCheckView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     stepStyles,
-    reducedMotionStyles,
+    statusRowStyles,
     linkStyles,
     css`
       .status-card {
@@ -61,77 +61,8 @@ export class UtmCheckView extends LitElement {
         position: absolute;
       }
 
-      .status-row {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-      }
-
-      .status-icon {
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-      }
-
-      .status-icon.loading {
-        width: 24px;
-        height: 24px;
-        background: none;
-      }
-
-      .status-icon.success {
-        background-color: #4caf50;
-      }
-
-      .status-icon.warning {
-        background-color: #ff9800;
-      }
-
-      .status-icon svg {
-        width: 16px;
-        height: 16px;
-        fill: white;
-      }
-
-      .spinner {
-        width: 24px;
-        height: 24px;
-        border: 2px solid var(--ha-secondary-text-color, #727272);
-        border-top-color: transparent;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .status-text {
-        display: flex;
-        flex-direction: column;
-      }
-
       .status-text.unavailable {
         text-align: center;
-      }
-
-      .status-title {
-        font-size: 1rem;
-        font-weight: 500;
-        color: var(--ha-text-color, #212121);
-        margin: 0;
-      }
-
-      .status-description {
-        font-size: 0.8125rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0.25rem 0 0 0;
       }
 
       .version-info {
@@ -347,100 +278,48 @@ export class UtmCheckView extends LitElement {
   }
 
   private _renderLoading() {
-    return html`
-      <div class="status-row">
-        <div class="status-icon loading">
-          <div class="spinner"></div>
-        </div>
-        <div class="status-text">
-          <p class="status-title">
-            ${this._askingAutomation
-              ? localize("views.utm.utm_check_view.allow_control_of_utm")
-              : localize("views.utm.utm_check_view.checking_for_utm")}
-          </p>
-          ${this._askingAutomation
-            ? html`<p class="status-description">
-                ${localize(
-                  "views.utm.utm_check_view.allow_control_of_utm_description"
-                )}
-              </p>`
-            : ""}
-        </div>
-      </div>
-    `;
+    return this._askingAutomation
+      ? renderStatusRow(
+          "loading",
+          localize("views.utm.utm_check_view.allow_control_of_utm"),
+          localize("views.utm.utm_check_view.allow_control_of_utm_description")
+        )
+      : renderStatusRow(
+          "loading",
+          localize("views.utm.utm_check_view.checking_for_utm")
+        );
   }
 
   private _renderError() {
-    return html`
-      <div class="status-row" data-focus-alert>
-        <div class="status-icon warning">
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
-            />
-          </svg>
-        </div>
-        <div class="status-text">
-          <p class="status-title">
-            ${localize("views.utm.utm_check_view.error_checking_utm")}
-          </p>
-          <p class="status-description" style="overflow-wrap: anywhere;">
-            ${this._error?.message}
-          </p>
-          ${renderErrorHelp()}
-        </div>
-      </div>
-    `;
+    return renderStatusRow(
+      "error",
+      localize("views.utm.utm_check_view.error_checking_utm"),
+      this._error?.message
+    );
   }
 
   private _renderInstalled() {
-    return html`
-      <div class="status-row">
-        <div class="status-icon success">
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-          </svg>
-        </div>
-        <div class="status-text">
-          <p class="status-title">
-            ${this._utmStatus?.version
-              ? localizeContent("utm.installed_with_version", {
-                  version: html`<span class="version-info"
-                    >${localize("utm.version", {
-                      version: this._utmStatus.version,
-                    })}</span
-                  >`,
-                })
-              : localize("utm.installed")}
-          </p>
-          <p class="status-description">
-            ${localize("views.utm.utm_check_view.ready")}
-          </p>
-        </div>
-      </div>
-    `;
+    return renderStatusRow(
+      "success",
+      this._utmStatus?.version
+        ? localizeContent("utm.installed_with_version", {
+            version: html`<span class="version-info"
+              >${localize("utm.version", {
+                version: this._utmStatus.version,
+              })}</span
+            >`,
+          })
+        : localize("utm.installed"),
+      localize("views.utm.utm_check_view.ready")
+    );
   }
 
   private _renderNotInstalled() {
-    return html`
-      <div class="status-row">
-        <div class="status-icon warning">
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
-            />
-          </svg>
-        </div>
-        <div class="status-text">
-          <p class="status-title">
-            ${localize("views.utm.utm_check_view.utm_is_not_installed")}
-          </p>
-          <p class="status-description">
-            ${localize("views.utm.utm_check_view.not_installed_description")}
-          </p>
-        </div>
-      </div>
-    `;
+    return renderStatusRow(
+      "warning",
+      localize("views.utm.utm_check_view.utm_is_not_installed"),
+      localize("views.utm.utm_check_view.not_installed_description")
+    );
   }
 
   private _renderDownloadIcon() {

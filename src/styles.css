@@ -40,6 +40,10 @@
   --ha-warning-heading-color: var(--ha-text-color);
   --ha-error-background: rgba(219, 68, 55, 0.1);
   --ha-error-border: rgba(219, 68, 55, 0.3);
+  /* A check that passed or needs the user, like UTM found or missing. Like
+   * the error color, 4.5:1 on the page and the cards in either theme. */
+  --ha-success-color: #00883c;
+  --ha-warning-color: #b45f04;
   /* Behind a plain or outlined button that is hovered or pressed */
   --ha-hover-fill: rgba(0, 0, 0, 0.06);
   /* Between the window's edges and the header, content and footer of every
@@ -159,6 +163,8 @@ body {
     --ha-warning-heading-color: #ffb74d;
     --ha-error-background: rgba(219, 68, 55, 0.15);
     --ha-error-border: rgba(219, 68, 55, 0.4);
+    --ha-success-color: #5dc36f;
+    --ha-warning-color: #ef9d00;
     --ha-hover-fill: rgba(255, 255, 255, 0.1);
   }
 }

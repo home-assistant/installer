@@ -722,6 +722,10 @@ describe("proxmox-connect-view", () => {
     expect(
       el.shadowRoot!.querySelector(".status-title")!.textContent!.trim()
     ).to.equal("Connection failed");
+    // The same error row as the UTM check's, which takes the focus
+    const error = el.shadowRoot!.querySelector(".status-row.status-error")!;
+    expect(error.hasAttribute("data-focus-alert")).to.be.true;
+    expect(error.querySelector(".error-help")).to.exist;
   });
 
   it("does not authenticate after removal during the probe or start a duplicate connection", async () => {

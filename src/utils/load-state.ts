@@ -1,4 +1,4 @@
-import { css, html } from "lit";
+import { css, html, nothing } from "lit";
 import { localize } from "../localization/localize.js";
 import { renderErrorHelp, type InstallerError } from "./installer-error.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
@@ -103,6 +103,135 @@ export function renderLoadError(
       </p>
       ${renderErrorHelp()}
       ${error.retryable ? renderRetryButton(retrying, onRetry) : ""}
+    </div>
+  `;
+}
+
+/** What a status row reports, which picks its icon and color. */
+export type StatusKind = "loading" | "success" | "warning" | "error";
+
+// mdi:check-circle, mdi:alert-circle and mdi:close-circle. The mark is cut
+// out of the circle, so it shows what is under it in either theme.
+const statusIcons: Record<Exclude<StatusKind, "loading">, string> = {
+  success:
+    "M12 2C6.5 2 2 6.5 2 12S6.5 22 12 22 22 17.5 22 12 17.5 2 12 2M10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z",
+  warning:
+    "M13,13H11V7H13M13,17H11V15H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z",
+  error:
+    "M12,2C17.53,2 22,6.47 22,12C22,17.53 17.53,22 12,22C6.47,22 2,17.53 2,12C2,6.47 6.47,2 12,2M15.59,7L12,10.59L8.41,7L7,8.41L10.59,12L7,15.59L8.41,17L12,13.41L15.59,17L17,15.59L13.41,12L17,8.41L15.59,7Z",
+};
+
+/**
+ * A check on a step's card, as one line with an icon: under way, what it
+ * found, or why it failed. Every step that checks something this way renders
+ * it with renderStatusRow().
+ */
+export const statusRowStyles = css`
+  .status-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    text-align: start;
+  }
+
+  /* Set apart like an error notice, so it isn't taken for a result */
+  .status-row.status-error {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 1rem;
+    border-radius: var(--ha-small-border-radius, 8px);
+    background-color: var(--ha-error-background, rgba(219, 68, 55, 0.1));
+    border: 1px solid var(--ha-error-border, rgba(219, 68, 55, 0.3));
+  }
+
+  /* As tall as the title's first line, which it stands next to */
+  .status-icon,
+  .status-row loading-spinner {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+  }
+
+  .status-icon {
+    fill: currentColor;
+  }
+
+  .status-success .status-icon {
+    color: var(--ha-success-color, #00883c);
+  }
+
+  .status-warning .status-icon {
+    color: var(--ha-warning-color, #b45f04);
+  }
+
+  .status-error .status-icon {
+    color: var(--ha-error-color, #b30532);
+  }
+
+  .status-row loading-spinner {
+    font-size: 24px;
+    --track-width: 2px;
+    --track-color: var(--ha-border-color, #e0e0e0);
+    --indicator-color: var(--ha-primary-color, #006787);
+  }
+
+  .status-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .status-title {
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--ha-text-color, #212121);
+    margin: 0;
+  }
+
+  .status-description {
+    font-size: 0.8125rem;
+    color: var(--ha-secondary-text-color, #727272);
+    margin: 0;
+  }
+
+  .status-error .status-description {
+    color: var(--ha-error-color, #b30532);
+  }
+
+  .status-text .error-help {
+    margin: 0.5rem 0 0;
+  }
+`;
+
+/**
+ * One line of a check: a spinner while it runs, then what it found. An error
+ * also links to help, and takes the focus when it appears, which reads it
+ * out. Try again stays outside it, so it can stay, busy, while the error
+ * makes way for the check.
+ */
+export function renderStatusRow(
+  kind: StatusKind,
+  title: unknown,
+  description?: unknown
+) {
+  const error = kind === "error";
+  // The title says how it went; the icon adds nothing to read out
+  return html`
+    <div class="status-row status-${kind}" ?data-focus-alert=${error}>
+      ${kind === "loading"
+        ? html`<loading-spinner aria-hidden="true"></loading-spinner>`
+        : html`<svg class="status-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d=${statusIcons[kind]} />
+          </svg>`}
+      <div class="status-text">
+        <p class="status-title">${title}</p>
+        ${description
+          ? html`<p class="status-description">${description}</p>`
+          : nothing}
+        ${error ? renderErrorHelp() : nothing}
+      </div>
     </div>
   `;
 }
