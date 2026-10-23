@@ -5,6 +5,7 @@ import type { DeviceType } from "../api/types.js";
 import { formatBytes } from "../api/commands.js";
 import { localize } from "../localization/localize.js";
 import { renderDriveIcon } from "./drive-icon.js";
+import { driveModelLabel } from "../utils/drive-selection.js";
 import { reducedMotionStyles } from "../utils/view-accessibility.js";
 import {
   selectableCardStyles,
@@ -213,19 +214,7 @@ export class DriveCard extends WaRadio {
   }
 
   private _getDetails(): string {
-    const parts: string[] = [];
-    // Models often start with their vendor already ("Samsung EVO Plus")
-    const vendorInModel =
-      this.vendor &&
-      `${this.model.toLowerCase()} `.startsWith(
-        `${this.vendor.toLowerCase()} `
-      );
-    if (this.vendor && !vendorInModel) parts.push(this.vendor);
-    if (this.model) parts.push(this.model);
-    if (parts.length === 0) {
-      parts.push(this._getTypeLabel());
-    }
-    return parts.join(" ");
+    return driveModelLabel(this.vendor, this.model) || this._getTypeLabel();
   }
 
   private _getTypeLabel(): string {

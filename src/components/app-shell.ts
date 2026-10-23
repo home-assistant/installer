@@ -60,6 +60,7 @@ import { WizardStateController } from "../state/wizard-state-controller.js";
 import { listBlockDevices, onCloseBlocked, quitAnyway } from "../api/index.js";
 import {
   clearDriveSelection,
+  driveModelLabel,
   findDrive,
   readDriveSelection,
 } from "../utils/drive-selection.js";
@@ -195,9 +196,10 @@ export class AppShell extends LitElement {
         ?open=${this._showConfirmDialog}
         .driveName=${selections.driveName || ""}
         .drivePath=${selections.drive || ""}
-        .driveModel=${[selections.driveVendor, selections.driveModel]
-          .filter(Boolean)
-          .join(" ")}
+        .driveModel=${driveModelLabel(
+          selections.driveVendor,
+          selections.driveModel
+        )}
         .driveSize=${selections.driveSize}
         @dialog-primary=${this._onDialogConfirm}
         @dialog-secondary=${this._onDialogCancel}

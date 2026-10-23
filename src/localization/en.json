@@ -342,6 +342,7 @@
   "views.sbc.drive_selection_view.subtitle_nvme": "Choose the NVMe/SSD drive to install Home Assistant on",
   "views.sbc.drive_selection_view.subtitle_removable": "Choose the SD card or USB drive to install Home Assistant on",
   "views.sbc.drive_selection_view.no_drives_adapter": "Connect your drive using a USB adapter and select Refresh.",
+  "views.sbc.drive_selection_view.no_drives_usb_stick": "Insert a USB stick and select Refresh.",
   "views.sbc.drive_selection_view.failed_to_load_drives": "Failed to load drives",
   "views.sbc.drive_selection_view.no_drives_removable": "Insert an SD card or USB drive and select Refresh.",
   "views.sbc.drive_selection_view.no_drives_found": "No drives found",

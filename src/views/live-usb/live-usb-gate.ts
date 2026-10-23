@@ -15,6 +15,8 @@ import {
   type LiveUsbStatus,
 } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
+import { LatestRequest } from "../../utils/latest-request.js";
+import { renderRetryButton } from "../../utils/load-state.js";
 import { liveUsbStyles } from "./live-usb-styles.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 
@@ -55,6 +57,11 @@ export class LiveUsbGate extends LitElement {
 
   @state()
   private _relaunchError = "";
+
+  @state()
+  private _checking = false;
+
+  private readonly _checks = new LatestRequest(this);
 
   @query("slot")
   private _slot?: HTMLSlotElement;
@@ -98,20 +105,25 @@ export class LiveUsbGate extends LitElement {
   }
 
   private async _check() {
-    this._error = null;
-    this._status = null;
+    const check = this._checks.start();
+    // The previous result, and its Try again, stay until this one replaces it,
+    // so focus stays where it was
+    this._checking = true;
     wizardState.setSelection("liveReady", false);
     try {
       const status = await getLiveUsbStatus();
-      if (!this.isConnected) return;
+      if (!check.current) return;
+      this._error = null;
       this._status = status;
       wizardState.setSelection(
         "liveReady",
         status.hai_live_found && !(this.admin && status.needs_admin)
       );
     } catch (error) {
-      if (!this.isConnected) return;
+      if (!check.current) return;
       this._error = installerError(error);
+    } finally {
+      if (check.current) this._checking = false;
     }
   }
 
@@ -129,9 +141,7 @@ export class LiveUsbGate extends LitElement {
       return html`
         <div class="notice error">
           <p data-focus-alert>${this._error.message}</p>
-          <wa-button appearance="outlined" @click=${this._check}>
-            ${localize("common.try_again")}
-          </wa-button>
+          ${renderRetryButton(this._checking, () => this._check())}
         </div>
       `;
     }

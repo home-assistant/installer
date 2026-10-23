@@ -6,6 +6,7 @@ import type { WizardState } from "../../state/wizard-state.js";
 import { WizardStateController } from "../../state/wizard-state-controller.js";
 import { formatBytes, getHaosRelease } from "../../api/commands.js";
 import { selectedWifi } from "../../utils/wifi.js";
+import { driveModelLabel } from "../../utils/drive-selection.js";
 import { renderDriveIcon } from "../../components/drive-icon.js";
 import {
   HaosVersion,
@@ -92,9 +93,10 @@ export class ConfirmationView extends LitElement {
     // The path is what actually gets written to, so show it alongside the
     // friendly name: two identical cards are otherwise indistinguishable.
     const drivePath = selections.drive || "";
-    const driveModel = [selections.driveVendor, selections.driveModel]
-      .filter(Boolean)
-      .join(" ");
+    const driveModel = driveModelLabel(
+      selections.driveVendor,
+      selections.driveModel
+    );
     const deviceConfig = selections.deviceConfig;
     const installer = findInstaller(deviceConfig?.board);
     const wifi = selectedWifi(selections);

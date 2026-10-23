@@ -20,6 +20,20 @@ export interface DriveIdentity {
   serial?: string;
 }
 
+/**
+ * Vendor and model as one label, like "SanDisk Ultra". Models often start with
+ * their vendor already ("Samsung EVO Plus"), so it isn't said twice.
+ */
+export function driveModelLabel(
+  vendor: string | null | undefined,
+  model: string | null | undefined
+): string {
+  const vendorInModel =
+    !!vendor &&
+    `${(model ?? "").toLowerCase()} `.startsWith(`${vendor.toLowerCase()} `);
+  return [vendorInModel ? "" : vendor, model].filter(Boolean).join(" ");
+}
+
 export function driveIdentity(drive: BlockDevice): DriveIdentity {
   return {
     id: drive.id,

@@ -299,8 +299,13 @@ export class DriveSelectionView extends LitElement {
     return wizardState.getState().currentFlow === "ha-hardware";
   }
 
+  /** Making a USB stick to boot the mini PC from, not installing on its drive */
+  private _isUsbBoot(): boolean {
+    return wizardState.getState().selections.installMethod === "usb-boot";
+  }
+
   private _subtitle(): string {
-    if (wizardState.getState().selections.installMethod === "usb-boot") {
+    if (this._isUsbBoot()) {
       return localize("views.sbc.drive_selection_view.choose_the_usb_stick");
     }
     if (this._isMiniPCFlow()) {
@@ -367,11 +372,15 @@ export class DriveSelectionView extends LitElement {
       const emptyTitle = localize(
         "views.sbc.drive_selection_view.no_drives_found"
       );
-      const emptyText = this._isMiniPCFlow()
-        ? localize("views.sbc.drive_selection_view.no_drives_adapter")
-        : this._isHaHardwareFlow()
-          ? localize("views.sbc.drive_selection_view.no_drives_described_above")
-          : localize("views.sbc.drive_selection_view.no_drives_removable");
+      const emptyText = this._isUsbBoot()
+        ? localize("views.sbc.drive_selection_view.no_drives_usb_stick")
+        : this._isMiniPCFlow()
+          ? localize("views.sbc.drive_selection_view.no_drives_adapter")
+          : this._isHaHardwareFlow()
+            ? localize(
+                "views.sbc.drive_selection_view.no_drives_described_above"
+              )
+            : localize("views.sbc.drive_selection_view.no_drives_removable");
 
       return html`
         <div class="empty-state">

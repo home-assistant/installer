@@ -4,6 +4,7 @@ import { MOCK_MANIFEST } from "../../../src/api/mock-data.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
 import {
   driveIdentity,
+  driveModelLabel,
   clearDriveSelection,
   findDrive,
   isSameDrive,
@@ -171,5 +172,24 @@ describe("drive-selection", () => {
     storeDriveSelection(makeDrive({ serial: null }));
     expect(readDriveSelection(wizardState.getState().selections)?.serial).to.be
       .undefined;
+  });
+});
+
+describe("driveModelLabel", () => {
+  it("names the vendor once, even when the model already starts with it", () => {
+    for (const [vendor, model, label] of [
+      ["SanDisk", "Ultra", "SanDisk Ultra"],
+      ["Samsung", "Samsung EVO Plus", "Samsung EVO Plus"],
+      ["SAMSUNG", "Samsung EVO Plus", "Samsung EVO Plus"],
+      // Only a whole word counts as the vendor
+      ["Sam", "Samsung EVO Plus", "Sam Samsung EVO Plus"],
+      [undefined, "Ultra", "Ultra"],
+      ["SanDisk", undefined, "SanDisk"],
+      [null, null, ""],
+    ] as const) {
+      expect(driveModelLabel(vendor, model), `${vendor} ${model}`).to.equal(
+        label
+      );
+    }
   });
 });

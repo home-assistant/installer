@@ -73,6 +73,32 @@ describe("drive-selection-view", () => {
     }
   });
 
+  for (const [flow, installMethod, hint] of [
+    ["sbc", undefined, "Insert an SD card or USB drive"],
+    ["minipc", undefined, "Connect your drive using a USB adapter"],
+    // Making a stick to boot the mini PC from: a stick is what's missing
+    ["minipc", "usb-boot", "Insert a USB stick"],
+  ] as const) {
+    it(`says what to connect when no drive is found (${flow} ${installMethod ?? "drive"})`, async () => {
+      wizardState.startFlow(flow);
+      if (installMethod)
+        wizardState.setSelection("installMethod", installMethod);
+      const scan = holdDeviceScan();
+      try {
+        const el = await fixture<DriveSelectionView>(
+          html`<drive-selection-view></drive-selection-view>`
+        );
+        scan.resolve([]);
+        await flush();
+        expect(
+          el.shadowRoot!.querySelector(".empty-text")!.textContent
+        ).to.contain(hint);
+      } finally {
+        scan.restore();
+      }
+    });
+  }
+
   it("keeps focus on Refresh while it scans, and announces what it found", async () => {
     let scan = holdDeviceScan();
     try {

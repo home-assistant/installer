@@ -1,8 +1,10 @@
 import { expect, fixtureSync, html } from "@open-wc/testing";
 import "../../../../src/views/live-usb/live-usb-gate.js";
 import type { LiveUsbGate } from "../../../../src/views/live-usb/live-usb-gate.js";
+import { wizardState } from "../../../../src/state/wizard-state.js";
 import {
   deferred,
+  ipcError,
   mockTauriIpc,
   restoreTauriIpc,
   settle,
@@ -53,5 +55,57 @@ describe("live-usb-gate", () => {
     await revealAfterSlowStatus(gate);
 
     expect(document.activeElement).to.equal(elsewhere);
+  });
+
+  it("keeps Try again, and focus on it, while checking again", async () => {
+    const checks: ReturnType<typeof deferred<unknown>>[] = [];
+    mockTauriIpc((cmd) => {
+      if (cmd !== "live_usb_status") throw new Error(`unexpected ${cmd}`);
+      const check = deferred<unknown>();
+      checks.push(check);
+      return check.promise;
+    });
+    const gate = fixtureSync<LiveUsbGate>(
+      html`<live-usb-gate><h2>Where to save</h2></live-usb-gate>`
+    );
+    checks[0].reject(ipcError("internal", "No answer"));
+    await settle();
+    const retry = gate.shadowRoot!.querySelector("wa-button")!;
+    retry.focus();
+
+    retry.click();
+    await settle();
+    expect(checks).to.have.length(2);
+    expect(gate.shadowRoot!.querySelector("wa-button")).to.equal(retry);
+    expect(retry.loading).to.equal(true);
+    expect(gate.shadowRoot!.activeElement).to.equal(retry);
+
+    checks[1].resolve({ hai_live_found: true, needs_admin: false });
+    await settle();
+    expect(gate.shadowRoot!.querySelector("slot")).to.exist;
+    expect(wizardState.getState().selections.liveReady).to.equal(true);
+  });
+
+  it("ignores an earlier check that answers after a later one", async () => {
+    const checks: ReturnType<typeof deferred<unknown>>[] = [];
+    mockTauriIpc(() => {
+      const check = deferred<unknown>();
+      checks.push(check);
+      return check.promise;
+    });
+    const gate = fixtureSync<LiveUsbGate>(
+      html`<live-usb-gate><h2>Where to save</h2></live-usb-gate>`
+    );
+    checks[0].reject(ipcError("internal", "No answer"));
+    await settle();
+    gate.shadowRoot!.querySelector("wa-button")!.click();
+    gate.shadowRoot!.querySelector("wa-button")!.click();
+    await settle();
+    expect(checks).to.have.length(3);
+
+    checks[2].resolve({ hai_live_found: true, needs_admin: false });
+    checks[1].resolve({ hai_live_found: false, needs_admin: false });
+    await settle();
+    expect(wizardState.getState().selections.liveReady).to.equal(true);
   });
 });

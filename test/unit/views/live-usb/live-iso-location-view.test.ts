@@ -4,6 +4,7 @@ import "../../../../src/views/live-usb/live-iso-location-view.js";
 import type { LiveIsoLocationView } from "../../../../src/views/live-usb/live-iso-location-view.js";
 import {
   deferred,
+  ipcError,
   mockTauriIpc,
   restoreTauriIpc,
   settle,
@@ -45,6 +46,22 @@ describe("live-iso-location-view", () => {
     );
     expect(await checking).to.equal(true);
     expect(wizardState.getState().selections.liveIsoOverwrite).to.equal(true);
+  });
+
+  it("doesn't show a problem with a name that was changed during the check", async () => {
+    const el = fixtureSync<LiveIsoLocationView>(
+      html`<live-iso-location-view></live-iso-location-view>`
+    );
+    await settle();
+    const checking = el.check();
+    const [, name] = el.shadowRoot!.querySelectorAll("wa-input");
+    name.value = "fixed.iso";
+    name.dispatchEvent(new Event("input"));
+    location.reject(ipcError("invalid_file_name", "No separators"));
+
+    expect(await checking).to.equal(false);
+    await settle();
+    expect(el.shadowRoot!.querySelector(".notice.error")).to.not.exist;
   });
 
   it("settles a check that answers after the view was left", async () => {

@@ -66,18 +66,19 @@ export class LiveIsoLocationView extends LitElement {
     this._problem = "";
     const folder = this._folder;
     const name = this._name;
+    // Back or Cancel while checking: nobody is left to answer a prompt.
+    // An edit meanwhile was not checked, so it waits for the next press, and
+    // a problem with the old location must not show under the new one.
+    const outdated = () =>
+      !this.isConnected || this._folder !== folder || this._name !== name;
     let exists: boolean;
     try {
       ({ exists } = await checkIsoLocation(folder, name));
     } catch (error) {
-      this._problem = installerError(error).message;
+      if (!outdated()) this._problem = installerError(error).message;
       return false;
     }
-    // Back or Cancel while checking: nobody is left to answer a prompt.
-    // An edit meanwhile was not checked, so it waits for the next press.
-    if (!this.isConnected || this._folder !== folder || this._name !== name) {
-      return false;
-    }
+    if (outdated()) return false;
     if (!exists) {
       wizardState.setSelection("liveIsoOverwrite", false);
       return true;
