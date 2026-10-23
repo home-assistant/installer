@@ -165,7 +165,7 @@ download_url: string,
  */
 size: number,
 /**
- * GitHub's digest of the compressed asset. Required for installation.
+ * Verified SHA-256 of the compressed asset. Required for installation.
  */
 digest: string | null, };
 

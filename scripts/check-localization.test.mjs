@@ -206,10 +206,10 @@ test("catalog check holds translations to the English", () => {
       [
         "pl.json",
         {
-          "components.install_progress.minutes_remaining":
-            "Jeszcze {minutes, plural, one {# minuta} few {# minuty}}",
+          "views.sbc.drive_selection_view.drives_found":
+            "Znaleziono {count, plural, one {# dysk} few {# dyski}}",
         },
-        /pl\.json: components\.install_progress\.minutes_remaining: MISSING_OTHER_CLAUSE/,
+        /pl\.json: views\.sbc\.drive_selection_view\.drives_found: MISSING_OTHER_CLAUSE/,
       ],
       ["pt_BR.json", {}, /pt_BR\.json: name a catalog after its language tag/],
     ]) {

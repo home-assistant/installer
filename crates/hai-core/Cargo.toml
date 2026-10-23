@@ -25,6 +25,9 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 rustls = { workspace = true }
 rustls-platform-verifier = { workspace = true }
+sigstore-trust-root = { workspace = true }
+sigstore-types = { workspace = true }
+sigstore-verify = { workspace = true }
 liblzma = { workspace = true }
 directories = { workspace = true }
 fs2 = { workspace = true }

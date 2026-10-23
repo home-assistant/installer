@@ -588,6 +588,7 @@
   "backend.download.github_refused": "GitHub refused access to release {version} (HTTP {status}). Try again later or check your network's access to GitHub.",
   "backend.download.github_release_unavailable": "GitHub could not provide release {version} (HTTP {status}). Try again later.",
   "backend.download.github_rate_limited": "GitHub's request limit has been reached for this network. Wait at least {minutes, plural, one {# minute} other {# minutes}}, then try again.",
+  "backend.download.sigstore_unreachable": "Cannot reach Sigstore to check the signature of Home Assistant OS. Check your internet connection and try again.",
   "backend.proxmox.connection_timed_out": "Connection timed out. Please check the server URL and network connectivity.",
   "backend.proxmox.connection_failed": "Failed to connect to Proxmox server. Please verify the URL is correct.",
   "backend.proxmox.authentication_failed": "Authentication failed. Please check your username and password.",

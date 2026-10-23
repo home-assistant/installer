@@ -5,141 +5,225 @@
 mod drives;
 mod image;
 mod safety;
+mod ui;
 mod writer;
 
-use std::io::{BufRead, Write};
 use std::path::Path;
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use drives::{Disk, Entry};
 use image::BundledImage;
+use ratatui::crossterm::event::KeyCode;
+use ui::{DiskRow, Screen, Ui};
 
 const SYS_BLOCK: &str = "/sys/block";
 const DEV: &str = "/dev";
 const MEDIA: &str = "/media";
 const DISK_CHANGED: &str =
     "The disk changed, disappeared or could not be checked again. Nothing was written.";
+/// How often the disk list looks again, so a disk connected later shows up by itself.
+const REFRESH: Duration = Duration::from_secs(2);
 
 fn main() {
+    let mut ui = match Ui::start() {
+        Ok(ui) => ui,
+        // No console to draw on. Exit rather than spin; init restarts hai-live on tty1.
+        Err(_) => std::process::exit(1),
+    };
+    let mut selected: Option<String> = None;
     loop {
-        header();
         let image = image::find(Path::new(MEDIA));
-        match &image {
-            Some(image) => println!("Home Assistant OS image: {}", image.name()),
-            None => println!("No Home Assistant OS image found on the USB stick."),
-        }
-        let review = show_disks();
+        let review = review_disks();
+        // Keep the same disk selected while the list refreshes
+        let index = selected
+            .as_ref()
+            .and_then(|name| review.choices.iter().position(|c| &c.disk.name == name))
+            .unwrap_or(0);
+        selected = review.choices.get(index).map(|c| c.disk.name.clone());
+        ui.show(&Screen::Disks {
+            os: image.as_ref().map(BundledImage::name),
+            disks: review
+                .choices
+                .iter()
+                .map(|choice| DiskRow {
+                    label: describe(&choice.disk),
+                    problem: choice.problem,
+                })
+                .collect(),
+            selected: index,
+            hidden: ui::hidden_summary(&review.hidden),
+        });
 
-        println!("\nAlt+F2 opens a root shell for debugging.");
-        let question = if image.is_some() && !review.choices.is_empty() {
-            "Disk number = install, r = reboot, p = power off, Enter = refresh: "
-        } else {
-            "r = reboot, p = power off, Enter = refresh: "
+        let Some(key) = ui.key(Some(REFRESH)) else {
+            continue;
         };
-        let answer = prompt(question);
-        match answer.as_str() {
-            "r" => run("reboot"),
-            "p" => run("poweroff"),
-            _ => {
-                let chosen = answer
-                    .parse::<usize>()
-                    .ok()
-                    .and_then(|n| review.choices.get(n.wrapping_sub(1)));
-                if let (Some(image), Some(choice)) = (&image, chosen) {
+        let last = review.choices.len().saturating_sub(1);
+        match key {
+            KeyCode::Up | KeyCode::Char('k') => {
+                selected = review.choices.get(index.saturating_sub(1)).map(name_of);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                selected = review.choices.get((index + 1).min(last)).map(name_of);
+            }
+            KeyCode::Char('r' | 'R') => run(&mut ui, "reboot"),
+            KeyCode::Char('p' | 'P') => run(&mut ui, "poweroff"),
+            KeyCode::Enter => {
+                if let (Some(image), Some(choice)) = (&image, review.choices.get(index)) {
                     match choice.problem {
-                        Some(problem) => {
-                            println!("\n{} can't be used: {problem}.", choice.disk.name);
-                            prompt("Press Enter to go back.");
-                        }
-                        None => install(image, &choice.disk),
+                        Some(problem) => message(
+                            &mut ui,
+                            "This disk can't be used",
+                            &format!("{} can't be used: {problem}.", choice.disk.name),
+                        ),
+                        None => install(&mut ui, image, &choice.disk),
                     }
                 }
             }
+            _ => {}
         }
     }
 }
 
-fn header() {
-    // Clear the screen and move the cursor to the top left.
-    print!("\x1b[2J\x1b[H");
-    println!("==========================================");
-    println!(" HAI live USB: hai-live {}", env!("CARGO_PKG_VERSION"));
-    println!("==========================================\n");
+fn name_of(choice: &safety::Choice) -> String {
+    choice.disk.name.clone()
 }
 
-fn install(image: &BundledImage, disk: &Disk) {
-    header();
-    println!("You chose:\n");
-    println!("  {}", describe(disk));
-    println!("\nEVERYTHING ON THIS DISK WILL BE ERASED.");
-    println!(
-        "Home Assistant OS ({}) will be written to it.\n",
-        image.name()
-    );
-    if prompt("Type erase to continue, or press Enter to go back: ") != "erase" {
+/// Asks for the typed confirmation, then checks the image and writes it to `disk`.
+fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
+    if !confirm_erase(ui, image, disk) {
         return;
     }
 
-    println!("\nChecking the Home Assistant OS image...");
-    let mut last = None;
-    match image::verify(image, &mut |read, total| {
-        show_percent(&mut last, "Checking", read, total, "")
-    }) {
-        Ok(true) => println!("\n  Image OK."),
+    let mut step = Step::start();
+    let verified = image::verify(image, &mut |read, total| {
+        show_progress(
+            ui,
+            &mut step,
+            "Checking the image",
+            "Making sure the Home Assistant OS image on the USB stick is complete.",
+            read,
+            total,
+        )
+    });
+    match verified {
+        Ok(true) => {}
         Ok(false) => {
-            return fail("The image on the USB stick is damaged. Prepare the stick again.")
+            return message(
+                ui,
+                "The image is damaged",
+                "The Home Assistant OS image on the USB stick is damaged. Nothing was written.\n\
+                 Prepare the stick again with the Home Assistant Installer.",
+            )
         }
-        Err(error) => return fail(&format!("Could not read the image: {error}")),
+        Err(error) => {
+            return message(
+                ui,
+                "Could not read the image",
+                &format!("{error}\nNothing was written."),
+            )
+        }
     }
 
     let (sys_block, dev) = (Path::new(SYS_BLOCK), Path::new(DEV));
     let usable = drives::list(sys_block)
         .is_ok_and(|current| safety::still_usable(disk, current, sys_block, dev));
     if !usable {
-        return fail(DISK_CHANGED);
+        return message(ui, "Nothing was written", DISK_CHANGED);
     }
     let path = dev.join(&disk.name);
     let mut target = match writer::open_disk(&path) {
         Ok(file) => file,
-        Err(error) => return fail(&format!("Could not open {}: {error}", disk.name)),
+        Err(error) => {
+            return message(
+                ui,
+                "Could not open the disk",
+                &format!(
+                    "Could not open {}: {error}\nNothing was written.",
+                    disk.name
+                ),
+            )
+        }
     };
     // Checked again after opening, so the disk can't be swapped between the check and the write.
     let unchanged = drives::list(sys_block)
         .is_ok_and(|current| current.contains(&Entry::Disk(disk.clone())))
         && writer::is_same_device(&target, &path);
     if !unchanged {
-        return fail(DISK_CHANGED);
+        return message(ui, "Nothing was written", DISK_CHANGED);
     }
-    println!("\nWriting Home Assistant OS to {}...", disk.name);
-    let mut last = None;
+
+    let mut step = Step::start();
     let result = writer::write_image(
         &image.path,
         &mut target,
         disk.size_bytes,
         &mut |read, total, written| {
-            let note = format!("  ({:.1} GB written)", written as f64 / 1e9);
-            show_percent(&mut last, "Writing", read, total, &note)
+            let detail = format!("To {}: {:.1} GB written.", disk.name, written as f64 / 1e9);
+            show_progress(
+                ui,
+                &mut step,
+                "Writing Home Assistant OS",
+                &detail,
+                read,
+                total,
+            )
         },
     );
     if let Err(error) = result {
-        return fail(&format!(
-            "Writing failed: {error}\nThe disk is now incomplete; run the install again."
-        ));
+        return message(
+            ui,
+            "Writing failed",
+            &format!("{error}\nThe disk is now incomplete. Install again to fix it."),
+        );
     }
 
-    println!("\n\nFinishing (making sure everything is on the disk)...");
+    ui.show(&Screen::Progress {
+        title: "Finishing".into(),
+        detail: "Making sure everything is on the disk.".into(),
+        percent: 100,
+        time_left: None,
+    });
     if let Err(error) = target.sync_all() {
-        return fail(&format!("Finishing failed: {error}"));
+        return message(ui, "Finishing failed", &error.to_string());
     }
     drop(target);
 
-    header();
-    println!("Home Assistant OS is installed on {}.\n", disk.name);
-    println!("Remove the USB stick, then reboot.");
     loop {
-        match prompt("\nr = reboot, p = power off: ").as_str() {
-            "r" => run("reboot"),
-            "p" => run("poweroff"),
+        ui.show(&Screen::Done {
+            disk: disk.name.clone(),
+        });
+        match ui.key(None) {
+            Some(KeyCode::Char('r' | 'R')) => run(ui, "reboot"),
+            Some(KeyCode::Char('p' | 'P')) => run(ui, "poweroff"),
+            _ => {}
+        }
+    }
+}
+
+/// Whether `erase` was typed for `disk`. Esc, or Enter on an empty line, goes back.
+fn confirm_erase(ui: &mut Ui, image: &BundledImage, disk: &Disk) -> bool {
+    let mut typed = String::new();
+    let mut mistyped = false;
+    loop {
+        ui.show(&Screen::Confirm {
+            disk: describe(disk),
+            os: image.name(),
+            typed: typed.clone(),
+            mistyped,
+        });
+        match ui.key(None) {
+            Some(KeyCode::Esc) => return false,
+            Some(KeyCode::Enter) if typed.is_empty() => return false,
+            Some(KeyCode::Enter) if typed == "erase" => return true,
+            Some(KeyCode::Enter) => {
+                typed.clear();
+                mistyped = true;
+            }
+            Some(KeyCode::Backspace) => {
+                typed.pop();
+            }
+            Some(KeyCode::Char(c)) if typed.len() < 16 => typed.push(c),
             _ => {}
         }
     }
@@ -155,74 +239,61 @@ fn describe(disk: &Disk) -> String {
     )
 }
 
-/// Prints `label: NN%` on one line, only when the whole percentage changes.
-fn show_percent(last: &mut Option<u64>, label: &str, done: u64, total: u64, note: &str) {
-    let percent = (done * 100).checked_div(total).unwrap_or(0);
-    if *last != Some(percent) {
-        *last = Some(percent);
-        print!("\r  {label}: {percent:>3}%{note}   ");
-        let _ = std::io::stdout().flush();
-    }
+/// A long step: when it started, and what was last drawn for it.
+struct Step {
+    started: Instant,
+    shown: Option<(u64, Option<String>)>,
 }
 
-fn fail(message: &str) {
-    println!("\n\n{message}");
-    prompt("Press Enter to go back.");
-}
-
-fn show_disks() -> safety::Review {
-    let (sys_block, dev) = (Path::new(SYS_BLOCK), Path::new(DEV));
-    let entries = match drives::list(sys_block) {
-        Ok(entries) => entries,
-        Err(error) => {
-            println!("\nCould not list disks: {error}");
-            return safety::Review::default();
+impl Step {
+    fn start() -> Self {
+        Self {
+            started: Instant::now(),
+            shown: None,
         }
-    };
-    let review = safety::review(entries, sys_block, dev);
-
-    println!("\nDisks:");
-    if review.choices.is_empty() {
-        println!("  No internal disks found.");
-    }
-    for (number, choice) in review.choices.iter().enumerate() {
-        let note = choice
-            .problem
-            .map(|p| format!("  NOT USABLE: {p}"))
-            .unwrap_or_default();
-        println!("  {}) {}{note}", number + 1, describe(&choice.disk));
-    }
-
-    println!("\nHidden:");
-    let mut reasons: Vec<&str> = review.hidden.iter().map(|(_, r)| *r).collect();
-    reasons.sort_unstable();
-    reasons.dedup();
-    for reason in reasons {
-        let names: Vec<&str> = review
-            .hidden
-            .iter()
-            .filter(|(_, r)| *r == reason)
-            .map(|(n, _)| n.as_str())
-            .collect();
-        println!("  {reason}: {}", names.join(" "));
-    }
-    review
-}
-
-fn prompt(question: &str) -> String {
-    print!("{question}");
-    let _ = std::io::stdout().flush();
-    let mut answer = String::new();
-    match std::io::stdin().lock().read_line(&mut answer) {
-        // No console to read from. Exit rather than spin; init restarts hai-live on tty1.
-        Ok(0) | Err(_) => std::process::exit(1),
-        Ok(_) => answer.trim().to_string(),
     }
 }
 
-fn run(command: &str) {
+/// Draws the progress of `step`, only when the whole percentage or the time left changes.
+fn show_progress(ui: &mut Ui, step: &mut Step, title: &str, detail: &str, done: u64, total: u64) {
+    let percent = (done * 100).checked_div(total).unwrap_or(0).min(100);
+    let time_left = ui::time_left(step.started.elapsed(), done, total);
+    let now = Some((percent, time_left.clone()));
+    if step.shown != now {
+        step.shown = now;
+        ui.show(&Screen::Progress {
+            title: title.into(),
+            detail: detail.into(),
+            percent: percent as u16,
+            time_left,
+        });
+    }
+}
+
+/// Shows `body` until Enter or Esc.
+fn message(ui: &mut Ui, title: &str, body: &str) {
+    loop {
+        ui.show(&Screen::Message {
+            title: title.into(),
+            body: body.into(),
+        });
+        if matches!(ui.key(None), Some(KeyCode::Enter | KeyCode::Esc)) {
+            return;
+        }
+    }
+}
+
+fn review_disks() -> safety::Review {
+    let (sys_block, dev) = (Path::new(SYS_BLOCK), Path::new(DEV));
+    match drives::list(sys_block) {
+        Ok(entries) => safety::review(entries, sys_block, dev),
+        // Shown as an empty list; it's tried again on the next refresh
+        Err(_) => safety::Review::default(),
+    }
+}
+
+fn run(ui: &mut Ui, command: &str) {
     if let Err(error) = Command::new(command).status() {
-        println!("{command} failed: {error}");
-        prompt("Press Enter to continue.");
+        message(ui, &format!("{command} failed"), &error.to_string());
     }
 }

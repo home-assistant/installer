@@ -298,24 +298,16 @@ mod tests {
         Ok(releases)
     }
 
+    /// The expected images that aren't release assets or lack a verified digest.
     fn unusable_release_assets(
         expected: &[String],
         assets: &[crate::types::GitHubAsset],
+        sums: &std::collections::HashMap<String, String>,
     ) -> Vec<String> {
         expected
             .iter()
             .filter(|name| {
-                !assets.iter().any(|asset| {
-                    asset.name == **name
-                        && crate::download::expected_sha256(&crate::types::HaosImage {
-                            board: String::new(),
-                            format: crate::types::ImageFormat::Raw,
-                            size: asset.size,
-                            download_url: asset.browser_download_url.clone(),
-                            digest: asset.digest.clone(),
-                        })
-                        .is_ok()
-                })
+                !sums.contains_key(*name) || !assets.iter().any(|asset| asset.name == **name)
             })
             .cloned()
             .collect()
@@ -326,8 +318,15 @@ mod tests {
             name,
             size: 1,
             browser_download_url: "https://example.test/image.img.xz".into(),
-            digest: Some(format!("sha256:{}", "00".repeat(32))),
         }
+    }
+
+    fn sums_fixture(names: &[String]) -> std::collections::HashMap<String, String> {
+        let digest = format!("sha256:{}", "00".repeat(32));
+        names
+            .iter()
+            .map(|name| (name.clone(), digest.clone()))
+            .collect()
     }
 
     fn stable_catalog_fixture() -> crate::types::StableVersionInfo {
@@ -344,41 +343,33 @@ mod tests {
     fn catalog_asset_check_requires_every_raw_image() {
         let releases = required_release_assets(&stable_catalog_fixture()).unwrap();
         let expected = &releases["18.3"];
+        let sums = sums_fixture(expected);
         let mut assets: Vec<_> = expected
             .iter()
             .cloned()
             .map(release_asset_fixture)
             .collect();
-        assert!(unusable_release_assets(expected, &assets).is_empty());
+        assert!(unusable_release_assets(expected, &assets, &sums).is_empty());
         assets.retain(|asset| asset.name != "haos_rpi5-64-18.3.img.xz");
         assets.extend([
             release_asset_fixture("haos_rpi5-64-18.3.qcow2.xz".into()),
             release_asset_fixture("haos_rpi5-64-18.2.img.xz".into()),
         ]);
         assert_eq!(
-            unusable_release_assets(expected, &assets),
+            unusable_release_assets(expected, &assets, &sums),
             ["haos_rpi5-64-18.3.img.xz"]
         );
     }
 
     #[test]
-    fn catalog_asset_check_requires_installable_sha256_digests() {
+    fn catalog_asset_check_requires_a_verified_digest() {
         let expected: Vec<String> = vec!["haos_rpi5-64-18.3.img.xz".into()];
-        let mut asset = release_asset_fixture(expected[0].clone());
-        for digest in [
-            None,
-            Some("sha256:abc".into()),
-            Some(format!("sha256:{}", "gg".repeat(32))),
-            Some(format!("sha512:{}", "00".repeat(32))),
-        ] {
-            asset.digest = digest;
-            assert_eq!(
-                unusable_release_assets(&expected, &[asset.clone()]),
-                expected
-            );
-        }
-        asset.digest = Some(format!("sha256:{}", "ab".repeat(32)));
-        assert!(unusable_release_assets(&expected, &[asset]).is_empty());
+        let assets = [release_asset_fixture(expected[0].clone())];
+        assert_eq!(
+            unusable_release_assets(&expected, &assets, &sums_fixture(&[])),
+            expected
+        );
+        assert!(unusable_release_assets(&expected, &assets, &sums_fixture(&expected)).is_empty());
     }
 
     #[test]
@@ -396,7 +387,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "live GitHub metadata check; run explicitly in CI"]
+    #[ignore = "live GitHub metadata and signature check; run explicitly in CI"]
     async fn bundled_boards_have_stable_release_assets() {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
@@ -433,10 +424,17 @@ mod tests {
                 .await
                 .expect("Invalid GitHub release metadata");
             assert_eq!(release.tag_name, version);
-            let missing = unusable_release_assets(&expected, &release.assets);
+            let sums = crate::download::sha256sums::verified(
+                &client,
+                crate::download::HAOS_DOWNLOADS,
+                &version,
+            )
+            .await
+            .expect("Could not verify the checksums of the stable HAOS release");
+            let missing = unusable_release_assets(&expected, &release.assets, &sums);
             assert!(
                 missing.is_empty(),
-                "Bundled images missing or lacking valid SHA-256 digests in stable HAOS {version}: {}",
+                "Bundled images missing or lacking verified SHA-256 digests in stable HAOS {version}: {}",
                 missing.join(", ")
             );
         }

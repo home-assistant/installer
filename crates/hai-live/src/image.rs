@@ -16,12 +16,23 @@ pub struct BundledImage {
 }
 
 impl BundledImage {
-    /// File name, for the screen.
+    /// What is installed, for the screen: "Home Assistant OS 18.3". The file name is a
+    /// technical detail nobody needs to see.
     pub fn name(&self) -> String {
-        self.path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default()
+        match self.version() {
+            Some(version) => format!("Home Assistant OS {version}"),
+            None => "Home Assistant OS".to_string(),
+        }
+    }
+
+    /// The version in the file name, for example `18.3` from `haos_generic-x86-64-18.3.img.xz`.
+    fn version(&self) -> Option<String> {
+        let name = self.path.file_name()?.to_str()?;
+        let stem = name.strip_prefix("haos_")?.strip_suffix(".img.xz")?;
+        let (_, version) = stem.rsplit_once('-')?;
+        version
+            .starts_with(|c: char| c.is_ascii_digit())
+            .then(|| version.to_string())
     }
 }
 
@@ -99,6 +110,19 @@ mod tests {
         );
         assert_eq!(parse_sha256(&line, "other.img.xz"), None);
         assert_eq!(parse_sha256(&format!("abc  {NAME}"), NAME), None);
+    }
+
+    #[test]
+    fn names_what_is_installed_not_the_file() {
+        let image = |name: &str| BundledImage {
+            path: PathBuf::from("/media/sda1").join(name),
+            sha256: HELLO_SHA256.into(),
+        };
+        assert_eq!(image(NAME).name(), "Home Assistant OS 18.3");
+        assert_eq!(
+            image("haos_generic-x86-64-dev.img.xz").name(),
+            "Home Assistant OS"
+        );
     }
 
     #[test]
