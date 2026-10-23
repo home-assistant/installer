@@ -3,6 +3,9 @@ import { LitElement } from "lit";
 import { property } from "lit/decorators.js";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import "@home-assistant/webawesome/dist/components/input/input.js";
+import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
+import "@home-assistant/webawesome/dist/components/select/select.js";
+import "@home-assistant/webawesome/dist/components/option/option.js";
 import {
   fieldError,
   fieldErrorStyles,
@@ -27,6 +30,23 @@ class FieldErrorTestView extends LitElement {
   }
 }
 customElements.define("field-error-test-view", FieldErrorTestView);
+
+/** A select, whose hint is there only to say what is wrong */
+class SelectErrorTestView extends LitElement {
+  static styles = fieldErrorStyles;
+  @property() error?: string;
+  render() {
+    return html`<wa-select
+      label="Storage"
+      value="local"
+      ${fieldError(this.error)}
+    >
+      <wa-option value="local">local</wa-option>
+      ${this.error ? html`<span slot="hint">${this.error}</span>` : ""}
+    </wa-select>`;
+  }
+}
+customElements.define("select-error-test-view", SelectErrorTestView);
 
 async function mount() {
   const el = await fixture<FieldErrorTestView>(
@@ -102,5 +122,41 @@ describe("fieldError", () => {
     expect(field.validity.customError).to.be.true;
     expect(field.hasAttribute("custom-error")).to.be.true;
     expect(field.input.getAttribute("aria-invalid")).to.equal("true");
+  });
+
+  it("marks a select invalid, described and coloured by its error", async () => {
+    const el = await fixture<SelectErrorTestView>(
+      html`<select-error-test-view></select-error-test-view>`
+    );
+    const select = el.shadowRoot!.querySelector<WaSelect>("wa-select")!;
+    const setError = async (error: string | undefined) => {
+      el.error = error;
+      await el.updateComplete;
+      await select.updateComplete;
+    };
+    const combobox = async () =>
+      findByRole(await fullA11ySnapshot(), "combobox").find(
+        (node) => node.name === "Storage"
+      )!;
+    const border = () =>
+      getComputedStyle(select.shadowRoot!.querySelector('[part~="combobox"]')!)
+        .borderTopColor;
+    await setError(undefined);
+    expect((await combobox()).invalid).to.be.undefined;
+    expect(border()).not.to.equal(ERROR_COLOR);
+
+    await setError("Not enough free space.");
+    expect(select.validity.customError).to.be.true;
+    const invalid = await combobox();
+    expect(invalid.invalid).to.equal("true");
+    expect(invalid.description).to.equal("Not enough free space.");
+    expect(border()).to.equal(ERROR_COLOR);
+    const hint = el.shadowRoot!.querySelector<HTMLElement>('[slot="hint"]')!;
+    expect(getComputedStyle(hint).color).to.equal(ERROR_COLOR);
+    expect(getComputedStyle(hint, "::before").content).to.equal('""');
+
+    await setError(undefined);
+    expect(select.validity.valid).to.be.true;
+    expect((await combobox()).invalid).to.be.undefined;
   });
 });

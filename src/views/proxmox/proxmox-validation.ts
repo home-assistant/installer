@@ -4,6 +4,7 @@
  */
 
 import { memoryOptionsUpTo } from "../../state/vm-defaults.js";
+import type { InstallerError } from "../../utils/installer-error.js";
 
 /**
  * Proxmox's `dns-name` format: dot-separated labels of letters, digits and
@@ -22,6 +23,31 @@ export const MAX_VM_ID = 999_999_999;
 /** The VLAN tags Proxmox accepts */
 export const MIN_VLAN_TAG = 1;
 export const MAX_VLAN_TAG = 4094;
+
+/** A setting on the configure step that the check at Next can refuse */
+export type CheckedSetting = "name" | "storage" | "vmId";
+
+/**
+ * What each refusal of the check at Next is about, by its backend message.
+ * The others, like missing permissions, are no one setting's.
+ */
+const CHECKED_SETTINGS = new Map<string, CheckedSetting>([
+  ["backend.proxmox.invalid_vm_name", "name"],
+  ["backend.proxmox.storage_not_found", "storage"],
+  ["backend.proxmox.storage_inactive", "storage"],
+  ["backend.proxmox.storage_no_disk_images", "storage"],
+  // A smaller disk fits too, but the message names the storage
+  ["backend.proxmox.storage_too_small", "storage"],
+  ["backend.proxmox.vm_id_unavailable", "vmId"],
+]);
+
+/** The setting a refusal of the check at Next is about, if it is one's */
+export function checkedSetting(
+  error: InstallerError
+): CheckedSetting | undefined {
+  const key = error.details.message_key;
+  return typeof key === "string" ? CHECKED_SETTINGS.get(key) : undefined;
+}
 
 export const CORE_OPTIONS = [2, 4, 6, 8, 10, 12, 16];
 export const MEMORY_OPTIONS_MB = memoryOptionsUpTo(32768);

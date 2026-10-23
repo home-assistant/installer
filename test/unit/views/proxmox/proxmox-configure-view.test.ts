@@ -1245,9 +1245,10 @@ describe("proxmox-configure-view", () => {
       bridge: "vmbr0",
       vm_id: 100,
     });
-    expect(
-      el.shadowRoot!.querySelector("[data-focus-alert]")!.textContent
-    ).to.contain("VM ID 100 can't be used. Choose a different ID.");
+    const hint = el.shadowRoot!.querySelector(".vm-id-hint")!;
+    expect(hint.textContent).to.contain(
+      "VM ID 100 can't be used. Choose a different ID."
+    );
 
     // The form stays, so the setting can be fixed right here
     const vmId = el.shadowRoot!.querySelector<WaInput>(
@@ -1256,8 +1257,7 @@ describe("proxmox-configure-view", () => {
     vmId.value = "101";
     vmId.dispatchEvent(new Event("input"));
     await el.updateComplete;
-    expect(el.shadowRoot!.querySelector("[data-focus-alert]")?.textContent).to
-      .be.undefined;
+    expect(hint.textContent).not.to.contain("can't be used");
 
     rejection = undefined;
     expect(await el.check()).to.be.true;

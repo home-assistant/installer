@@ -47,9 +47,11 @@ import {
   MIN_VLAN_TAG,
   MIN_VM_ID,
   VM_NAME_PATTERN,
+  checkedSetting,
   coreOptionsFor,
   fitCores,
   parseWholeNumber,
+  type CheckedSetting,
 } from "./proxmox-validation.js";
 import { VmSettings, configCardStyles } from "../../utils/vm-settings.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
@@ -182,10 +184,10 @@ export class ProxmoxConfigureView extends LitElement {
   private readonly _vm = new VmSettings(this, {
     defaultName: DEFAULT_PROXMOX_VM_NAME,
     // Says what Proxmox would reject, and "home-" stays typeable on the way
-    // to "home-assistant"
+    // to "home-assistant". The check at Next can still refuse a name.
     nameError: (name) =>
       VM_NAME_PATTERN.test(name)
-        ? undefined
+        ? this._checkErrorAt("name")
         : localize("views.proxmox.proxmox_configure_view.vm_name_invalid"),
     nameHint: () =>
       localize("views.proxmox.proxmox_configure_view.vm_name_hint"),
@@ -214,12 +216,18 @@ export class ProxmoxConfigureView extends LitElement {
   @query("#network-bridge") private _bridgeSelect?: HTMLElement;
   @query(".storage-retry") private _storageRetryButton?: HTMLElement;
   @query("#storage") private _storageSelect?: HTMLElement;
+  @query("#vm-id") private _vmIdInput?: HTMLElement;
+  /** In the name's field, which the shared VM settings render */
+  @query(".name-hint") private _nameHint?: HTMLElement;
   /** What the lookup error offers: Try again, or Reconnect */
   @query(".load-retry, .reconnect") private _loadRetryButton?: HTMLElement;
   @query("h2") private _heading?: HTMLElement;
   /** The lookup error Try again is retrying, kept on screen meanwhile */
   @state() private _retrying: InstallerError | null = null;
-  /** Why Proxmox would reject these settings, until one of them changes */
+  /**
+   * Why Proxmox would reject these settings, until one of them changes. It
+   * shows at the setting it is about, if it is one's.
+   */
   @state() private _checkError: InstallerError | null = null;
   /** Raw text of the VLAN field; empty keeps today's untagged network. */
   @state() private _vlanTag = "";
@@ -286,10 +294,48 @@ export class ProxmoxConfigureView extends LitElement {
         this._lookup.setError(error);
       } else {
         new InstallDiagnostics("proxmox").fail(error);
-        this._checkError = installerError(error);
+        const checkError = installerError(error);
+        this._checkError = checkError;
+        const setting = checkedSetting(checkError);
+        if (setting) await this._focusSetting(setting, checkError);
       }
       return false;
     }
+  }
+
+  /** What the check at Next refused about `setting`, shown at its field */
+  private _checkErrorAt(setting: CheckedSetting): string | undefined {
+    const error = this._checkError;
+    return error && checkedSetting(error) === setting
+      ? error.message
+      : undefined;
+  }
+
+  /** The field of `setting`, where the check's error for it shows */
+  private _fieldOf(setting: CheckedSetting): HTMLElement | null | undefined {
+    switch (setting) {
+      case "name":
+        return this._nameHint?.closest<HTMLElement>("wa-input");
+      case "storage":
+        return this._storageSelect;
+      case "vmId":
+        return this._vmIdInput;
+    }
+  }
+
+  /**
+   * Take the focus to the field the check's `error` is about, which says
+   * why. An error that is no setting's takes the focus itself, below the
+   * form.
+   */
+  private async _focusSetting(setting: CheckedSetting, error: InstallerError) {
+    await this.updateComplete;
+    if (!this.isConnected || this._checkError !== error) return;
+    const field = this._fieldOf(setting);
+    // Once the field has its error, so it is read out with it
+    await (field as { updateComplete?: Promise<unknown> } | null | undefined)
+      ?.updateComplete;
+    field?.focus();
   }
 
   private async _enableImport() {
@@ -397,6 +443,8 @@ export class ProxmoxConfigureView extends LitElement {
   }
 
   private _saveSelections() {
+    // Cleared first, so it can't hold Next back through the name's error
+    // below: Next runs the check again
     this._checkError = null;
     const lookup = this._lookup;
     const selections: Partial<WizardSelections> = {
@@ -521,6 +569,13 @@ export class ProxmoxConfigureView extends LitElement {
 
   private _renderForm() {
     const lookup = this._lookup;
+    const storageError = this._checkErrorAt("storage");
+    const vmIdError = this._vmIdError ?? this._checkErrorAt("vmId");
+    // What the check refused that is no one setting's
+    const generalError =
+      this._checkError && !checkedSetting(this._checkError)
+        ? this._checkError
+        : null;
     return html`
       <p class="sr-only" role="status">${lookup.importStorage.status}</p>
 
@@ -622,6 +677,7 @@ export class ProxmoxConfigureView extends LitElement {
                     @change=${this._onStorageChange}
                     ?disabled=${!lookup.selectedNode ||
                     lookup.storages.length === 0}
+                    ${fieldError(storageError)}
                   >
                     ${lookup.storages.map(
                       (storage) => html`
@@ -633,6 +689,11 @@ export class ProxmoxConfigureView extends LitElement {
                         </wa-option>
                       `
                     )}
+                    ${storageError
+                      ? html`<span slot="hint" class="storage-error"
+                          >${storageError}</span
+                        >`
+                      : ""}
                   </wa-select>
                 `}
             <p class="setting-description">
@@ -744,6 +805,7 @@ export class ProxmoxConfigureView extends LitElement {
           <div class="setting-icon">${renderIcon(vmIdIcon)}</div>
           <div class="setting-content">
             <wa-input
+              id="vm-id"
               label=${localize("views.proxmox.proxmox_configure_view.vm_id")}
               type="number"
               size="s"
@@ -752,11 +814,11 @@ export class ProxmoxConfigureView extends LitElement {
               @input=${this._onVmIdChange}
               min=${MIN_VM_ID}
               max=${MAX_VM_ID}
-              ${fieldError(this._vmIdError)}
+              ${fieldError(vmIdError)}
             >
               <!-- In the hint slot and not role="alert", like the name hint -->
               <span slot="hint" class="vm-id-hint" aria-live="polite"
-                >${this._vmIdError ??
+                >${vmIdError ??
                 localize(
                   "views.proxmox.proxmox_configure_view.unique_identifier_for_the_virtual_machine"
                 )}</span
@@ -796,9 +858,9 @@ export class ProxmoxConfigureView extends LitElement {
           >
         </wa-input>
       </wa-details>
-      ${this._checkError
+      ${generalError
         ? html`<p class="error-text" data-focus-alert>
-            ${this._checkError.message}
+            ${generalError.message}
           </p>`
         : ""}
     `;
