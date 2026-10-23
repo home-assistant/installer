@@ -8,6 +8,7 @@ import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
+import { LatestRequest } from "../../utils/latest-request.js";
 import { customElement, queryAll, state } from "lit/decorators.js";
 import {
   proxmoxCertificateFingerprint,
@@ -154,7 +155,7 @@ export class ProxmoxConnectView extends LitElement {
   private _trustedCertificates = new Map<string, string | null>();
 
   private _resolveCertificate?: (confirmed: boolean) => void;
-  private _connectionAttempt = 0;
+  private readonly _attempts = new LatestRequest(this);
 
   connectedCallback() {
     super.connectedCallback();
@@ -193,7 +194,6 @@ export class ProxmoxConnectView extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._connectionAttempt++;
     this._connecting = false;
     this._finishCertificate(false);
   }
@@ -268,23 +268,18 @@ export class ProxmoxConnectView extends LitElement {
     // Gone while Proxmox is asked again, so the same error coming back is
     // read out again
     this._fieldErrors = {};
-    const attempt = ++this._connectionAttempt;
-    const flowGeneration = wizardState.flowGeneration;
-    const isCurrent = () =>
-      this.isConnected &&
-      attempt === this._connectionAttempt &&
-      flowGeneration === wizardState.flowGeneration;
+    const attempt = this._attempts.start();
     const diagnostics = new InstallDiagnostics("proxmox");
     diagnostics.advance("connecting");
 
     try {
       const fingerprint = await proxmoxCertificateFingerprint(url);
-      if (!isCurrent()) return false;
+      if (!attempt.current) return false;
       // No fingerprint means the platform trusts the certificate; remembered,
       // so an untrusted one on a retry is a change, not a first visit
       if (fingerprint) {
         const confirmed = await this._confirmCertificate(url, fingerprint);
-        if (!confirmed || !isCurrent()) return false;
+        if (!confirmed || !attempt.current) return false;
       } else {
         this._rememberCertificate(url, null);
       }
@@ -295,7 +290,7 @@ export class ProxmoxConnectView extends LitElement {
         totp: this._totp.trim() || undefined,
         ...(fingerprint ? { certificate_sha256: fingerprint } : {}),
       });
-      if (!isCurrent()) return false;
+      if (!attempt.current) return false;
 
       this._connected = true;
       diagnostics.advance("complete");
@@ -316,7 +311,7 @@ export class ProxmoxConnectView extends LitElement {
       });
       return true;
     } catch (error) {
-      if (!isCurrent()) return false;
+      if (!attempt.current) return false;
       diagnostics.fail(error);
       wizardState.setSelection("proxmoxConnected", false);
       const failure = installerError(
@@ -331,7 +326,7 @@ export class ProxmoxConnectView extends LitElement {
       this._error = failure;
       return false;
     } finally {
-      if (attempt === this._connectionAttempt) {
+      if (attempt.latest) {
         this._totp = "";
         this._connecting = false;
       }

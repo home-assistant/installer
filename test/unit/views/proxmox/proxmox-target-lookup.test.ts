@@ -55,9 +55,12 @@ function createLookup() {
     nodesLoaded: (nextVmId) => heard.nextVmIds.push(nextVmId),
     save: () => heard.saves++,
   });
-  expect(controllers).to.deep.equal([lookup]);
-  lookup.hostConnected();
-  return { lookup, heard };
+  expect(controllers).to.include(lookup);
+  // Like Lit, the view tells each of its controllers when it comes and goes
+  controllers.forEach((controller) => controller.hostConnected?.());
+  const leave = () =>
+    controllers.forEach((controller) => controller.hostDisconnected?.());
+  return { lookup, heard, leave };
 }
 
 describe("ProxmoxTargetLookup", () => {
@@ -191,9 +194,9 @@ describe("ProxmoxTargetLookup", () => {
   it("changes nothing once its view was left", async () => {
     const pending = deferred<ProxmoxNode[]>();
     nodes = pending.promise;
-    const { lookup, heard } = createLookup();
+    const { lookup, heard, leave } = createLookup();
     const loading = lookup.loadNodes();
-    lookup.hostDisconnected();
+    leave();
 
     pending.reject(ipcError("proxmox_session_expired", "Session expired"));
     await loading;

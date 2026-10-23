@@ -21,6 +21,10 @@ import {
   installerError,
   type InstallerError,
 } from "../../utils/installer-error.js";
+import {
+  LatestRequest,
+  type RequestToken,
+} from "../../utils/latest-request.js";
 import { ProxmoxImportStorage } from "./proxmox-import-storage.js";
 import {
   SESSION_EXPIRED,
@@ -75,8 +79,10 @@ export class ProxmoxTargetLookup implements ReactiveController {
   /** Whether the node's storage accepts Import, and the consent to enable it */
   readonly importStorage = new ProxmoxImportStorage(this);
 
-  /** Bumped per storage lookup, so only the latest one applies its result */
-  private _storageLookup = 0;
+  /** Only the latest storage lookup applies its result */
+  private readonly _storageLookups: LatestRequest;
+  /** The storage lookup started last, see `storageLookup` */
+  private _storageLookup?: RequestToken;
   /** A lookup that finishes once the step was left must not save */
   private _connected = false;
 
@@ -84,6 +90,7 @@ export class ProxmoxTargetLookup implements ReactiveController {
     private readonly _host: ReactiveControllerHost,
     private readonly _form: ProxmoxTargetForm
   ) {
+    this._storageLookups = new LatestRequest(_host);
     _host.addController(this);
   }
 
@@ -109,7 +116,7 @@ export class ProxmoxTargetLookup implements ReactiveController {
   }
 
   /** The latest storage lookup, which a newer one replaces */
-  get storageLookup(): number {
+  get storageLookup(): RequestToken | undefined {
     return this._storageLookup;
   }
 
@@ -236,8 +243,8 @@ export class ProxmoxTargetLookup implements ReactiveController {
     const node = this.selectedNode;
     // Switching nodes quickly can have lookups finish out of order, even two
     // for the same node; only the latest one may update the storage
-    const lookup = ++this._storageLookup;
-    const isLatest = () => lookup === this._storageLookup;
+    const lookup = this._storageLookups.start();
+    this._storageLookup = lookup;
     const isCurrentSession = () => this._form.session() === session;
 
     this.loadingStorage = true;
@@ -268,7 +275,7 @@ export class ProxmoxTargetLookup implements ReactiveController {
           result.status === "rejected"
       );
       const expired = failures.find((result) => needsReconnect(result.reason));
-      if (!isLatest()) {
+      if (!lookup.latest) {
         // Session expiry applies to every node, even from a superseded
         // lookup; the catch below handles it. Other failures belong to the
         // old selection.
@@ -322,7 +329,7 @@ export class ProxmoxTargetLookup implements ReactiveController {
       this._form.save();
     } catch (error) {
       if (!this.connected || !isCurrentSession()) return;
-      if (!isLatest()) {
+      if (!lookup.latest) {
         // Session expiry applies to every node, even if this lookup was
         // superseded. Ordinary failures still belong to the old selection.
         if (needsReconnect(error)) {
@@ -336,7 +343,7 @@ export class ProxmoxTargetLookup implements ReactiveController {
       this.setError(error);
     } finally {
       // A newer lookup is still running and owns the loading state
-      if (isLatest()) {
+      if (lookup.latest) {
         this.loadingStorage = false;
         this.reloadFrom = undefined;
         this.importStorage.busy = false;

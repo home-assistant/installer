@@ -3,6 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import { checkConnection } from "../api/commands.js";
 import { localize } from "../localization/localize.js";
 import { installerError, renderErrorHelp } from "../utils/installer-error.js";
+import { LatestRequest } from "../utils/latest-request.js";
 import { linkStyles } from "../utils/link-styles.js";
 import { renderRetryButton } from "../utils/load-state.js";
 import { pageStyles, renderBackHeader } from "../utils/page-header.js";
@@ -40,7 +41,7 @@ export class ConnectionCheckView extends LitElement {
   @state() private _error = "";
   /** A check failed, so Try again stays, also while it checks again */
   @state() private _failed = false;
-  private _request = 0;
+  private readonly _requests = new LatestRequest(this);
 
   connectedCallback() {
     super.connectedCallback();
@@ -49,27 +50,26 @@ export class ConnectionCheckView extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._request++;
     this._checking = false;
   }
 
   private async _check() {
     if (this._checking) return;
-    const request = ++this._request;
+    const request = this._requests.start();
     this._checking = true;
     this._error = "";
     try {
       await checkConnection();
-      if (this.isConnected && request === this._request) {
+      if (request.current) {
         this.dispatchEvent(new CustomEvent("connection-ready"));
       }
     } catch (error) {
-      if (this.isConnected && request === this._request) {
+      if (request.current) {
         this._error = installerError(error).message;
         this._failed = true;
       }
     } finally {
-      if (request === this._request) this._checking = false;
+      if (request.latest) this._checking = false;
     }
   }
 
@@ -108,7 +108,7 @@ export class ConnectionCheckView extends LitElement {
   }
 
   private _back() {
-    this._request++;
+    this._requests.cancel();
     this.dispatchEvent(new CustomEvent("connection-back"));
   }
 }

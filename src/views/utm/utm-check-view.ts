@@ -7,6 +7,7 @@ import { linkStyles } from "../../utils/link-styles.js";
 import { LitElement, html, css, nothing } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { recordFailure } from "../../utils/diagnostics.js";
+import { LatestRequest } from "../../utils/latest-request.js";
 import { customElement, query, state } from "lit/decorators.js";
 import { checkUtmAutomation, checkUtmStatus } from "../../api/commands.js";
 import type { UtmStatus } from "../../api/types.js";
@@ -102,28 +103,18 @@ export class UtmCheckView extends LitElement {
   @query(".status .status-title")
   private _statusTitle?: HTMLElement;
 
-  /** Bumped per check, so only the latest one decides */
-  private _check = 0;
+  /** Only the latest check decides */
+  private readonly _checks = new LatestRequest(this);
 
   connectedCallback() {
     super.connectedCallback();
     void this._checkStatus();
   }
 
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this._check++;
-  }
-
   private async _checkStatus() {
-    const check = ++this._check;
-    const flowGeneration = wizardState.flowGeneration;
     // The Automation prompt can stay open while the user leaves the step;
     // its answer then belongs to no flow
-    const isCurrent = () =>
-      this.isConnected &&
-      check === this._check &&
-      flowGeneration === wizardState.flowGeneration;
+    const check = this._checks.start();
     // The previous result, and its buttons, stay until this one replaces it
     this._loading = true;
     // Coming back from a later step left this set: Next waits for the check
@@ -135,14 +126,14 @@ export class UtmCheckView extends LitElement {
     let status: UtmStatus | undefined;
     try {
       status = await checkUtmStatus();
-      if (!isCurrent()) return;
+      if (!check.current) return;
 
       // Ask for Automation now, not after the download: a refusal then
       // costs nothing, and an unnoticed prompt can't stall the install
       if (status.installed) {
         this._askingAutomation = true;
         await checkUtmAutomation();
-        if (!isCurrent()) return;
+        if (!check.current) return;
       }
 
       // Store UTM installed status in wizard state
@@ -150,7 +141,7 @@ export class UtmCheckView extends LitElement {
       this._error = null;
       wizardState.setSelection("utmInstalled", status.installed);
     } catch (error) {
-      if (!isCurrent()) return;
+      if (!check.current) return;
       if (status) this._utmStatus = status;
       recordFailure("utm", error);
       this._error = installerError(
@@ -159,7 +150,7 @@ export class UtmCheckView extends LitElement {
       );
       wizardState.setSelection("utmInstalled", false);
     } finally {
-      if (check === this._check) {
+      if (check.latest) {
         this._loading = false;
         this._askingAutomation = false;
       }
@@ -168,7 +159,7 @@ export class UtmCheckView extends LitElement {
     // The button that started the check can be gone now, as when UTM was
     // found: continue from what the check found
     await this.updateComplete;
-    if (!isCurrent()) return;
+    if (!check.current) return;
     this._accessibility.restoreFocus(this._statusTitle);
   }
 
