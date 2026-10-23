@@ -52,7 +52,7 @@ export class HaHardwareConnectInstructions extends LitElement {
 
       ol {
         margin: 0;
-        padding-left: 1.25rem;
+        padding-inline-start: 1.25rem;
       }
 
       li + li {

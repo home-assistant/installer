@@ -227,6 +227,8 @@ export class InstallProgress extends LitElement {
         }
       }
 
+      /* Right of Casita in either direction: the artwork's bubbles rise that
+         way */
       .thinking-cloud {
         position: absolute;
         top: -110px;
