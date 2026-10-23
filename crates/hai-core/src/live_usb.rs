@@ -79,6 +79,8 @@ pub async fn prepare<B: ReleaseSource, P: ProgressCallback>(
     let haos = downloads::fetch_haos(backend, &cache, progress).await?;
 
     let files = unpack_alpine(&cache, &alpine)?;
+    // Also on an earlier unpacked copy, so a cache from before this still gets the new title
+    retitle_boot_menu(&files.join("boot/grub/grub.cfg"))?;
     let label = iso::read_label(&alpine.path)?;
     let haos_name = haos
         .path
@@ -145,6 +147,32 @@ fn unpack_alpine(cache: &Path, alpine: &downloads::Download) -> Result<PathBuf> 
     std::fs::write(&done, alpine.sha256.as_bytes())?;
     Ok(dir.join("files"))
 }
+
+/// GRUB shows the menu entry's title while it starts the stick ("Booting `Linux lts'"). Name it
+/// after what the stick is. Only titles change, so the kernel arguments keep following Alpine;
+/// without a GRUB config there is nothing to rename.
+fn retitle_boot_menu(grub_cfg: &Path) -> Result<()> {
+    let Ok(config) = std::fs::read_to_string(grub_cfg) else {
+        return Ok(());
+    };
+    let retitled: String = config
+        .lines()
+        .map(|line| match line.strip_prefix("menuentry \"") {
+            Some(rest) => match rest.split_once('"') {
+                Some((_, after)) => format!("menuentry \"{BOOT_MENU_TITLE}\"{after}\n"),
+                None => format!("{line}\n"),
+            },
+            None => format!("{line}\n"),
+        })
+        .collect();
+    if retitled != config {
+        std::fs::write(grub_cfg, retitled)?;
+    }
+    Ok(())
+}
+
+/// What GRUB says it is starting.
+const BOOT_MENU_TITLE: &str = "Home Assistant Installer";
 
 /// Whether the file at `path` is the static Linux build of `hai-live` that the stick can run.
 pub fn is_usable_hai_live(path: &Path) -> bool {
@@ -232,6 +260,30 @@ mod tests {
         assert!(!is_usable_hai_live(&path), "dynamic");
         std::fs::write(&path, elf(2, 0x3e, 1)).unwrap();
         assert!(is_usable_hai_live(&path));
+    }
+
+    #[test]
+    fn names_the_boot_menu_after_the_installer() {
+        let dir = tempfile::tempdir().unwrap();
+        let grub_cfg = dir.path().join("grub.cfg");
+        // Alpine 3.24's boot/grub/grub.cfg
+        std::fs::write(
+            &grub_cfg,
+            "set timeout=1\n\nmenuentry \"Linux lts\" {\nlinux\t/boot/vmlinuz-lts modules=loop,squashfs,sd-mod,usb-storage quiet \ninitrd\t/boot/initramfs-lts\n}\n",
+        )
+        .unwrap();
+
+        retitle_boot_menu(&grub_cfg).unwrap();
+        let config = std::fs::read_to_string(&grub_cfg).unwrap();
+        assert!(config.contains("menuentry \"Home Assistant Installer\" {"));
+        assert!(config
+            .contains("linux\t/boot/vmlinuz-lts modules=loop,squashfs,sd-mod,usb-storage quiet"));
+        assert!(!config.contains("Linux lts"));
+
+        // A second time changes nothing, and no config is fine
+        retitle_boot_menu(&grub_cfg).unwrap();
+        assert_eq!(std::fs::read_to_string(&grub_cfg).unwrap(), config);
+        retitle_boot_menu(&dir.path().join("missing.cfg")).unwrap();
     }
 
     #[test]

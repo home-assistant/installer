@@ -8,6 +8,7 @@ description = "Install program on the live USB stick: writes Home Assistant OS t
 
 [dependencies]
 lzma-rs = { workspace = true }
+ratatui = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 
