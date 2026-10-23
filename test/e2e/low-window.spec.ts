@@ -8,7 +8,12 @@ import { expect, test } from "./fixtures.js";
  */
 async function bars(page: Page, view: string, width: number, height: number) {
   await page.setViewportSize({ width, height });
-  return page.locator(view).evaluate((element) => {
+  return page.locator(view).evaluate(async (element) => {
+    // The step indicator fits its names in the frame after it sees the new
+    // width, which the first frame may only just show it
+    for (let frame = 0; frame < 3; frame++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
     const part = (selector: string) =>
       element.shadowRoot!.querySelector(selector)?.getBoundingClientRect()
         .height ?? 0;
