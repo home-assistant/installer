@@ -104,7 +104,7 @@ async function finishRecovery(page: Page, { retried = false } = {}) {
     // Try again stays, busy and focused, until the lookups are back; the
     // error is empty meanwhile, so the same failure would be read out again
     const retry = view.getByRole("button", { name: "Try again", exact: true });
-    await expect(view.locator("wa-button.load-retry")).toHaveAttribute(
+    await expect(view.locator(".error > wa-button")).toHaveAttribute(
       "loading",
       ""
     );

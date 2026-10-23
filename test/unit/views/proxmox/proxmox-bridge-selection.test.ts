@@ -505,7 +505,7 @@ describe("Proxmox bridge selection", () => {
     wizardState.setSelection("proxmoxBridge", "vmbr1");
     mockNetworks(() => Promise.reject("Network lookup failed"));
     const el = await mount();
-    await waitUntil(() => !!el.shadowRoot!.querySelector(".error-text"));
+    await waitUntil(() => !!el.shadowRoot!.querySelector(".error-message"));
     expect(el.shadowRoot!.textContent).to.contain("Network lookup failed");
     expect(wizardState.getState().selections.proxmoxBridge).to.equal("");
     expect(wizardState.getState().selections.proxmoxBridgeReady).to.be.false;

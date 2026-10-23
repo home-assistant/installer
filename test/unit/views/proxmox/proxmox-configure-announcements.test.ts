@@ -205,7 +205,7 @@ describe("proxmox-configure-view announcements", () => {
 
     nodes = () => [{ name: "pve", status: "online" }];
     storages = () => [directory, disk];
-    el.shadowRoot!.querySelector<HTMLElement>(".load-retry")!.click();
+    el.shadowRoot!.querySelector<HTMLElement>(".error > wa-button")!.click();
     await waitUntil(
       () => status(el).textContent!.includes(needsImport),
       "the hint never said what Next needs"

@@ -1,6 +1,5 @@
 import {
   installerError,
-  renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
@@ -55,7 +54,11 @@ import {
 } from "./proxmox-validation.js";
 import { VmSettings, configCardStyles } from "../../utils/vm-settings.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
-import { renderRetryButton } from "../../utils/load-state.js";
+import {
+  loadStateStyles,
+  renderLoadError,
+  renderRetryButton,
+} from "../../utils/load-state.js";
 
 // MDI icons only this view uses; utils/icons.ts has the shared ones
 const vmIdIcon =
@@ -79,6 +82,7 @@ export class ProxmoxConfigureView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     stepStyles,
+    loadStateStyles,
     srOnlyStyles,
     reducedMotionStyles,
     settingStyles,
@@ -220,7 +224,7 @@ export class ProxmoxConfigureView extends LitElement {
   /** In the name's field, which the shared VM settings render */
   @query(".name-hint") private _nameHint?: HTMLElement;
   /** What the lookup error offers: Try again, or Reconnect */
-  @query(".load-retry, .reconnect") private _loadRetryButton?: HTMLElement;
+  @query(".error > wa-button") private _loadRetryButton?: HTMLElement;
   @query("h2") private _heading?: HTMLElement;
   /** The lookup error Try again is retrying, kept on screen meanwhile */
   @state() private _retrying: InstallerError | null = null;
@@ -543,28 +547,15 @@ export class ProxmoxConfigureView extends LitElement {
 
   /** A lookup that failed, in place of the form */
   private _renderLookupError(error: InstallerError) {
-    return html`
-      <div class="config-card">
-        <!-- Empty while trying again, so the same failure is read out again -->
-        <p class="error-text" data-focus-alert style="overflow-wrap: anywhere;">
-          ${this._retrying ? "" : error.message}
-        </p>
-        ${renderErrorHelp()}
-        ${this._lookup.sessionExpired
-          ? html`<wa-button
-              class="reconnect"
-              variant="brand"
-              @click=${this._reconnect}
-            >
-              ${localize("common.proxmox.reconnect")}
-            </wa-button>`
-          : error.retryable
-            ? renderRetryButton(!!this._retrying, () => this._retry(), {
-                className: "load-retry",
-              })
-            : ""}
-      </div>
-    `;
+    // Trying again can't bring back an expired session; logging in again can
+    return renderLoadError(error, !!this._retrying, () => this._retry(), {
+      action: this._lookup.sessionExpired
+        ? {
+            label: localize("common.proxmox.reconnect"),
+            onAction: () => this._reconnect(),
+          }
+        : undefined,
+    });
   }
 
   private _renderForm() {

@@ -11,6 +11,7 @@ import {
 import type { InstallerError } from "../../../src/utils/installer-error.js";
 import "../../../src/views/ha-hardware/device-selection-view.js";
 import "../../../src/views/minipc/architecture-selection-view.js";
+import "../../../src/views/proxmox/proxmox-configure-view.js";
 import "../../../src/views/proxmox/proxmox-connect-view.js";
 import "../../../src/views/sbc/device-selection-view.js";
 import "../../../src/views/sbc/drive-selection-view.js";
@@ -21,6 +22,7 @@ const STEPS = [
   "minipc-architecture-selection-view",
   "device-selection-view",
   "drive-selection-view",
+  "proxmox-configure-view",
 ];
 
 const STATUS_STEPS = ["utm-check-view", "proxmox-connect-view"];
@@ -85,6 +87,23 @@ describe("load state", () => {
       html`<div>${renderLoadError(failure(false), false, noop)}</div>`
     );
     expect(el.querySelector("wa-button")).to.be.null;
+  });
+
+  it("offers what fixes the error in place of Try again", () => {
+    let actions = 0;
+    const el = fixtureSync(
+      html`<div>
+        ${renderLoadError(failure(true), false, noop, {
+          action: { label: "Reconnect", onAction: () => actions++ },
+        })}
+      </div>`
+    );
+    const buttons = el.querySelectorAll(".error > wa-button");
+    expect(buttons.length).to.equal(1);
+    expect(buttons[0].textContent!.trim()).to.equal("Reconnect");
+    expect(buttons[0].getAttribute("variant")).to.equal("brand");
+    buttons[0].dispatchEvent(new MouseEvent("click"));
+    expect(actions).to.equal(1);
   });
 
   it("draws every Try again alike", () => {

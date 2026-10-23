@@ -90,15 +90,23 @@ export function renderRetryButton(
   `;
 }
 
+/** What a load error offers when trying again can't fix it */
+export interface LoadErrorAction {
+  label: string;
+  onAction: () => unknown;
+}
+
 /**
  * Why a step couldn't load what it needs. While it retries, the error stays
  * with Try again busy, and the message is empty, so the same failure is read
- * out again if it comes back.
+ * out again if it comes back. An error that only something else fixes, like
+ * logging in again, offers that `action` in place of Try again.
  */
 export function renderLoadError(
   error: InstallerError,
   retrying: boolean,
-  onRetry: () => unknown
+  onRetry: () => unknown,
+  { action }: { action?: LoadErrorAction } = {}
 ) {
   return html`
     <div class="error">
@@ -107,7 +115,13 @@ export function renderLoadError(
         ${retrying ? "" : error.message}
       </p>
       ${renderErrorHelp()}
-      ${error.retryable ? renderRetryButton(retrying, onRetry) : ""}
+      ${action
+        ? html`<wa-button variant="brand" @click=${action.onAction}
+            >${action.label}</wa-button
+          >`
+        : error.retryable
+          ? renderRetryButton(retrying, onRetry)
+          : ""}
     </div>
   `;
 }
