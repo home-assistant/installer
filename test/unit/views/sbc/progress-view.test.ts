@@ -14,6 +14,7 @@ import { wizardState } from "../../../../src/state/wizard-state.js";
 import { storeDriveSelection } from "../../../../src/utils/drive-selection.js";
 import "../../../../src/views/sbc/progress-view.js";
 import type { ProgressView } from "../../../../src/views/sbc/progress-view.js";
+import { showsError } from "../../helpers/progress-error.js";
 import {
   deferred,
   mockTauriIpc,
@@ -161,7 +162,7 @@ describe("progress-view", () => {
     await settle();
     expect(completed).to.equal(1);
     expect(errors).to.equal(0);
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
   });
 
   // Commands reject with structured errors; only retryable ones may retry here
@@ -178,7 +179,7 @@ describe("progress-view", () => {
       details: {},
     });
     await settle();
-    expect(el.hasError).to.be.true;
+    expect(showsError(el)).to.be.true;
     expect(
       el
         .shadowRoot!.querySelector("install-progress")!
@@ -190,7 +191,7 @@ describe("progress-view", () => {
     await settle();
     expect(attempts).to.have.length(2);
     expect(attempts[1].request).to.deep.equal(attempts[0].request);
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
     expect(
       el
         .shadowRoot!.querySelector("install-progress")!
@@ -270,7 +271,7 @@ describe("progress-view", () => {
 
         attempts[0].result.reject(cancelled);
         await settle();
-        expect(el.hasError).to.be.true;
+        expect(showsError(el)).to.be.true;
         expect(errorMessage(el)).to.contain(message);
 
         // Stopped is not broken: the same install can start again, as a
@@ -307,7 +308,7 @@ describe("progress-view", () => {
       expect(
         el.shadowRoot!.querySelector("install-progress")!.stageTitle
       ).to.not.equal("Stopping");
-      expect(el.hasError).to.be.false;
+      expect(showsError(el)).to.be.false;
       expect(attempts).to.have.length(1);
     });
 
@@ -377,7 +378,7 @@ describe("progress-view", () => {
     el.retry();
     await settle();
     expect(attempts).to.have.length(1);
-    expect(el.hasError).to.be.true;
+    expect(showsError(el)).to.be.true;
   });
 
   // The drive is fine: offer to write it again, not to pick another one
@@ -536,7 +537,7 @@ describe("progress-view", () => {
       );
       await el.updateComplete;
 
-      expect(el.hasError).to.be.true;
+      expect(showsError(el)).to.be.true;
       expect(
         el.shadowRoot!.querySelector("install-progress")!.shadowRoot!
           .textContent
@@ -562,7 +563,7 @@ describe("progress-view", () => {
         html`<progress-view></progress-view>`
       );
       await settle();
-      expect(el.hasError).to.be.true;
+      expect(showsError(el)).to.be.true;
       expect(
         el
           .shadowRoot!.querySelector("install-progress")!

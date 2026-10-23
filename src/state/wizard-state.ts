@@ -428,11 +428,6 @@ class WizardStateStore {
   get isLastStep(): boolean {
     return this.state.currentStepIndex === this.state.steps.length - 1;
   }
-
-  get progress(): number {
-    if (this.state.steps.length === 0) return 0;
-    return (this.state.currentStepIndex + 1) / this.state.steps.length;
-  }
 }
 
 // Singleton instance

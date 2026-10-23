@@ -12,6 +12,7 @@ import type {
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/proxmox/proxmox-progress-view.js";
 import type { ProxmoxProgressView } from "../../../../src/views/proxmox/proxmox-progress-view.js";
+import { showsError } from "../../helpers/progress-error.js";
 import {
   deferred,
   ipcError,
@@ -224,7 +225,7 @@ describe("proxmox-progress-view", () => {
     el.retry();
     await settle();
     expect(attempts).to.equal(1);
-    expect(el.hasError).to.be.true;
+    expect(showsError(el)).to.be.true;
   });
 
   // Before the VM is being created, the backend keeps the retry: nothing is
@@ -339,7 +340,7 @@ describe("proxmox-progress-view", () => {
     const el = mount();
     await oneEvent(el, "install-complete");
 
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
     expect(wizardState.getState().selections.ipAddress).to.equal(
       "192.168.1.50"
     );
@@ -517,7 +518,7 @@ describe("proxmox-progress-view", () => {
       "never showed the problem",
       { timeout: 3000 }
     );
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
     el.remove();
   });
 
@@ -597,7 +598,7 @@ describe("proxmox-progress-view", () => {
     await oneEvent(el, "install-complete");
 
     expect(statusCalls).to.equal(2);
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
   });
 
   // Before the VM is created, logging in again can start over safely. Once
@@ -853,7 +854,7 @@ describe("proxmox-progress-view", () => {
       install.createVm.resolve({ vm_id: 100, node: "pve" });
       await completed;
 
-      expect(el.hasError).to.be.false;
+      expect(showsError(el)).to.be.false;
       expect(stageTitle(el)).to.not.equal("Stopping");
     });
 
@@ -884,7 +885,7 @@ describe("proxmox-progress-view", () => {
       await el.updateComplete;
 
       expect(abortSignalOf(el), "install should not have started").to.not.exist;
-      expect(el.hasError).to.be.true;
+      expect(showsError(el)).to.be.true;
       expect(progressOf(el).textContent).to.contain("No Proxmox session");
       expect(errorEvents).to.equal(1);
     } finally {

@@ -230,10 +230,6 @@ export class WizardShell extends LitElement {
     return wizardState.isFirstStep;
   }
 
-  get isLastStep(): boolean {
-    return wizardState.isLastStep;
-  }
-
   render() {
     return html`
       <header class="header">

@@ -289,21 +289,6 @@ describe("wizard-state", () => {
     expect(state.selections).to.deep.equal({});
   });
 
-  it("calculates progress correctly", () => {
-    wizardState.startFlow("vm");
-    const stepCount = wizardState.getState().steps.length;
-    expect(wizardState.progress).to.be.closeTo(1 / stepCount, 0.01);
-
-    wizardState.nextStep();
-    expect(wizardState.progress).to.be.closeTo(2 / stepCount, 0.01);
-
-    // Advance to the final step
-    while (!wizardState.isLastStep) {
-      wizardState.nextStep();
-    }
-    expect(wizardState.progress).to.equal(1);
-  });
-
   it("notifies subscribers on state change", () => {
     let notifyCount = 0;
     const unsubscribe = wizardState.subscribe(() => {

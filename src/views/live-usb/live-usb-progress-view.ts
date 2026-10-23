@@ -135,7 +135,6 @@ export class LiveUsbProgressView extends InstallProgressView {
       throwIfCancelled(signal);
       wizardState.setSelection("liveIsoPath", path);
     }
-    return {};
   }
 
   protected _choiceCanFix(error: InstallerError): boolean {

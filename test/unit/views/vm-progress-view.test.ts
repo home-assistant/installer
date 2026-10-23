@@ -9,6 +9,7 @@ import type { FlashProgress } from "../../../src/api/types.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
 import type { InstallFailure } from "../../../src/views/install-progress-view.js";
 import { VmProgressView } from "../../../src/views/vm-progress-view.js";
+import { showsError } from "../helpers/progress-error.js";
 import {
   deferred,
   ipcError,
@@ -21,10 +22,7 @@ import {
 type TestStage = "downloading" | "building";
 
 /** What a test plays as the flow's steps, on the view they report to */
-type Steps = (
-  view: TestProgressView,
-  signal: AbortSignal
-) => Promise<Record<string, unknown>>;
+type Steps = (view: TestProgressView, signal: AbortSignal) => Promise<void>;
 
 /** A made-up flow: a download a stop can end, then one more step */
 class TestProgressView extends VmProgressView<TestStage> {
@@ -141,13 +139,13 @@ describe("vm-progress-view", () => {
     expect(Misspelled).to.be.a("function");
   });
 
-  it("completes with what the flow's steps resolve to", async () => {
-    const el = mount(async () => ({ ipAddress: "192.0.2.50" }));
+  it("completes once the flow's steps are done", async () => {
+    const el = mount(async () => {});
 
     const completed = await oneEvent(el, "install-complete");
     await el.updateComplete;
 
-    expect(completed.detail).to.deep.equal({ ipAddress: "192.0.2.50" });
+    expect(completed.detail).to.equal(null);
     expect(layoutOf(el).stage).to.equal("complete");
     expect(layoutOf(el).progress).to.equal(100);
   });
@@ -161,7 +159,6 @@ describe("vm-progress-view", () => {
       const el = mount(
         async () => {
           ran = true;
-          return {};
         },
         {
           error: ipcError("test_blocked", "Blocked", false),
@@ -169,9 +166,9 @@ describe("vm-progress-view", () => {
         }
       );
 
-      expect(el.hasError).to.be.true;
       expect(errors).to.equal(1);
       await el.updateComplete;
+      expect(showsError(el)).to.be.true;
       expect(layoutOf(el).error).to.equal("Nothing to install with");
 
       el.retry();
@@ -198,7 +195,6 @@ describe("vm-progress-view", () => {
 
     const failedAgain = oneEvent(el, "install-error");
     el.retry();
-    expect(el.hasError).to.be.false;
     expect((await failedAgain).detail.retryable).to.be.false;
 
     el.retry();
@@ -240,7 +236,6 @@ describe("vm-progress-view", () => {
     const el = mount(async (view) => {
       await view.runBackendStep(() => first.promise);
       await view.runBackendStep(() => new Promise(() => {}));
-      return {};
     });
     await el.updateComplete;
     el.showProgress("downloading", progress(30));
@@ -269,7 +264,7 @@ describe("vm-progress-view", () => {
     const el = mount(async (view, signal) => {
       await view.runBackendStep(() => download.promise);
       view.startStage("building");
-      return { ipAddress: await view.waitForHomeAssistant(signal) };
+      await view.waitForHomeAssistant(signal);
     });
     const stoppable: boolean[] = [];
     const leavable: boolean[] = [];
@@ -324,7 +319,6 @@ describe("vm-progress-view", () => {
           attempts.push(attempt);
           return step.promise;
         });
-        return {};
       });
       return { el, steps, attempts, stops, stopped };
     }
@@ -387,7 +381,7 @@ describe("vm-progress-view", () => {
 
   for (const leave of ["detached", "a new flow started"]) {
     it(`drops the install's result once ${leave}`, async () => {
-      const result = deferred<Record<string, unknown>>();
+      const result = deferred<void>();
       let signal!: AbortSignal;
       const el = mount((_view, attemptSignal) => {
         signal = attemptSignal;
@@ -401,10 +395,10 @@ describe("vm-progress-view", () => {
       else wizardState.startFlow("vm");
       expect(signal.aborted).to.be.true;
 
-      result.resolve({});
+      result.resolve();
       await settle();
       expect(events).to.deep.equal([]);
-      expect(el.hasError).to.be.false;
+      expect(showsError(el)).to.be.false;
     });
   }
 
@@ -420,12 +414,7 @@ describe("vm-progress-view", () => {
       await view.runBackendStep(() => download.promise);
       view.startStage("building");
       await built.promise;
-      return {
-        ipAddress: await view.waitForHomeAssistant(
-          signal,
-          () => address.promise
-        ),
-      };
+      await view.waitForHomeAssistant(signal, () => address.promise);
     });
     await el.updateComplete;
     const layout = layoutOf(el);
@@ -474,7 +463,6 @@ describe("vm-progress-view", () => {
   it("shows the backend's progress in whole percent", async () => {
     const el = mount(async (view) => {
       await view.runBackendStep(() => new Promise(() => {}));
-      return {};
     });
     await el.updateComplete;
     const layout = layoutOf(el);

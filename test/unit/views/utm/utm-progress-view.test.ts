@@ -10,6 +10,7 @@ import { wizardState } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/utm/utm-progress-view.js";
 import "../../../../src/views/utm/utm-configure-view.js";
 import type { UtmProgressView } from "../../../../src/views/utm/utm-progress-view.js";
+import { showsError } from "../../helpers/progress-error.js";
 import {
   deferred,
   ipcError,
@@ -126,7 +127,7 @@ describe("utm-progress-view", () => {
     await oneEvent(el, "install-complete");
 
     expect(statusCalls).to.equal(3);
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
   });
 
   it("starts the install when connected", async () => {
@@ -198,7 +199,7 @@ describe("utm-progress-view", () => {
     // A second createUtmVm call would have replaced this with a new id
     expect(selections.vmId).to.equal("existing-vm");
     expect(selections.ipAddress).to.equal("192.168.1.100");
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
   });
 
   it("retains a VM created after detachment and resumes it on reentry", async () => {
@@ -386,7 +387,7 @@ describe("utm-progress-view", () => {
     creation.reject(ipcError("utm", "Import failed", true));
     await error;
     expect(oldError).to.be.false;
-    expect(next.hasError).to.be.true;
+    expect(showsError(next)).to.be.true;
     expect(wizardState.getState().selections.utmCreation).to.be.undefined;
     const complete = oneEvent(next, "install-complete");
     next.retry();
@@ -504,11 +505,11 @@ describe("utm-progress-view", () => {
 
     const next = mount();
     await next.updateComplete;
-    expect(next.hasError).to.be.true;
+    expect(showsError(next)).to.be.true;
     expect(errorText(next)).to.contain("already created with earlier settings");
     next.retry();
     await next.updateComplete;
-    expect(next.hasError).to.be.true;
+    expect(showsError(next)).to.be.true;
     expect(calls).to.deep.equal([
       "download_utm_image",
       "create_utm_vm",
@@ -541,7 +542,7 @@ describe("utm-progress-view", () => {
       finishCreate("old-vm");
       await error;
       await el.updateComplete;
-      expect(el.hasError).to.be.true;
+      expect(showsError(el)).to.be.true;
       expect(errorText(el)).to.contain("Check UTM before trying again");
       expect(wizardState.getState().selections.vmId).to.equal(
         change === "new VM" ? "newer-vm" : undefined
@@ -595,7 +596,7 @@ describe("utm-progress-view", () => {
     await oneEvent(el, "install-error");
     await el.updateComplete;
 
-    expect(el.hasError).to.be.true;
+    expect(showsError(el)).to.be.true;
     expect(
       el
         .shadowRoot!.querySelector("install-progress")!
@@ -758,7 +759,7 @@ describe("utm-progress-view", () => {
       { timeout: 3000 }
     );
     // A problem alone doesn't end the wait
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
     expect(el.leavable).to.be.true;
     el.remove();
   });
@@ -1098,7 +1099,7 @@ describe("utm-progress-view", () => {
     await oneEvent(el, "install-error");
     await el.updateComplete;
 
-    expect(el.hasError).to.be.true;
+    expect(showsError(el)).to.be.true;
     expect(
       el
         .shadowRoot!.querySelector("install-progress")!

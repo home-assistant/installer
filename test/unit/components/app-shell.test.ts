@@ -13,6 +13,7 @@ import {
 import { wizardState } from "../../../src/state/wizard-state.js";
 import { storeDriveSelection } from "../../../src/utils/drive-selection.js";
 import { flush, holdDeviceScan } from "../helpers/hold-device-scan.js";
+import { showsError } from "../helpers/progress-error.js";
 import {
   deferred,
   ipcError,
@@ -969,7 +970,7 @@ describe("app-shell", () => {
       await waitUntil(() => shellOf(el).nextLabel === "Try again");
       expect(shellOf(el).hideFooter).to.be.false;
       expect(wizardState.currentStep?.id).to.equal("flash");
-      expect(el.shadowRoot!.querySelector("progress-view")!.hasError).to.be
+      expect(showsError(el.shadowRoot!.querySelector("progress-view")!)).to.be
         .true;
     });
   });
@@ -1068,8 +1069,8 @@ describe("app-shell", () => {
       selectTargets();
       failFlash("json");
       await goToStep(el, "flash");
-      await waitUntil(
-        () => shellOf(el).querySelector("progress-view")!.hasError
+      await waitUntil(() =>
+        showsError(shellOf(el).querySelector("progress-view")!)
       );
       await el.updateComplete;
       expect(shellOf(el).hideNext).to.be.true;
@@ -1170,8 +1171,8 @@ describe("app-shell", () => {
       await waitUntil(() => shellOf(el).nextLabel === "Try again");
       expect(shellOf(el).hideFooter).to.be.false;
       expect(wizardState.currentStep?.id).to.equal("install");
-      expect(el.shadowRoot!.querySelector("proxmox-progress-view")!.hasError).to
-        .be.true;
+      expect(showsError(el.shadowRoot!.querySelector("proxmox-progress-view")!))
+        .to.be.true;
     });
 
     it("offers to leave once the VM runs, and leaves it running", async () => {
@@ -1436,8 +1437,8 @@ describe("app-shell", () => {
       // the progress view reports the flash error itself.
       selectTargets({ withBoard: false });
       await goToStep(el, "flash");
-      await waitUntil(
-        () => shellOf(el).querySelector("progress-view")!.hasError
+      await waitUntil(() =>
+        showsError(shellOf(el).querySelector("progress-view")!)
       );
 
       fire(shellOf(el), "wizard-cancel");

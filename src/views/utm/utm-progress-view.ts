@@ -123,7 +123,7 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
 
       const startedVmId = vmId;
       const app = "UTM";
-      const ipAddress = await this._waitForHomeAssistant(
+      await this._waitForHomeAssistant(
         {
           vmAddress: async () => (await getUtmVmStatus(startedVmId)).ip_address,
           stopOn: failsEveryTime,
@@ -140,7 +140,6 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
         },
         signal
       );
-      return { ipAddress };
     } finally {
       // Not awaited, so it doesn't hold up the result. An image UTM imported
       // is no longer the backend's to delete.

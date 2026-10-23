@@ -25,7 +25,7 @@ export interface InstallFailure {
  *
  * - `install-stoppable` and `install-leavable` whenever `stoppable` or
  *   `leavable` changes, so the shell offers Cancel only while it works
- * - `install-complete`, with what the steps after it need
+ * - `install-complete`, once the install is done
  * - `install-error`, with whether `retry` can work, and whether choosing
  *   differently can, like another drive
  */
@@ -85,12 +85,8 @@ export abstract class InstallProgressView extends LitElement {
   /** Names the flow in diagnostics */
   protected abstract readonly _flow: DiagnosticFlow;
 
-  /**
-   * Run the install. Resolves with what `install-complete` tells the shell.
-   */
-  protected abstract _install(
-    signal: AbortSignal
-  ): Promise<Record<string, unknown>>;
+  /** Run the install, resolving once it is done */
+  protected abstract _install(signal: AbortSignal): Promise<void>;
 
   /** Ask the backend to stop the step that runs as `attempt` */
   protected abstract _cancel(attempt: string): Promise<void>;
@@ -121,11 +117,6 @@ export abstract class InstallProgressView extends LitElement {
    */
   protected _choiceCanFix(_error: InstallerError): boolean {
     return false;
-  }
-
-  /** Whether the install has failed */
-  get hasError(): boolean {
-    return this._error !== null;
   }
 
   /** Whether `stop` can still end the install */
@@ -222,9 +213,9 @@ export abstract class InstallProgressView extends LitElement {
     this._error = null;
 
     try {
-      const detail = await this._install(signal);
+      await this._install(signal);
       throwIfCancelled(signal);
-      this._complete(detail);
+      this._complete();
     } catch (error) {
       if (isCancelled(error) || signal.aborted) {
         // The view was detached mid-install, or its flow ended - leave the
@@ -263,9 +254,9 @@ export abstract class InstallProgressView extends LitElement {
   }
 
   /** The install is done: tell the shell, which moves on */
-  protected _complete(detail: Record<string, unknown>) {
+  protected _complete() {
     this._diagnostics?.advance("complete");
-    this._dispatch("install-complete", detail);
+    this._dispatch("install-complete");
   }
 
   /** Show a failure, in `message`'s words if given, and tell the shell */
@@ -284,7 +275,7 @@ export abstract class InstallProgressView extends LitElement {
     });
   }
 
-  private _dispatch(type: string, detail: Record<string, unknown>) {
+  private _dispatch(type: string, detail?: Record<string, unknown>) {
     this.dispatchEvent(
       new CustomEvent(type, { detail, bubbles: true, composed: true })
     );

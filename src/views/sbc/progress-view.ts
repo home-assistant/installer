@@ -114,7 +114,6 @@ export class ProgressView extends InstallProgressView {
         attempt
       )
     );
-    return {};
   }
 
   protected _installerError(error: unknown): InstallerError {

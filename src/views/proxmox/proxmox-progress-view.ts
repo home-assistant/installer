@@ -129,7 +129,6 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
       },
       signal
     );
-    return { result };
   }
 
   /** Create and start the VM, reporting the backend's progress */

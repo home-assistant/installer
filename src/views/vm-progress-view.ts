@@ -114,10 +114,10 @@ export abstract class VmProgressView<
     );
   }
 
-  protected _complete(detail: Record<string, unknown>) {
+  protected _complete() {
     this._stage = "complete";
     this._progress = 100;
-    super._complete(detail);
+    super._complete();
   }
 
   /**
