@@ -314,9 +314,14 @@ where
     if let Some(wifi) = request.wifi.clone() {
         image = tokio::task::spawn_blocking(move || hai_core::haos_config::with_wifi(image, &wifi))
             .await
-            // A panic's message may hold the Wi-Fi password, and the log keeps causes
+            // A crash, not a storage problem the Io error would send the user looking for.
+            // Its panic message may hold the Wi-Fi password, so it isn't passed on.
             .map_err(|_| {
-                hai_core::Error::Io(std::io::Error::other("Wi-Fi setup stopped unexpectedly"))
+                CommandError::new(
+                    "internal",
+                    "Adding the Wi-Fi settings stopped unexpectedly.",
+                    false,
+                )
             })??;
     }
 
@@ -408,8 +413,9 @@ pub async fn get_manifest() -> Result<DeviceManifest, CommandError> {
 // System Info Commands
 // =============================================================================
 
-/// Get system information (CPU cores and memory) for VM configuration limits
-#[tauri::command]
+/// Get system information (CPU cores and memory) for VM configuration limits.
+/// Off the main thread: on macOS it runs `sysctl`, which would freeze the window.
+#[tauri::command(async)]
 pub fn get_system_info() -> Result<SystemInfo, CommandError> {
     Backend.system_info().map_err(CommandError::from)
 }
