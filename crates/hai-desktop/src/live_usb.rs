@@ -102,7 +102,8 @@ pub struct IsoLocation {
 }
 
 /// Checks the name, that the folder exists and can be written, and whether the file exists.
-#[tauri::command]
+/// Off the main thread: the folder can be a slow network share or a sleeping disk.
+#[tauri::command(async)]
 pub fn check_iso_location(folder: String, file_name: String) -> Result<IsoLocation, CommandError> {
     let folder = Path::new(&folder);
     let target = iso_target(folder, &file_name, true)?;
