@@ -79,7 +79,7 @@ export const optionCardStyles = css`
   .selected-indicator {
     position: absolute;
     top: 8px;
-    right: 8px;
+    inset-inline-end: 8px;
     width: 24px;
     height: 24px;
     background-color: var(--ha-primary-fill, #006787);

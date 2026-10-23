@@ -53,7 +53,7 @@ export const settingStyles = css`
     font-weight: 600;
     color: var(--ha-primary-color, #03a9f4);
     min-width: 70px;
-    text-align: right;
+    text-align: end;
   }
 
   .setting-description {

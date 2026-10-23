@@ -13,6 +13,11 @@ export const pageHeaderStyles = css`
     align-items: center;
     padding: 1rem var(--ha-page-gutter, 2rem);
   }
+
+  /* Back points the way the page reads */
+  .header [slot="start"]:dir(rtl) {
+    transform: scaleX(-1);
+  }
 `;
 
 /** The header of a screen that has only Back in it. */
