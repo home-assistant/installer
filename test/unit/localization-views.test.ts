@@ -237,7 +237,7 @@ describe("localized view contracts", () => {
   }
 
   it("install-progress takes the ETA's duration units from the locale", () => {
-    setLanguage(["en-CA"]);
+    setLanguage("en-CA");
     expect(eta(5400)).to.equal("About 1h 30min remaining");
   });
 

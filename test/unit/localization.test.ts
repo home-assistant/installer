@@ -96,7 +96,7 @@ describe("localization", () => {
       "common.next": "Weiter",
       "common.back": " ",
       "app.title": 42,
-      "components.install_progress.minutes_remaining": "Noch {minutes, plural",
+      "components.vm_resources.cores": "{count, plural",
       "utm.update_timeout": "Öffne {link}",
       "backend.proxmox.node_offline": "Knoten {node} ist offline",
     });
@@ -104,9 +104,9 @@ describe("localization", () => {
     expect(localize("common.cancel")).to.equal("Cancel");
     expect(localize("common.back")).to.equal("Back");
     expect(localize("app.title")).to.equal("Home Assistant Installer");
-    expect(
-      localize("components.install_progress.minutes_remaining", { minutes: 2 })
-    ).to.equal("About 2 minutes remaining");
+    expect(localize("components.vm_resources.cores", { count: 2 })).to.equal(
+      "2 cores"
+    );
     expect(
       localize("utm.update_timeout", { address: "http://192.0.2.1" })
     ).to.contain("Open http://192.0.2.1");
@@ -120,11 +120,11 @@ describe("localization", () => {
   });
 
   it("uses English plural rules for an English fallback", () => {
-    const key = "components.install_progress.minutes_remaining";
+    const key = "components.vm_resources.cores";
     setLanguage("ja", {});
-    expect(localize(key, { minutes: 1 })).to.equal("About 1 minute remaining");
+    expect(localize(key, { count: 1 })).to.equal("1 core");
     setLanguage("fr", {});
-    expect(localize(key, { minutes: 0 })).to.equal("About 0 minutes remaining");
+    expect(localize(key, { count: 0 })).to.equal("0 cores");
   });
 
   it("prefers the native OS locale over the browser and falls back safely", async () => {
