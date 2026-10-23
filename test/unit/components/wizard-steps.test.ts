@@ -212,7 +212,7 @@ describe("wizard-steps", () => {
     };
     const message = stopMessage(enabled);
     expect(message).to.contain(
-      'Import, which this installer enabled on "local", "backup"'
+      'Import, which this installer enabled on "local" and "backup"'
     );
     expect(message).to.contain("turn it off in Proxmox");
     expect(message).not.to.contain("elsewhere");

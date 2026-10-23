@@ -59,12 +59,13 @@ export class LiveUsbSummaryView extends LitElement {
       (this._versionUnknown
         ? localize("common.version_unknown")
         : localize("common.loading"));
-    const stick = [
-      selections.driveName || localize("common.unknown_drive"),
-      selections.driveSize ? `(${formatBytes(selections.driveSize)})` : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
+    const driveName = selections.driveName || localize("common.unknown_drive");
+    const stick = selections.driveSize
+      ? localize("views.live_usb.live_usb_summary_view.drive_name_and_size", {
+          name: driveName,
+          size: formatBytes(selections.driveSize),
+        })
+      : driveName;
 
     return html`
       <h2>

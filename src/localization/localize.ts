@@ -121,3 +121,20 @@ export function formatNumber(
 ): string {
   return new Intl.NumberFormat(language, options).format(value);
 }
+
+/** Items as a sentence's list, with the separators and "and" of the language */
+export function formatList(items: string[]): string {
+  return new Intl.ListFormat(language, { type: "conjunction" }).format(items);
+}
+
+/**
+ * The same list in parts, for items that are styled or linked: each "element"
+ * is one of `items`, in order, and each "literal" is what goes between them.
+ */
+export function formatListParts(
+  items: string[]
+): { type: "element" | "literal"; value: string }[] {
+  return new Intl.ListFormat(language, {
+    type: "conjunction",
+  }).formatToParts(items);
+}

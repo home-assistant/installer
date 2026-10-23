@@ -1,4 +1,9 @@
-import { localize, localizeContent } from "../../localization/localize.js";
+import {
+  formatList,
+  formatListParts,
+  localize,
+  localizeContent,
+} from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import {
@@ -30,14 +35,16 @@ export function enabledImportStorages(selections: WizardSelections): string[] {
     .map((change) => change.storage);
 }
 
+/** A storage's name, set off from the sentence it is in */
+const quoteStorage = (storage: string) =>
+  localize("views.proxmox.proxmox_success_view.quoted_storage", { storage });
+
 /**
  * Those storages, named as the reminder names them, for a message that is
  * plain text, like a dialog's. Empty when there are none.
  */
 export const enabledImportStorageList = (selections: WizardSelections) =>
-  enabledImportStorages(selections)
-    .map((storage) => `"${storage}"`)
-    .join(", ");
+  formatList(enabledImportStorages(selections).map(quoteStorage));
 
 @customElement("proxmox-success-view")
 export class ProxmoxSuccessView extends LitElement {
@@ -115,9 +122,10 @@ export class ProxmoxSuccessView extends LitElement {
         ${localizeContent(
           "views.proxmox.proxmox_success_view.installer_enabled_import_on_storages",
           {
-            storages: storages.map(
-              (storage, index) =>
-                html`${index ? ", " : ""}<strong>"${storage}"</strong>`
+            storages: formatListParts(storages.map(quoteStorage)).map((part) =>
+              part.type === "element"
+                ? html`<strong>${part.value}</strong>`
+                : part.value
             ),
           }
         )}

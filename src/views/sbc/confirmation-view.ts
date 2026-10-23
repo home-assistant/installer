@@ -1,4 +1,4 @@
-import { localize } from "../../localization/localize.js";
+import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css, nothing } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { customElement, state } from "lit/decorators.js";
@@ -142,9 +142,15 @@ export class ConfirmationView extends LitElement {
           localize("common.target_drive"),
           driveName,
           html`<p class="summary-detail">
-              ${this._formatSize(driveSize)}${driveModel
-                ? html` · <bdi>${driveModel}</bdi>`
-                : nothing}
+              ${driveModel
+                ? localizeContent(
+                    "views.sbc.confirmation_view.drive_size_and_model",
+                    {
+                      size: this._formatSize(driveSize),
+                      model: html`<bdi>${driveModel}</bdi>`,
+                    }
+                  )
+                : this._formatSize(driveSize)}
             </p>
             ${drivePath
               ? html`<p class="summary-detail drive-path">

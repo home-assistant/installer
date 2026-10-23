@@ -52,7 +52,10 @@ export class HaSetupStalledError extends Error implements InstallerError {
     address: string
   ) {
     super(
-      `${haSetupProblemMessage(problem)} ${localize("utils.ha_setup.stalled", { address })}`
+      localize("utils.ha_setup.stalled", {
+        problem: haSetupProblemMessage(problem),
+        address,
+      })
     );
     this.name = "HaSetupStalledError";
     // A fixed category for diagnostics, one per problem
