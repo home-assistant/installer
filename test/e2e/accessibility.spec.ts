@@ -308,7 +308,7 @@ test("navigation focuses headings without stealing focus on input", async ({
   ).toBeFocused();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Home Assistant" })
+    page.getByRole("heading", { name: "What would you like to install on?" })
   ).toBeFocused();
 });
 
