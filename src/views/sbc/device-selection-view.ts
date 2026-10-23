@@ -1,7 +1,6 @@
 import { localize } from "../../localization/localize.js";
 import {
   installerError,
-  renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
@@ -11,42 +10,28 @@ import {
   reducedMotionStyles,
 } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import { getManifest, type Device } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../components/device-card.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import {
+  loadStateStyles,
+  renderLoadError,
+  renderLoading,
+} from "../../utils/load-state.js";
 
 @customElement("device-selection-view")
 export class DeviceSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
+    loadStateStyles,
     reducedMotionStyles,
     linkStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 2rem 0;
-        text-align: center;
-      }
-
       .devices-grid {
         width: 100%;
         max-width: 700px;
@@ -57,49 +42,6 @@ export class DeviceSelectionView extends LitElement {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
         gap: 1rem;
-      }
-
-      .loading {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 3rem;
-        color: var(--ha-secondary-text-color, #727272);
-      }
-
-      .loading-spinner {
-        width: 40px;
-        height: 40px;
-        border: 3px solid var(--ha-border-color, #e0e0e0);
-        border-top-color: var(--ha-primary-color, #03a9f4);
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin-bottom: 1rem;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .error {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 2rem;
-        text-align: center;
-      }
-
-      .error-icon {
-        font-size: 3rem;
-        margin-bottom: 1rem;
-      }
-
-      .error-message {
-        color: var(--ha-error-color, #db4437);
-        margin-bottom: 1rem;
       }
     `,
   ];
@@ -112,6 +54,10 @@ export class DeviceSelectionView extends LitElement {
 
   @state()
   private _error: InstallerError | null = null;
+
+  /** Try again while an error offers it, else the heading of the list */
+  @query(".error wa-button, h2")
+  private _continueFrom?: HTMLElement;
 
   @state()
   private _selectedDeviceId: string | null = null;
@@ -128,8 +74,8 @@ export class DeviceSelectionView extends LitElement {
   }
 
   private async _loadDevices() {
+    // An error stays, with Try again busy, until this result replaces it
     this._loading = true;
-    this._error = null;
     if (wizardState.getState().selections.deviceCatalogReady) {
       wizardState.setSelection("deviceCatalogReady", false);
     }
@@ -154,9 +100,11 @@ export class DeviceSelectionView extends LitElement {
           deviceConfig: undefined,
         });
       }
+      this._error = null;
       wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
-      if (this.isConnected) new InstallDiagnostics("flash").fail(err);
+      if (!this.isConnected) return;
+      new InstallDiagnostics("flash").fail(err);
       this._error = installerError(
         err,
         localize("common.failed_to_load_devices")
@@ -164,48 +112,27 @@ export class DeviceSelectionView extends LitElement {
     } finally {
       this._loading = false;
     }
+    // The list can take the place of Try again, which had the focus
+    await this.updateComplete;
+    this._accessibility.restoreFocus(this._continueFrom);
   }
 
   render() {
-    if (this._loading) {
-      return html`
-        <div class="loading">
-          <div class="loading-spinner"></div>
-          <span>${localize("common.loading_devices")}</span>
-        </div>
-      `;
+    if (this._error) {
+      return renderLoadError(this._error, this._loading, () =>
+        this._loadDevices()
+      );
     }
 
-    if (this._error) {
-      return html`
-        <div class="error">
-          <span class="error-icon">⚠️</span>
-          <p
-            class="error-message"
-            role="alert"
-            style="overflow-wrap: anywhere;"
-          >
-            ${this._error?.message}
-          </p>
-          ${renderErrorHelp()}
-          ${this._error.retryable
-            ? html`<wa-button
-                variant="brand"
-                appearance="outlined"
-                @click=${this._loadDevices}
-              >
-                ${localize("common.try_again")}
-              </wa-button>`
-            : ""}
-        </div>
-      `;
+    if (this._loading) {
+      return renderLoading(localize("common.loading_devices"));
     }
 
     return html`
-      <h2>${localize("views.sbc.device_selection_view.select_your_device")}</h2>
-      <p class="subtitle">
-        ${localize("views.sbc.device_selection_view.subtitle")}
-      </p>
+      ${renderStepHeading(
+        localize("views.sbc.device_selection_view.select_your_device"),
+        localize("views.sbc.device_selection_view.subtitle")
+      )}
 
       <wa-radio-group
         class="devices-grid"

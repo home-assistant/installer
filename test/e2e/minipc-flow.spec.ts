@@ -7,7 +7,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
     // Use mock mode to avoid real API calls
     await page.goto("/");
     // Navigate to path selection
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
@@ -187,7 +187,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
 test.describe("Mini PC Flow - Architecture Selection", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     // Select "connect drive" to get to architecture selection
@@ -208,14 +208,16 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
     await expect(archSelectionView).toBeVisible();
 
     const title = archSelectionView.locator("h2");
-    await expect(title).toContainText("Select your architecture");
+    await expect(title).toContainText(
+      "Which processor does your mini PC have?"
+    );
   });
 
-  test("shows subtitle with CPU architecture mention", async ({ page }) => {
+  test("shows where to find the processor", async ({ page }) => {
     const subtitle = page
       .locator("minipc-architecture-selection-view")
       .locator(".subtitle");
-    await expect(subtitle).toContainText("CPU architecture");
+    await expect(subtitle).toContainText("specifications");
   });
 
   test("displays x86-64 architecture option", async ({ page }) => {
@@ -319,7 +321,7 @@ test.describe("Mini PC Flow - Navigation", () => {
     await page.goto("/");
 
     // Step 1: Welcome
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
 
     // Step 2: Path selection - Mini PC
     await page.locator('option-card[heading="Generic (mini) PC"]').click();
@@ -363,7 +365,7 @@ test.describe("Mini PC Flow - Navigation", () => {
     await page.goto("/");
 
     // Navigate to path selection
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await page.locator('option-card[heading="Generic (mini) PC"]').click();
 
     // Setup method - Connect drive

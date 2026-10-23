@@ -8,7 +8,7 @@ import { logFrontendError } from "../utils/diagnostics.js";
 import { customElement, state } from "lit/decorators.js";
 import { openExternalLink } from "../utils/external-url.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
-import "../components/casita-mascot.js";
+import "../components/diagnostics-actions.js";
 
 @customElement("welcome-view")
 export class WelcomeView extends LitElement {
@@ -21,35 +21,27 @@ export class WelcomeView extends LitElement {
   static styles = [
     reducedMotionStyles,
     css`
+      /* The content centers in the space above the footer, and the footer
+         sits at the bottom. A window too low for both scrolls, footer last. */
       :host {
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
+        box-sizing: border-box;
         height: 100%;
-        padding: 2rem var(--ha-page-gutter, 2rem);
+        padding: 2rem var(--ha-page-gutter, 2rem) 1rem;
         text-align: center;
-        position: relative;
       }
 
       @media (max-height: 700px) {
         :host {
-          box-sizing: border-box;
           min-height: 0;
           overflow-y: auto;
-          justify-content: flex-start;
-          padding-bottom: 6rem;
         }
 
         :host > * {
           flex-shrink: 0;
         }
-      }
-
-      casita-mascot {
-        width: 96px;
-        height: 96px;
-        margin-bottom: 1.5rem;
       }
 
       @keyframes soft-pulse {
@@ -65,7 +57,7 @@ export class WelcomeView extends LitElement {
       }
 
       .logo-container {
-        margin: 0 0 2rem;
+        margin: auto 0 2rem;
         font-size: inherit;
         line-height: 1;
       }
@@ -80,48 +72,75 @@ export class WelcomeView extends LitElement {
         animation: soft-pulse 3s ease-in-out infinite;
       }
 
-      .welcome-text {
+      .intro {
         max-width: 520px;
         color: var(--ha-secondary-text-color, #727272);
         line-height: 1.6;
-        margin-bottom: 2rem;
+        margin: 0 0 3rem;
       }
 
-      .welcome-text p {
-        margin: 0 0 1rem 0;
+      /* Report a problem, the foundation logo and Learn more, with the logo
+         in the middle however wide the two sides are */
+      .welcome-footer {
+        align-self: stretch;
+        margin-top: auto;
+        padding-top: 2rem;
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 1rem;
+        font-size: 0.875rem;
+        color: var(--ha-secondary-text-color, #727272);
       }
 
-      .welcome-text p:last-child {
-        margin-bottom: 0;
+      .report {
+        justify-self: start;
+        --diagnostics-link-color: var(--ha-secondary-text-color, #727272);
       }
 
       .learn-more {
-        margin-top: 1rem;
-        font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #9e9e9e);
+        justify-self: end;
+        color: inherit;
         text-decoration: underline;
       }
 
-      .ohf-link {
-        position: absolute;
-        bottom: 2rem;
-        text-decoration: none;
-      }
+      /* Too narrow for three columns: stack them around the logo */
+      @media (max-width: 600px) {
+        .welcome-footer {
+          grid-template-columns: auto;
+          justify-items: center;
+          gap: 0.5rem;
+        }
 
-      @media (max-height: 700px) {
+        .report,
+        .learn-more {
+          justify-self: center;
+        }
+
         .ohf-link {
-          position: static;
-          margin-top: 2rem;
+          order: -1;
         }
       }
 
-      .ohf-logo {
-        width: 180px;
-        opacity: 0.7;
-        transition: opacity 0.2s ease;
+      .ohf-link {
+        display: block;
+        line-height: 0;
+        text-decoration: none;
       }
 
-      .ohf-link:hover .ohf-logo {
+      /* Quiet until pointed at: the footer should not compete with Let's go */
+      .ohf-logo {
+        width: 140px;
+        filter: grayscale(1);
+        opacity: 0.6;
+        transition:
+          opacity 0.2s ease,
+          filter 0.2s ease;
+      }
+
+      .ohf-link:hover .ohf-logo,
+      .ohf-link:focus-visible .ohf-logo {
+        filter: none;
         opacity: 1;
       }
 
@@ -159,12 +178,7 @@ export class WelcomeView extends LitElement {
         />
       </h1>
 
-      <casita-mascot mood="winking"></casita-mascot>
-
-      <div class="welcome-text">
-        <p>${localize("views.welcome_view.welcome")}</p>
-        <p>${localize("views.welcome_view.intro")}</p>
-      </div>
+      <p class="intro">${localize("views.welcome_view.subtitle")}</p>
 
       <wa-button
         variant="brand"
@@ -175,36 +189,36 @@ export class WelcomeView extends LitElement {
         ${localize("views.welcome_view.let_s_go")} <span slot="end">→</span>
       </wa-button>
 
-      <a
-        class="learn-more"
-        href="https://www.home-assistant.io/installation/"
-        target="_blank"
-        rel="noopener noreferrer"
-        @click=${openExternalLink}
-      >
-        ${localize(
-          "views.welcome_view.learn_more_about_installing_home_assistant"
-        )}
-      </a>
-
-      <a
-        class="ohf-link"
-        href="https://www.openhomefoundation.org/"
-        target="_blank"
-        rel="noopener noreferrer"
-        @click=${openExternalLink}
-      >
-        <img
-          class="ohf-logo ohf-logo-light"
-          src="/assets/ohf-logo-light.svg"
-          alt=${localize("views.welcome_view.open_home_foundation")}
-        />
-        <img
-          class="ohf-logo ohf-logo-dark"
-          src="/assets/ohf-logo-dark.svg"
-          alt=${localize("views.welcome_view.open_home_foundation")}
-        />
-      </a>
+      <footer class="welcome-footer">
+        <diagnostics-actions class="report"></diagnostics-actions>
+        <a
+          class="ohf-link"
+          href="https://www.openhomefoundation.org/"
+          target="_blank"
+          rel="noopener noreferrer"
+          @click=${openExternalLink}
+        >
+          <img
+            class="ohf-logo ohf-logo-light"
+            src="/assets/ohf-logo-light.svg"
+            alt=${localize("views.welcome_view.open_home_foundation")}
+          />
+          <img
+            class="ohf-logo ohf-logo-dark"
+            src="/assets/ohf-logo-dark.svg"
+            alt=${localize("views.welcome_view.open_home_foundation")}
+          />
+        </a>
+        <a
+          class="learn-more"
+          href="https://www.home-assistant.io/installation/"
+          target="_blank"
+          rel="noopener noreferrer"
+          @click=${openExternalLink}
+        >
+          ${localize("views.welcome_view.learn_more")}
+        </a>
+      </footer>
     `;
   }
 

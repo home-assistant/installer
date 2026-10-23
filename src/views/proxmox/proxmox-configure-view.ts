@@ -57,6 +57,8 @@ import {
 } from "./proxmox-session.js";
 import "../../components/vm-resources.js";
 import type { VmResourceValues } from "../../components/vm-resources.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import { renderRetryButton } from "../../utils/load-state.js";
 
 const DIRECTORY_STORAGE_DOCS =
   "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory";
@@ -90,34 +92,13 @@ function parseWholeNumber(
 export class ProxmoxConfigureView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
     srOnlyStyles,
     reducedMotionStyles,
     settingStyles,
     fieldErrorStyles,
     linkStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 1.5rem 0;
-        text-align: center;
-      }
-
       .config-card {
         display: flex;
         flex-direction: column;
@@ -262,6 +243,11 @@ export class ProxmoxConfigureView extends LitElement {
   @query("#network-bridge") private _bridgeSelect?: HTMLElement;
   @query(".storage-retry") private _storageRetryButton?: HTMLElement;
   @query("#storage") private _storageSelect?: HTMLElement;
+  /** What the lookup error offers: Try again, or Reconnect */
+  @query(".load-retry, .reconnect") private _loadRetryButton?: HTMLElement;
+  @query("h2") private _heading?: HTMLElement;
+  /** The lookup error Try again is retrying, kept on screen meanwhile */
+  @state() private _retrying: InstallerError | null = null;
   /** Why Proxmox would reject these settings, until one of them changes */
   @state() private _checkError: InstallerError | null = null;
   /** Raw text of the VLAN field; empty keeps today's untagged network. */
@@ -698,9 +684,14 @@ export class ProxmoxConfigureView extends LitElement {
     this._importDeclined = true;
   }
 
-  private _retry() {
+  private async _retry() {
     if (this._loadingNodes || this._loadingStorage) return;
-    void this._loadNodes();
+    this._retrying = this._error;
+    await this._loadNodes();
+    this._retrying = null;
+    // The settings, or Reconnect, can take the place of Try again, which had
+    // the focus
+    await this._restoreFocus(() => this._loadRetryButton ?? this._heading);
   }
 
   /** The dialog hands focus back to nothing: continue from its button. */
@@ -1091,37 +1082,41 @@ export class ProxmoxConfigureView extends LitElement {
   }
 
   render() {
-    if (this._error) {
+    const error = this._error ?? this._retrying;
+    if (error) {
       return html`
-        <h2>${localize("common.vm.configure_virtual_machine")}</h2>
-        <p class="subtitle">
-          ${localize("views.proxmox.proxmox_configure_view.subtitle")}
-        </p>
+        ${renderStepHeading(
+          localize("common.vm.configure_virtual_machine"),
+          localize("views.proxmox.proxmox_configure_view.subtitle")
+        )}
         <div class="config-card">
+          <!-- Empty while trying again, so the same failure is read out again -->
           <p class="error-text" role="alert" style="overflow-wrap: anywhere;">
-            ${this._error.message}
+            ${this._retrying ? "" : error.message}
           </p>
           ${renderErrorHelp()}
-          ${this._sessionExpired || this._error.retryable
+          ${this._sessionExpired
             ? html`<wa-button
+                class="reconnect"
                 variant="brand"
-                @click=${this._sessionExpired ? this._reconnect : this._retry}
-                ?disabled=${this._loadingNodes || this._loadingStorage}
+                @click=${this._reconnect}
               >
-                ${this._sessionExpired
-                  ? localize("proxmox.reconnect")
-                  : localize("common.try_again")}
+                ${localize("proxmox.reconnect")}
               </wa-button>`
-            : ""}
+            : error.retryable
+              ? renderRetryButton(!!this._retrying, () => this._retry(), {
+                  className: "load-retry",
+                })
+              : ""}
         </div>
       `;
     }
 
     return html`
-      <h2>${localize("common.vm.configure_virtual_machine")}</h2>
-      <p class="subtitle">
-        ${localize("views.proxmox.proxmox_configure_view.subtitle")}
-      </p>
+      ${renderStepHeading(
+        localize("common.vm.configure_virtual_machine"),
+        localize("views.proxmox.proxmox_configure_view.subtitle")
+      )}
       <p class="sr-only" role="status">${this._importStatus}</p>
 
       <div class="config-card">
@@ -1253,13 +1248,11 @@ export class ProxmoxConfigureView extends LitElement {
                           "views.proxmox.proxmox_configure_view.no_disk_storage_on_node"
                         )}
                   </p>
-                  <wa-button
-                    class="storage-retry"
-                    ?disabled=${this._importBusy}
-                    ?loading=${this._reloadFrom === "storage"}
-                    @click=${this._retryStorage}
-                    >${localize("common.try_again")}</wa-button
-                  >`
+                  ${renderRetryButton(
+                    this._reloadFrom === "storage",
+                    () => this._retryStorage(),
+                    { className: "storage-retry", disabled: this._importBusy }
+                  )}`
               : ""}
           </div>
         </div>
@@ -1317,12 +1310,11 @@ export class ProxmoxConfigureView extends LitElement {
                                   "views.proxmox.proxmox_configure_view.no_online_proxmox_nodes_found"
                                 )}
                         </p>
-                        <wa-button
-                          class="bridge-retry"
-                          ?loading=${this._reloadFrom === "bridges"}
-                          @click=${this._retryBridges}
-                          >${localize("common.try_again")}</wa-button
-                        >`
+                        ${renderRetryButton(
+                          this._reloadFrom === "bridges",
+                          () => this._retryBridges(),
+                          { className: "bridge-retry" }
+                        )}`
                     : ""}
                 `}
           </div>

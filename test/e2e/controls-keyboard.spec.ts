@@ -45,7 +45,7 @@ test("Mini PC choices work with Tab, Space, and arrow keys", async ({
     page.getByRole("button", { name: "I can connect the drive" })
   );
   await expect(
-    page.getByRole("radiogroup", { name: "CPU architecture" })
+    page.getByRole("radiogroup", { name: "Processor" })
   ).toBeVisible();
   const intel = page.getByRole("radio", { name: "Intel/AMD" });
   const arm = page.getByRole("radio", { name: "ARM (aarch64)" });

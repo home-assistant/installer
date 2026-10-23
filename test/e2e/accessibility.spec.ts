@@ -148,24 +148,16 @@ for (const tag of [
   });
 }
 
-test("reduced motion reaches card shadow roots and the FAB button part", async ({
-  page,
-}) => {
+test("reduced motion reaches card shadow roots", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await page.locator("welcome-view").waitFor({ state: "attached" });
   await page.evaluate(() => {
     document.querySelector("app-shell")!.remove();
-    for (const tag of [
-      "option-card",
-      "device-card",
-      "drive-card",
-      "fab-button",
-    ]) {
+    for (const tag of ["option-card", "device-card", "drive-card"]) {
       const element = document.createElement(tag);
       element.setAttribute("heading", "Test option");
       element.setAttribute("name", "Test device");
-      element.setAttribute("label", "Refresh devices");
       document.body.append(element);
     }
   });
@@ -177,14 +169,6 @@ test("reduced motion reaches card shadow roots and the FAB button part", async (
     await expect(card).toHaveCSS("transform", "none");
     await page.mouse.up();
   }
-  const button = page.locator("fab-button wa-button");
-  await button.hover();
-  await expect(button).toHaveCSS("transition-duration", "0s");
-  await expect(button).toHaveCSS("transform", "none");
-  await expect(button.locator("button")).toHaveCSS("transition-duration", "0s");
-  await page.mouse.down();
-  await expect(button).toHaveCSS("transform", "none");
-  await page.mouse.up();
 });
 
 test("indeterminate progress and the spinner hold still with reduced motion", async ({
@@ -337,9 +321,10 @@ test("connecting to Proxmox keeps the focus and says so", async ({ page }) => {
   const next = page.locator("wizard-shell .footer-right wa-button");
   await expect(next).toHaveText("Connecting...");
   await expect(next).toHaveAttribute("loading", "");
-  await expect(page.locator("wizard-shell [aria-live=polite]")).toHaveText(
-    "Connecting..."
-  );
+  // The footer's own live region; the fields' hints are live regions too
+  await expect(
+    page.locator("wizard-shell .footer-right [aria-live=polite]")
+  ).toHaveText("Connecting...");
   await expect(password).toBeFocused();
   await expect(
     page.getByRole("heading", { name: "Configure virtual machine" })

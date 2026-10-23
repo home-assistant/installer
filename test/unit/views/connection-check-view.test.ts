@@ -56,7 +56,7 @@ describe("connection-check-view", () => {
     await waitUntil(() => ready === 1);
   });
 
-  it("keeps focus on Retry while it checks again, and announces the outcome", async () => {
+  it("keeps focus on Try again while it checks again, and announces the outcome", async () => {
     const retry = deferred<void>();
     let calls = 0;
     mockTauriIpc(() =>
@@ -80,7 +80,7 @@ describe("connection-check-view", () => {
     button.click();
     await el.updateComplete;
 
-    // Retry stays where it was, busy, so focus doesn't fall to the page
+    // Try again stays where it was, busy, so focus doesn't fall to the page
     expect(button.isConnected).to.be.true;
     expect(button.loading).to.be.true;
     expect(el.shadowRoot!.activeElement).to.equal(button);

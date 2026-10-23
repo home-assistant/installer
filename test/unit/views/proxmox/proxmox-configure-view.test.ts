@@ -901,15 +901,28 @@ describe("proxmox-configure-view", () => {
       calls.length = 0;
       const retry = el.shadowRoot!.querySelector("wa-button")!;
       expect(retry.textContent).to.contain("Try again");
+      retry.focus();
       retry.click();
       retry.click();
       await el.updateComplete;
-      expect(el.shadowRoot!.textContent).to.contain("Loading nodes...");
+      // Try again stays, busy, with the focus; the alert empties so the same
+      // failure would be read out again
+      expect(el.shadowRoot!.querySelector("wa-button") === retry).to.be.true;
+      expect(retry.hasAttribute("loading")).to.be.true;
+      expect(
+        el.shadowRoot!.querySelector("[role=alert]")!.textContent!.trim()
+      ).to.equal("");
+      expect(el.shadowRoot!.activeElement === retry).to.be.true;
       expect(wizardState.getState().selections.proxmoxConfigureReady).to.be
         .false;
       nodes.resolve([{ name: "pve", status: "online" }]);
       await waitUntil(
         () => wizardState.getState().selections.proxmoxConfigureReady === true
+      );
+      // The settings took its place, so the focus goes on from their heading
+      await waitUntil(
+        () =>
+          el.shadowRoot!.activeElement === el.shadowRoot!.querySelector("h2")
       );
       expect(calls).to.deep.equal([
         "proxmox_list_nodes",

@@ -6,7 +6,7 @@ test.use({ platform: "macos" });
 test.describe("UTM Installation Flow", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
 
     const vmOption = page.locator('option-card[heading="Virtual machine"]');
@@ -44,12 +44,13 @@ test.describe("UTM Installation Flow", () => {
     );
   });
 
-  test("step 1: shows warning about testing/evaluation", async ({ page }) => {
+  test("step 1: says what a virtual machine is good for", async ({ page }) => {
     const checkView = page.locator("utm-check-view");
-    const warningCard = checkView.locator("inline-notice");
-    await expect(warningCard).toBeVisible();
-    await expect(warningCard).toContainText("Best for testing");
-    await expect(warningCard).toContainText("Mac needs to be running");
+    const note = checkView.locator(".testing-note");
+    await expect(note).toBeVisible();
+    await expect(note).toContainText("Good for trying Home Assistant");
+    await expect(note).toContainText("while your Mac is on");
+    await expect(checkView.locator("inline-notice")).toHaveCount(0);
   });
 
   test("step 1: shows the supplied Casita status artwork", async ({ page }) => {
@@ -76,7 +77,7 @@ test.describe("UTM Installation Flow", () => {
     });
     const wizardShell = page.locator("wizard-shell");
     await wizardShell.locator(".footer-left wa-button").click();
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await page.locator('option-card[heading="Virtual machine"]').click();
 
     const checkView = page.locator("utm-check-view");
@@ -137,7 +138,7 @@ test.describe("UTM Installation Flow", () => {
     });
     const wizardShell = page.locator("wizard-shell");
     await wizardShell.locator(".footer-left wa-button").click();
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     const vmOption = page.locator('option-card[heading="Virtual machine"]');
     // Answered as an Apple silicon Mac, not one that can't run the VM
     await expect(vmOption).toContainText("Run Home Assistant in UTM");
@@ -586,7 +587,7 @@ test.describe("UTM Installation Flow", () => {
     await expect(page.locator("welcome-view")).toBeVisible();
 
     // Restart flow
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     const vmOption = page.locator('option-card[heading="Virtual machine"]');
     await expect(vmOption).toBeVisible();
     await vmOption.click();

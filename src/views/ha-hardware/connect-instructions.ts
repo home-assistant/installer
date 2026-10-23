@@ -3,6 +3,7 @@ import { LitElement, html, css, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { openExternalLink } from "../../utils/external-url.js";
 import { linkStyles } from "../../utils/link-styles.js";
+import { getPlatform } from "../../utils/platform.js";
 import type { HaHardwareId } from "./hardware.js";
 
 const RPIBOOT_URL = "https://github.com/raspberrypi/usbboot";
@@ -69,7 +70,7 @@ export class HaHardwareConnectInstructions extends LitElement {
   @property({ attribute: false })
   hardware?: HaHardwareId;
 
-  render() {
+  render(): TemplateResult | typeof nothing {
     switch (this.hardware) {
       case "green":
         return this._renderBox(
@@ -97,7 +98,8 @@ export class HaHardwareConnectInstructions extends LitElement {
           localize("views.ha_hardware.connect_instructions.blue_title"),
           this._renderBlue()
         );
-      default:
+      // Listing every device makes a new one fail the build until it has steps
+      case undefined:
         return nothing;
     }
   }
@@ -112,6 +114,7 @@ export class HaHardwareConnectInstructions extends LitElement {
   }
 
   private _renderYellowCm5() {
+    const [rpiboot, drivePrompt] = this._yellowCm5PlatformSteps();
     return html`
       <ol>
         <li>
@@ -130,34 +133,59 @@ export class HaHardwareConnectInstructions extends LitElement {
             "views.ha_hardware.connect_instructions.yellow_cm5_recovery"
           )}
         </li>
-        <li>
-          ${localizeContent(
-            "views.ha_hardware.connect_instructions.yellow_cm5_rpiboot",
-            {
-              rpiboot: html`<a
-                href=${RPIBOOT_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                @click=${openExternalLink}
-                >rpiboot</a
-              >`,
-              command: html`<code
-                >sudo ./rpiboot -d mass-storage-gadget64</code
-              >`,
-              windowsCommand: html`<code
-                >rpiboot-CM4-CM5 - Mass Storage Gadget</code
-              >`,
-            }
-          )}
-        </li>
+        <li>${rpiboot}</li>
         <li>
           ${localizeContent(
             "views.ha_hardware.connect_instructions.yellow_cm5_drive",
             { driveName: html`<code>RPi-MSD</code>` }
           )}
+          ${drivePrompt}
         </li>
       </ol>
     `;
+  }
+
+  // How to run rpiboot, and what the OS asks when the drive shows up.
+  private _yellowCm5PlatformSteps() {
+    const rpiboot = html`<a
+      href=${RPIBOOT_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      @click=${openExternalLink}
+      >rpiboot</a
+    >`;
+    const command = html`<code>sudo ./rpiboot -d mass-storage-gadget64</code>`;
+    const shortcut = html`<code>rpiboot-CM4-CM5 - Mass Storage Gadget</code>`;
+    switch (getPlatform()) {
+      case "macos":
+        return [
+          localizeContent(
+            "views.ha_hardware.connect_instructions.yellow_cm5_rpiboot_macos",
+            { rpiboot, command }
+          ),
+          localize(
+            "views.ha_hardware.connect_instructions.yellow_cm5_drive_prompt_macos"
+          ),
+        ];
+      case "windows":
+        return [
+          localizeContent(
+            "views.ha_hardware.connect_instructions.yellow_cm5_rpiboot_windows",
+            { rpiboot, shortcut }
+          ),
+          localize(
+            "views.ha_hardware.connect_instructions.yellow_cm5_drive_prompt_windows"
+          ),
+        ];
+      default:
+        return [
+          localizeContent(
+            "views.ha_hardware.connect_instructions.yellow_cm5_rpiboot_linux",
+            { rpiboot, command }
+          ),
+          nothing,
+        ];
+    }
   }
 
   private _renderBlue() {

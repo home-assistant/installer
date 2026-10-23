@@ -19,7 +19,7 @@ for (const width of [1100, 390]) {
       await page.setViewportSize({ width, height: 850 });
       // The Vite development build uses browser mocks when Tauri is absent.
       await page.goto("/");
-      await page.locator("welcome-view wa-button").click();
+      await page.getByRole("button", { name: "Let's go" }).click();
       if (scenario.device.startsWith("generic-")) {
         await page.locator('option-card[heading="Generic (mini) PC"]').click();
         await page
@@ -62,12 +62,11 @@ for (const width of [1100, 390]) {
       await expect(success.locator(".next-steps")).toContainText(
         "router or on an attached display"
       );
-      await expect(success.locator("inline-notice")).toContainText(
-        "Do not format or initialize the written drive."
+      // Formatting is what to avoid while ejecting, so it is part of that step
+      await expect(success.locator(".step-text").first()).toContainText(
+        "if it offers to format or initialize the drive, choose Cancel or Ignore"
       );
-      await expect(success.locator("inline-notice")).toContainText(
-        "Choose Cancel if offered, or Ignore or Eject on macOS."
-      );
+      await expect(success.locator("inline-notice")).toHaveCount(0);
       await expect(success.locator(".next-steps-footer a")).toBeVisible();
       await expect(next(page)).toHaveText("Done");
       await expect(success.locator(".next-steps")).toContainText(
@@ -101,9 +100,7 @@ for (const width of [1100, 390]) {
             left: bounds.left,
             right: bounds.right,
             overflowing: [
-              ...element.querySelectorAll(
-                ".step-text, inline-notice, .next-steps-footer"
-              ),
+              ...element.querySelectorAll(".step-text, .next-steps-footer"),
             ].some((item) => item.scrollWidth > item.clientWidth + 1),
             overlappingSteps: steps.some(
               (step, index) =>
@@ -142,7 +139,7 @@ test("a Wi-Fi network set on its own step replaces the cable step", async ({
 }) => {
   test.setTimeout(60000);
   await page.goto("/");
-  await page.locator("welcome-view wa-button").click();
+  await page.getByRole("button", { name: "Let's go" }).click();
   await page
     .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();

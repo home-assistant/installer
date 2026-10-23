@@ -14,7 +14,6 @@ import { wizardState } from "../../../src/state/wizard-state.js";
 import { storeDriveSelection } from "../../../src/utils/drive-selection.js";
 import { flush, holdDeviceScan } from "../helpers/hold-device-scan.js";
 import {
-  captureOpenedUrls,
   deferred,
   ipcError,
   mockTauriIpc,
@@ -474,30 +473,6 @@ describe("app-shell", () => {
 
       expect(wizardState.currentStep!.id).to.equal("architecture");
       expect(wizardState.getState().selections.device).to.equal(undefined);
-    });
-
-    it("on Done does not open the Home Toolbox", async () => {
-      await enterSbcFlow(el);
-      await goToStep(el, "success");
-      const opened = captureOpenedUrls();
-
-      click(
-        shellOf(el).shadowRoot!.querySelector(".footer-right wa-button")!,
-        1
-      );
-      await el.updateComplete;
-      // The toolbox button sits over where Done was
-      const toolbox = viewOf(el, "fab-button");
-      await toolbox.updateComplete;
-      click(toolbox.shadowRoot!.querySelector("wa-button")!, 2);
-      await settle();
-      expect(!!viewOf(el, "welcome-view")).to.be.true;
-      expect(opened).to.deep.equal([]);
-
-      // A click of its own still opens it
-      click(toolbox.shadowRoot!.querySelector("wa-button")!, 1);
-      await settle();
-      expect(opened).to.deep.equal(["https://toolbox.openhomefoundation.org/"]);
     });
 
     it("leaves the keyboard alone", async () => {

@@ -20,6 +20,7 @@ import type WaDialog from "@home-assistant/webawesome/dist/components/dialog/dia
 import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 /** The fields Next checks before connecting */
 type Field = "serverUrl" | "username" | "password";
@@ -37,31 +38,10 @@ function serverOrigin(url: string): string {
 export class ProxmoxConnectView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
     fieldErrorStyles,
     linkStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 1.5rem 0;
-        text-align: center;
-      }
-
       .connect-card {
         display: flex;
         flex-direction: column;
@@ -462,12 +442,10 @@ export class ProxmoxConnectView extends LitElement {
     // The fields are read-only while connecting, not disabled: that would
     // take the focus from the one Enter was pressed in
     return html`
-      <h2>
-        ${localize("views.proxmox.proxmox_connect_view.connect_to_proxmox_ve")}
-      </h2>
-      <p class="subtitle">
-        ${localize("views.proxmox.proxmox_connect_view.subtitle")}
-      </p>
+      ${renderStepHeading(
+        localize("views.proxmox.proxmox_connect_view.connect_to_proxmox_ve"),
+        localize("views.proxmox.proxmox_connect_view.subtitle")
+      )}
 
       <div class="connect-card">
         ${this._error ? this._renderError() : ""}

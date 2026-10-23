@@ -9,36 +9,15 @@ import { wizardState } from "../../state/wizard-state.js";
 import { openExternalUrl } from "../../utils/external-url.js";
 import "../../components/info-dialog.js";
 import "../../components/option-card.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 @customElement("minipc-setup-method-view")
 export class MiniPCSetupMethodView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
+    stepStyles,
     reducedMotionStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 100%;
-      }
-
-      h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 2rem 0;
-        text-align: center;
-        max-width: 500px;
-      }
-
       .options {
         display: flex;
         flex-direction: column;
@@ -54,12 +33,10 @@ export class MiniPCSetupMethodView extends LitElement {
 
   render() {
     return html`
-      <h2>
-        ${localize("views.minipc.setup_method_view.how_will_you_install")}
-      </h2>
-      <p class="subtitle">
-        ${localize("views.minipc.setup_method_view.subtitle")}
-      </p>
+      ${renderStepHeading(
+        localize("views.minipc.setup_method_view.how_will_you_install"),
+        localize("views.minipc.setup_method_view.subtitle")
+      )}
 
       <div class="options">
         <option-card

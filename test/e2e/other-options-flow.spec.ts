@@ -4,7 +4,7 @@ test.describe("Other Options View", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     // Navigate to path selection
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
@@ -169,7 +169,7 @@ test.describe("Other Options - Navigation", () => {
     await page.goto("/");
 
     // Step 1: Welcome to path selection
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
 
     // Step 2: Path selection to other options

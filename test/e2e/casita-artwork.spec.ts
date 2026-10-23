@@ -137,37 +137,25 @@ for (const flow of ["sbc", "utm", "proxmox"]) {
   }
 }
 
-test("welcome artwork leaves the footer reachable on short screens", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 320, height: 568 });
-  await page.goto("/");
-  await expect(page.locator(".ohf-link")).toHaveCSS("position", "static");
-  await expect(page.getByRole("button", { name: "Let's go" })).toBeInViewport();
-  await page.locator("welcome-view").evaluate((el) => {
-    el.scrollTop = el.scrollHeight;
-  });
-  await expect(page.locator(".ohf-link")).toBeInViewport();
-  const footer = await page.locator(".ohf-link").boundingBox();
-  expect(footer!.y + footer!.height).toBeLessThan(488);
-});
-
 for (const [width, height] of [
   [900, 780],
   [800, 750],
+  [800, 500],
+  [320, 568],
 ]) {
-  test(`welcome preserves footer positioning at native ${width}x${height}`, async ({
+  test(`welcome keeps its footer at the bottom at ${width}x${height}`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height });
     await page.goto("/");
-    const footer = page.locator(".ohf-link");
-    await expect(footer).toHaveCSS("position", "absolute");
-    await expect(footer).toBeInViewport();
+    const footer = page.locator("welcome-view .welcome-footer");
+    await expect(footer).toBeInViewport({ ratio: 1 });
+    const letsGo = page.getByRole("button", { name: "Let's go" });
+    await expect(letsGo).toBeInViewport();
     const bounds = await footer.boundingBox();
-    const link = await page.locator(".learn-more").boundingBox();
-    expect(bounds!.y + bounds!.height).toBeCloseTo(height - 32, 0);
-    expect(link!.y + link!.height).toBeLessThan(bounds!.y);
+    const button = await letsGo.boundingBox();
+    expect(bounds!.y + bounds!.height).toBeCloseTo(height - 16, 0);
+    expect(button!.y + button!.height).toBeLessThan(bounds!.y);
   });
 }
 
@@ -231,11 +219,12 @@ test("every supplied mood loads as nonblank static decorative artwork", async ({
     "unknown",
   ]) {
     const result = await page.evaluate(async (mood) => {
-      const mascot = document
-        .querySelector("app-shell")!
-        .shadowRoot!.querySelector("welcome-view")!
-        .shadowRoot!.querySelector("casita-mascot")!;
+      await customElements.whenDefined("casita-mascot");
+      const mascot = document.createElement("casita-mascot") as HTMLElement & {
+        updateComplete: Promise<boolean>;
+      };
       mascot.setAttribute("mood", mood);
+      document.body.replaceChildren(mascot);
       await mascot.updateComplete;
       const image = mascot.shadowRoot!.querySelector("img")!;
       await image.decode();

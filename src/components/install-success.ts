@@ -4,7 +4,6 @@ import { localize } from "../localization/localize.js";
 import { openExternalLink } from "../utils/external-url.js";
 import { linkStyles } from "../utils/link-styles.js";
 import { renderCasitaHappy } from "./install-mascot.js";
-import "./inline-notice.js";
 import {
   ReducedSvgMotion,
   ViewAccessibility,
@@ -20,12 +19,27 @@ export class InstallSuccess extends LitElement {
     reducedMotionStyles,
     linkStyles,
     css`
+      /* Its own width, not the window's, decides between the layouts */
       :host {
         display: flex;
         flex-direction: column;
-        align-items: center;
         height: 100%;
         text-align: center;
+        container-type: inline-size;
+      }
+
+      /* Narrow, Casita stands above the heading and the next steps */
+      .layout {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .details {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
       }
 
       .mascot-container {
@@ -175,10 +189,6 @@ export class InstallSuccess extends LitElement {
         text-align: left;
       }
 
-      inline-notice {
-        margin: 1.25rem 0;
-      }
-
       .next-steps-footer {
         margin: 1.25rem 0 0;
       }
@@ -186,13 +196,47 @@ export class InstallSuccess extends LitElement {
       .tip-section strong {
         color: var(--ha-primary-color, #03a9f4);
       }
+
+      /* Wide enough, Casita stands beside the next steps, under the heading,
+         so the artwork doesn't push them down and out of view */
+      @container (min-width: 640px) {
+        .layout {
+          flex-flow: row wrap;
+          justify-content: center;
+          column-gap: 3rem;
+        }
+
+        /* Casita is hidden from assistive technology, so moving the heading
+           above it leaves the reading order as it was */
+        .heading {
+          order: -1;
+          flex-basis: 100%;
+        }
+
+        /* The other steps' spacing under their subtitle */
+        .subtitle {
+          margin-bottom: 1.5rem;
+        }
+
+        /* No basis, so the details share Casita's line even where they have
+           to narrow to fit */
+        .details {
+          align-items: stretch;
+          flex: 1 1 0;
+          max-width: 500px;
+          min-width: 0;
+        }
+
+        .mascot-container {
+          flex-shrink: 0;
+          margin-bottom: 0;
+        }
+      }
     `,
   ];
   @property({ attribute: false }) subtitle: string | TemplateResult = "";
   @property({ attribute: false }) steps: (string | TemplateResult)[] = [];
   @property({ attribute: false }) tip: string | TemplateResult = "";
-  /** Shown above the steps, for something to avoid before starting them. */
-  @property({ attribute: false }) notice: string | TemplateResult = "";
   /** Shown below the steps, such as a link to further documentation. */
   @property({ attribute: false }) footer: string | TemplateResult = "";
 
@@ -200,65 +244,70 @@ export class InstallSuccess extends LitElement {
     const title = localize("components.install_success.title");
 
     return html`
-      <div class="mascot-container" aria-hidden="true">
-        ${renderCasitaHappy()}
-      </div>
-      <div role="alert">
-        <h2>${title}</h2>
-      </div>
-      <p class="subtitle">${this.subtitle}</p>
-      <div class="next-steps">
-        <p class="next-steps-title">
-          ${localize("components.install_success.next_steps")}
-        </p>
-        ${this.notice
-          ? html`<inline-notice><p>${this.notice}</p></inline-notice>`
-          : ""}
-        <ol
-          class="steps-list"
-          role="list"
-          aria-label=${localize("components.install_success.next_steps")}
-        >
-          ${this.steps.map(
-            (step, index) => html`
-              <li class="step-item">
-                <span class="step-number">${index + 1}</span>
-                <span class="step-text">${step}</span>
-              </li>
-            `
-          )}
-        </ol>
-        ${this.footer
-          ? html`<p class="next-steps-footer">${this.footer}</p>`
-          : ""}
-      </div>
-      <slot></slot>
-      ${this.tip ? html`<div class="tip-section">${this.tip}</div>` : ""}
-      <div class="companion-section">
-        <p class="companion-title">
-          ${localize("components.install_success.companion_app")}
-        </p>
-        <div class="app-links">
-          <a
-            class="app-link"
-            href="https://apps.apple.com/app/home-assistant/id1099568401"
-            target="_blank"
-            rel="noopener noreferrer"
-            @click=${openExternalLink}
-          >
-            ${this._renderAppleIcon()}
-            <span>${localize("components.install_success.app_store")}</span>
-          </a>
-          <a
-            class="app-link"
-            href="https://play.google.com/store/apps/details?id=io.homeassistant.companion.android"
-            target="_blank"
-            rel="noopener noreferrer"
-            @click=${openExternalLink}
-          >
-            ${this._renderGooglePlayIcon()}
-            <span>${localize("components.install_success.google_play")}</span>
-          </a>
+      <div class="layout">
+        <div class="mascot-container" aria-hidden="true">
+          ${renderCasitaHappy()}
+        </div>
+        <div class="heading">
+          <div role="alert">
+            <h2>${title}</h2>
+          </div>
+          <p class="subtitle">${this.subtitle}</p>
+        </div>
+        <div class="details">
+          <div class="next-steps">
+            <p class="next-steps-title">
+              ${localize("components.install_success.next_steps")}
+            </p>
+            <ol
+              class="steps-list"
+              role="list"
+              aria-label=${localize("components.install_success.next_steps")}
+            >
+              ${this.steps.map(
+                (step, index) => html`
+                  <li class="step-item">
+                    <span class="step-number">${index + 1}</span>
+                    <span class="step-text">${step}</span>
+                  </li>
+                `
+              )}
+            </ol>
+            ${this.footer
+              ? html`<p class="next-steps-footer">${this.footer}</p>`
+              : ""}
+          </div>
+          <slot></slot>
+          ${this.tip ? html`<div class="tip-section">${this.tip}</div>` : ""}
+          <div class="companion-section">
+            <p class="companion-title">
+              ${localize("components.install_success.companion_app")}
+            </p>
+            <div class="app-links">
+              <a
+                class="app-link"
+                href="https://apps.apple.com/app/home-assistant/id1099568401"
+                target="_blank"
+                rel="noopener noreferrer"
+                @click=${openExternalLink}
+              >
+                ${this._renderAppleIcon()}
+                <span>${localize("components.install_success.app_store")}</span>
+              </a>
+              <a
+                class="app-link"
+                href="https://play.google.com/store/apps/details?id=io.homeassistant.companion.android"
+                target="_blank"
+                rel="noopener noreferrer"
+                @click=${openExternalLink}
+              >
+                ${this._renderGooglePlayIcon()}
+                <span
+                  >${localize("components.install_success.google_play")}</span
+                >
+              </a>
+            </div>
+          </div>
         </div>
       </div>
     `;

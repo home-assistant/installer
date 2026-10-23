@@ -1,10 +1,51 @@
-import { expect, fixture, html } from "@open-wc/testing";
+import {
+  expect,
+  fixture,
+  fixtureSync,
+  html,
+  waitUntil,
+} from "@open-wc/testing";
 import "../../../src/components/install-success.js";
 import type { InstallSuccess } from "../../../src/components/install-success.js";
 import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
 import { expectThemeLink } from "../helpers/link-style.js";
 
 describe("install-success", () => {
+  it("puts Casita beside the next steps under the heading when wide, and above it when narrow", async () => {
+    const container = fixtureSync<HTMLDivElement>(html`
+      <div style="width: 736px">
+        <install-success
+          .subtitle=${"Installed on the fixture."}
+          .steps=${["Power it on", "Log in"]}
+        ></install-success>
+      </div>
+    `);
+    const el = container.querySelector("install-success")!;
+    await el.updateComplete;
+    const bounds = (selector: string) =>
+      el.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+
+    // The smallest window leaves 736px: the next steps fit beside Casita,
+    // and the heading spans both
+    expect(bounds(".mascot-container").right).to.be.at.most(
+      bounds(".details").left
+    );
+    expect(bounds(".heading").bottom).to.be.at.most(
+      bounds(".mascot-container").top
+    );
+    expect(bounds(".heading").bottom).to.be.at.most(bounds(".details").top);
+    expect(bounds(".mascot-container").width).to.equal(140);
+    expect(bounds(".details").right).to.be.at.most(
+      container.getBoundingClientRect().right
+    );
+
+    container.style.width = "500px";
+    await waitUntil(
+      () => bounds(".mascot-container").bottom <= bounds("h2").top,
+      "Casita should stand above the heading"
+    );
+  });
+
   it("numbers the next steps in a labelled list", async () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success
@@ -35,24 +76,18 @@ describe("install-success", () => {
     expect(lists.map((node) => node.name)).to.include("Next steps");
   });
 
-  it("leaves out the notice, footer and tip unless given", async () => {
+  it("leaves out the footer and tip unless given", async () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success .steps=${["Only step"]}></install-success>`
     );
-    expect(el.shadowRoot!.querySelector("inline-notice")).to.not.exist;
     expect(el.shadowRoot!.querySelector(".next-steps-footer")).to.not.exist;
     expect(el.shadowRoot!.querySelector(".tip-section")).to.not.exist;
 
-    el.notice = "Do not format the drive.";
     el.footer = html`<a href="#">Full guide</a>`;
     el.tip = "Manage it from the dashboard.";
     await el.updateComplete;
-    // The notice comes before the steps, the footer after them
+    // The footer comes after the steps
     const text = el.shadowRoot!.querySelector(".next-steps")!.textContent!;
-    expect(text.indexOf("Do not format the drive.")).to.be.within(
-      0,
-      text.indexOf("Only step")
-    );
     expect(text.indexOf("Full guide")).to.be.greaterThan(
       text.indexOf("Only step")
     );
