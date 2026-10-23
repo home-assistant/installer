@@ -1,4 +1,4 @@
-import { expect, fixture, html } from "@open-wc/testing";
+import { expect, fixture, fixtureSync, html } from "@open-wc/testing";
 import "../../../src/components/diagnostics-actions.js";
 import type { DiagnosticsActions } from "../../../src/components/diagnostics-actions.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../tauri-ipc.js";
@@ -36,7 +36,10 @@ describe("diagnostics-actions", () => {
   });
 
   it("reads as a link in the text around it, but pads the dialog buttons", async () => {
-    const el = await fixture<HTMLParagraphElement>(
+    // fixtureSync rather than fixture(): a non-Lit root makes fixture() fall
+    // back to a requestAnimationFrame wait, which never fires while the test
+    // page is backgrounded.
+    const el = fixtureSync<HTMLParagraphElement>(
       // The theme that sets the button padding isn't loaded in unit tests
       html`<p style="font-size: 13px; --wa-form-control-padding-inline: 1rem">
         <diagnostics-actions></diagnostics-actions>

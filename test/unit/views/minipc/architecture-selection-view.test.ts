@@ -83,9 +83,13 @@ describe("minipc-architecture-selection-view choices", () => {
     wizardState.reset();
   });
 
-  async function renderChoices(manifest: () => unknown = () => MOCK_MANIFEST) {
+  async function renderChoices(
+    manifest: () => unknown = () => MOCK_MANIFEST,
+    utmSupported = true
+  ) {
     wizardState.startFlow("minipc");
     mockTauriIpc((cmd) => {
+      if (cmd === "utm_supported") return utmSupported;
       expect(cmd).to.equal("get_manifest");
       return manifest();
     });
@@ -170,30 +174,33 @@ describe("minipc-architecture-selection-view choices", () => {
     expect(checks()).to.deep.equal([true, false]);
   });
 
-  for (const [platform, userAgent] of [
+  // Apple silicon Macs also report "Intel Mac OS X"
+  const macUserAgent =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";
+  for (const [machine, userAgent, utmSupported, pointed] of [
+    ["a Mac with Apple silicon", macUserAgent, true, true],
+    ["an Intel Mac", macUserAgent, false, false],
     [
-      "macos",
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
-    ],
-    [
-      "linux",
+      "Linux",
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+      false,
+      false,
     ],
   ] as const) {
-    it(`${platform === "macos" ? "points" : "does not point"} ${platform} users to the virtual machine path`, async () => {
+    it(`${pointed ? "points" : "does not point"} users on ${machine} to the virtual machine path`, async () => {
       Object.defineProperty(window.navigator, "userAgent", {
         value: userAgent,
         configurable: true,
       });
-      const el = await renderChoices();
+      const el = await renderChoices(undefined, utmSupported);
       const note = el.shadowRoot!.querySelector(".mac-note");
-      if (platform === "macos") {
+      if (pointed) {
         expect(note!.textContent).to.contain("on this Mac itself");
         expect(note!.querySelector("strong")!.textContent).to.equal(
           "Virtual machine"
         );
       } else {
-        expect(note).to.not.exist;
+        expect(note === null).to.equal(true);
       }
     });
   }
