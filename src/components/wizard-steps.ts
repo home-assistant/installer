@@ -228,7 +228,8 @@ export const WIZARD_STEPS: Record<
   vm: {
     check: {
       render: () => html`<utm-check-view></utm-check-view>`,
-      ready: (selections) => !!selections.utmInstalled,
+      ready: (selections) =>
+        !!selections.utmInstalled && !!selections.utmControlAllowed,
     },
     configure: {
       render: () => html`<utm-configure-view></utm-configure-view>`,

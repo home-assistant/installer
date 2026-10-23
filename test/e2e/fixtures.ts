@@ -30,6 +30,20 @@ export async function approveProxmoxImport(page: Page) {
 }
 
 /**
+ * The VM step asks macOS whether the installer may control UTM only once the
+ * user chooses to. The browser mock allows it right away.
+ */
+export async function allowUtmControl(page: Page) {
+  const view = page.locator("utm-check-view");
+  await view
+    .getByRole("button", { name: "Allow control of UTM", exact: true })
+    .click();
+  await expect(view).toContainText(
+    "Ready to create a Home Assistant virtual machine"
+  );
+}
+
+/**
  * Boards with built-in Wi-Fi get an optional Wi-Fi step after the drive. Leave
  * Wi-Fi off and go on to Confirm; for other boards, Confirm is already there.
  */

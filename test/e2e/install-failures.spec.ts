@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import {
+  allowUtmControl,
   approveProxmoxImport,
   test,
   expect,
@@ -89,6 +90,8 @@ for (const scenario of [
         await connect.locator("#server-url").fill("https://192.0.2.10:8006");
         await connect.locator("#username").fill("test@pam");
         await connect.locator("#password").fill("test-only");
+      } else {
+        await allowUtmControl(page);
       }
       await expect(next(page)).toHaveJSProperty("disabled", false);
       await next(page).click();

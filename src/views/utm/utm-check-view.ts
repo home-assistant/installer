@@ -101,12 +101,23 @@ export class UtmCheckView extends LitElement {
     void this._checkStatus();
   }
 
-  private async _checkStatus() {
+  /** Asked once a flow: macOS keeps the answer */
+  private get _controlAllowed() {
+    return !!wizardState.getState().selections.utmControlAllowed;
+  }
+
+  /**
+   * Whether UTM is installed, and with `askControl`, whether the installer
+   * may control it. Asking opens UTM and can show the macOS prompt over the
+   * step, so it waits until the user asks for it.
+   */
+  private async _checkStatus({ askControl = false } = {}) {
     // The Automation prompt can stay open while the user leaves the step;
     // its answer then belongs to no flow
     const check = this._checks.start();
     // The previous result, and its buttons, stay until this one replaces it
     this._loading = true;
+    this._askingAutomation = askControl && !this._controlAllowed;
     // Coming back from a later step left this set: Next waits for the check
     wizardState.setSelection("utmInstalled", false);
 
@@ -118,12 +129,12 @@ export class UtmCheckView extends LitElement {
       status = await checkUtmStatus();
       if (!check.current) return;
 
-      // Ask for Automation now, not after the download: a refusal then
-      // costs nothing, and an unnoticed prompt can't stall the install
-      if (status.installed) {
-        this._askingAutomation = true;
+      // Asked before the download: a refusal then costs nothing, and an
+      // unnoticed prompt can't stall the install
+      if (status.installed && this._askingAutomation) {
         await checkUtmAutomation();
         if (!check.current) return;
+        wizardState.setSelection("utmControlAllowed", true);
       }
 
       // Store UTM installed status in wizard state
@@ -151,6 +162,11 @@ export class UtmCheckView extends LitElement {
     await this.updateComplete;
     if (!check.current) return;
     this._accessibility.restoreFocus(this._statusTitle);
+  }
+
+  /** Opens UTM, and macOS asks unless it was answered before. */
+  private _allowControl() {
+    return this._checkStatus({ askControl: true });
   }
 
   /** An Intel Mac: nothing to fix or retry, this option just isn't for it. */
@@ -211,11 +227,26 @@ export class UtmCheckView extends LitElement {
   private _renderActions() {
     if (this._unavailable) return "";
     if (this._error) {
+      // Once UTM was found, what failed is asking macOS
       return this._error.retryable
-        ? renderRetryButton(this._loading, () => this._checkStatus())
+        ? renderRetryButton(this._loading, () =>
+            this._checkStatus({ askControl: !!this._utmStatus?.installed })
+          )
         : "";
     }
-    if (!this._utmStatus || this._utmStatus.installed) return "";
+    if (!this._utmStatus) return "";
+    if (this._utmStatus.installed) {
+      return this._controlAllowed
+        ? ""
+        : html`<wa-button
+            variant="brand"
+            appearance="accent"
+            ?loading=${this._loading}
+            @click=${this._allowControl}
+          >
+            ${localize("views.utm.utm_check_view.allow_control")}
+          </wa-button>`;
+    }
     return html`
       <wa-button
         variant="brand"
@@ -291,7 +322,9 @@ export class UtmCheckView extends LitElement {
             >`,
           })
         : localize("views.utm.utm_check_view.installed"),
-      localize("views.utm.utm_check_view.ready")
+      this._controlAllowed
+        ? localize("views.utm.utm_check_view.ready")
+        : localize("views.utm.utm_check_view.allow_control_needed")
     );
   }
 
