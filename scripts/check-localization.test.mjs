@@ -206,10 +206,10 @@ test("catalog check holds translations to the English", () => {
       [
         "pl.json",
         {
-          "components.install_progress.minutes_remaining":
-            "Jeszcze {minutes, plural, one {# minuta} few {# minuty}}",
+          "components.vm_resources.cores":
+            "{count, plural, one {# rdzeń} few {# rdzenie}}",
         },
-        /pl\.json: components\.install_progress\.minutes_remaining: MISSING_OTHER_CLAUSE/,
+        /pl\.json: components\.vm_resources\.cores: MISSING_OTHER_CLAUSE/,
       ],
       ["pt_BR.json", {}, /pt_BR\.json: name a catalog after its language tag/],
     ]) {
