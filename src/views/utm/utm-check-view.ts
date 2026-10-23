@@ -21,6 +21,7 @@ import "../../components/ha-svg-icon.js";
 import "../../components/casita-mascot.js";
 import "../../components/inline-notice.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import { renderRetryButton } from "../../utils/load-state.js";
 
 // mdi:download
 const mdiDownload = "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z";
@@ -329,15 +330,7 @@ export class UtmCheckView extends LitElement {
     if (this._unavailable) return "";
     if (this._error) {
       return this._error.retryable
-        ? html`<wa-button
-            variant="brand"
-            appearance="outlined"
-            ?loading=${this._loading}
-            @click=${this._checkStatus}
-          >
-            ${this._renderRefreshIcon()}
-            ${localize("views.utm.utm_check_view.retry_check")}
-          </wa-button>`
+        ? renderRetryButton(this._loading, () => this._checkStatus())
         : "";
     }
     if (!this._utmStatus || this._utmStatus.installed) return "";

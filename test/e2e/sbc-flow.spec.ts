@@ -10,7 +10,7 @@ const nextButton = (page: Page) =>
 
 async function openConfirmation(page: Page) {
   await page.goto("/");
-  await page.locator("welcome-view").locator("wa-button").click();
+  await page.getByRole("button", { name: "Let's go" }).click();
   await page
     .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
