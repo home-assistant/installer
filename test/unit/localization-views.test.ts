@@ -210,6 +210,18 @@ describe("localized view contracts", () => {
     expect(labels).not.to.include("Disk fixture");
   });
 
+  // One byte a second, so the bytes left are the seconds left
+  function eta(seconds: number): string | null {
+    Date.now = () => 10000;
+    const element = view("install-progress", {
+      stageStartTime: 9000,
+      stageStartBytes: 0,
+      bytesProcessed: 1,
+      totalBytes: seconds + 1,
+    }) as unknown as { _calculateEta(): string | null };
+    return element._calculateEta();
+  }
+
   for (const [seconds, phrase] of [
     [59, "Less than a minute remaining"],
     [60, "About 1 minute remaining"],
@@ -220,16 +232,14 @@ describe("localized view contracts", () => {
     [7199, "About 2h 0m remaining"],
   ] as const) {
     it(`install-progress preserves the ${seconds}-second ETA boundary`, () => {
-      Date.now = () => 10000;
-      const element = view("install-progress", {
-        stageStartTime: 9000,
-        stageStartBytes: 0,
-        bytesProcessed: 1,
-        totalBytes: seconds + 1,
-      }) as unknown as { _calculateEta(): string | null };
-      expect(element._calculateEta()).to.equal(phrase);
+      expect(eta(seconds)).to.equal(phrase);
     });
   }
+
+  it("install-progress takes the ETA's duration units from the locale", () => {
+    setLanguage(["en-CA"]);
+    expect(eta(5400)).to.equal("About 1h 30min remaining");
+  });
 
   it("uses regional Intl grouping in VM formatters without changing size units", () => {
     setLanguage(["en-IN"]);
