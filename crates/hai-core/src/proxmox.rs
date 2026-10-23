@@ -2214,11 +2214,27 @@ mod tests {
         assert!(!version_meets_minimum((8, 4, 99), (8, 5, 0)));
     }
 
+    /// Whether two messages have the same key and parameters. The frontend gets
+    /// the parameters as a JSON object, so their order doesn't count.
+    fn same_message(left: &crate::Message, right: &crate::Message) -> bool {
+        left.key == right.key && left.params_json() == right.params_json()
+    }
+
+    /// A message that equals a `message!` by `same_message`.
+    #[derive(Debug)]
+    struct AnyOrder(crate::Message);
+
+    impl PartialEq<crate::Message> for AnyOrder {
+        fn eq(&self, other: &crate::Message) -> bool {
+            same_message(&self.0, other)
+        }
+    }
+
     /// The message of an `Error::ProxmoxActionRequired`, or a panic naming what came instead.
     #[track_caller]
-    fn action_required<T: std::fmt::Debug>(result: Result<T>) -> crate::Message {
+    fn action_required<T: std::fmt::Debug>(result: Result<T>) -> AnyOrder {
         match result {
-            Err(Error::ProxmoxActionRequired(message)) => message,
+            Err(Error::ProxmoxActionRequired(message)) => AnyOrder(message),
             other => panic!("expected ProxmoxActionRequired, got {other:?}"),
         }
     }
@@ -2471,6 +2487,9 @@ mod tests {
     // HTTP Mocking tests using mockito
     // =========================================================================
 
+    /// How an endpoint handles each answer is a row in `test_authenticate_failures`,
+    /// `test_lookup_answers` or `test_write_answers_without_a_task`, and task polling
+    /// a row in `test_wait_for_task_answers`. Multi-step flows get their own tests.
     mod http_mock_tests {
         use super::*;
         use mockito::{Matcher, Mock, Server};
@@ -2657,7 +2676,9 @@ mod tests {
             let matched = match (&result, expected) {
                 (Ok(value), Returns(text)) => format!("{value:?}") == *text,
                 (Err(Error::ProxmoxApi(message)), Api(part)) => message.contains(part),
-                (Err(Error::ProxmoxActionRequired(message)), Action(want)) => message == want,
+                (Err(Error::ProxmoxActionRequired(message)), Action(want)) => {
+                    same_message(message, want)
+                }
                 (Err(Error::ProxmoxSessionExpired), SessionExpired) => true,
                 _ => false,
             };
@@ -2834,7 +2855,7 @@ mod tests {
                 // The whole message also shows that neither ticket nor code leaks into it
                 match (authenticate(&credentials).await, error) {
                     (Err(Error::ProxmoxTwoFactor(message)), Some(expected)) => {
-                        assert_eq!(message, expected)
+                        assert_eq!(AnyOrder(message), expected)
                     }
                     (Ok(session), None) => {
                         assert_eq!(session.ticket, complete["ticket"]);
@@ -3040,6 +3061,7 @@ mod tests {
             enum Lookup {
                 Nodes,
                 Storage,
+                Bridges,
                 NextId,
                 VmIdFree,
                 Privileges,
@@ -3101,6 +3123,43 @@ mod tests {
                     200,
                     "{}",
                     Api("missing 'data' array"),
+                ),
+                ("bridges 401", Bridges, 401, "", SessionExpired),
+                (
+                    "bridges 403",
+                    Bridges,
+                    403,
+                    "",
+                    Api("Failed to list network bridges: 403 Forbidden"),
+                ),
+                (
+                    "bridges 500",
+                    Bridges,
+                    500,
+                    "",
+                    Api("Failed to list network bridges: 500 Internal Server Error"),
+                ),
+                (
+                    "bridges without data",
+                    Bridges,
+                    200,
+                    "{}",
+                    Api("Invalid network response: missing 'data' array"),
+                ),
+                (
+                    "bridges not JSON",
+                    Bridges,
+                    200,
+                    "invalid",
+                    Api("Failed to parse network bridges"),
+                ),
+                // The name ends up in net0, where a comma would add options
+                (
+                    "bridge name with options",
+                    Bridges,
+                    200,
+                    r#"{"data":[{"iface":"vmbr0,tag=10","type":"bridge"}]}"#,
+                    Api("Invalid network bridge identifier"),
                 ),
                 ("next ID 401", NextId, 401, "", SessionExpired),
                 (
@@ -3193,6 +3252,7 @@ mod tests {
                 let path = match lookup {
                     Nodes => "/api2/json/nodes",
                     Storage => "/api2/json/nodes/pve/storage",
+                    Bridges => "/api2/json/nodes/pve/network?type=any_bridge",
                     NextId => "/api2/json/cluster/nextid",
                     VmIdFree => "/api2/json/cluster/nextid?vmid=101",
                     Privileges => "/api2/json/access/permissions?path=%2Fvms%2F100",
@@ -3208,6 +3268,7 @@ mod tests {
                 match lookup {
                     Nodes => assert_outcome(row, list_nodes(&session).await, &expected),
                     Storage => assert_outcome(row, list_storage(&session, "pve").await, &expected),
+                    Bridges => assert_outcome(row, list_bridges(&session, "pve").await, &expected),
                     NextId => assert_outcome(row, get_next_vm_id(&session).await, &expected),
                     VmIdFree => {
                         assert_outcome(row, ensure_vm_id_free(&session, 101).await, &expected)
@@ -3286,40 +3347,6 @@ mod tests {
                 )
             );
             network.expect(2).assert_async().await;
-        }
-
-        #[tokio::test]
-        async fn test_list_bridges_errors() {
-            for (status, body) in [
-                (401, ""),
-                (403, ""),
-                (500, ""),
-                (200, "{}"),
-                (200, "invalid"),
-                (
-                    200,
-                    r#"{"data":[{"iface":"vmbr0,tag=10","type":"bridge"}]}"#,
-                ),
-            ] {
-                let mut server = Server::new_async().await;
-                let network = server
-                    .mock("GET", "/api2/json/nodes/pve/network")
-                    .match_query(Matcher::Any)
-                    .with_status(status)
-                    .with_body(body)
-                    .create_async()
-                    .await;
-                let error = list_bridges(&session(server.url()), "pve")
-                    .await
-                    .unwrap_err();
-                // An expired session offers reconnecting, like the other lookups
-                if status == 401 {
-                    assert!(matches!(error, Error::ProxmoxSessionExpired));
-                } else {
-                    assert!(matches!(error, Error::ProxmoxApi(_)));
-                }
-                network.assert_async().await;
-            }
         }
 
         #[tokio::test]
@@ -5233,6 +5260,8 @@ mod tests {
 
             let start_mock = server
                 .mock("POST", "/api2/json/nodes/pve/qemu/100/status/start")
+                .match_header("cookie", "PVEAuthCookie=test-ticket")
+                .match_header("CSRFPreventionToken", "test-csrf")
                 .with_body(serde_json::json!({ "data": UPID }).to_string())
                 .create_async()
                 .await;
