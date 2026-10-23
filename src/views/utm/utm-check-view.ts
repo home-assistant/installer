@@ -6,7 +6,7 @@ import {
 import { linkStyles } from "../../utils/link-styles.js";
 import { LitElement, html, css, nothing } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
-import { InstallDiagnostics } from "../../utils/diagnostics.js";
+import { recordFailure } from "../../utils/diagnostics.js";
 import { customElement, query, state } from "lit/decorators.js";
 import { checkUtmAutomation, checkUtmStatus } from "../../api/commands.js";
 import type { UtmStatus } from "../../api/types.js";
@@ -152,7 +152,7 @@ export class UtmCheckView extends LitElement {
     } catch (error) {
       if (!isCurrent()) return;
       if (status) this._utmStatus = status;
-      new InstallDiagnostics("utm").fail(error);
+      recordFailure("utm", error);
       this._error = installerError(
         error,
         localize("views.utm.utm_check_view.failed_to_check_utm_status")

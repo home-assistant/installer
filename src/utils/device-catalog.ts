@@ -4,7 +4,7 @@ import type { CardButton } from "../components/card-button.js";
 import { goToNextStep } from "../components/wizard-steps.js";
 import { localize } from "../localization/localize.js";
 import { wizardState, type WizardSelections } from "../state/wizard-state.js";
-import { InstallDiagnostics } from "./diagnostics.js";
+import { recordFailure } from "./diagnostics.js";
 import { clearDriveSelection } from "./drive-selection.js";
 import { installerError, type InstallerError } from "./installer-error.js";
 import { renderLoadError, renderLoading } from "./load-state.js";
@@ -79,7 +79,7 @@ export class DeviceCatalog<T> implements ReactiveController {
       wizardState.setSelection("deviceCatalogReady", true);
     } catch (err) {
       if (!this.host.isConnected) return;
-      new InstallDiagnostics("flash").fail(err);
+      recordFailure("flash", err);
       this.error = installerError(
         err,
         this.options.failedMessage?.() ??

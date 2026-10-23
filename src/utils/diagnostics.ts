@@ -138,6 +138,14 @@ export class InstallDiagnostics {
   }
 }
 
+// Loading a list or running a check starts no install, so a failure there
+// logs no start. It is still the error shown next to the diagnostics, so it
+// becomes the context.
+export function recordFailure(flow: DiagnosticFlow, error: unknown) {
+  failure = { flow, stage: "preparing", error: diagnosticError(error) };
+  log(flow, failure.stage, "failed", 0, failure.error);
+}
+
 export function installErrorLogging() {
   const report = (error: "frontend_error" | "unhandled_rejection") => {
     if (!failure || failure.flow === "application") {
@@ -180,7 +188,7 @@ export function diagnosticText(data: Diagnostics): string {
     .join("\n");
 }
 
-export const REPORT_URL_LIMIT = 7500;
+const REPORT_URL_LIMIT = 7500;
 
 /** A new issue from the bug report template, without diagnostics */
 export const BUG_REPORT_URL =

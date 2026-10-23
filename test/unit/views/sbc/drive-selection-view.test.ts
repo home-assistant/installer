@@ -715,8 +715,9 @@ describe("drive-selection diagnostics", () => {
         stage: "preparing",
         error: category,
       });
-      expect(calls).to.have.length(2);
-      expect(calls[1]).to.include({
+      // A failed scan starts no install, so nothing logs a start
+      expect(calls).to.have.length(1);
+      expect(calls[0]).to.include({
         flow: "flash",
         stage: "preparing",
         outcome: "failed",
