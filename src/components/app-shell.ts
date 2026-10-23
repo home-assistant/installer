@@ -410,10 +410,9 @@ export class AppShell extends LitElement {
 
   // A click that changes the screen does so before the second click of a
   // double-click arrives, so that one would act on whatever the next screen
-  // has in the same spot: Back on the first step and then Back on the path
-  // selection went all the way to the welcome screen, and Next on a
-  // configured VM went past its confirmation into the install. `detail`
-  // counts the clicks; keyboard activation reports 0.
+  // has in the same spot: Next on a configured VM went past its confirmation
+  // into the install. `detail` counts the clicks; keyboard activation
+  // reports 0.
   private _onClick = (event: MouseEvent) => {
     if (event.detail < 2) {
       this._clickedScreen = this._screen;

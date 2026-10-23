@@ -440,9 +440,8 @@ describe("app-shell", () => {
     it("on Back on the first step stops at the path selection", async () => {
       await enterSbcFlow(el);
 
-      click(shellOf(el).shadowRoot!.querySelector(".header wa-button")!, 1);
+      click(shellOf(el).shadowRoot!.querySelector(".back")!, 1);
       await el.updateComplete;
-      // The path selection has its own Back in the same spot
       const paths = viewOf(el, "path-selection-view");
       await paths.updateComplete;
       click(paths.shadowRoot!.querySelector(".header wa-button")!, 2);
@@ -480,7 +479,7 @@ describe("app-shell", () => {
     it("leaves the keyboard alone", async () => {
       await enterSbcFlow(el);
 
-      click(shellOf(el).shadowRoot!.querySelector(".header wa-button")!, 1);
+      click(shellOf(el).shadowRoot!.querySelector(".back")!, 1);
       await el.updateComplete;
       const paths = viewOf(el, "path-selection-view");
       await paths.updateComplete;
@@ -900,12 +899,10 @@ describe("app-shell", () => {
   // "Try again" writes the same drive and Cancel drops every choice, so Back
   // is the way to change the drive or the Wi-Fi once the flash ended
   describe("Back after the flash ended", () => {
-    /** Click Back in the header, as the user would. */
+    /** Click Back, as the user would. */
     async function clickBack(el: AppShell) {
       await shellOf(el).updateComplete;
-      shellOf(el)
-        .shadowRoot!.querySelector<HTMLElement>(".header wa-button")!
-        .click();
+      shellOf(el).shadowRoot!.querySelector<HTMLElement>(".back")!.click();
       await el.updateComplete;
     }
 

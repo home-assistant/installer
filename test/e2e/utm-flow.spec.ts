@@ -266,7 +266,7 @@ test.describe("UTM Installation Flow", () => {
 
     // ...then back to double-check: the settings must still be the user's,
     // not silently reset to the defaults
-    await page.locator("wizard-shell").locator(".header wa-button").click();
+    await page.locator("wizard-shell").locator(".back").click();
     await expect(configView).toBeVisible();
     await expect(
       configView.getByRole("textbox", { name: "Display name" })
@@ -360,9 +360,7 @@ test.describe("UTM Installation Flow", () => {
   test("step 2: can navigate back to step 1", async ({ page }) => {
     await navigateToUtmStep2(page);
 
-    const backButton = page
-      .locator("wizard-shell")
-      .locator(".header wa-button");
+    const backButton = page.locator("wizard-shell").locator(".back");
     await expect(backButton).toHaveJSProperty("disabled", false);
     await backButton.click();
 
@@ -415,9 +413,7 @@ test.describe("UTM Installation Flow", () => {
   test("step 3: can navigate back to step 2", async ({ page }) => {
     await navigateToUtmStep3(page);
 
-    const backButton = page
-      .locator("wizard-shell")
-      .locator(".header wa-button");
+    const backButton = page.locator("wizard-shell").locator(".back");
     await expect(backButton).toHaveJSProperty("disabled", false);
     await backButton.click();
 
@@ -501,7 +497,7 @@ test.describe("UTM Installation Flow", () => {
     await navigateToUtmStep4(page);
 
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".header wa-button");
+    const backButton = wizardShell.locator(".back");
     await expect(backButton).toHaveCSS("visibility", "hidden");
   });
 
@@ -562,7 +558,7 @@ test.describe("UTM Installation Flow", () => {
     await navigateToUtmStep5(page);
 
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".header wa-button");
+    const backButton = wizardShell.locator(".back");
     await expect(backButton).toHaveCSS("visibility", "hidden");
   });
 

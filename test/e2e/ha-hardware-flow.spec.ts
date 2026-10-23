@@ -7,8 +7,7 @@ import { skipWifiStep } from "./fixtures.js";
 const next = (page: Page) =>
   page.locator("wizard-shell .footer-right wa-button");
 // The reinstall dialog has a header with a close button of its own
-const back = (page: Page) =>
-  page.locator("wizard-shell .header:has(step-indicator) > wa-button");
+const back = (page: Page) => page.locator("wizard-shell .back");
 const cancel = (page: Page) =>
   page.locator("wizard-shell .footer-left wa-button");
 

@@ -230,7 +230,7 @@ test.describe("Wizard Flow", () => {
     await expect(wizardShell).toContainText("drive");
 
     // Back button should now be enabled
-    const backButton = wizardShell.locator(".header wa-button");
+    const backButton = wizardShell.locator(".back");
     await expect(backButton).toHaveJSProperty("disabled", false);
 
     // Click back
@@ -247,7 +247,7 @@ test.describe("Wizard Flow", () => {
 
     const wizardShell = page.locator("wizard-shell");
     await expect(page.locator("device-selection-view")).toBeVisible();
-    await wizardShell.locator(".header wa-button").click();
+    await wizardShell.locator(".back").click();
 
     await expect(page.locator("path-selection-view")).toBeVisible();
     await expect(wizardShell).toHaveCount(0);
@@ -261,8 +261,7 @@ test.describe("Wizard Flow", () => {
       .click();
     await expect(page.locator("device-selection-view")).toBeVisible();
 
-    // The path selection has its own Back in the same spot
-    await page.locator("wizard-shell").locator(".header wa-button").dblclick();
+    await page.locator("wizard-shell").locator(".back").dblclick();
 
     await expect(page.locator("path-selection-view")).toBeVisible();
     await expect(page.locator("welcome-view")).toHaveCount(0);
@@ -417,7 +416,7 @@ test.describe("SBC Drive Selection", () => {
 
   test("can navigate back to device selection", async ({ page }) => {
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".header wa-button");
+    const backButton = wizardShell.locator(".back");
 
     // Back button should be enabled on drive step
     await expect(backButton).toHaveJSProperty("disabled", false);
@@ -578,7 +577,7 @@ test.describe("SBC Confirmation", () => {
     page,
   }) => {
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".header wa-button");
+    const backButton = wizardShell.locator(".back");
 
     // Back button should be enabled
     await expect(backButton).toHaveJSProperty("disabled", false);
@@ -694,7 +693,7 @@ test.describe("SBC Flashing", () => {
 
   test("back button is hidden during flashing", async ({ page }) => {
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".header wa-button");
+    const backButton = wizardShell.locator(".back");
     // Back button should be hidden (visibility: hidden)
     await expect(backButton).toHaveCSS("visibility", "hidden");
   });
@@ -849,7 +848,7 @@ test.describe("SBC Success", () => {
 
   test("back button is hidden on success step", async ({ page }) => {
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".header wa-button");
+    const backButton = wizardShell.locator(".back");
     await expect(backButton).toHaveCSS("visibility", "hidden");
   });
 

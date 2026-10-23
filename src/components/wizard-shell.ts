@@ -38,15 +38,7 @@ export class WizardShell extends LitElement {
       }
 
       .header {
-        justify-content: space-between;
         border-bottom: 1px solid var(--ha-border-color, #e0e0e0);
-      }
-
-      .header-center {
-        flex: 1;
-        min-width: 0;
-        display: flex;
-        justify-content: center;
       }
 
       /* Its width is the room available, not its content, so it can tell when
@@ -54,16 +46,6 @@ export class WizardShell extends LitElement {
       step-indicator {
         flex: 1;
         min-width: 0;
-      }
-
-      .header-right {
-        min-width: 80px;
-      }
-
-      @media (max-width: 600px) {
-        .header-right {
-          min-width: 0;
-        }
       }
 
       .content {
@@ -74,8 +56,8 @@ export class WizardShell extends LitElement {
 
       .footer {
         display: flex;
-        justify-content: space-between;
         align-items: center;
+        gap: 1rem;
         padding: 1rem var(--ha-page-gutter, 2rem);
         border-top: 1px solid var(--ha-border-color, #e0e0e0);
       }
@@ -83,11 +65,17 @@ export class WizardShell extends LitElement {
       .footer-left {
         display: flex;
         gap: 1rem;
+        margin-inline-end: auto;
       }
 
       .footer-right {
         display: flex;
         gap: 1rem;
+      }
+
+      /* Back points the way the page reads */
+      .back [slot="start"]:dir(rtl) {
+        transform: scaleX(-1);
       }
 
       /* Out of use, the buttons keep their place, so the step doesn't move */
@@ -184,23 +172,10 @@ export class WizardShell extends LitElement {
   render() {
     return html`
       <div class="header">
-        <wa-button
-          appearance="plain"
-          @click=${this._onBack}
-          ?disabled=${this.hideBack}
-          style=${this.hideBack ? "visibility: hidden" : ""}
-        >
-          <span slot="start">←</span> ${localize("common.back")}
-        </wa-button>
-
-        <div class="header-center">
-          <step-indicator
-            .steps=${this.steps}
-            .currentIndex=${this.currentIndex}
-          ></step-indicator>
-        </div>
-
-        <div class="header-right"></div>
+        <step-indicator
+          .steps=${this.steps}
+          .currentIndex=${this.currentIndex}
+        ></step-indicator>
       </div>
 
       <div class="content">
@@ -215,6 +190,15 @@ export class WizardShell extends LitElement {
                 ${localize("common.cancel")}
               </wa-button>`}
         </div>
+        <wa-button
+          class="back"
+          appearance="plain"
+          @click=${this._onBack}
+          ?disabled=${this.hideBack}
+          style=${this.hideBack ? "visibility: hidden" : ""}
+        >
+          <span slot="start">←</span> ${localize("common.back")}
+        </wa-button>
         <div class="footer-right">
           <!-- A new label on the focused button isn't always read out -->
           <span class="sr-only" aria-live="polite"

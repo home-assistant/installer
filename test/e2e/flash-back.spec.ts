@@ -4,7 +4,7 @@ import { expect, skipWifiStep, test } from "./fixtures.js";
 const next = (page: Page) =>
   page.locator("wizard-shell .footer-right wa-button");
 // The error screen has dialogs with a header of their own
-const back = (page: Page) => page.locator("wizard-shell .header > wa-button");
+const back = (page: Page) => page.locator("wizard-shell .back");
 
 // "Try again" writes the same drive and Cancel drops every choice, so Back is
 // the way to change the drive or the Wi-Fi once the flash was stopped

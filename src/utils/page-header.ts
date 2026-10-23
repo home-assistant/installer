@@ -3,9 +3,8 @@ import { localize } from "../localization/localize.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 
 /**
- * The bar holding Back at the top of a screen. The install flow and the
- * screens before it share it, so Back never moves between them. Its sides
- * are the page gutter, like the content and footer below it.
+ * The bar at the top of a screen: Back before the install flow, the steps
+ * in it. Its sides are the page gutter, like the content and footer below it.
  */
 export const pageHeaderStyles = css`
   .header {

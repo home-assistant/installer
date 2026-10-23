@@ -17,7 +17,7 @@ test("catalog navigation preserves selection without a Lit mount-update warning"
   const next = page.locator("wizard-shell .footer-right wa-button");
   await next.click();
   await expect(page.locator("drive-selection-view")).toBeVisible();
-  await page.locator("wizard-shell .header wa-button").click();
+  await page.locator("wizard-shell .back").click();
   await expect(page.locator("device-selection-view")).toBeVisible();
   await expect(next).toBeEnabled();
   expect(warnings).toEqual([]);

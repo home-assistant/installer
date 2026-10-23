@@ -15,7 +15,10 @@ for (const [width, height, gutter] of [
     await page.getByRole("button", { name: "Let's go" }).click();
     const back = page.getByRole("button", { name: "Back", exact: false });
     async function expectGutter(view: string) {
-      expect((await back.boundingBox())!.x).toBeCloseTo(gutter, 0);
+      // In the flow, Back sits beside Next
+      if (view !== "wizard-shell") {
+        expect((await back.boundingBox())!.x).toBeCloseTo(gutter, 0);
+      }
       // Where the content inside the padding starts and ends
       const content = await page.locator(view).evaluate((element) => {
         const part = element.shadowRoot!.querySelector(".content")!;

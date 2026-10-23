@@ -49,7 +49,7 @@ test("holds Next until a restored bridge is verified for the current session", a
       },
     };
   });
-  await page.locator("wizard-shell .header wa-button").click();
+  await page.locator("wizard-shell .back").click();
   const next = page.getByRole("button", { name: "Next", exact: true });
   await expect(next).toBeDisabled();
   await expect(page.getByText("Loading network bridges...")).toBeVisible();
@@ -94,7 +94,7 @@ test("retains the chosen bridge and sends it to VM creation", async ({
   await expect(page.locator("proxmox-confirm-view")).toContainText(
     "Network bridge: vmbr1"
   );
-  await page.locator("wizard-shell .header wa-button").click();
+  await page.locator("wizard-shell .back").click();
   await expect(
     configure.locator('wa-select[label="Network bridge"]')
   ).toHaveJSProperty("value", "vmbr1");

@@ -43,7 +43,7 @@ for (const width of [1100, 390]) {
     await expect(page.locator("proxmox-confirm-view")).not.toContainText(
       "VLAN tag:"
     );
-    await page.locator("wizard-shell .header wa-button").click();
+    await page.locator("wizard-shell .back").click();
     await configure
       .getByRole("button", { name: "Advanced", exact: true })
       .click();
@@ -74,7 +74,7 @@ for (const width of [1100, 390]) {
     await page.locator("proxmox-confirm-view").screenshot({
       path: test.info().outputPath(`vlan-confirmation-${width}.png`),
     });
-    await page.locator("wizard-shell .header wa-button").click();
+    await page.locator("wizard-shell .back").click();
     await expect(tag).toHaveValue("42");
     await expect(configure.locator("wa-details")).toHaveAttribute("open");
     await expect(next).toBeEnabled();

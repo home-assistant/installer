@@ -16,7 +16,7 @@ describe("wizard-shell", () => {
   it("renders the header with back button", async () => {
     const el = await fixture<WizardShell>(html`<wizard-shell></wizard-shell>`);
 
-    const backButton = el.shadowRoot!.querySelector(".header wa-button");
+    const backButton = el.shadowRoot!.querySelector(".back");
     expect(backButton).to.exist;
     expect(backButton!.textContent).to.include("Back");
   });
@@ -68,7 +68,7 @@ describe("wizard-shell", () => {
     const el = await fixture<WizardShell>(html`<wizard-shell></wizard-shell>`);
 
     const backButton = el.shadowRoot!.querySelector(
-      ".header wa-button"
+      ".back"
     ) as HTMLButtonElement;
     expect(backButton.disabled).to.be.false;
 
@@ -99,7 +99,7 @@ describe("wizard-shell", () => {
     );
 
     const backButton = el.shadowRoot!.querySelector(
-      ".header wa-button"
+      ".back"
     ) as HTMLButtonElement;
     expect(backButton.disabled).to.be.true;
   });
@@ -110,7 +110,7 @@ describe("wizard-shell", () => {
     const el = await fixture<WizardShell>(html`<wizard-shell></wizard-shell>`);
 
     const backButton = el.shadowRoot!.querySelector(
-      ".header wa-button"
+      ".back"
     ) as HTMLButtonElement;
     expect(backButton.disabled).to.be.false;
   });
@@ -145,7 +145,7 @@ describe("wizard-shell", () => {
     const el = await fixture<WizardShell>(html`<wizard-shell></wizard-shell>`);
 
     const backButton = el.shadowRoot!.querySelector(
-      ".header wa-button"
+      ".back"
     ) as HTMLButtonElement;
 
     setTimeout(() => backButton.click());
