@@ -4,7 +4,7 @@ import { formatNumber, localize } from "../localization/localize.js";
  * The bytes in a VM's GB. Proxmox and UTM make a "32G" disk 32 GiB, and the
  * sliders call that 32 GB, so free space for a disk counts the same way.
  */
-export const VM_GB_BYTES = 1024 ** 3;
+const VM_GB_BYTES = 1024 ** 3;
 
 // A size keeps its fraction: 1.5 GB must not read as 2 GB
 function formatSize(value: number): string {

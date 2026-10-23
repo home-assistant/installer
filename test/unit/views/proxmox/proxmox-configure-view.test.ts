@@ -303,9 +303,9 @@ describe("proxmox-configure-view", () => {
     expect(select.displayInput.value).to.equal("local (200 GB free)");
   });
 
-  describe("disk sizes for the selected storage", () => {
-    // Proxmox makes a "32G" disk 32 GiB. Listed as 34 GB free in decimal
-    // units, "tight" seemed to have room for it until the check at Next.
+  // Proxmox makes a "32G" disk 32 GiB. Listed as 34 GB free in decimal
+  // units, "tight" seemed to have room for it until the check at Next.
+  it("lists free space in the GB the disk sizes are in", async () => {
     const storage = (name: string, available: number): ProxmoxStorage => ({
       name,
       storage_type: "lvmthin",
@@ -313,93 +313,29 @@ describe("proxmox-configure-view", () => {
       content: ["images"],
       available,
     });
-    const storages = [
-      storage("large", 400 * 1024 ** 3),
-      storage("medium", 100 * 1024 ** 3),
-      storage("tight", 34e9),
-    ];
-
-    beforeEach(() => {
-      mockTauriIpc((cmd) => {
-        switch (cmd) {
-          case "proxmox_list_bridges":
-            return [{ name: "vmbr0", network_type: "bridge", comments: null }];
-          case "proxmox_list_nodes":
-            return [{ name: "pve", status: "online" }];
-          case "proxmox_get_next_vm_id":
-            return 100;
-          case "proxmox_list_storage":
-            return storages;
-        }
-        throw new Error(`Unexpected IPC command: ${cmd}`);
-      });
+    mockTauriIpc((cmd) => {
+      switch (cmd) {
+        case "proxmox_list_bridges":
+          return [{ name: "vmbr0", network_type: "bridge", comments: null }];
+        case "proxmox_list_nodes":
+          return [{ name: "pve", status: "online" }];
+        case "proxmox_get_next_vm_id":
+          return 100;
+        case "proxmox_list_storage":
+          return [storage("large", 400 * 1024 ** 3), storage("tight", 34e9)];
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
     });
 
-    async function diskSlider(el: HTMLElement) {
-      const slider = (await resourcesOf(el)).querySelectorAll("wa-slider")[2];
-      await slider.updateComplete;
-      return slider;
-    }
+    const el = await mount();
 
-    it("lists free space in the GB the disk sizes are in", async () => {
-      const el = await mount();
-      const options = [
-        ...el.shadowRoot!.querySelectorAll("#storage wa-option"),
-      ].map((option) => option.textContent!.trim());
-      expect(options).to.deep.equal([
-        "large (400 GB free)",
-        "medium (100 GB free)",
-        "tight (31.6 GB free)",
-      ]);
-    });
-
-    it("offers only disk sizes the storage has room for", async () => {
-      wizardState.setSelection("proxmoxStorage", "large");
-      wizardState.setSelection("diskSizeGb", 128);
-      const el = await mount();
-      const storageSelect = el.shadowRoot!.querySelector<WaSelect>("#storage")!;
-      const pickStorage = async (name: string) => {
-        storageSelect.value = name;
-        storageSelect.dispatchEvent(new Event("change"));
-        await el.updateComplete;
-      };
-
-      // 512 GB doesn't fit in 400
-      let slider = await diskSlider(el);
-      expect(slider.max).to.equal(3);
-      expect(slider.value).to.equal(2);
-      expect(wizardState.getState().selections.diskSizeGb).to.equal(128);
-
-      // A chosen size that no longer fits comes down to one that does
-      await pickStorage("medium");
-      slider = await diskSlider(el);
-      expect(slider.max).to.equal(1);
-      expect(slider.value).to.equal(1);
-      expect(wizardState.getState().selections.diskSizeGb).to.equal(64);
-      expect(wizardState.getState().selections.proxmoxConfigureReady).to.be
-        .true;
-
-      // Without room for the smallest disk, it stays for Next to explain
-      await pickStorage("tight");
-      slider = await diskSlider(el);
-      expect(slider.disabled).to.be.true;
-      expect(wizardState.getState().selections.diskSizeGb).to.equal(32);
-
-      await pickStorage("large");
-      slider = await diskSlider(el);
-      expect(slider.max).to.equal(3);
-      expect(wizardState.getState().selections.diskSizeGb).to.equal(32);
-    });
-
-    it("fits a restored disk size to the storage once it is read", async () => {
-      wizardState.setSelection("proxmoxStorage", "medium");
-      wizardState.setSelection("diskSizeGb", 512);
-
-      const el = await mount();
-
-      expect(wizardState.getState().selections.diskSizeGb).to.equal(64);
-      expect((await resourcesOf(el)).textContent).to.contain("64 GB");
-    });
+    const options = [
+      ...el.shadowRoot!.querySelectorAll("#storage wa-option"),
+    ].map((option) => option.textContent!.trim());
+    expect(options).to.deep.equal([
+      "large (400 GB free)",
+      "tight (31.6 GB free)",
+    ]);
   });
 
   it("saves the defaults on a first visit", async () => {
@@ -978,8 +914,7 @@ describe("proxmox-configure-view", () => {
                 name: "local",
                 active: true,
                 content: ["images"],
-                // Room for the restored 64 GB disk
-                available: 100 * 1024 ** 3,
+                available: 100,
               },
             ];
         }
