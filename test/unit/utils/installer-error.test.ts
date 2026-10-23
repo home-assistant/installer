@@ -1,6 +1,7 @@
 import { expect, fixtureSync, html } from "@open-wc/testing";
 import {
   installerError,
+  isDriveFailure,
   renderErrorHelp,
 } from "../../../src/utils/installer-error.js";
 import { ipcError } from "../tauri-ipc.js";
@@ -224,5 +225,42 @@ describe("installer errors", () => {
     // Reporting goes through the diagnostics dialog instead of a bare link
     expect(el.querySelector("diagnostics-actions")).to.exist;
     for (const link of links) expect(new URL(link.href).search).to.equal("");
+  });
+
+  describe("isDriveFailure", () => {
+    for (const code of [
+      "device_not_found",
+      "drive_disconnected",
+      "drive_too_small",
+      "image_too_large",
+      "write_protected",
+    ]) {
+      it(`blames the drive for ${code} at any stage`, () => {
+        expect(isDriveFailure(code, false)).to.be.true;
+        expect(isDriveFailure(code, true)).to.be.true;
+      });
+    }
+
+    // Before the write, these are about this computer's storage or the image
+    for (const code of ["io", "verification_failed"]) {
+      it(`blames the drive for ${code} only once the write reached it`, () => {
+        expect(isDriveFailure(code, false)).to.be.false;
+        expect(isDriveFailure(code, true)).to.be.true;
+      });
+    }
+
+    for (const code of [
+      "json",
+      "invalid_config",
+      "internal",
+      "operation_in_progress",
+      "unsupported_platform",
+      "unknown",
+    ]) {
+      it(`never blames the drive for ${code}`, () => {
+        expect(isDriveFailure(code, false)).to.be.false;
+        expect(isDriveFailure(code, true)).to.be.false;
+      });
+    }
   });
 });

@@ -201,6 +201,10 @@ permissions or services recover; unsupported methods remain non-retryable.
 `src/utils/installer-error.ts` maps codes to user-facing guidance and supplies
 fixed help/report links. Only explicitly retryable errors expose Try again;
 VM creation with an uncertain outcome must not be retried automatically.
+Choose another drive is offered only for a failure of the drive itself: one
+that is gone, too small or write-protected, or one that failed while it was
+written or checked. Other failures that can't be retried keep Back to the
+confirmation and Cancel, with no Next.
 
 Successful flashing returns only `duration_secs`; failures reject.
 

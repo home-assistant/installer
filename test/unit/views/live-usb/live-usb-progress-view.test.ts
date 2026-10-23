@@ -160,4 +160,36 @@ describe("live-usb-progress-view", () => {
       "The drive is in use"
     );
   });
+
+  // Another stick for what is wrong with the stick, another location for
+  // what is wrong with the ISO's folder, and nothing else
+  for (const [media, code, changeChoice] of [
+    ["usb", "drive_disconnected", true],
+    ["usb", "io", false],
+    ["usb", "json", false],
+    ["iso", "file_exists", true],
+    ["iso", "io", true],
+    ["iso", "json", false],
+  ] as const) {
+    it(`reports whether choosing differently fixes ${code} on the ${media}`, async () => {
+      wizardState.setSelection("liveMedia", media);
+      if (media === "usb") storeDriveSelection(MOCK_BLOCK_DEVICES[0]);
+      const calls = mockCommands();
+      const el = fixtureSync<LiveUsbProgressView>(
+        html`<live-usb-progress-view></live-usb-progress-view>`
+      );
+      const reports: boolean[] = [];
+      el.addEventListener("install-error", (event) =>
+        reports.push(
+          (event as CustomEvent<{ changeChoice: boolean }>).detail.changeChoice
+        )
+      );
+      await settle();
+
+      // Before anything reached the stick
+      calls[0].result.reject(ipcError(code, "Failed"));
+      await settle();
+      expect(reports).to.deep.equal([changeChoice]);
+    });
+  }
 });

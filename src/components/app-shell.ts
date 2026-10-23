@@ -107,6 +107,10 @@ export class AppShell extends LitElement {
   @state()
   private _installReconnect = false;
 
+  /** Choosing differently, like another drive, can fix the failed install */
+  @state()
+  private _installChangeChoice = false;
+
   // What the running `beforeNext` of a step started from: the flow, or the
   // selections. Leaving the flow (or changing a choice) replaces it, so a run
   // left behind holds up nothing.
@@ -453,6 +457,7 @@ export class AppShell extends LitElement {
     this._installError = false;
     this._installRetryable = false;
     this._installReconnect = false;
+    this._installChangeChoice = false;
   }
 
   /** Whether the step on screen runs an install that has not failed. */
@@ -462,11 +467,12 @@ export class AppShell extends LitElement {
 
   /**
    * Where Next leads from the failed `install` instead of trying it again:
-   * to log in again, or to change a choice that trying again can't fix.
+   * to log in again, or to the choice that failed it, like the drive. A
+   * failure no choice fixes, like an unexpected response, leads nowhere.
    */
   private _installDetour(install: InstallStep): InstallDetour | undefined {
     if (this._installReconnect) return install.reconnect?.();
-    if (this._installRetryable) return undefined;
+    if (this._installRetryable || !this._installChangeChoice) return undefined;
     return install.changeChoice?.(this._wizardState.selections);
   }
 
@@ -691,7 +697,11 @@ export class AppShell extends LitElement {
   }
 
   private _onInstallError(
-    event: CustomEvent<{ retryable?: boolean; reconnect?: boolean }>
+    event: CustomEvent<{
+      retryable?: boolean;
+      reconnect?: boolean;
+      changeChoice?: boolean;
+    }>
   ) {
     // The install ended, so there is nothing left to stop, leave or quit,
     // whether or not the view said so first
@@ -700,6 +710,7 @@ export class AppShell extends LitElement {
     this._showQuitDialog = false;
     this._installRetryable = event.detail?.retryable === true;
     this._installReconnect = event.detail?.reconnect === true;
+    this._installChangeChoice = event.detail?.changeChoice === true;
     this._installError = true;
   }
 }

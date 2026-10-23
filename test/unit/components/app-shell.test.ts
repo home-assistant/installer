@@ -79,6 +79,14 @@ function selectTargets({ withBoard = true } = {}) {
   storeDriveSelection(CONNECTED);
 }
 
+/** Have the flash fail with `code` before it reaches the drive. */
+function failFlash(code: string) {
+  mockTauriIpc((cmd) => {
+    if (cmd === "flash_image") return Promise.reject(ipcError(code, "Failed"));
+    throw new Error(`Unexpected IPC command: ${cmd}`);
+  });
+}
+
 async function goToStep(el: AppShell, id: string) {
   wizardState.goToStep(
     wizardState.getState().steps.findIndex((step) => step.id === id)
@@ -949,16 +957,82 @@ describe("app-shell", () => {
     });
 
     it("is there beside Choose another drive", async () => {
-      // Without a board there is nothing to download, so no write starts:
-      // the progress view reports the flash error itself.
-      selectTargets({ withBoard: false });
+      selectTargets();
+      failFlash("drive_disconnected");
       await goToStep(el, "flash");
       await waitUntil(() => shellOf(el).nextLabel === "Choose another drive");
       expect(shellOf(el).hideBack).to.be.false;
+      restoreTauriIpc();
 
       await clickBack(el);
       expect(wizardState.currentStep?.id).to.equal("confirm");
       expect((el as unknown as ErrorFlags)._installError).to.be.false;
+    });
+
+    // Another drive can't fix an unexpected response, so there is no Next
+    it("is the way on when the drive is not what failed", async () => {
+      selectTargets();
+      failFlash("json");
+      await goToStep(el, "flash");
+      await waitUntil(
+        () => shellOf(el).querySelector("progress-view")!.hasError
+      );
+      await el.updateComplete;
+      expect(shellOf(el).hideNext).to.be.true;
+      expect(shellOf(el).hideBack).to.be.false;
+      expect(shellOf(el).hideFooter).to.be.false;
+      restoreTauriIpc();
+
+      await clickBack(el);
+      expect(wizardState.currentStep?.id).to.equal("confirm");
+      expect(shellOf(el).nextLabel).to.equal("Install");
+    });
+  });
+
+  // The progress view says whether choosing differently can fix a failure
+  // that trying again can't
+  describe("Next after a failed flash", () => {
+    beforeEach(async () => {
+      await enterSbcFlow(el);
+      selectTargets();
+      // The flash keeps running until the test fails it
+      mockTauriIpc(() => new Promise(() => {}));
+      await goToStep(el, "flash");
+    });
+
+    async function fail(detail: { retryable: boolean; changeChoice: boolean }) {
+      fire(
+        shellOf(el).querySelector("progress-view")!,
+        "install-error",
+        detail
+      );
+      await el.updateComplete;
+    }
+
+    it("leads to the drive step when the drive failed", async () => {
+      await fail({ retryable: false, changeChoice: true });
+      expect(shellOf(el).nextLabel).to.equal("Choose another drive");
+      expect(shellOf(el).hideNext).to.be.false;
+
+      fire(shellOf(el), "wizard-next");
+      await el.updateComplete;
+      expect(wizardState.currentStep?.id).to.equal("drive");
+    });
+
+    it("tries the same drive again first when that can work", async () => {
+      await fail({ retryable: true, changeChoice: true });
+      expect(shellOf(el).nextLabel).to.equal("Try again");
+    });
+
+    it("is hidden when no choice can fix it", async () => {
+      await fail({ retryable: false, changeChoice: false });
+      expect(shellOf(el).hideNext).to.be.true;
+      expect(shellOf(el).hideBack).to.be.false;
+
+      // Nothing else sends the flash on to the drive step either
+      fire(shellOf(el), "wizard-next");
+      await el.updateComplete;
+      expect(wizardState.currentStep?.id).to.equal("flash");
     });
   });
 
@@ -1211,7 +1285,9 @@ describe("app-shell", () => {
       // the progress view reports the flash error itself.
       selectTargets({ withBoard: false });
       await goToStep(el, "flash");
-      await waitUntil(() => shellOf(el).nextLabel === "Choose another drive");
+      await waitUntil(
+        () => shellOf(el).querySelector("progress-view")!.hasError
+      );
 
       fire(shellOf(el), "wizard-cancel");
       await el.updateComplete;

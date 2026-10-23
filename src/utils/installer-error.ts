@@ -108,6 +108,28 @@ export function installerError(
   };
 }
 
+/** Failures of the drive itself, whatever stage they come from */
+const DRIVE_FAILURES = [
+  "device_not_found",
+  "drive_disconnected",
+  "drive_too_small",
+  "image_too_large",
+  "write_protected",
+];
+
+/**
+ * Whether the failure with `code` is the drive's, so another drive can fix
+ * it. A read or write error, or a failed check, is the drive's only once
+ * the write reached it: before that, it is about this computer's storage or
+ * the image.
+ */
+export function isDriveFailure(code: string, reachedDrive: boolean): boolean {
+  return (
+    DRIVE_FAILURES.includes(code) ||
+    (reachedDrive && (code === "io" || code === "verification_failed"))
+  );
+}
+
 /** Fixed destinations only: error text, paths, and credentials never enter URLs. */
 export function renderErrorHelp() {
   const help = "https://www.home-assistant.io/installation/";
