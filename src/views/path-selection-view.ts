@@ -7,13 +7,7 @@ import { pageHeaderStyles, renderBackHeader } from "../utils/page-header.js";
 import "../components/option-card.js";
 import { getPlatform } from "../utils/platform.js";
 import { isUtmSupported } from "../api/commands.js";
-
-export type InstallationPath =
-  | "sbc"
-  | "minipc"
-  | "ha-hardware"
-  | "proxmox"
-  | "vm";
+import type { WizardFlow } from "../state/wizard-state.js";
 
 @customElement("path-selection-view")
 export class PathSelectionView extends LitElement {
@@ -191,8 +185,7 @@ export class PathSelectionView extends LitElement {
   }
 
   private _onSelectPath(ev: Event) {
-    const path = (ev.currentTarget as HTMLElement).dataset
-      .path as InstallationPath;
+    const path = (ev.currentTarget as HTMLElement).dataset.path as WizardFlow;
     this.dispatchEvent(
       new CustomEvent("select-path", {
         detail: { path },

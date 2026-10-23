@@ -10,7 +10,7 @@ import {
   findHaHardware,
   haHardwareName,
   type HaHardwareId,
-} from "./hardware.js";
+} from "../../state/ha-hardware.js";
 
 import "../../components/install-success.js";
 

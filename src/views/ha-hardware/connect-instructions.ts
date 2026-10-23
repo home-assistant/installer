@@ -4,7 +4,7 @@ import { customElement, property } from "lit/decorators.js";
 import { openExternalLink } from "../../utils/external-url.js";
 import { linkStyles } from "../../utils/link-styles.js";
 import { getPlatform } from "../../utils/platform.js";
-import type { HaHardwareId } from "./hardware.js";
+import type { HaHardwareId } from "../../state/ha-hardware.js";
 
 const RPIBOOT_URL = "https://github.com/raspberrypi/usbboot";
 

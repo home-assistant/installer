@@ -22,7 +22,7 @@ import {
   findHaHardware,
   installerConfig,
   type HaHardwareId,
-} from "../../../../src/views/ha-hardware/hardware.js";
+} from "../../../../src/state/ha-hardware.js";
 import {
   MOCK_BLOCK_DEVICES,
   MOCK_MANIFEST,

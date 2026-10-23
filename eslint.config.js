@@ -44,6 +44,25 @@ export default [
     },
   },
   {
+    // State is what views read and write, so it can't depend on them, not even
+    // for a type: the dependency would run both ways.
+    files: ["src/state/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/views/**", "**/components/**"],
+              message:
+                "src/state must not import views or components; move what it needs into src/state.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     ignores: ["dist/", "node_modules/", "crates/"],
   },
   {

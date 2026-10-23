@@ -8,7 +8,10 @@ import { optionCardStyles } from "../../utils/option-card-styles.js";
 import { customElement } from "lit/decorators.js";
 import { wizardState } from "../../state/wizard-state.js";
 import { clearDriveSelection } from "../../utils/drive-selection.js";
-import { haHardwareName, type YellowModuleId } from "./hardware.js";
+import {
+  haHardwareName,
+  type YellowModuleId,
+} from "../../state/ha-hardware.js";
 import { goToNextStep } from "../../components/wizard-steps.js";
 import "../../components/option-card.js";
 import type { OptionCard } from "../../components/option-card.js";

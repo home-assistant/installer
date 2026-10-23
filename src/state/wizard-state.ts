@@ -7,14 +7,11 @@ import type {
   UtmVmConfig,
   WifiConfig,
 } from "../api/types.js";
-import type { InstallationPath } from "../views/path-selection-view.js";
-import type {
-  HaHardwareId,
-  YellowModuleId,
-} from "../views/ha-hardware/hardware.js";
+import type { HaHardwareId, YellowModuleId } from "./ha-hardware.js";
 import { supportsWifi } from "../utils/wifi.js";
 
-export type WizardFlow = InstallationPath;
+/** The way to install, as picked on the first screen. */
+export type WizardFlow = "sbc" | "minipc" | "ha-hardware" | "proxmox" | "vm";
 
 export interface WizardStep {
   id: string;

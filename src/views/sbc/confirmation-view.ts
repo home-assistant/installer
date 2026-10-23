@@ -19,7 +19,7 @@ import {
   findInstaller,
   installerName,
   type HaHardwareInstaller,
-} from "../ha-hardware/hardware.js";
+} from "../../state/ha-hardware.js";
 import "../../components/inline-notice.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 

@@ -3,7 +3,7 @@ import { localize } from "../localization/localize.js";
 import { isValidUtmVmName } from "../state/vm-defaults.js";
 import type { WizardFlow, WizardSelections } from "../state/wizard-state.js";
 import { isValidWifi, selectedWifi } from "../utils/wifi.js";
-import { isYellow } from "../views/ha-hardware/hardware.js";
+import { isYellow } from "../state/ha-hardware.js";
 import type { HaHardwareDeviceSelectionView } from "../views/ha-hardware/device-selection-view.js";
 import type { LiveIsoLocationView } from "../views/live-usb/live-iso-location-view.js";
 import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-view.js";
