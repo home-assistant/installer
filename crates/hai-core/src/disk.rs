@@ -230,16 +230,6 @@ const DISCONNECTED_OS_ERRORS: &[i32] = &[
     1167, // ERROR_DEVICE_NOT_CONNECTED
 ];
 
-/// Raw OS error codes that mean the drive refuses writes.
-#[cfg(unix)]
-const WRITE_PROTECTED_OS_ERRORS: &[i32] = &[
-    30, // EROFS: read-only file system
-];
-#[cfg(windows)]
-const WRITE_PROTECTED_OS_ERRORS: &[i32] = &[
-    19, // ERROR_WRITE_PROTECT
-];
-
 /// Check if an I/O error indicates the drive was disconnected
 fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
     matches!(
@@ -255,10 +245,8 @@ fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
 /// Check if an I/O error means the drive is write-protected, like an SD card
 /// with its lock switch on.
 fn is_write_protected(io_err: &std::io::Error) -> bool {
+    // std gives EROFS and ERROR_WRITE_PROTECT this kind
     io_err.kind() == std::io::ErrorKind::ReadOnlyFilesystem
-        || io_err
-            .raw_os_error()
-            .is_some_and(|code| WRITE_PROTECTED_OS_ERRORS.contains(&code))
 }
 
 /// Map an I/O error from reading or writing the device onto an [`Error`]:
