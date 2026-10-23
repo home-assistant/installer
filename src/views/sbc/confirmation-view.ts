@@ -1,4 +1,4 @@
-import { localize, localizeContent } from "../../localization/localize.js";
+import { localize } from "../../localization/localize.js";
 import { LitElement, html, css, nothing } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { customElement, state } from "lit/decorators.js";
@@ -131,14 +131,7 @@ export class ConfirmationView extends LitElement {
                 ${renderSummaryIcon(boardIcon)}
               </div>`,
           localize("common.device"),
-          deviceName,
-          deviceConfig && !installer
-            ? html`<p class="summary-detail">
-                ${localizeContent("views.sbc.confirmation_view.board_summary", {
-                  board: deviceConfig.board,
-                })}
-              </p>`
-            : nothing
+          deviceName
         )}
 
         <div class="divider"></div>

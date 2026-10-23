@@ -70,7 +70,7 @@ export class HaHardwareConnectInstructions extends LitElement {
   @property({ attribute: false })
   hardware?: HaHardwareId;
 
-  render() {
+  render(): TemplateResult | typeof nothing {
     switch (this.hardware) {
       case "green":
         return this._renderBox(
@@ -98,7 +98,8 @@ export class HaHardwareConnectInstructions extends LitElement {
           localize("views.ha_hardware.connect_instructions.blue_title"),
           this._renderBlue()
         );
-      default:
+      // Listing every device makes a new one fail the build until it has steps
+      case undefined:
         return nothing;
     }
   }

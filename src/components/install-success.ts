@@ -4,7 +4,6 @@ import { localize } from "../localization/localize.js";
 import { openExternalLink } from "../utils/external-url.js";
 import { linkStyles } from "../utils/link-styles.js";
 import { renderCasitaHappy } from "./install-mascot.js";
-import "./inline-notice.js";
 import {
   ReducedSvgMotion,
   ViewAccessibility,
@@ -190,10 +189,6 @@ export class InstallSuccess extends LitElement {
         text-align: left;
       }
 
-      inline-notice {
-        margin: 1.25rem 0;
-      }
-
       .next-steps-footer {
         margin: 1.25rem 0 0;
       }
@@ -242,8 +237,6 @@ export class InstallSuccess extends LitElement {
   @property({ attribute: false }) subtitle: string | TemplateResult = "";
   @property({ attribute: false }) steps: (string | TemplateResult)[] = [];
   @property({ attribute: false }) tip: string | TemplateResult = "";
-  /** Shown above the steps, for something to avoid before starting them. */
-  @property({ attribute: false }) notice: string | TemplateResult = "";
   /** Shown below the steps, such as a link to further documentation. */
   @property({ attribute: false }) footer: string | TemplateResult = "";
 
@@ -266,9 +259,6 @@ export class InstallSuccess extends LitElement {
             <p class="next-steps-title">
               ${localize("components.install_success.next_steps")}
             </p>
-            ${this.notice
-              ? html`<inline-notice><p>${this.notice}</p></inline-notice>`
-              : ""}
             <ol
               class="steps-list"
               role="list"

@@ -62,12 +62,11 @@ for (const width of [1100, 390]) {
       await expect(success.locator(".next-steps")).toContainText(
         "router or on an attached display"
       );
-      await expect(success.locator("inline-notice")).toContainText(
-        "Do not format or initialize the written drive."
+      // Formatting is what to avoid while ejecting, so it is part of that step
+      await expect(success.locator(".step-text").first()).toContainText(
+        "if it offers to format or initialize the drive, choose Cancel or Ignore"
       );
-      await expect(success.locator("inline-notice")).toContainText(
-        "Choose Cancel if offered, or Ignore or Eject on macOS."
-      );
+      await expect(success.locator("inline-notice")).toHaveCount(0);
       await expect(success.locator(".next-steps-footer a")).toBeVisible();
       await expect(next(page)).toHaveText("Done");
       await expect(success.locator(".next-steps")).toContainText(
@@ -101,9 +100,7 @@ for (const width of [1100, 390]) {
             left: bounds.left,
             right: bounds.right,
             overflowing: [
-              ...element.querySelectorAll(
-                ".step-text, inline-notice, .next-steps-footer"
-              ),
+              ...element.querySelectorAll(".step-text, .next-steps-footer"),
             ].some((item) => item.scrollWidth > item.clientWidth + 1),
             overlappingSteps: steps.some(
               (step, index) =>
