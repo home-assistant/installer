@@ -134,64 +134,89 @@ export interface WizardState {
 
 type WizardStateListener = (state: WizardState) => void;
 
+/**
+ * A step whose title is looked up each time it is read, so it follows the
+ * language. The step itself is built once and stays the same object, which
+ * the step indicator relies on to keep its steps between selection changes.
+ */
+function localizedStep(
+  id: string,
+  title: () => string,
+  when?: WizardStep["when"]
+): WizardStep {
+  return {
+    id,
+    get title() {
+      return title();
+    },
+    when,
+  };
+}
+
 /** Wi-Fi is offered only for boards that have it. */
-const wifiStep: WizardStep = {
-  id: "wifi",
-  title: localize("state.wizard_state.wifi"),
-  when: (selections) => supportsWifi(selections.deviceConfig?.board),
-};
+const wifiStep = localizedStep(
+  "wifi",
+  () => localize("state.wizard_state.wifi"),
+  (selections) => supportsWifi(selections.deviceConfig?.board)
+);
 
 const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
   sbc: [
-    { id: "device", title: localize("state.wizard_state.select_device") },
-    { id: "drive", title: localize("state.wizard_state.select_drive") },
+    localizedStep("device", () => localize("state.wizard_state.select_device")),
+    localizedStep("drive", () => localize("state.wizard_state.select_drive")),
     wifiStep,
-    { id: "confirm", title: localize("common.confirm") },
-    { id: "flash", title: localize("common.install") },
-    { id: "success", title: localize("common.done") },
+    localizedStep("confirm", () => localize("common.confirm")),
+    localizedStep("flash", () => localize("common.install")),
+    localizedStep("success", () => localize("common.done")),
   ],
   minipc: [
-    { id: "method", title: localize("state.wizard_state.installation_method") },
-    {
-      id: "architecture",
-      title: localize("state.wizard_state.select_processor"),
-    },
-    { id: "drive", title: localize("state.wizard_state.select_drive") },
+    localizedStep("method", () =>
+      localize("state.wizard_state.installation_method")
+    ),
+    localizedStep("architecture", () =>
+      localize("state.wizard_state.select_processor")
+    ),
+    localizedStep("drive", () => localize("state.wizard_state.select_drive")),
     wifiStep,
-    { id: "confirm", title: localize("common.confirm") },
-    { id: "flash", title: localize("common.install") },
-    { id: "success", title: localize("common.done") },
+    localizedStep("confirm", () => localize("common.confirm")),
+    localizedStep("flash", () => localize("common.install")),
+    localizedStep("success", () => localize("common.done")),
   ],
   "ha-hardware": [
-    { id: "device", title: localize("state.wizard_state.select_device") },
+    localizedStep("device", () => localize("state.wizard_state.select_device")),
     // Only for the Yellow, whose compute modules the device step hands on
-    {
-      id: "module",
-      title: localize("state.wizard_state.select_module"),
-      when: (selections) => !!selections.yellowModules?.length,
-    },
-    { id: "drive", title: localize("state.wizard_state.select_drive") },
+    localizedStep(
+      "module",
+      () => localize("state.wizard_state.select_module"),
+      (selections) => !!selections.yellowModules?.length
+    ),
+    localizedStep("drive", () => localize("state.wizard_state.select_drive")),
     wifiStep,
-    { id: "confirm", title: localize("common.confirm") },
-    { id: "flash", title: localize("common.install") },
-    { id: "success", title: localize("common.done") },
+    localizedStep("confirm", () => localize("common.confirm")),
+    localizedStep("flash", () => localize("common.install")),
+    localizedStep("success", () => localize("common.done")),
   ],
   proxmox: [
-    {
-      id: "connection",
-      title: localize("state.wizard_state.connect_to_proxmox"),
-    },
-    { id: "configure", title: localize("state.wizard_state.configure_vm") },
-    { id: "confirm", title: localize("common.confirm") },
-    { id: "install", title: localize("common.install") },
-    { id: "success", title: localize("common.done") },
+    localizedStep("connection", () =>
+      localize("state.wizard_state.connect_to_proxmox")
+    ),
+    localizedStep("configure", () =>
+      localize("state.wizard_state.configure_vm")
+    ),
+    localizedStep("confirm", () => localize("common.confirm")),
+    localizedStep("install", () => localize("common.install")),
+    localizedStep("success", () => localize("common.done")),
   ],
   vm: [
-    { id: "check", title: localize("state.wizard_state.check_requirements") },
-    { id: "configure", title: localize("state.wizard_state.configure_vm") },
-    { id: "confirm", title: localize("common.confirm") },
-    { id: "install", title: localize("common.install") },
-    { id: "success", title: localize("common.done") },
+    localizedStep("check", () =>
+      localize("state.wizard_state.check_requirements")
+    ),
+    localizedStep("configure", () =>
+      localize("state.wizard_state.configure_vm")
+    ),
+    localizedStep("confirm", () => localize("common.confirm")),
+    localizedStep("install", () => localize("common.install")),
+    localizedStep("success", () => localize("common.done")),
   ],
 };
 
@@ -213,12 +238,14 @@ function stepsFor(
  * re-checks, erase confirmation and retry handling apply to it unchanged. */
 function liveUsbSteps(target: WizardStep): WizardStep[] {
   return [
-    { id: "method", title: localize("state.wizard_state.installation_method") },
-    { id: "media", title: localize("state.wizard_state.media_type") },
+    localizedStep("method", () =>
+      localize("state.wizard_state.installation_method")
+    ),
+    localizedStep("media", () => localize("state.wizard_state.media_type")),
     target,
-    { id: "confirm", title: localize("common.confirm") },
-    { id: "flash", title: localize("common.create") },
-    { id: "success", title: localize("common.done") },
+    localizedStep("confirm", () => localize("common.confirm")),
+    localizedStep("flash", () => localize("common.create")),
+    localizedStep("success", () => localize("common.done")),
   ];
 }
 
@@ -226,14 +253,16 @@ function liveUsbSteps(target: WizardStep): WizardStep[] {
 export const MINIPC_STEPS = {
   // No board is picked yet; choosing one adds the Wi-Fi step back.
   direct: stepsFor("minipc", {}),
-  usb: liveUsbSteps({
-    id: "drive",
-    title: localize("state.wizard_state.select_usb_stick"),
-  }),
-  iso: liveUsbSteps({
-    id: "location",
-    title: localize("state.wizard_state.save_location"),
-  }),
+  usb: liveUsbSteps(
+    localizedStep("drive", () =>
+      localize("state.wizard_state.select_usb_stick")
+    )
+  ),
+  iso: liveUsbSteps(
+    localizedStep("location", () =>
+      localize("state.wizard_state.save_location")
+    )
+  ),
 };
 
 /** The direct path's steps, with Wi-Fi if the architecture picked earlier has it. */

@@ -81,7 +81,9 @@ containing code-owned Lit placeholders (for example, a link or emphasized
 drive name). Catalog values must never contain HTML. Keep whole sentences
 together and use ICU plurals instead of assembling English suffixes. Keys
 are type-checked; `npm run localization:check` checks every call's placeholder
-names, catalog syntax, and unused entries in CI.
+names, catalog syntax, and unused entries in CI. Call them where the text is
+shown, in `render()` or a function it calls, never while a module loads: that
+text would not follow the language, and the check rejects such a call.
 
 Choose semantic keys for a specific UI meaning, not merely identical English
 wording, and named placeholders such as `version` or `drive`. Storage pools

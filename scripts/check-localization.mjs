@@ -96,6 +96,17 @@ function fileNamespace(filename) {
     .join(".");
 }
 
+// Code that runs when the module loads cannot localize: the text would be
+// fixed before the language is known and never follow a change of it.
+// Functions and instance fields run later, once the app is up.
+function runsLater(node) {
+  return (
+    ts.isFunctionLike(node) ||
+    (ts.isPropertyDeclaration(node) &&
+      !(ts.getCombinedModifierFlags(node) & ts.ModifierFlags.Static))
+  );
+}
+
 const used = new Set();
 function walk(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -111,7 +122,7 @@ function walk(directory) {
       ts.ScriptTarget.Latest,
       true
     );
-    function visit(node) {
+    function visit(node, deferred = false) {
       if (
         ts.isCallExpression(node) &&
         ts.isIdentifier(node.expression) &&
@@ -121,6 +132,10 @@ function walk(directory) {
         assert(
           key && ts.isStringLiteral(key),
           `${filename}: localization keys must be static`
+        );
+        assert(
+          deferred,
+          `${filename}: ${key.text} is localized when the module loads. Localize when the text is shown, in render() or in a function it calls`
         );
         assert(
           parameters.has(key.text),
@@ -161,7 +176,9 @@ function walk(directory) {
         );
         used.add(key.text);
       }
-      ts.forEachChild(node, visit);
+      ts.forEachChild(node, (child) => {
+        visit(child, deferred || runsLater(node));
+      });
     }
     visit(source);
   }

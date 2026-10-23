@@ -136,7 +136,7 @@ test("catalog check keeps a key with the file that renders it", () => {
     fs.mkdirSync(path.join(source, "views"), { recursive: true });
     fs.writeFileSync(
       path.join(source, "views", "first-view.ts"),
-      'localize("views.second_view.title");\n'
+      'const title = () => localize("views.second_view.title");\n'
     );
 
     const result = spawnSync(process.execPath, [checker, fixture, source], {
@@ -216,6 +216,59 @@ test("catalog check holds translations to the English", () => {
       const result = check(filename, translation);
       assert.equal(result.status, 1, filename);
       assert.match(result.stderr, error);
+    }
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("catalog check keeps text from being localized when a module loads", () => {
+  const checker = fileURLToPath(
+    new URL("./check-localization.mjs", import.meta.url)
+  );
+  const catalogPath = fileURLToPath(
+    new URL("../src/localization/en.json", import.meta.url)
+  );
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "hai-localization-"));
+  try {
+    const fixture = path.join(directory, "en.json");
+    fs.copyFileSync(catalogPath, fixture);
+    const source = path.join(directory, "src");
+    fs.mkdirSync(path.join(source, "views"), { recursive: true });
+    const check = (code) => {
+      fs.writeFileSync(path.join(source, "views", "first-view.ts"), code);
+      return spawnSync(process.execPath, [checker, fixture, source], {
+        encoding: "utf8",
+      });
+    };
+
+    for (const code of [
+      'const title = localize("common.next");',
+      'const steps = [{ title: localize("common.next") }];',
+      'class View { static label = localize("common.next"); }',
+      'export default { title: localizeContent("common.next") };',
+    ]) {
+      const result = check(code);
+      assert.equal(result.status, 1, code);
+      assert.match(
+        result.stderr,
+        /common\.next is localized when the module loads/,
+        code
+      );
+    }
+
+    // Text localized later follows the language. The unused catalog entries
+    // are what is left to fail, once the sources are accepted.
+    for (const code of [
+      'const title = () => localize("common.next");',
+      'function title() { return localize("common.next"); }',
+      'class View { label = localize("common.next"); render() { return localize("common.back"); } }',
+      'class View { get title() { return localize("common.next"); } }',
+    ]) {
+      const result = check(code);
+      assert.equal(result.status, 1, code);
+      assert.doesNotMatch(result.stderr, /when the module loads/, code);
+      assert.match(result.stderr, /Unused catalog messages/, code);
     }
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
