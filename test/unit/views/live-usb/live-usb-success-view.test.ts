@@ -3,6 +3,7 @@ import { wizardState } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/live-usb/live-usb-success-view.js";
 import type { LiveUsbSuccessView } from "../../../../src/views/live-usb/live-usb-success-view.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../../tauri-ipc.js";
+import { expectReadsLeftToRight } from "../../helpers/bidi.js";
 
 describe("live-usb-success-view", () => {
   afterEach(() => {
@@ -34,6 +35,19 @@ describe("live-usb-success-view", () => {
     expect(row.assignedSlot).to.exist;
     expect(row.scrollWidth).to.be.at.most(row.clientWidth);
     expect(getComputedStyle(row).display).to.equal("flex");
+  });
+
+  it("reads the ISO path left to right even when its folders are Hebrew", async () => {
+    wizardState.startFlow("minipc");
+    wizardState.setSelection("liveMedia", "iso");
+    wizardState.setSelection("liveIsoPath", "/נתונים/haos.iso");
+    const view = fixtureSync<LiveUsbSuccessView>(
+      html`<live-usb-success-view></live-usb-success-view>`
+    );
+    await view.updateComplete;
+    await view.shadowRoot!.querySelector("install-success")!.updateComplete;
+
+    expectReadsLeftToRight(view.shadowRoot!.querySelector(".saved bdi")!);
   });
 
   it("warns not to format a written stick, not a saved ISO", async () => {

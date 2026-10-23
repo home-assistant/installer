@@ -104,7 +104,7 @@ export class LiveUsbSuccessView extends LitElement {
               <span class="saved"
                 >${localizeContent(
                   "views.live_usb.live_usb_success_view.saved_to",
-                  { path: html`<bdi>${path}</bdi>` }
+                  { path: html`<bdi dir="ltr">${path}</bdi>` }
                 )}</span
               >
               ${path
