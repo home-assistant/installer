@@ -42,6 +42,14 @@ for (const scenario of [
       "Proxmox could not complete the request. Check the server, account permissions, and connection.",
     recovery: "cancel",
   },
+  // Before the VM exists, so nothing is left on the server to trip a retry
+  {
+    failure: "proxmox-download",
+    flow: "proxmox",
+    message:
+      "The image could not be downloaded. Check your connection and available storage.",
+    recovery: "retry",
+  },
   {
     failure: "utm-create",
     flow: "utm",
@@ -136,18 +144,20 @@ for (const scenario of [
       await page.locator('confirm-dialog wa-button[variant="danger"]').click();
     }
     await expect(progress.locator(".error-message")).toHaveCount(0);
-    // A running flash offers Cancel only; the VM installs show no buttons,
-    // in a footer that stays in place
+    // A running flash offers Cancel only; the VM installs show no buttons
+    // while the VM is being created, in a footer that stays in place
     if (scenario.flow === "sbc") {
       await expect(next(page)).toHaveCount(0);
       await expect(
         page.locator("wizard-shell .footer-left wa-button")
       ).toHaveText("Cancel");
     } else {
+      const cancel = page.locator("wizard-shell .footer-left wa-button");
+      await expect(cancel).toHaveText("Cancel");
+      await expect(cancel).not.toBeVisible({ timeout: 20000 });
+      // Hidden by the install itself, not by the success step after it
+      await expect(progress).toBeVisible();
       await expect(page.locator("wizard-shell .footer-left")).toBeVisible();
-      await expect(
-        page.locator("wizard-shell .footer-left wa-button")
-      ).not.toBeVisible();
     }
     await expect(page.locator(`${prefix}success-view`)).toBeVisible({
       timeout: 45000,

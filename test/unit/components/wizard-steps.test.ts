@@ -123,12 +123,13 @@ describe("wizard-steps", () => {
       proxmoxImportReady: true,
     };
     expect(readyWith("proxmox", "configure", configured)).to.be.true;
-    expect(
-      readyWith("proxmox", "configure", {
-        ...configured,
-        proxmoxImportReady: false,
-      })
-    ).to.be.false;
+    // Each holds Next on its own: the bridge check finishes after the rest
+    for (const key of Object.keys(configured) as (keyof WizardSelections)[]) {
+      expect(
+        readyWith("proxmox", "configure", { ...configured, [key]: undefined }),
+        key
+      ).to.be.false;
+    }
   });
 
   it("only holds Next for Proxmox and the official hardware", () => {
