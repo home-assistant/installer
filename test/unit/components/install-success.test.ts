@@ -7,7 +7,11 @@ import {
 } from "@open-wc/testing";
 import "../../../src/components/install-success.js";
 import type { InstallSuccess } from "../../../src/components/install-success.js";
-import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
+import {
+  findByRole,
+  fullA11ySnapshot,
+  headingOutline,
+} from "../helpers/a11y.js";
 import { expectThemeLink } from "../helpers/link-style.js";
 
 const USER_AGENTS = {
@@ -95,6 +99,22 @@ describe("install-success", () => {
 
     const lists = findByRole(await fullA11ySnapshot(), "list");
     expect(lists.map((node) => node.name)).to.include("Next steps");
+  });
+
+  it("heads the next steps and the companion app under the step's heading", async () => {
+    await fixture<InstallSuccess>(
+      html`<install-success
+        .subtitle=${"Installed on the fixture."}
+        .steps=${["Power it on"]}
+      ></install-success>`
+    );
+
+    // Chrome names the next steps' heading as it shows it, in capitals
+    expect(headingOutline(await fullA11ySnapshot())).to.deep.equal([
+      [2, "You're all set!"],
+      [3, "NEXT STEPS"],
+      [3, "Get the Home Assistant Companion App"],
+    ]);
   });
 
   it("leaves out the notice, footer and tip unless given", async () => {

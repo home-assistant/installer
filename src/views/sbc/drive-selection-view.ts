@@ -4,6 +4,7 @@ import {
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
+import { sectionLabelStyles } from "../../utils/section-label-styles.js";
 import { LitElement, html, css } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import {
@@ -54,6 +55,7 @@ export class DriveSelectionView extends LitElement {
     srOnlyStyles,
     reducedMotionStyles,
     linkStyles,
+    sectionLabelStyles,
     css`
       inline-notice {
         margin-bottom: 1.5rem;
@@ -66,15 +68,6 @@ export class DriveSelectionView extends LitElement {
         width: 100%;
         max-width: 500px;
         margin-bottom: 1rem;
-      }
-
-      .drives-title {
-        font-size: 0.875rem;
-        font-weight: 500;
-        color: var(--ha-secondary-text-color, #727272);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin: 0;
       }
 
       .drives-list {
@@ -396,9 +389,9 @@ export class DriveSelectionView extends LitElement {
     return html`
       ${this._noUsableDrive() ? this._renderNoUsableDrive(config) : ""}
       <div class="drives-header">
-        <p class="drives-title">
+        <h3 class="section-label">
           ${localize("views.sbc.drive_selection_view.available_drives")}
-        </p>
+        </h3>
         <wa-button
           variant="brand"
           appearance="outlined"

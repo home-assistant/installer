@@ -13,6 +13,7 @@ import {
 } from "../../../../src/utils/drive-selection.js";
 import type { BlockDevice } from "../../../../src/api/index.js";
 import { flush, holdDeviceScan } from "../../helpers/hold-device-scan.js";
+import { fullA11ySnapshot, headingOutline } from "../../helpers/a11y.js";
 import { ipcError, mockTauriIpc, restoreTauriIpc } from "../../tauri-ipc.js";
 import {
   diagnosticText,
@@ -378,6 +379,33 @@ describe("drive-selection-view", () => {
       scan.restore();
     }
   });
+
+  // Moving by headings reaches the list, at the level of the instructions
+  // a Home Assistant device shows above it. Chrome names the list's heading
+  // as it shows it, in capitals.
+  for (const [flow, outline] of [
+    ["sbc", [[3, "AVAILABLE DRIVES"]]],
+    [
+      "ha-hardware",
+      [
+        [3, "Connect a microSD card"],
+        [3, "AVAILABLE DRIVES"],
+      ],
+    ],
+  ] as const) {
+    it(`heads the ${flow} drive list under the step's heading`, async () => {
+      wizardState.startFlow(flow);
+      wizardState.setSelection("deviceConfig", config);
+      if (flow === "ha-hardware")
+        wizardState.setSelection("haHardware", "green");
+      await mountLoaded();
+
+      expect(headingOutline(await fullA11ySnapshot())).to.deep.equal([
+        [2, "Select your drive"],
+        ...outline,
+      ]);
+    });
+  }
 
   it("keeps undersized drives visible and disables them with the board minimum", async () => {
     const scan = holdDeviceScan();

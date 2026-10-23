@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import { localize } from "../localization/localize.js";
 import { openExternalLink } from "../utils/external-url.js";
 import { linkStyles } from "../utils/link-styles.js";
+import { sectionLabelStyles } from "../utils/section-label-styles.js";
 import { getPlatform } from "../utils/platform.js";
 import { renderCasitaHappy } from "./install-mascot.js";
 import "./inline-notice.js";
@@ -20,6 +21,7 @@ export class InstallSuccess extends LitElement {
   static styles = [
     reducedMotionStyles,
     linkStyles,
+    sectionLabelStyles,
     css`
       /* Its own width, not the window's, decides between the layouts */
       :host {
@@ -76,12 +78,7 @@ export class InstallSuccess extends LitElement {
       }
 
       .next-steps-title {
-        font-size: 0.875rem;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 1rem 0;
+        margin-bottom: 1rem;
       }
 
       .steps-list {
@@ -265,9 +262,9 @@ export class InstallSuccess extends LitElement {
         </div>
         <div class="details">
           <div class="next-steps">
-            <p class="next-steps-title">
+            <h3 class="section-label next-steps-title">
               ${localize("components.install_success.next_steps")}
-            </p>
+            </h3>
             ${notice
               ? html`<inline-notice><p>${notice}</p></inline-notice>`
               : ""}
@@ -291,10 +288,12 @@ export class InstallSuccess extends LitElement {
           </div>
           <slot></slot>
           ${this.tip ? html`<div class="tip-section">${this.tip}</div>` : ""}
+          <!-- A heading of its own, so the app links don't read as part of
+               the next steps -->
           <div class="companion-section">
-            <p class="companion-title">
+            <h3 class="companion-title">
               ${localize("components.install_success.companion_app")}
-            </p>
+            </h3>
             <div class="app-links">
               <a
                 class="app-link"

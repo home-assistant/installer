@@ -18,10 +18,10 @@ function rendered(template: unknown): HTMLDivElement {
   return container;
 }
 
-/** Each line of a summary row's text, as its paragraphs show it. */
+/** Each line of a summary row's text: its heading, then its paragraphs. */
 function lines(row: Element) {
-  return [...row.querySelectorAll("p")].map((p) =>
-    p.textContent!.replace(/\s+/g, " ").trim()
+  return [...row.querySelectorAll(".summary-info > *")].map((line) =>
+    line.textContent!.replace(/\s+/g, " ").trim()
   );
 }
 
@@ -58,7 +58,8 @@ describe("summary-styles", () => {
     expect(
       row.querySelector(".icon-container svg path")!.getAttribute("d")
     ).to.equal(mdiMonitor);
-    expect(row.querySelector(".summary-label")!.textContent).to.equal(
+    // The row's heading, under the step's h2
+    expect(row.querySelector("h3.summary-label")!.textContent).to.equal(
       "Virtual machine"
     );
     expect(row.querySelector(".summary-value")!.textContent).to.equal(
