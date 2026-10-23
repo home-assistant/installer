@@ -489,53 +489,48 @@ mod tests {
         assert_eq!(format!("{error:?}"), "Unrecognized");
     }
 
+    /// Every code a command can send, read from the source. A list kept by
+    /// hand is how new codes ended up without a category before.
+    fn command_error_codes() -> std::collections::BTreeSet<String> {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut codes = std::collections::BTreeSet::new();
+        for entry in std::fs::read_dir(src).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|extension| extension != "rs") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).unwrap();
+            // command_error.rs builds its codes as `Self::new("code"` and in the
+            // `=> ("code", ...)` table; everything else uses `CommandError::`
+            let mut calls = vec!["CommandError::new(", "CommandError::with_message("];
+            if path.ends_with("command_error.rs") {
+                calls.extend(["Self::new(", "Self::with_message(", "=> ("]);
+            }
+            for call in calls {
+                for (at, _) in source.match_indices(call) {
+                    let Some(rest) = source[at + call.len()..].trim_start().strip_prefix('"')
+                    else {
+                        continue;
+                    };
+                    let code = &rest[..rest.find('"').unwrap()];
+                    if code.bytes().all(|b| b.is_ascii_lowercase() || b == b'_') {
+                        codes.insert(code.to_string());
+                    }
+                }
+            }
+        }
+        codes
+    }
+
     #[test]
     fn every_command_error_code_has_a_category() {
-        // The codes in command_error.rs and the ones commands.rs creates itself
-        for code in [
-            "network",
-            "io",
-            "device_not_found",
-            "device_busy",
-            "checksum_mismatch",
-            "permission_denied",
-            "disk_service_unavailable",
-            "cancelled",
-            "proxmox_api",
-            "proxmox_action_required",
-            "proxmox_session_expired",
-            "proxmox_certificate_changed",
-            "proxmox_two_factor",
-            "utm",
-            "utm_operation_uncertain",
-            "utm_vm_created",
-            "drive_disconnected",
-            "write_protected",
-            "unsupported_platform",
-            "json",
-            "invalid_config",
-            "rate_limited",
-            "download_failed",
-            "extraction_failed",
-            "verification_failed",
-            "image_too_large",
-            "drive_too_small",
-            "temporary_image_unavailable",
-            "operation_in_progress",
-            "internal",
-            "hai_live_missing",
-            "hai_live_invalid",
-            "release_unavailable",
-            "image_build_failed",
-            "file_exists",
-            "invalid_file_name",
-            "file_name_not_portable",
-            "folder_not_found",
-            "folder_in_cache",
-            "folder_name_taken",
-            "relaunch_cancelled",
-        ] {
-            let category = serde_json::from_value::<ErrorCategory>(code.into()).unwrap();
+        let codes = command_error_codes();
+        // A scan that finds nothing would pass anything
+        for known in ["network", "internal", "image_too_large", "hai_live_missing"] {
+            assert!(codes.contains(known), "{known} not found in {codes:?}");
+        }
+        for code in codes {
+            let category = serde_json::from_value::<ErrorCategory>(code.as_str().into()).unwrap();
             assert!(
                 !matches!(category, ErrorCategory::Unrecognized),
                 "{code} has no category"
