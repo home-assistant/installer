@@ -270,7 +270,9 @@ export class InstallSuccess extends LitElement {
             <p class="next-steps-title">
               ${localize("components.install_success.next_steps")}
             </p>
-            ${notice ? html`<inline-notice><p>${notice}</p></inline-notice>` : ""}
+            ${notice
+              ? html`<inline-notice><p>${notice}</p></inline-notice>`
+              : ""}
             <ol
               class="steps-list"
               role="list"
