@@ -1,4 +1,5 @@
 import { expect, fixture, html } from "@open-wc/testing";
+import { setViewport } from "@web/test-runner-commands";
 import "../../../src/components/step-indicator.js";
 import type { StepIndicator } from "../../../src/components/step-indicator.js";
 import type { WizardStep } from "../../../src/state/wizard-state.js";
@@ -10,6 +11,35 @@ describe("step-indicator", () => {
     { id: "step2", title: "Second Step" },
     { id: "step3", title: "Third Step" },
   ];
+  // The Mini PC steps for a board with Wi-Fi, the most there are
+  const longSteps: WizardStep[] = [
+    "Installation method",
+    "Select processor",
+    "Select drive",
+    "Wi-Fi",
+    "Confirm",
+    "Install",
+    "Done",
+  ].map((title, index) => ({ id: `step${index}`, title }));
+
+  const shown = (el: StepIndicator) =>
+    [...el.shadowRoot!.querySelectorAll<HTMLElement>(".step-label")].map(
+      (label) => label.offsetWidth > 1
+    );
+  // Steps on one line share a vertical center, whatever their height
+  const rows = (el: StepIndicator) =>
+    new Set(
+      [...el.shadowRoot!.querySelectorAll<HTMLElement>(".step")].map((step) =>
+        Math.round(step.offsetTop + step.offsetHeight / 2)
+      )
+    ).size;
+  // List items have no accessible name, so read their text in order.
+  const announced = async () =>
+    findByRole(await fullA11ySnapshot(), "listitem").map((item) =>
+      findByRole(item, "StaticText")
+        .map((text) => text.name)
+        .join(" ")
+    );
 
   it("renders all steps", async () => {
     const el = await fixture<StepIndicator>(html`
@@ -35,13 +65,6 @@ describe("step-indicator", () => {
     const el = await fixture<StepIndicator>(html`
       <step-indicator .steps=${mockSteps} .currentIndex=${1}></step-indicator>
     `);
-    // List items have no accessible name, so read their text in order.
-    const announced = async () =>
-      findByRole(await fullA11ySnapshot(), "listitem").map((item) =>
-        findByRole(item, "StaticText")
-          .map((text) => text.name)
-          .join(" ")
-      );
 
     expect(await announced()).to.deep.equal([
       "First Step (completed)",
@@ -65,27 +88,59 @@ describe("step-indicator", () => {
         .currentIndex=${1}
       ></step-indicator>
     `);
-    const shown = () =>
-      [...el.shadowRoot!.querySelectorAll<HTMLElement>(".step-label")].map(
-        (label) => label.offsetWidth > 1
-      );
-    // Steps on one line share a vertical center, whatever their height
-    const rows = () =>
-      new Set(
-        [...el.shadowRoot!.querySelectorAll<HTMLElement>(".step")].map((step) =>
-          Math.round(step.offsetTop + step.offsetHeight / 2)
-        )
-      ).size;
 
     expect(el.hasAttribute("compact")).to.be.true;
-    expect(shown()).to.deep.equal([false, true, false]);
-    expect(rows()).to.equal(1);
+    expect(shown(el)).to.deep.equal([false, true, false]);
+    expect(rows(el)).to.equal(1);
+    // The others are hidden only from sight
+    expect(await announced()).to.deep.equal([
+      "First Step (completed)",
+      "Second Step",
+      "Third Step (upcoming)",
+    ]);
 
     el.style.width = "800px";
     el.currentIndex = 2;
     await el.updateComplete;
     expect(el.hasAttribute("compact")).to.be.false;
-    expect(shown()).to.deep.equal([true, true, true]);
+    expect(shown(el)).to.deep.equal([true, true, true]);
+  });
+
+  it("wraps the current name beside its dot when it doesn't fit there either", async () => {
+    const el = await fixture<StepIndicator>(html`
+      <step-indicator
+        style="width: 360px"
+        .steps=${longSteps}
+        .currentIndex=${0}
+      ></step-indicator>
+    `);
+    const label = el.shadowRoot!.querySelector<HTMLElement>(".step-label")!;
+    const lines = () => {
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      return [...range.getClientRects()];
+    };
+
+    expect(shown(el)).to.deep.equal([true, ...Array(6).fill(false)]);
+    expect(rows(el)).to.equal(1);
+    expect(lines().length).to.equal(2);
+    // The next line follows the longest line of the name, as it follows a dot
+    const end = Math.max(...lines().map((line) => line.right));
+    const connector = el.shadowRoot!.querySelector(".step-connector")!;
+    const dot = el.shadowRoot!.querySelectorAll(".step-dot")[1];
+    expect(connector.getBoundingClientRect().left - end).to.be.closeTo(
+      dot.getBoundingClientRect().left -
+        connector.getBoundingClientRect().right,
+      1
+    );
+
+    // Completed in a wider window, it is one line again, like the others
+    el.style.width = "1200px";
+    el.currentIndex = 1;
+    await el.updateComplete;
+    expect(shown(el)).to.deep.equal(Array(7).fill(true));
+    const next = el.shadowRoot!.querySelectorAll<HTMLElement>(".step-label")[1];
+    expect(label.offsetHeight).to.equal(next.offsetHeight);
   });
 
   it("marks current step as active", async () => {
@@ -167,5 +222,33 @@ describe("step-indicator", () => {
 
     const steps = el.shadowRoot!.querySelectorAll(".step");
     expect(steps.length).to.equal(0);
+  });
+
+  describe("in the smallest window, zoomed to 200%", () => {
+    beforeEach(() => setViewport({ width: 400, height: 375 }));
+    afterEach(() => setViewport({ width: 800, height: 600 }));
+
+    it("still names the current step", async () => {
+      // What the header leaves it beside Back
+      const el = await fixture<StepIndicator>(html`
+        <step-indicator
+          style="width: 270px"
+          .steps=${longSteps}
+          .currentIndex=${2}
+        ></step-indicator>
+      `);
+
+      expect(shown(el)).to.deep.equal([
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+      ]);
+      expect(rows(el)).to.equal(1);
+      expect(el.scrollWidth).to.equal(el.clientWidth);
+    });
   });
 });

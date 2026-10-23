@@ -1,5 +1,5 @@
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
-import { customElement, property, queryAll } from "lit/decorators.js";
+import { customElement, property, query, queryAll } from "lit/decorators.js";
 import type { WizardStep } from "../state/wizard-state.js";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { localize } from "../localization/localize.js";
@@ -35,6 +35,7 @@ export class StepIndicator extends LitElement {
       /* Each state has its own shape, not only its own color: upcoming is an
          empty ring, completed a filled dot, current a filled dot in a ring */
       .step-dot {
+        flex-shrink: 0;
         box-sizing: border-box;
         width: 10px;
         height: 10px;
@@ -66,6 +67,7 @@ export class StepIndicator extends LitElement {
       }
 
       .step-connector {
+        flex-shrink: 0;
         width: 24px;
         height: 2px;
         background-color: var(--ha-inactive-color, #8c8c8c);
@@ -103,14 +105,14 @@ export class StepIndicator extends LitElement {
         }
       }
 
-      /* Keep the other names in the accessibility tree when only the current
-       one fits. */
-      :host([compact]) .step-label:not(.active) {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
+      /* The current name takes the room the dots leave, and wraps there
+         rather than pushing steps onto a line of their own */
+      :host([compact]) .steps {
+        flex-wrap: nowrap;
+      }
+
+      :host([compact]) .step-label.active {
+        overflow-wrap: anywhere;
       }
 
       :host([compact]) .step-connector {
@@ -118,14 +120,17 @@ export class StepIndicator extends LitElement {
       }
 
       @media (max-width: 600px) {
-        .step-label {
-          position: absolute;
-          width: 1px;
-          height: 1px;
-          overflow: hidden;
-          clip-path: inset(50%);
+        .steps {
+          gap: 0.25rem;
         }
-        .step-connector {
+
+        /* Its ring reaches as far as the gap, and would touch the lines */
+        .step-dot.active {
+          margin-inline: 2px;
+        }
+
+        .step-connector,
+        :host([compact]) .step-connector {
           width: 8px;
         }
       }
@@ -140,6 +145,12 @@ export class StepIndicator extends LitElement {
 
   @queryAll(".step")
   private _steps!: NodeListOf<HTMLElement>;
+
+  @queryAll(".step-label")
+  private _labels!: NodeListOf<HTMLElement>;
+
+  @query(".step-label.active")
+  private _currentLabel!: HTMLElement | null;
 
   private _fitFrame?: number;
 
@@ -177,9 +188,37 @@ export class StepIndicator extends LitElement {
     const first = steps[0];
     const last = steps[steps.length - 1];
     if (!first || !last || first === last) return;
-    this.removeAttribute("compact");
+    this._setCompact(false);
     const wraps = last.offsetTop >= first.offsetTop + first.offsetHeight;
-    this.toggleAttribute("compact", wraps);
+    this._setCompact(wraps);
+    if (wraps && this._currentLabel) this._hug(this._currentLabel);
+  }
+
+  // Hidden, the other names stay in the accessibility tree. Rendering a
+  // label's class anew drops `sr-only`, and `updated` fits the steps again.
+  private _setCompact(compact: boolean) {
+    this.toggleAttribute("compact", compact);
+    for (const label of this._labels) {
+      label.classList.toggle(
+        "sr-only",
+        compact && !label.classList.contains("active")
+      );
+      label.style.width = "";
+    }
+  }
+
+  /**
+   * A name that wraps keeps all the room it was given, beside its shorter
+   * lines too. Narrow it to its longest line, so the next dot follows it.
+   */
+  private _hug(label: HTMLElement) {
+    const range = document.createRange();
+    range.selectNodeContents(label);
+    const lines = [...range.getClientRects()];
+    if (lines.length < 2) return;
+    const start = Math.min(...lines.map((line) => line.left));
+    const end = Math.max(...lines.map((line) => line.right));
+    label.style.width = `${Math.ceil(end - start)}px`;
   }
 
   render() {
