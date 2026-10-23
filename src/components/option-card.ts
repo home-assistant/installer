@@ -2,6 +2,7 @@ import { LitElement, html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { reducedMotionStyles } from "../utils/view-accessibility.js";
+import { selectableCardStyles } from "../utils/card-styles.js";
 import { mdiServer } from "../utils/icons.js";
 
 import "./ha-svg-icon.js";
@@ -18,7 +19,7 @@ const mdiDisc =
 
 // Single-color icon files. They are drawn as a mask in the icon color, so
 // they match the MDI icons in light and dark mode.
-const ICON_FILES: Record<string, string> = {
+const ICON_FILES = {
   "ha-hardware": "/assets/icons/home-assistant-hardware.svg",
   "drive-connect": "/assets/icons/drive-connect.svg",
   "usb-boot": "/assets/icons/usb-boot.svg",
@@ -29,52 +30,43 @@ const ICON_FILES: Record<string, string> = {
   windows: "/assets/icons/windows.svg",
 };
 
+const ICON_PATHS = {
+  minipc: mdiDesktopTower,
+  proxmox: mdiServer,
+  vm: mdiLaptop,
+  disc: mdiDisc,
+  others: mdiDotsHorizontal,
+};
+
+/** The icons an option card can show; `sbc` is a photo of a board. */
+export type OptionCardIcon =
+  | "sbc"
+  | keyof typeof ICON_FILES
+  | keyof typeof ICON_PATHS;
+
+// An attribute in a template isn't type-checked, so look the icon up as any
+// string, and only among the map's own keys
+function hasIcon<T extends object>(
+  icons: T,
+  icon: string
+): icon is Extract<keyof T, string> {
+  return Object.prototype.hasOwnProperty.call(icons, icon);
+}
+
 @customElement("option-card")
 export class OptionCard extends LitElement {
   static styles = [
     reducedMotionStyles,
+    selectableCardStyles,
     css`
-      @media (prefers-reduced-motion: reduce) {
-        .card:active {
-          transform: none !important;
-        }
-      }
-      :host {
-        display: block;
-        outline: none;
-      }
-
-      :host(:focus-visible) .card {
-        outline: var(--wa-focus-ring);
-        outline-offset: var(--wa-focus-ring-offset);
-      }
-
       /* Fills a stretched grid cell, so cards in one row end level */
       .card {
         display: flex;
         flex-direction: column;
         align-items: center;
-        box-sizing: border-box;
         height: 100%;
         padding: 1.5rem;
         min-height: 200px;
-        background-color: var(--ha-card-background, #ffffff);
-        border: 2px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-card-border-radius, 12px);
-        cursor: pointer;
-        transition:
-          border-color 0.2s ease,
-          box-shadow 0.2s ease,
-          transform 0.1s ease;
-      }
-
-      .card:hover {
-        border-color: var(--ha-primary-color, #03a9f4);
-        box-shadow: var(--ha-card-hover-shadow);
-      }
-
-      .card:active {
-        transform: scale(0.98);
       }
 
       :host([horizontal]) .card {
@@ -177,10 +169,7 @@ export class OptionCard extends LitElement {
   description = "";
 
   @property({ type: String })
-  icon = "";
-
-  @property({ type: String })
-  image = "";
+  icon: OptionCardIcon = "others";
 
   connectedCallback() {
     super.connectedCallback();
@@ -218,32 +207,20 @@ export class OptionCard extends LitElement {
   // computed from its contents. The visible name below already supplies that;
   // giving the image an alt would have screen readers announce it twice.
   private _renderIcon() {
-    if (this.image) {
-      return html`<img src=${this.image} alt="" />`;
-    }
-
-    if (this.icon === "sbc") {
+    const icon: string = this.icon;
+    if (icon === "sbc") {
       return html`<img src="/assets/devices/raspberry_pi_5.png" alt="" />`;
     }
 
-    if (Object.prototype.hasOwnProperty.call(ICON_FILES, this.icon)) {
+    if (hasIcon(ICON_FILES, icon)) {
       return html`<span
         class="icon-file"
-        style=${styleMap({ "--icon-file": `url(${ICON_FILES[this.icon]})` })}
+        style=${styleMap({ "--icon-file": `url(${ICON_FILES[icon]})` })}
       ></span>`;
     }
 
-    const paths: Record<string, string> = {
-      minipc: mdiDesktopTower,
-      proxmox: mdiServer,
-      vm: mdiLaptop,
-      disc: mdiDisc,
-      others: mdiDotsHorizontal,
-    };
     return html`<ha-svg-icon
-      .path=${Object.prototype.hasOwnProperty.call(paths, this.icon)
-        ? paths[this.icon]
-        : mdiDotsHorizontal}
+      .path=${hasIcon(ICON_PATHS, icon) ? ICON_PATHS[icon] : mdiDotsHorizontal}
     ></ha-svg-icon>`;
   }
 }

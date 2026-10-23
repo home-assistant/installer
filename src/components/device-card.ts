@@ -2,6 +2,10 @@ import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import WaRadio from "@home-assistant/webawesome/dist/components/radio/radio.js";
 import { reducedMotionStyles } from "../utils/view-accessibility.js";
+import {
+  selectableCardStyles,
+  selectedIndicatorStyles,
+} from "../utils/card-styles.js";
 
 /**
  * A device tile that behaves as a radio inside a `<wa-radio-group>`.
@@ -15,22 +19,9 @@ import { reducedMotionStyles } from "../utils/view-accessibility.js";
 export class DeviceCard extends WaRadio {
   static css = [
     reducedMotionStyles,
+    selectableCardStyles,
+    selectedIndicatorStyles,
     css`
-      @media (prefers-reduced-motion: reduce) {
-        .card:active {
-          transform: none !important;
-        }
-      }
-      :host {
-        display: block;
-        outline: none;
-        cursor: pointer;
-      }
-
-      :host(:state(disabled)) {
-        cursor: not-allowed;
-      }
-
       .card {
         display: flex;
         flex-direction: column;
@@ -38,33 +29,6 @@ export class DeviceCard extends WaRadio {
         justify-content: center;
         padding: 1.25rem;
         height: 180px;
-        box-sizing: border-box;
-        background-color: var(--ha-card-background, #ffffff);
-        border: 2px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-card-border-radius, 12px);
-        transition:
-          border-color 0.2s ease,
-          box-shadow 0.2s ease,
-          transform 0.1s ease;
-      }
-
-      .card:hover {
-        border-color: var(--ha-primary-color, #03a9f4);
-        box-shadow: var(--ha-card-hover-shadow);
-      }
-
-      .card:active {
-        transform: scale(0.98);
-      }
-
-      :host(:state(checked)) .card {
-        border-color: var(--ha-primary-color, #03a9f4);
-        box-shadow: var(--ha-card-selected-shadow);
-      }
-
-      :host(:focus-visible) .card {
-        outline: var(--wa-focus-ring);
-        outline-offset: var(--wa-focus-ring-offset);
       }
 
       .image-container {
@@ -108,30 +72,6 @@ export class DeviceCard extends WaRadio {
         position: absolute;
         top: 8px;
         inset-inline-end: 8px;
-        width: 24px;
-        height: 24px;
-        background-color: var(--ha-primary-fill, #006787);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--wa-color-brand-on-loud, white);
-        font-size: 14px;
-      }
-
-      /* Forced colors would draw every card with the same border and paint
-       * the check's circle like the card, leaving only a small tick on the
-       * chosen one */
-      @media (forced-colors: active) {
-        :host(:state(checked)) .card {
-          border-color: Highlight;
-        }
-
-        .selected-indicator {
-          forced-color-adjust: none;
-          background-color: Highlight;
-          color: HighlightText;
-        }
       }
 
       .card-wrapper {

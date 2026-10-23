@@ -1,4 +1,5 @@
 import { css } from "lit";
+import { selectedIndicatorStyles } from "./card-styles.js";
 
 /**
  * A choice between a few options, as a `wa-radio-group` of class `options`
@@ -7,6 +8,8 @@ import { css } from "lit";
  * Side by side, and stacked on narrow windows.
  */
 export const optionCardStyles = css`
+  ${selectedIndicatorStyles}
+
   .options {
     display: block;
     width: 100%;
@@ -80,28 +83,12 @@ export const optionCardStyles = css`
     position: absolute;
     top: 8px;
     inset-inline-end: 8px;
-    width: 24px;
-    height: 24px;
-    background-color: var(--ha-primary-fill, #006787);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--wa-color-brand-on-loud, white);
-    font-size: 14px;
   }
 
-  /* Forced colors would draw both choices with the same border, and hide
-   * the check behind a backplate */
+  /* Forced colors would draw both choices with the same border */
   @media (forced-colors: active) {
     wa-radio[aria-checked="true"] {
       border-color: Highlight;
-    }
-
-    .selected-indicator {
-      forced-color-adjust: none;
-      background-color: Highlight;
-      color: HighlightText;
     }
   }
 `;

@@ -36,24 +36,31 @@ describe("option-card", () => {
     expect(img!.getAttribute("alt")).to.equal("");
   });
 
-  it("renders with a custom image", async () => {
-    const el = await fixture<OptionCard>(html`
-      <option-card heading="Custom" image="/custom/path.svg"></option-card>
-    `);
-
-    const img = el.shadowRoot!.querySelector(".icon-container img");
-    expect(img).to.exist;
-    expect(img!.getAttribute("src")).to.equal("/custom/path.svg");
-    expect(img!.getAttribute("alt")).to.equal("");
-  });
-
-  it("renders a neutral category icon when no icon or image is provided", async () => {
+  it("renders a neutral category icon when no icon is set", async () => {
     const el = await fixture<OptionCard>(html`
       <option-card heading="No Icon"></option-card>
     `);
 
     expect(el.shadowRoot!.querySelector("ha-svg-icon")!.path).to.not.be.empty;
   });
+
+  // An attribute in a template isn't type-checked, so a misspelled icon can
+  // still arrive
+  for (const icon of ["dockr", "constructor"]) {
+    it(`falls back to the neutral icon for an unknown icon "${icon}"`, async () => {
+      const neutral = await fixture<OptionCard>(html`
+        <option-card heading="No Icon"></option-card>
+      `);
+      const el = await fixture<OptionCard>(html`
+        <option-card heading="Unknown" icon=${icon}></option-card>
+      `);
+
+      expect(el.shadowRoot!.querySelector(".icon-file")).to.be.null;
+      expect(el.shadowRoot!.querySelector("ha-svg-icon")!.path).to.equal(
+        neutral.shadowRoot!.querySelector("ha-svg-icon")!.path
+      );
+    });
+  }
 
   for (const icon of ["minipc", "proxmox", "vm", "others"]) {
     it(`renders a decorative category icon for ${icon}`, async () => {

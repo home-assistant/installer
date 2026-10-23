@@ -6,6 +6,10 @@ import { formatBytes } from "../api/commands.js";
 import { localize } from "../localization/localize.js";
 import { renderDriveIcon } from "./drive-icon.js";
 import { reducedMotionStyles } from "../utils/view-accessibility.js";
+import {
+  selectableCardStyles,
+  selectedIndicatorStyles,
+} from "../utils/card-styles.js";
 
 /**
  * A drive row that behaves as a radio inside a `<wa-radio-group>`.
@@ -23,25 +27,11 @@ import { reducedMotionStyles } from "../utils/view-accessibility.js";
 export class DriveCard extends WaRadio {
   static css = [
     reducedMotionStyles,
+    selectableCardStyles,
+    selectedIndicatorStyles,
     css`
-      @media (prefers-reduced-motion: reduce) {
-        .card:active {
-          transform: none !important;
-        }
-      }
-      :host {
-        display: block;
-        outline: none;
-        cursor: pointer;
-      }
-
       :host(:state(disabled)) {
         cursor: not-allowed;
-      }
-
-      :host(:focus-visible) .card {
-        outline: var(--wa-focus-ring);
-        outline-offset: var(--wa-focus-ring-offset);
       }
 
       .card {
@@ -50,27 +40,6 @@ export class DriveCard extends WaRadio {
         align-items: center;
         gap: 1rem;
         padding: 1rem 1.25rem;
-        background-color: var(--ha-card-background, #ffffff);
-        border: 2px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-card-border-radius, 12px);
-        transition:
-          border-color 0.2s ease,
-          box-shadow 0.2s ease,
-          transform 0.1s ease;
-      }
-
-      .card:hover {
-        border-color: var(--ha-primary-color, #03a9f4);
-        box-shadow: var(--ha-card-hover-shadow);
-      }
-
-      .card:active {
-        transform: scale(0.99);
-      }
-
-      :host(:state(checked)) .card {
-        border-color: var(--ha-primary-color, #03a9f4);
-        box-shadow: var(--ha-card-selected-shadow);
       }
 
       /* Fade what marks the drive as unavailable, but not the reason it is:
@@ -151,34 +120,10 @@ export class DriveCard extends WaRadio {
         margin: 0;
       }
 
-      .selected-indicator {
-        width: 24px;
-        height: 24px;
-        background-color: var(--ha-primary-fill, #006787);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--wa-color-brand-on-loud, white);
-        font-size: 14px;
-        flex-shrink: 0;
-      }
-
-      /* Forced colors would draw every card with the same border and paint
-       * the check's circle like the card, leaving only a small tick on the
-       * chosen one. A drive that can't be picked takes the system's color
-       * for disabled text, which is meant to be read, instead of fading. */
+      /* In forced colors, a drive that can't be picked takes the system's
+       * color for disabled text, which is meant to be read, instead of
+       * fading */
       @media (forced-colors: active) {
-        :host(:state(checked)) .card {
-          border-color: Highlight;
-        }
-
-        .selected-indicator {
-          forced-color-adjust: none;
-          background-color: Highlight;
-          color: HighlightText;
-        }
-
         :host(:state(disabled)) .card {
           border-color: GrayText;
         }

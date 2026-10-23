@@ -66,7 +66,7 @@ export class MiniPCMediaView extends LitElement {
           description=${localize(
             "views.minipc.media_view.write_to_a_usb_stick_description"
           )}
-          image="/assets/icons/usb-boot.svg"
+          icon="usb-boot"
           @click=${this._chooseUsb}
           ><span slot="end" aria-hidden="true">→</span></option-card
         >

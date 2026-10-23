@@ -8,13 +8,14 @@ import { customElement } from "lit/decorators.js";
 import { pageHeaderStyles, renderBackHeader } from "../utils/page-header.js";
 import { linkStyles } from "../utils/link-styles.js";
 import "../components/option-card.js";
+import type { OptionCardIcon } from "../components/option-card.js";
 import { openExternalLink, openExternalUrl } from "../utils/external-url.js";
 
 interface OtherOption {
   title: string;
   description: string;
   url: string;
-  icon: string;
+  icon: OptionCardIcon;
 }
 
 const INSTALLATION_TYPES_URL =
