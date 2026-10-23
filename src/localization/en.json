@@ -178,6 +178,7 @@
   "views.minipc.architecture_selection_view.arm64_examples": "Examples: Ampere-based servers and other UEFI ARM64 machines. A Raspberry Pi or ODROID has its own option.",
   "views.minipc.architecture_selection_view.x86_64_examples": "Examples: Intel NUC, ASUS NUC, Beelink, GMKtec, Minisforum, Dell, HP",
   "views.minipc.architecture_selection_view.failed_to_load_architectures": "Failed to load architectures",
+  "views.minipc.architecture_selection_view.loading_architectures": "Loading architectures...",
   "views.minipc.architecture_selection_view.intel_amd_x86_64": "Intel/AMD (x86-64)",
   "views.minipc.architecture_selection_view.title": "Which processor does your mini PC have?",
   "views.minipc.architecture_selection_view.x86_64_description": "Standard PC architecture used by most mini PCs, NUCs, and desktops",

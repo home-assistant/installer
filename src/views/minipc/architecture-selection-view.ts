@@ -1,8 +1,4 @@
 import { localize, localizeContent } from "../../localization/localize.js";
-import {
-  installerError,
-  type InstallerError,
-} from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
 import { LitElement, html, css, nothing } from "lit";
 import {
@@ -10,21 +6,22 @@ import {
   reducedMotionStyles,
 } from "../../utils/view-accessibility.js";
 import { optionCardStyles } from "../../utils/option-card-styles.js";
-import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, query, state } from "lit/decorators.js";
-import { getManifest, isUtmSupported, type Device } from "../../api/index.js";
-import { wizardState } from "../../state/wizard-state.js";
-import type WaButton from "@home-assistant/webawesome/dist/components/button/button.js";
+import { customElement, state } from "lit/decorators.js";
+import {
+  isUtmSupported,
+  type Device,
+  type DeviceCategory,
+} from "../../api/index.js";
+import { getPlatform } from "../../utils/platform.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
-import type WaRadioGroup from "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "@home-assistant/webawesome/dist/components/radio/radio.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
-import {
-  loadStateStyles,
-  renderLoadError,
-  renderLoading,
-} from "../../utils/load-state.js";
+import { loadStateStyles } from "../../utils/load-state.js";
+import { DeviceCatalog, deviceSelections } from "../../utils/device-catalog.js";
+
+/** The catalog's generic images, one for each processor architecture */
+const ARCHITECTURES: DeviceCategory[] = ["generic_x86", "generic_arm64"];
 
 @customElement("minipc-architecture-selection-view")
 export class MiniPCArchitectureSelectionView extends LitElement {
@@ -63,123 +60,73 @@ export class MiniPCArchitectureSelectionView extends LitElement {
     `,
   ];
 
-  @state()
-  private _x86Device: Device | null = null;
-
-  @state()
-  private _arm64Device: Device | null = null;
-
-  @state()
-  private _loading = true;
-
-  @state()
-  private _error: InstallerError | null = null;
-
-  @state()
-  private _selectedDeviceId: string | null = null;
+  private readonly _catalog = new DeviceCatalog<Device>(
+    this,
+    this._accessibility,
+    {
+      offer: (manifest) =>
+        ARCHITECTURES.flatMap((category) => {
+          const device = manifest.devices.find(
+            (device) => device.category === category
+          );
+          return device ? [device] : [];
+        }),
+      id: (device) => device.id,
+      selections: deviceSelections,
+      loadingLabel: () =>
+        localize(
+          "views.minipc.architecture_selection_view.loading_architectures"
+        ),
+      failedMessage: () =>
+        localize(
+          "views.minipc.architecture_selection_view.failed_to_load_architectures"
+        ),
+    }
+  );
 
   /** Intel Macs can't run the UTM install the note points to. */
   @state()
   private _utmSupported = false;
 
-  @query("wa-radio-group")
-  private _radioGroup?: WaRadioGroup;
-
-  @query("wa-button")
-  private _button?: WaButton;
-
   connectedCallback() {
     super.connectedCallback();
-    void this._loadDevices();
-
-    // Check if there's already a selection in wizard state
-    const state = wizardState.getState();
-    if (state.selections.device) {
-      this._selectedDeviceId = state.selections.device;
-    }
-  }
-
-  private async _loadDevices() {
-    // An error stays, with Try again busy, until this result replaces it
-    this._loading = true;
-    if (wizardState.getState().selections.deviceCatalogReady) {
-      wizardState.setSelection("deviceCatalogReady", false);
-    }
-
-    try {
-      const manifest = await getManifest();
-      this._utmSupported = await isUtmSupported().catch(() => false);
-      if (!this.isConnected) return;
-      // Find the generic x86-64 and ARM64 devices
-      this._x86Device =
-        manifest.devices.find((d) => d.category === "generic_x86") || null;
-      this._arm64Device =
-        manifest.devices.find((d) => d.category === "generic_arm64") || null;
-      if (
-        ![this._x86Device, this._arm64Device].some(
-          (device) => device?.id === this._selectedDeviceId
-        )
-      ) {
-        this._selectedDeviceId = null;
-        wizardState.setSelections({
-          device: undefined,
-          deviceConfig: undefined,
-        });
-      }
-      this._error = null;
-      wizardState.setSelection("deviceCatalogReady", true);
-    } catch (err) {
-      if (!this.isConnected) return;
-      new InstallDiagnostics("flash").fail(err);
-      this._error = installerError(
-        err,
-        localize(
-          "views.minipc.architecture_selection_view.failed_to_load_architectures"
-        )
+    // Only a Mac can run UTM, so no other computer has to ask. The note is
+    // an aside, so the architectures don't wait for it.
+    if (getPlatform() === "macos") {
+      void isUtmSupported().then(
+        (supported) => {
+          this._utmSupported = supported;
+        },
+        // Leave the note out
+        () => undefined
       );
-    } finally {
-      this._loading = false;
-    }
-
-    // The setup action is removed on navigation. Give keyboard users a new
-    // focus target once the asynchronously loaded architecture choices exist.
-    await this.updateComplete;
-    const focusTarget = this._radioGroup ?? this._button;
-    if (focusTarget) {
-      await focusTarget.updateComplete;
-      if (this.isConnected && document.activeElement === document.body) {
-        focusTarget.focus();
-      }
     }
   }
 
   render() {
-    if (this._error) {
-      return renderLoadError(this._error, this._loading, () =>
-        this._loadDevices()
-      );
-    }
-
-    if (this._loading) {
-      return renderLoading(localize("common.loading"));
-    }
-
     return html`
       ${renderStepHeading(
         localize("views.minipc.architecture_selection_view.title"),
         localize("views.minipc.architecture_selection_view.subtitle")
       )}
+      ${this._catalog.render(() => this._renderChoices())}
+    `;
+  }
 
+  private _renderChoices() {
+    const x86Device = this._architecture("generic_x86");
+    const arm64Device = this._architecture("generic_arm64");
+    return html`
       <wa-radio-group
         class="options"
         orientation="horizontal"
         label=${localize("views.minipc.architecture_selection_view.processor")}
-        .value=${this._selectedDeviceId ?? ""}
-        @change=${this._onDeviceChange}
+        .value=${this._catalog.selected ?? ""}
+        @change=${this._catalog.onChange}
       >
-        ${this._x86Device
+        ${x86Device
           ? html`
-              <wa-radio appearance="button" .value=${this._x86Device.id}>
+              <wa-radio appearance="button" .value=${x86Device.id}>
                 <div class="option-icon">
                   <svg viewBox="0 0 24 24">
                     <path
@@ -204,13 +151,13 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                     )}
                   </p>
                 </div>
-                ${this._renderCheck(this._x86Device)}
+                ${this._renderCheck(x86Device)}
               </wa-radio>
             `
           : ""}
-        ${this._arm64Device
+        ${arm64Device
           ? html`
-              <wa-radio appearance="button" .value=${this._arm64Device.id}>
+              <wa-radio appearance="button" .value=${arm64Device.id}>
                 <div class="option-icon">
                   <svg viewBox="0 0 24 24">
                     <path
@@ -235,7 +182,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
                     )}
                   </p>
                 </div>
-                ${this._renderCheck(this._arm64Device)}
+                ${this._renderCheck(arm64Device)}
               </wa-radio>
             `
           : ""}
@@ -255,29 +202,15 @@ export class MiniPCArchitectureSelectionView extends LitElement {
     `;
   }
 
+  private _architecture(category: DeviceCategory) {
+    return this._catalog.devices.find((device) => device.category === category);
+  }
+
   // Screen readers already hear which radio is checked
   private _renderCheck(device: Device) {
-    return device.id === this._selectedDeviceId
+    return device.id === this._catalog.selected
       ? html`<span class="selected-indicator" aria-hidden="true">✓</span>`
       : nothing;
-  }
-
-  private _onDeviceChange(e: Event) {
-    const id = (e.target as { value?: string }).value;
-    const device = [this._x86Device, this._arm64Device].find(
-      (device) => device?.id === id
-    );
-    if (device) this._onSelectDevice(device);
-  }
-
-  private _onSelectDevice(device: Device) {
-    this._selectedDeviceId = device.id;
-    wizardState.setSelections({
-      device: device.id,
-      deviceName: device.name,
-      deviceImage: device.image_url || "",
-      deviceConfig: device.haos,
-    });
   }
 }
 

@@ -26,7 +26,7 @@ describe("minipc-architecture-selection-view focus", () => {
     wizardState.reset();
   });
 
-  it("hands lost focus to the choices and does not refocus on ordinary updates", async () => {
+  it("focuses its heading and does not refocus on ordinary updates", async () => {
     const el = await fixture<MiniPCArchitectureSelectionView>(
       html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`
     );
@@ -47,10 +47,11 @@ describe("minipc-architecture-selection-view focus", () => {
     const el = await fixture<MiniPCArchitectureSelectionView>(
       html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`
     );
-    await waitUntil(() => !!el.shadowRoot!.activeElement);
-    // A loading failure focuses its alert, next to the retry control
-    expect(el.shadowRoot!.activeElement!.getAttribute("role")).to.equal(
-      "alert"
+    // A loading failure focuses its alert, next to the retry control. The
+    // heading, there while it loads, has the focus until then.
+    await waitUntil(
+      () => el.shadowRoot!.activeElement?.getAttribute("role") === "alert",
+      "the alert never got the focus"
     );
   });
 
@@ -204,6 +205,49 @@ describe("minipc-architecture-selection-view choices", () => {
       }
     });
   }
+
+  it("does not ask whether UTM runs on a computer other than a Mac", async () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)",
+      configurable: true,
+    });
+    const commands: string[] = [];
+    wizardState.startFlow("minipc");
+    mockTauriIpc((cmd) => {
+      commands.push(cmd);
+      return MOCK_MANIFEST;
+    });
+    const el = await fixture<MiniPCArchitectureSelectionView>(
+      html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`
+    );
+    await waitUntil(() => radios(el).length === 2, "catalog never loaded");
+    await settle();
+    expect(commands).to.deep.equal(["get_manifest"]);
+  });
+
+  it("offers the architectures without waiting to hear whether the Mac runs UTM", async () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: macUserAgent,
+      configurable: true,
+    });
+    const utm = deferred<boolean>();
+    wizardState.startFlow("minipc");
+    mockTauriIpc((cmd) =>
+      cmd === "utm_supported" ? utm.promise : MOCK_MANIFEST
+    );
+    const el = await fixture<MiniPCArchitectureSelectionView>(
+      html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`
+    );
+    await waitUntil(() => radios(el).length === 2, "catalog waited for UTM");
+    expect(el.shadowRoot!.querySelector(".mac-note") === null).to.be.true;
+
+    utm.resolve(true);
+    await waitUntil(
+      () => el.shadowRoot!.querySelector(".mac-note"),
+      "note never shown"
+    );
+  });
 
   it("loads the architectures again on Try again", async () => {
     let attempts = 0;

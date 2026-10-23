@@ -1,27 +1,30 @@
 import { localize } from "../../localization/localize.js";
-import {
-  installerError,
-  type InstallerError,
-} from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
-import { LitElement, html, css } from "lit";
+import { LitElement, html } from "lit";
 import {
   ViewAccessibility,
   reducedMotionStyles,
 } from "../../utils/view-accessibility.js";
-import { InstallDiagnostics } from "../../utils/diagnostics.js";
-import { customElement, query, state } from "lit/decorators.js";
-import { getManifest, type Device } from "../../api/index.js";
-import { wizardState } from "../../state/wizard-state.js";
+import { customElement } from "lit/decorators.js";
+import type { Device, DeviceCategory } from "../../api/index.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../components/device-card.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import { loadStateStyles } from "../../utils/load-state.js";
 import {
-  loadStateStyles,
-  renderLoadError,
-  renderLoading,
-} from "../../utils/load-state.js";
+  DeviceCatalog,
+  deviceGridStyles,
+  deviceSelections,
+} from "../../utils/device-catalog.js";
+
+/** The single board computers in the catalog */
+const SBC_CATEGORIES: DeviceCategory[] = [
+  "raspberry_pi",
+  "odroid",
+  "khadas",
+  "asus",
+];
 
 @customElement("device-selection-view")
 export class DeviceSelectionView extends LitElement {
@@ -31,147 +34,52 @@ export class DeviceSelectionView extends LitElement {
     loadStateStyles,
     reducedMotionStyles,
     linkStyles,
-    css`
-      .devices-grid {
-        width: 100%;
-        max-width: 700px;
-      }
-
-      /* The group's default layout is a flex column; the tiles want a grid. */
-      .devices-grid::part(form-control-input) {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-        gap: 1rem;
-      }
-    `,
+    deviceGridStyles,
   ];
 
-  @state()
-  private _devices: Device[] = [];
-
-  @state()
-  private _loading = true;
-
-  @state()
-  private _error: InstallerError | null = null;
-
-  /** Try again while an error offers it, else the heading of the list */
-  @query(".error wa-button, h2")
-  private _continueFrom?: HTMLElement;
-
-  @state()
-  private _selectedDeviceId: string | null = null;
-
-  connectedCallback() {
-    super.connectedCallback();
-    void this._loadDevices();
-
-    // Check if there's already a selection in wizard state
-    const state = wizardState.getState();
-    if (state.selections.device) {
-      this._selectedDeviceId = state.selections.device;
+  private readonly _catalog = new DeviceCatalog<Device>(
+    this,
+    this._accessibility,
+    {
+      offer: (manifest) =>
+        manifest.devices.filter((device) =>
+          SBC_CATEGORIES.includes(device.category)
+        ),
+      id: (device) => device.id,
+      selections: deviceSelections,
     }
-  }
-
-  private async _loadDevices() {
-    // An error stays, with Try again busy, until this result replaces it
-    this._loading = true;
-    if (wizardState.getState().selections.deviceCatalogReady) {
-      wizardState.setSelection("deviceCatalogReady", false);
-    }
-
-    try {
-      const manifest = await getManifest();
-      if (!this.isConnected) return;
-      // Filter to only show SBC devices
-      this._devices = manifest.devices.filter(
-        (device) =>
-          device.category === "raspberry_pi" ||
-          device.category === "odroid" ||
-          device.category === "khadas" ||
-          device.category === "asus"
-      );
-      if (
-        !this._devices.some((device) => device.id === this._selectedDeviceId)
-      ) {
-        this._selectedDeviceId = null;
-        wizardState.setSelections({
-          device: undefined,
-          deviceConfig: undefined,
-        });
-      }
-      this._error = null;
-      wizardState.setSelection("deviceCatalogReady", true);
-    } catch (err) {
-      if (!this.isConnected) return;
-      new InstallDiagnostics("flash").fail(err);
-      this._error = installerError(
-        err,
-        localize("common.failed_to_load_devices")
-      );
-    } finally {
-      this._loading = false;
-    }
-    // The list can take the place of Try again, which had the focus
-    await this.updateComplete;
-    this._accessibility.restoreFocus(this._continueFrom);
-  }
+  );
 
   render() {
-    if (this._error) {
-      return renderLoadError(this._error, this._loading, () =>
-        this._loadDevices()
-      );
-    }
-
-    if (this._loading) {
-      return renderLoading(localize("common.loading_devices"));
-    }
-
     return html`
       ${renderStepHeading(
         localize("views.sbc.device_selection_view.select_your_device"),
         localize("views.sbc.device_selection_view.subtitle")
       )}
-
-      <wa-radio-group
-        class="devices-grid"
-        radio-tag="device-card"
-        aria-label=${localize(
-          "views.sbc.device_selection_view.single_board_computer"
-        )}
-        .value=${this._selectedDeviceId ?? ""}
-        @change=${this._onDeviceChange}
-      >
-        ${this._devices.map(
-          (device) => html`
-            <device-card
-              .value=${device.id}
-              .name=${device.name}
-              .image=${device.image_url || ""}
-            ></device-card>
-          `
-        )}
-      </wa-radio-group>
+      ${this._catalog.render(
+        () => html`
+          <wa-radio-group
+            class="devices-grid"
+            radio-tag="device-card"
+            aria-label=${localize(
+              "views.sbc.device_selection_view.single_board_computer"
+            )}
+            .value=${this._catalog.selected ?? ""}
+            @change=${this._catalog.onChange}
+          >
+            ${this._catalog.devices.map(
+              (device) => html`
+                <device-card
+                  .value=${device.id}
+                  .name=${device.name}
+                  .image=${device.image_url || ""}
+                ></device-card>
+              `
+            )}
+          </wa-radio-group>
+        `
+      )}
     `;
-  }
-
-  private _onDeviceChange(e: Event) {
-    const id = (e.target as { value?: string | number | null }).value;
-    const device = this._devices.find((d) => d.id === id);
-    if (device) {
-      this._onSelectDevice(device);
-    }
-  }
-
-  private _onSelectDevice(device: Device) {
-    this._selectedDeviceId = device.id;
-    wizardState.setSelections({
-      device: device.id,
-      deviceName: device.name,
-      deviceImage: device.image_url || "",
-      deviceConfig: device.haos,
-    });
   }
 }
 
