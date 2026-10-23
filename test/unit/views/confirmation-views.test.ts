@@ -11,6 +11,7 @@ import "../../../src/views/sbc/confirmation-view.js";
 import "../../../src/views/utm/utm-confirm-view.js";
 import "../../../src/views/proxmox/proxmox-confirm-view.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../tauri-ipc.js";
+import { expectReadsLeftToRight } from "../helpers/bidi.js";
 
 describe("installation confirmation views", () => {
   afterEach(() => {
@@ -112,6 +113,19 @@ describe("installation confirmation views", () => {
       expect(text.includes("Garden-Net"), board).to.equal(listed);
       expect(text).not.to.contain("12345678");
     }
+  });
+
+  it("reads the drive path left to right in a right-to-left language", async () => {
+    wizardState.startFlow("sbc");
+    storeDriveSelection({ ...MOCK_BLOCK_DEVICES[0], id: "/dev/sdb" });
+    wizardState.setSelection("deviceConfig", MOCK_MANIFEST.devices[0].haos);
+    mockTauriIpc(() => MOCK_HAOS_RELEASE);
+    const el = fixtureSync(
+      html`<confirmation-view dir="rtl"></confirmation-view>`
+    );
+    await settle();
+
+    expectReadsLeftToRight(el.shadowRoot!.querySelector(".drive-path")!);
   });
 
   async function confirmDrive(drive: BlockDevice) {

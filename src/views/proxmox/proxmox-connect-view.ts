@@ -55,6 +55,11 @@ export class ProxmoxConnectView extends LitElement {
         max-width: 500px;
       }
 
+      /* The address reads left to right in any language, not its label */
+      wa-input[type="url"]::part(input) {
+        direction: ltr;
+      }
+
       /* The password has no hint, only room for its error */
       wa-input[type="password"]:not([custom-error])::part(hint) {
         margin-block-start: 0;
@@ -570,7 +575,11 @@ export class ProxmoxConnectView extends LitElement {
           )}
         </div>
         <div class="fingerprint">
-          ${this._renderFingerprint(this._certificate?.fingerprint ?? "")}
+          <bdi
+            >${this._renderFingerprint(
+              this._certificate?.fingerprint ?? ""
+            )}</bdi
+          >
         </div>
         <wa-button
           slot="footer"

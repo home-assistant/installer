@@ -3,6 +3,7 @@ import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../../src/components/drive-card.js";
 import type { DriveCard } from "../../../src/components/drive-card.js";
 import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
+import { expectReadsLeftToRight } from "../helpers/bidi.js";
 
 describe("drive-card", () => {
   it("renders with drive name", async () => {
@@ -262,6 +263,16 @@ describe("drive-card", () => {
     expect(el.shadowRoot!.querySelector(".path")!.textContent).to.equal(
       "/dev/sdb"
     );
+  });
+
+  it("reads the path left to right in a right-to-left language", async () => {
+    for (const path of ["/dev/sdb", "\\\\.\\PhysicalDrive2"]) {
+      const el = await fixture<DriveCard>(html`
+        <drive-card dir="rtl" name="Test" value=${path}></drive-card>
+      `);
+
+      expectReadsLeftToRight(el.shadowRoot!.querySelector(".path")!);
+    }
   });
 
   it("leaves out the path line without a path", async () => {

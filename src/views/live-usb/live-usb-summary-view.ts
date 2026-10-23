@@ -92,10 +92,12 @@ export class LiveUsbSummaryView extends LitElement {
                   ${localize("views.live_usb.live_usb_summary_view.save_as")}
                 </dt>
                 <dd>
-                  ${isoTargetPath(
-                    selections.liveIsoFolder ?? "",
-                    selections.liveIsoName ?? ""
-                  )}
+                  <bdi
+                    >${isoTargetPath(
+                      selections.liveIsoFolder ?? "",
+                      selections.liveIsoName ?? ""
+                    )}</bdi
+                  >
                   ${selections.liveIsoOverwrite
                     ? html`<br />${localize(
                           "views.live_usb.live_usb_summary_view.replaces_existing"

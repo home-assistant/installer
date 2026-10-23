@@ -34,8 +34,10 @@ export function renderOpenHomeAssistantStep() {
       @click=${openExternalLink}
       >homeassistant.local</a
     >`,
-    ip_url: html`<code
-      >http://&lt;${localize("views.sbc.success_view.ip_address")}&gt;</code
+    ip_url: html`<code dir="ltr"
+      >http://&lt;<bdi>${localize(
+        "views.sbc.success_view.ip_address"
+      )}</bdi>&gt;</code
     >`,
   })}`;
 }

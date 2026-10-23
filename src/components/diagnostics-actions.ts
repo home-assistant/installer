@@ -151,6 +151,7 @@ export class DiagnosticsActions extends LitElement {
         </p>
         ${this._data
           ? html`<textarea
+              dir="ltr"
               aria-label=${localize(
                 "components.diagnostics_actions.diagnostics"
               )}

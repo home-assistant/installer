@@ -33,6 +33,10 @@ export class LiveIsoLocationView extends LitElement {
       .folder-row wa-input {
         flex: 1;
       }
+      /* Paths and file names read left to right in any language; labels don't */
+      wa-input::part(input) {
+        direction: ltr;
+      }
     `,
   ];
 

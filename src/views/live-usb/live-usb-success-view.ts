@@ -102,9 +102,10 @@ export class LiveUsbSuccessView extends LitElement {
               style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-bottom: 1.5rem; overflow-wrap: anywhere"
             >
               <span class="saved"
-                >${localize("views.live_usb.live_usb_success_view.saved_to", {
-                  path,
-                })}</span
+                >${localizeContent(
+                  "views.live_usb.live_usb_success_view.saved_to",
+                  { path: html`<bdi>${path}</bdi>` }
+                )}</span
               >
               ${path
                 ? html`<wa-button

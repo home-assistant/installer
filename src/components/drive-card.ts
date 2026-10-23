@@ -249,7 +249,9 @@ export class DriveCard extends WaRadio {
               ? this.disabledReason
               : this._getDetails()}
           </p>
-          ${this.value ? html`<p class="path">${this.value}</p>` : nothing}
+          ${this.value
+            ? html`<p class="path"><bdi>${this.value}</bdi></p>`
+            : nothing}
         </div>
         <span class="size">${formatBytes(this.driveSize)}</span>
         ${this.checked

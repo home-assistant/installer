@@ -142,11 +142,13 @@ export class ConfirmationView extends LitElement {
           driveName,
           html`<p class="summary-detail">
               ${this._formatSize(driveSize)}${driveModel
-                ? ` · ${driveModel}`
+                ? html` · <bdi>${driveModel}</bdi>`
                 : nothing}
             </p>
             ${drivePath
-              ? html`<p class="summary-detail drive-path">${drivePath}</p>`
+              ? html`<p class="summary-detail drive-path">
+                  <bdi>${drivePath}</bdi>
+                </p>`
               : nothing}`
         )}
 
