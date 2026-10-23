@@ -64,6 +64,7 @@ import {
   readDriveSelection,
 } from "../utils/drive-selection.js";
 import { logFrontendError } from "../utils/diagnostics.js";
+import type { HAIEvent } from "../utils/fire-event.js";
 import { homeAssistantUrl } from "../utils/external-url.js";
 
 export type ViewName =
@@ -416,11 +417,11 @@ export class AppShell extends LitElement {
     }
   };
 
-  private _onNavigate(e: CustomEvent<{ view: ViewName }>) {
+  private _onNavigate(e: HAIEvent<"navigate">) {
     this._currentView = e.detail.view;
   }
 
-  private _onSelectPath(e: CustomEvent<{ path: WizardFlow }>) {
+  private _onSelectPath(e: HAIEvent<"select-path">) {
     this._resetErrorState();
     this._pendingFlow = e.detail.path;
     this._currentView = "connection-check";
@@ -692,7 +693,7 @@ export class AppShell extends LitElement {
     if (this._installRunning) this._stepView?.stop?.();
   }
 
-  private _onInstallStoppable(event: CustomEvent<{ stoppable: boolean }>) {
+  private _onInstallStoppable(event: HAIEvent<"install-stoppable">) {
     this._installStoppable = event.detail.stoppable;
     // The install moved past where it can stop: there is nothing to ask
     if (!this._installStoppable && this._installRunning) {
@@ -700,7 +701,7 @@ export class AppShell extends LitElement {
     }
   }
 
-  private _onInstallLeavable(event: CustomEvent<{ leavable: boolean }>) {
+  private _onInstallLeavable(event: HAIEvent<"install-leavable">) {
     this._installLeavable = event.detail.leavable;
     if (!this._installLeavable) this._showLeaveDialog = false;
   }
@@ -718,13 +719,7 @@ export class AppShell extends LitElement {
     wizardState.nextStep();
   }
 
-  private _onInstallError(
-    event: CustomEvent<{
-      retryable?: boolean;
-      reconnect?: boolean;
-      changeChoice?: boolean;
-    }>
-  ) {
+  private _onInstallError(event: HAIEvent<"install-error">) {
     // The install ended, so there is nothing left to stop, leave or quit,
     // whether or not the view said so first
     this._showStopDialog = false;
@@ -740,5 +735,9 @@ export class AppShell extends LitElement {
 declare global {
   interface HTMLElementTagNameMap {
     "app-shell": AppShell;
+  }
+
+  interface HAIEvents {
+    navigate: { view: ViewName };
   }
 }

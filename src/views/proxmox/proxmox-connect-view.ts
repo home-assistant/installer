@@ -9,6 +9,7 @@ import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
 import { LatestRequest } from "../../utils/latest-request.js";
+import { fireEvent } from "../../utils/fire-event.js";
 import { customElement, queryAll, state } from "lit/decorators.js";
 import {
   proxmoxCertificateFingerprint,
@@ -431,9 +432,7 @@ export class ProxmoxConnectView extends LitElement {
     ) {
       // Same path as the Next button, so the app shell's connecting guard
       // applies and a successful login moves on to the next step.
-      this.dispatchEvent(
-        new CustomEvent("wizard-next", { bubbles: true, composed: true })
-      );
+      fireEvent(this, "wizard-next");
     }
   }
 

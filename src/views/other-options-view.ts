@@ -7,6 +7,7 @@ import {
 import { customElement } from "lit/decorators.js";
 import { pageStyles, renderBackHeader } from "../utils/page-header.js";
 import { linkStyles } from "../utils/link-styles.js";
+import { fireEvent } from "../utils/fire-event.js";
 import "../components/option-card.js";
 import type { OptionCardIcon } from "../components/option-card.js";
 import { openExternalLink, openExternalUrl } from "../utils/external-url.js";
@@ -121,13 +122,7 @@ export class OtherOptionsView extends LitElement {
   }
 
   private _onBack() {
-    this.dispatchEvent(
-      new CustomEvent("navigate", {
-        detail: { view: "path-selection" },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "navigate", { view: "path-selection" });
   }
 }
 

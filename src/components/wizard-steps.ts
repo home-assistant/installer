@@ -3,6 +3,7 @@ import { localize } from "../localization/localize.js";
 import { isValidUtmVmName } from "../state/vm-defaults.js";
 import type { WizardFlow, WizardSelections } from "../state/wizard-state.js";
 import { isValidWifi, selectedWifi } from "../utils/wifi.js";
+import { fireEvent } from "../utils/fire-event.js";
 import { isYellow } from "../state/ha-hardware.js";
 import type { HaHardwareDeviceSelectionView } from "../views/ha-hardware/device-selection-view.js";
 import type { LiveIsoLocationView } from "../views/live-usb/live-iso-location-view.js";
@@ -90,9 +91,7 @@ export interface WizardStepDefinition {
  * Whatever Next waits for or asks first still applies.
  */
 export function goToNextStep(view: HTMLElement) {
-  view.dispatchEvent(
-    new CustomEvent("wizard-next", { bubbles: true, composed: true })
-  );
+  fireEvent(view, "wizard-next");
 }
 
 const deviceChosen = (selections: WizardSelections) =>

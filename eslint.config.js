@@ -29,6 +29,9 @@ export default [
     },
     rules: {
       ...tseslint.configs.recommended.rules,
+      // tsc checks names already, and also sees the types a `declare global`
+      // adds, which ESLint takes for undefined
+      "no-undef": "off",
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_" },

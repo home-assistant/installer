@@ -10,6 +10,7 @@ import { WizardStateController } from "../state/wizard-state-controller.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "./step-indicator.js";
 import { pageHeaderStyles } from "../utils/page-header.js";
+import { fireEvent } from "../utils/fire-event.js";
 import {
   dialogHasFocus,
   focusHeading,
@@ -294,44 +295,33 @@ export class WizardShell extends LitElement {
   private _onBack() {
     // On the first step, Back leaves the flow for the screen it was picked on
     if (this.isFirstStep) {
-      this.dispatchEvent(
-        new CustomEvent("wizard-exit", {
-          bubbles: true,
-          composed: true,
-        })
-      );
+      fireEvent(this, "wizard-exit");
       return;
     }
     wizardState.previousStep();
-    this.dispatchEvent(
-      new CustomEvent("wizard-back", {
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "wizard-back");
   }
 
   private _onNext() {
-    this.dispatchEvent(
-      new CustomEvent("wizard-next", {
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "wizard-next");
   }
 
   private _onCancel() {
-    this.dispatchEvent(
-      new CustomEvent("wizard-cancel", {
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "wizard-cancel");
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
     "wizard-shell": WizardShell;
+  }
+
+  interface HAIEvents {
+    /** Back on the first step, which leaves the flow */
+    "wizard-exit": undefined;
+    "wizard-back": undefined;
+    /** Next, or a step's view moving on the way Next does */
+    "wizard-next": undefined;
+    "wizard-cancel": undefined;
   }
 }

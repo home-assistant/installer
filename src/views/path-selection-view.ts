@@ -3,6 +3,7 @@ import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../utils/view-accessibility.js";
 import { customElement, state } from "lit/decorators.js";
 import { pageStyles, renderBackHeader } from "../utils/page-header.js";
+import { fireEvent } from "../utils/fire-event.js";
 
 import "../components/option-card.js";
 import { getPlatform } from "../utils/platform.js";
@@ -129,39 +130,25 @@ export class PathSelectionView extends LitElement {
   }
 
   private _onBack() {
-    this.dispatchEvent(
-      new CustomEvent("navigate", {
-        detail: { view: "welcome" },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "navigate", { view: "welcome" });
   }
 
   private _onSelectPath(ev: Event) {
     const path = (ev.currentTarget as HTMLElement).dataset.path as WizardFlow;
-    this.dispatchEvent(
-      new CustomEvent("select-path", {
-        detail: { path },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "select-path", { path });
   }
 
   private _onOtherOptions() {
-    this.dispatchEvent(
-      new CustomEvent("navigate", {
-        detail: { view: "other-options" },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "navigate", { view: "other-options" });
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
     "path-selection-view": PathSelectionView;
+  }
+
+  interface HAIEvents {
+    "select-path": { path: WizardFlow };
   }
 }

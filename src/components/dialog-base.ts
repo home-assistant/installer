@@ -1,6 +1,7 @@
 import { LitElement, html, css, type CSSResultGroup } from "lit";
 import { property } from "lit/decorators.js";
 import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
+import { fireEvent } from "../utils/fire-event.js";
 import { dialogStyles } from "../utils/dialog-styles.js";
 
 /**
@@ -130,7 +131,7 @@ export abstract class DialogBase extends LitElement {
   protected choose(type: DialogChoice) {
     if (!this.open || this._closing) return;
     this.open = false;
-    this._dispatch(type);
+    fireEvent(this, type);
   }
 
   private _onHide(event: Event) {
@@ -158,17 +159,18 @@ export abstract class DialogBase extends LitElement {
       return;
     }
     this.open = false;
-    this._dispatch("dialog-secondary");
+    fireEvent(this, "dialog-secondary");
   }
 
   private _setClosing(closing: boolean) {
     this._closing = closing;
     this.toggleAttribute("closing", closing);
   }
+}
 
-  private _dispatch(type: DialogChoice) {
-    this.dispatchEvent(
-      new CustomEvent(type, { bubbles: true, composed: true })
-    );
+declare global {
+  interface HAIEvents {
+    "dialog-primary": undefined;
+    "dialog-secondary": undefined;
   }
 }

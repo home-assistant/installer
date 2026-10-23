@@ -180,7 +180,7 @@ export abstract class VmProgressView<
   protected _fail(
     error: unknown,
     message?: string,
-    detail: Record<string, unknown> = {}
+    detail: Partial<HAIEvents["install-error"]> = {}
   ) {
     this._stage = "error";
     // Log a wait that ran out as a timeout, not by the words of its message

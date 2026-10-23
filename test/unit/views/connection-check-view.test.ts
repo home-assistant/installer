@@ -173,6 +173,25 @@ describe("connection-check-view", () => {
     });
   }
 
+  it("sends ready and Back up through the page, as the other screens do", async () => {
+    mockTauriIpc(() => Promise.resolve());
+    const heard: string[] = [];
+    const record = (event: Event) => heard.push(event.type);
+    document.addEventListener("connection-ready", record);
+    document.addEventListener("connection-back", record);
+    try {
+      const el = await fixture<ConnectionCheckView>(
+        html`<connection-check-view></connection-check-view>`
+      );
+      await waitUntil(() => heard.length === 1);
+      (el.shadowRoot!.querySelector("wa-button") as HTMLElement).click();
+      expect(heard).to.deep.equal(["connection-ready", "connection-back"]);
+    } finally {
+      document.removeEventListener("connection-ready", record);
+      document.removeEventListener("connection-back", record);
+    }
+  });
+
   it("checks again if a pending element is reconnected", async () => {
     const first = deferred<void>();
     const second = deferred<void>();

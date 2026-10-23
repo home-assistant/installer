@@ -5,6 +5,7 @@ import { localize } from "../localization/localize.js";
 import { installerError, renderErrorHelp } from "../utils/installer-error.js";
 import { LatestRequest } from "../utils/latest-request.js";
 import { linkStyles } from "../utils/link-styles.js";
+import { fireEvent } from "../utils/fire-event.js";
 import { renderRetryButton } from "../utils/load-state.js";
 import { pageStyles, renderBackHeader } from "../utils/page-header.js";
 import { ViewAccessibility } from "../utils/view-accessibility.js";
@@ -61,7 +62,7 @@ export class ConnectionCheckView extends LitElement {
     try {
       await checkConnection();
       if (request.current) {
-        this.dispatchEvent(new CustomEvent("connection-ready"));
+        fireEvent(this, "connection-ready");
       }
     } catch (error) {
       if (request.current) {
@@ -109,12 +110,18 @@ export class ConnectionCheckView extends LitElement {
 
   private _back() {
     this._requests.cancel();
-    this.dispatchEvent(new CustomEvent("connection-back"));
+    fireEvent(this, "connection-back");
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
     "connection-check-view": ConnectionCheckView;
+  }
+
+  interface HAIEvents {
+    /** The connection works, so the flow can start */
+    "connection-ready": undefined;
+    "connection-back": undefined;
   }
 }

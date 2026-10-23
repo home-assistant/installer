@@ -11,6 +11,7 @@ import {
   installerError,
   type InstallerError,
 } from "../utils/installer-error.js";
+import { fireEvent } from "../utils/fire-event.js";
 import { isCancelled, throwIfCancelled } from "../utils/polling.js";
 
 /** A failure to show, in `message`'s words if given */
@@ -181,11 +182,11 @@ export abstract class InstallProgressView extends LitElement {
   private _report() {
     if (this.stoppable !== this._reportedStoppable) {
       this._reportedStoppable = this.stoppable;
-      this._dispatch("install-stoppable", { stoppable: this.stoppable });
+      fireEvent(this, "install-stoppable", { stoppable: this.stoppable });
     }
     if (this.leavable !== this._reportedLeavable) {
       this._reportedLeavable = this.leavable;
-      this._dispatch("install-leavable", { leavable: this.leavable });
+      fireEvent(this, "install-leavable", { leavable: this.leavable });
     }
   }
 
@@ -256,28 +257,38 @@ export abstract class InstallProgressView extends LitElement {
   /** The install is done: tell the shell, which moves on */
   protected _complete() {
     this._diagnostics?.advance("complete");
-    this._dispatch("install-complete");
+    fireEvent(this, "install-complete");
   }
 
   /** Show a failure, in `message`'s words if given, and tell the shell */
   protected _fail(
     error: unknown,
     message?: string,
-    detail: Record<string, unknown> = {}
+    detail: Partial<HAIEvents["install-error"]> = {}
   ) {
     this._diagnostics?.fail(error);
     const installer = this._installerError(error);
     this._error = message ? { ...installer, message } : installer;
-    this._dispatch("install-error", {
+    fireEvent(this, "install-error", {
       retryable: this._error.retryable,
       changeChoice: this._choiceCanFix(this._error),
       ...detail,
     });
   }
+}
 
-  private _dispatch(type: string, detail?: Record<string, unknown>) {
-    this.dispatchEvent(
-      new CustomEvent(type, { detail, bubbles: true, composed: true })
-    );
+declare global {
+  interface HAIEvents {
+    "install-stoppable": { stoppable: boolean };
+    "install-leavable": { leavable: boolean };
+    "install-complete": undefined;
+    "install-error": {
+      /** Trying the same again can work */
+      retryable: boolean;
+      /** Choosing differently can, like another drive */
+      changeChoice: boolean;
+      /** Only logging in again can get past it */
+      reconnect?: boolean;
+    };
   }
 }

@@ -7,6 +7,7 @@ import {
 import { logFrontendError } from "../utils/diagnostics.js";
 import { customElement, state } from "lit/decorators.js";
 import { openExternalLink } from "../utils/external-url.js";
+import { fireEvent } from "../utils/fire-event.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../components/diagnostics-actions.js";
 
@@ -265,13 +266,7 @@ export class WelcomeView extends LitElement {
   }
 
   private _onLetsGo() {
-    this.dispatchEvent(
-      new CustomEvent("navigate", {
-        detail: { view: "path-selection" },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "navigate", { view: "path-selection" });
   }
 
   disconnectedCallback() {
