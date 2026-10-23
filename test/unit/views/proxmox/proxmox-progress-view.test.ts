@@ -407,7 +407,9 @@ describe("proxmox-progress-view", () => {
       await el.updateComplete;
 
       expect(failed.detail.retryable).to.be.true;
-      expect(errorText(el)).to.contain("did not report an IPv4 address");
+      expect(errorText(el)).to.contain(
+        "did not report an IPv4 address within 5 minutes. Check that it is running in Proxmox"
+      );
       // Not reported as installed, and nothing to check Home Assistant on
       expect(calls).to.not.include("check_ha_ready");
       // The VM is kept, so a retry does not create a second one

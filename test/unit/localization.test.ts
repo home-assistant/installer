@@ -97,7 +97,7 @@ describe("localization", () => {
       "common.back": " ",
       "app.title": 42,
       "views.sbc.drive_selection_view.drives_found": "{count, plural",
-      "utm.update_timeout": "Öffne {link}",
+      "common.vm.update_timeout": "Öffne {link}",
       "backend.proxmox.node_offline": "Knoten {node} ist offline",
     });
     expect(localize("common.next")).to.equal("Weiter");
@@ -108,7 +108,7 @@ describe("localization", () => {
       localize("views.sbc.drive_selection_view.drives_found", { count: 2 })
     ).to.equal("2 drives found");
     expect(
-      localize("utm.update_timeout", { address: "http://192.0.2.1" })
+      localize("common.vm.update_timeout", { address: "http://192.0.2.1" })
     ).to.contain("Open http://192.0.2.1");
     expect(
       localizeBackend("backend.proxmox.node_offline", { node: "pve" })
@@ -188,7 +188,7 @@ describe("localization", () => {
       `All data on ${drive} will be permanently erased. This action cannot be undone.`
     );
     expect(
-      localize("utm.update_timeout", { address: "http://192.0.2.1" })
+      localize("common.vm.update_timeout", { address: "http://192.0.2.1" })
     ).to.contain("http://192.0.2.1");
   });
 });

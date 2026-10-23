@@ -109,18 +109,20 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
       throwIfCancelled(signal);
 
       const startedVmId = vmId;
+      const app = "UTM";
       const ipAddress = await this._waitForHomeAssistant(
         {
           vmAddress: async () => (await getUtmVmStatus(startedVmId)).ip_address,
           stopOn: failsEveryTime,
           messages: {
-            noAddress: localize("views.utm.utm_progress_view.no_ip_address"),
+            noAddress: localize("common.vm.no_ip_address", { app }),
             notResponding: (ipAddress) =>
-              localize("views.utm.utm_progress_view.not_responding", {
+              localize("common.vm.not_responding", {
                 address: ipAddress,
+                app,
               }),
             notUpdated: (address) =>
-              localize("utm.update_timeout", { address }),
+              localize("common.vm.update_timeout", { address }),
           },
         },
         signal

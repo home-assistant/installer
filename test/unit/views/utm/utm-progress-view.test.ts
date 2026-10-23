@@ -850,7 +850,9 @@ describe("utm-progress-view", () => {
         el
           .shadowRoot!.querySelector("install-progress")!
           .shadowRoot!.querySelector(".error-message")!.textContent
-      ).to.contain("did not respond at 192.0.2.50 within 5 minutes");
+      ).to.contain(
+        "did not respond at 192.0.2.50 within 5 minutes. The virtual machine was created. Check whether it is running in UTM,"
+      );
 
       Date.now = now;
       ready = true;
@@ -933,7 +935,9 @@ describe("utm-progress-view", () => {
     }
     await el.updateComplete;
     expect(completed).to.be.false;
-    expect(errorText(el)).to.contain("did not report an IPv4 address");
+    expect(errorText(el)).to.contain(
+      "did not report an IPv4 address within 5 minutes. Check that it is running in UTM"
+    );
     expect(wizardState.getState().selections.ipAddress).to.be.undefined;
     expect(calls).to.not.include("check_ha_ready");
     expect(calls).to.not.include("check_ha_updated");
