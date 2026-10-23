@@ -81,6 +81,10 @@ export class InstallSuccess extends LitElement {
         margin-bottom: 1rem;
       }
 
+      .next-steps inline-notice {
+        margin-bottom: 1rem;
+      }
+
       .steps-list {
         display: flex;
         flex-direction: column;

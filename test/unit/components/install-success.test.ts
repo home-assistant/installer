@@ -159,6 +159,25 @@ describe("install-success", () => {
     });
   }
 
+  it("leaves as much room under the format warning as above it", async () => {
+    setUserAgent("Windows");
+    const el = await fixture<InstallSuccess>(
+      html`<install-success
+        .formatWarning=${true}
+        .steps=${["Only step"]}
+      ></install-success>`
+    );
+    const bounds = (selector: string) =>
+      el.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+
+    const above =
+      bounds("inline-notice").top - bounds(".next-steps-title").bottom;
+    expect(above).to.be.greaterThan(0);
+    expect(
+      bounds(".steps-list").top - bounds("inline-notice").bottom
+    ).to.be.closeTo(above, 0.5);
+  });
+
   it("underlines links in the steps and footer, not the app buttons", async () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success
