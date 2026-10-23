@@ -139,6 +139,38 @@ export class DriveCard extends WaRadio {
         flex-shrink: 0;
       }
 
+      /* Forced colors would draw every card with the same border and paint
+       * the check's circle like the card, leaving only a small tick on the
+       * chosen one. A drive that can't be picked takes the system's color
+       * for disabled text, which is meant to be read, instead of fading. */
+      @media (forced-colors: active) {
+        :host(:state(checked)) .card {
+          border-color: Highlight;
+        }
+
+        .selected-indicator {
+          forced-color-adjust: none;
+          background-color: Highlight;
+          color: HighlightText;
+        }
+
+        :host(:state(disabled)) .card {
+          border-color: GrayText;
+        }
+
+        :host(:state(disabled)) :is(.card, .card *) {
+          opacity: 1;
+        }
+
+        :host(:state(disabled)) :is(.name, .details, .size) {
+          color: GrayText;
+        }
+
+        :host(:state(disabled)) .icon-container svg {
+          fill: GrayText;
+        }
+      }
+
       @media (max-width: 480px) {
         .card {
           grid-template-columns: 32px minmax(0, 1fr) auto 24px;
