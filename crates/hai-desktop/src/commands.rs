@@ -95,7 +95,7 @@ async fn reuse_download<P: ProgressCallback>(
     };
     // It sat in the cache folder since the last attempt, so check it again
     match hai_core::download::is_downloaded(image, &kept.archive_path(), callback).await {
-        Ok(true) if link_or_copy(&kept.archive_path(), path).is_ok() => Ok(true),
+        Ok(true) if std::fs::hard_link(kept.archive_path(), path).is_ok() => Ok(true),
         Err(hai_core::Error::Cancelled) => Err(hai_core::Error::Cancelled.into()),
         _ => {
             downloads.clear();
@@ -106,6 +106,9 @@ async fn reuse_download<P: ProgressCallback>(
 
 /// Keep the download of `image` at `path` for a retry, in a folder of its own so
 /// it outlives this attempt's. Not keeping it only means a retry downloads again.
+///
+/// Only as a hard link, which takes no space. A copy would take room the
+/// extraction was promised by the space check before the download.
 fn keep_download(
     downloads: &SessionDownload,
     cache_dir: &std::path::Path,
@@ -115,15 +118,9 @@ fn keep_download(
     let Ok(kept) = TemporaryImage::new(cache_dir, ImageFormat::Raw) else {
         return;
     };
-    if link_or_copy(path, &kept.archive_path()).is_ok() {
+    if std::fs::hard_link(path, kept.archive_path()).is_ok() {
         downloads.keep(image, kept);
     }
-}
-
-/// A hard link costs neither time nor space; a copy is the fallback where the
-/// file system has none.
-fn link_or_copy(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
-    std::fs::hard_link(from, to).or_else(|_| std::fs::copy(from, to).map(drop))
 }
 
 // =============================================================================
