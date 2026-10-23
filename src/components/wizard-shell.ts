@@ -90,7 +90,9 @@ export class WizardShell extends LitElement {
         gap: 1rem;
       }
 
-      /* Thinner on a low window, like the header */
+      /* Thinner on a low window, like the header. Cancel and Next have no
+         step name beside them, so unlike Back they get lower too; their text
+         keeps its size. */
       @media (max-height: 600px) {
         .footer {
           padding-block: 0.5rem;
