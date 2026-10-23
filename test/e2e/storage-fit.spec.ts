@@ -1,5 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { skipWifiStep } from "./fixtures.js";
+import { type Page } from "@playwright/test";
+import { skipWifiStep, test, expect } from "./fixtures.js";
 
 const nextButton = (page: Page) =>
   page.locator("wizard-shell .footer-right wa-button");

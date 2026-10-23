@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { type Locator, type Page } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 // Forced colors, as in Windows High Contrast, give every card border the same
 // color and paint backgrounds like the page, so the device and drive cards

@@ -1,5 +1,4 @@
-import { test, expect } from "@playwright/test";
-import { skipWifiStep } from "./fixtures.js";
+import { skipWifiStep, test, expect } from "./fixtures.js";
 
 test.describe("Navigation Flow", () => {
   test.beforeEach(async ({ page }) => {

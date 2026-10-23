@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.js";
 
 // Mini PC flow order: method → architecture → drive → confirm → flash → success
 

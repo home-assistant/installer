@@ -1,5 +1,9 @@
-import { expect, test } from "@playwright/test";
-import { approveProxmoxImport, skipWifiStep } from "./fixtures.js";
+import {
+  approveProxmoxImport,
+  skipWifiStep,
+  expect,
+  test,
+} from "./fixtures.js";
 
 // sRGB channels (0 to 1) of a computed colour, rgb() or color(srgb …), painted
 // over an opaque background

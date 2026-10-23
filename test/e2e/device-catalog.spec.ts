@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 test("catalog navigation preserves selection without a Lit mount-update warning", async ({
   page,

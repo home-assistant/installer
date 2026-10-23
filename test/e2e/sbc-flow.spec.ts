@@ -1,5 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { skipWifiStep } from "./fixtures.js";
+import { type Page } from "@playwright/test";
+import { skipWifiStep, test, expect } from "./fixtures.js";
 
 // Browser-only mode serves the mock block devices from src/api/mock-data.ts.
 // Importing that module from the page returns the instance the app uses, so

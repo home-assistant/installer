@@ -1,5 +1,5 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
-import { approveProxmoxImport } from "./fixtures.js";
+import { type Locator, type Page } from "@playwright/test";
+import { approveProxmoxImport, test, expect } from "./fixtures.js";
 
 // Traverse the real tab order instead of focusing controls programmatically.
 async function tabTo(page: Page, control: Locator) {

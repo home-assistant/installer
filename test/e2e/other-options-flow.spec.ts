@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.js";
 
 test.describe("Other Options View", () => {
   test.beforeEach(async ({ page }) => {

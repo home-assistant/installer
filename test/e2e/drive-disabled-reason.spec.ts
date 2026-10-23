@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 // A drive that can't be picked is faded, but the line saying why is the only
 // explanation the user gets, so it has to stay readable.
