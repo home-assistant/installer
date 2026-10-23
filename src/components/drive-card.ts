@@ -73,9 +73,20 @@ export class DriveCard extends WaRadio {
         box-shadow: var(--ha-card-selected-shadow);
       }
 
+      /* Fade what marks the drive as unavailable, but not the reason it is:
+       * that line is all the explanation the user gets, so it keeps its
+       * contrast */
       :host(:state(disabled)) .card {
-        opacity: 0.5;
+        border-color: color-mix(
+          in srgb,
+          var(--ha-border-color, #e0e0e0) 50%,
+          transparent
+        );
         pointer-events: none;
+      }
+
+      :host(:state(disabled)) :is(.icon-container, .name, .size) {
+        opacity: 0.5;
       }
 
       .icon-container {
@@ -151,6 +162,38 @@ export class DriveCard extends WaRadio {
         color: var(--wa-color-brand-on-loud, white);
         font-size: 14px;
         flex-shrink: 0;
+      }
+
+      /* Forced colors would draw every card with the same border and paint
+       * the check's circle like the card, leaving only a small tick on the
+       * chosen one. A drive that can't be picked takes the system's color
+       * for disabled text, which is meant to be read, instead of fading. */
+      @media (forced-colors: active) {
+        :host(:state(checked)) .card {
+          border-color: Highlight;
+        }
+
+        .selected-indicator {
+          forced-color-adjust: none;
+          background-color: Highlight;
+          color: HighlightText;
+        }
+
+        :host(:state(disabled)) .card {
+          border-color: GrayText;
+        }
+
+        :host(:state(disabled)) :is(.card, .card *) {
+          opacity: 1;
+        }
+
+        :host(:state(disabled)) :is(.name, .details, .size) {
+          color: GrayText;
+        }
+
+        :host(:state(disabled)) .icon-container svg {
+          fill: GrayText;
+        }
       }
 
       @media (max-width: 480px) {

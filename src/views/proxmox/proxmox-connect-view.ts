@@ -501,9 +501,6 @@ export class ProxmoxConnectView extends LitElement {
           type="password"
           input-id="password"
           label=${localize("views.proxmox.proxmox_connect_view.password")}
-          placeholder=${localize(
-            "views.proxmox.proxmox_connect_view.enter_your_password"
-          )}
           autocomplete="current-password"
           password-toggle
           required
@@ -526,6 +523,7 @@ export class ProxmoxConnectView extends LitElement {
           )}
           autocomplete="one-time-code"
           inputmode="numeric"
+          hint=${localize("views.proxmox.proxmox_connect_view.totp_hint")}
           .value=${this._totp}
           @input=${this._onTotpChange}
           @keydown=${this._onKeyDown}

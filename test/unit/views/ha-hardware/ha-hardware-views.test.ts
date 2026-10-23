@@ -81,13 +81,15 @@ describe("Home Assistant hardware views", () => {
       ]);
     });
 
-    for (const [id, name, heading, action, note] of [
+    // Going back stands out where the device is ready to use as it is
+    for (const [id, name, heading, action, note, emphasis] of [
       [
         "green",
         "Home Assistant Green",
         "Your Home Assistant Green is ready to use",
         "Reinstall",
         "Only reinstall to reset or recover it",
+        "secondary",
       ],
       [
         "blue",
@@ -95,6 +97,7 @@ describe("Home Assistant hardware views", () => {
         "Your Home Assistant Blue is ready to use",
         "Reinstall",
         "Only reinstall to reset or recover it",
+        "secondary",
       ],
       [
         "yellow-cm4",
@@ -102,6 +105,7 @@ describe("Home Assistant hardware views", () => {
         "Your Yellow may be ready to use",
         "Install",
         "set up a compute module of your own",
+        "primary",
       ],
     ] as const) {
       it(`asks before reinstalling the ${id}`, async () => {
@@ -119,6 +123,7 @@ describe("Home Assistant hardware views", () => {
         expect(dialog.heading).to.equal(heading);
         expect(dialog.message).to.contain("homeassistant.local");
         expect(dialog.primaryLabel).to.equal(action);
+        expect(dialog.emphasis).to.equal(emphasis);
         expect(dialog.textContent).to.contain(note);
         dialog.dispatchEvent(new CustomEvent("dialog-secondary"));
         expect(await declined).to.equal(false);
@@ -718,6 +723,7 @@ describe("Home Assistant hardware views", () => {
         );
         const success = el.shadowRoot!.querySelector("install-success")!;
         await success.updateComplete;
+        expect(success.formatWarning).to.equal(true);
         const content = text(success.shadowRoot!);
         for (const part of expected) {
           expect(content).to.contain(part);

@@ -78,6 +78,30 @@ describe("drive-card", () => {
     expect(details!.textContent!.trim()).to.equal("Drive is too small");
   });
 
+  it("fades a disabled drive but not the reason it can't be picked", async () => {
+    const el = await fixture<DriveCard>(html`
+      <drive-card
+        name="Test"
+        disabled
+        disabled-reason="Drive is too small"
+      ></drive-card>
+    `);
+    const opacity = (selector: string) =>
+      getComputedStyle(el.shadowRoot!.querySelector(selector)!).opacity;
+
+    for (const selector of [".icon-container", ".name", ".size"]) {
+      expect(opacity(selector), selector).to.equal("0.5");
+    }
+    // Opacity on any of these would fade the reason with it
+    for (const selector of [".card", ".info", ".details"]) {
+      expect(opacity(selector), selector).to.equal("1");
+    }
+
+    el.disabled = false;
+    await el.updateComplete;
+    expect(opacity(".name")).to.equal("1");
+  });
+
   it("renders SD card icon for sd_card type", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test" device-type="sd_card"></drive-card>

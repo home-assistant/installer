@@ -3,7 +3,9 @@ import { customElement, property } from "lit/decorators.js";
 import { localize } from "../localization/localize.js";
 import { openExternalLink } from "../utils/external-url.js";
 import { linkStyles } from "../utils/link-styles.js";
+import { getPlatform } from "../utils/platform.js";
 import { renderCasitaHappy } from "./install-mascot.js";
+import "./inline-notice.js";
 import {
   ReducedSvgMotion,
   ViewAccessibility,
@@ -237,11 +239,20 @@ export class InstallSuccess extends LitElement {
   @property({ attribute: false }) subtitle: string | TemplateResult = "";
   @property({ attribute: false }) steps: (string | TemplateResult)[] = [];
   @property({ attribute: false }) tip: string | TemplateResult = "";
+  /** Warns not to format the written drive, where the OS offers to. */
+  @property({ attribute: false }) formatWarning = false;
   /** Shown below the steps, such as a link to further documentation. */
   @property({ attribute: false }) footer: string | TemplateResult = "";
 
   render() {
     const title = localize("components.install_success.title");
+    const platform = this.formatWarning && getPlatform();
+    const notice =
+      platform === "macos"
+        ? localize("common.success.do_not_format.macos")
+        : platform === "windows"
+          ? localize("common.success.do_not_format.windows")
+          : "";
 
     return html`
       <div class="layout">
@@ -259,6 +270,9 @@ export class InstallSuccess extends LitElement {
             <p class="next-steps-title">
               ${localize("components.install_success.next_steps")}
             </p>
+            ${notice
+              ? html`<inline-notice><p>${notice}</p></inline-notice>`
+              : ""}
             <ol
               class="steps-list"
               role="list"

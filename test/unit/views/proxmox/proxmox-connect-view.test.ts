@@ -200,7 +200,7 @@ describe("proxmox-connect-view", () => {
     await typeInto(el, inputs[1], "root@pam");
     await settled(inputs);
     expect(hints(inputs).slice(0, 3)).to.deep.equal([
-      "Full URL to your Proxmox server (for example, https://192.168.1.100:8006)",
+      "The address you open the Proxmox web interface on",
       "Usually root@pam for the default admin account",
       "Enter the password",
     ]);

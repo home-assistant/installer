@@ -10,6 +10,7 @@ import type WaSwitch from "@home-assistant/webawesome/dist/components/switch/swi
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import "@home-assistant/webawesome/dist/components/switch/switch.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 
 /** Optional step for boards with built-in Wi-Fi: the network to join. */
 @customElement("wifi-view")
@@ -17,6 +18,7 @@ export class WifiView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     stepStyles,
+    fieldErrorStyles,
     css`
       .wifi-card {
         display: flex;
@@ -90,9 +92,9 @@ export class WifiView extends LitElement {
                 autocorrect="off"
                 .spellcheck=${false}
                 .value=${wifi.ssid}
-                .customError=${ssidError ?? null}
                 @input=${this._onSsidInput}
                 @blur=${this._onSsidBlur}
+                ${fieldError(ssidError)}
               >
                 <!-- In the hint slot, so the field describes itself with it.
                   Not role="alert": ViewAccessibility focuses a new alert, which
@@ -108,9 +110,9 @@ export class WifiView extends LitElement {
                 autocomplete="off"
                 password-toggle
                 .value=${wifi.password}
-                .customError=${passwordError ?? null}
                 @input=${this._onPasswordInput}
                 @blur=${this._onPasswordBlur}
+                ${fieldError(passwordError)}
               >
                 <!-- In the hint slot and not role="alert", like the network
                   name's -->
