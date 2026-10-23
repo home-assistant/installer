@@ -11,6 +11,59 @@ function activeElement(): Element | null {
   return active;
 }
 
+/** Whether an open modal dialog has the focus, leaving the rest inert. */
+export function dialogHasFocus(): boolean {
+  // Up through the slots and shadow roots the dialog's content sits in
+  let node: Node | null = activeElement();
+  while (node) {
+    if (node instanceof HTMLDialogElement && node.open) return true;
+    node =
+      (node instanceof Element && node.assignedSlot) ||
+      node.parentNode ||
+      (node instanceof ShadowRoot ? node.host : null);
+  }
+  return false;
+}
+
+/** What `focusHeading` focuses once the dialog that has the focus closes. */
+let pendingHeading: HTMLElement | null = null;
+
+function stopWaiting() {
+  pendingHeading = null;
+  document.removeEventListener("wa-after-hide", focusPendingHeading, true);
+}
+
+function focusPendingHeading() {
+  const heading = pendingHeading;
+  stopWaiting();
+  if (heading?.isConnected) focusHeading(heading);
+}
+
+/**
+ * Continue from `heading`, as screen readers do where a new view starts.
+ * Other text is focused like a heading.
+ *
+ * A modal dialog leaves the rest of the page inert, so while one has the
+ * focus, the heading takes it only once the dialog has closed. The dialog
+ * gives the focus back to what opened it, which may be gone by then, like
+ * Cancel on the success step, and the focus would fall to the page.
+ */
+export function focusHeading(heading: HTMLElement) {
+  // The latest place to continue from replaces one still waiting
+  stopWaiting();
+  // Focus only tells screen readers where to continue. A heading isn't
+  // something to act on, so it gets no focus ring (Chromium and WebView2
+  // draw one for focus set from script).
+  heading.tabIndex = -1;
+  heading.style.outline = "none";
+  heading.focus();
+  if (activeElement() !== heading && dialogHasFocus()) {
+    pendingHeading = heading;
+    // The dialog has closed and given back the focus by then
+    document.addEventListener("wa-after-hide", focusPendingHeading, true);
+  }
+}
+
 /** Focus new views and new errors, never ordinary form/progress updates. */
 export class ViewAccessibility implements ReactiveController {
   private _headingFocused = false;
@@ -44,7 +97,7 @@ export class ViewAccessibility implements ReactiveController {
       this._initialFocus = activeElement();
     }
     if (text && text !== this._alert) {
-      this._focus(alert!.querySelector<HTMLElement>("h1, h2") ?? alert!);
+      focusHeading(alert!.querySelector<HTMLElement>("h1, h2") ?? alert!);
       this._headingFocused = true;
     } else if (!this._headingFocused) {
       const heading = this.host.renderRoot.querySelector<HTMLElement>("h1, h2");
@@ -52,7 +105,7 @@ export class ViewAccessibility implements ReactiveController {
         const active = activeElement();
         // A delayed load must not interrupt someone who already moved on.
         if (active === this._initialFocus || active === document.body) {
-          this._focus(heading);
+          focusHeading(heading);
           // Only a stand-in: the view may know a better place to continue
           if (recovering) this._recovered = heading;
         }
@@ -78,17 +131,8 @@ export class ViewAccessibility implements ReactiveController {
     if (target.matches(CONTROLS)) {
       target.focus();
     } else {
-      this._focus(target);
+      focusHeading(target);
     }
-  }
-
-  private _focus(element: HTMLElement) {
-    // Focus only tells screen readers where the new view starts. A heading
-    // isn't something to act on, so it gets no focus ring (Chromium and
-    // WebView2 draw one for focus set from script).
-    element.tabIndex = -1;
-    element.style.outline = "none";
-    element.focus();
   }
 }
 

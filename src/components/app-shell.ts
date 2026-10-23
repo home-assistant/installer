@@ -731,6 +731,10 @@ export class AppShell extends LitElement {
   }
 
   private _onVmInstallComplete() {
+    // The install ended, so there is nothing left to stop, leave or quit,
+    // whether or not the view said so first
+    this._showStopDialog = false;
+    this._showLeaveDialog = false;
     this._showQuitDialog = false;
     // Advance to success step after the UTM or Proxmox install completes
     wizardState.nextStep();
