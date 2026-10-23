@@ -59,7 +59,6 @@ export class ConfirmationView extends LitElement {
 
       .drive-path {
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        overflow-wrap: anywhere;
       }
 
       inline-notice {

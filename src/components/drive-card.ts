@@ -91,9 +91,12 @@ export class DriveCard extends WaRadio {
         fill: var(--ha-primary-color, #03a9f4);
       }
 
+      /* A long name wraps, even mid-word, so the whole of it shows; so do
+         the vendor and model below it, which repeat its parts */
       .info {
         flex: 1;
         min-width: 0;
+        overflow-wrap: anywhere;
       }
 
       .name {
@@ -101,8 +104,6 @@ export class DriveCard extends WaRadio {
         font-weight: 500;
         color: var(--ha-text-color, #212121);
         margin: 0 0 0.25rem 0;
-        /* Wrap a long name, even mid-word, so the whole of it shows */
-        overflow-wrap: anywhere;
       }
 
       .details {

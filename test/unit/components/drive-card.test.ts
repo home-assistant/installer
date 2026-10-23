@@ -15,28 +15,46 @@ describe("drive-card", () => {
     expect(name!.textContent).to.equal("My USB Drive");
   });
 
-  for (const name of [
-    "SanDisk Cruzer Blade USB Device",
-    "GenericSTORAGEDEVICEMultiCardReaderUSB",
+  // The name is built from the vendor and model, which the details repeat
+  for (const [name, vendor, model] of [
+    ["SanDisk Cruzer Blade USB Device", "SanDisk", "Cruzer Blade"],
+    [
+      "GenericSTORAGEDEVICEMultiCardReaderUSB",
+      "Generic",
+      "STORAGEDEVICEMultiCardReaderUSB",
+    ],
   ]) {
-    it(`wraps ${name} instead of cutting it off`, async () => {
+    it(`wraps ${name} and its details instead of cutting them off`, async () => {
       // The drive list's width in the smallest window at 200% zoom
       const el = await fixture<DriveCard>(html`
         <drive-card
           style="width: 368px"
           name=${name}
+          vendor=${vendor}
+          model=${model}
           drive-size="32000000000"
         ></drive-card>
       `);
 
-      const shown = el.shadowRoot!.querySelector<HTMLElement>(".name")!;
-      const range = document.createRange();
-      range.selectNodeContents(shown);
-      expect(range.getClientRects().length).to.be.greaterThan(1);
-      expect(shown.scrollWidth).to.equal(shown.clientWidth);
-      expect(range.getBoundingClientRect().right).to.be.at.most(
-        el.shadowRoot!.querySelector(".size")!.getBoundingClientRect().left
-      );
+      /** The text of a line, as laid out */
+      const text = (selector: string) => {
+        const range = document.createRange();
+        range.selectNodeContents(el.shadowRoot!.querySelector(selector)!);
+        return range;
+      };
+      const size = el
+        .shadowRoot!.querySelector(".size")!
+        .getBoundingClientRect().left;
+
+      expect(text(".name").getClientRects().length).to.be.greaterThan(1);
+      for (const selector of [".name", ".details"]) {
+        const shown = el.shadowRoot!.querySelector<HTMLElement>(selector)!;
+        expect(shown.scrollWidth, selector).to.equal(shown.clientWidth);
+        expect(
+          text(selector).getBoundingClientRect().right,
+          selector
+        ).to.be.at.most(size);
+      }
     });
   }
 
