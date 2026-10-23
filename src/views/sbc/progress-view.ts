@@ -15,7 +15,6 @@ import { readDriveSelection } from "../../utils/drive-selection.js";
 import { selectedWifi } from "../../utils/wifi.js";
 import { findInstaller } from "../ha-hardware/hardware.js";
 import "../../components/install-progress.js";
-import "../../components/progress-bar.js";
 import { InstallProgressView } from "../install-progress-view.js";
 
 /**

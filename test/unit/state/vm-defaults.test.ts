@@ -1,6 +1,7 @@
 import { expect } from "@open-wc/testing";
 import {
   memoryOptionsUpTo,
+  proxmoxVmConfig,
   utmVmConfig,
 } from "../../../src/state/vm-defaults.js";
 
@@ -48,6 +49,23 @@ describe("vm-defaults", () => {
 
     it("never hands UTM an empty name", () => {
       expect(utmVmConfig({ vmName: "" }).name).to.equal("Home Assistant");
+    });
+  });
+
+  describe("proxmoxVmConfig", () => {
+    it("guesses no node or storage before the configure step picks them", () => {
+      const config = proxmoxVmConfig({});
+      expect(config.node).to.equal("");
+      expect(config.storage).to.equal("");
+    });
+
+    it("uses the node and storage the configure step picked", () => {
+      const config = proxmoxVmConfig({
+        proxmoxNode: "pve2",
+        proxmoxStorage: "local-lvm",
+      });
+      expect(config.node).to.equal("pve2");
+      expect(config.storage).to.equal("local-lvm");
     });
   });
 });

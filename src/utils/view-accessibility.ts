@@ -215,30 +215,3 @@ export const reducedMotionStyles = css`
     }
   }
 `;
-
-/** CSS cannot stop SVG SMIL animations. Keep their initial, static artwork. */
-export class ReducedSvgMotion implements ReactiveController {
-  private readonly _media = matchMedia("(prefers-reduced-motion: reduce)");
-  constructor(private readonly host: LitElement) {
-    host.addController(this);
-  }
-  hostConnected() {
-    this._media.addEventListener("change", this._apply);
-  }
-  hostDisconnected() {
-    this._media.removeEventListener("change", this._apply);
-  }
-  hostUpdated() {
-    this._apply();
-  }
-  private readonly _apply = () => {
-    for (const svg of this.host.renderRoot.querySelectorAll("svg")) {
-      if (this._media.matches) {
-        svg.pauseAnimations();
-        svg.setCurrentTime(0);
-      } else {
-        svg.unpauseAnimations();
-      }
-    }
-  };
-}

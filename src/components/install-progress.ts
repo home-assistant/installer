@@ -19,7 +19,6 @@ import { openExternalLink } from "../utils/external-url.js";
 import { linkStyles } from "../utils/link-styles.js";
 import {
   LiveStatus,
-  ReducedSvgMotion,
   ViewAccessibility,
   reducedMotionStyles,
   srOnlyStyles,
@@ -33,7 +32,6 @@ export interface InstallStage {
 @customElement("install-progress")
 export class InstallProgress extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
-  protected readonly _svgMotion = new ReducedSvgMotion(this);
   private readonly _status = new LiveStatus(this);
 
   static styles = [

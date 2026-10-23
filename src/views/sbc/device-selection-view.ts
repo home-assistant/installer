@@ -7,7 +7,6 @@ import {
 } from "../../utils/view-accessibility.js";
 import { customElement } from "lit/decorators.js";
 import type { Device, DeviceCategory } from "../../api/index.js";
-import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/device-card.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 import { loadStateStyles } from "../../utils/load-state.js";

@@ -58,14 +58,14 @@ export function utmVmConfig(
  */
 export const DEFAULT_PROXMOX_VM_NAME = "home-assistant";
 export const DEFAULT_PROXMOX_VM_ID = 100;
-export const DEFAULT_PROXMOX_NODE = "pve";
-export const DEFAULT_PROXMOX_STORAGE = "local";
 
 /** The VM a Proxmox install creates, so its checks and the install agree. */
 export function proxmoxVmConfig(selections: WizardSelections): ProxmoxVmConfig {
   return {
-    node: selections.proxmoxNode || DEFAULT_PROXMOX_NODE,
-    storage: selections.proxmoxStorage || DEFAULT_PROXMOX_STORAGE,
+    // Only what the server listed: a guess like "pve" could put the VM on a
+    // node or storage nobody picked. The configure step waits for both.
+    node: selections.proxmoxNode ?? "",
+    storage: selections.proxmoxStorage ?? "",
     bridge: selections.proxmoxBridge ?? "",
     vlan_tag: selections.proxmoxVlanTag,
     vm_id: selections.proxmoxVmId ?? DEFAULT_PROXMOX_VM_ID,

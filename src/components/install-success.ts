@@ -8,7 +8,6 @@ import { getPlatform } from "../utils/platform.js";
 import { renderCasitaHappy } from "./install-mascot.js";
 import "./inline-notice.js";
 import {
-  ReducedSvgMotion,
   ViewAccessibility,
   reducedMotionStyles,
 } from "../utils/view-accessibility.js";
@@ -16,7 +15,6 @@ import {
 @customElement("install-success")
 export class InstallSuccess extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
-  protected readonly _svgMotion = new ReducedSvgMotion(this);
 
   static styles = [
     reducedMotionStyles,

@@ -15,7 +15,7 @@ export interface VmResourceValues {
   diskSizeGb: number;
 }
 
-export function formatCores(cores: number): string {
+function formatCores(cores: number): string {
   return localize("components.vm_resources.cores", {
     count: cores,
   });

@@ -17,7 +17,6 @@ import {
   isYellow,
   type HaHardware,
 } from "./hardware.js";
-import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/device-card.js";
 import "../../components/info-dialog.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";

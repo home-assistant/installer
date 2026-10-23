@@ -1,9 +1,6 @@
 import { localize } from "../../localization/localize.js";
 import { LitElement, html } from "lit";
-import {
-  ViewAccessibility,
-  reducedMotionStyles,
-} from "../../utils/view-accessibility.js";
+import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { logFrontendError } from "../../utils/diagnostics.js";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState } from "../../state/wizard-state.js";
@@ -43,7 +40,6 @@ export class UtmConfigureView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     stepStyles,
-    reducedMotionStyles,
     settingStyles,
     fieldErrorStyles,
     configCardStyles,

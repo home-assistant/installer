@@ -6,11 +6,10 @@ import type WaProgressBar from "@home-assistant/webawesome/dist/components/progr
 import "@home-assistant/webawesome/dist/components/progress-bar/progress-bar.js";
 
 /**
- * Thin wrapper over `<wa-progress-bar>`.
- *
- * Kept as its own element so the three progress views (and the e2e selectors
- * that target them) stay unchanged, while the bar itself gets Web Awesome's
- * `role="progressbar"` and aria-value handling instead of two bare divs.
+ * `<wa-progress-bar>` in the app's colors, as `install-progress` shows it for
+ * every install. It adds what Web Awesome leaves out: a rule for reduced
+ * motion, no slide back when a stage counts from 0 again, and no 0% read out
+ * while a wait has no value.
  */
 @customElement("progress-bar")
 export class ProgressBar extends LitElement {
@@ -24,10 +23,6 @@ export class ProgressBar extends LitElement {
       --track-height: 8px;
       --indicator-color: var(--ha-primary-color, #03a9f4);
       --track-color: var(--ha-border-color, #e0e0e0);
-    }
-
-    wa-progress-bar.error {
-      --indicator-color: var(--ha-error-color, #db4437);
     }
 
     /* Web Awesome has no reduced-motion rule of its own */
@@ -57,9 +52,6 @@ export class ProgressBar extends LitElement {
 
   @property({ type: Boolean })
   indeterminate = false;
-
-  @property({ type: Boolean })
-  error = false;
 
   @property({ type: String })
   label = "";
@@ -93,7 +85,6 @@ export class ProgressBar extends LitElement {
       this._run,
       html`
         <wa-progress-bar
-          class=${this.error ? "error" : ""}
           ?indeterminate=${this.indeterminate}
           value=${value}
           label=${this.label || localize("common.progress")}

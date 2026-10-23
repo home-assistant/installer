@@ -200,35 +200,6 @@ describe("progress-bar", () => {
     expect(bar(el).value).to.equal(20);
   });
 
-  it("renders with error state", async () => {
-    const el = await fixture<ProgressBar>(html`
-      <progress-bar error progress="30"></progress-bar>
-    `);
-
-    expect(bar(el).classList.contains("error")).to.be.true;
-  });
-
-  it("does not show error class when error is false", async () => {
-    const el = await fixture<ProgressBar>(html`
-      <progress-bar progress="30"></progress-bar>
-    `);
-
-    expect(bar(el).classList.contains("error")).to.be.false;
-  });
-
-  it("can toggle error state", async () => {
-    const el = await fixture<ProgressBar>(html`
-      <progress-bar progress="30"></progress-bar>
-    `);
-
-    expect(bar(el).classList.contains("error")).to.be.false;
-
-    el.error = true;
-    await el.updateComplete;
-
-    expect(bar(el).classList.contains("error")).to.be.true;
-  });
-
   it("exposes a label to assistive technology", async () => {
     const el = await fixture<ProgressBar>(html`<progress-bar></progress-bar>`);
 

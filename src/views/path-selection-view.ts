@@ -62,18 +62,6 @@ export class PathSelectionView extends LitElement {
         width: 100%;
         margin-bottom: auto;
       }
-
-      .other-options {
-        margin-top: 2rem;
-        font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #9e9e9e);
-        text-decoration: underline;
-        cursor: pointer;
-      }
-
-      .other-options:hover {
-        color: var(--ha-primary-color, #03a9f4);
-      }
     `,
   ];
 

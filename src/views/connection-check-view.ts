@@ -7,7 +7,6 @@ import { linkStyles } from "../utils/link-styles.js";
 import { renderRetryButton } from "../utils/load-state.js";
 import { pageHeaderStyles, renderBackHeader } from "../utils/page-header.js";
 import { ViewAccessibility } from "../utils/view-accessibility.js";
-import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../components/casita-mascot.js";
 import "../components/loading-spinner.js";
 

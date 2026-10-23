@@ -131,16 +131,7 @@ test("every supplied mood loads as nonblank static artwork", async ({
   await page.goto("/");
   // The app shell loads after locale detection, so wait for it to render.
   await page.locator("welcome-view").waitFor({ state: "attached" });
-  for (const mood of [
-    "happy",
-    "grinning",
-    "loving",
-    "winking",
-    "loading",
-    "focusing",
-    "sad",
-    "problem",
-  ]) {
+  for (const mood of ["happy", "loading", "focusing", "sad", "problem"]) {
     const result = await page.evaluate(async (mood) => {
       await customElements.whenDefined("casita-mascot");
       const mascot = document.createElement("casita-mascot") as HTMLElement & {

@@ -13,7 +13,6 @@ import {
   type DeviceCategory,
 } from "../../api/index.js";
 import { getPlatform } from "../../utils/platform.js";
-import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/option-card.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 import { loadStateStyles } from "../../utils/load-state.js";

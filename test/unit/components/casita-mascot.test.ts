@@ -3,16 +3,7 @@ import "../../../src/components/casita-mascot.js";
 import type { CasitaMascot } from "../../../src/components/casita-mascot.js";
 
 describe("casita-mascot", () => {
-  for (const mood of [
-    "happy",
-    "grinning",
-    "loving",
-    "winking",
-    "loading",
-    "focusing",
-    "sad",
-    "problem",
-  ]) {
+  for (const mood of ["happy", "loading", "focusing", "sad", "problem"]) {
     it(`renders the supplied ${mood} artwork decoratively`, async () => {
       const el = await fixture<CasitaMascot>(
         html`<casita-mascot mood=${mood}></casita-mascot>`
