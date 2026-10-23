@@ -57,14 +57,21 @@ async function expectChosen(
   await expect(other.locator(".selected-indicator")).toHaveCount(0);
 }
 
-// The ring sits outside the border, in a color of its own, so a focused card
-// stays apart from the chosen one. Chromium forces it to the text color;
-// WebKit only matches the media query and keeps the theme's colors.
-async function expectFocusRing(card: Locator, system: SystemColors) {
+// The ring sits outside the border. On a radio it has a color of its own, so
+// a focused card stays apart from the chosen one: Chromium forces it to the
+// text color, and WebKit only matches the media query and keeps the theme's
+// colors. A card that is never chosen may draw it in Highlight.
+async function expectFocusRing(
+  card: Locator,
+  system: SystemColors,
+  { canBeChosen = true } = {}
+) {
   const ring = card.locator(".card");
   await expect(ring).toHaveCSS("outline-style", "solid");
   await expect(ring).not.toHaveCSS("outline-width", "0px");
-  await expect(ring).not.toHaveCSS("outline-color", system.highlight);
+  if (canBeChosen) {
+    await expect(ring).not.toHaveCSS("outline-color", system.highlight);
+  }
 }
 
 test("forced colors keep the focused device and the chosen drive apart", async ({
@@ -100,7 +107,7 @@ test("forced colors keep the focused device and the chosen drive apart", async (
   // Picking a device goes on, so none is chosen
   const devices = page.locator("device-selection-view device-card");
   await tabTo(page, devices.nth(1));
-  await expectFocusRing(devices.nth(1), system);
+  await expectFocusRing(devices.nth(1), system, { canBeChosen: false });
   await page.screenshot({
     path: testInfo.outputPath("forced-colors-device.png"),
   });

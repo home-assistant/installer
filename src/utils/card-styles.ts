@@ -3,9 +3,9 @@ import { css } from "lit";
 /**
  * The frame the option, device and drive cards share: a `.card` in the card
  * colors that lights up under the pointer, gives a little when pressed, and
- * shows the focus ring when its host has the focus. A card that is checked,
- * as a drive radio is, keeps the lit border with a ring around it. Each card
- * adds its own layout.
+ * shows the focus ring when it or its host has the focus. A card that is
+ * checked, as a drive radio is, keeps the lit border with a ring around it.
+ * Each card adds its own layout.
  */
 export const selectableCardStyles = css`
   :host {
@@ -40,7 +40,11 @@ export const selectableCardStyles = css`
     }
   }
 
-  :host(:focus-visible) .card {
+  /* A drive radio takes the focus on its host. The option and device cards
+     take it on the card, and a host that hands it on doesn't match
+     :focus-visible */
+  :host(:focus-visible) .card,
+  .card:focus-visible {
     outline: var(--wa-focus-ring);
     outline-offset: var(--wa-focus-ring-offset);
   }

@@ -1,9 +1,9 @@
 import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures.js";
 
-// The device and drive cards extend Web Awesome's radio, but should look like
-// the option and summary cards next to them: Web Awesome's own dark surface is
-// a navy darker than the page, and its quiet text a bluish grey.
+// The drive cards extend Web Awesome's radio, but should look like the option,
+// device and summary cards next to them: Web Awesome's own dark surface is a
+// navy darker than the page, and its quiet text a bluish grey.
 
 /** A CSS color value as the browser computes it, so it compares as text. */
 function resolveColor(page: Page, value: string) {
@@ -17,6 +17,44 @@ function resolveColor(page: Page, value: string) {
 }
 
 for (const colorScheme of ["light", "dark"] as const) {
+  // The focus sits on the card inside them, where the browser would draw its
+  // own outline
+  test(`${colorScheme} option and device cards show the theme's focus ring`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+    await page.goto("/");
+    await page.locator("welcome-view").waitFor({ state: "attached" });
+    const ring = await page.evaluate(() => {
+      document.querySelector("app-shell")!.remove();
+      const option = document.createElement("option-card");
+      option.setAttribute("heading", "Test option");
+      const device = document.createElement("device-card");
+      device.setAttribute("name", "Test device");
+      const probe = document.createElement("div");
+      probe.style.outline = "var(--wa-focus-ring)";
+      document.body.append(option, device, probe);
+      const { outlineStyle, outlineWidth, outlineColor } =
+        getComputedStyle(probe);
+      probe.remove();
+      return { outlineStyle, outlineWidth, outlineColor };
+    });
+    expect(ring.outlineStyle).toBe("solid");
+
+    for (const tag of ["option-card", "device-card"]) {
+      await page.keyboard.press("Tab");
+      const card = page.locator(`${tag} .card`);
+      await expect(card).toBeFocused();
+      for (const [name, value] of [
+        ["outline-style", ring.outlineStyle],
+        ["outline-width", ring.outlineWidth],
+        ["outline-color", ring.outlineColor],
+      ]) {
+        await expect(card).toHaveCSS(name, value);
+      }
+    }
+  });
+
   test(`${colorScheme} device and drive cards match the other cards`, async ({
     page,
   }) => {
