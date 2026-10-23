@@ -47,11 +47,11 @@ describe("minipc-architecture-selection-view focus", () => {
     const el = await fixture<MiniPCArchitectureSelectionView>(
       html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`
     );
-    // A loading failure focuses its alert, next to the retry control. The
+    // A loading failure focuses its message, next to the retry control. The
     // heading, there while it loads, has the focus until then.
     await waitUntil(
-      () => el.shadowRoot!.activeElement?.getAttribute("role") === "alert",
-      "the alert never got the focus"
+      () => el.shadowRoot!.activeElement?.hasAttribute("data-focus-alert"),
+      "the error never got the focus"
     );
   });
 
@@ -175,6 +175,15 @@ describe("minipc-architecture-selection-view choices", () => {
     expect(checks()).to.deep.equal([true, false]);
   });
 
+  it("keeps the processor logos from screen readers", async () => {
+    const el = await renderChoices();
+    await el.shadowRoot!.querySelector("wa-radio-group")!.updateComplete;
+    const tree = await fullA11ySnapshot();
+
+    expect(findByRole(tree, "image")).to.deep.equal([]);
+    expect(findByRole(tree, "radio")[0]!.name).to.contain("Intel/AMD (x86-64)");
+  });
+
   // Apple silicon Macs also report "Intel Mac OS X"
   const macUserAgent =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";
@@ -257,7 +266,7 @@ describe("minipc-architecture-selection-view choices", () => {
         : MOCK_MANIFEST
     );
     expect(
-      el.shadowRoot!.querySelector('[role="alert"]')!.textContent
+      el.shadowRoot!.querySelector("[data-focus-alert]")!.textContent
     ).to.contain("Could not connect");
 
     const retry = [...el.shadowRoot!.querySelectorAll("wa-button")].find(
@@ -267,6 +276,6 @@ describe("minipc-architecture-selection-view choices", () => {
     await waitUntil(() => radios(el).length === 2, "catalog never reloaded");
 
     expect(attempts).to.equal(2);
-    expect(el.shadowRoot!.querySelector('[role="alert"]')).to.not.exist;
+    expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.not.exist;
   });
 });

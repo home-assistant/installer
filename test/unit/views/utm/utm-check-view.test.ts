@@ -138,7 +138,7 @@ describe("utm-check-view", () => {
         automation.reject(ipcError("utm", "Not allowed to control UTM", true));
       await settle();
       expect(wizardState.getState().selections.utmInstalled).to.equal(allowed);
-      expect(current.shadowRoot!.querySelector('[role="alert"]')).to.equal(
+      expect(current.shadowRoot!.querySelector("[data-focus-alert]")).to.equal(
         null
       );
     });
@@ -168,7 +168,7 @@ describe("utm-check-view", () => {
     await settle();
     await settle();
     expect(
-      el.shadowRoot!.querySelector('[role="alert"]')!.textContent
+      el.shadowRoot!.querySelector("[data-focus-alert]")!.textContent
     ).to.contain("Privacy & Security > Automation");
     expect(wizardState.getState().selections.utmInstalled).to.be.false;
 
@@ -305,7 +305,7 @@ describe("utm-check-view artwork", () => {
     expect(text).to.include("Apple silicon");
     // None of it applies when the option can't run here at all
     expect(el.shadowRoot!.querySelector("inline-notice")).to.equal(null);
-    expect(el.shadowRoot!.querySelector('[role="alert"]')).to.equal(null);
+    expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.equal(null);
     expect(text).not.to.include("Error checking UTM");
     expect(text).not.to.include("Try again");
     expect(wizardState.getState().selections.utmInstalled).to.be.false;

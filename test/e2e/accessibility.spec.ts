@@ -87,7 +87,7 @@ for (const [flow, tag] of [
       },
       { flow, tag }
     );
-    await expect(page.getByRole("alert")).toBeFocused();
+    await expect(page.locator("[data-focus-alert]")).toBeFocused();
     await page.getByRole("button", { name: "Try again", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(page.locator(`${tag} h2`)).toBeFocused();
@@ -621,7 +621,7 @@ for (const tag of [
         details: {},
       };
     }, tag);
-    await expect(page.getByRole("alert")).toBeFocused();
+    await expect(page.locator("[data-focus-alert]")).toBeFocused();
     await expect(
       page.locator(`${tag} casita-mascot[mood="problem"] img`)
     ).toBeVisible();
@@ -656,7 +656,5 @@ test("disk installation keeps heading focus after the confirmation dialog closes
       .locator("success-view")
       .getByRole("heading", { name: "You're all set!" })
   ).toBeFocused({ timeout: 20000 });
-  await expect(page.locator("success-view").getByRole("alert")).toContainText(
-    "You're all set!"
-  );
+  await expect(page.locator("success-view").getByRole("alert")).toHaveCount(0);
 });

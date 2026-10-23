@@ -209,6 +209,21 @@ describe("drive-card", () => {
     expect(icon).to.exist;
   });
 
+  // The icon only pictures the drive's kind; the card's text names the drive
+  it("keeps its icon from screen readers", async () => {
+    await fixture<DriveCard>(html`
+      <drive-card
+        value="/dev/sda"
+        name="SanDisk"
+        device-type="sd_card"
+      ></drive-card>
+    `);
+    const tree = await fullA11ySnapshot();
+
+    expect(findByRole(tree, "image")).to.deep.equal([]);
+    expect(findByRole(tree, "radio")[0]!.name).to.contain("SanDisk");
+  });
+
   it("displays vendor and model in details", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test" vendor="SanDisk" model="Ultra"></drive-card>

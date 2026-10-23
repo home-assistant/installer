@@ -93,7 +93,8 @@ export class ConnectionCheckView extends LitElement {
   }
 
   render() {
-    // Both regions stay in the DOM, so a change to either is announced
+    // The status stays in the DOM, so each change to it is announced. The
+    // error takes the focus instead, which reads it out.
     return html`
       ${renderBackHeader(this._back)}
       <div class="content">
@@ -115,7 +116,7 @@ export class ConnectionCheckView extends LitElement {
               ? localize("views.connection_check_view.connecting")
               : ""}
           </p>
-          <p role="alert">${this._error}</p>
+          <p data-focus-alert>${this._error}</p>
         </div>
         ${this._failed
           ? renderRetryButton(this._checking, () => this._check())

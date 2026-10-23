@@ -112,6 +112,7 @@ export const haIcon = html`
 /**
  * One row of the summary: an icon, what the row is about and its value.
  * `details` go below the value, as `<p class="summary-detail">` lines.
+ * The label already says what the icon shows, so screen readers skip it.
  */
 export function renderSummaryRow(
   icon: unknown,
@@ -121,7 +122,7 @@ export function renderSummaryRow(
 ) {
   return html`
     <div class="summary-row">
-      <div class="icon-container">${icon}</div>
+      <div class="icon-container" aria-hidden="true">${icon}</div>
       <div class="summary-info">
         <p class="summary-label">${label}</p>
         <p class="summary-value">${value}</p>

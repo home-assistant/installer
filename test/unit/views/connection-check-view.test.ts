@@ -9,9 +9,9 @@ import {
   settle,
 } from "../tauri-ipc.js";
 
-/** The alert stays in the DOM, so a failure shows up as its text */
+/** The error stays in the DOM, so a failure shows up as its text */
 const alertText = (el: ConnectionCheckView) =>
-  el.shadowRoot!.querySelector('[role="alert"]')!.textContent!.trim();
+  el.shadowRoot!.querySelector("[data-focus-alert]")!.textContent!.trim();
 
 describe("connection-check-view", () => {
   afterEach(restoreTauriIpc);
@@ -69,7 +69,7 @@ describe("connection-check-view", () => {
     );
     await waitUntil(() => !!alertText(el));
     const status = el.shadowRoot!.querySelector('[role="status"]')!;
-    const alert = el.shadowRoot!.querySelector('[role="alert"]')!;
+    const alert = el.shadowRoot!.querySelector("[data-focus-alert]")!;
     // The failure takes focus, so it is read out
     expect(el.shadowRoot!.activeElement).to.equal(alert);
 
@@ -91,7 +91,7 @@ describe("connection-check-view", () => {
 
     retry.reject(ipcError("network", "Still offline", true));
     await waitUntil(() => !!alertText(el));
-    expect(el.shadowRoot!.querySelector('[role="alert"]')).to.equal(alert);
+    expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.equal(alert);
     expect(status.textContent!.trim()).to.equal("");
   });
 

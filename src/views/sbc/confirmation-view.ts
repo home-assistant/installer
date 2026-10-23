@@ -118,13 +118,14 @@ export class ConfirmationView extends LitElement {
       <div class="summary-card">
         <!-- Device -->
         ${renderSummaryRow(
+          // The device's name is right next to its picture
           deviceImage
             ? html`<img
                 class=${deviceImage.endsWith(".svg")
                   ? "device-icon"
                   : "device-image"}
                 src=${deviceImage}
-                alt=${deviceName}
+                alt=""
               />`
             : html`<div class="device-image-placeholder">
                 ${renderSummaryIcon(boardIcon)}
