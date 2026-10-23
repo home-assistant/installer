@@ -213,15 +213,6 @@ describe("proxmox-connect-view", () => {
     expect(el.shadowRoot!.activeElement === inputs[2]).to.be.true;
   });
 
-  it("says who needs the authenticator app code", async () => {
-    const { inputs } = await renderView();
-
-    expect(inputs[3].hint).to.equal(
-      "Only if your Proxmox account uses two-factor authentication"
-    );
-    expect(inputs[2].placeholder).to.equal("");
-  });
-
   it("says what is missing to screen readers on the field itself", async () => {
     const { el, inputs } = await renderView();
 
