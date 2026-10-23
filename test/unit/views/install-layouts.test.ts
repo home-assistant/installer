@@ -96,10 +96,7 @@ describe("shared install layouts", () => {
         }
       }
       let errors = 0;
-      view.addEventListener(
-        flow === "sbc" ? "flash-error" : "install-error",
-        () => errors++
-      );
+      view.addEventListener("install-error", () => errors++);
       // A retryable failure whose code has no fixed text keeps its message
       reject({
         code: "test_failure",

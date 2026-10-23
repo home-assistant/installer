@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.js";
 
 test("certificate approval precedes authentication at 390px", async ({
   page,

@@ -186,35 +186,17 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
   }
 
   protected _stageTitle(stage: BackendStage): string {
-    switch (stage) {
-      case "downloading":
-        return localize("common.install.downloading");
-      case "extracting":
-        return localize("common.install.extracting");
-      case "uploading":
-        return localize("views.proxmox.proxmox_progress_view.uploading");
-      case "creating_vm":
-        return localize("common.vm.creating");
-      case "starting_vm":
-        return localize("common.vm.starting");
-    }
+    return stage === "uploading"
+      ? localize("views.proxmox.proxmox_progress_view.uploading")
+      : super._stageTitle(stage);
   }
 
   protected _stageDescription(stage: BackendStage): string {
-    switch (stage) {
-      case "downloading":
-        return localize("common.vm.downloading_home_assistant_os");
-      case "extracting":
-        return localize("common.install.extracting_the_image");
-      case "uploading":
-        return localize(
+    return stage === "uploading"
+      ? localize(
           "views.proxmox.proxmox_progress_view.uploading_image_to_proxmox"
-        );
-      case "creating_vm":
-        return localize("common.vm.creating_virtual_machine");
-      case "starting_vm":
-        return localize("common.vm.starting_home_assistant_os");
-    }
+        )
+      : super._stageDescription(stage);
   }
 }
 

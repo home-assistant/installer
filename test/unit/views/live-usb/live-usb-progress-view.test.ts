@@ -48,7 +48,7 @@ describe("live-usb-progress-view", () => {
       html`<live-usb-progress-view></live-usb-progress-view>`
     );
     let completed = 0;
-    el.addEventListener("flash-complete", () => completed++);
+    el.addEventListener("install-complete", () => completed++);
     await settle();
 
     expect(calls).to.have.length(1);
@@ -116,6 +116,26 @@ describe("live-usb-progress-view", () => {
     );
   });
 
+  it("leaves a flow started since alone when an earlier ISO save ends", async () => {
+    wizardState.setSelection("liveMedia", "iso");
+    wizardState.setSelection("liveIsoFolder", "/home/me");
+    wizardState.setSelection("liveIsoName", "stick.iso");
+    const calls = mockCommands();
+    const el = fixtureSync<LiveUsbProgressView>(
+      html`<live-usb-progress-view></live-usb-progress-view>`
+    );
+    let completed = 0;
+    el.addEventListener("install-complete", () => completed++);
+    await settle();
+
+    wizardState.startFlow("minipc");
+    calls[0].result.resolve("/home/me/stick.iso");
+    await settle();
+
+    expect(wizardState.getState().selections).to.deep.equal({});
+    expect(completed).to.equal(0);
+  });
+
   it("shows a backend error and reports whether it can be retried", async () => {
     wizardState.setSelection("liveMedia", "usb");
     storeDriveSelection(MOCK_BLOCK_DEVICES[0]);
@@ -124,7 +144,7 @@ describe("live-usb-progress-view", () => {
       html`<live-usb-progress-view></live-usb-progress-view>`
     );
     const errors: boolean[] = [];
-    el.addEventListener("flash-error", (event) =>
+    el.addEventListener("install-error", (event) =>
       errors.push(
         (event as CustomEvent<{ retryable: boolean }>).detail.retryable
       )

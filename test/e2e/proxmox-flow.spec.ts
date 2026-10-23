@@ -1,5 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { approveProxmoxImport } from "./fixtures.js";
+import { type Page } from "@playwright/test";
+import { approveProxmoxImport, test, expect } from "./fixtures.js";
 
 test.describe("Proxmox Installation Flow", () => {
   test.beforeEach(async ({ page }) => {

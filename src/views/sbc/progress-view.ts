@@ -3,9 +3,8 @@ import {
   installerError,
   type InstallerError,
 } from "../../utils/installer-error.js";
-import { LitElement, html, css } from "lit";
+import { html } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import {
   cancelFlash,
   flashImage,
@@ -16,10 +15,7 @@ import { selectedWifi } from "../../utils/wifi.js";
 import { findInstaller } from "../ha-hardware/hardware.js";
 import "../../components/install-progress.js";
 import "../../components/progress-bar.js";
-import {
-  InstallDiagnostics,
-  logFrontendError,
-} from "../../utils/diagnostics.js";
+import { InstallProgressView } from "../install-progress-view.js";
 
 /**
  * Failures the user fixes on this computer: a cancelled password prompt or
@@ -34,120 +30,44 @@ const FIXED_ON_THIS_COMPUTER = [
 ];
 
 @customElement("progress-view")
-export class ProgressView extends LitElement {
-  static styles = css`
-    :host {
-      display: flex;
-      flex-direction: column;
-      min-height: 100%;
-    }
-    install-progress {
-      width: 100%;
-      flex: 1;
-    }
-  `;
-
-  @state()
-  private _wizardState: WizardState = wizardState.getState();
+export class ProgressView extends InstallProgressView {
+  protected readonly _flow = "flash";
 
   @state()
   private _progress: FlashProgress | null = null;
 
-  @state()
-  private _error: InstallerError | null = null;
-
-  @state()
-  private _isFlashing = false;
-
-  @state()
-  private _stopping = false;
-
   /** Whether this attempt got as far as the drive. */
   private _reachedDrive = false;
 
-  /** Names the running attempt, so a late stop can never hit a retry. */
-  private _attempt = "";
-
-  private _stageStartTime: number | null = null;
-  private _diagnostics?: InstallDiagnostics;
-  private _stageStartBytes: number = 0;
-
-  /** Whether the flash operation has failed */
-  get hasError(): boolean {
-    return this._error !== null;
+  protected _cancel(attempt: string): Promise<void> {
+    return cancelFlash(attempt);
   }
 
-  /** Retry the flash operation */
-  retry(): void {
-    if (!this._error?.retryable) return;
-    this._error = null;
+  protected _resetProgress() {
     this._progress = null;
-    this._stageStartTime = null;
-    this._stageStartBytes = 0;
-    void this._startFlashing();
   }
 
-  /** Stop the running flash. It ends as a retryable `cancelled` error. */
-  stop(): void {
-    if (!this._isFlashing || this._stopping) return;
-
-    this._stopping = true;
-    const attempt = this._attempt;
-    cancelFlash(attempt).catch((error: unknown) => {
-      logFrontendError(error);
-      // A late failure must not touch a retry that is stopping by now
-      if (attempt !== this._attempt || !this._isFlashing) return;
-
-      // The flash keeps going; show it as such again
-      this._stopping = false;
-      this.dispatchEvent(
-        new CustomEvent("flash-stop-failed", { bubbles: true, composed: true })
-      );
-    });
-  }
-
-  private _unsubscribe?: () => void;
-
-  connectedCallback() {
-    super.connectedCallback();
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-    });
-
-    // Start flashing when view is connected
-    void this._startFlashing();
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this._unsubscribe?.();
-  }
-
-  private async _startFlashing() {
-    if (this._isFlashing) return;
-
-    this._isFlashing = true;
-    this._reachedDrive = false;
-    this._attempt = crypto.randomUUID();
-    this._diagnostics = new InstallDiagnostics("flash");
-    this._error = null;
-
+  protected _startFailure() {
     const selections = this._wizardState.selections;
-    const drive = readDriveSelection(selections);
-    const deviceConfig = selections.deviceConfig;
-
-    if (!drive || !deviceConfig) {
-      this._isFlashing = false;
-      this._setError(
-        localize(
-          "views.sbc.progress_view.missing_drive_or_device_configuration"
-        )
-      );
-      return;
+    if (readDriveSelection(selections) && selections.deviceConfig) {
+      return undefined;
     }
+    return {
+      error: localize(
+        "views.sbc.progress_view.missing_drive_or_device_configuration"
+      ),
+    };
+  }
 
-    try {
-      await flashImage(
+  protected async _install() {
+    this._reachedDrive = false;
+    const selections = this._wizardState.selections;
+    // `_startFailure` holds back a flash without them
+    const drive = readDriveSelection(selections)!;
+    const deviceConfig = selections.deviceConfig!;
+
+    await this._runStoppable((attempt) =>
+      flashImage(
         {
           device_id: drive.id,
           board: deviceConfig.board,
@@ -175,61 +95,27 @@ export class ProgressView extends LitElement {
           if (["writing", "verifying", "finalizing"].includes(progress.stage)) {
             this._reachedDrive = true;
           }
-
-          // If we've completed, advance to next step
-          if (progress.stage === "complete") {
-            this._onComplete();
-          }
         },
-        this._attempt
-      );
-    } catch (err) {
-      this._setError(err, this._stoppedMessage(err));
-    } finally {
-      this._isFlashing = false;
-      this._stopping = false;
-    }
+        attempt
+      )
+    );
+    return {};
   }
 
-  /** Say what a stop left behind, rather than a generic "cancelled". */
-  private _stoppedMessage(error: unknown): string | undefined {
-    if (!this._stopping || installerError(error).code !== "cancelled") {
-      return undefined;
-    }
+  protected _installerError(error: unknown): InstallerError {
+    const installer = installerError(error);
+    return {
+      ...installer,
+      retryable:
+        installer.retryable || FIXED_ON_THIS_COMPUTER.includes(installer.code),
+    };
+  }
 
+  protected _stoppedMessage(): string {
     if (this._reachedDrive) {
       return localize("views.sbc.progress_view.stopped_drive_not_ready");
     }
     return localize("views.sbc.progress_view.stopped_nothing_written");
-  }
-
-  private _setError(error: unknown, message?: string) {
-    this._diagnostics?.fail(error);
-    const installer = installerError(error);
-    const retryable =
-      installer.retryable || FIXED_ON_THIS_COMPUTER.includes(installer.code);
-    this._error = {
-      ...installer,
-      retryable,
-      message: message ?? installer.message,
-    };
-    this.dispatchEvent(
-      new CustomEvent("flash-error", {
-        detail: { retryable: this._error.retryable },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
-  private _onComplete() {
-    // Dispatch event to notify parent
-    this.dispatchEvent(
-      new CustomEvent("flash-complete", {
-        bubbles: true,
-        composed: true,
-      })
-    );
   }
 
   render() {

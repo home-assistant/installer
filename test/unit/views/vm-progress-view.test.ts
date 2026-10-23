@@ -7,10 +7,8 @@ import {
 } from "@open-wc/testing";
 import type { FlashProgress } from "../../../src/api/types.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
-import {
-  VmProgressView,
-  type VmInstallFailure,
-} from "../../../src/views/vm-progress-view.js";
+import type { InstallFailure } from "../../../src/views/install-progress-view.js";
+import { VmProgressView } from "../../../src/views/vm-progress-view.js";
 import {
   deferred,
   ipcError,
@@ -39,7 +37,7 @@ class TestProgressView extends VmProgressView<TestStage> {
   protected readonly _measurableStages = ["downloading"];
 
   steps: Steps = () => new Promise(() => {});
-  startFailure?: VmInstallFailure;
+  startFailure?: InstallFailure;
 
   protected _stoppedMessage() {
     return "Stopped. Nothing was built.";
@@ -99,10 +97,7 @@ class TestProgressView extends VmProgressView<TestStage> {
 customElements.define("test-vm-progress-view", TestProgressView);
 
 /** Mount the view, which starts the install with `steps` as it connects */
-function mount(
-  steps?: Steps,
-  startFailure?: VmInstallFailure
-): TestProgressView {
+function mount(steps?: Steps, startFailure?: InstallFailure): TestProgressView {
   const el = document.createElement(
     "test-vm-progress-view"
   ) as TestProgressView;

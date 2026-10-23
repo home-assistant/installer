@@ -1,5 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { skipWifiStep } from "./fixtures.js";
+import { type Page } from "@playwright/test";
+import { skipWifiStep, test, expect } from "./fixtures.js";
 
 // Browser tests mock native IPC, metadata, clipboard and folder/browser opening.
 // No disk is written and no VM or network connection is created.

@@ -1,5 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { approveProxmoxImport } from "./fixtures.js";
+import { type Page } from "@playwright/test";
+import { approveProxmoxImport, test, expect } from "./fixtures.js";
 
 type CreateVmArgs = { config: { bridge: string; vlan_tag?: number } };
 

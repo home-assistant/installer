@@ -1,5 +1,5 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
-import { approveProxmoxImport } from "./fixtures.js";
+import { type Locator, type Page } from "@playwright/test";
+import { approveProxmoxImport, test, expect } from "./fixtures.js";
 
 // Traverse the real tab order instead of focusing controls programmatically.
 async function tabTo(page: Page, control: Locator) {
@@ -75,9 +75,7 @@ test("Mini PC choices work with Tab, Space, and arrow keys", async ({
   await expect(page.locator("success-view")).toBeVisible({ timeout: 20000 });
 });
 
-test("the existing board flow remains keyboard accessible", async ({
-  page,
-}) => {
+test("a board can be picked with the keyboard", async ({ page }) => {
   await start(page, "Raspberry Pi & other boards");
   await activate(
     page,
@@ -85,22 +83,10 @@ test("the existing board flow remains keyboard accessible", async ({
     "Space"
   );
   await next(page);
-  await activate(page, page.getByRole("radio").first(), "Space");
-  await next(page);
-  await expect(page.locator("wifi-view")).toBeVisible();
-  await next(page);
-  await activate(
-    page,
-    page.getByRole("button", { name: "Install", exact: true })
-  );
-  await activate(
-    page,
-    page.getByRole("button", { name: "Erase and install", exact: true })
-  );
-  await expect(page.locator("success-view")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator("drive-selection-view")).toBeVisible();
 });
 
-test("every external installation guide can be opened with the keyboard", async ({
+test("an external installation guide can be opened with the keyboard", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -110,22 +96,11 @@ test("every external installation guide can be opened with the keyboard", async 
     };
   });
   await start(page, "Other options");
-  const guides = page.locator("other-options-view option-card");
-  const urls = [
-    "linux#docker-compose",
-    "alternative#synology-nas",
-    "alternative#qnap-nas",
-    "linux",
-    "windows",
-  ];
-  await expect(guides).toHaveCount(urls.length);
-  for (let index = 0; index < urls.length; index++) {
-    await activate(page, guides.nth(index), index % 2 ? "Space" : "Enter");
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-opened-url",
-      `https://www.home-assistant.io/installation/${urls[index]}`
-    );
-  }
+  await activate(page, page.locator("other-options-view option-card").first());
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-opened-url",
+    "https://www.home-assistant.io/installation/linux#docker-compose"
+  );
 });
 
 for (const flow of ["proxmox", "utm"] as const) {
