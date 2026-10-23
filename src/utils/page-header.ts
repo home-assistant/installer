@@ -18,6 +18,16 @@ export const pageHeaderStyles = css`
   .header [slot="start"]:dir(rtl) {
     transform: scaleX(-1);
   }
+
+  /* A low window leaves more of its height to the screen below. Zooming in
+     lowers it too: the smallest window, 750px high, is 375px at 200%. Back
+     keeps its size: in the install flow, the name of the current step beside
+     it may need that height for two lines. */
+  @media (max-height: 600px) {
+    .header {
+      padding-block: 0.5rem;
+    }
+  }
 `;
 
 /** The header of a screen that has only Back in it. */

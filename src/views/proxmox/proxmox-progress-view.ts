@@ -106,23 +106,21 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
     }
 
     const { node, vm_id } = result;
+    const app = "Proxmox";
     await this._waitForHomeAssistant(
       {
         vmAddress: async () =>
           (await proxmoxGetVmStatus(session, node, vm_id)).ip_address,
         stopOn: needsUserAction,
         messages: {
-          noAddress: localize(
-            "views.proxmox.proxmox_progress_view.no_ip_address"
-          ),
+          noAddress: localize("common.vm.no_ip_address", { app }),
           notResponding: (ipAddress) =>
-            localize("views.proxmox.proxmox_progress_view.not_responding", {
+            localize("common.vm.not_responding", {
               address: ipAddress,
+              app,
             }),
           notUpdated: (address) =>
-            localize("views.proxmox.proxmox_progress_view.update_timeout", {
-              address,
-            }),
+            localize("common.vm.update_timeout", { address }),
         },
       },
       signal

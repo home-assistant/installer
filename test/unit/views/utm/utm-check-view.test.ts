@@ -212,6 +212,7 @@ describe("utm-check-view", () => {
     // The same region reports the check
     expect(el.shadowRoot!.querySelector('[role="status"]')).to.equal(status);
     expect(status.textContent).to.contain("Checking");
+    expect(status.querySelector(".status-loading loading-spinner")).to.exist;
 
     second.resolve({
       installed: true,
@@ -275,6 +276,11 @@ describe("utm-check-view artwork", () => {
       expect(
         el.shadowRoot!.querySelector(".status-title")!.textContent
       ).to.include(installed ? "installed" : "not installed");
+      expect(
+        el.shadowRoot!.querySelector(
+          installed ? ".status-success" : ".status-warning"
+        )
+      ).to.exist;
       if (!installed)
         expect(el.shadowRoot!.textContent).to.include("Download UTM");
     });
@@ -331,9 +337,14 @@ describe("utm-check-view artwork", () => {
     expect(el.shadowRoot!.querySelector("casita-mascot")!.mood).to.equal(
       "problem"
     );
-    expect(
-      el.shadowRoot!.querySelector(".status-description")!.textContent
-    ).to.include("Mock check failed");
+    // Drawn as an error, like the one on Proxmox connect, not as a result
+    const error = el.shadowRoot!.querySelector(".status-error")!;
+    expect(error.hasAttribute("data-focus-alert")).to.be.true;
+    expect(error.querySelector(".status-description")!.textContent).to.include(
+      "Mock check failed"
+    );
+    expect(el.shadowRoot!.querySelector('[role="status"]')!.textContent!.trim())
+      .to.be.empty;
     expect(el.shadowRoot!.textContent).to.include("Try again");
   });
 });

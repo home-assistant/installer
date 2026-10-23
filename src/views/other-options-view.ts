@@ -21,7 +21,9 @@ interface OtherOption {
 const INSTALLATION_TYPES_URL =
   "https://www.home-assistant.io/installation/#about-installation-types";
 
-const OTHER_OPTIONS: OtherOption[] = [
+// A function, so the text is localized when the view renders, not when the
+// module loads, and follows the language
+const otherOptions = (): OtherOption[] => [
   {
     title: localize("views.other_options_view.home_assistant_container"),
     description: localize("views.other_options_view.docker_description"),
@@ -127,7 +129,7 @@ export class OtherOptionsView extends LitElement {
         </p>
 
         <div class="options-list">
-          ${OTHER_OPTIONS.map(
+          ${otherOptions().map(
             (option) => html`
               <option-card
                 horizontal

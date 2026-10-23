@@ -1,7 +1,11 @@
 import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { wizardState, type WizardState } from "../../state/wizard-state.js";
+import {
+  wizardState,
+  type WizardSelections,
+  type WizardState,
+} from "../../state/wizard-state.js";
 import { proxmoxVmConfig } from "../../state/vm-defaults.js";
 import { openExternalLink } from "../../utils/external-url.js";
 import { linkStyles } from "../../utils/link-styles.js";
@@ -12,6 +16,28 @@ import "../../components/install-success.js";
 
 const DIRECTORY_STORAGE_DOCS =
   "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory";
+
+/**
+ * The storages this installer enabled Import on, on the server it is
+ * connected to.
+ */
+export function enabledImportStorages(selections: WizardSelections): string[] {
+  if (!selections.proxmoxSession) return [];
+
+  const serverOrigin = new URL(selections.proxmoxSession.server_url).origin;
+  return (selections.proxmoxImportChanges ?? [])
+    .filter((change) => change.serverOrigin === serverOrigin)
+    .map((change) => change.storage);
+}
+
+/**
+ * Those storages, named as the reminder names them, for a message that is
+ * plain text, like a dialog's. Empty when there are none.
+ */
+export const enabledImportStorageList = (selections: WizardSelections) =>
+  enabledImportStorages(selections)
+    .map((storage) => `"${storage}"`)
+    .join(", ");
 
 @customElement("proxmox-success-view")
 export class ProxmoxSuccessView extends LitElement {
@@ -75,13 +101,7 @@ export class ProxmoxSuccessView extends LitElement {
    * cluster may rely on it by now.
    */
   private _renderImportReminder() {
-    const selections = this._wizardState.selections;
-    if (!selections.proxmoxSession) return "";
-
-    const serverOrigin = new URL(selections.proxmoxSession.server_url).origin;
-    const storages = (selections.proxmoxImportChanges ?? [])
-      .filter((change) => change.serverOrigin === serverOrigin)
-      .map((change) => change.storage);
+    const storages = enabledImportStorages(this._wizardState.selections);
     if (!storages.length) return "";
 
     return html`<inline-notice

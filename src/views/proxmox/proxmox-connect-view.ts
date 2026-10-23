@@ -1,6 +1,5 @@
 import {
   installerError,
-  renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
@@ -22,6 +21,7 @@ import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import { renderStatusRow, statusRowStyles } from "../../utils/load-state.js";
 
 /** The fields Next checks before connecting */
 type Field = "serverUrl" | "username" | "password";
@@ -40,6 +40,7 @@ export class ProxmoxConnectView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     stepStyles,
+    statusRowStyles,
     fieldErrorStyles,
     linkStyles,
     dialogStyles,
@@ -86,50 +87,6 @@ export class ProxmoxConnectView extends LitElement {
         font-family: monospace;
         font-size: 0.8125rem;
         line-height: 1.6;
-      }
-
-      .status-row {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 1rem;
-        border-radius: var(--ha-small-border-radius, 8px);
-        background-color: rgba(244, 67, 54, 0.1);
-        border: 1px solid rgba(244, 67, 54, 0.3);
-      }
-
-      .status-icon {
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        background-color: var(--ha-error-fill, #b30532);
-      }
-
-      .status-icon svg {
-        width: 14px;
-        height: 14px;
-        fill: white;
-      }
-
-      .status-text {
-        flex: 1;
-      }
-
-      .status-title {
-        font-size: 0.9375rem;
-        font-weight: 500;
-        color: var(--ha-text-color, #212121);
-        margin: 0;
-      }
-
-      .status-description {
-        font-size: 0.8125rem;
-        color: var(--ha-error-color, #b30532);
-        margin: 0.25rem 0 0 0;
       }
     `,
   ];
@@ -606,26 +563,11 @@ export class ProxmoxConnectView extends LitElement {
   }
 
   private _renderError() {
-    return html`
-      <div class="status-row" data-focus-alert>
-        <div class="status-icon">
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-            />
-          </svg>
-        </div>
-        <div class="status-text">
-          <p class="status-title">
-            ${localize("views.proxmox.proxmox_connect_view.connection_failed")}
-          </p>
-          <p class="status-description" style="overflow-wrap: anywhere;">
-            ${this._error?.message}
-          </p>
-          ${renderErrorHelp()}
-        </div>
-      </div>
-    `;
+    return renderStatusRow(
+      "error",
+      localize("views.proxmox.proxmox_connect_view.connection_failed"),
+      this._error?.message
+    );
   }
 }
 
