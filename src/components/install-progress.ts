@@ -493,6 +493,7 @@ export class InstallProgress extends LitElement {
         </div>
         <h2>${this.description}</h2>
         <div class="details">
+          <slot></slot>
           <ol
             class="stages-indicator"
             aria-label=${localize(
@@ -661,9 +662,7 @@ export class InstallProgress extends LitElement {
     const bytesPerSecond = bytesInStage / elapsed;
     if (bytesPerSecond <= 0 || !isFinite(bytesPerSecond)) return "";
 
-    return localize("components.install_progress.speed", {
-      speed: formatBytes(bytesPerSecond),
-    });
+    return formatBytes(bytesPerSecond, true);
   }
 }
 

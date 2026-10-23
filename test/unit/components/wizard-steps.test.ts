@@ -1,11 +1,13 @@
 import { expect } from "@open-wc/testing";
 import { render } from "lit";
 import {
+  LIVE_USB_STEPS,
   WIZARD_STEPS,
   wizardStep,
   type WizardStepView,
 } from "../../../src/components/wizard-steps.js";
 import {
+  MINIPC_STEPS,
   wizardState,
   type WizardFlow,
   type WizardSelections,
@@ -166,5 +168,77 @@ describe("wizard-steps", () => {
       expect(await run(view)).to.equal(answer);
       expect(asked).to.equal(1);
     }
+  });
+
+  describe("booting the mini PC from USB", () => {
+    const usbBoot: WizardSelections = { installMethod: "usb-boot" };
+    const liveStep = (stepId: string, selections: WizardSelections = usbBoot) =>
+      wizardStep("minipc", stepId, selections);
+
+    it("has a view for every step of both media", () => {
+      for (const steps of [MINIPC_STEPS.usb, MINIPC_STEPS.iso]) {
+        for (const { id } of steps) {
+          const step = liveStep(id);
+          expect(step, id).to.exist;
+          const container = document.createElement("div");
+          render(step!.render(), container);
+          expect(container.firstElementChild?.tagName.includes("-"), id).to.be
+            .true;
+        }
+      }
+      expect(Object.keys(LIVE_USB_STEPS)).to.have.members([
+        ...new Set(
+          [...MINIPC_STEPS.usb, ...MINIPC_STEPS.iso]
+            .map(({ id }) => id)
+            .filter((id) => id !== "method")
+        ),
+      ]);
+    });
+
+    it("shows its own views only on the USB path", () => {
+      expect(liveStep("drive")).to.equal(LIVE_USB_STEPS.drive);
+      expect(liveStep("method")).to.equal(WIZARD_STEPS.minipc.method);
+      expect(liveStep("drive", { installMethod: "direct" })).to.equal(
+        WIZARD_STEPS.minipc.drive
+      );
+      expect(wizardStep("minipc", "drive")).to.equal(WIZARD_STEPS.minipc.drive);
+    });
+
+    it("holds Next until the program for the stick is there", () => {
+      const ready = (stepId: string, selections: WizardSelections) =>
+        liveStep(stepId)!.ready!({ ...usbBoot, ...selections });
+      expect(ready("drive", { drive: "/dev/sdb" })).to.be.false;
+      // The stick is still being rescanned, as when coming back from the summary
+      expect(ready("drive", { drive: "/dev/sdb", liveReady: true })).to.be
+        .false;
+      expect(
+        ready("drive", {
+          drive: "/dev/sdb",
+          driveScanReady: true,
+          liveReady: true,
+        })
+      ).to.be.true;
+      const location = {
+        liveReady: true,
+        liveIsoFolder: "/tmp",
+        liveIsoName: "haos.iso",
+      };
+      expect(ready("location", location)).to.be.true;
+      expect(ready("location", { ...location, liveReady: false })).to.be.false;
+      expect(ready("location", { ...location, liveIsoFolder: "  " })).to.be
+        .false;
+      expect(ready("location", { ...location, liveIsoName: "" })).to.be.false;
+    });
+
+    it("checks the save location before leaving it", async () => {
+      const beforeNext = liveStep("location")!.beforeNext!;
+      expect(beforeNext.until).to.equal("selections");
+      for (const answer of [true, false]) {
+        const view = Object.assign(document.createElement("div"), {
+          check: () => Promise.resolve(answer),
+        }) as unknown as WizardStepView;
+        expect(await beforeNext.run(view)).to.equal(answer);
+      }
+    });
   });
 });

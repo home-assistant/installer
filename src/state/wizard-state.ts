@@ -73,6 +73,19 @@ export interface WizardSelections {
 
   /** UTM was found on the requirements step. */
   utmInstalled?: boolean;
+
+  /** Mini PC path: connect the drive here, or boot the mini PC from USB. */
+  installMethod?: "direct" | "usb-boot";
+  /** Bootable media to create for the USB boot path. */
+  liveMedia?: "usb" | "iso";
+  /** The live USB checks passed (hai-live found, admin rights where needed). */
+  liveReady?: boolean;
+  /** Where the ISO is saved: folder and file name as entered, then the saved path. */
+  liveIsoFolder?: string;
+  liveIsoName?: string;
+  /** The user agreed to replace an existing file with that name. */
+  liveIsoOverwrite?: boolean;
+  liveIsoPath?: string;
   /** UTM install progress, so a retry resumes instead of starting over. */
   vmId?: string;
   /** Native creation outlives its view; reentry must await the same result. */
@@ -187,7 +200,46 @@ function stepsFor(
   flow: WizardFlow,
   selections: WizardSelections
 ): WizardStep[] {
+  // Booting the mini PC from USB has steps of its own. Steps follow the
+  // selections, so this keeps them when a later selection changes.
+  if (flow === "minipc" && selections.installMethod === "usb-boot") {
+    return MINIPC_STEPS[selections.liveMedia ?? "usb"];
+  }
+
   return FLOW_STEPS[flow].filter((step) => step.when?.(selections) ?? true);
+}
+
+/** The USB path keeps the drive/confirm/flash/success ids, so the shell's drive
+ * re-checks, erase confirmation and retry handling apply to it unchanged. */
+function liveUsbSteps(target: WizardStep): WizardStep[] {
+  return [
+    { id: "method", title: localize("state.wizard_state.installation_method") },
+    { id: "media", title: localize("state.wizard_state.media_type") },
+    target,
+    { id: "confirm", title: localize("common.confirm") },
+    { id: "flash", title: localize("common.create") },
+    { id: "success", title: localize("common.done") },
+  ];
+}
+
+/** Mini PC paths share the method step, then each shows its own steps. */
+export const MINIPC_STEPS = {
+  // No board is picked yet; choosing one adds the Wi-Fi step back.
+  direct: stepsFor("minipc", {}),
+  usb: liveUsbSteps({
+    id: "drive",
+    title: localize("state.wizard_state.select_usb_stick"),
+  }),
+  iso: liveUsbSteps({
+    id: "location",
+    title: localize("state.wizard_state.save_location"),
+  }),
+};
+
+/** The direct path's steps, with Wi-Fi if the architecture picked earlier has it. */
+export function minipcDirectSteps(selections: WizardSelections): WizardStep[] {
+  // Without a picked architecture, deviceConfig may still be the USB path's
+  return stepsFor("minipc", selections.device ? selections : {});
 }
 
 function createInitialState(): WizardState {
@@ -316,6 +368,16 @@ class WizardStateStore {
       steps: changed ? next : steps,
       currentStepIndex: index >= 0 ? index : currentStepIndex,
       selections,
+    };
+    this.notify();
+  }
+
+  /** Replaces the step list when a choice splits the flow; keeps the position. */
+  setSteps(steps: WizardStep[]) {
+    this.state = {
+      ...this.state,
+      steps,
+      currentStepIndex: Math.min(this.state.currentStepIndex, steps.length - 1),
     };
     this.notify();
   }

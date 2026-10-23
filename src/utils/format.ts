@@ -7,38 +7,34 @@ import { formatNumber, localize } from "../localization/localize.js";
 const VM_GB_BYTES = 1024 ** 3;
 
 // A size keeps its fraction: 1.5 GB must not read as 2 GB
-function formatSize(value: number): string {
-  return formatNumber(value, { maximumFractionDigits: 20 });
+function formatSize(value: number, unit: "gigabyte" | "terabyte"): string {
+  return formatNumber(value, {
+    style: "unit",
+    unit,
+    maximumFractionDigits: 20,
+  });
 }
 
-/** A size in GB, or in TB from 1024 GB, with its number written by `format` */
-function formatGb(gb: number, format: (size: number) => string): string {
+/** A size in GB, or in TB from 1024 GB, with its number rounded by `round` */
+function formatGb(gb: number, round = (size: number) => size): string {
   return gb >= 1024
-    ? localize("common.size_tb", {
-        size: format(gb / 1024),
-      })
-    : localize("common.size_gb", {
-        size: format(gb),
-      });
+    ? formatSize(round(gb / 1024), "terabyte")
+    : formatSize(round(gb), "gigabyte");
 }
 
 /** A VM's memory in GB, as its slider shows it */
 export function formatMemory(mb: number): string {
-  return localize("common.size_gb", {
-    size: formatSize(mb / 1024),
-  });
+  return formatSize(mb / 1024, "gigabyte");
 }
 
 /** A VM's memory in GB, as the confirm step lists it with the CPU cores */
 export function formatRam(mb: number): string {
-  return localize("common.vm.memory_gb", {
-    size: formatSize(mb / 1024),
-  });
+  return localize("common.vm.memory", { size: formatMemory(mb) });
 }
 
 /** A VM's disk in GB, or in TB from 1024 GB */
 export function formatDiskSize(gb: number): string {
-  return formatGb(gb, formatSize);
+  return formatGb(gb);
 }
 
 /**
@@ -46,7 +42,5 @@ export function formatDiskSize(gb: number): string {
  * compare. Rounded down to a tenth: 31.99 GB must not read as room for 32 GB.
  */
 export function formatFreeSpace(bytes: number): string {
-  return formatGb(bytes / VM_GB_BYTES, (size) =>
-    formatNumber(Math.floor(size * 10) / 10)
-  );
+  return formatGb(bytes / VM_GB_BYTES, (size) => Math.floor(size * 10) / 10);
 }

@@ -545,6 +545,9 @@ jobs:
       BUILD_TARGET: ${{ matrix.target }}
       BUNDLE_DIR: target/${{ matrix.target }}/release/bundle
       SIGN_MACOS: ${{ matrix.os == 'macos-latest' && github.event_name != 'pull_request' }}
+      # Bundles hai-live, the program on the live USB stick. Only release
+      # builds use it, so other builds don't need hai-live built first.
+      LIVE_USB_CONFIG: crates/hai-desktop/tauri.live-usb.conf.json
     strategy:
       fail-fast: false
       matrix:
@@ -573,7 +576,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          targets: ${{ matrix.rust-targets }}
+          targets: ${{ matrix.rust-targets }},x86_64-unknown-linux-musl
 
       # Tauri names the bundles and reports the app version after the version
       # in the workspace Cargo.toml, which stays at 0.0.0 on main. A release
@@ -639,12 +642,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The same static Linux program goes into every platform's app. Not
+      # --locked: a release run has just changed the version in Cargo.toml.
+      - name: Build hai-live
+        run: cargo build --release -p hai-live --target x86_64-unknown-linux-musl
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+
       # Compiling and bundling are separate steps so that the Apple credentials
       # below are only ever in the environment of the bundler, never of npm or
       # cargo build scripts.
       - name: Build
         shell: bash
-        run: npm run tauri build -- --target "$BUILD_TARGET" --no-bundle
+        run: npm run tauri build -- --target "$BUILD_TARGET" --config "$LIVE_USB_CONFIG" --no-bundle
 
       - name: Verify universal macOS binary
         if: runner.os == 'macOS'
@@ -666,7 +676,7 @@ jobs:
       - name: Bundle
         if: env.SIGN_MACOS != 'true'
         shell: bash
-        run: npm run tauri bundle -- --target "$BUILD_TARGET"
+        run: npm run tauri bundle -- --target "$BUILD_TARGET" --config "$LIVE_USB_CONFIG"
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
 
@@ -708,7 +718,7 @@ jobs:
       # APPLE_SIGNING_IDENTITY, which catches an export of the wrong identity.
       - name: Bundle (signed)
         if: env.SIGN_MACOS == 'true'
-        run: npm run tauri bundle -- --target "$BUILD_TARGET"
+        run: npm run tauri bundle -- --target "$BUILD_TARGET" --config "$LIVE_USB_CONFIG"
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
