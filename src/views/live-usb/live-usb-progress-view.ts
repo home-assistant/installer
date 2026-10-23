@@ -9,6 +9,7 @@ import {
   type FlashProgress,
 } from "../../api/index.js";
 import { readDriveSelection } from "../../utils/drive-selection.js";
+import { throwIfCancelled } from "../../utils/polling.js";
 import "../../components/install-progress.js";
 import { InstallProgressView } from "../install-progress-view.js";
 
@@ -59,7 +60,7 @@ export class LiveUsbProgressView extends InstallProgressView {
     return wizardState.getState().selections.liveMedia !== "iso";
   }
 
-  protected async _install() {
+  protected async _install(signal: AbortSignal) {
     this._reachedDrive = false;
     const selections = wizardState.getState().selections;
     const onProgress = (progress: FlashProgress) => {
@@ -110,6 +111,9 @@ export class LiveUsbProgressView extends InstallProgressView {
           attempt
         )
       );
+      // A run left behind (the view detached, or a new flow started) must
+      // not write into the wizard state
+      throwIfCancelled(signal);
       wizardState.setSelection("liveIsoPath", path);
     }
     return {};
