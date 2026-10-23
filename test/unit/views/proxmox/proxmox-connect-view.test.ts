@@ -99,16 +99,22 @@ describe("proxmox-connect-view", () => {
     expect(el.shadowRoot!.querySelector("wa-dialog")!.open).to.be.false;
   });
 
-  it("shows the second-factor error, retries with the code, and clears it", async () => {
+  /** A second-factor rejection, shaped like the native one */
+  const twoFactor = (key: string) => ({
+    code: "proxmox_two_factor",
+    message: "Proxmox two-factor authentication failed.",
+    retryable: false,
+    details: { message_key: `backend.proxmox.${key}`, message_params: {} },
+  });
+
+  it("asks for the code on its own field, retries with it, and clears it", async () => {
     const submitted: ProxmoxCredentials[] = [];
     mockTauriIpc((cmd, args) => {
       if (cmd === "proxmox_certificate_fingerprint") return null;
       expect(cmd).to.equal("proxmox_connect");
       const { credentials } = args as { credentials: ProxmoxCredentials };
       submitted.push(credentials);
-      if (!credentials.totp) {
-        throw "Proxmox two-factor authentication: Enter the current authenticator app code.";
-      }
+      if (!credentials.totp) throw twoFactor("two_factor_code_required");
       return {
         server_url: credentials.server_url,
         ticket: "complete",
@@ -119,15 +125,32 @@ describe("proxmox-connect-view", () => {
     await typeInto(el, inputs[0], "https://192.168.1.100:8006");
     await typeInto(el, inputs[2], "secret");
     await typeInto(el, inputs[3], "   ");
+    expect(inputs[3].label).to.equal("Authenticator app code (optional)");
     expect(await el.connect()).to.be.false;
     expect(submitted[0].totp).to.be.undefined;
-    await el.updateComplete;
-    expect(
-      el.shadowRoot!.querySelector(".status-description")!.textContent
-    ).to.include("two-factor");
+    await settled(inputs);
+
+    // On the code's field, which takes the focus, not in an alert above
+    expect(hints(inputs)[3]).to.equal(
+      "This account requires an authenticator app code. Enter the current code and try again."
+    );
+    expect(nativeInput(inputs[3]).getAttribute("aria-invalid")).to.equal(
+      "true"
+    );
+    expect(el.shadowRoot!.activeElement === inputs[3]).to.be.true;
+    expect(el.shadowRoot!.querySelector(".status-row")).to.be.null;
+    // No longer optional for this account
+    expect(inputs[3].label).to.equal("Authenticator app code");
+    expect(nativeInput(inputs[3]).required).to.be.true;
     expect(wizardState.getState().selections.proxmoxConnected).to.be.false;
     expect(wizardState.getState().selections.proxmoxSession).to.be.undefined;
+
+    // Typing the code takes the error away
     await typeInto(el, inputs[3], " 012345 ");
+    await settled(inputs);
+    expect(hints(inputs)[3]).to.equal(
+      "Only if your Proxmox account uses two-factor authentication"
+    );
     expect(await el.connect()).to.be.true;
     await el.updateComplete;
     await inputs[3].updateComplete;
@@ -136,6 +159,130 @@ describe("proxmox-connect-view", () => {
     expect(wizardState.getState().selections.proxmoxSession?.ticket).to.equal(
       "complete"
     );
+  });
+
+  for (const key of [
+    "two_factor_code_invalid",
+    "two_factor_rejected",
+    "two_factor_incomplete",
+  ]) {
+    it(`says ${key} on the code's field`, async () => {
+      mockTauriIpc((cmd) => {
+        if (cmd === "proxmox_certificate_fingerprint") return null;
+        throw twoFactor(key);
+      });
+      const { el, inputs } = await renderView();
+      await typeInto(el, inputs[0], "https://pve.example:8006");
+      await typeInto(el, inputs[2], "secret");
+      await typeInto(el, inputs[3], "123456");
+
+      expect(await el.connect()).to.be.false;
+      await settled(inputs);
+      expect(nativeInput(inputs[3]).getAttribute("aria-invalid")).to.equal(
+        "true"
+      );
+      expect(hints(inputs)[3]).to.not.contain("Only if");
+      expect(el.shadowRoot!.querySelector(".status-row")).to.be.null;
+    });
+  }
+
+  for (const key of [
+    "two_factor_totp_unavailable",
+    "two_factor_request_failed",
+    "two_factor_invalid_response",
+  ]) {
+    it(`keeps ${key} above the form, where no code fixes it`, async () => {
+      mockTauriIpc((cmd) => {
+        if (cmd === "proxmox_certificate_fingerprint") return null;
+        throw twoFactor(key);
+      });
+      const { el, inputs } = await renderView();
+      await typeInto(el, inputs[0], "https://pve.example:8006");
+      await typeInto(el, inputs[2], "secret");
+
+      expect(await el.connect()).to.be.false;
+      await settled(inputs);
+      expect(el.shadowRoot!.querySelector(".status-row.status-error")).to.exist;
+      expect(nativeInput(inputs[3]).getAttribute("aria-invalid")).to.equal(
+        "false"
+      );
+      expect(inputs[3].label).to.equal("Authenticator app code (optional)");
+    });
+  }
+
+  it("keeps asking for the code until another server or account is entered", async () => {
+    mockTauriIpc((cmd) => {
+      if (cmd === "proxmox_certificate_fingerprint") return null;
+      throw twoFactor("two_factor_code_required");
+    });
+    const { el, inputs } = await renderView();
+    await typeInto(el, inputs[0], "https://pve.example:8006");
+    await typeInto(el, inputs[2], "secret");
+    expect(await el.connect()).to.be.false;
+
+    // A missing password is said, and so is the code still missing
+    await typeInto(el, inputs[2], "");
+    expect(await el.connect()).to.be.false;
+    await settled(inputs);
+    expect(hints(inputs)[2]).to.equal("Enter the password");
+    expect(hints(inputs)[3]).to.contain("requires an authenticator app code");
+    expect(el.shadowRoot!.activeElement === inputs[2]).to.be.true;
+
+    await typeInto(el, inputs[1], "installer@pve");
+    await settled(inputs);
+    expect(hints(inputs)[3]).to.equal(
+      "Only if your Proxmox account uses two-factor authentication"
+    );
+    expect(inputs[3].label).to.equal("Authenticator app code (optional)");
+    expect(nativeInput(inputs[3]).required).to.be.false;
+  });
+
+  it("connects to the server of an address copied from the web interface", async () => {
+    const fingerprint = Array(32).fill("AB").join(":");
+    const urls: string[] = [];
+    mockTauriIpc((cmd, args) => {
+      if (cmd === "proxmox_certificate_fingerprint") {
+        urls.push((args as { serverUrl: string }).serverUrl);
+        return fingerprint;
+      }
+      const { credentials } = args as { credentials: ProxmoxCredentials };
+      urls.push(credentials.server_url);
+      return {
+        server_url: credentials.server_url,
+        ticket: "ticket",
+        csrf_token: "csrf",
+        certificate_sha256: fingerprint,
+      };
+    });
+    const { el, inputs } = await renderView();
+    await typeInto(
+      el,
+      inputs[0],
+      " https://pve.example:8006/#v1:0:=qemu%2F100:4::::::: "
+    );
+    await typeInto(el, inputs[2], "secret");
+
+    const connecting = el.connect();
+    const dialog = el.shadowRoot!.querySelector("wa-dialog")!;
+    await waitUntil(
+      () => dialog.querySelector(".fingerprint")!.textContent!.trim(),
+      "certificate not shown"
+    );
+    // What is asked about, shown and stored is the server alone
+    expect(dialog.querySelector(".certificate-host")!.textContent).to.equal(
+      "https://pve.example:8006"
+    );
+    await inputs[0].updateComplete;
+    expect(nativeInput(inputs[0]).value).to.equal("https://pve.example:8006");
+    dialog.querySelectorAll("wa-button")[1].click();
+    expect(await connecting).to.be.true;
+    expect(urls).to.deep.equal([
+      "https://pve.example:8006",
+      "https://pve.example:8006",
+    ]);
+    expect(
+      wizardState.getState().selections.proxmoxSession?.server_url
+    ).to.equal("https://pve.example:8006");
   });
 
   it("marks the server URL, username and password required, not the code", async () => {
@@ -187,11 +334,11 @@ describe("proxmox-connect-view", () => {
       "Enter the server URL",
       "Enter the username",
       "Enter the password",
-      "",
+      "Only if your Proxmox account uses two-factor authentication",
     ]);
     expect(
       inputs.map((input) => nativeInput(input).getAttribute("aria-invalid"))
-    ).to.deep.equal(["true", "true", "true", null]);
+    ).to.deep.equal(["true", "true", "true", "false"]);
     expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.be.null;
     expect(el.shadowRoot!.activeElement === inputs[0]).to.be.true;
 
@@ -206,7 +353,7 @@ describe("proxmox-connect-view", () => {
     ]);
     expect(
       inputs.map((input) => nativeInput(input).getAttribute("aria-invalid"))
-    ).to.deep.equal(["false", "false", "true", null]);
+    ).to.deep.equal(["false", "false", "true", "false"]);
 
     // Next again goes to the field still to fix
     expect(await el.connect()).to.be.false;
@@ -852,13 +999,21 @@ describe("proxmox-connect-view", () => {
     "https://name:password@pve.example",
     "https://pve.example/api",
     "https://pve.example?secret",
-    "https://pve.example#secret",
+    // Without its fragment, still not the server alone
+    "https://pve.example/api#v1:0:=qemu%2F100",
+    "https://pve.example?secret#v1:0:=qemu%2F100",
   ]) {
     it(`rejects a non-origin URL: ${url}`, async () => {
       const { el, inputs } = await renderView();
       await typeInto(el, inputs[0], url);
       await typeInto(el, inputs[2], "secret");
       expect(await el.connect()).to.be.false;
+      await settled(inputs);
+      expect(hints(inputs)[0]).to.contain(
+        "Use a server URL without credentials"
+      );
+      // Left as typed, to fix
+      expect(nativeInput(inputs[0]).value).to.equal(url);
     });
   }
 });

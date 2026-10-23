@@ -23,8 +23,25 @@ import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 import { renderStatusRow, statusRowStyles } from "../../utils/load-state.js";
 
-/** The fields Next checks before connecting */
-type Field = "serverUrl" | "username" | "password";
+/** The fields that say what to fix in them */
+type Field = "serverUrl" | "username" | "password" | "totp";
+
+/** Second-factor errors that a new authenticator code fixes */
+const CODE_ERRORS = new Set([
+  "backend.proxmox.two_factor_code_required",
+  "backend.proxmox.two_factor_code_invalid",
+  "backend.proxmox.two_factor_rejected",
+  "backend.proxmox.two_factor_incomplete",
+]);
+
+/**
+ * The server in what was typed or pasted. The web interface keeps its place
+ * in the fragment (https://pve:8006/#v1:0:=qemu%2F100:4:::::::), which never
+ * reaches the server, so an address copied from it works as it is.
+ */
+function serverAddress(input: string): string {
+  return input.replace(/#.*/s, "").trim().replace(/\/$/, "");
+}
 
 /** A certificate belongs to a server, however its address is spelled. */
 function serverOrigin(url: string): string {
@@ -112,7 +129,11 @@ export class ProxmoxConnectView extends LitElement {
   @state()
   private _error: InstallerError | null = null;
 
-  /** What to fix in each field before connecting, until it is edited */
+  /** Proxmox asked this account for an authenticator code */
+  @state()
+  private _codeRequired = false;
+
+  /** What to fix in each field, until it is edited */
   @state()
   private _fieldErrors: Partial<Record<Field, string>> = {};
 
@@ -221,9 +242,12 @@ export class ProxmoxConnectView extends LitElement {
     }
 
     if (this._connecting) return false;
-    const url = this._serverUrl.trim().replace(/\/$/, "");
+    const url = serverAddress(this._serverUrl);
+    const serverUrlError = this._serverUrlError(url);
+    // The field shows the address that is connected to and remembered
+    if (!serverUrlError) this._serverUrl = url;
     const fieldErrors = {
-      serverUrl: this._serverUrlError(url),
+      serverUrl: serverUrlError,
       username: this._username
         ? undefined
         : localize("views.proxmox.proxmox_connect_view.enter_the_username"),
@@ -232,11 +256,18 @@ export class ProxmoxConnectView extends LitElement {
         : localize("views.proxmox.proxmox_connect_view.enter_the_password"),
     };
     if (Object.values(fieldErrors).some(Boolean)) {
-      return this._showFieldErrors(fieldErrors);
+      // The code's error stays too: only Proxmox can say it is fixed
+      return this._showFieldErrors({
+        ...fieldErrors,
+        totp: this._fieldErrors.totp,
+      });
     }
 
     this._connecting = true;
     this._error = null;
+    // Gone while Proxmox is asked again, so the same error coming back is
+    // read out again
+    this._fieldErrors = {};
     const attempt = ++this._connectionAttempt;
     const flowGeneration = wizardState.flowGeneration;
     const isCurrent = () =>
@@ -287,11 +318,17 @@ export class ProxmoxConnectView extends LitElement {
     } catch (error) {
       if (!isCurrent()) return false;
       diagnostics.fail(error);
-      this._error = installerError(
+      wizardState.setSelection("proxmoxConnected", false);
+      const failure = installerError(
         error,
         localize("proxmox.connection_failed")
       );
-      wizardState.setSelection("proxmoxConnected", false);
+      // Said on the code's field, like a missing password on its own
+      if (CODE_ERRORS.has(failure.details.message_key as string)) {
+        this._codeRequired = true;
+        return this._showFieldErrors({ totp: failure.message });
+      }
+      this._error = failure;
       return false;
     } finally {
       if (attempt === this._connectionAttempt) {
@@ -322,8 +359,7 @@ export class ProxmoxConnectView extends LitElement {
       parsed.username ||
       parsed.password ||
       parsed.pathname !== "/" ||
-      parsed.search ||
-      parsed.hash
+      parsed.search
     ) {
       return localize("views.proxmox.proxmox_connect_view.url_without_extras");
     }
@@ -364,7 +400,7 @@ export class ProxmoxConnectView extends LitElement {
 
   private _onTotpChange(e: Event) {
     this._totp = (e.target as WaInput).value ?? "";
-    this._resetConnection();
+    this._resetConnection("totp");
   }
 
   private _resetConnection(field?: Field) {
@@ -376,6 +412,13 @@ export class ProxmoxConnectView extends LitElement {
     // The edited field's error goes, the others stay until they are fixed
     if (field && this._fieldErrors[field]) {
       this._fieldErrors = { ...this._fieldErrors, [field]: undefined };
+    }
+    // Another server or account may not ask for a code
+    if (field === "serverUrl" || field === "username") {
+      this._codeRequired = false;
+      if (this._fieldErrors.totp) {
+        this._fieldErrors = { ...this._fieldErrors, totp: undefined };
+      }
     }
   }
 
@@ -479,17 +522,27 @@ export class ProxmoxConnectView extends LitElement {
         <wa-input
           type="text"
           input-id="totp"
-          label=${localize(
-            "views.proxmox.proxmox_connect_view.authenticator_app_code_optional"
-          )}
+          label=${this._codeRequired
+            ? localize(
+                "views.proxmox.proxmox_connect_view.authenticator_app_code"
+              )
+            : localize(
+                "views.proxmox.proxmox_connect_view.authenticator_app_code_optional"
+              )}
           autocomplete="one-time-code"
           inputmode="numeric"
-          hint=${localize("views.proxmox.proxmox_connect_view.totp_hint")}
+          ?required=${this._codeRequired}
           .value=${this._totp}
           @input=${this._onTotpChange}
           @keydown=${this._onKeyDown}
           ?readonly=${this._connecting}
-        ></wa-input>
+          ${fieldError(this._fieldErrors.totp)}
+        >
+          <span slot="hint" aria-live="polite"
+            >${this._fieldErrors.totp ??
+            localize("views.proxmox.proxmox_connect_view.totp_hint")}</span
+          >
+        </wa-input>
       </div>
       <wa-dialog
         label=${localize(
