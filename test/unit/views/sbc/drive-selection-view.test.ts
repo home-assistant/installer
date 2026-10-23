@@ -437,6 +437,180 @@ describe("drive-selection-view", () => {
     const el = await mountLoaded();
     expect(wizardState.getState().selections.drive).to.be.undefined;
     expect(selectedIds(el)).to.be.empty;
+    // Still there, so not "no longer available": its card says why instead
+    expect(el.shadowRoot!.querySelector('inline-notice[variant="error"]')).to
+      .not.exist;
+  });
+
+  it("counts the drives that can be used apart from those found", async () => {
+    const scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve([
+        drive({ id: "big" }),
+        drive({ id: "small", size: 8_000_000_000 }),
+        drive({ id: "tiny", size: 500_000_000 }),
+      ]);
+      await waitUntil(() => el.shadowRoot!.querySelector("drive-card"));
+      expect(
+        el.shadowRoot!.querySelector(".sr-only[role=status]")!.textContent
+      ).to.equal("3 drives found, 1 can be used");
+      expect(el.shadowRoot!.querySelector(".no-usable-drive")).to.not.exist;
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("says why no drive can be used, and continues from there", async () => {
+    const root = (el: DriveSelectionView) => el.shadowRoot!;
+    const status = (el: DriveSelectionView) =>
+      root(el).querySelector(".sr-only[role=status]")!.textContent;
+    const small = [
+      drive({ id: "small", size: 8_000_000_000 }),
+      drive({ id: "tiny", size: 500_000_000 }),
+    ];
+    let scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve(small);
+      await waitUntil(() => root(el).querySelector(".no-usable-drive"));
+      await el.updateComplete;
+      const why = root(el).querySelector(".no-usable-drive")!;
+      expect(why.textContent!.trim()).to.equal(
+        "None of these drives can be used. You need a drive of at least 16 GB. Connect one and select Refresh."
+      );
+      expect(status(el)).to.equal("2 drives found, but none can be used");
+      // Every card is disabled, so the group has no tab stop of its own
+      expect(root(el).activeElement).to.equal(why);
+
+      // The same again: Refresh keeps the focus, and the count is read out
+      const refresh = root(el).querySelector(
+        ".drives-header wa-button"
+      ) as HTMLElement;
+      refresh.focus();
+      scan.restore();
+      scan = holdDeviceScan();
+      refresh.click();
+      await el.updateComplete;
+      expect(status(el)).to.contain("Scanning for drives");
+      scan.resolve(small);
+      await waitUntil(() => !status(el)!.includes("Scanning"));
+      await el.updateComplete;
+      expect(root(el).activeElement).to.equal(refresh);
+
+      // A drive big enough: nothing left to explain
+      scan.restore();
+      scan = holdDeviceScan();
+      refresh.click();
+      scan.resolve([...small, drive({ id: "big" })]);
+      await waitUntil(() => !root(el).querySelector(".no-usable-drive"));
+      expect(status(el)).to.equal("3 drives found, 1 can be used");
+      expect(root(el).activeElement).to.equal(refresh);
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("says so of a single drive that can't be used", async () => {
+    const scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve([drive({ size: 8_000_000_000 })]);
+      await waitUntil(() => el.shadowRoot!.querySelector(".no-usable-drive"));
+      expect(
+        el.shadowRoot!.querySelector(".no-usable-drive")!.textContent
+      ).to.contain("This drive can't be used. You need a drive of at least");
+      expect(
+        el.shadowRoot!.querySelector(".sr-only[role=status]")!.textContent
+      ).to.equal("1 drive found, but it can't be used");
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("says when the board's requirements are unknown", async () => {
+    wizardState.setSelection("deviceConfig", undefined);
+    const scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve([drive({ id: "a" }), drive({ id: "b" })]);
+      await waitUntil(() => el.shadowRoot!.querySelector(".no-usable-drive"));
+      expect(
+        el.shadowRoot!.querySelector(".no-usable-drive")!.textContent!.trim()
+      ).to.equal(
+        "None of these drives can be used, because their capacity or the board's requirements are unavailable."
+      );
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("keeps the selection through a failed scan, and holds Next until one confirms it", async () => {
+    storeDriveSelection(CONNECTED);
+    const root = (el: DriveSelectionView) => el.shadowRoot!;
+    let scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.reject(
+        ipcError("io", "The drive scan failed.", true) as unknown as Error
+      );
+      await waitUntil(() => root(el).querySelector(".error-message"));
+      await el.updateComplete;
+      // Nothing says the drive is gone: the scan only couldn't tell
+      expect(root(el).querySelector("inline-notice")).to.not.exist;
+      expect(wizardState.getState().selections.drive).to.equal(CONNECTED.id);
+      expect(wizardState.getState().selections.driveScanReady).to.not.be.true;
+
+      scan.restore();
+      scan = holdDeviceScan();
+      (root(el).querySelector(".error wa-button") as HTMLElement).click();
+      scan.resolve([CONNECTED]);
+      await waitUntil(
+        () => wizardState.getState().selections.driveScanReady === true
+      );
+      await waitUntil(() => selectedIds(el).length > 0);
+      expect(selectedIds(el)).to.deep.equal([CONNECTED.id]);
+      expect(root(el).querySelector("inline-notice")).to.not.exist;
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("says a selection was cleared once a scan after a failure finds it gone", async () => {
+    storeDriveSelection(CONNECTED);
+    const root = (el: DriveSelectionView) => el.shadowRoot!;
+    let scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.reject(
+        ipcError("io", "The drive scan failed.", true) as unknown as Error
+      );
+      await waitUntil(() => root(el).querySelector(".error-message"));
+
+      scan.restore();
+      scan = holdDeviceScan();
+      (root(el).querySelector(".error wa-button") as HTMLElement).click();
+      scan.resolve([drive({ id: "other" })]);
+      await waitUntil(() =>
+        root(el).querySelector('inline-notice[variant="error"]')
+      );
+      expect(wizardState.getState().selections.drive).to.be.undefined;
+      expect(wizardState.getState().selections.driveScanReady).to.be.true;
+    } finally {
+      scan.restore();
+    }
   });
 });
 

@@ -8,6 +8,8 @@ import { LitElement, html, css } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import {
   ViewAccessibility,
+  activeElement,
+  focusHeading,
   reducedMotionStyles,
   srOnlyStyles,
 } from "../../utils/view-accessibility.js";
@@ -17,13 +19,16 @@ import {
   formatBytes,
   listBlockDevices,
   type BlockDevice,
+  type HaosConfig,
 } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import {
   clearDriveSelection,
+  driveIdentity,
   findDrive,
   getDriveFit,
   isEligibleFlashTarget,
+  isSameDrive,
   readDriveSelection,
   storeDriveSelection,
 } from "../../utils/drive-selection.js";
@@ -122,6 +127,10 @@ export class DriveSelectionView extends LitElement {
   @query(".drives-header wa-button, .empty-state wa-button, .error wa-button")
   private _refreshButton?: HTMLElement;
 
+  /** Why no drive can be picked, while none can */
+  @query(".no-usable-drive")
+  private _noUsableDriveReason?: HTMLElement;
+
   @state()
   private _error: InstallerError | null = null;
 
@@ -161,8 +170,6 @@ export class DriveSelectionView extends LitElement {
         err,
         localize("views.sbc.drive_selection_view.failed_to_load_drives")
       );
-      // The scan failed, so the selection cannot be confirmed. Drop it rather
-      // than let a stale path through to the write.
       drives = [];
     }
 
@@ -172,17 +179,42 @@ export class DriveSelectionView extends LitElement {
       return;
     }
 
+    const explained = this._noUsableDrive();
     this._drives = drives;
     this._error = error;
     if (error) new InstallDiagnostics("flash").fail(scanError);
     this._loading = false;
     this._scanned = true;
     this._reconcileSelection();
-    wizardState.setSelection("driveScanReady", true);
+    // A failed scan confirmed nothing, so Next keeps waiting for one that does
+    if (!error) wizardState.setSelection("driveScanReady", true);
 
-    // Refresh can give way to the list it found, or the other way around
     await this.updateComplete;
+    // Not one card can be picked, so the group takes no focus and Tab skips
+    // every drive. Continue from why instead, when that is new.
+    const why = this._noUsableDriveReason;
+    const active = activeElement();
+    if (
+      why &&
+      !explained &&
+      (!active || active === document.body || this.matches(":focus-within"))
+    ) {
+      focusHeading(why);
+      return;
+    }
+    // Refresh can give way to the list it found, or the other way around
     this._accessibility.restoreFocus(this._refreshButton);
+  }
+
+  /** Whether the list is up, but every drive on it is disabled. */
+  private _noUsableDrive(): boolean {
+    const config = wizardState.getState().selections.deviceConfig;
+    return (
+      this._scanned &&
+      !this._error &&
+      this._drives.length > 0 &&
+      !this._drives.some((drive) => isEligibleFlashTarget(drive, config))
+    );
   }
 
   /** What the last scan found, once there is a list to refresh. */
@@ -192,11 +224,27 @@ export class DriveSelectionView extends LitElement {
       return localize("views.sbc.drive_selection_view.scanning_for_drives");
     }
     if (this._error) return "";
-    return this._drives.length
-      ? localize("views.sbc.drive_selection_view.drives_found", {
-          count: this._drives.length,
+    const count = this._drives.length;
+    if (!count) {
+      return localize("views.sbc.drive_selection_view.no_drives_found");
+    }
+    const config = wizardState.getState().selections.deviceConfig;
+    const usable = this._drives.filter((drive) =>
+      isEligibleFlashTarget(drive, config)
+    ).length;
+    if (usable === count) {
+      return localize("views.sbc.drive_selection_view.drives_found", {
+        count,
+      });
+    }
+    return usable
+      ? localize("views.sbc.drive_selection_view.drives_found_usable", {
+          count,
+          usable,
         })
-      : localize("views.sbc.drive_selection_view.no_drives_found");
+      : localize("views.sbc.drive_selection_view.drives_found_none_usable", {
+          count,
+        });
   }
 
   /**
@@ -212,6 +260,11 @@ export class DriveSelectionView extends LitElement {
       wizardState.setSelection("driveSelectionLost", undefined);
       this._selectionLost = true;
     }
+
+    // A failed scan can't tell whether the drive is still there. Its
+    // selection stays, and only a scan that no longer finds the drive clears
+    // it, and says so.
+    if (this._error) return;
 
     const selection = readDriveSelection(wizardState.getState().selections);
     if (!selection) {
@@ -233,7 +286,11 @@ export class DriveSelectionView extends LitElement {
 
     clearDriveSelection();
     this._selectedDriveId = null;
-    this._selectionLost = true;
+    // A drive still listed only falls short of this board, which its card says
+    const listed = this._drives.some((drive) =>
+      isSameDrive(selection, driveIdentity(drive))
+    );
+    if (!listed) this._selectionLost = true;
   }
 
   private _isMiniPCFlow(): boolean {
@@ -337,6 +394,7 @@ export class DriveSelectionView extends LitElement {
     }
 
     return html`
+      ${this._noUsableDrive() ? this._renderNoUsableDrive(config) : ""}
       <div class="drives-header">
         <p class="drives-title">
           ${localize("views.sbc.drive_selection_view.available_drives")}
@@ -405,6 +463,35 @@ export class DriveSelectionView extends LitElement {
           }
         )}
       </wa-radio-group>
+    `;
+  }
+
+  /**
+   * Why none of the drives can be picked. Each disabled card says why it
+   * can't, but nothing would say that none can.
+   */
+  private _renderNoUsableDrive(config?: HaosConfig) {
+    const count = this._drives.length;
+    const tooSmall = this._drives.some(
+      (drive) => getDriveFit(drive.size, config) === "too-small"
+    );
+    return html`
+      <inline-notice>
+        <p class="no-usable-drive">
+          ${tooSmall
+            ? localize(
+                "views.sbc.drive_selection_view.no_usable_drive_minimum",
+                {
+                  count,
+                  size: formatBytes(config!.minimum_storage_bytes),
+                }
+              )
+            : localize(
+                "views.sbc.drive_selection_view.no_usable_drive_unavailable",
+                { count }
+              )}
+        </p>
+      </inline-notice>
     `;
   }
 
