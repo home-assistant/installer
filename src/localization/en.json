@@ -374,7 +374,7 @@
   "views.sbc.success_view.step_insert_storage": "Insert the written storage into {device}.",
   "views.sbc.success_view.step_insert_storage_generic": "Insert the written storage into your device.",
   "common.success.step_connect_ethernet_and_power": "Connect an Ethernet cable to the same network as your computer, with internet access. Then connect power to start the device.",
-  "views.sbc.success_view.step_connect_power_wifi": "Connect power to start the device. It joins the Wi-Fi network {network}. If Home Assistant can't be reached after a few minutes, connect an Ethernet cable.",
+  "views.sbc.success_view.step_connect_power_wifi": "Connect power to start the device. It joins the Wi-Fi network {network}. If Home Assistant can't be reached after a few minutes, the Wi-Fi password may have a typo. Connect an Ethernet cable instead.",
   "views.sbc.success_view.step_open": "Open {url} in your browser. If it still does not open after a few minutes, find the device's IP address in your router or on an attached display, then open {ip_url}.",
   "views.sbc.success_view.ip_address": "IP address",
   "common.success.step_preparing_page": "The Preparing Home Assistant page downloads the latest Home Assistant. Allow about 20 minutes, depending on your internet connection. Keep power and Ethernet connected until the welcome screen appears.",

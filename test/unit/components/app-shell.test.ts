@@ -396,18 +396,26 @@ describe("app-shell", () => {
     }
   });
 
-  it("returns to path selection when Back leaves the first step", async () => {
-    await enterSbcFlow(el);
-    wizardState.setSelection("device", "rpi5");
+  // The welcome screen has nothing new for someone who already used it
+  for (const [action, event, step] of [
+    ["Back leaves the first step", "wizard-exit", undefined],
+    ["Cancel is chosen", "wizard-cancel", undefined],
+    ["Done is chosen", "wizard-next", "success"],
+  ] as const) {
+    it(`returns to path selection when ${action}`, async () => {
+      await enterSbcFlow(el);
+      wizardState.setSelection("device", "rpi5");
+      if (step) await goToStep(el, step);
 
-    fire(shellOf(el), "wizard-exit");
-    await el.updateComplete;
+      fire(shellOf(el), event);
+      await el.updateComplete;
 
-    expect(el.shadowRoot!.querySelector("path-selection-view")).to.exist;
-    expect(shellOf(el)).to.equal(null);
-    expect(wizardState.getState().currentFlow).to.equal(null);
-    expect(wizardState.getState().selections).to.deep.equal({});
-  });
+      expect(el.shadowRoot!.querySelector("path-selection-view")).to.exist;
+      expect(shellOf(el)).to.equal(null);
+      expect(wizardState.getState().currentFlow).to.equal(null);
+      expect(wizardState.getState().selections).to.deep.equal({});
+    });
+  }
 
   it("offers only Done once the installation succeeded", async () => {
     await enterSbcFlow(el);
@@ -1045,7 +1053,7 @@ describe("app-shell", () => {
       await el.updateComplete;
       fire(leaveDialog, "dialog-primary");
       await el.updateComplete;
-      expect(el.shadowRoot!.querySelector("welcome-view")).to.exist;
+      expect(el.shadowRoot!.querySelector("path-selection-view")).to.exist;
       expect(wizardState.getState().selections.proxmoxVmResult).to.be.undefined;
     });
 
@@ -1221,7 +1229,7 @@ describe("app-shell", () => {
       wizardState.startFlow("sbc");
       selectTargets();
       await goToStep(el, "flash");
-      fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+      fire(el.shadowRoot!.querySelector("path-selection-view")!, "navigate", {
         view: "wizard",
       });
       await el.updateComplete;

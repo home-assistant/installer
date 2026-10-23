@@ -24,8 +24,8 @@
 | Portainer | Container-based, not HAOS |
 
 Back always goes one screen back: on a flow's first step it returns to the
-path selection, the same as Back on any other screen. Cancel leaves the flow
-for the welcome screen.
+path selection, the same as Back on any other screen. Cancel, Done and
+leaving a running VM install also return to the path selection.
 
 ---
 

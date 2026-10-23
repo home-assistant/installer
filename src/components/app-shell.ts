@@ -289,7 +289,7 @@ export class AppShell extends LitElement {
     const hideBack =
       last || (!!install && (running || !install.backAfterError));
 
-    // Done already returns to the start, so Cancel would only repeat it
+    // Done already leaves the flow, so Cancel would only repeat it
     const hideCancel = last;
 
     const hideNext =
@@ -308,7 +308,7 @@ export class AppShell extends LitElement {
         .hideCancel=${hideCancel}
         @wizard-cancel=${this._onWizardCancel}
         @wizard-back=${this._onWizardBack}
-        @wizard-exit=${this._onWizardExit}
+        @wizard-exit=${this._exitFlow}
         @wizard-next=${this._onWizardNext}
         @install-stoppable=${this._onInstallStoppable}
         @install-leavable=${this._onInstallLeavable}
@@ -425,9 +425,7 @@ export class AppShell extends LitElement {
       return;
     }
 
-    this._resetErrorState();
-    wizardState.reset();
-    this._currentView = "welcome";
+    this._exitFlow();
   }
 
   /**
@@ -439,8 +437,11 @@ export class AppShell extends LitElement {
     this._resetErrorState();
   }
 
-  /** Back on the first step returns to where the flow was picked. */
-  private _onWizardExit() {
+  /**
+   * Back on the first step, Cancel, Done and leaving a running VM return to
+   * where the flow was picked. The welcome screen has nothing new by then.
+   */
+  private _exitFlow() {
     this._resetErrorState();
     wizardState.reset();
     this._currentView = "path-selection";
@@ -526,10 +527,7 @@ export class AppShell extends LitElement {
       : -1;
 
     if (wizardState.isLastStep) {
-      // Flow complete - go back to welcome
-      this._resetErrorState();
-      wizardState.reset();
-      this._currentView = "welcome";
+      this._exitFlow();
     } else if (skipIndex >= 0) {
       wizardState.goToStep(skipIndex);
     } else {
@@ -648,9 +646,7 @@ export class AppShell extends LitElement {
     // Leaving detaches the progress view, which stops its waiting; the VM
     // and Home Assistant carry on
     this._showLeaveDialog = false;
-    this._resetErrorState();
-    wizardState.reset();
-    this._currentView = "welcome";
+    this._exitFlow();
   }
 
   private _onKeepWaiting() {

@@ -460,15 +460,14 @@ test.describe("Proxmox Installation Flow", () => {
     await expect(backButton).toHaveCSS("visibility", "hidden");
   });
 
-  test("step 5: clicking Done returns to welcome", async ({ page }) => {
+  test("step 5: clicking Done returns to path selection", async ({ page }) => {
     await navigateToProxmoxStep5(page);
 
     const wizardShell = page.locator("wizard-shell");
     const doneButton = wizardShell.locator(".footer-right wa-button");
     await doneButton.click();
 
-    // Should be back on welcome screen
-    await expect(page.locator("welcome-view")).toBeVisible();
+    await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
   test("can cancel wizard at any step before installation", async ({
@@ -477,14 +476,13 @@ test.describe("Proxmox Installation Flow", () => {
     // Test cancel on step 1
     const wizardShell = page.locator("wizard-shell");
     await wizardShell.locator(".footer-left wa-button").click();
-    await expect(page.locator("welcome-view")).toBeVisible();
+    await expect(page.locator("path-selection-view")).toBeVisible();
 
     // Restart and test cancel on step 2
-    await page.getByRole("button", { name: "Let's go" }).click();
     await page.locator('option-card[heading="Proxmox server"]').click();
     await navigateToProxmoxStep2(page);
     await wizardShell.locator(".footer-left wa-button").click();
-    await expect(page.locator("welcome-view")).toBeVisible();
+    await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
   test("complete end-to-end flow", async ({ page }) => {
@@ -525,12 +523,12 @@ test.describe("Proxmox Installation Flow", () => {
       timeout: 30000,
     });
 
-    // Return to welcome
+    // Done returns to the path selection
     await page
       .locator("wizard-shell")
       .locator(".footer-right wa-button")
       .click();
-    await expect(page.locator("welcome-view")).toBeVisible();
+    await expect(page.locator("path-selection-view")).toBeVisible();
   });
 });
 

@@ -103,7 +103,7 @@ test.describe("Home Assistant hardware flow", () => {
       timeout: 45000,
     });
     await next(page).click();
-    await expect(page.locator("welcome-view")).toBeVisible();
+    await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
   test("the Yellow asks for its compute module after the dialog", async ({
@@ -152,6 +152,6 @@ test.describe("Home Assistant hardware flow", () => {
     ).toHaveJSProperty("checked", true);
 
     await cancel(page).click();
-    await expect(page.locator("welcome-view")).toBeVisible();
+    await expect(page.locator("path-selection-view")).toBeVisible();
   });
 });

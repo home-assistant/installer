@@ -166,13 +166,12 @@ test.describe("Proxmox TOTP login", () => {
     });
     await code.fill("012345");
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(page.locator("welcome-view")).toBeVisible();
+    await expect(page.locator("path-selection-view")).toBeVisible();
     await expect(page.locator("proxmox-connect-view")).toHaveCount(0);
     expect(
       await page.evaluate(() => (window as unknown as TotpWindow).totpAttempts)
     ).toEqual([]);
 
-    await page.getByRole("button", { name: "Let's go" }).click();
     await page.locator('option-card[heading="Proxmox server"]').click();
     await expect(code).toHaveValue("");
     await page
