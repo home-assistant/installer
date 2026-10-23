@@ -239,6 +239,43 @@ describe("Proxmox import consent", () => {
     expect(writes).to.deep.equal([]);
   });
 
+  async function refreshStorage(el: ProxmoxConfigureView) {
+    const before = reads;
+    (el.shadowRoot!.querySelector(".refresh-storage") as HTMLElement).click();
+    await waitUntil(() => reads > before);
+    await settle();
+    await el.updateComplete;
+  }
+
+  it("keeps the chosen Import storage across Refresh storage while it is still a candidate", async () => {
+    storages.push({ ...directory, name: "other" });
+    const el = await mount();
+    const select = importSelect(el)!;
+    select.value = "other";
+    select.dispatchEvent(new Event("change"));
+    await el.updateComplete;
+
+    await refreshStorage(el);
+    expect(importSelect(el)!.value).to.equal("other");
+    await click(el, "Enable Import...");
+    const dialog = el.shadowRoot!.querySelector("info-dialog") as InfoDialog;
+    expect(dialog.message).to.contain('"other"');
+
+    // Once it is no longer a candidate, the first one is offered instead
+    dialog.dispatchEvent(new CustomEvent("dialog-secondary"));
+    storages = [
+      directory,
+      disk,
+      { ...directory, name: "other", active: false },
+      { ...directory, name: "spare" },
+    ];
+    await refreshStorage(el);
+    expect(importSelect(el)!.value).to.equal("local");
+    await click(el, "Enable Import...");
+    expect(dialog.message).to.contain('"local"');
+    expect(writes).to.deep.equal([]);
+  });
+
   it("hands focus back to Enable Import once its dialog closes", async () => {
     const el = await mount();
     // Without opening it for real: a test page in the background never
