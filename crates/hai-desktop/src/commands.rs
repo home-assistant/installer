@@ -557,6 +557,7 @@ pub async fn download_utm_image(
     progress_channel: Channel<FlashProgress>,
     pending: tauri::State<'_, PendingUtmImages>,
     jobs: tauri::State<'_, InstallJobs>,
+    downloads: tauri::State<'_, SessionDownload>,
 ) -> Result<String, CommandError> {
     let job = jobs.begin(attempt);
     let _running = running_job();
@@ -575,19 +576,22 @@ pub async fn download_utm_image(
     };
     let image = callback
         .operation
-        .finish(run_utm_download(&Backend, board, &callback).await)?;
+        .finish(run_utm_download(&Backend, board, &callback, &downloads).await)?;
     let path = image.path().to_string_lossy().into_owned();
     pending.insert(path.clone(), image);
     Ok(path)
 }
 
-/// Download and extract the HAOS qcow2 image for `arch`, returning the extracted path.
+/// Download and extract the HAOS qcow2 image for `arch`, returning the extracted
+/// path. A retry reuses the download in `downloads` instead of downloading the
+/// same image again.
 ///
 /// Generic over the backend so it can be exercised against `BackendMock`.
 async fn run_utm_download<B, P>(
     backend: &B,
     arch: &str,
     callback: &P,
+    downloads: &SessionDownload,
 ) -> Result<TemporaryImage, CommandError>
 where
     B: ReleaseSource,
@@ -615,10 +619,13 @@ where
         TemporaryImage::new(&cache_dir, ImageFormat::Qcow2).map_err(CommandError::from)?;
     let compressed_path = temporary_image.archive_path();
 
-    backend
-        .download_image(image, &compressed_path, callback)
-        .await
-        .map_err(CommandError::from)?;
+    if !reuse_download(downloads, image, &compressed_path, callback).await? {
+        backend
+            .download_image(image, &compressed_path, callback)
+            .await
+            .map_err(CommandError::from)?;
+        keep_download(downloads, &cache_dir, image, &compressed_path);
+    }
 
     backend
         .extract_temporary_image(&temporary_image, callback)
@@ -664,10 +671,16 @@ pub fn check_utm_automation() -> Result<(), CommandError> {
 pub async fn create_utm_vm(
     config: hai_core::UtmVmConfig,
     pending: tauri::State<'_, PendingUtmImages>,
+    downloads: tauri::State<'_, SessionDownload>,
 ) -> Result<String, CommandError> {
     let _running = running_job();
     let _awake = keep_awake("Creating the Home Assistant virtual machine").await;
-    Operation::new("utm_create").finish(run_utm_creation(&Backend, &config, &pending).await)
+    let result = run_utm_creation(&Backend, &config, &pending).await;
+    if result.is_ok() {
+        // Created: there is no retry to keep the download for anymore
+        downloads.clear();
+    }
+    Operation::new("utm_create").finish(result)
 }
 
 async fn run_utm_creation<B: UtmBackend>(
@@ -1081,6 +1094,7 @@ mod tests {
         crate::diagnostics::clear_test_log_tail();
         let app = tauri::test::mock_app();
         app.manage(PendingUtmImages::default());
+        app.manage(SessionDownload::default());
         app.manage(crate::install_jobs::InstallJobs::default());
         let channel = Channel::new(|_| {
             let tail = crate::diagnostics::test_log_tail();
@@ -1089,9 +1103,15 @@ mod tests {
                 .any(|line| line.contains("rust utm_download") && line.contains(" success ")));
             Ok(())
         });
-        let path = download_utm_image("attempt".into(), channel, app.state(), app.state())
-            .await
-            .unwrap();
+        let path = download_utm_image(
+            "attempt".into(),
+            channel,
+            app.state(),
+            app.state(),
+            app.state(),
+        )
+        .await
+        .unwrap();
         let tail = crate::diagnostics::test_log_tail();
         assert_eq!(
             tail.iter()
@@ -1112,11 +1132,18 @@ mod tests {
 
         let app = tauri::test::mock_app();
         app.manage(PendingUtmImages::default());
+        app.manage(SessionDownload::default());
         app.manage(InstallJobs::default());
         let channel = Channel::new(|_| panic!("An unsupported UTM download must not start"));
-        let error = download_utm_image("attempt".into(), channel, app.state(), app.state())
-            .await
-            .unwrap_err();
+        let error = download_utm_image(
+            "attempt".into(),
+            channel,
+            app.state(),
+            app.state(),
+            app.state(),
+        )
+        .await
+        .unwrap_err();
         assert_eq!(error.code, "unsupported_platform");
         // The log category is the same fixed code the view receives
         let tail = crate::diagnostics::test_log_tail();
@@ -2196,6 +2223,28 @@ mod mock_tests {
     }
 
     #[tokio::test]
+    async fn a_utm_retry_reuses_the_download() {
+        let backend = RetryBackend::new();
+        let downloads = SessionDownload::default();
+
+        // Creating the VM failed, so the view drops its image and starts over
+        let first = run_utm_download(&backend, "generic-aarch64", &NoOpProgress, &downloads)
+            .await
+            .unwrap();
+        drop(first);
+        let second = run_utm_download(&backend, "generic-aarch64", &NoOpProgress, &downloads)
+            .await
+            .unwrap();
+        assert_eq!(backend.downloads(), 1, "the retry downloaded again");
+        assert!(second.path().exists());
+
+        // Once the VM is created, `create_utm_vm` clears what was kept
+        drop(second);
+        downloads.clear();
+        assert_eq!(backend.folders(), 0);
+    }
+
+    #[tokio::test]
     async fn a_damaged_kept_download_is_downloaded_again() {
         let backend = RetryBackend::new();
         let downloads = SessionDownload::default();
@@ -2230,7 +2279,9 @@ mod mock_tests {
                 extracted: Default::default(),
                 write_started: Default::default(),
             };
-            let result = run_utm_download(&backend, "generic-aarch64", &NoOpProgress).await;
+            let downloads = SessionDownload::default();
+            let result =
+                run_utm_download(&backend, "generic-aarch64", &NoOpProgress, &downloads).await;
             assert_eq!(result.is_ok(), outcome == "success");
             if let Ok(image) = &result {
                 assert!(image.path().exists());
@@ -2239,6 +2290,8 @@ mod mock_tests {
             drop(result);
             let path = backend.extracted.lock().unwrap().clone().unwrap();
             assert!(!path.exists());
+            // A download kept for a retry goes with the session
+            drop(downloads);
             assert_eq!(std::fs::read_dir(backend.cache.path()).unwrap().count(), 0);
         }
     }
@@ -2720,9 +2773,10 @@ mod mock_tests {
         assert_eq!(error.code, "checksum_mismatch");
         assert!(error.retryable);
         for board in ["generic-aarch64", "ova"] {
-            let error = run_utm_download(&backend, board, &NoOpProgress)
-                .await
-                .unwrap_err();
+            let error =
+                run_utm_download(&backend, board, &NoOpProgress, &SessionDownload::default())
+                    .await
+                    .unwrap_err();
             assert_eq!(error.code, "checksum_mismatch");
             assert!(error.retryable);
         }
@@ -2986,9 +3040,14 @@ mod mock_tests {
         assert!(image
             .download_url
             .ends_with(&format!("haos_{board}-16.3.qcow2.xz")));
-        let image = run_utm_download(&BackendMock, board, &NoOpProgress)
-            .await
-            .unwrap();
+        let image = run_utm_download(
+            &BackendMock,
+            board,
+            &NoOpProgress,
+            &SessionDownload::default(),
+        )
+        .await
+        .unwrap();
         let path = image.path();
         assert!(path.exists());
         drop(image);
@@ -3004,10 +3063,12 @@ mod mock_tests {
         // Off macOS the mock command skips the Apple silicon check
         let app = tauri::test::mock_app();
         app.manage(PendingUtmImages::default());
+        app.manage(SessionDownload::default());
         app.manage(InstallJobs::default());
         let path = download_utm_image(
             "attempt".into(),
             Channel::new(|_| Ok(())),
+            app.state(),
             app.state(),
             app.state(),
         )
