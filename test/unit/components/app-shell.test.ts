@@ -1035,6 +1035,7 @@ describe("app-shell", () => {
       expect(stopDialogOf(el).open).to.be.false;
       expect(leaveDialog.heading).to.equal("Leave the installation?");
       expect(leaveDialog.message).to.contain("http://192.0.2.50");
+      expect(leaveDialog.message).not.to.contain("Import");
 
       fire(leaveDialog, "dialog-secondary");
       await el.updateComplete;
@@ -1047,6 +1048,62 @@ describe("app-shell", () => {
       await el.updateComplete;
       expect(el.shadowRoot!.querySelector("welcome-view")).to.exist;
       expect(wizardState.getState().selections.proxmoxVmResult).to.be.undefined;
+    });
+
+    // Import is cluster-wide and stays on, and only the success view would
+    // remind of it otherwise
+    describe("after this flow enabled Import", () => {
+      const enableImport = () =>
+        wizardState.setSelection("proxmoxImportChanges", [
+          { serverOrigin: "https://pve:8006", storage: "local" },
+        ]);
+
+      it("says so before a stop", async () => {
+        await enterProxmoxInstall(enableImport);
+        await waitUntil(() => !shellOf(el).hideFooter, "Cancel never showed");
+
+        fire(shellOf(el), "wizard-cancel");
+        await el.updateComplete;
+        expect(stopDialogOf(el).open).to.be.true;
+        expect(stopDialogOf(el).message).to.contain(
+          'Import, which this installer enabled on "local", stays on'
+        );
+        expect(stopDialogOf(el).message).not.to.contain(
+          "nothing is left behind"
+        );
+      });
+
+      it("says so before leaving", async () => {
+        const calls: string[] = [];
+        await enterProxmoxInstall(() => {
+          enableImport();
+          mockTauriIpc((cmd) => {
+            calls.push(cmd);
+            if (cmd === "proxmox_create_vm") return { vm_id: 100, node: "pve" };
+            if (cmd === "proxmox_get_vm_status")
+              return { status: "running", ip_address: "192.0.2.50" };
+            // Home Assistant is still starting
+            if (cmd === "check_ha_ready") return new Promise(() => {});
+            throw new Error(`Unexpected IPC command: ${cmd}`);
+          });
+        });
+        await waitUntil(
+          () => calls.includes("check_ha_ready") && !shellOf(el).hideFooter,
+          "Cancel never came back once the VM existed"
+        );
+        const leaveDialog = el.shadowRoot!.querySelector(
+          "info-dialog.leave-dialog"
+        ) as InfoDialog;
+
+        fire(shellOf(el), "wizard-cancel");
+        await el.updateComplete;
+        expect(leaveDialog.open).to.be.true;
+        expect(leaveDialog.message).to.contain("http://192.0.2.50");
+        expect(leaveDialog.message).to.contain(
+          'Import, which this installer enabled on "local", stays on'
+        );
+        expect(leaveDialog.message).to.contain("turn it off in Proxmox");
+      });
     });
 
     it("stops asking to leave once the install completed", async () => {

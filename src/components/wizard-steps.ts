@@ -8,6 +8,7 @@ import type { HaHardwareDeviceSelectionView } from "../views/ha-hardware/device-
 import type { LiveIsoLocationView } from "../views/live-usb/live-iso-location-view.js";
 import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-view.js";
 import type { ProxmoxConnectView } from "../views/proxmox/proxmox-connect-view.js";
+import { enabledImportStorageList } from "../views/proxmox/proxmox-success-view.js";
 
 /** What the shell can ask of the step it shows; a step offers what it has. */
 export interface WizardStepView extends HTMLElement {
@@ -245,6 +246,16 @@ export const WIZARD_STEPS: Record<
       render: () => html`<proxmox-progress-view></proxmox-progress-view>`,
       install: {
         ...vmInstall,
+        // A stop leaves no VM behind, but Import that the configure step
+        // enabled stays on
+        stopMessage: (selections) => {
+          const storages = enabledImportStorageList(selections);
+          return storages
+            ? localize("components.wizard_steps.stop_proxmox_import_message", {
+                storages,
+              })
+            : vmInstall.stopMessage(selections);
+        },
         // The session expired: log in again, then wait for the VM made by then
         reconnect: () => ({
           step: "connection",

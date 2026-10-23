@@ -193,6 +193,47 @@ describe("wizard-steps", () => {
     ).to.deep.equal({ step: "connection", label: "Reconnect" });
   });
 
+  // Import that the configure step enabled is cluster-wide and stays on
+  it("says a Proxmox stop leaves the Import it enabled", () => {
+    const session = {
+      server_url: "https://pve:8006",
+      ticket: "test",
+      csrf_token: "test",
+    };
+    const stopMessage = wizardStep("proxmox", "install")!.install!.stopMessage;
+    const enabled: WizardSelections = {
+      proxmoxSession: session,
+      proxmoxImportChanges: [
+        { serverOrigin: "https://pve:8006", storage: "local" },
+        { serverOrigin: "https://pve:8006", storage: "backup" },
+        { serverOrigin: "https://other:8006", storage: "elsewhere" },
+      ],
+    };
+    const message = stopMessage(enabled);
+    expect(message).to.contain(
+      'Import, which this installer enabled on "local", "backup"'
+    );
+    expect(message).to.contain("turn it off in Proxmox");
+    expect(message).not.to.contain("elsewhere");
+    expect(message).not.to.contain("nothing is left behind");
+
+    // Without a change on this server, nothing is left behind
+    for (const selections of [
+      { proxmoxSession: session },
+      {
+        proxmoxSession: session,
+        proxmoxImportChanges: [
+          { serverOrigin: "https://other:8006", storage: "local" },
+        ],
+      },
+    ]) {
+      expect(stopMessage(selections)).to.contain("nothing is left behind");
+    }
+    expect(
+      wizardStep("vm", "install")!.install!.stopMessage(enabled)
+    ).to.contain("nothing is left behind");
+  });
+
   it("leaves the hardware device step only when the reinstall is confirmed", async () => {
     const run = wizardStep("ha-hardware", "device")!.beforeNext!.run;
     for (const answer of [true, false]) {

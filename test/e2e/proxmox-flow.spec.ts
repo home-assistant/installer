@@ -387,7 +387,10 @@ test.describe("Proxmox Installation Flow", () => {
     const wizardShell = page.locator("wizard-shell");
     const stopDialog = page.locator("app-shell > info-dialog.stop-dialog");
     await wizardShell.locator(".footer-left wa-button").click();
-    await expect(stopDialog.getByText("nothing is left behind")).toBeVisible();
+    // The configure step enabled Import in the mock, which a stop leaves on
+    await expect(
+      stopDialog.getByText('Import, which this installer enabled on "local"')
+    ).toBeVisible();
     await stopDialog.getByRole("button", { name: "Stop installation" }).click();
 
     await expect(

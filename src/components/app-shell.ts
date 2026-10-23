@@ -34,6 +34,7 @@ import "../views/proxmox/proxmox-configure-view.js";
 import "../views/proxmox/proxmox-confirm-view.js";
 import "../views/proxmox/proxmox-progress-view.js";
 import "../views/proxmox/proxmox-success-view.js";
+import { enabledImportStorageList } from "../views/proxmox/proxmox-success-view.js";
 
 // Import components
 import type { WizardShell } from "./wizard-shell.js";
@@ -179,6 +180,12 @@ export class AppShell extends LitElement {
 
   render() {
     const selections = this._wizardState.selections;
+    const address = selections.ipAddress
+      ? `http://${selections.ipAddress}`
+      : "http://homeassistant.local";
+    // Leaving skips the success view, which reminds of the Import this flow
+    // enabled
+    const importStorages = enabledImportStorageList(selections);
 
     return html`
       ${this._renderView()}
@@ -208,11 +215,14 @@ export class AppShell extends LitElement {
         class="leave-dialog"
         ?open=${this._showLeaveDialog}
         .heading=${localize("components.app_shell.leave_installation_title")}
-        .message=${localize("components.app_shell.leave_installation_message", {
-          address: this._wizardState.selections.ipAddress
-            ? `http://${this._wizardState.selections.ipAddress}`
-            : "http://homeassistant.local",
-        })}
+        .message=${importStorages
+          ? localize("components.app_shell.leave_installation_import_message", {
+              address,
+              storages: importStorages,
+            })
+          : localize("components.app_shell.leave_installation_message", {
+              address,
+            })}
         .primaryLabel=${localize("components.app_shell.leave_installation")}
         .secondaryLabel=${localize("components.app_shell.keep_waiting")}
         @dialog-primary=${this._onLeaveInstallation}
