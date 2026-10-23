@@ -15,10 +15,12 @@ const cancel = (page: Page) =>
 const reinstallDialog = (page: Page) =>
   page.locator("ha-hardware-device-selection-view info-dialog");
 
-/** Next on the device step, answering the reinstall question with Continue. */
+/** Next on the device step, answering yes to the reinstall question. */
 async function nextFromDevice(page: Page) {
   await next(page).click();
-  await reinstallDialog(page).locator('wa-button[variant="brand"]').click();
+  await reinstallDialog(page)
+    .getByRole("button", { name: /^(Reinstall|Install)$/ })
+    .click();
 }
 
 async function openHaHardware(page: Page) {
@@ -125,8 +127,15 @@ test.describe("Home Assistant hardware flow", () => {
     );
     await expect(dialog).toContainText("Reinstalling erases everything on it");
 
+    // Going back is what stands out, since the device is ready as it is
+    const goBack = dialog.locator("wa-button", { hasText: "Go back" });
+    await expect(goBack).toHaveAttribute("variant", "brand");
+    await expect(
+      dialog.locator("wa-button", { hasText: "Reinstall" })
+    ).toHaveAttribute("appearance", "outlined");
+
     // Go back stays on the device step, with the device still selected
-    await dialog.locator('wa-button[appearance="outlined"]').click();
+    await goBack.click();
     await expect(dialog).not.toBeVisible();
     await expect(
       page.locator('device-card[value="ha-green"]')

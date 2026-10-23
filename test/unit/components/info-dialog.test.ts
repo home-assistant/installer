@@ -83,6 +83,25 @@ describe("info-dialog", () => {
       .exist;
   });
 
+  it("makes the secondary button stand out when asked to", async () => {
+    const el = await fixture<InfoDialog>(html`
+      <info-dialog
+        open
+        primary-label="Reinstall"
+        secondary-label="Go back"
+        emphasis="secondary"
+      ></info-dialog>
+    `);
+
+    const [secondary, primary] = el.shadowRoot!.querySelectorAll("wa-button");
+    expect(secondary.textContent!.trim()).to.equal("Go back");
+    expect(secondary.getAttribute("variant")).to.equal("brand");
+    expect(secondary.getAttribute("appearance")).to.equal("accent");
+    expect(primary.textContent!.trim()).to.equal("Reinstall");
+    expect(primary.getAttribute("variant")).to.equal("neutral");
+    expect(primary.getAttribute("appearance")).to.equal("outlined");
+  });
+
   it("does not render secondary button by default", async () => {
     const el = await fixture<InfoDialog>(html`
       <info-dialog open></info-dialog>

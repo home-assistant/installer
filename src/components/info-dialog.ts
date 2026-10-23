@@ -9,7 +9,8 @@ import "@home-assistant/webawesome/dist/components/button/button.js";
  * dismiss, and role="dialog"/aria-modal come for free).
  *
  * Toggle `open`, set `heading` / `message` / `primaryLabel` / `secondaryLabel` /
- * `primaryVariant`, and listen for `dialog-primary` / `dialog-secondary`.
+ * `primaryVariant` / `emphasis`, and listen for `dialog-primary` /
+ * `dialog-secondary`.
  * Escape, backdrop click, and the header close button all map to
  * `dialog-secondary` (dismiss).
  */
@@ -85,7 +86,16 @@ export class InfoDialog extends LitElement {
   @property({ type: String, attribute: "primary-variant" })
   primaryVariant: "brand" | "danger" = "brand";
 
+  /**
+   * Which button stands out. "secondary" when most people should not take the
+   * primary action. Dismissing still means secondary either way.
+   */
+  @property({ type: String })
+  emphasis: "primary" | "secondary" = "primary";
+
   render() {
+    const secondaryStandsOut = this.emphasis === "secondary";
+
     return html`
       <wa-dialog
         .open=${this.open}
@@ -110,7 +120,8 @@ export class InfoDialog extends LitElement {
           ? html`
               <wa-button
                 slot="footer"
-                appearance="outlined"
+                variant=${secondaryStandsOut ? "brand" : "neutral"}
+                appearance=${secondaryStandsOut ? "accent" : "outlined"}
                 @click=${this._onSecondary}
               >
                 ${this.secondaryLabel}
@@ -119,8 +130,8 @@ export class InfoDialog extends LitElement {
           : ""}
         <wa-button
           slot="footer"
-          variant=${this.primaryVariant}
-          appearance="accent"
+          variant=${secondaryStandsOut ? "neutral" : this.primaryVariant}
+          appearance=${secondaryStandsOut ? "outlined" : "accent"}
           @click=${this._onPrimary}
         >
           ${this.primaryLabel}

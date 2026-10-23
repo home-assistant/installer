@@ -260,7 +260,8 @@ export class HaHardwareDeviceSelectionView extends LitElement {
       ({ deviceId }) => deviceId === this._selectedDeviceId
     );
     if (!hardware) return nothing;
-    // A Yellow kit may come without a compute module, so nothing is on it yet
+    // A Yellow kit may come without a compute module, so nothing is on it yet.
+    // The others are ready to use, so going back is what most people want.
     const yellow = hardware.id === "yellow-cm4" || hardware.id === "yellow-cm5";
     return html`
       <info-dialog
@@ -281,6 +282,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
           ? localize("common.install")
           : localize("views.ha_hardware.device_selection_view.reinstall")}
         secondary-label=${localize("common.go_back")}
+        emphasis=${yellow ? "primary" : "secondary"}
         @dialog-primary=${this._onReinstallConfirmed}
         @dialog-secondary=${this._onReinstallDeclined}
       >
