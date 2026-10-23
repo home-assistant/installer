@@ -8,6 +8,8 @@ mod safety;
 mod ui;
 mod writer;
 
+use std::fs::File;
+use std::io;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -34,7 +36,11 @@ fn main() {
     let mut selected: Option<String> = None;
     loop {
         let image = image::find(Path::new(MEDIA));
-        let review = review_disks();
+        let (review, scan_error) = match review_disks(image.as_ref()) {
+            Ok(review) => (review, None),
+            // Shown instead of an empty list; it's tried again on the next refresh
+            Err(error) => (safety::Review::default(), Some(error.to_string())),
+        };
         // Keep the same disk selected while the list refreshes
         let index = selected
             .as_ref()
@@ -53,6 +59,7 @@ fn main() {
                 .collect(),
             selected: index,
             hidden: ui::hidden_summary(&review.hidden),
+            scan_error,
         });
 
         let Some(key) = ui.key(Some(REFRESH)) else {
@@ -126,8 +133,10 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
     }
 
     let (sys_block, dev) = (Path::new(SYS_BLOCK), Path::new(DEV));
-    let usable = drives::list(sys_block)
-        .is_ok_and(|current| safety::still_usable(disk, current, sys_block, dev));
+    let boot_disk = boot_disk(image);
+    let usable = drives::list(sys_block).is_ok_and(|current| {
+        safety::still_usable(disk, current, sys_block, dev, boot_disk.as_deref())
+    });
     if !usable {
         return message(ui, "Nothing was written", DISK_CHANGED);
     }
@@ -152,10 +161,21 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
     if !unchanged {
         return message(ui, "Nothing was written", DISK_CHANGED);
     }
+    // Opened before the disk is wiped, so a stick pulled out by now leaves the disk as it was
+    let image_file = match File::open(&image.path) {
+        Ok(file) => file,
+        Err(error) => {
+            return message(
+                ui,
+                "Could not read the image",
+                &format!("{error}\nNothing was written."),
+            )
+        }
+    };
 
     let mut step = Step::start();
     let result = writer::write_image(
-        &image.path,
+        image_file,
         &mut target,
         disk.size_bytes,
         &mut |read, total, written| {
@@ -283,17 +303,26 @@ fn message(ui: &mut Ui, title: &str, body: &str) {
     }
 }
 
-fn review_disks() -> safety::Review {
+fn review_disks(image: Option<&BundledImage>) -> io::Result<safety::Review> {
     let (sys_block, dev) = (Path::new(SYS_BLOCK), Path::new(DEV));
-    match drives::list(sys_block) {
-        Ok(entries) => safety::review(entries, sys_block, dev),
-        // Shown as an empty list; it's tried again on the next refresh
-        Err(_) => safety::Review::default(),
-    }
+    let boot_disk = image.and_then(boot_disk);
+    Ok(safety::review(
+        drives::list(sys_block)?,
+        sys_block,
+        dev,
+        boot_disk.as_deref(),
+    ))
+}
+
+/// The disk the image is read from, so it's never offered as a target.
+fn boot_disk(image: &BundledImage) -> Option<String> {
+    drives::disk_holding(Path::new(SYS_BLOCK), &image.path)
 }
 
 fn run(ui: &mut Ui, command: &str) {
-    if let Err(error) = Command::new(command).status() {
-        message(ui, &format!("{command} failed"), &error.to_string());
+    match Command::new(command).status() {
+        Ok(status) if status.success() => {}
+        Ok(status) => message(ui, &format!("{command} failed"), &status.to_string()),
+        Err(error) => message(ui, &format!("{command} failed"), &error.to_string()),
     }
 }

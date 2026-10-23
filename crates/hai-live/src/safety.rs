@@ -30,12 +30,23 @@ pub struct Review {
     pub hidden: Vec<(String, &'static str)>,
 }
 
-/// Applies the rules to `entries`. `sys_block` is `/sys/block`, `dev` is `/dev`.
-pub fn review(entries: Vec<Entry>, sys_block: &Path, dev: &Path) -> Review {
+/// Applies the rules to `entries`. `sys_block` is `/sys/block`, `dev` is `/dev`, and
+/// `boot_disk` is the disk the image is read from, when that's known.
+pub fn review(
+    entries: Vec<Entry>,
+    sys_block: &Path,
+    dev: &Path,
+    boot_disk: Option<&str>,
+) -> Review {
     let mut review = Review::default();
     for entry in entries {
         match entry {
             Entry::Skipped { name, reason } => review.hidden.push((name, reason)),
+            // Not every boot medium carries the stick's label: the ISO, attached to a VM as a
+            // disk or written to a drive that isn't on USB, looks like any other disk
+            Entry::Disk(disk) if boot_disk == Some(disk.name.as_str()) => {
+                review.hidden.push((disk.name, "HAI live stick"))
+            }
             Entry::Disk(disk) => match is_hai_stick(sys_block, dev, &disk.name) {
                 Ok(true) => review.hidden.push((disk.name, "HAI live stick")),
                 // Can't rule out that this is the stick we booted from, so never offer it.
@@ -55,8 +66,14 @@ pub fn review(entries: Vec<Entry>, sys_block: &Path, dev: &Path) -> Review {
 
 /// Re-checks right before writing that `disk` is still in `current` (a fresh [`drives::list`]),
 /// unchanged (name, model, size and serial) and usable.
-pub fn still_usable(disk: &Disk, current: Vec<Entry>, sys_block: &Path, dev: &Path) -> bool {
-    review(current, sys_block, dev)
+pub fn still_usable(
+    disk: &Disk,
+    current: Vec<Entry>,
+    sys_block: &Path,
+    dev: &Path,
+    boot_disk: Option<&str>,
+) -> bool {
+    review(current, sys_block, dev, boot_disk)
         .choices
         .iter()
         .any(|c| c.problem.is_none() && c.disk == *disk)
@@ -110,7 +127,12 @@ mod tests {
         add_partition(&sys, "sdd", "sdd1"); // no /dev/sdd1, so it can't be checked
         add_block(&sys, "sr0", 1_000_000, &[]);
 
-        let review = review(drives::list_with(&sys, &fake_link).unwrap(), &sys, &dev);
+        let review = review(
+            drives::list_with(&sys, &fake_link).unwrap(),
+            &sys,
+            &dev,
+            None,
+        );
 
         let shown: Vec<(&str, Option<&str>)> = review
             .choices
@@ -144,8 +166,35 @@ mod tests {
             Entry::Disk(d) => d.clone(),
             other => panic!("{other:?}"),
         };
-        assert!(still_usable(&picked, disk("AAA"), &sys, &dev));
-        assert!(!still_usable(&picked, disk("BBB"), &sys, &dev));
+        assert!(still_usable(&picked, disk("AAA"), &sys, &dev, None));
+        assert!(!still_usable(&picked, disk("BBB"), &sys, &dev, None));
+    }
+
+    #[test]
+    fn hides_the_disk_it_boots_from_without_the_stick_label() {
+        let dir = tempfile::tempdir().unwrap();
+        let (sys, dev) = (dir.path().join("sys"), dir.path().join("dev"));
+        std::fs::create_dir_all(&dev).unwrap();
+        // The ISO attached as a SATA disk: big enough, no FAT label, not on USB
+        add_block(&sys, "sda", 34_359_738_368, &[("model", "QEMU HARDDISK")]);
+        add_block(&sys, "sdb", 64_000_000_000, &[("model", "SSD")]);
+        let entries = || drives::list_with(&sys, &fake_link).unwrap();
+
+        let review = review(entries(), &sys, &dev, Some("sda"));
+        let shown: Vec<&str> = review
+            .choices
+            .iter()
+            .map(|c| c.disk.name.as_str())
+            .collect();
+        assert_eq!(shown, ["sdb"]);
+        assert!(review.hidden.contains(&("sda".into(), "HAI live stick")));
+
+        let sda = match &entries()[0] {
+            Entry::Disk(disk) => disk.clone(),
+            other => panic!("{other:?}"),
+        };
+        assert!(still_usable(&sda, entries(), &sys, &dev, None));
+        assert!(!still_usable(&sda, entries(), &sys, &dev, Some("sda")));
     }
 
     #[test]

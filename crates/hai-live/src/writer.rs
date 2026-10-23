@@ -43,17 +43,16 @@ pub fn is_same_device(_disk: &File, _path: &Path) -> bool {
 /// Zeroes the start and end of `disk` (old partition tables and signatures can break HAOS's
 /// first-boot resize), then writes the decompressed `image_xz` from the start.
 ///
-/// `progress(compressed_read, compressed_total, written)` is called about every 64 MiB.
+/// The image comes in already open, so a stick that vanished is noticed before anything is
+/// wiped. `progress(compressed_read, compressed_total, written)` is called about every 64 MiB.
 /// Returns the number of image bytes written.
 pub fn write_image<D: Write + Seek>(
-    image_xz: &Path,
+    image_xz: File,
     disk: &mut D,
     disk_size: u64,
     progress: &mut dyn FnMut(u64, u64, u64),
 ) -> io::Result<u64> {
-    // Open the source first, so a vanished stick never leaves a wiped disk behind.
-    let file = File::open(image_xz)?;
-    let compressed_total = file.metadata()?.len();
+    let compressed_total = image_xz.metadata()?.len();
 
     wipe_ends(disk, disk_size)?;
     disk.seek(SeekFrom::Start(0))?;
@@ -62,7 +61,7 @@ pub fn write_image<D: Write + Seek>(
     let mut input = BufReader::with_capacity(
         BUFFER_BYTES,
         CountingReader {
-            inner: file,
+            inner: image_xz,
             count: compressed_read.clone(),
         },
     );
@@ -153,7 +152,8 @@ mod tests {
         let disk_size = 16 * MIB;
         let mut disk = Cursor::new(vec![0xffu8; disk_size]);
         let mut reports = 0;
-        let written = write_image(&image_xz, &mut disk, disk_size as u64, &mut |_, _, _| {
+        let image_file = File::open(&image_xz).unwrap();
+        let written = write_image(image_file, &mut disk, disk_size as u64, &mut |_, _, _| {
             reports += 1
         })
         .unwrap();
@@ -176,17 +176,8 @@ mod tests {
         data[0] ^= 0xff;
         std::fs::write(&image_xz, data).unwrap();
         let mut disk = Cursor::new(vec![0u8; 8 * 1024 * 1024]);
-        assert!(write_image(&image_xz, &mut disk, 8 * 1024 * 1024, &mut |_, _, _| {}).is_err());
-    }
-
-    #[test]
-    fn missing_image_leaves_the_disk_untouched() {
-        let dir = tempfile::tempdir().unwrap();
-        let disk_size = 16 * 1024 * 1024;
-        let mut disk = Cursor::new(vec![0xffu8; disk_size]);
-        let missing = dir.path().join("gone.img.xz");
-        assert!(write_image(&missing, &mut disk, disk_size as u64, &mut |_, _, _| {}).is_err());
-        assert!(disk.get_ref().iter().all(|&b| b == 0xff));
+        let image_file = File::open(&image_xz).unwrap();
+        assert!(write_image(image_file, &mut disk, 8 * 1024 * 1024, &mut |_, _, _| {}).is_err());
     }
 
     /// Decompression speed on real HAOS: set `HAOS_XZ` to the cached `.img.xz` and run

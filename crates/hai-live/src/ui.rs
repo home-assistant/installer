@@ -68,6 +68,8 @@ pub enum Screen {
         selected: usize,
         /// Hidden devices, one line per reason.
         hidden: Vec<String>,
+        /// Why the disks couldn't be listed, when they couldn't.
+        scan_error: Option<String>,
     },
     /// The typed confirmation before anything is erased.
     Confirm {
@@ -210,6 +212,7 @@ fn content(screen: &Screen) -> Card {
             disks,
             selected,
             hidden,
+            scan_error,
         } => {
             let mut lines = Vec::new();
             let Some(os) = os else {
@@ -229,7 +232,15 @@ fn content(screen: &Screen) -> Card {
                 "Choose the disk to install {os} on. Everything on it is erased."
             )));
             lines.push(Line::default());
-            if disks.is_empty() {
+            if let Some(error) = scan_error {
+                lines.push(
+                    Line::from(format!(
+                        "The disks could not be listed: {error}. Trying again by itself."
+                    ))
+                    .fg(WARNING)
+                    .bold(),
+                );
+            } else if disks.is_empty() {
                 lines.push(Line::from(
                     "No internal disk found. Connect one; this list updates by itself.",
                 ));
@@ -516,6 +527,7 @@ mod tests {
             ],
             selected: 0,
             hidden: vec!["optical drive: sr0".into(), "RAM disk: 16 devices".into()],
+            scan_error: None,
         }
     }
 
@@ -543,6 +555,7 @@ mod tests {
             disks: disks.clone(),
             selected,
             hidden: vec![],
+            scan_error: None,
         };
 
         // 80 x 25, the smallest console: the list doesn't fit the card
@@ -626,12 +639,30 @@ mod tests {
                 disks: vec![],
                 selected: 0,
                 hidden: vec![],
+                scan_error: None,
             },
             80,
             25,
         );
         assert!(shows(&rows, "no Home Assistant OS image"));
         assert!(!shows(&rows, "Enter install"));
+    }
+
+    #[test]
+    fn a_failed_scan_says_so_instead_of_finding_no_disks() {
+        let rows = draw(
+            &Screen::Disks {
+                os: Some("Home Assistant OS 18.3".into()),
+                disks: vec![],
+                selected: 0,
+                hidden: vec![],
+                scan_error: Some("Permission denied (os error 13)".into()),
+            },
+            80,
+            25,
+        );
+        assert!(shows(&rows, "could not be listed"), "{}", rows.join("\n"));
+        assert!(!shows(&rows, "No internal disk found"));
     }
 
     #[test]

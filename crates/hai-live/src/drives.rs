@@ -243,6 +243,47 @@ pub fn partitions(sys_block: &Path, disk: &str) -> io::Result<Vec<String>> {
     Ok(names)
 }
 
+/// The disk that holds `file`: the disk itself, or the disk one of whose partitions it's on.
+/// `None` when the file isn't on a disk in `sys_block`, for example when it was copied to RAM.
+#[cfg(unix)]
+pub fn disk_holding(sys_block: &Path, file: &Path) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    let number = device_number(fs::metadata(file).ok()?.dev());
+    disk_with_device(sys_block, &number)
+}
+
+/// hai-live only runs on Linux; elsewhere no file is ever on a disk.
+#[cfg(not(unix))]
+pub fn disk_holding(_sys_block: &Path, _file: &Path) -> Option<String> {
+    None
+}
+
+/// Linux encodes major and minor in a `dev_t` like this (see `gnu_dev_major` in glibc).
+#[cfg(any(unix, test))]
+fn device_number(dev: u64) -> String {
+    let major = ((dev >> 8) & 0xfff) | ((dev >> 32) & !0xfff);
+    let minor = (dev & 0xff) | ((dev >> 12) & !0xff);
+    format!("{major}:{minor}")
+}
+
+/// The disk in `sys_block` whose `dev` file, or one of whose partitions' `dev` file, is `number`.
+#[cfg(any(unix, test))]
+fn disk_with_device(sys_block: &Path, number: &str) -> Option<String> {
+    let is_number = |dir: &Path| read_trimmed(&dir.join("dev")).as_deref() == Some(number);
+    for item in fs::read_dir(sys_block).ok()?.flatten() {
+        let disk = item.file_name().to_string_lossy().into_owned();
+        let dir = sys_block.join(&disk);
+        let on_a_partition = partitions(sys_block, &disk)
+            .unwrap_or_default()
+            .iter()
+            .any(|part| is_number(&dir.join(part)));
+        if is_number(&dir) || on_a_partition {
+            return Some(disk);
+        }
+    }
+    None
+}
+
 fn read_trimmed(path: &Path) -> Option<String> {
     let text = fs::read_to_string(path).ok()?;
     let text = text.trim();
@@ -282,6 +323,34 @@ pub(crate) mod tests {
         Ok(PathBuf::from(format!(
             "../devices/pci0000:00/{bus}/host0/block/{name}"
         )))
+    }
+
+    #[test]
+    fn decodes_device_numbers_like_the_kernel() {
+        assert_eq!(device_number(0x0811), "8:17");
+        assert_eq!(device_number(0xfd00), "253:0");
+        // NVMe and other large numbers use the high bits
+        assert_eq!(device_number((259 << 8) | 3), "259:3");
+        assert_eq!(
+            device_number((8 << 8) | (300 & 0xff) | ((300 & !0xff) << 12)),
+            "8:300"
+        );
+    }
+
+    #[test]
+    fn finds_the_disk_holding_a_device() {
+        let dir = tempfile::tempdir().unwrap();
+        let sys = dir.path();
+        add_block(sys, "sda", 1_000_000_000, &[]);
+        fs::write(sys.join("sda").join("dev"), "8:0\n").unwrap();
+        add_partition(sys, "sda", "sda1");
+        fs::write(sys.join("sda").join("sda1").join("dev"), "8:1\n").unwrap();
+        add_block(sys, "vda", 1_000_000_000, &[]);
+        fs::write(sys.join("vda").join("dev"), "254:0\n").unwrap();
+
+        assert_eq!(disk_with_device(sys, "8:1").as_deref(), Some("sda"));
+        assert_eq!(disk_with_device(sys, "254:0").as_deref(), Some("vda"));
+        assert_eq!(disk_with_device(sys, "0:42"), None);
     }
 
     #[test]
