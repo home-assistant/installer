@@ -14,8 +14,10 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   test("navigates to Mini PC setup method when clicking the option", async ({
     page,
   }) => {
-    // Click Generic (mini) PC option
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    // Click Mini PC or other computer option
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     // Should now see wizard shell
     const wizardShell = page.locator("wizard-shell");
@@ -26,7 +28,9 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("shows setup method view with correct title", async ({ page }) => {
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     const setupMethodView = page.locator("minipc-setup-method-view");
     await expect(setupMethodView).toBeVisible();
@@ -37,7 +41,9 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("shows subtitle about installation method", async ({ page }) => {
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     const subtitle = page
       .locator("minipc-setup-method-view")
@@ -46,7 +52,9 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("displays connect drive option", async ({ page }) => {
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const connectDriveOption = setupView
@@ -58,7 +66,9 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("displays USB boot option", async ({ page }) => {
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const usbBootOption = setupView
@@ -69,7 +79,9 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("clicking USB boot shows info dialog", async ({ page }) => {
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const usbBootOption = setupView
@@ -85,7 +97,9 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("USB boot dialog has View Instructions button", async ({ page }) => {
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const usbBootOption = setupView
@@ -104,7 +118,9 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("USB boot dialog can be closed with Go Back", async ({ page }) => {
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const usbBootOption = setupView
@@ -128,7 +144,9 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   });
 
   test("USB boot dialog can be dismissed with Escape", async ({ page }) => {
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const usbBootOption = setupView
@@ -150,7 +168,9 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   test("clicking connect drive navigates to architecture selection", async ({
     page,
   }) => {
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     const setupView = page.locator("minipc-setup-method-view");
     const connectDriveOption = setupView
@@ -167,7 +187,9 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
   test("a double-click on connect drive picks no architecture", async ({
     page,
   }) => {
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
     // On the heading: the middle of the card falls between the architectures
     // that open under it
     await page
@@ -188,7 +210,9 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "Let's go" }).click();
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     // Select "connect drive" to get to architecture selection
     const setupView = page.locator("minipc-setup-method-view");
@@ -324,7 +348,9 @@ test.describe("Mini PC Flow - Navigation", () => {
     await page.getByRole("button", { name: "Let's go" }).click();
 
     // Step 2: Path selection - Mini PC
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     // Step 3: Setup method - Connect drive
     const setupView = page.locator("minipc-setup-method-view");
@@ -366,7 +392,9 @@ test.describe("Mini PC Flow - Navigation", () => {
 
     // Navigate to path selection
     await page.getByRole("button", { name: "Let's go" }).click();
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
 
     // Setup method - Connect drive
     const setupView = page.locator("minipc-setup-method-view");

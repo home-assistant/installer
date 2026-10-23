@@ -45,9 +45,9 @@ describe("path-selection-view", () => {
 
     expect(titles).to.include("Home Assistant hardware");
     expect(titles).to.include("Raspberry Pi & other boards");
-    expect(titles).to.include("Generic (mini) PC");
+    expect(titles).to.include("Mini PC or other computer");
     expect(titles).to.include("Proxmox server");
-    expect(titles).to.include("Others");
+    expect(titles).to.include("Other options");
   });
 
   it("dispatches navigate event when back is clicked", async () => {
@@ -99,8 +99,14 @@ describe("path-selection-view", () => {
       'option-card[icon="minipc"]'
     );
     expect(minipcCard).to.exist;
-    expect(minipcCard!.getAttribute("heading")).to.include("Generic");
-    expect(minipcCard!.getAttribute("description")).to.include("x86-64");
+    expect(minipcCard!.getAttribute("heading")).to.equal(
+      "Mini PC or other computer"
+    );
+    // The processor is asked later, in plain words
+    expect(minipcCard!.getAttribute("description")).to.include(
+      "a PC you no longer use"
+    );
+    expect(minipcCard!.getAttribute("description")).not.to.include("x86-64");
   });
 
   it("renders Proxmox option with correct details", async () => {

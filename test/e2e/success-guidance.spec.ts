@@ -21,7 +21,9 @@ for (const width of [1100, 390]) {
       await page.goto("/");
       await page.getByRole("button", { name: "Let's go" }).click();
       if (scenario.device.startsWith("generic-")) {
-        await page.locator('option-card[heading="Generic (mini) PC"]').click();
+        await page
+          .locator('option-card[heading="Mini PC or other computer"]')
+          .click();
         await page
           .locator("minipc-setup-method-view")
           .locator("option-card, wa-radio")

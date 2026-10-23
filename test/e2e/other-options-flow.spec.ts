@@ -12,7 +12,7 @@ test.describe("Other Options View", () => {
     page,
   }) => {
     // Click Others option
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
 
     // Should show other options view
     const otherOptionsView = page.locator("other-options-view");
@@ -20,7 +20,7 @@ test.describe("Other Options View", () => {
   });
 
   test("shows correct title", async ({ page }) => {
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
 
     const title = page.locator("other-options-view").locator("h1");
     await expect(title).toContainText("Other installation methods");
@@ -29,7 +29,7 @@ test.describe("Other Options View", () => {
   test("shows subtitle explaining these options are not directly supported", async ({
     page,
   }) => {
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
 
     const subtitle = page.locator("other-options-view").locator(".subtitle");
     await expect(subtitle).toContainText("not directly supported");
@@ -40,7 +40,7 @@ test.describe("Other Options View", () => {
     page,
   }) => {
     await page.setViewportSize({ width: 900, height: 600 });
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
 
     const view = page.locator("other-options-view");
     const box = await view.boundingBox();
@@ -52,7 +52,7 @@ test.describe("Other Options View", () => {
   });
 
   test("has back button that returns to path selection", async ({ page }) => {
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
 
     const otherOptionsView = page.locator("other-options-view");
     await expect(otherOptionsView).toBeVisible();
@@ -67,7 +67,7 @@ test.describe("Other Options View", () => {
   });
 
   test("displays Docker Container option", async ({ page }) => {
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
 
     const dockerOption = page
       .locator("other-options-view")
@@ -86,7 +86,7 @@ test.describe("Other Options View", () => {
   });
 
   test("displays Synology NAS option", async ({ page }) => {
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
 
     const synologyOption = page
       .locator("other-options-view")
@@ -97,7 +97,7 @@ test.describe("Other Options View", () => {
   });
 
   test("displays QNAP NAS option", async ({ page }) => {
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
 
     const qnapOption = page
       .locator("other-options-view")
@@ -108,7 +108,7 @@ test.describe("Other Options View", () => {
   });
 
   test("displays Linux Virtual Machine option", async ({ page }) => {
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
 
     const linuxVMOption = page
       .locator("other-options-view")
@@ -120,7 +120,7 @@ test.describe("Other Options View", () => {
   });
 
   test("displays Windows Virtual Machine option", async ({ page }) => {
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
 
     const windowsVMOption = page
       .locator("other-options-view")
@@ -132,7 +132,7 @@ test.describe("Other Options View", () => {
   });
 
   test("all options have external link indicator", async ({ page }) => {
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
 
     const options = page.locator("other-options-view").locator("option-card");
     const count = await options.count();
@@ -149,7 +149,7 @@ test.describe("Other Options View", () => {
   });
 
   test("all options have icons", async ({ page }) => {
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
 
     const options = page.locator("other-options-view").locator("option-card");
     const count = await options.count();
@@ -173,7 +173,7 @@ test.describe("Other Options - Navigation", () => {
     await expect(page.locator("path-selection-view")).toBeVisible();
 
     // Step 2: Path selection to other options
-    await page.locator('option-card[heading="Others"]').click();
+    await page.locator('option-card[heading="Other options"]').click();
     await expect(page.locator("other-options-view")).toBeVisible();
 
     // Step 3: Other options back to path selection
