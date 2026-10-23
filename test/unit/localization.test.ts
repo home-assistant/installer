@@ -96,7 +96,7 @@ describe("localization", () => {
       "common.next": "Weiter",
       "common.back": " ",
       "app.title": 42,
-      "components.install_progress.minutes_remaining": "Noch {minutes, plural",
+      "views.sbc.drive_selection_view.drives_found": "{count, plural",
       "utm.update_timeout": "Öffne {link}",
       "backend.proxmox.node_offline": "Knoten {node} ist offline",
     });
@@ -105,8 +105,8 @@ describe("localization", () => {
     expect(localize("common.back")).to.equal("Back");
     expect(localize("app.title")).to.equal("Home Assistant Installer");
     expect(
-      localize("components.install_progress.minutes_remaining", { minutes: 2 })
-    ).to.equal("About 2 minutes remaining");
+      localize("views.sbc.drive_selection_view.drives_found", { count: 2 })
+    ).to.equal("2 drives found");
     expect(
       localize("utm.update_timeout", { address: "http://192.0.2.1" })
     ).to.contain("Open http://192.0.2.1");
@@ -120,11 +120,12 @@ describe("localization", () => {
   });
 
   it("uses English plural rules for an English fallback", () => {
-    const key = "components.install_progress.minutes_remaining";
+    const key = "views.sbc.drive_selection_view.drives_found";
     setLanguage("ja", {});
-    expect(localize(key, { minutes: 1 })).to.equal("About 1 minute remaining");
+    expect(localize(key, { count: 1 })).to.equal("1 drive found");
+    // French counts 0 as one; the English text needs the English rule
     setLanguage("fr", {});
-    expect(localize(key, { minutes: 0 })).to.equal("About 0 minutes remaining");
+    expect(localize(key, { count: 0 })).to.equal("0 drives found");
   });
 
   it("prefers the native OS locale over the browser and falls back safely", async () => {
