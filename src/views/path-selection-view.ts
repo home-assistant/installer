@@ -2,7 +2,7 @@ import { localize } from "../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../utils/view-accessibility.js";
 import { customElement, state } from "lit/decorators.js";
-import { pageHeaderStyles, renderBackHeader } from "../utils/page-header.js";
+import { pageStyles, renderBackHeader } from "../utils/page-header.js";
 
 import "../components/option-card.js";
 import { getPlatform } from "../utils/platform.js";
@@ -13,48 +13,14 @@ import type { WizardFlow } from "../state/wizard-state.js";
 export class PathSelectionView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
-    pageHeaderStyles,
+    pageStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        box-sizing: border-box;
-        height: 100%;
-      }
-
-      .content {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        overflow-y: auto;
-        padding: 1rem var(--ha-page-gutter, 2rem) 2rem;
-      }
-
-      /* The auto margins center the options while they fit; once they don't,
-         the list scrolls from the top instead of being cut off */
-      h1 {
-        font-size: 1.75rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: auto 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 2rem 0;
-        text-align: center;
-      }
-
       .options-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: 1.5rem;
         max-width: 900px;
         width: 100%;
-        margin-bottom: auto;
       }
     `,
   ];

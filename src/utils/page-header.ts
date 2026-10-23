@@ -30,6 +30,58 @@ export const pageHeaderStyles = css`
   }
 `;
 
+/**
+ * A screen before the install flow: the header with Back, and below it the
+ * content under the page's title and a line saying what the screen is for.
+ * Like the welcome screen before them, these screens center what they show,
+ * so a short list doesn't hang at the top of a tall window.
+ */
+export const pageStyles = css`
+  ${pageHeaderStyles}
+
+  :host {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    height: 100%;
+  }
+
+  .content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-y: auto;
+    padding: 1rem var(--ha-page-gutter, 2rem) 2rem;
+  }
+
+  /* The auto margins center the content while it fits; once it doesn't, it
+     scrolls from the top instead of being cut off */
+  .content > :first-child {
+    margin-top: auto;
+  }
+
+  .content > :last-child {
+    margin-bottom: auto;
+  }
+
+  h1 {
+    font-size: 1.75rem;
+    font-weight: 400;
+    color: var(--ha-text-color, #212121);
+    margin: 0;
+    text-align: center;
+  }
+
+  .subtitle {
+    font-size: 1rem;
+    color: var(--ha-secondary-text-color, #727272);
+    margin: 0.5rem 0 2rem;
+    text-align: center;
+    max-width: 500px;
+  }
+`;
+
 /** The header of a screen that has only Back in it. */
 export function renderBackHeader(onBack: (event: MouseEvent) => void) {
   return html`

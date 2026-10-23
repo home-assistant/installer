@@ -5,7 +5,7 @@ import { localize } from "../localization/localize.js";
 import { installerError, renderErrorHelp } from "../utils/installer-error.js";
 import { linkStyles } from "../utils/link-styles.js";
 import { renderRetryButton } from "../utils/load-state.js";
-import { pageHeaderStyles, renderBackHeader } from "../utils/page-header.js";
+import { pageStyles, renderBackHeader } from "../utils/page-header.js";
 import { ViewAccessibility } from "../utils/view-accessibility.js";
 import "../components/casita-mascot.js";
 import "../components/loading-spinner.js";
@@ -14,38 +14,15 @@ import "../components/loading-spinner.js";
 export class ConnectionCheckView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
-    pageHeaderStyles,
+    pageStyles,
     linkStyles,
     css`
       :host {
-        display: flex;
-        flex-direction: column;
-        box-sizing: border-box;
-        height: 100%;
         text-align: center;
         color: var(--ha-text-color, #212121);
       }
       .content {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
         gap: 1.5rem;
-        overflow-y: auto;
-        padding: 1rem var(--ha-page-gutter, 2rem) 2rem;
-      }
-      /* The auto margins center the status while it fits; once it doesn't,
-         it scrolls from the top instead of being cut off */
-      .content > :first-child {
-        margin-top: auto;
-      }
-      .content > :last-child {
-        margin-bottom: auto;
-      }
-      h1 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        margin: 0;
       }
       p {
         max-width: 32rem;

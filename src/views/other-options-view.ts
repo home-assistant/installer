@@ -5,7 +5,7 @@ import {
   reducedMotionStyles,
 } from "../utils/view-accessibility.js";
 import { customElement } from "lit/decorators.js";
-import { pageHeaderStyles, renderBackHeader } from "../utils/page-header.js";
+import { pageStyles, renderBackHeader } from "../utils/page-header.js";
 import { linkStyles } from "../utils/link-styles.js";
 import "../components/option-card.js";
 import type { OptionCardIcon } from "../components/option-card.js";
@@ -61,41 +61,9 @@ export class OtherOptionsView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     reducedMotionStyles,
-    pageHeaderStyles,
+    pageStyles,
     linkStyles,
     css`
-      :host {
-        display: flex;
-        flex-direction: column;
-        box-sizing: border-box;
-        height: 100%;
-      }
-
-      .content {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        overflow-y: auto;
-        padding: 1rem var(--ha-page-gutter, 2rem) 2rem;
-      }
-
-      h1 {
-        font-size: 1.75rem;
-        font-weight: 400;
-        color: var(--ha-text-color, #212121);
-        margin: 0 0 0.5rem 0;
-        text-align: center;
-      }
-
-      .subtitle {
-        font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
-        margin: 0 0 2rem 0;
-        text-align: center;
-        max-width: 500px;
-      }
-
       .options-list {
         display: flex;
         flex-direction: column;
