@@ -426,392 +426,73 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_media_name_with_vendor() {
-        let (vendor, model) = parse_media_name("SanDisk Ultra");
-        assert_eq!(vendor, Some("SanDisk".to_string()));
-        assert_eq!(model, Some("Ultra".to_string()));
-    }
-
-    #[test]
-    fn test_parse_media_name_vendor_only() {
-        let (vendor, model) = parse_media_name("Samsung");
-        assert_eq!(vendor, Some("Samsung".to_string()));
-        assert_eq!(model, None);
-    }
-
-    #[test]
-    fn test_parse_media_name_no_vendor() {
-        let (vendor, model) = parse_media_name("Unknown Device");
-        assert_eq!(vendor, None);
-        assert_eq!(model, Some("Unknown Device".to_string()));
-    }
-
-    #[test]
-    fn test_parse_media_name_case_insensitive() {
-        let (vendor, model) = parse_media_name("SANDISK EXTREME PRO");
-        assert_eq!(vendor, Some("SanDisk".to_string()));
-        assert_eq!(model, Some("EXTREME PRO".to_string()));
-    }
-
-    #[test]
-    fn test_determine_device_type_sd_card_by_media_type() {
-        let info = DiskUtilInfo {
-            ejectable: true,
-            removable: true,
-            removable_media: true,
-            solid_state: true,
-            media_name: None,
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 32_000_000_000,
-            bus_protocol: Some("USB".to_string()),
-            media_type: Some("SD Card".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::SdCard);
-    }
-
-    #[test]
-    fn test_determine_device_type_sd_card_by_media_name() {
-        let info = DiskUtilInfo {
-            ejectable: true,
-            removable: true,
-            removable_media: true,
-            solid_state: true,
-            media_name: Some("SD Card Reader".to_string()),
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 32_000_000_000,
-            bus_protocol: None,
-            media_type: None,
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::SdCard);
-    }
-
-    #[test]
-    fn test_determine_device_type_usb_drive() {
-        let info = DiskUtilInfo {
-            ejectable: true,
-            removable: true,
-            removable_media: true,
-            solid_state: false,
-            media_name: Some("USB Drive".to_string()),
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 64_000_000_000,
-            bus_protocol: Some("USB".to_string()),
-            media_type: None,
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::UsbDrive);
-    }
-
-    #[test]
-    fn test_determine_device_type_portable_ssd_is_not_sd_card() {
-        // "SSD" contains "sd" as a substring; only whole-word "SD" counts.
-        let info = DiskUtilInfo {
-            ejectable: true,
-            removable: true,
-            removable_media: true,
-            solid_state: true,
-            media_name: Some("Samsung Portable SSD T7".to_string()),
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 500_000_000_000,
-            bus_protocol: Some("USB".to_string()),
-            media_type: Some("SSD".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::UsbDrive);
-    }
-
-    #[test]
-    fn test_determine_device_type_sdxc_is_sd_card() {
-        let info = DiskUtilInfo {
-            ejectable: true,
-            removable: true,
-            removable_media: true,
-            solid_state: true,
-            media_name: None,
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 128_000_000_000,
-            bus_protocol: Some("USB".to_string()),
-            media_type: Some("SDXC".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::SdCard);
-    }
-
-    #[test]
-    fn test_determine_device_type_nvme_pcie() {
-        let info = DiskUtilInfo {
-            ejectable: false,
-            removable: false,
-            removable_media: false,
-            solid_state: true,
-            media_name: None,
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 500_000_000_000,
-            bus_protocol: Some("PCI-Express".to_string()),
-            media_type: None,
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::Nvme);
-    }
-
-    #[test]
-    fn test_determine_device_type_ssd_pcie() {
-        let info = DiskUtilInfo {
-            ejectable: false,
-            removable: false,
-            removable_media: false,
-            solid_state: false,
-            media_name: None,
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 500_000_000_000,
-            bus_protocol: Some("PCI".to_string()),
-            media_type: None,
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::Ssd);
-    }
-
-    #[test]
-    fn test_determine_device_type_ssd_sata() {
-        let info = DiskUtilInfo {
-            ejectable: false,
-            removable: false,
-            removable_media: false,
-            solid_state: true,
-            media_name: None,
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 256_000_000_000,
-            bus_protocol: Some("SATA".to_string()),
-            media_type: None,
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::Ssd);
-    }
-
-    #[test]
-    fn test_determine_device_type_hdd_sata() {
-        let info = DiskUtilInfo {
-            ejectable: false,
-            removable: false,
-            removable_media: false,
-            solid_state: false,
-            media_name: None,
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 1_000_000_000_000,
-            bus_protocol: Some("SATA".to_string()),
-            media_type: None,
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::Hdd);
-    }
-
-    #[test]
-    fn test_determine_device_type_unknown_protocol_solid_state() {
-        let info = DiskUtilInfo {
-            ejectable: false,
-            removable: false,
-            removable_media: false,
-            solid_state: true,
-            media_name: None,
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 128_000_000_000,
-            bus_protocol: Some("Unknown".to_string()),
-            media_type: None,
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::Ssd);
-    }
-
-    #[test]
-    fn test_determine_device_type_unknown() {
-        let info = DiskUtilInfo {
-            ejectable: false,
-            removable: false,
-            removable_media: false,
-            solid_state: false,
-            media_name: None,
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 128_000_000_000,
-            bus_protocol: None,
-            media_type: None,
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::Unknown);
-    }
-
-    #[test]
-    fn test_parse_media_name_with_various_vendors() {
-        // Test all vendor variations
-        let vendors_to_test = [
-            ("Kingston DataTraveler", "Kingston", "DataTraveler"),
-            ("Lexar JumpDrive", "Lexar", "JumpDrive"),
-            ("PNY USB Drive", "PNY", "USB Drive"),
-            ("Transcend JetFlash", "Transcend", "JetFlash"),
-            ("Sony Storage", "Sony", "Storage"),
-            ("Toshiba Drive", "Toshiba", "Drive"),
+    fn determine_device_type_by_media_then_bus() {
+        use DeviceType::{Hdd, Nvme, SdCard, Ssd, Unknown, UsbDrive};
+        for (label, bus, solid_state, media_type, media_name, expected) in [
+            ("SD media type", Some("USB"), true, Some("SD"), None, SdCard),
+            ("SD media name", None, true, None, Some("SD READER"), SdCard),
+            ("USB", Some("USB"), false, None, Some("USB Drive"), UsbDrive),
             (
-                "Western Digital My Passport",
-                "Western Digital",
-                "My Passport",
+                "portable SSD",
+                Some("USB"),
+                true,
+                Some("SSD"),
+                Some("Samsung Portable SSD T7"),
+                UsbDrive,
             ),
-            ("WD Elements", "WD", "Elements"),
-            ("Seagate Backup Plus", "Seagate", "Backup Plus"),
-            ("Crucial X6", "Crucial", "X6"),
-            ("Micron M600", "Micron", "M600"),
-        ];
-
-        for (input, expected_vendor, expected_model) in vendors_to_test {
-            let (vendor, model) = parse_media_name(input);
-            assert_eq!(
-                vendor,
-                Some(expected_vendor.to_string()),
-                "Failed for input: {}",
-                input
-            );
-            assert_eq!(
-                model,
-                Some(expected_model.to_string()),
-                "Failed for input: {}",
-                input
-            );
+            ("PCIe SSD", Some("PCI-Express"), true, None, None, Nvme),
+            ("PCI, not solid state", Some("PCI"), false, None, None, Ssd),
+            ("SATA SSD", Some("SATA"), true, None, None, Ssd),
+            ("SATA HDD", Some("SATA"), false, None, None, Hdd),
+            ("other bus, SSD", Some("Unknown"), true, None, None, Ssd),
+            ("no bus", None, false, None, None, Unknown),
+            ("empty bus", Some(""), false, None, None, Unknown),
+        ] {
+            let info = DiskUtilInfo {
+                bus_protocol: bus.map(Into::into),
+                solid_state,
+                media_type: media_type.map(Into::into),
+                media_name: media_name.map(Into::into),
+                ..Default::default()
+            };
+            assert_eq!(determine_device_type(&info), expected, "{label}");
         }
     }
 
     #[test]
-    fn test_parse_media_name_vendor_at_end() {
-        let (vendor, model) = parse_media_name("Ultra SanDisk");
-        assert_eq!(vendor, Some("SanDisk".to_string()));
-        assert_eq!(model, Some("Ultra".to_string()));
-    }
-
-    #[test]
-    fn test_parse_media_name_with_hyphens_and_underscores() {
-        let (vendor, model) = parse_media_name("SanDisk-Ultra-Pro");
-        assert_eq!(vendor, Some("SanDisk".to_string()));
-        assert_eq!(model, Some("Ultra-Pro".to_string()));
-    }
-
-    #[test]
-    fn test_parse_media_name_empty_model_after_vendor() {
-        let (vendor, model) = parse_media_name("SanDisk   ");
-        assert_eq!(vendor, Some("SanDisk".to_string()));
-        assert_eq!(model, None);
-    }
-
-    #[test]
-    fn test_determine_device_type_with_no_bus_protocol() {
-        let info = DiskUtilInfo {
-            ejectable: true,
-            removable: true,
-            removable_media: true,
-            solid_state: false,
-            media_name: None,
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 32_000_000_000,
-            bus_protocol: None,
-            media_type: None,
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::Unknown);
-    }
-
-    #[test]
-    fn test_determine_device_type_empty_bus_protocol() {
-        let info = DiskUtilInfo {
-            ejectable: true,
-            removable: true,
-            removable_media: true,
-            solid_state: false,
-            media_name: None,
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 32_000_000_000,
-            bus_protocol: Some("".to_string()),
-            media_type: None,
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::Unknown);
-    }
-
-    #[test]
-    fn test_determine_device_type_sd_lowercase_in_media_type() {
-        let info = DiskUtilInfo {
-            ejectable: true,
-            removable: true,
-            removable_media: true,
-            solid_state: true,
-            media_name: None,
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 32_000_000_000,
-            bus_protocol: None,
-            media_type: Some("sd".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::SdCard);
-    }
-
-    #[test]
-    fn test_determine_device_type_sd_uppercase_in_media_name() {
-        let info = DiskUtilInfo {
-            ejectable: true,
-            removable: true,
-            removable_media: true,
-            solid_state: true,
-            media_name: Some("SD READER".to_string()),
-            io_registry_entry_name: None,
-            device_node: None,
-            size: 32_000_000_000,
-            bus_protocol: None,
-            media_type: None,
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&info), DeviceType::SdCard);
-    }
-
-    #[test]
-    fn test_parse_media_name_with_underscores() {
-        let (vendor, model) = parse_media_name("SanDisk_Ultra_Pro");
-        assert_eq!(vendor, Some("SanDisk".to_string()));
-        assert_eq!(model, Some("Ultra_Pro".to_string()));
-    }
-
-    #[test]
-    fn test_parse_media_name_empty_string() {
-        let (vendor, model) = parse_media_name("");
-        assert_eq!(vendor, None);
-        assert_eq!(model, Some("".to_string()));
-    }
-
-    #[test]
-    fn test_parse_media_name_survives_text_that_grows_when_lowercased() {
-        // "İ" is 2 bytes but lowercases to 3, which used to shift the slice
-        // past the end of the original name and panic.
-        let (vendor, model) = parse_media_name("İSanDisk Ultra");
-        assert_eq!(vendor, Some("SanDisk".to_string()));
-        assert_eq!(model, Some("İ Ultra".to_string()));
-    }
-
-    #[test]
-    fn test_parse_media_name_ignores_the_kelvin_sign() {
-        // The Kelvin sign lowercases to an ASCII "k", but it is not a "K".
-        // Matching it used to cut the model to "on DataTraveler".
-        let (vendor, model) = parse_media_name("\u{212A}ingston DataTraveler");
-        assert_eq!(vendor, None);
-        assert_eq!(model, Some("\u{212A}ingston DataTraveler".to_string()));
+    fn parse_media_name_splits_off_a_known_vendor() {
+        for (name, vendor, model) in [
+            ("SanDisk Ultra", Some("SanDisk"), Some("Ultra")),
+            ("SANDISK EXTREME PRO", Some("SanDisk"), Some("EXTREME PRO")),
+            ("Ultra SanDisk", Some("SanDisk"), Some("Ultra")),
+            ("SanDisk-Ultra-Pro", Some("SanDisk"), Some("Ultra-Pro")),
+            ("SanDisk_Ultra_Pro", Some("SanDisk"), Some("Ultra_Pro")),
+            ("Samsung", Some("Samsung"), None),
+            ("SanDisk   ", Some("SanDisk"), None),
+            ("Kingston DT Exodia", Some("Kingston"), Some("DT Exodia")),
+            ("Lexar JumpDrive", Some("Lexar"), Some("JumpDrive")),
+            ("PNY USB Drive", Some("PNY"), Some("USB Drive")),
+            ("Transcend JetFlash", Some("Transcend"), Some("JetFlash")),
+            ("Sony Storage", Some("Sony"), Some("Storage")),
+            ("Toshiba Drive", Some("Toshiba"), Some("Drive")),
+            ("Western Digital Red", Some("Western Digital"), Some("Red")),
+            ("WD Elements", Some("WD"), Some("Elements")),
+            ("Seagate Backup Plus", Some("Seagate"), Some("Backup Plus")),
+            ("Crucial X6", Some("Crucial"), Some("X6")),
+            ("Micron M600", Some("Micron"), Some("M600")),
+            ("Unknown Device", None, Some("Unknown Device")),
+            ("", None, Some("")),
+            // "İ" grows when lowercased, so offsets from a lowercased copy don't fit.
+            ("İSanDisk Ultra", Some("SanDisk"), Some("İ Ultra")),
+            // The Kelvin sign lowercases to an ASCII "k", but it is not a "K".
+            ("\u{212A}ingston", None, Some("\u{212A}ingston")),
+        ] {
+            let (found_vendor, found_model) = parse_media_name(name);
+            assert_eq!(
+                (found_vendor.as_deref(), found_model.as_deref()),
+                (vendor, model),
+                "{name:?}"
+            );
+        }
     }
 }
