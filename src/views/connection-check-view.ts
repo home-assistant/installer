@@ -2,7 +2,8 @@ import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { checkConnection } from "../api/commands.js";
 import { localize } from "../localization/localize.js";
-import { installerError } from "../utils/installer-error.js";
+import { installerError, renderErrorHelp } from "../utils/installer-error.js";
+import { linkStyles } from "../utils/link-styles.js";
 import { renderRetryButton } from "../utils/load-state.js";
 import { pageHeaderStyles, renderBackHeader } from "../utils/page-header.js";
 import { ViewAccessibility } from "../utils/view-accessibility.js";
@@ -15,6 +16,7 @@ export class ConnectionCheckView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     pageHeaderStyles,
+    linkStyles,
     css`
       :host {
         display: flex;
@@ -51,6 +53,9 @@ export class ConnectionCheckView extends LitElement {
         overflow-wrap: anywhere;
         margin: 0;
         color: var(--ha-secondary-text-color, #727272);
+      }
+      .error-help {
+        margin-top: 1rem;
       }
     `,
   ];
@@ -117,6 +122,7 @@ export class ConnectionCheckView extends LitElement {
               : ""}
           </p>
           <p data-focus-alert>${this._error}</p>
+          ${this._failed ? renderErrorHelp() : ""}
         </div>
         ${this._failed
           ? renderRetryButton(this._checking, () => this._check())

@@ -1,4 +1,4 @@
-import { expect, fixture, html, oneEvent } from "@open-wc/testing";
+import { expect, fixture, fixtureSync, html, oneEvent } from "@open-wc/testing";
 import "../../../src/components/wizard-shell.js";
 import type { WizardShell } from "../../../src/components/wizard-shell.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
@@ -278,6 +278,103 @@ describe("wizard-shell", () => {
     expect(status.textContent).to.equal("");
     next.click();
     expect(nexts).to.equal(1);
+  });
+
+  it("puts the step in the main landmark, between a header and a footer", async () => {
+    const el = await fixture<WizardShell>(html`<wizard-shell></wizard-shell>`);
+    const root = el.shadowRoot!;
+
+    expect(root.querySelector("header.header wa-button")).to.exist;
+    expect(root.querySelector("main.content slot")).to.exist;
+    expect(root.querySelector("footer.footer .footer-right wa-button")).to
+      .exist;
+  });
+
+  it("names the flow in a hidden main heading, and leaves it out without one", async () => {
+    const el = await fixture<WizardShell>(html`
+      <wizard-shell flow-title="Proxmox server"></wizard-shell>
+    `);
+    const heading = el.shadowRoot!.querySelector("main h1");
+    expect(heading!.textContent).to.equal("Proxmox server");
+    expect(heading!.classList.contains("sr-only")).to.be.true;
+
+    el.flowTitle = "";
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector("h1")).to.be.null;
+  });
+
+  describe("scrolling with the keyboard", () => {
+    type Scrolling = { _checkScrolling(): void };
+
+    async function shell(width: string, height: string) {
+      const step = document.createElement("div");
+      step.style.width = width;
+      step.style.height = height;
+      // fixture() would wait a frame for the plain wrapper
+      const el = fixtureSync(html`
+        <div style="height: 400px; width: 600px">
+          <wizard-shell>${step}</wizard-shell>
+        </div>
+      `).querySelector("wizard-shell")!;
+      await el.updateComplete;
+      const main = el.shadowRoot!.querySelector("main")!;
+      // Called as the observer would; a backgrounded test page gets no
+      // resize callbacks
+      const check = async () => {
+        (el as unknown as Scrolling)._checkScrolling();
+        await el.updateComplete;
+      };
+      return { el, step, main, check };
+    }
+
+    it("makes the step focusable only while it overflows", async () => {
+      const { step, main, check } = await shell("auto", "10px");
+      await check();
+      expect(main.hasAttribute("tabindex")).to.be.false;
+
+      step.style.height = "2000px";
+      await check();
+      expect(main.getAttribute("tabindex")).to.equal("0");
+
+      step.style.height = "10px";
+      await check();
+      expect(main.hasAttribute("tabindex")).to.be.false;
+    });
+
+    it("counts a step that only overflows sideways", async () => {
+      const { main, check } = await shell("2000px", "10px");
+      await check();
+      expect(main.getAttribute("tabindex")).to.equal("0");
+    });
+
+    it("doesn't count the pixel rounding can add", async () => {
+      const { step, main, check } = await shell("auto", "10px");
+      const style = getComputedStyle(main);
+      const padding =
+        parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      step.style.height = `${main.clientHeight - padding + 1}px`;
+      await check();
+      expect(main.scrollHeight - main.clientHeight).to.equal(1);
+      expect(main.hasAttribute("tabindex")).to.be.false;
+    });
+
+    it("watches the step again when it is put back in the page", async () => {
+      const { el, step } = await shell("auto", "10px");
+      const observed: Element[] = [];
+      (
+        el as unknown as { _resizeObserver: Partial<ResizeObserver> }
+      )._resizeObserver = {
+        observe: (target: Element) => void observed.push(target),
+        disconnect: () => (observed.length = 0),
+      };
+      const parent = el.parentElement!;
+
+      el.remove();
+      parent.append(el);
+
+      expect(observed).to.include(step);
+      expect(observed).to.include(el.shadowRoot!.querySelector("main")!);
+    });
   });
 
   it("hides next button when hideNext is true", async () => {

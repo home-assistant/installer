@@ -1,6 +1,7 @@
 import { localize } from "../../localization/localize.js";
 import {
   installerError,
+  isDriveFailure,
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { html } from "lit";
@@ -109,6 +110,12 @@ export class ProgressView extends InstallProgressView {
       retryable:
         installer.retryable || FIXED_ON_THIS_COMPUTER.includes(installer.code),
     };
+  }
+
+  // Only what is wrong with the drive leads back to the drive step. Space on
+  // this computer or an unexpected response can't be fixed there.
+  protected _choiceCanFix(error: InstallerError): boolean {
+    return isDriveFailure(error.code, this._reachedDrive);
   }
 
   protected _stoppedMessage(): string {

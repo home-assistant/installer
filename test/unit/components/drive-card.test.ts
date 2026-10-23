@@ -140,10 +140,19 @@ describe("drive-card", () => {
     for (const selector of [".card", ".info", ".details"]) {
       expect(opacity(selector), selector).to.equal("1");
     }
+    // Web Awesome's radio fades its whole host when disabled
+    expect(getComputedStyle(el).opacity, "host").to.equal("1");
+    const reason = getComputedStyle(
+      el.shadowRoot!.querySelector(".details")!
+    ).color;
 
     el.disabled = false;
     await el.updateComplete;
     expect(opacity(".name")).to.equal("1");
+    // Nor is the reason paler than an available drive's details
+    expect(
+      getComputedStyle(el.shadowRoot!.querySelector(".details")!).color
+    ).to.equal(reason);
   });
 
   it("renders SD card icon for sd_card type", async () => {

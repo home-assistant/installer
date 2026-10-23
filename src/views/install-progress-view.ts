@@ -25,7 +25,8 @@ export interface InstallFailure {
  * - `install-stoppable` and `install-leavable` whenever `stoppable` or
  *   `leavable` changes, so the shell offers Cancel only while it works
  * - `install-complete`, with what the steps after it need
- * - `install-error`, with whether `retry` can work
+ * - `install-error`, with whether `retry` can work, and whether choosing
+ *   differently can, like another drive
  */
 export abstract class InstallProgressView extends LitElement {
   static styles = css`
@@ -101,6 +102,15 @@ export abstract class InstallProgressView extends LitElement {
   /** The failure to show for `error` */
   protected _installerError(error: unknown): InstallerError {
     return installerError(error);
+  }
+
+  /**
+   * Whether choosing differently, like another drive, can fix `error`. The
+   * shell then leads Next back to that choice; otherwise there is nothing
+   * to pick instead.
+   */
+  protected _choiceCanFix(_error: InstallerError): boolean {
+    return false;
   }
 
   /** Whether the install has failed */
@@ -267,6 +277,7 @@ export abstract class InstallProgressView extends LitElement {
     this._error = message ? { ...installer, message } : installer;
     this._dispatch("install-error", {
       retryable: this._error.retryable,
+      changeChoice: this._choiceCanFix(this._error),
       ...detail,
     });
   }

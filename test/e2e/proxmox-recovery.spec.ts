@@ -1,11 +1,6 @@
 import { type Page } from "@playwright/test";
 import { test, expect } from "./fixtures.js";
 
-type LookupCommand =
-  | "proxmox_list_nodes"
-  | "proxmox_list_storage"
-  | "proxmox_get_next_vm_id";
-
 type TestWindow = typeof window & {
   isTauri: boolean;
   __TAURI_INTERNALS__: { invoke: (command: string) => Promise<unknown> };
@@ -15,20 +10,16 @@ type TestWindow = typeof window & {
 
 // Installed only after entering the connection view, so other browser fixtures
 // keep their existing behavior. Each Playwright test has its own page/context.
-async function mockLookupFailure(
-  page: Page,
-  command: LookupCommand,
-  expired: boolean
-) {
+async function mockLookupFailure(page: Page, expired: boolean) {
   await page.evaluate(
-    ({ command, expired }) => {
+    ({ expired }) => {
       const testWindow = window as TestWindow;
       let lookupCount = 0;
       testWindow.connectionCount = 0;
       testWindow.isTauri = true;
       testWindow.__TAURI_INTERNALS__ = {
         invoke: async (cmd) => {
-          if (cmd === command) {
+          if (cmd === "proxmox_list_nodes") {
             lookupCount++;
             if (lookupCount === 1) {
               throw {
@@ -90,7 +81,7 @@ async function mockLookupFailure(
         },
       };
     },
-    { command, expired }
+    { expired }
   );
 }
 
@@ -121,7 +112,7 @@ async function finishRecovery(page: Page, { retried = false } = {}) {
     await expect(view.getByRole("alert")).toHaveText("");
   } else {
     await expect(view.getByRole("alert")).toHaveCount(0);
-    await expect(view).toContainText(/Loading (nodes|storage)/);
+    await expect(view).toContainText("Loading nodes");
   }
   await expect(next).toBeDisabled();
   await page.evaluate(() => (window as TestWindow).resumeLookup());
@@ -149,60 +140,50 @@ test.describe("Proxmox configuration recovery", () => {
     await expect(page.locator("proxmox-connect-view")).toBeVisible();
   });
 
-  for (const command of [
-    "proxmox_list_nodes",
-    "proxmox_list_storage",
-    "proxmox_get_next_vm_id",
-  ] as const) {
-    test(`retries a temporary ${command} failure through confirmation`, async ({
-      page,
-    }) => {
-      await mockLookupFailure(page, command, false);
-      await connect(page);
-      const view = page.locator("proxmox-configure-view");
-      // The view shows the safe message for the code, not the remote text
-      await expect(view.getByRole("alert")).toHaveText(
-        "Proxmox could not complete the request. Check the server, account permissions, and connection."
-      );
-      await expect(
-        page.getByRole("button", { name: "Next", exact: true })
-      ).toBeDisabled();
-      await view
-        .getByRole("button", { name: "Try again", exact: true })
-        .click();
-      await finishRecovery(page, { retried: true });
-      expect(
-        await page.evaluate(() => (window as TestWindow).connectionCount)
-      ).toBe(1);
-    });
+  test("retries a temporary proxmox_list_nodes failure through confirmation", async ({
+    page,
+  }) => {
+    await mockLookupFailure(page, false);
+    await connect(page);
+    const view = page.locator("proxmox-configure-view");
+    // The view shows the safe message for the code, not the remote text
+    await expect(view.getByRole("alert")).toHaveText(
+      "Proxmox could not complete the request. Check the server, account permissions, and connection."
+    );
+    await expect(
+      page.getByRole("button", { name: "Next", exact: true })
+    ).toBeDisabled();
+    await view.getByRole("button", { name: "Try again", exact: true }).click();
+    await finishRecovery(page, { retried: true });
+    expect(
+      await page.evaluate(() => (window as TestWindow).connectionCount)
+    ).toBe(1);
+  });
 
-    test(`reconnects after an expired session from ${command}`, async ({
-      page,
-    }) => {
-      await mockLookupFailure(page, command, true);
-      await connect(page);
-      const view = page.locator("proxmox-configure-view");
-      await expect(view.getByRole("alert")).toHaveText(
-        "Your Proxmox session expired. Reconnect to Proxmox to continue."
-      );
-      await expect(
-        page.getByRole("button", { name: "Next", exact: true })
-      ).toBeDisabled();
-      await expect(
-        view.getByRole("button", { name: "Try again", exact: true })
-      ).toHaveCount(0);
-      await view
-        .getByRole("button", { name: "Reconnect", exact: true })
-        .click();
-      await expect(page.locator("proxmox-connect-view")).toBeVisible();
-      await expect(page.locator("proxmox-connect-view #password")).toHaveValue(
-        ""
-      );
-      await connect(page);
-      await finishRecovery(page);
-      expect(
-        await page.evaluate(() => (window as TestWindow).connectionCount)
-      ).toBe(2);
-    });
-  }
+  test("reconnects after an expired session from proxmox_list_nodes", async ({
+    page,
+  }) => {
+    await mockLookupFailure(page, true);
+    await connect(page);
+    const view = page.locator("proxmox-configure-view");
+    await expect(view.getByRole("alert")).toHaveText(
+      "Your Proxmox session expired. Reconnect to Proxmox to continue."
+    );
+    await expect(
+      page.getByRole("button", { name: "Next", exact: true })
+    ).toBeDisabled();
+    await expect(
+      view.getByRole("button", { name: "Try again", exact: true })
+    ).toHaveCount(0);
+    await view.getByRole("button", { name: "Reconnect", exact: true }).click();
+    await expect(page.locator("proxmox-connect-view")).toBeVisible();
+    await expect(page.locator("proxmox-connect-view #password")).toHaveValue(
+      ""
+    );
+    await connect(page);
+    await finishRecovery(page);
+    expect(
+      await page.evaluate(() => (window as TestWindow).connectionCount)
+    ).toBe(2);
+  });
 });

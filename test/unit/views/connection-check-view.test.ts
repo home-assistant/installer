@@ -95,6 +95,41 @@ describe("connection-check-view", () => {
     expect(status.textContent!.trim()).to.equal("");
   });
 
+  it("offers installation help and a report once a check has failed", async () => {
+    const retry = deferred<void>();
+    let calls = 0;
+    mockTauriIpc(() =>
+      ++calls === 1
+        ? Promise.reject(ipcError("network", "Offline", true))
+        : retry.promise
+    );
+    const el = await fixture<ConnectionCheckView>(
+      html`<connection-check-view></connection-check-view>`
+    );
+    const help = () => el.shadowRoot!.querySelector(".error-help");
+    // Nothing has failed yet, so there is nothing to get help with
+    expect(help()).to.equal(null);
+
+    await waitUntil(() => !!alertText(el));
+    expect(help()!.querySelector("a")!.getAttribute("href")).to.equal(
+      "https://www.home-assistant.io/installation/"
+    );
+    expect(help()!.textContent).to.contain("Installation help");
+    expect(help()!.querySelector("diagnostics-actions")).to.exist;
+    // Outside the alert, so the focus reads out the failure alone
+    expect(el.shadowRoot!.querySelector("[data-focus-alert] a")).to.equal(null);
+
+    // The help stays while it checks again, as Try again does
+    (
+      el.shadowRoot!.querySelector('wa-button[variant="brand"]') as HTMLElement
+    ).click();
+    await el.updateComplete;
+    expect(alertText(el)).to.equal("");
+    expect(help()).to.exist;
+
+    retry.resolve();
+  });
+
   it("does not describe a service failure as offline", async () => {
     mockTauriIpc(() =>
       Promise.reject(

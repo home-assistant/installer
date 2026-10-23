@@ -13,6 +13,25 @@ async function progressbar(el: ProgressBar) {
   return bar(el).shadowRoot!.querySelector('[role="progressbar"]')!;
 }
 
+/**
+ * Whether the indicator slides to the bar's value. Web Awesome sets its width
+ * a frame after each update, and a backgrounded test page draws no frames, so
+ * this sets it as Web Awesome would, after the width it had is computed.
+ */
+async function slides(el: ProgressBar) {
+  await el.updateComplete;
+  const inner = bar(el);
+  await inner.updateComplete;
+  const indicator =
+    inner.shadowRoot!.querySelector<HTMLElement>('[part="indicator"]')!;
+  getComputedStyle(indicator).getPropertyValue("width");
+  inner.style.setProperty("--percentage", `${inner.value}%`);
+  // The stripe a wait shows is an animation of its own
+  return indicator
+    .getAnimations()
+    .some((animation) => animation instanceof CSSTransition);
+}
+
 describe("progress-bar", () => {
   it("renders with default progress (0)", async () => {
     const el = await fixture<ProgressBar>(html`<progress-bar></progress-bar>`);
@@ -128,6 +147,57 @@ describe("progress-bar", () => {
     expect((await progressbar(el)).getAttribute("aria-valuenow")).to.equal(
       "30"
     );
+  });
+
+  it("slides forward, but shows a value that drops at once", async () => {
+    const el = await fixture<ProgressBar>(html`
+      <progress-bar progress="40"></progress-bar>
+    `);
+    expect(await slides(el)).to.be.false;
+
+    const first = bar(el);
+    el.progress = 100;
+    expect(await slides(el)).to.be.true;
+    expect(bar(el) === first).to.be.true;
+
+    // The next stage counts from 0, so the bar must not slide back across the
+    // track while the label counts up
+    el.progress = 0;
+    expect(await slides(el)).to.be.false;
+    expect(bar(el) === first).to.be.false;
+    expect(bar(el).value).to.equal(0);
+
+    el.progress = 30;
+    expect(await slides(el)).to.be.true;
+  });
+
+  it("shows the value at once when a wait starts or ends", async () => {
+    const el = await fixture<ProgressBar>(html`
+      <progress-bar progress="60"></progress-bar>
+    `);
+    await slides(el);
+    const measured = bar(el);
+
+    // Not from the value to the stripe
+    el.indeterminate = true;
+    expect(await slides(el)).to.be.false;
+    const waiting = bar(el);
+    expect(waiting === measured).to.be.false;
+    expect(waiting.indeterminate).to.be.true;
+
+    // A stage that drops back to 0 while still waiting keeps the same stripe
+    // moving
+    el.progress = 0;
+    await slides(el);
+    expect(bar(el) === waiting).to.be.true;
+
+    // Nor from the stripe to the value
+    el.indeterminate = false;
+    el.progress = 20;
+    expect(await slides(el)).to.be.false;
+    expect(bar(el) === waiting).to.be.false;
+    expect(bar(el).indeterminate).to.be.false;
+    expect(bar(el).value).to.equal(20);
   });
 
   it("renders with error state", async () => {

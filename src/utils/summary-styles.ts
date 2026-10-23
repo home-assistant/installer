@@ -10,9 +10,12 @@ import { localize, localizeContent } from "../localization/localize.js";
 import { logFrontendError } from "./diagnostics.js";
 import { formatDiskSize, formatRam } from "./format.js";
 import { homeAssistantLogo, mdiHarddisk, mdiMonitor } from "./icons.js";
+import { sectionLabelStyles } from "./section-label-styles.js";
 
 /** The card the confirm steps sum up an install in, one row per part. */
 export const summaryStyles = css`
+  ${sectionLabelStyles}
+
   .summary-card {
     display: flex;
     flex-direction: column;
@@ -61,10 +64,6 @@ export const summaryStyles = css`
 
   .summary-label {
     font-size: 0.75rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--ha-secondary-text-color, #727272);
     margin: 0 0 0.25rem 0;
   }
 
@@ -113,6 +112,7 @@ export const haIcon = html`
  * One row of the summary: an icon, what the row is about and its value.
  * `details` go below the value, as `<p class="summary-detail">` lines.
  * The label already says what the icon shows, so screen readers skip it.
+ * The label is the row's heading, under the step's h2.
  */
 export function renderSummaryRow(
   icon: unknown,
@@ -124,7 +124,7 @@ export function renderSummaryRow(
     <div class="summary-row">
       <div class="icon-container" aria-hidden="true">${icon}</div>
       <div class="summary-info">
-        <p class="summary-label">${label}</p>
+        <h3 class="section-label summary-label">${label}</h3>
         <p class="summary-value">${value}</p>
         ${details}
       </div>

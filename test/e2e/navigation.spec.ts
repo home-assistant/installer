@@ -31,7 +31,7 @@ test.describe("Wizard Flow", () => {
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
-  test("wizard cancel returns to welcome screen", async ({ page }) => {
+  test("wizard cancel returns to path selection", async ({ page }) => {
     await page
       .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
@@ -42,8 +42,8 @@ test.describe("Wizard Flow", () => {
     // Click cancel
     await wizardShell.locator(".footer-left wa-button").click();
 
-    // Should be back on welcome screen
-    await expect(page.locator("welcome-view")).toBeVisible();
+    await expect(page.locator("path-selection-view")).toBeVisible();
+    await expect(page.locator("welcome-view")).toHaveCount(0);
   });
 
   test("wizard back button goes to previous step", async ({ page }) => {
@@ -175,7 +175,7 @@ test.describe("SBC Success", () => {
     await expect(page.locator("success-view")).toBeVisible({ timeout: 20000 });
   });
 
-  test("names the selected device, and Done returns to welcome screen", async ({
+  test("names the selected device, and Done returns to path selection", async ({
     page,
   }) => {
     const successView = page.locator("success-view");
@@ -187,7 +187,6 @@ test.describe("SBC Success", () => {
     const doneButton = wizardShell.locator(".footer-right wa-button");
     await doneButton.click();
 
-    // Should be back on welcome screen
-    await expect(page.locator("welcome-view")).toBeVisible();
+    await expect(page.locator("path-selection-view")).toBeVisible();
   });
 });

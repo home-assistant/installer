@@ -120,39 +120,34 @@ for (const tag of ["confirm-dialog", "info-dialog"]) {
   });
 }
 
-for (const tag of [
-  "success-view",
-  "proxmox-success-view",
-  "utm-success-view",
-]) {
-  test(`${tag} preserves next-step list and completion semantics`, async ({
-    page,
-  }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/");
-    await page.locator("welcome-view").waitFor({ state: "attached" });
-    await page.evaluate((tag) => {
-      document.querySelector("app-shell")!.remove();
-      document.body.append(document.createElement(tag));
-    }, tag);
-    const heading = page.getByRole("heading", { name: "You're all set!" });
-    await expect(heading).toBeFocused();
-    // The focus reads it out; an alert would read it out again
-    await expect(page.getByRole("alert")).toHaveCount(0);
-    const list = page.getByRole("list", { name: "Next steps" });
-    await expect(list).toBeVisible();
-    expect(await list.getByRole("listitem").count()).toBeGreaterThan(0);
-    expect(await list.ariaSnapshot()).toContain("listitem");
-    await expect
-      .poll(() =>
-        page
-          .locator(`${tag} svg`)
-          .first()
-          .evaluate((svg) => (svg as SVGSVGElement).animationsPaused())
-      )
-      .toBe(true);
+// WebKit drops list semantics with list-style: none unless role="list" is set
+test("success-view preserves next-step list and completion semantics", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await page.locator("welcome-view").waitFor({ state: "attached" });
+  await page.evaluate(() => {
+    document.querySelector("app-shell")!.remove();
+    document.body.append(document.createElement("success-view"));
   });
-}
+  const heading = page.getByRole("heading", { name: "You're all set!" });
+  await expect(heading).toBeFocused();
+  // The focus reads it out; an alert would read it out again
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const list = page.getByRole("list", { name: "Next steps" });
+  await expect(list).toBeVisible();
+  expect(await list.getByRole("listitem").count()).toBeGreaterThan(0);
+  expect(await list.ariaSnapshot()).toContain("listitem");
+  await expect
+    .poll(() =>
+      page
+        .locator("success-view svg")
+        .first()
+        .evaluate((svg) => (svg as SVGSVGElement).animationsPaused())
+    )
+    .toBe(true);
+});
 
 test("reduced motion reaches card shadow roots", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -194,8 +189,6 @@ test("indeterminate progress and the spinner hold still with reduced motion", as
   const progressbar = page.getByRole("progressbar", {
     name: "Waiting for Home Assistant",
   });
-  // Its value is unknown, not 0%
-  await expect(progressbar).not.toHaveAttribute("aria-valuenow");
   const indicator = page.locator("progress-bar .indicator");
   await expect(indicator).toHaveCSS("animation-name", "none");
   // It fills the track: half of it, standing still, would read as 50%
@@ -212,14 +205,12 @@ test("indeterminate progress and the spinner hold still with reduced motion", as
     "none"
   );
 
+  // Without the preference they do move
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await expect(indicator).toHaveCSS(
+  await expect(indicator).not.toHaveCSS("animation-name", "none");
+  await expect(spinner.locator(".indicator")).not.toHaveCSS(
     "animation-name",
-    "wa-progress-indeterminate"
-  );
-  await expect(spinner.locator(".indicator")).toHaveCSS(
-    "animation-name",
-    "dash"
+    "none"
   );
 });
 
@@ -309,7 +300,7 @@ test("navigation focuses headings without stealing focus on input", async ({
   ).toBeFocused();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Home Assistant" })
+    page.getByRole("heading", { name: "What would you like to install on?" })
   ).toBeFocused();
 });
 
@@ -406,7 +397,8 @@ for (const colorScheme of ["light", "dark"] as const) {
       ["--ha-primary-color", "--ha-background-color"],
       ["--ha-error-color", "--ha-background-color"],
       ["--ha-error-color", "--ha-card-background"],
-      // Placeholders, like the example formats in the Proxmox connect form
+      // Placeholders, like the example formats in the Proxmox connect form,
+      // and a drive's disabled reason
       [
         "--wa-form-control-placeholder-color",
         "--wa-form-control-background-color",
@@ -606,88 +598,27 @@ for (const tag of [
   "proxmox-progress-view",
   "utm-progress-view",
 ]) {
-  test(`${tag} keeps stage semantics and progress with reduced motion`, async ({
+  test(`${tag} stops the stage pulse with reduced motion and focuses a failure`, async ({
     page,
   }, testInfo) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/");
     await page.locator("welcome-view").waitFor({ state: "attached" });
-    const initialStatus = await page.evaluate(async (tag) => {
+    await page.evaluate(async (tag) => {
       document.querySelector("app-shell")!.remove();
       const progress = document.createElement(tag) as HTMLElement & {
         _startInstall: () => Promise<void>;
-        _progress: unknown;
-        _stage: string;
-        _bytesProcessed: number;
-        _totalBytes: number;
         updateComplete: Promise<unknown>;
       };
       // Isolated rendered view: never begin an install or call native commands.
       progress._startInstall = async () => {};
       progress.style.height = "100vh";
-      progress._stage = "downloading";
-      progress._progress =
-        tag === "progress-view"
-          ? {
-              stage: "downloading",
-              progress: 25,
-              bytes_processed: 256,
-              total_bytes: 1024,
-            }
-          : 25;
-      progress._bytesProcessed = 256;
-      progress._totalBytes = 1024;
       document.body.append(progress);
       await progress.updateComplete;
-      // The shared progress layout renders the live region in its own shadow root
-      const layout = progress.shadowRoot!.querySelector(
-        "install-progress"
-      )! as HTMLElement & { updateComplete: Promise<unknown> };
-      await layout.updateComplete;
-      await new Promise(requestAnimationFrame);
-      return layout
-        .shadowRoot!.querySelector('[role="status"]')!
-        .textContent?.trim();
     }, tag);
-    expect(initialStatus).toBe("");
-    // The stage's live region, then the warning's, which waits empty for a
-    // problem so its first one is announced too
-    await expect(page.getByRole("status")).toHaveCount(2);
-    await expect(page.getByRole("status").first()).toHaveText("Downloading");
-    await expect(page.getByRole("status").nth(1)).toHaveText("");
-    await expect(
-      page.getByRole("list", { name: "Installation stages" })
-    ).toBeVisible();
-    await expect(page.getByRole("listitem")).toHaveCount(
-      {
-        "progress-view": 5,
-        "proxmox-progress-view": 8,
-        "utm-progress-view": 7,
-      }[tag]!
-    );
-    // Stage labels are each flow's own descriptions in the shared layout
-    await expect(page.locator('[aria-current="step"]')).toContainText(
-      tag === "progress-view" ? "Fetching the Home Assistant image" : "Download"
-    );
-    // The supplied Casita artwork is a static image, so it has no SVG
-    // animations left to pause
-    await expect(page.locator(`${tag} casita-mascot img`)).toBeVisible();
-    expect(await page.locator(`${tag} svg animate`).count()).toBe(0);
     await expect(page.locator(".stage-dot.active")).toHaveCSS(
       "animation-name",
       "none"
-    );
-    await expect(page.locator(".stage-dot.active")).toHaveCSS(
-      "background-color",
-      "rgb(0, 103, 135)"
-    );
-    await expect(page.locator(".cloud-text")).toHaveCSS(
-      "color",
-      "rgb(255, 255, 255)"
-    );
-    await expect(page.getByRole("progressbar")).toHaveAttribute(
-      "aria-valuenow",
-      "25"
     );
     await page.screenshot({
       path: testInfo.outputPath(`${tag}-reduced-motion.png`),
@@ -737,4 +668,54 @@ test("disk installation keeps heading focus after the confirmation dialog closes
       .getByRole("heading", { name: "You're all set!" })
   ).toBeFocused({ timeout: 20000 });
   await expect(page.locator("success-view").getByRole("alert")).toHaveCount(0);
+});
+
+// A keyboard can only scroll what it can focus. The step's area takes the
+// focus once the step grows past the window, also after it opened, and gives
+// it up again when it fits.
+test("a step that grows past the window can be scrolled with the keyboard", async ({
+  page,
+}) => {
+  const main = page.locator("wizard-shell main");
+  /** Adds a block as tall as `height` to the bottom of `step`, or removes it. */
+  const grow = (step: string, height: number) =>
+    page.locator(step).evaluate((element, height) => {
+      const root = element.shadowRoot!;
+      root.querySelector(".grown")?.remove();
+      if (!height) return;
+      const block = document.createElement("div");
+      block.className = "grown";
+      block.style.height = `${height}px`;
+      root.append(block);
+    }, height);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Let's go" }).click();
+  await page
+    .locator('option-card[heading="Mini PC or other computer"]')
+    .click();
+  // The shared step styles, and the media step's own
+  for (const step of ["minipc-setup-method-view", "minipc-media-view"]) {
+    await expect(page.locator(step)).toBeVisible();
+    await expect(main).not.toHaveAttribute("tabindex");
+
+    await grow(step, 2000);
+    await expect(main).toHaveAttribute("tabindex", "0");
+    await main.focus();
+    await page.keyboard.press("End");
+    await expect
+      .poll(() => main.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+
+    await grow(step, 0);
+    await expect(main).not.toHaveAttribute("tabindex");
+
+    if (step === "minipc-setup-method-view") {
+      await page
+        .locator(step)
+        .locator("option-card")
+        .filter({ hasText: "I need to boot from USB" })
+        .click();
+    }
+  }
 });

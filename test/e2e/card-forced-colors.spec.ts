@@ -24,7 +24,6 @@ function systemColors(page: Page) {
       return getComputedStyle(probe).color;
     };
     const colors = {
-      canvasText: resolve("CanvasText"),
       grayText: resolve("GrayText"),
       highlight: resolve("Highlight"),
       highlightText: resolve("HighlightText"),

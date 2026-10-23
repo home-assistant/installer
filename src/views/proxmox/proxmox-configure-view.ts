@@ -26,9 +26,6 @@ import { proxmoxCheckVmConfig } from "../../api/commands.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/details/details.js";
 import {
-  DEFAULT_CPU_CORES,
-  DEFAULT_DISK_SIZE_GB,
-  DEFAULT_MEMORY_MB,
   DEFAULT_PROXMOX_VM_ID,
   DEFAULT_PROXMOX_VM_NAME,
   proxmoxVmConfig,
@@ -44,7 +41,6 @@ import {
   type ImportStorageActions,
 } from "./proxmox-import-storage.js";
 import {
-  DISK_SIZE_OPTIONS_GB,
   MAX_VLAN_TAG,
   MAX_VM_ID,
   MEMORY_OPTIONS_MB,
@@ -55,14 +51,11 @@ import {
   fitCores,
   parseWholeNumber,
 } from "./proxmox-validation.js";
-import "../../components/vm-resources.js";
-import type { VmResourceValues } from "../../components/vm-resources.js";
+import { VmSettings, configCardStyles } from "../../utils/vm-settings.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 import { renderRetryButton } from "../../utils/load-state.js";
 
 // MDI icons only this view uses; utils/icons.ts has the shared ones
-const labelIcon =
-  "M16,17H5V7H16L19.55,12M17.63,5.84C17.27,5.33 16.67,5 16,5H5A2,2 0 0,0 3,7V17A2,2 0 0,0 5,19H16C16.67,19 17.27,18.66 17.63,18.15L22,12L17.63,5.84Z";
 const vmIdIcon =
   "M9,7H11V15H9V7M13,7H15V15H13V7M5,3H19A2,2 0 0,1 21,5V19A2,2 0 0,1 19,21H5A2,2 0 0,1 3,19V5A2,2 0 0,1 5,3M5,5V19H19V5H5Z";
 
@@ -80,20 +73,8 @@ export class ProxmoxConfigureView extends LitElement {
     settingStyles,
     fieldErrorStyles,
     linkStyles,
+    configCardStyles,
     css`
-      .config-card {
-        display: flex;
-        flex-direction: column;
-        gap: 1.75rem;
-        padding: 1rem 1.25rem;
-        background-color: var(--ha-card-background, #ffffff);
-        border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-card-border-radius, 12px);
-        width: 100%;
-        box-sizing: border-box;
-        max-width: 500px;
-      }
-
       wa-details {
         width: 100%;
         max-width: 500px;
@@ -153,21 +134,24 @@ export class ProxmoxConfigureView extends LitElement {
     dialogHidden: () => this._onImportDialogHidden(),
   };
 
+  /** The VM's name and resources */
+  private readonly _vm = new VmSettings(this, {
+    defaultName: DEFAULT_PROXMOX_VM_NAME,
+    // Says what Proxmox would reject, and "home-" stays typeable on the way
+    // to "home-assistant"
+    nameError: (name) =>
+      VM_NAME_PATTERN.test(name)
+        ? undefined
+        : localize("views.proxmox.proxmox_configure_view.vm_name_invalid"),
+    nameHint: () =>
+      localize("views.proxmox.proxmox_configure_view.vm_name_hint"),
+    maxNameLength: 63,
+    save: () => this._saveSelections(),
+  });
+
   /** Raw text of the VM ID field, so it never changes while typing */
   @state()
   private _vmIdText = String(DEFAULT_PROXMOX_VM_ID);
-
-  @state()
-  private _vmName = DEFAULT_PROXMOX_VM_NAME;
-
-  @state()
-  private _cpuCores = DEFAULT_CPU_CORES;
-
-  @state()
-  private _memoryMb = DEFAULT_MEMORY_MB;
-
-  @state()
-  private _diskSizeGb = DEFAULT_DISK_SIZE_GB;
 
   private _unsubscribe?: () => void;
 
@@ -218,10 +202,7 @@ export class ProxmoxConfigureView extends LitElement {
     const selections = this._wizardState.selections;
     this._lookup.restore(selections);
     this._vlanTag = selections.proxmoxVlanTag?.toString() ?? "";
-    this._vmName = selections.vmName ?? DEFAULT_PROXMOX_VM_NAME;
-    this._cpuCores = selections.cpuCores ?? DEFAULT_CPU_CORES;
-    this._memoryMb = selections.memoryMb ?? DEFAULT_MEMORY_MB;
-    this._diskSizeGb = selections.diskSizeGb ?? DEFAULT_DISK_SIZE_GB;
+    this._vm.restore(selections);
 
     if (selections.proxmoxVmId !== undefined) {
       this._vmIdText = String(selections.proxmoxVmId);
@@ -380,13 +361,10 @@ export class ProxmoxConfigureView extends LitElement {
       proxmoxConfigureReady:
         lookup.loaded &&
         !this._vlanError &&
-        !this._nameError &&
+        !this._vm.nameError &&
         !this._vmIdError,
       proxmoxImportReady: lookup.loaded && lookup.importStorage.ready,
-      vmName: this._vmName,
-      cpuCores: this._cpuCores,
-      memoryMb: this._memoryMb,
-      diskSizeGb: this._diskSizeGb,
+      ...this._vm.selections,
     };
     // A failed initial lookup must not turn the fallback ID into a choice
     // that suppresses the next-free-ID suggestion after reconnecting.
@@ -438,27 +416,6 @@ export class ProxmoxConfigureView extends LitElement {
     this._saveSelections();
   }
 
-  private get _nameError(): string | undefined {
-    return VM_NAME_PATTERN.test(this._vmName)
-      ? undefined
-      : localize("views.proxmox.proxmox_configure_view.vm_name_invalid");
-  }
-
-  private _onNameChange(e: Event) {
-    // Kept as typed: rewriting the field while typing didn't always reach
-    // it, so it could show another name than the one used. _nameError says
-    // what Proxmox would reject, and "home-" stays typeable on the way.
-    this._vmName = (e.target as WaInput).value ?? "";
-    this._saveSelections();
-  }
-
-  private _onResourcesChange(e: CustomEvent<VmResourceValues>) {
-    this._cpuCores = e.detail.cpuCores;
-    this._memoryMb = e.detail.memoryMb;
-    this._diskSizeGb = e.detail.diskSizeGb;
-    this._saveSelections();
-  }
-
   private _getCoreOptions(): number[] {
     const lookup = this._lookup;
     return coreOptionsFor(
@@ -468,7 +425,9 @@ export class ProxmoxConfigureView extends LitElement {
 
   /** Lower a chosen or restored core count to what the selected node has. */
   private _fitCoresToNode() {
-    this._cpuCores = fitCores(this._cpuCores, this._getCoreOptions());
+    this._vm.set({
+      cpuCores: fitCores(this._vm.cpuCores, this._getCoreOptions()),
+    });
   }
 
   render() {
@@ -511,32 +470,7 @@ export class ProxmoxConfigureView extends LitElement {
       <p class="sr-only" role="status">${lookup.importStorage.status}</p>
 
       <div class="config-card">
-        <!-- VM Name (Display Name) - First -->
-        <div class="setting-row">
-          <div class="setting-icon">${renderIcon(labelIcon)}</div>
-          <div class="setting-content">
-            <wa-input
-              label=${localize("common.vm.display_name")}
-              type="text"
-              size="s"
-              .value=${this._vmName}
-              @input=${this._onNameChange}
-              placeholder="home-assistant"
-              maxlength="63"
-              ${fieldError(this._nameError)}
-            >
-              <!-- In the hint slot, so the field describes itself with it.
-                Not role="alert": ViewAccessibility focuses a new alert, which
-                would pull focus out of the field halfway through typing -->
-              <span slot="hint" class="name-hint" aria-live="polite"
-                >${this._nameError ??
-                localize(
-                  "views.proxmox.proxmox_configure_view.vm_name_hint"
-                )}</span
-              >
-            </wa-input>
-          </div>
-        </div>
+        ${this._vm.renderName()}
 
         <!-- Node Selection -->
         <div class="setting-row">
@@ -721,6 +655,7 @@ export class ProxmoxConfigureView extends LitElement {
               label=${localize("views.proxmox.proxmox_configure_view.vm_id")}
               type="number"
               size="s"
+              required
               .value=${this._vmIdText}
               @input=${this._onVmIdChange}
               min=${MIN_VM_ID}
@@ -738,15 +673,7 @@ export class ProxmoxConfigureView extends LitElement {
           </div>
         </div>
 
-        <vm-resources
-          .coreOptions=${this._getCoreOptions()}
-          .memoryOptions=${MEMORY_OPTIONS_MB}
-          .diskOptions=${DISK_SIZE_OPTIONS_GB}
-          .cpuCores=${this._cpuCores}
-          .memoryMb=${this._memoryMb}
-          .diskSizeGb=${this._diskSizeGb}
-          @resources-change=${this._onResourcesChange}
-        ></vm-resources>
+        ${this._vm.renderResources(this._getCoreOptions(), MEMORY_OPTIONS_MB)}
       </div>
       <wa-details
         appearance="plain"

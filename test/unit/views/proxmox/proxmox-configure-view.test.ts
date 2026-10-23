@@ -216,6 +216,23 @@ describe("proxmox-configure-view", () => {
     expect(wizardState.getState().selections.proxmoxConfigureReady).to.be.true;
   });
 
+  it("marks the name and the VM ID required, not the VLAN tag", async () => {
+    const el = await mount();
+    await Promise.all(
+      [...el.shadowRoot!.querySelectorAll<WaInput>("wa-input")].map(
+        (input) => input.updateComplete
+      )
+    );
+
+    const snapshot = await fullA11ySnapshot();
+    const required = (role: string, name: string) =>
+      findByRole(snapshot, role).find((node) => node.name === name)?.required;
+    expect(required("textbox", "Display name")).to.be.true;
+    expect(required("spinbutton", "VM ID")).to.be.true;
+    expect(el.shadowRoot!.querySelector<WaInput>("#vlan-tag")!.required).to.be
+      .false;
+  });
+
   it("keeps the VM ID as typed and only saves one Proxmox accepts", async () => {
     const el = await mount();
     const vmId = el.shadowRoot!.querySelector<WaInput>(
@@ -293,6 +310,31 @@ describe("proxmox-configure-view", () => {
     const cores = (await resourcesOf(el)).querySelector("wa-slider")!;
     expect(cores.max).to.equal(3); // 2, 4, 6 and 8 cores
     expect(cores.value).to.equal(3);
+  });
+
+  it("hands the sliders the same options while the name is typed", async () => {
+    // The mocked pve2 has 8 CPUs, so its core options are a filtered list
+    wizardState.setSelection("proxmoxNode", "pve2");
+    const el = await mount();
+    const resources = el.shadowRoot!.querySelector("vm-resources")!;
+    const options = () => [
+      resources.coreOptions,
+      resources.memoryOptions,
+      resources.diskOptions,
+    ];
+    const before = options();
+    expect(before[0]).to.deep.equal([2, 4, 6, 8]);
+
+    const name = el.shadowRoot!.querySelector<WaInput>(
+      'wa-input[label="Display name"]'
+    )!;
+    name.value = "my-home";
+    name.dispatchEvent(new Event("input"));
+    await el.updateComplete;
+
+    expect(wizardState.getState().selections.vmName).to.equal("my-home");
+    // New arrays would render every slider again, on every keystroke
+    expect(options()).to.have.ordered.members(before);
   });
 
   it("shows storage labels without template indentation", async () => {

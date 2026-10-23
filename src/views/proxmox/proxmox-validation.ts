@@ -3,6 +3,8 @@
  * resources the step offers for it.
  */
 
+import { memoryOptionsUpTo } from "../../state/vm-defaults.js";
+
 /**
  * Proxmox's `dns-name` format: dot-separated labels of letters, digits and
  * dashes, each starting and ending with a letter or digit. Proxmox only
@@ -22,10 +24,7 @@ export const MIN_VLAN_TAG = 1;
 export const MAX_VLAN_TAG = 4094;
 
 export const CORE_OPTIONS = [2, 4, 6, 8, 10, 12, 16];
-export const MEMORY_OPTIONS_MB = [
-  2048, 4096, 6144, 8192, 12288, 16384, 24576, 32768,
-];
-export const DISK_SIZE_OPTIONS_GB = [32, 64, 128, 256, 512];
+export const MEMORY_OPTIONS_MB = memoryOptionsUpTo(32768);
 
 /** A whole number from min to max, or undefined */
 export function parseWholeNumber(
@@ -38,14 +37,23 @@ export function parseWholeNumber(
   return value >= min && value <= max ? value : undefined;
 }
 
+/** Kept per CPU count, see `coreOptionsFor` */
+const coreOptionsByCpus = new Map<number, number[]>();
+
 /**
  * The core counts to offer on a node with `cpus` CPUs. Proxmox creates a VM
- * with more cores than its node has, then won't start it.
+ * with more cores than its node has, then won't start it. The same count
+ * gets the same array, so the sliders don't render again on every keystroke.
  */
 export function coreOptionsFor(cpus: number | null | undefined): number[] {
   if (!cpus) return CORE_OPTIONS;
-  const fitting = CORE_OPTIONS.filter((cores) => cores <= cpus);
-  return fitting.length ? fitting : [cpus];
+  let options = coreOptionsByCpus.get(cpus);
+  if (!options) {
+    const fitting = CORE_OPTIONS.filter((cores) => cores <= cpus);
+    options = fitting.length ? fitting : [cpus];
+    coreOptionsByCpus.set(cpus, options);
+  }
+  return options;
 }
 
 /** Lower a chosen or restored core count to the options a node has. */

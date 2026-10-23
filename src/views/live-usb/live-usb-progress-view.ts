@@ -9,9 +9,26 @@ import {
   type FlashProgress,
 } from "../../api/index.js";
 import { readDriveSelection } from "../../utils/drive-selection.js";
+import {
+  isDriveFailure,
+  type InstallerError,
+} from "../../utils/installer-error.js";
 import { throwIfCancelled } from "../../utils/polling.js";
 import "../../components/install-progress.js";
 import { InstallProgressView } from "../install-progress-view.js";
+
+/**
+ * Failures of the ISO's folder or file name, which another location fixes.
+ * The ISO is built in its folder, so a read or write error is most likely
+ * there too.
+ */
+const LOCATION_FAILURES = [
+  "file_exists",
+  "folder_name_taken",
+  "folder_not_found",
+  "invalid_file_name",
+  "io",
+];
 
 /**
  * Creates the stick or ISO, as the install of the Mini PC's USB boot steps.
@@ -21,11 +38,13 @@ import { InstallProgressView } from "../install-progress-view.js";
 export class LiveUsbProgressView extends InstallProgressView {
   static styles = css`
     :host {
-      display: block;
-      height: 100%;
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
     }
     install-progress {
       width: 100%;
+      flex: 1;
     }
     .keep-plugged-in {
       margin: 0 auto 1rem;
@@ -117,6 +136,12 @@ export class LiveUsbProgressView extends InstallProgressView {
       wizardState.setSelection("liveIsoPath", path);
     }
     return {};
+  }
+
+  protected _choiceCanFix(error: InstallerError): boolean {
+    return this._usb
+      ? isDriveFailure(error.code, this._reachedDrive)
+      : LOCATION_FAILURES.includes(error.code);
   }
 
   protected _stoppedMessage(): string {

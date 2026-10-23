@@ -85,6 +85,25 @@ test("a board can be picked with the keyboard", async ({ page }) => {
   await expect(page.locator("drive-selection-view")).toBeVisible();
 });
 
+test("Home Assistant hardware can be picked with the keyboard, past the reinstall question", async ({
+  page,
+}) => {
+  await start(page, "Home Assistant hardware");
+  await activate(
+    page,
+    page.getByRole("radio", { name: "Home Assistant Green", exact: true }),
+    "Space"
+  );
+  await next(page);
+  await activate(
+    page,
+    page
+      .locator("ha-hardware-device-selection-view info-dialog")
+      .getByRole("button", { name: "Reinstall", exact: true })
+  );
+  await expect(page.locator("drive-selection-view")).toBeVisible();
+});
+
 test("an external installation guide can be opened with the keyboard", async ({
   page,
 }) => {

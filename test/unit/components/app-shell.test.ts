@@ -26,6 +26,7 @@ import {
 const CONNECTED = MOCK_BLOCK_DEVICES[0];
 
 interface WizardShell extends HTMLElement {
+  flowTitle: string;
   nextLabel: string;
   nextDisabled: boolean;
   nextBusy: boolean;
@@ -77,6 +78,14 @@ function selectTargets({ withBoard = true } = {}) {
     wizardState.setSelection("deviceConfig", MOCK_MANIFEST.devices[0].haos);
   }
   storeDriveSelection(CONNECTED);
+}
+
+/** Have the flash fail with `code` before it reaches the drive. */
+function failFlash(code: string) {
+  mockTauriIpc((cmd) => {
+    if (cmd === "flash_image") return Promise.reject(ipcError(code, "Failed"));
+    throw new Error(`Unexpected IPC command: ${cmd}`);
+  });
 }
 
 async function goToStep(el: AppShell, id: string) {
@@ -325,6 +334,42 @@ describe("app-shell", () => {
     });
   }
 
+  it("names the flow in the wizard's main heading", async () => {
+    await enterSbcFlow(el);
+    for (const [flow, title] of [
+      ["sbc", "Raspberry Pi & other boards"],
+      ["minipc", "Mini PC or other computer"],
+      ["ha-hardware", "Home Assistant hardware"],
+      ["proxmox", "Proxmox server"],
+      ["vm", "Virtual machine"],
+    ] as const) {
+      wizardState.startFlow(flow);
+      await el.updateComplete;
+      expect(shellOf(el).flowTitle).to.equal(title);
+    }
+  });
+
+  it("puts each screen before a flow in the main landmark", async () => {
+    // The welcome screen has a footer of its own, outside it
+    const welcome = el.shadowRoot!.querySelector("welcome-view")!;
+    expect(welcome.shadowRoot!.querySelector("main h1")).to.exist;
+    expect(welcome.shadowRoot!.querySelector("main footer")).to.be.null;
+
+    fire(welcome, "navigate", { view: "path-selection" });
+    await el.updateComplete;
+    expect(
+      el.shadowRoot!.querySelector("path-selection-view")!.getAttribute("role")
+    ).to.equal("main");
+
+    fire(el.shadowRoot!.querySelector("path-selection-view")!, "navigate", {
+      view: "other-options",
+    });
+    await el.updateComplete;
+    expect(
+      el.shadowRoot!.querySelector("other-options-view")!.getAttribute("role")
+    ).to.equal("main");
+  });
+
   describe("connection gate", () => {
     it("starts the selected flow only after a successful retry", async () => {
       const retry = deferred<void>();
@@ -402,18 +447,26 @@ describe("app-shell", () => {
     }
   });
 
-  it("returns to path selection when Back leaves the first step", async () => {
-    await enterSbcFlow(el);
-    wizardState.setSelection("device", "rpi5");
+  // The welcome screen has nothing new for someone who already used it
+  for (const [action, event, step] of [
+    ["Back leaves the first step", "wizard-exit", undefined],
+    ["Cancel is chosen", "wizard-cancel", undefined],
+    ["Done is chosen", "wizard-next", "success"],
+  ] as const) {
+    it(`returns to path selection when ${action}`, async () => {
+      await enterSbcFlow(el);
+      wizardState.setSelection("device", "rpi5");
+      if (step) await goToStep(el, step);
 
-    fire(shellOf(el), "wizard-exit");
-    await el.updateComplete;
+      fire(shellOf(el), event);
+      await el.updateComplete;
 
-    expect(el.shadowRoot!.querySelector("path-selection-view")).to.exist;
-    expect(shellOf(el)).to.equal(null);
-    expect(wizardState.getState().currentFlow).to.equal(null);
-    expect(wizardState.getState().selections).to.deep.equal({});
-  });
+      expect(el.shadowRoot!.querySelector("path-selection-view")).to.exist;
+      expect(shellOf(el)).to.equal(null);
+      expect(wizardState.getState().currentFlow).to.equal(null);
+      expect(wizardState.getState().selections).to.deep.equal({});
+    });
+  }
 
   it("offers only Done once the installation succeeded", async () => {
     await enterSbcFlow(el);
@@ -997,16 +1050,82 @@ describe("app-shell", () => {
     });
 
     it("is there beside Choose another drive", async () => {
-      // Without a board there is nothing to download, so no write starts:
-      // the progress view reports the flash error itself.
-      selectTargets({ withBoard: false });
+      selectTargets();
+      failFlash("drive_disconnected");
       await goToStep(el, "flash");
       await waitUntil(() => shellOf(el).nextLabel === "Choose another drive");
       expect(shellOf(el).hideBack).to.be.false;
+      restoreTauriIpc();
 
       await clickBack(el);
       expect(wizardState.currentStep?.id).to.equal("confirm");
       expect((el as unknown as ErrorFlags)._installError).to.be.false;
+    });
+
+    // Another drive can't fix an unexpected response, so there is no Next
+    it("is the way on when the drive is not what failed", async () => {
+      selectTargets();
+      failFlash("json");
+      await goToStep(el, "flash");
+      await waitUntil(
+        () => shellOf(el).querySelector("progress-view")!.hasError
+      );
+      await el.updateComplete;
+      expect(shellOf(el).hideNext).to.be.true;
+      expect(shellOf(el).hideBack).to.be.false;
+      expect(shellOf(el).hideFooter).to.be.false;
+      restoreTauriIpc();
+
+      await clickBack(el);
+      expect(wizardState.currentStep?.id).to.equal("confirm");
+      expect(shellOf(el).nextLabel).to.equal("Install");
+    });
+  });
+
+  // The progress view says whether choosing differently can fix a failure
+  // that trying again can't
+  describe("Next after a failed flash", () => {
+    beforeEach(async () => {
+      await enterSbcFlow(el);
+      selectTargets();
+      // The flash keeps running until the test fails it
+      mockTauriIpc(() => new Promise(() => {}));
+      await goToStep(el, "flash");
+    });
+
+    async function fail(detail: { retryable: boolean; changeChoice: boolean }) {
+      fire(
+        shellOf(el).querySelector("progress-view")!,
+        "install-error",
+        detail
+      );
+      await el.updateComplete;
+    }
+
+    it("leads to the drive step when the drive failed", async () => {
+      await fail({ retryable: false, changeChoice: true });
+      expect(shellOf(el).nextLabel).to.equal("Choose another drive");
+      expect(shellOf(el).hideNext).to.be.false;
+
+      fire(shellOf(el), "wizard-next");
+      await el.updateComplete;
+      expect(wizardState.currentStep?.id).to.equal("drive");
+    });
+
+    it("tries the same drive again first when that can work", async () => {
+      await fail({ retryable: true, changeChoice: true });
+      expect(shellOf(el).nextLabel).to.equal("Try again");
+    });
+
+    it("is hidden when no choice can fix it", async () => {
+      await fail({ retryable: false, changeChoice: false });
+      expect(shellOf(el).hideNext).to.be.true;
+      expect(shellOf(el).hideBack).to.be.false;
+
+      // Nothing else sends the flash on to the drive step either
+      fire(shellOf(el), "wizard-next");
+      await el.updateComplete;
+      expect(wizardState.currentStep?.id).to.equal("flash");
     });
   });
 
@@ -1093,7 +1212,7 @@ describe("app-shell", () => {
       await el.updateComplete;
       fire(leaveDialog, "dialog-primary");
       await el.updateComplete;
-      expect(el.shadowRoot!.querySelector("welcome-view")).to.exist;
+      expect(el.shadowRoot!.querySelector("path-selection-view")).to.exist;
       expect(wizardState.getState().selections.proxmoxVmResult).to.be.undefined;
     });
 
@@ -1259,7 +1378,9 @@ describe("app-shell", () => {
       // the progress view reports the flash error itself.
       selectTargets({ withBoard: false });
       await goToStep(el, "flash");
-      await waitUntil(() => shellOf(el).nextLabel === "Choose another drive");
+      await waitUntil(
+        () => shellOf(el).querySelector("progress-view")!.hasError
+      );
 
       fire(shellOf(el), "wizard-cancel");
       await el.updateComplete;
@@ -1269,7 +1390,7 @@ describe("app-shell", () => {
       wizardState.startFlow("sbc");
       selectTargets();
       await goToStep(el, "flash");
-      fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+      fire(el.shadowRoot!.querySelector("path-selection-view")!, "navigate", {
         view: "wizard",
       });
       await el.updateComplete;

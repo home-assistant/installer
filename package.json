@@ -32,6 +32,7 @@
   },
   "devDependencies": {
     "@actions/artifact": "^6.2.1",
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^10.0.0",
     "@open-wc/testing": "^5.0.0",
     "@playwright/test": "^1.57.0",

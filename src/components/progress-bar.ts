@@ -1,6 +1,7 @@
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, type PropertyValues } from "lit";
 import { localize } from "../localization/localize.js";
 import { customElement, property, query } from "lit/decorators.js";
+import { keyed } from "lit/directives/keyed.js";
 import type WaProgressBar from "@home-assistant/webawesome/dist/components/progress-bar/progress-bar.js";
 import "@home-assistant/webawesome/dist/components/progress-bar/progress-bar.js";
 
@@ -66,17 +67,39 @@ export class ProgressBar extends LitElement {
   @query("wa-progress-bar")
   private _bar!: WaProgressBar;
 
+  /** Counts the bars drawn, as a new one has no width to slide from */
+  private _run = 0;
+
+  protected willUpdate(changed: PropertyValues<this>) {
+    // Web Awesome slides the indicator to each new value. A stage that counts
+    // from 0 again would slide back across the whole track while its label
+    // counts up, and a wait that starts or ends would slide between the value
+    // and the stripe it shows. A new bar shows its value at once
+    const previous = changed.get("progress");
+    if (
+      changed.get("indeterminate") !== undefined ||
+      (!this.indeterminate &&
+        previous !== undefined &&
+        this.progress < previous)
+    ) {
+      this._run++;
+    }
+  }
+
   render() {
     const value = Math.min(100, Math.max(0, this.progress));
 
-    return html`
-      <wa-progress-bar
-        class=${this.error ? "error" : ""}
-        ?indeterminate=${this.indeterminate}
-        value=${value}
-        label=${this.label || localize("common.progress")}
-      ></wa-progress-bar>
-    `;
+    return keyed(
+      this._run,
+      html`
+        <wa-progress-bar
+          class=${this.error ? "error" : ""}
+          ?indeterminate=${this.indeterminate}
+          value=${value}
+          label=${this.label || localize("common.progress")}
+        ></wa-progress-bar>
+      `
+    );
   }
 
   protected updated() {

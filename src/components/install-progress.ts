@@ -567,9 +567,8 @@ export class InstallProgress extends LitElement {
                     <div class="progress-right">
                       <span class="percentage"
                         >${this.measurable
-                          ? formatNumber(this.progress / 100, {
+                          ? formatNumber(this._percentage() / 100, {
                               style: "percent",
-                              maximumFractionDigits: 20,
                             })
                           : ""}</span
                       >
@@ -611,6 +610,11 @@ export class InstallProgress extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  /** A whole percent on the bar's track, whatever a view passes */
+  private _percentage(): number {
+    return Math.min(100, Math.max(0, Math.round(this.progress)));
   }
 
   private _calculateEta(): string | null {

@@ -110,9 +110,7 @@ export class PathSelectionView extends LitElement {
           ></option-card>
 
           <option-card
-            heading=${localize(
-              "views.path_selection_view.raspberry_pi_other_boards"
-            )}
+            heading=${localize("common.raspberry_pi_other_boards")}
             description=${localize("views.path_selection_view.sbc_description")}
             icon="sbc"
             data-path="sbc"
@@ -120,7 +118,7 @@ export class PathSelectionView extends LitElement {
           ></option-card>
 
           <option-card
-            heading=${localize("views.path_selection_view.generic_mini_pc")}
+            heading=${localize("common.generic_mini_pc")}
             description=${localize(
               "views.path_selection_view.minipc_description"
             )}

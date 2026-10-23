@@ -10,6 +10,7 @@ import {
   minipcDirectSteps,
   wizardState,
 } from "../../state/wizard-state.js";
+import { goToNextStep } from "../../components/wizard-steps.js";
 import "../../components/option-card.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
@@ -69,13 +70,13 @@ export class MiniPCSetupMethodView extends LitElement {
   private _onConnectDrive() {
     wizardState.setSteps(minipcDirectSteps(wizardState.getState().selections));
     wizardState.setSelection("installMethod", "direct");
-    wizardState.nextStep();
+    goToNextStep(this);
   }
 
   private _onUsbBoot() {
     wizardState.setSteps(MINIPC_STEPS.usb);
     wizardState.setSelection("installMethod", "usb-boot");
-    wizardState.nextStep();
+    goToNextStep(this);
   }
 }
 

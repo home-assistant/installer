@@ -8,6 +8,7 @@ import {
 import { MINIPC_STEPS, wizardState } from "../../state/wizard-state.js";
 import { clearDriveSelection } from "../../utils/drive-selection.js";
 import type { HaosConfig } from "../../api/types.js";
+import { goToNextStep } from "../../components/wizard-steps.js";
 import "../../components/option-card.js";
 
 /** Drive rules for the stick: removable and 2 GB or more (the drive list allows 5% less). */
@@ -26,7 +27,7 @@ export class MiniPCMediaView extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      height: 100%;
+      min-height: 100%;
     }
 
     h2 {
@@ -103,7 +104,7 @@ export class MiniPCMediaView extends LitElement {
     );
     wizardState.setSteps(MINIPC_STEPS[media]);
     wizardState.setSelection("liveMedia", media);
-    wizardState.nextStep();
+    goToNextStep(this);
   }
 }
 

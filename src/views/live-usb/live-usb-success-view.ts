@@ -16,7 +16,7 @@ export class LiveUsbSuccessView extends LitElement {
   static styles = css`
     :host {
       display: block;
-      height: 100%;
+      min-height: 100%;
     }
   `;
 

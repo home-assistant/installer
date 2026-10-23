@@ -12,7 +12,11 @@ import "../../../src/views/utm/utm-confirm-view.js";
 import "../../../src/views/proxmox/proxmox-confirm-view.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../tauri-ipc.js";
 import { expectReadsLeftToRight } from "../helpers/bidi.js";
-import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
+import {
+  findByRole,
+  fullA11ySnapshot,
+  headingOutline,
+} from "../helpers/a11y.js";
 
 describe("installation confirmation views", () => {
   afterEach(() => {
@@ -113,6 +117,43 @@ describe("installation confirmation views", () => {
 
       expect(findByRole(tree, "image")).to.deep.equal([]);
       expect(findByRole(tree, "heading")[0]!.name).to.equal("Ready to install");
+    });
+  }
+
+  // Moving by headings reaches each row of the summary. Chrome names each
+  // row's heading as it shows it, in capitals.
+  for (const [flow, rows] of [
+    ["sbc", ["DEVICE", "TARGET DRIVE", "HOME ASSISTANT OPERATING SYSTEM"]],
+    ["vm", ["VIRTUAL MACHINE", "STORAGE", "HOME ASSISTANT OPERATING SYSTEM"]],
+    [
+      "proxmox",
+      [
+        "PROXMOX SERVER",
+        "VIRTUAL MACHINE",
+        "STORAGE",
+        "HOME ASSISTANT OPERATING SYSTEM",
+      ],
+    ],
+  ] as const) {
+    it(`heads each row of the ${flow} summary under the step's heading`, async () => {
+      wizardState.startFlow(flow);
+      storeDriveSelection(MOCK_BLOCK_DEVICES[0]);
+      wizardState.setSelection("deviceName", MOCK_MANIFEST.devices[0].name);
+      wizardState.setSelection("deviceConfig", MOCK_MANIFEST.devices[0].haos);
+      mockTauriIpc(() => MOCK_HAOS_RELEASE);
+      fixtureSync(
+        flow === "sbc"
+          ? html`<confirmation-view></confirmation-view>`
+          : flow === "vm"
+            ? html`<utm-confirm-view></utm-confirm-view>`
+            : html`<proxmox-confirm-view></proxmox-confirm-view>`
+      );
+      await settle();
+
+      expect(headingOutline(await fullA11ySnapshot())).to.deep.equal([
+        [2, "Ready to install"],
+        ...rows.map((row) => [3, row]),
+      ]);
     });
   }
 

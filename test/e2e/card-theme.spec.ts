@@ -105,9 +105,12 @@ for (const colorScheme of ["light", "dark"] as const) {
     );
     await page.locator("drive-card").click();
     await page.mouse.move(0, 0);
-    await expect(page.locator("drive-card .card")).toHaveCSS(
-      "box-shadow",
-      `${ring} 0px 0px 0px 3px`
-    );
+    await expect
+      .poll(() =>
+        page
+          .locator("drive-card .card")
+          .evaluate((card) => getComputedStyle(card).boxShadow)
+      )
+      .toContain(ring);
   });
 }

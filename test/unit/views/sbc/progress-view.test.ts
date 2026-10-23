@@ -4,6 +4,7 @@ import type {
   FlashProgress,
   FlashRequest,
   FlashResult,
+  FlashStage,
 } from "../../../../src/api/types.js";
 import {
   MOCK_BLOCK_DEVICES,
@@ -208,6 +209,35 @@ describe("progress-view", () => {
     expect(errors).to.equal(1);
   });
 
+  it("starts a retry from zero, not from where the failed attempt got", async () => {
+    const { el, attempts } = mockFlash();
+    attempts[0].progressChannel.onmessage({
+      stage: "writing",
+      progress: 30,
+      bytes_processed: 300,
+      total_bytes: 1000,
+      message: "",
+    });
+    attempts[0].result.reject({
+      code: "device_busy",
+      message: "Write failed: I/O error",
+      retryable: true,
+      details: {},
+    });
+    await settle();
+    const layout = el.shadowRoot!.querySelector("install-progress")!;
+    expect(layout.bytesProcessed).to.equal(300);
+
+    el.retry();
+    await settle();
+    expect(layout.stage).to.equal("downloading");
+    expect(layout.progress).to.equal(0);
+    expect(layout.bytesProcessed).to.equal(0);
+    expect(layout.totalBytes).to.equal(0);
+    expect(layout.stageStartTime).to.be.null;
+    expect(layout.stageStartBytes).to.equal(0);
+  });
+
   describe("stopping", () => {
     for (const { stage, message } of [
       { stage: "extracting", message: "Nothing was written to the drive" },
@@ -374,6 +404,67 @@ describe("progress-view", () => {
       expect(attempts[1].request).to.deep.equal(attempts[0].request);
     });
   }
+
+  // The shell offers another drive only for what is wrong with the drive
+  describe("whether another drive can fix it", () => {
+    /** What the flash tells the shell when it fails with `code` at `stage` */
+    async function changeChoiceAfter(code: string, stage?: FlashStage) {
+      const { el, attempts } = mockFlash();
+      let changeChoice: boolean | undefined;
+      el.addEventListener("install-error", (event) => {
+        changeChoice = (event as CustomEvent<{ changeChoice: boolean }>).detail
+          .changeChoice;
+      });
+      if (stage) {
+        attempts[0].progressChannel.onmessage({
+          stage,
+          progress: 50,
+          bytes_processed: 1024,
+          total_bytes: 2048,
+          message: "Busy",
+        });
+      }
+      attempts[0].result.reject({
+        code,
+        message: "Failed",
+        retryable: false,
+        details: {},
+      });
+      await settle();
+      return changeChoice;
+    }
+
+    for (const code of [
+      "device_not_found",
+      "drive_disconnected",
+      "drive_too_small",
+      "image_too_large",
+      "write_protected",
+    ]) {
+      it(`says so for ${code}`, async () => {
+        expect(await changeChoiceAfter(code)).to.be.true;
+      });
+    }
+
+    for (const [code, stage, drive] of [
+      // The release's checksums, or this computer's storage
+      ["verification_failed", "downloading", false],
+      ["io", "extracting", false],
+      // Reading back or writing the drive itself
+      ["verification_failed", "verifying", true],
+      ["io", "writing", true],
+    ] as const) {
+      it(`says ${drive ? "so" : "not"} for ${code} while ${stage}`, async () => {
+        expect(await changeChoiceAfter(code, stage)).to.equal(drive);
+      });
+    }
+
+    for (const code of ["json", "invalid_config", "internal"]) {
+      it(`says not for ${code}, even while writing`, async () => {
+        expect(await changeChoiceAfter(code, "writing")).to.be.false;
+      });
+    }
+  });
 
   it("reports a failed verification without advancing", async () => {
     const { el, attempts } = mockFlash();

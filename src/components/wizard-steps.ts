@@ -54,8 +54,9 @@ export interface InstallStep {
    */
   backAfterError?: boolean;
   /**
-   * Where a failure that trying again can't fix leads, like a drive that is
-   * gone. Without it, Cancel is all that is left.
+   * Where Next leads from a failure that the view says choosing differently
+   * fixes, like a drive that is gone. Any other failure that trying again
+   * can't fix hides Next.
    */
   changeChoice?(selections: WizardSelections): InstallDetour;
   /** Where a failure that logging in again fixes leads */
@@ -71,7 +72,11 @@ export interface WizardStepDefinition {
   skipTo?(selections: WizardSelections): string | undefined;
   /** What Next says, if not "Next" */
   nextLabel?(): string;
-  /** Picking an option moves on by itself, so there is no Next */
+  /**
+   * Picking an option moves on by itself, so there is no Next. The view
+   * sends `wizard-next` once it saved the pick, which leaves the step the
+   * way Next does.
+   */
   pickToContinue?: boolean;
   /** Whether Next erases the drive, which is checked and asked first */
   erasesDrive?(selections: WizardSelections): boolean;

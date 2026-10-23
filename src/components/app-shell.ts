@@ -107,6 +107,10 @@ export class AppShell extends LitElement {
   @state()
   private _installReconnect = false;
 
+  /** Choosing differently, like another drive, can fix the failed install */
+  @state()
+  private _installChangeChoice = false;
+
   // What the running `beforeNext` of a step started from: the flow, or the
   // selections. Leaving the flow (or changing a choice) replaces it, so a run
   // left behind holds up nothing.
@@ -238,6 +242,7 @@ export class AppShell extends LitElement {
     switch (this._currentView) {
       case "connection-check":
         return html`<connection-check-view
+          role="main"
           @connection-ready=${this._onConnectionReady}
           @connection-back=${this._onConnectionBack}
         ></connection-check-view>`;
@@ -247,11 +252,13 @@ export class AppShell extends LitElement {
         ></welcome-view>`;
       case "path-selection":
         return html`<path-selection-view
+          role="main"
           @navigate=${this._onNavigate}
           @select-path=${this._onSelectPath}
         ></path-selection-view>`;
       case "other-options":
         return html`<other-options-view
+          role="main"
           @navigate=${this._onNavigate}
         ></other-options-view>`;
       case "wizard":
@@ -289,7 +296,7 @@ export class AppShell extends LitElement {
     const hideBack =
       last || (!!install && (running || !install.backAfterError));
 
-    // Done already returns to the start, so Cancel would only repeat it
+    // Done already leaves the flow, so Cancel would only repeat it
     const hideCancel = last;
 
     const hideNext =
@@ -299,6 +306,7 @@ export class AppShell extends LitElement {
 
     return html`
       <wizard-shell
+        .flowTitle=${this._flowTitle(this._wizardState.currentFlow)}
         .nextDisabled=${nextDisabled}
         .nextBusy=${!!busy}
         .nextLabel=${busy ?? nextLabel}
@@ -308,7 +316,7 @@ export class AppShell extends LitElement {
         .hideCancel=${hideCancel}
         @wizard-cancel=${this._onWizardCancel}
         @wizard-back=${this._onWizardBack}
-        @wizard-exit=${this._onWizardExit}
+        @wizard-exit=${this._exitFlow}
         @wizard-next=${this._onWizardNext}
         @install-stoppable=${this._onInstallStoppable}
         @install-leavable=${this._onInstallLeavable}
@@ -318,6 +326,18 @@ export class AppShell extends LitElement {
         ${step?.render() ?? nothing}
       </wizard-shell>
     `;
+  }
+
+  private _flowTitle(flow: WizardFlow | null): string {
+    if (!flow) return "";
+    const titles: Record<WizardFlow, string> = {
+      sbc: localize("common.raspberry_pi_other_boards"),
+      minipc: localize("common.generic_mini_pc"),
+      "ha-hardware": localize("common.home_assistant_hardware"),
+      proxmox: localize("common.proxmox_server"),
+      vm: localize("common.virtual_machine"),
+    };
+    return titles[flow];
   }
 
   private _getNextLabel(step: WizardStepDefinition | undefined): string {
@@ -425,9 +445,7 @@ export class AppShell extends LitElement {
       return;
     }
 
-    this._resetErrorState();
-    wizardState.reset();
-    this._currentView = "welcome";
+    this._exitFlow();
   }
 
   /**
@@ -439,8 +457,11 @@ export class AppShell extends LitElement {
     this._resetErrorState();
   }
 
-  /** Back on the first step returns to where the flow was picked. */
-  private _onWizardExit() {
+  /**
+   * Back on the first step, Cancel, Done and leaving a running VM return to
+   * where the flow was picked. The welcome screen has nothing new by then.
+   */
+  private _exitFlow() {
     this._resetErrorState();
     wizardState.reset();
     this._currentView = "path-selection";
@@ -453,6 +474,7 @@ export class AppShell extends LitElement {
     this._installError = false;
     this._installRetryable = false;
     this._installReconnect = false;
+    this._installChangeChoice = false;
   }
 
   /** Whether the step on screen runs an install that has not failed. */
@@ -462,11 +484,12 @@ export class AppShell extends LitElement {
 
   /**
    * Where Next leads from the failed `install` instead of trying it again:
-   * to log in again, or to change a choice that trying again can't fix.
+   * to log in again, or to the choice that failed it, like the drive. A
+   * failure no choice fixes, like an unexpected response, leads nowhere.
    */
   private _installDetour(install: InstallStep): InstallDetour | undefined {
     if (this._installReconnect) return install.reconnect?.();
-    if (this._installRetryable) return undefined;
+    if (this._installRetryable || !this._installChangeChoice) return undefined;
     return install.changeChoice?.(this._wizardState.selections);
   }
 
@@ -528,10 +551,7 @@ export class AppShell extends LitElement {
       : -1;
 
     if (wizardState.isLastStep) {
-      // Flow complete - go back to welcome
-      this._resetErrorState();
-      wizardState.reset();
-      this._currentView = "welcome";
+      this._exitFlow();
     } else if (skipIndex >= 0) {
       wizardState.goToStep(skipIndex);
     } else {
@@ -650,9 +670,7 @@ export class AppShell extends LitElement {
     // Leaving detaches the progress view, which stops its waiting; the VM
     // and Home Assistant carry on
     this._showLeaveDialog = false;
-    this._resetErrorState();
-    wizardState.reset();
-    this._currentView = "welcome";
+    this._exitFlow();
   }
 
   private _onKeepWaiting() {
@@ -693,7 +711,11 @@ export class AppShell extends LitElement {
   }
 
   private _onInstallError(
-    event: CustomEvent<{ retryable?: boolean; reconnect?: boolean }>
+    event: CustomEvent<{
+      retryable?: boolean;
+      reconnect?: boolean;
+      changeChoice?: boolean;
+    }>
   ) {
     // The install ended, so there is nothing left to stop, leave or quit,
     // whether or not the view said so first
@@ -702,6 +724,7 @@ export class AppShell extends LitElement {
     this._showQuitDialog = false;
     this._installRetryable = event.detail?.retryable === true;
     this._installReconnect = event.detail?.reconnect === true;
+    this._installChangeChoice = event.detail?.changeChoice === true;
     this._installError = true;
   }
 }

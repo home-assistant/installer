@@ -137,7 +137,11 @@ export class ProxmoxImportStorage {
         s.available > 0 &&
         !s.content.includes("import")
     );
-    this.selected = this.candidates[0]?.name ?? "";
+    // Keep the user's candidate if Refresh storage still finds it, otherwise
+    // fall back to the first one
+    if (!this.candidates.some((s) => s.name === this.selected)) {
+      this.selected = this.candidates[0]?.name ?? "";
+    }
     this._lookup.requestUpdate();
   }
 
