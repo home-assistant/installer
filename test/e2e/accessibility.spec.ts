@@ -401,7 +401,6 @@ for (const colorScheme of ["light", "dark"] as const) {
       ["--ha-primary-color", "--ha-background-color"],
       ["--ha-error-color", "--ha-background-color"],
       ["--ha-error-color", "--ha-card-background"],
-      ["--ha-primary-color-dark", "#18bcf2"],
       // Placeholders, like the example formats in the Proxmox connect form
       [
         "--wa-form-control-placeholder-color",
