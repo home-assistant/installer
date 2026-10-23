@@ -5,7 +5,7 @@ test.describe("Proxmox Installation Flow", () => {
   test.beforeEach(async ({ page }) => {
     // Use mock mode to avoid actual Proxmox connections
     await page.goto("/");
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
     // Select Proxmox Server option
     await page.locator('option-card[heading="Proxmox server"]').click();
@@ -480,7 +480,7 @@ test.describe("Proxmox Installation Flow", () => {
     await expect(page.locator("welcome-view")).toBeVisible();
 
     // Restart and test cancel on step 2
-    await page.locator("welcome-view").locator("wa-button").click();
+    await page.getByRole("button", { name: "Let's go" }).click();
     await page.locator('option-card[heading="Proxmox server"]').click();
     await navigateToProxmoxStep2(page);
     await wizardShell.locator(".footer-left wa-button").click();

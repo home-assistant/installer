@@ -1,5 +1,5 @@
 import { LitElement, css, html } from "lit";
-import { customElement, property, query, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { localize } from "../localization/localize.js";
@@ -16,12 +16,23 @@ import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 @customElement("diagnostics-actions")
 export class DiagnosticsActions extends LitElement {
   static styles = css`
-    /* Under an error it continues the "Installation help · " line */
-    :host {
-      display: inline-block;
+    /* It sits in text: after "Installation help · " under an error, and in
+       the welcome footer. So it looks like a link in that text (as in
+       link-styles.ts), in its font and on its baseline, not like a button of
+       its own. The welcome footer gives it its own quieter color. */
+    .launcher {
+      padding: 0;
+      border: 0;
+      background: none;
+      font: inherit;
+      color: var(--diagnostics-link-color, var(--ha-primary-color, #006787));
+      text-decoration: underline;
+      cursor: pointer;
     }
-    :host(:not([about])) .launcher::part(base) {
-      padding-inline: 0;
+    .launcher:focus-visible {
+      outline: 2px solid var(--wa-color-focus, currentColor);
+      outline-offset: 2px;
+      border-radius: 2px;
     }
     wa-dialog {
       --width: 36rem;
@@ -51,7 +62,6 @@ export class DiagnosticsActions extends LitElement {
     }
   `;
 
-  @property({ type: Boolean }) about = false;
   @state() private _open = false;
   @state() private _version = "";
   @state() private _data?: Diagnostics;
@@ -121,19 +131,11 @@ export class DiagnosticsActions extends LitElement {
   render() {
     const report = this._data ? reportUrl(this._data) : undefined;
     return html`
-      <wa-button class="launcher" appearance="plain" @click=${this._show}
-        >${this.about
-          ? localize("components.diagnostics_actions.about")
-          : localize(
-              "components.diagnostics_actions.report_a_problem"
-            )}</wa-button
-      >
+      <button class="launcher" type="button" @click=${this._show}>
+        ${localize("components.diagnostics_actions.report_a_problem")}
+      </button>
       <wa-dialog
-        label=${this.about
-          ? localize(
-              "components.diagnostics_actions.about_home_assistant_installer"
-            )
-          : localize("components.diagnostics_actions.report_a_problem")}
+        label=${localize("components.diagnostics_actions.report_a_problem")}
         .open=${this._open}
         @wa-after-hide=${this._onAfterHide}
       >

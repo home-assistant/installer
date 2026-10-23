@@ -19,7 +19,7 @@ for (const width of [1100, 390]) {
       await page.setViewportSize({ width, height: 850 });
       // The Vite development build uses browser mocks when Tauri is absent.
       await page.goto("/");
-      await page.locator("welcome-view wa-button").click();
+      await page.getByRole("button", { name: "Let's go" }).click();
       if (scenario.device.startsWith("generic-")) {
         await page.locator('option-card[heading="Generic (mini) PC"]').click();
         await page
@@ -142,7 +142,7 @@ test("a Wi-Fi network set on its own step replaces the cable step", async ({
 }) => {
   test.setTimeout(60000);
   await page.goto("/");
-  await page.locator("welcome-view wa-button").click();
+  await page.getByRole("button", { name: "Let's go" }).click();
   await page
     .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
