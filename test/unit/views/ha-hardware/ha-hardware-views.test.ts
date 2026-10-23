@@ -747,7 +747,9 @@ describe("Home Assistant hardware views", () => {
     }
 
     it("shows steps that fit any device when none was selected", async () => {
-      wizardState.startFlow("ha-hardware");
+      // The name and board of the device picked before stay behind
+      select("blue", "Home Assistant Blue");
+      wizardState.setSelection("haHardware", undefined);
       const el = await fixture(
         html`<ha-hardware-success-view></ha-hardware-success-view>`
       );
