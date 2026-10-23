@@ -745,5 +745,26 @@ describe("Home Assistant hardware views", () => {
         );
       });
     }
+
+    it("shows steps that fit any device when none was selected", async () => {
+      wizardState.startFlow("ha-hardware");
+      const el = await fixture(
+        html`<ha-hardware-success-view></ha-hardware-success-view>`
+      );
+      const generic = el.shadowRoot!.querySelector("success-view")!;
+      await generic.updateComplete;
+      const success = generic.shadowRoot!.querySelector("install-success")!;
+      await success.updateComplete;
+      const content = text(success.shadowRoot!);
+      expect(content).to.contain("Insert the written storage into your device");
+      for (const device of ["Green", "Yellow", "Blue"]) {
+        expect(content).not.to.contain(device);
+      }
+      expect(
+        success.shadowRoot!.querySelector<HTMLAnchorElement>(
+          ".next-steps-footer a"
+        )!.href
+      ).to.equal("https://www.home-assistant.io/installation/");
+    });
   });
 });

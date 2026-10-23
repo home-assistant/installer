@@ -47,7 +47,11 @@ export class HaHardwareSuccessView extends LitElement {
   }
 
   render() {
-    const hardware = this._wizardState.selections.haHardware ?? "green";
+    const hardware = this._wizardState.selections.haHardware;
+    // The device and module steps always pick one before the flow gets here.
+    // Without it, no device's steps apply, so show the ones that fit any board
+    // instead of guessing one.
+    if (!hardware) return html`<success-view></success-view>`;
     const guide = GUIDES[hardware];
     // Without an installer, Home Assistant OS itself is on the drive and
     // starts its first setup when the device boots from it
