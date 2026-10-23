@@ -95,7 +95,13 @@ pub enum Screen {
 /// Draws `screen`: a centered card with the keys to press under it, and the Home Assistant logo
 /// above it where the console is tall enough.
 pub fn render(frame: &mut Frame, screen: &Screen) {
-    let (title, lines, gauge, keys) = content(screen);
+    let Card {
+        title,
+        lines,
+        progress: gauge,
+        keys,
+        focus,
+    } = content(screen);
 
     let width = CARD_WIDTH.min(frame.area().width.saturating_sub(2));
     // Borders and padding take 5 columns on each side, padding 2 rows above and below
@@ -143,7 +149,17 @@ pub fn render(frame: &mut Frame, screen: &Screen) {
 
     let [text_area, gauge_area] =
         Layout::vertical([Constraint::Fill(1), Constraint::Length(gauge_height)]).areas(inner);
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), text_area);
+    // Keep the selected disk in view where the list doesn't fit the card
+    let scroll = focus.map_or(0, |focus| {
+        let through_focus = wrapped_height(&lines[..focus.end], text_area.width);
+        through_focus.saturating_sub(text_area.height)
+    });
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((scroll, 0)),
+        text_area,
+    );
     if let Some((percent, time_left)) = gauge {
         let [_, bar, below] = Layout::vertical([Constraint::Length(1); 3]).areas(gauge_area);
         frame.render_widget(progress_bar(percent, bar.width), bar);
@@ -174,11 +190,20 @@ fn progress_bar(percent: u16, width: u16) -> Line<'static> {
     ])
 }
 
-/// How far a step is: the percentage, and the time left once that can be told.
-type Progress = (u16, Option<String>);
+/// What goes in the card for one screen.
+struct Card {
+    title: String,
+    lines: Vec<Line<'static>>,
+    /// The percentage, and the time left once that can be told.
+    progress: Option<(u16, Option<String>)>,
+    /// The keys to press, under the card.
+    keys: String,
+    /// The lines that must stay in view: the selected disk, and why it can't be used.
+    focus: Option<std::ops::Range<usize>>,
+}
 
-/// The title, body, optional progress and key hint of `screen`.
-fn content(screen: &Screen) -> (String, Vec<Line<'static>>, Option<Progress>, String) {
+/// The card of `screen`.
+fn content(screen: &Screen) -> Card {
     match screen {
         Screen::Disks {
             os,
@@ -192,12 +217,13 @@ fn content(screen: &Screen) -> (String, Vec<Line<'static>>, Option<Progress>, St
                     "There is no Home Assistant OS image on this USB stick. \
                      Prepare the stick again with the Home Assistant Installer.",
                 ));
-                return (
-                    "Home Assistant Installer".into(),
+                return Card {
+                    title: "Home Assistant Installer".into(),
                     lines,
-                    None,
-                    "R restart   P power off".into(),
-                );
+                    progress: None,
+                    keys: "R restart   P power off".into(),
+                    focus: None,
+                };
             };
             lines.push(Line::from(format!(
                 "Choose the disk to install {os} on. Everything on it is erased."
@@ -208,8 +234,10 @@ fn content(screen: &Screen) -> (String, Vec<Line<'static>>, Option<Progress>, St
                     "No internal disk found. Connect one; this list updates by itself.",
                 ));
             }
+            let mut focus = None;
             for (index, disk) in disks.iter().enumerate() {
                 let chosen = index == *selected;
+                let first = lines.len();
                 let marker = if chosen { "\u{25ba} " } else { "  " };
                 let mut style = Style::new();
                 if chosen {
@@ -226,6 +254,9 @@ fn content(screen: &Screen) -> (String, Vec<Line<'static>>, Option<Progress>, St
                             .bold(),
                     );
                 }
+                if chosen {
+                    focus = Some(first..lines.len());
+                }
             }
             if !hidden.is_empty() {
                 lines.push(Line::default());
@@ -239,7 +270,13 @@ fn content(screen: &Screen) -> (String, Vec<Line<'static>>, Option<Progress>, St
             } else {
                 "\u{2191}\u{2193} choose   Enter install   R restart   P power off   Alt+F2 shell"
             };
-            ("Home Assistant Installer".into(), lines, None, keys.into())
+            Card {
+                title: "Home Assistant Installer".into(),
+                lines,
+                progress: None,
+                keys: keys.into(),
+                focus,
+            }
         }
         Screen::Confirm {
             disk,
@@ -269,12 +306,13 @@ fn content(screen: &Screen) -> (String, Vec<Line<'static>>, Option<Progress>, St
                         .bold(),
                 );
             }
-            (
-                "Erase this disk?".into(),
+            Card {
+                title: "Erase this disk?".into(),
                 lines,
-                None,
-                "Enter continue   Esc back".into(),
-            )
+                progress: None,
+                keys: "Enter continue   Esc back".into(),
+                focus: None,
+            }
         }
         Screen::Progress {
             title,
@@ -286,24 +324,27 @@ fn content(screen: &Screen) -> (String, Vec<Line<'static>>, Option<Progress>, St
                 Line::from(detail.clone()),
                 Line::from("Keep the USB stick connected.").fg(MUTED),
             ];
-            (
-                title.clone(),
+            Card {
+                title: title.clone(),
                 lines,
-                Some((*percent, time_left.clone())),
-                String::new(),
-            )
+                progress: Some((*percent, time_left.clone())),
+                keys: String::new(),
+                focus: None,
+            }
         }
-        Screen::Message { title, body } => (
-            title.clone(),
-            body.lines()
+        Screen::Message { title, body } => Card {
+            title: title.clone(),
+            lines: body
+                .lines()
                 .map(|line| Line::from(line.to_string()))
                 .collect(),
-            None,
-            "Enter back".into(),
-        ),
-        Screen::Done { disk } => (
-            "Home Assistant OS is installed".into(),
-            vec![
+            progress: None,
+            keys: "Enter back".into(),
+            focus: None,
+        },
+        Screen::Done { disk } => Card {
+            title: "Home Assistant OS is installed".into(),
+            lines: vec![
                 Line::from(format!("Home Assistant OS is on {disk}.")),
                 Line::default(),
                 Line::from("Remove the USB stick, then restart the computer."),
@@ -314,9 +355,10 @@ fn content(screen: &Screen) -> (String, Vec<Line<'static>>, Option<Progress>, St
                     Span::from(" in a browser."),
                 ]),
             ],
-            None,
-            "R restart   P power off".into(),
-        ),
+            progress: None,
+            keys: "R restart   P power off".into(),
+            focus: None,
+        },
     }
 }
 
@@ -341,12 +383,11 @@ pub fn time_left(elapsed: Duration, done: u64, total: u64) -> Option<String> {
     })
 }
 
-/// Lines `lines` takes when wrapped to `width` columns. Rounds up, so the card never cuts text.
+/// Rows `lines` takes when word-wrapped to `width` columns, exactly as the card draws them.
 fn wrapped_height(lines: &[Line], width: u16) -> u16 {
-    lines
-        .iter()
-        .map(|line| (line.width() as u16).div_ceil(width).max(1))
-        .sum()
+    Paragraph::new(lines.to_vec())
+        .wrap(Wrap { trim: false })
+        .line_count(width.max(1)) as u16
 }
 
 /// One line per reason a device is hidden. Long lists are counted, not named.
@@ -489,6 +530,31 @@ mod tests {
     }
 
     #[test]
+    fn keeps_the_selected_disk_in_view_when_the_list_is_long() {
+        let disks: Vec<DiskRow> = (0..16)
+            .map(|n| DiskRow {
+                label: format!("sd{}      SATA   Disk {n:<24}  64.0 GB", (b'a' + n) as char),
+                // Every other one also needs a line for why it can't be used
+                problem: (n % 2 == 1).then_some("smaller than 32 GB"),
+            })
+            .collect();
+        let screen = |selected| Screen::Disks {
+            os: Some("Home Assistant OS 18.3".into()),
+            disks: disks.clone(),
+            selected,
+            hidden: vec![],
+        };
+
+        // 80 x 25, the smallest console: the list doesn't fit the card
+        let rows = draw(&screen(15), 80, 25);
+        assert!(shows(&rows, "\u{25ba} sdp"), "{}", rows.join("\n"));
+        assert!(shows(&rows, "Can't be used"));
+        let rows = draw(&screen(0), 80, 25);
+        assert!(shows(&rows, "\u{25ba} sda"));
+        assert!(shows(&rows, "Choose the disk"));
+    }
+
+    #[test]
     fn every_screen_fits_the_smallest_console() {
         let screens = [
             disks(),
@@ -598,8 +664,8 @@ mod tests {
 
     #[test]
     fn done_points_to_home_assistant_without_a_port() {
-        let (_, lines, _, _) = content(&Screen::Done { disk: "vda".into() });
-        let text: Vec<String> = lines.iter().map(ToString::to_string).collect();
+        let card = content(&Screen::Done { disk: "vda".into() });
+        let text: Vec<String> = card.lines.iter().map(ToString::to_string).collect();
         let text = text.join(" ");
         assert!(
             text.contains("open http://homeassistant.local in a browser."),
