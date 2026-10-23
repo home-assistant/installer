@@ -3,6 +3,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { customElement, state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../../state/wizard-state.js";
+import { WizardStateController } from "../../state/wizard-state-controller.js";
 import type { WifiConfig } from "../../api/types.js";
 import { ssidProblem, wifiPasswordProblem } from "../../utils/wifi.js";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
@@ -43,8 +44,11 @@ export class WifiView extends LitElement {
     `,
   ];
 
-  @state()
-  private _wizardState: WizardState = wizardState.getState();
+  private readonly _wizard = new WizardStateController(this);
+
+  private get _wizardState(): WizardState {
+    return this._wizard.state;
+  }
 
   // Fields left at least once. Until then an empty or short value may still
   // be on its way; one filled in on an earlier visit to this step is done.
@@ -53,20 +57,6 @@ export class WifiView extends LitElement {
 
   @state()
   private _passwordLeft = this._wizardState.selections.wifi !== undefined;
-
-  private _unsubscribe?: () => void;
-
-  connectedCallback() {
-    super.connectedCallback();
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-    });
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this._unsubscribe?.();
-  }
 
   render() {
     const wifi = this._wizardState.selections.wifi;

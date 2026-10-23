@@ -1,7 +1,8 @@
 import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
-import { wizardState, type WizardState } from "../../state/wizard-state.js";
+import { customElement, property } from "lit/decorators.js";
+import type { WizardState } from "../../state/wizard-state.js";
+import { WizardStateController } from "../../state/wizard-state-controller.js";
 import { openExternalLink } from "../../utils/external-url.js";
 import { selectedWifi } from "../../utils/wifi.js";
 
@@ -58,21 +59,10 @@ export class SuccessView extends LitElement {
   @property({ type: Boolean })
   generic = false;
 
-  @state()
-  private _wizardState: WizardState = wizardState.getState();
+  private readonly _wizard = new WizardStateController(this);
 
-  private _unsubscribe?: () => void;
-
-  connectedCallback() {
-    super.connectedCallback();
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-    });
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this._unsubscribe?.();
+  private get _wizardState(): WizardState {
+    return this._wizard.state;
   }
 
   render() {

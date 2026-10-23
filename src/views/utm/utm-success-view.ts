@@ -1,7 +1,8 @@
 import { LitElement, html, css } from "lit";
 import { localizeContent } from "../../localization/localize.js";
-import { customElement, state } from "lit/decorators.js";
-import { wizardState, type WizardState } from "../../state/wizard-state.js";
+import { customElement } from "lit/decorators.js";
+import type { WizardState } from "../../state/wizard-state.js";
+import { WizardStateController } from "../../state/wizard-state-controller.js";
 import { utmVmConfig } from "../../state/vm-defaults.js";
 import { vmSuccessSteps, vmTipPrefix } from "../../utils/vm-success.js";
 
@@ -16,21 +17,10 @@ export class UtmSuccessView extends LitElement {
     }
   `;
 
-  @state()
-  private _wizardState: WizardState = wizardState.getState();
+  private readonly _wizard = new WizardStateController(this);
 
-  private _unsubscribe?: () => void;
-
-  connectedCallback() {
-    super.connectedCallback();
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-    });
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this._unsubscribe?.();
+  private get _wizardState(): WizardState {
+    return this._wizard.state;
   }
 
   render() {

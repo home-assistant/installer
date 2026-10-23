@@ -1,6 +1,7 @@
 import { LitElement, css, type PropertyValues } from "lit";
 import { state } from "lit/decorators.js";
 import { wizardState, type WizardState } from "../state/wizard-state.js";
+import { WizardStateController } from "../state/wizard-state-controller.js";
 import {
   InstallDiagnostics,
   logFrontendError,
@@ -41,8 +42,16 @@ export abstract class InstallProgressView extends LitElement {
     }
   `;
 
-  @state()
-  protected _wizardState: WizardState = wizardState.getState();
+  private readonly _wizard = new WizardStateController(this, () => {
+    // An install must not carry on into a flow started after it
+    if (wizardState.flowGeneration !== this._flowGeneration) {
+      this._cancelInstall();
+    }
+  });
+
+  protected get _wizardState(): WizardState {
+    return this._wizard.state;
+  }
 
   @state()
   protected _error: InstallerError | null = null;
@@ -69,7 +78,8 @@ export abstract class InstallProgressView extends LitElement {
   /** What the shell last heard about `leavable`. */
   private _reportedLeavable?: boolean;
 
-  private _unsubscribe?: () => void;
+  /** The flow the install runs for */
+  private _flowGeneration = 0;
   private _abortController?: AbortController;
 
   /** Names the flow in diagnostics */
@@ -158,14 +168,7 @@ export abstract class InstallProgressView extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this._wizardState = wizardState.getState();
-    // An install must not carry on into a flow started after it
-    const generation = wizardState.flowGeneration;
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-      if (wizardState.flowGeneration !== generation) this._cancelInstall();
-    });
-
+    this._flowGeneration = wizardState.flowGeneration;
     void this._startInstall();
   }
 
@@ -176,7 +179,6 @@ export abstract class InstallProgressView extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._unsubscribe?.();
     // Stop the install pipeline. Without this its polling loops keep running
     // after a cancel or a navigation and write wizard state and dispatch
     // events from a component that is no longer in the document. A backend

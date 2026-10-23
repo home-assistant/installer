@@ -26,6 +26,14 @@ function view(tag: string, fields: Record<string, unknown> = {}): RenderView {
   ) as unknown as RenderView;
 }
 
+/** What a view's wizard state controller would have heard, had it shown */
+function select(element: RenderView, selections: Record<string, unknown>) {
+  (element as unknown as { _wizard: { state: unknown } })._wizard.state = {
+    ...wizardState.getState(),
+    selections,
+  };
+}
+
 // Detached views exercise the real templates without starting install pipelines.
 function output(element: RenderView): HTMLDivElement {
   const container = document.createElement("div");
@@ -86,12 +94,7 @@ describe("localized view contracts", () => {
       "Insert fixture."
     );
     expect(insertStep()).to.equal("Insert fixture.");
-    Object.assign(element, {
-      _wizardState: {
-        ...wizardState.getState(),
-        selections: { deviceName: "Raspberry Pi 5" },
-      },
-    });
+    select(element, { deviceName: "Raspberry Pi 5" });
     expect(insertStep()).to.equal(
       "Insert the written storage into Raspberry Pi 5."
     );
@@ -107,12 +110,7 @@ describe("localized view contracts", () => {
         _haosVersion: { hostConnected(): void };
       };
       // The board release lookup needs a selected board to ask for.
-      Object.assign(element, {
-        _wizardState: {
-          ...wizardState.getState(),
-          selections: { deviceConfig: { board: "rpi5-64" } },
-        },
-      });
+      select(element, { deviceConfig: { board: "rpi5-64" } });
       expect(output(element).textContent).to.contain("Loading...");
       mockTauriIpc((command) => {
         expect(command).to.equal("get_haos_release");

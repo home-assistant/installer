@@ -56,6 +56,7 @@ import {
   type WizardFlow,
   type WizardState,
 } from "../state/wizard-state.js";
+import { WizardStateController } from "../state/wizard-state-controller.js";
 import { listBlockDevices, onCloseBlocked, quitAnyway } from "../api/index.js";
 import {
   clearDriveSelection,
@@ -91,8 +92,11 @@ export class AppShell extends LitElement {
   @state()
   private _currentView: ViewName = "welcome";
 
-  @state()
-  private _wizardState: WizardState = wizardState.getState();
+  private readonly _wizard = new WizardStateController(this);
+
+  private get _wizardState(): WizardState {
+    return this._wizard.state;
+  }
 
   @state()
   private _showConfirmDialog = false;
@@ -149,7 +153,6 @@ export class AppShell extends LitElement {
   @query("confirm-dialog")
   private _confirmDialog?: ConfirmDialog;
 
-  private _unsubscribe?: () => void;
   private _stopCloseListener?: Promise<() => void>;
   private _pendingFlow?: WizardFlow;
 
@@ -160,9 +163,6 @@ export class AppShell extends LitElement {
     super.connectedCallback();
     // Capturing, so it runs before the controls on the screen
     this.addEventListener("click", this._onClick, true);
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-    });
     // The backend holds back closing the app while an installation runs
     this._stopCloseListener = onCloseBlocked(() => {
       // One question at a time: quitting is the bigger one
@@ -178,7 +178,6 @@ export class AppShell extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this.removeEventListener("click", this._onClick, true);
-    this._unsubscribe?.();
     void this._stopCloseListener?.then((stop) => stop());
   }
 

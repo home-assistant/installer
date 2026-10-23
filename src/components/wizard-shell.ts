@@ -6,6 +6,7 @@ import {
   type WizardState,
   type WizardStep,
 } from "../state/wizard-state.js";
+import { WizardStateController } from "../state/wizard-state-controller.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "./step-indicator.js";
 import { pageHeaderStyles } from "../utils/page-header.js";
@@ -121,8 +122,11 @@ export class WizardShell extends LitElement {
     `,
   ];
 
-  @state()
-  private _wizardState: WizardState = wizardState.getState();
+  private readonly _wizard = new WizardStateController(this);
+
+  private get _wizardState(): WizardState {
+    return this._wizard.state;
+  }
 
   /** Whether the step is larger than the window, so it can be scrolled */
   @state()
@@ -163,20 +167,14 @@ export class WizardShell extends LitElement {
   @property({ type: Boolean, attribute: "hide-footer" })
   hideFooter = false;
 
-  private _unsubscribe?: () => void;
-
   connectedCallback() {
     super.connectedCallback();
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-    });
     // Put back in the page with the same step, the slot doesn't change
     if (this.hasUpdated) this._observeContent();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._unsubscribe?.();
     this._resizeObserver.disconnect();
   }
 

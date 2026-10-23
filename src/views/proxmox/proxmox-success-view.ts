@@ -1,11 +1,11 @@
 import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
-import { customElement, state } from "lit/decorators.js";
-import {
-  wizardState,
-  type WizardSelections,
-  type WizardState,
+import { customElement } from "lit/decorators.js";
+import type {
+  WizardSelections,
+  WizardState,
 } from "../../state/wizard-state.js";
+import { WizardStateController } from "../../state/wizard-state-controller.js";
 import { proxmoxVmConfig } from "../../state/vm-defaults.js";
 import { openExternalLink } from "../../utils/external-url.js";
 import { linkStyles } from "../../utils/link-styles.js";
@@ -55,21 +55,10 @@ export class ProxmoxSuccessView extends LitElement {
     `,
   ];
 
-  @state()
-  private _wizardState: WizardState = wizardState.getState();
+  private readonly _wizard = new WizardStateController(this);
 
-  private _unsubscribe?: () => void;
-
-  connectedCallback() {
-    super.connectedCallback();
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-    });
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this._unsubscribe?.();
+  private get _wizardState(): WizardState {
+    return this._wizard.state;
   }
 
   render() {
