@@ -252,7 +252,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       await next(page).click();
       await startWrite(page);
       const progress = page.locator("progress-view");
-      await expect(progress.getByRole("alert")).toContainText(
+      await expect(progress.locator(".error-message")).toContainText(
         "The drive is in use",
         { timeout: 30000 }
       );
