@@ -130,6 +130,36 @@ describe("utm-configure-view", () => {
     expect(input!.value).to.equal("My Home");
   });
 
+  it("marks the name required", async () => {
+    const el = await mount();
+    await el.shadowRoot!.querySelector<WaInput>("wa-input")!.updateComplete;
+
+    const name = findByRole(await fullA11ySnapshot(), "textbox").find(
+      (node) => node.name === "Display name"
+    );
+    expect(name?.required).to.be.true;
+  });
+
+  it("hands the sliders the same options while the name is typed", async () => {
+    const el = await mount();
+    const resources = el.shadowRoot!.querySelector("vm-resources")!;
+    const options = () => [
+      resources.coreOptions,
+      resources.memoryOptions,
+      resources.diskOptions,
+    ];
+    const before = options();
+
+    const name = el.shadowRoot!.querySelector<WaInput>("wa-input")!;
+    name.value = "My Home";
+    name.dispatchEvent(new Event("input"));
+    await el.updateComplete;
+
+    expect(wizardState.getState().selections.vmName).to.equal("My Home");
+    // New arrays would render every slider again, on every keystroke
+    expect(options()).to.have.ordered.members(before);
+  });
+
   it("keeps the name as typed and asks for one when it is cleared", async () => {
     const el = await mount();
     const name = el.shadowRoot!.querySelector<WaInput>("wa-input")!;

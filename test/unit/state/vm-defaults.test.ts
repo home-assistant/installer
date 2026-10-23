@@ -1,7 +1,23 @@
 import { expect } from "@open-wc/testing";
-import { utmVmConfig } from "../../../src/state/vm-defaults.js";
+import {
+  memoryOptionsUpTo,
+  utmVmConfig,
+} from "../../../src/state/vm-defaults.js";
 
 describe("vm-defaults", () => {
+  describe("memoryOptionsUpTo", () => {
+    it("offers the sizes that fit, the largest included", () => {
+      expect(memoryOptionsUpTo(14336)).to.deep.equal([
+        2048, 4096, 6144, 8192, 12288,
+      ]);
+      expect(memoryOptionsUpTo(65536)).to.have.length(10);
+    });
+
+    it("offers nothing below the smallest size", () => {
+      expect(memoryOptionsUpTo(0)).to.deep.equal([]);
+    });
+  });
+
   describe("utmVmConfig", () => {
     it("falls back to the defaults before the configure step saves", () => {
       expect(utmVmConfig({})).to.deep.equal({

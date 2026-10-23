@@ -13,6 +13,19 @@ export const DEFAULT_CPU_CORES = 4;
 export const DEFAULT_MEMORY_MB = 4096;
 export const DEFAULT_DISK_SIZE_GB = 32;
 
+/** The memory sizes the configure steps offer, see `memoryOptionsUpTo` */
+const MEMORY_SIZES_MB = [
+  2048, 4096, 6144, 8192, 12288, 16384, 24576, 32768, 49152, 65536,
+];
+
+/** The memory sizes to offer when a VM can have up to `maxMb` */
+export function memoryOptionsUpTo(maxMb: number): number[] {
+  return MEMORY_SIZES_MB.filter((mb) => mb <= maxMb);
+}
+
+/** The disk sizes the configure steps offer */
+export const DISK_SIZE_OPTIONS_GB = [32, 64, 128, 256, 512];
+
 /** UTM shows the name in its virtual machine list, so spaces are fine. */
 export const DEFAULT_UTM_VM_NAME = "Home Assistant";
 
@@ -39,7 +52,10 @@ export function utmVmConfig(
   };
 }
 
-/** Proxmox names must be hostname-safe (alphanumeric, dash, underscore, dot). */
+/**
+ * Proxmox names must be DNS names: letters, digits, dashes and dots, without
+ * spaces or underscores. `VM_NAME_PATTERN` has the exact rule.
+ */
 export const DEFAULT_PROXMOX_VM_NAME = "home-assistant";
 export const DEFAULT_PROXMOX_VM_ID = 100;
 export const DEFAULT_PROXMOX_NODE = "pve";
