@@ -18,6 +18,7 @@ import { recordFailure } from "../../utils/diagnostics.js";
 import { customElement, query, state } from "lit/decorators.js";
 import {
   listBlockDevices,
+  relaunchAsAdmin,
   type BlockDevice,
   type HaosConfig,
 } from "../../api/index.js";
@@ -59,6 +60,18 @@ export class DriveSelectionView extends LitElement {
     css`
       inline-notice {
         margin-bottom: 1.5rem;
+      }
+
+      .admin-needed wa-button {
+        align-self: flex-start;
+      }
+
+      .relaunch-error {
+        width: 100%;
+        max-width: 500px;
+        margin: 0;
+        color: var(--ha-error-color, #db4437);
+        overflow-wrap: anywhere;
       }
 
       .drives-header {
@@ -138,6 +151,10 @@ export class DriveSelectionView extends LitElement {
   /** Set when a previously selected drive was dropped by a re-scan. */
   @state()
   private _selectionLost = false;
+
+  /** Why restarting as administrator didn't happen, such as a declined prompt */
+  @state()
+  private _relaunchError = "";
 
   connectedCallback() {
     super.connectedCallback();
@@ -363,6 +380,12 @@ export class DriveSelectionView extends LitElement {
     }
 
     if (this._error) {
+      // Only Windows refuses this way, and only a restart changes it
+      if (
+        this._error.details.message_key === "backend.disk.run_as_administrator"
+      ) {
+        return this._renderAdminNeeded();
+      }
       return renderLoadError(this._error, this._loading, () =>
         this._loadDrives()
       );
@@ -473,6 +496,35 @@ export class DriveSelectionView extends LitElement {
         )}
       </wa-radio-group>
     `;
+  }
+
+  private _renderAdminNeeded() {
+    // The notice itself takes the focus: what it slots in isn't shown, so
+    // can't be focused, until it has rendered. The declined restart is read
+    // out on its own, so it stays outside.
+    return html`
+      <inline-notice class="admin-needed" data-focus-alert>
+        <p>${localize("views.sbc.drive_selection_view.admin_needed")}</p>
+        <p>${localize("views.sbc.drive_selection_view.admin_restart_note")}</p>
+        <wa-button variant="brand" @click=${this._relaunch}>
+          ${localize("views.sbc.drive_selection_view.restart_as_administrator")}
+        </wa-button>
+      </inline-notice>
+      ${this._relaunchError
+        ? html`<p class="relaunch-error" data-focus-alert>
+            ${this._relaunchError}
+          </p>`
+        : ""}
+    `;
+  }
+
+  private async _relaunch() {
+    this._relaunchError = "";
+    try {
+      await relaunchAsAdmin();
+    } catch (error) {
+      this._relaunchError = installerError(error).message;
+    }
   }
 
   /**

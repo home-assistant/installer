@@ -101,4 +101,28 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
     });
     expect(picked).toBeNull();
   });
+
+  test("offers the same restart as administrator as the USB stick path", async ({
+    page,
+  }) => {
+    // Set before the scan; the step loads it once
+    await page.evaluate(() =>
+      sessionStorage.setItem("hai:mock-failure", "drives-admin")
+    );
+    await page
+      .locator("minipc-architecture-selection-view")
+      .locator("option-card")
+      .filter({ hasText: "Intel/AMD" })
+      .click();
+
+    const drives = page.locator("drive-selection-view");
+    await expect(drives).toContainText("needs administrator access");
+    await expect(
+      drives.getByRole("button", { name: "Restart as administrator" })
+    ).toBeVisible();
+    await expect(drives.locator("drive-card")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Next", exact: true })
+    ).toBeDisabled();
+  });
 });

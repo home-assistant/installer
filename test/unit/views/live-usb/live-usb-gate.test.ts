@@ -11,9 +11,7 @@ import {
 } from "../../tauri-ipc.js";
 
 describe("live-usb-gate", () => {
-  let status: ReturnType<
-    typeof deferred<{ hai_live_found: boolean; needs_admin: boolean }>
-  >;
+  let status: ReturnType<typeof deferred<{ hai_live_found: boolean }>>;
 
   beforeEach(() => {
     status = deferred();
@@ -28,7 +26,7 @@ describe("live-usb-gate", () => {
   });
 
   async function revealAfterSlowStatus(gate: LiveUsbGate) {
-    status.resolve({ hai_live_found: true, needs_admin: false });
+    status.resolve({ hai_live_found: true });
     await settle();
     await gate.updateComplete;
   }
@@ -83,7 +81,7 @@ describe("live-usb-gate", () => {
     const alert = gate.shadowRoot!.querySelector("[data-focus-alert]")!;
     expect(alert.textContent!.trim()).to.equal("");
 
-    checks[1].resolve({ hai_live_found: true, needs_admin: false });
+    checks[1].resolve({ hai_live_found: true });
     await settle();
     expect(gate.shadowRoot!.querySelector("slot")).to.exist;
     expect(wizardState.getState().selections.liveReady).to.equal(true);
@@ -106,8 +104,8 @@ describe("live-usb-gate", () => {
     await settle();
     expect(checks).to.have.length(3);
 
-    checks[2].resolve({ hai_live_found: true, needs_admin: false });
-    checks[1].resolve({ hai_live_found: false, needs_admin: false });
+    checks[2].resolve({ hai_live_found: true });
+    checks[1].resolve({ hai_live_found: false });
     await settle();
     expect(wizardState.getState().selections.liveReady).to.equal(true);
   });

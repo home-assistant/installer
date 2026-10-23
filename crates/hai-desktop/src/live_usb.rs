@@ -7,9 +7,9 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use hai_core::{
-    BlockDevice, DeviceBackend, ExpectedDevice, FlashProgress, FlashStage, ProgressCallback,
-};
+#[cfg(not(feature = "mock"))]
+use hai_core::DeviceBackend;
+use hai_core::{BlockDevice, ExpectedDevice, FlashProgress, FlashStage, ProgressCallback};
 use serde::Serialize;
 use tauri::ipc::Channel;
 
@@ -23,24 +23,19 @@ use crate::flash_state::FlashState;
 const HAI_LIVE_ENV: &str = "HAI_LIVE_PATH";
 const HAI_LIVE_NAME: &str = "hai-live";
 
-/// What the live USB flow needs before it can start.
+/// What the live USB flow needs before it can start. Administrator rights are
+/// the drive step's to ask for, as in the regular flash.
 #[derive(Debug, Serialize, PartialEq)]
 pub struct LiveUsbStatus {
     /// The `hai-live` program for the stick was found.
     pub hai_live_found: bool,
-    /// Writing a stick needs the app restarted as administrator (Windows only).
-    pub needs_admin: bool,
 }
 
-/// Checks for `hai-live` and, on Windows, administrator rights.
+/// Checks for `hai-live`.
 #[tauri::command]
 pub async fn live_usb_status() -> LiveUsbStatus {
     LiveUsbStatus {
         hai_live_found: cfg!(feature = "mock") || find_hai_live().is_some(),
-        needs_admin: matches!(
-            Backend.check_write_privileges(),
-            Err(hai_core::Error::PermissionDenied(_))
-        ),
     }
 }
 
@@ -136,14 +131,6 @@ pub fn reveal_in_folder(app: tauri::AppHandle, path: String) -> Result<(), Comma
     app.opener()
         .reveal_item_in_dir(path)
         .map_err(|_| CommandError::new("io", "Could not open the folder.", false))
-}
-
-/// Restarts the app as administrator. The flow starts again in the new window.
-#[tauri::command]
-pub fn relaunch_as_admin(app: tauri::AppHandle) -> Result<(), CommandError> {
-    crate::elevation::relaunch_as_admin()?;
-    app.exit(0);
-    Ok(())
 }
 
 #[cfg(not(feature = "mock"))]

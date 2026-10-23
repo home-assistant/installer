@@ -135,6 +135,15 @@ async fn list_drives(backend: &impl DeviceBackend) -> Result<Vec<BlockDevice>, C
         .map_err(CommandError::from_query)
 }
 
+/// Restarts the app as administrator, which the drive step offers when
+/// listing refused. The flow starts again in the new window.
+#[tauri::command]
+pub fn relaunch_as_admin(app: tauri::AppHandle) -> Result<(), CommandError> {
+    crate::elevation::relaunch_as_admin()?;
+    app.exit(0);
+    Ok(())
+}
+
 // =============================================================================
 // Flash Commands
 // =============================================================================

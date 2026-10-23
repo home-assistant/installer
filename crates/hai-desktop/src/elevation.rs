@@ -1,4 +1,4 @@
-//! Restarting the app as administrator, which writing a USB stick needs on Windows.
+//! Restarting the app as administrator, which writing a drive needs on Windows.
 
 use crate::command_error::CommandError;
 

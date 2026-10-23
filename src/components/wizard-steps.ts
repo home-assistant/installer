@@ -321,7 +321,7 @@ export const LIVE_USB_STEPS: Record<string, WizardStepDefinition> = {
   },
   drive: {
     render: () =>
-      html`<live-usb-gate admin
+      html`<live-usb-gate
         ><drive-selection-view></drive-selection-view
       ></live-usb-gate>`,
     ready: (selections) => drive.ready!(selections) && !!selections.liveReady,

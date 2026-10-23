@@ -13,18 +13,13 @@ function isBrowserOnly(): boolean {
 export interface LiveUsbStatus {
   /** The program for the stick (hai-live) was found. */
   hai_live_found: boolean;
-  /** Writing a stick needs the app restarted as administrator (Windows only). */
-  needs_admin: boolean;
 }
 
 export async function getLiveUsbStatus(): Promise<LiveUsbStatus> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     // Browser tests pick a screen through this session value.
     const scenario = sessionStorage.getItem("hai:mock-live-usb");
-    return {
-      hai_live_found: scenario !== "hai-live-missing",
-      needs_admin: scenario === "needs-admin",
-    };
+    return { hai_live_found: scenario !== "hai-live-missing" };
   }
   return invoke<LiveUsbStatus>("live_usb_status");
 }
@@ -123,12 +118,6 @@ export async function checkIsoLocation(
 export async function revealInFolder(path: string): Promise<void> {
   if (MOCK_ALLOWED && isBrowserOnly()) return;
   await invoke("reveal_in_folder", { path });
-}
-
-/** Restart as administrator. The app closes if Windows grants it. */
-export async function relaunchAsAdmin(): Promise<void> {
-  if (MOCK_ALLOWED && isBrowserOnly()) return;
-  await invoke("relaunch_as_admin");
 }
 
 export async function defaultIsoFolder(): Promise<string> {
