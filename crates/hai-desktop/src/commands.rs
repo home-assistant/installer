@@ -191,10 +191,7 @@ fn find_flash_target<'a>(
             "drive_too_small",
             &hai_core::message!(
                 "backend.disk.drive_too_small",
-                size = format!(
-                    "{:.0}",
-                    config.minimum_storage_bytes as f64 / 1_000_000_000.0
-                ),
+                size = config.minimum_storage_bytes.div_ceil(1_000_000_000),
             ),
             false,
         ));
