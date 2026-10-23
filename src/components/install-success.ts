@@ -202,9 +202,12 @@ export class InstallSuccess extends LitElement {
       /* Wide enough, Casita stands beside the next steps, under the heading,
          so the artwork doesn't push them down and out of view */
       @container (min-width: 640px) {
+        /* Casita stays level with the top of the next steps, however far
+           down they run */
         .layout {
           flex-flow: row wrap;
           justify-content: center;
+          align-items: flex-start;
           column-gap: 3rem;
         }
 
