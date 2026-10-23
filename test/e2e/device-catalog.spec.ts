@@ -14,12 +14,23 @@ test("catalog navigation preserves selection without a Lit mount-update warning"
     .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
   await page.locator("device-selection-view device-card").first().click();
-  const next = page.locator("wizard-shell .footer-right wa-button");
-  await next.click();
   await expect(page.locator("drive-selection-view")).toBeVisible();
   await page.locator("wizard-shell .header wa-button").click();
   await expect(page.locator("device-selection-view")).toBeVisible();
-  await expect(next).toBeEnabled();
+  // The board stays chosen once the catalog is in again
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const state = "/src/state/wizard-state.ts";
+        const { wizardState } = (await import(
+          state
+        )) as typeof import("../../src/state/wizard-state.js");
+        const { device, deviceCatalogReady } =
+          wizardState.getState().selections;
+        return deviceCatalogReady ? device : "loading";
+      })
+    )
+    .toBe("rpi5");
   expect(warnings).toEqual([]);
 });
 

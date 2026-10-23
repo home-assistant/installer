@@ -15,20 +15,19 @@ const cancel = (page: Page) =>
 const reinstallDialog = (page: Page) =>
   page.locator("ha-hardware-device-selection-view info-dialog");
 
-/** Next on the device step, going on past the reinstall dialog. */
-async function nextFromDevice(page: Page) {
-  await next(page).click();
+/** Picks `device`, going on past the reinstall dialog it opens. */
+async function pickDevice(page: Page, device: string) {
+  await page.locator(`device-card[value="${device}"]`).click();
   await reinstallDialog(page)
     .getByRole("button", { name: /^(Reinstall|Install)$/ })
     .click();
 }
 
-/** Picks the Yellow's compute module on its own step, then goes on. */
+/** Picks the Yellow's compute module on its own step, which goes on. */
 async function pickModule(page: Page, module: string) {
   await page
-    .locator(`ha-hardware-module-selection-view wa-radio[value="${module}"]`)
+    .locator(`ha-hardware-module-selection-view option-card[value="${module}"]`)
     .click();
-  await next(page).click();
 }
 
 async function openHaHardware(page: Page) {
@@ -52,33 +51,30 @@ test.describe("Home Assistant hardware flow", () => {
       "Home Assistant Blue",
     ]) {
       await expect(
-        page.getByRole("radio", { name, exact: true })
+        page.getByRole("button", { name, exact: true })
       ).toBeVisible();
     }
-    await expect(next(page)).toHaveJSProperty("disabled", true);
+    // Picking a device goes on, so there is no Next
+    await expect(next(page)).toHaveCount(0);
     // Back leads out of the flow, to the path selection
     await back(page).click();
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
-  test("Next asks before reinstalling, and Go back stays on the device step", async ({
+  test("picking asks before reinstalling, and Go back stays on the device step", async ({
     page,
   }) => {
     await openHaHardware(page);
     await page.locator('device-card[value="ha-green"]').click();
-    await next(page).click();
 
     const dialog = reinstallDialog(page);
     await expect(dialog).toBeVisible();
     const goBack = dialog.locator("wa-button", { hasText: "Go back" });
 
-    // Go back stays on the device step, with the device still selected
     await goBack.click();
     await expect(dialog).not.toBeVisible();
-    await expect(
-      page.locator('device-card[value="ha-green"]')
-    ).toHaveJSProperty("checked", true);
     await expect(page.locator("drive-selection-view")).toHaveCount(0);
+    await expect(page.locator('device-card[value="ha-green"]')).toBeFocused();
   });
 
   test("the Green installs through to the success screen, and Done returns to the start", async ({
@@ -87,8 +83,7 @@ test.describe("Home Assistant hardware flow", () => {
     test.setTimeout(60000);
     await openHaHardware(page);
 
-    await page.locator('device-card[value="ha-green"]').click();
-    await nextFromDevice(page);
+    await pickDevice(page, "ha-green");
 
     const drive = page.locator("drive-selection-view");
     await drive.locator("drive-card").first().click();
@@ -112,20 +107,21 @@ test.describe("Home Assistant hardware flow", () => {
     await openHaHardware(page);
     await page.locator('device-card[value="ha-yellow"]').click();
     await expect(page.locator("step-indicator")).toContainText("Select module");
-    await nextFromDevice(page);
+    await reinstallDialog(page)
+      .getByRole("button", { name: "Install", exact: true })
+      .click();
 
     const modules = page.locator("ha-hardware-module-selection-view");
     await expect(modules).toContainText("Select your compute module");
-    await expect(modules.locator("wa-radio")).toHaveCount(2);
-    await expect(next(page)).toHaveJSProperty("disabled", true);
-    await modules.locator('wa-radio[value="yellow-cm4"]').click();
-    await expect(next(page)).toHaveJSProperty("disabled", false);
+    await expect(modules.locator("option-card")).toHaveCount(2);
+    await expect(next(page)).toHaveCount(0);
+    await pickModule(page, "yellow-cm4");
+    await expect(page.locator("drive-selection-view")).toBeVisible();
   });
 
   test("Back keeps the device and Cancel leaves the flow", async ({ page }) => {
     await openHaHardware(page);
-    await page.locator('device-card[value="ha-yellow"]').click();
-    await nextFromDevice(page);
+    await pickDevice(page, "ha-yellow");
     await pickModule(page, "yellow-cm5");
     await expect(
       page.locator("ha-hardware-connect-instructions")
@@ -133,11 +129,8 @@ test.describe("Home Assistant hardware flow", () => {
 
     await back(page).click();
     await expect(
-      page.locator(
-        'ha-hardware-module-selection-view wa-radio[value="yellow-cm5"]'
-      )
-    ).toHaveJSProperty("checked", true);
-    await expect(next(page)).toHaveJSProperty("disabled", false);
+      page.locator("ha-hardware-module-selection-view")
+    ).toBeVisible();
 
     // Another module is prepared differently, so its instructions follow.
     await pickModule(page, "yellow-cm4");
@@ -148,8 +141,10 @@ test.describe("Home Assistant hardware flow", () => {
     await back(page).click();
     await back(page).click();
     await expect(
-      page.locator('device-card[value="ha-yellow"]')
-    ).toHaveJSProperty("checked", true);
+      page.locator("ha-hardware-device-selection-view")
+    ).toBeVisible();
+    // Still the Yellow, whose compute module has a step of its own
+    await expect(page.locator("step-indicator")).toContainText("Select module");
 
     await cancel(page).click();
     await expect(page.locator("welcome-view")).toBeVisible();

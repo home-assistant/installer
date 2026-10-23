@@ -46,21 +46,21 @@ test("Mini PC choices work with Tab, Space, and arrow keys", async ({
     page,
     page.getByRole("button", { name: "I can connect the drive" })
   );
-  await expect(
-    page.getByRole("radiogroup", { name: "Processor" })
-  ).toBeVisible();
-  const intel = page.getByRole("radio", { name: "Intel/AMD" });
-  const arm = page.getByRole("radio", { name: "ARM (aarch64)" });
-  await tabTo(page, intel);
-  await page.keyboard.press("Space");
-  await expect(intel).toBeChecked();
-  await page.keyboard.press("ArrowRight");
-  await expect(arm).toBeChecked();
-  await page.keyboard.press("ArrowLeft");
-  await expect(intel).toBeChecked();
-  await next(page);
+  await expect(page.getByRole("group", { name: "Processor" })).toBeVisible();
+  await activate(
+    page,
+    page.getByRole("button", { name: "Intel/AMD" }),
+    "Space"
+  );
   await expect(page.locator("drive-selection-view")).toBeVisible();
-  await activate(page, page.getByRole("radio").first(), "Space");
+  // A drive is a radio: arrows move the choice, and Next goes on
+  const drives = page.locator("drive-selection-view").getByRole("radio");
+  await activate(page, drives.first(), "Space");
+  await expect(drives.first()).toBeChecked();
+  await page.keyboard.press("ArrowDown");
+  await expect(drives.nth(1)).toBeChecked();
+  await page.keyboard.press("ArrowUp");
+  await expect(drives.first()).toBeChecked();
   await next(page);
   await expect(page.locator("wifi-view")).toBeVisible();
   await next(page);
@@ -79,10 +79,9 @@ test("a board can be picked with the keyboard", async ({ page }) => {
   await start(page, "Raspberry Pi & other boards");
   await activate(
     page,
-    page.getByRole("radio", { name: "Raspberry Pi 5", exact: true }),
+    page.getByRole("button", { name: "Raspberry Pi 5", exact: true }),
     "Space"
   );
-  await next(page);
   await expect(page.locator("drive-selection-view")).toBeVisible();
 });
 

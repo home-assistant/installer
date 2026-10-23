@@ -322,8 +322,7 @@ export class AppShell extends LitElement {
     const hideNext =
       flashRunning ||
       vmRunning ||
-      currentStep?.id === "method" ||
-      currentStep?.id === "media" ||
+      !!step?.goesOnWhenPicked ||
       (currentStep?.id === "install" && this._installStuck());
 
     return html`
@@ -541,11 +540,13 @@ export class AppShell extends LitElement {
       currentStep?.id,
       this._wizardState.selections
     );
+    // Next takes no clicks while it isn't ready, and a step that goes on when
+    // a card is picked has none, but the step must never proceed meanwhile
+    if (!this._isReady(step)) return;
     if (step?.beforeNext) {
-      // Next takes no clicks while it isn't ready or is busy, but the step
-      // must never proceed meanwhile, whatever triggered the event
+      // The same goes for while Next is busy, whatever triggered the event
       const view = this._stepView;
-      if (!view || this._isBusy(step) || !this._isReady(step)) return;
+      if (!view || this._isBusy(step)) return;
       const token = this._pendingToken(step);
       this._pendingNext = token;
       try {

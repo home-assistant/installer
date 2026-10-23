@@ -59,19 +59,17 @@ for (const colorScheme of ["light", "dark"] as const) {
       quietText
     );
 
-    // The ring around a selected card is the theme's primary color, not the
-    // light blue of the old Home Assistant theme
+    // The ring around the chosen drive is the theme's primary color, not
+    // the light blue of the old Home Assistant theme
     const ring = await resolveColor(
       page,
       "color-mix(in srgb, var(--ha-primary-color) 20%, transparent)"
     );
-    for (const tag of ["device-card", "drive-card"]) {
-      await page.locator(tag).click();
-      await page.mouse.move(0, 0);
-      await expect(page.locator(`${tag} .card`)).toHaveCSS(
-        "box-shadow",
-        `${ring} 0px 0px 0px 3px`
-      );
-    }
+    await page.locator("drive-card").click();
+    await page.mouse.move(0, 0);
+    await expect(page.locator("drive-card .card")).toHaveCSS(
+      "box-shadow",
+      `${ring} 0px 0px 0px 3px`
+    );
   });
 }

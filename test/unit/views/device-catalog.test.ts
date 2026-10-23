@@ -12,6 +12,7 @@ import {
   settle,
 } from "../tauri-ipc.js";
 import type { DeviceManifest } from "../../../src/api/types.js";
+import type { CardButton } from "../../../src/components/card-button.js";
 
 describe("runtime device catalog selections", () => {
   afterEach(() => {
@@ -98,6 +99,15 @@ describe("runtime device catalog selections", () => {
       mockTauriIpc((cmd) => (cmd === "get_manifest" ? manifest() : false));
     }
 
+    /** The card of the device with id `value`, once the list is in */
+    function card(view: Element, value: string) {
+      return [
+        ...view.shadowRoot!.querySelectorAll<CardButton>(
+          "device-card, option-card"
+        ),
+      ].find((card) => card.value === value);
+    }
+
     it(`${tag} keeps its heading while the catalog loads and when it fails`, async () => {
       const pending = deferred<DeviceManifest>();
       mockCatalog(() => pending.promise);
@@ -127,7 +137,7 @@ describe("runtime device catalog selections", () => {
       retry.click();
 
       await waitUntil(
-        () => root.querySelector("wa-radio-group"),
+        () => root.querySelector('[role="group"]'),
         "catalog never reloaded"
       );
       await waitUntil(
@@ -141,20 +151,34 @@ describe("runtime device catalog selections", () => {
       wizardState.setSelection("drive", "keep-this-drive");
       mockCatalog(() => MOCK_MANIFEST);
       const view = await fixture(`<${tag}></${tag}>`);
-      await waitUntil(() => view.shadowRoot!.querySelector("wa-radio-group"));
-      const group = view.shadowRoot!.querySelector("wa-radio-group")!;
+      await waitUntil(() => card(view, first));
 
-      group.value = first;
-      group.dispatchEvent(new Event("change"));
+      card(view, first)!.click();
       expect(wizardState.getState().selections.drive).to.equal(
         "keep-this-drive"
       );
 
-      group.value = second;
-      group.dispatchEvent(new Event("change"));
+      card(view, second)!.click();
       const selections = wizardState.getState().selections;
       expect(selections.device).to.equal(second);
       expect(selections.drive).to.equal(undefined);
+    });
+
+    it(`${tag} goes on once a device is picked, the one chosen before too`, async () => {
+      wizardState.setSelection("device", first);
+      mockCatalog(() => MOCK_MANIFEST);
+      const view = await fixture(`<${tag}></${tag}>`);
+      await waitUntil(() => card(view, first));
+      const picked: (string | undefined)[] = [];
+      view.addEventListener("wizard-next", () => {
+        picked.push(wizardState.getState().selections.device);
+      });
+
+      card(view, first)!.click();
+      card(view, second)!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter" })
+      );
+      expect(picked).to.deep.equal([first, second]);
     });
   }
 });

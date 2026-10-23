@@ -4,8 +4,8 @@ import { css } from "lit";
  * The frame the option, device and drive cards share: a `.card` in the card
  * colors that lights up under the pointer, gives a little when pressed, and
  * shows the focus ring when its host has the focus. A card that is checked,
- * as the device and drive radios are, keeps the lit border with a ring
- * around it. Each card adds its own layout.
+ * as a drive radio is, keeps the lit border with a ring around it. Each card
+ * adds its own layout.
  */
 export const selectableCardStyles = css`
   :host {

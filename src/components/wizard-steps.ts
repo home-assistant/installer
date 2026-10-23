@@ -40,6 +40,18 @@ export interface WizardStepDefinition {
   beforeNext?: BeforeNext;
   /** A later step Next goes to instead of the following one, if any */
   skipTo?(selections: WizardSelections): string | undefined;
+  /** Picking one of the step's cards goes on, so it shows no Next */
+  goesOnWhenPicked?: boolean;
+}
+
+/**
+ * Go on from the step `view` shows, as Next does, once a card is picked.
+ * Whatever Next waits for or asks first still applies.
+ */
+export function goToNextStep(view: HTMLElement) {
+  view.dispatchEvent(
+    new CustomEvent("wizard-next", { bubbles: true, composed: true })
+  );
 }
 
 const deviceChosen = (selections: WizardSelections) =>
@@ -76,6 +88,7 @@ export const WIZARD_STEPS: Record<
     device: {
       render: () => html`<device-selection-view></device-selection-view>`,
       ready: deviceChosen,
+      goesOnWhenPicked: true,
     },
     drive,
     wifi,
@@ -89,6 +102,7 @@ export const WIZARD_STEPS: Record<
       render: () =>
         html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`,
       ready: deviceChosen,
+      goesOnWhenPicked: true,
       // The hardware ships with Home Assistant, so reinstalling is the exception
       beforeNext: {
         run: (view) =>
@@ -102,6 +116,7 @@ export const WIZARD_STEPS: Record<
         html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`,
       ready: (selections) =>
         isYellow(selections.haHardware) && !!selections.deviceConfig,
+      goesOnWhenPicked: true,
     },
     drive,
     wifi,
@@ -114,11 +129,13 @@ export const WIZARD_STEPS: Record<
   minipc: {
     method: {
       render: () => html`<minipc-setup-method-view></minipc-setup-method-view>`,
+      goesOnWhenPicked: true,
     },
     architecture: {
       render: () =>
         html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`,
       ready: deviceChosen,
+      goesOnWhenPicked: true,
     },
     drive,
     wifi,
@@ -187,7 +204,10 @@ export const WIZARD_STEPS: Record<
 
 /** The Mini PC steps after choosing to boot from USB, where they differ. */
 export const LIVE_USB_STEPS: Record<string, WizardStepDefinition> = {
-  media: { render: () => html`<minipc-media-view></minipc-media-view>` },
+  media: {
+    render: () => html`<minipc-media-view></minipc-media-view>`,
+    goesOnWhenPicked: true,
+  },
   drive: {
     render: () =>
       html`<live-usb-gate admin

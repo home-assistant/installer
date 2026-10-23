@@ -1,26 +1,15 @@
-import { html, css, nothing } from "lit";
+import { html, css } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import WaRadio from "@home-assistant/webawesome/dist/components/radio/radio.js";
 import { reducedMotionStyles } from "../utils/view-accessibility.js";
-import {
-  selectableCardStyles,
-  selectedIndicatorStyles,
-} from "../utils/card-styles.js";
+import { selectableCardStyles } from "../utils/card-styles.js";
+import { CardButton } from "./card-button.js";
 
-/**
- * A device tile that behaves as a radio inside a `<wa-radio-group>`.
- *
- * Extending `WaRadio` rather than re-implementing it means the group's
- * `radioTag` wiring — roving tabindex, arrow-key navigation, `role="radio"`,
- * `aria-checked`/`aria-disabled` — all applies as-is; only the presentation
- * is ours. Selection state lives in `checked`, driven by the group.
- */
+/** A device tile. Picking it goes on to the next step. */
 @customElement("device-card")
-export class DeviceCard extends WaRadio {
-  static css = [
+export class DeviceCard extends CardButton {
+  static styles = [
     reducedMotionStyles,
     selectableCardStyles,
-    selectedIndicatorStyles,
     css`
       .card {
         display: flex;
@@ -67,16 +56,6 @@ export class DeviceCard extends WaRadio {
         align-items: center;
         justify-content: center;
       }
-
-      .selected-indicator {
-        position: absolute;
-        top: 8px;
-        inset-inline-end: 8px;
-      }
-
-      .card-wrapper {
-        position: relative;
-      }
     `,
   ];
 
@@ -88,19 +67,14 @@ export class DeviceCard extends WaRadio {
 
   render() {
     return html`
-      <div class="card-wrapper">
-        <div class="card">
-          <div class="image-container">${this._renderImage()}</div>
-          <p class="name">${this.name}</p>
-        </div>
-        ${this.checked
-          ? html`<span class="selected-indicator" aria-hidden="true">✓</span>`
-          : nothing}
+      <div class="card">
+        <div class="image-container">${this._renderImage()}</div>
+        <p class="name">${this.name}</p>
       </div>
     `;
   }
 
-  // The card itself carries role="radio"/"button", so its accessible name is
+  // The card itself carries role="button", so its accessible name is
   // computed from its contents. The visible name below already supplies that;
   // giving the image an alt would have screen readers announce it twice.
   private _renderImage() {

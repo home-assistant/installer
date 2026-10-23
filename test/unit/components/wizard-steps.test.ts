@@ -155,6 +155,29 @@ describe("wizard-steps", () => {
     }
   });
 
+  // A drive is erased, so picking one still takes Next
+  it("goes on when a card is picked on the steps that choose what to install on, or how", () => {
+    const picked = [
+      ...FLOWS.flatMap((flow) =>
+        Object.entries(WIZARD_STEPS[flow]).map(
+          ([id, step]) => [`${flow}/${id}`, step] as const
+        )
+      ),
+      ...Object.entries(LIVE_USB_STEPS).map(
+        ([id, step]) => [`minipc/usb/${id}`, step] as const
+      ),
+    ].flatMap(([path, step]) => (step.goesOnWhenPicked ? [path] : []));
+
+    expect(picked).to.deep.equal([
+      "sbc/device",
+      "ha-hardware/device",
+      "ha-hardware/module",
+      "minipc/method",
+      "minipc/architecture",
+      "minipc/usb/media",
+    ]);
+  });
+
   it("leaves the hardware device step only when the reinstall is confirmed", async () => {
     const run = wizardStep("ha-hardware", "device")!.beforeNext!.run;
     for (const answer of [true, false]) {

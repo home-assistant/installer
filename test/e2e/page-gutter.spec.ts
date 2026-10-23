@@ -42,12 +42,17 @@ for (const [width, height, gutter] of [
       .getByRole("button", { name: "Cancel", exact: true })
       .boundingBox();
     expect(cancel!.x).toBeCloseTo(gutter, 0);
+    // Picking a board goes on; the drive step has Next
+    await page.locator("device-card").first().click();
+    await expect(page.locator("drive-selection-view")).toBeVisible();
     const next = await page
       .getByRole("button", { name: "Next", exact: true })
       .boundingBox();
     expect(width - next!.x - next!.width).toBeCloseTo(gutter, 0);
 
     // The connection check before a flow, held on a failure
+    await back.click();
+    await expect(page.locator("device-selection-view")).toBeVisible();
     await back.click();
     await page.evaluate(() => {
       const bridge = window as unknown as Record<string, unknown>;

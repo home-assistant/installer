@@ -17,7 +17,6 @@ async function openConfirmation(page: Page) {
 
   const deviceView = page.locator("device-selection-view");
   await deviceView.locator("device-card").first().click();
-  await nextButton(page).click();
 
   const driveView = page.locator("drive-selection-view");
   await driveView.locator("drive-card").first().click();

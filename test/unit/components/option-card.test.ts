@@ -62,7 +62,15 @@ describe("option-card", () => {
     });
   }
 
-  for (const icon of ["minipc", "proxmox", "vm", "others"]) {
+  for (const icon of [
+    "minipc",
+    "proxmox",
+    "vm",
+    "chip",
+    "intel",
+    "arm",
+    "others",
+  ]) {
     it(`renders a decorative category icon for ${icon}`, async () => {
       const el = await fixture<OptionCard>(html`
         <option-card heading="Path" icon=${icon}></option-card>
@@ -86,6 +94,21 @@ describe("option-card", () => {
     expect(card!.querySelector(".icon-container")).to.exist;
     expect(card!.querySelector(".title")).to.exist;
     expect(card!.querySelector(".description")).to.exist;
+  });
+
+  it("shows more under the description", async () => {
+    const el = await fixture<OptionCard>(html`
+      <option-card heading="ARM" description="ARM64 systems">
+        <p>Examples</p>
+      </option-card>
+    `);
+
+    const slot =
+      el.shadowRoot!.querySelector<HTMLSlotElement>("slot:not([name])")!;
+    expect(slot.previousElementSibling!.className).to.equal("description");
+    expect(slot.assignedElements().map((p) => p.textContent)).to.deep.equal([
+      "Examples",
+    ]);
   });
 
   it("draws icon files in the same color as the MDI icons", async () => {

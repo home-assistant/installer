@@ -69,14 +69,16 @@ describe("device-selection-view", () => {
     expect(cards(el)[0].image).to.equal("/assets/devices/raspberry_pi_5.png");
   });
 
-  it("exposes the boards as a named radio group", async () => {
-    const el = await renderCatalog();
-    await el.shadowRoot!.querySelector("wa-radio-group")!.updateComplete;
+  it("offers the boards as a named group of buttons", async () => {
+    await renderCatalog();
 
-    const groups = findByRole(await fullA11ySnapshot(), "radiogroup");
+    const groups = findByRole(await fullA11ySnapshot(), "group").filter(
+      (group) => group.name === "Single board computer"
+    );
     expect(groups).to.have.length(1);
-    expect(groups[0]!.name).to.equal("Single board computer");
-    expect(findByRole(groups[0]!, "radio")).to.have.length(10);
+    const buttons = findByRole(groups[0]!, "button");
+    expect(buttons).to.have.length(10);
+    expect(buttons[0]!.name).to.equal("Raspberry Pi 5");
   });
 
   it("stores the chosen board for the following steps", async () => {
@@ -96,21 +98,6 @@ describe("device-selection-view", () => {
     );
     expect(selections.deviceConfig!.board).to.equal("odroid-n2");
     expect(selections.deviceCatalogReady).to.equal(true);
-  });
-
-  it("shows a board chosen earlier as selected", async () => {
-    wizardState.startFlow("sbc");
-    wizardState.setSelection("device", "rpi4");
-    mockTauriIpc(() => MOCK_MANIFEST);
-    const el = await fixture<DeviceSelectionView>(html`
-      <device-selection-view></device-selection-view>
-    `);
-    await waitUntil(() => cards(el).length > 0);
-    const group = el.shadowRoot!.querySelector("wa-radio-group")!;
-    await group.updateComplete;
-    expect(group.value).to.equal("rpi4");
-    expect(cards(el).filter((card) => card.checked)).to.have.length(1);
-    expect(cards(el).find((card) => card.checked)!.value).to.equal("rpi4");
   });
 
   it("loads the catalog again on Try again", async () => {

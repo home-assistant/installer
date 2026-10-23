@@ -2,11 +2,8 @@ import { type Locator, type Page } from "@playwright/test";
 import { expect, test } from "./fixtures.js";
 
 // Forced colors, as in Windows High Contrast, give every card border the same
-// color and paint backgrounds like the page, so the device and drive cards
-// mark the chosen one with system colors, as the option cards do.
-
-const nextButton = (page: Page) =>
-  page.locator("wizard-shell .footer-right wa-button");
+// color and paint backgrounds like the page, so the drive cards mark the
+// chosen one with system colors. The focus ring stays apart from it.
 
 // Tab into the cards rather than clicking them, so the focus ring shows
 async function tabTo(page: Page, card: Locator) {
@@ -70,7 +67,7 @@ async function expectFocusRing(card: Locator, system: SystemColors) {
   await expect(ring).not.toHaveCSS("outline-color", system.highlight);
 }
 
-test("forced colors keep the chosen device and drive apart", async ({
+test("forced colors keep the focused device and the chosen drive apart", async ({
   page,
 }, testInfo) => {
   await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
@@ -100,16 +97,15 @@ test("forced colors keep the chosen device and drive apart", async ({
     .click();
   const system = await systemColors(page);
 
+  // Picking a device goes on, so none is chosen
   const devices = page.locator("device-selection-view device-card");
-  await tabTo(page, devices.nth(0));
-  await page.keyboard.press("ArrowRight");
-  await expectChosen(devices.nth(1), devices.nth(0), system);
+  await tabTo(page, devices.nth(1));
   await expectFocusRing(devices.nth(1), system);
   await page.screenshot({
     path: testInfo.outputPath("forced-colors-device.png"),
   });
 
-  await nextButton(page).click();
+  await page.keyboard.press("Enter");
   const drives = page.locator("drive-selection-view drive-card");
   const first = drives.filter({ hasText: "First drive" });
   const second = drives.filter({ hasText: "Second drive" });

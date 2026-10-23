@@ -18,7 +18,6 @@ test("next steps fit a 390px window after the browser mock flash", async ({
     .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
   await page.locator('device-card[value="odroid-n2"]').click();
-  await next(page).click();
   await page.locator("drive-selection-view drive-card").first().click();
   await next(page).click();
   await skipWifiStep(page);
@@ -75,7 +74,6 @@ test("a Wi-Fi network set on its own step replaces the cable step", async ({
     .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
   await page.locator('device-card[value="rpi5"]').click();
-  await next(page).click();
   await page.locator("drive-selection-view drive-card").first().click();
   await next(page).click();
 

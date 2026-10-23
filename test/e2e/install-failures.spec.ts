@@ -65,7 +65,6 @@ for (const scenario of [
         .locator('option-card[heading="Raspberry Pi & other boards"]')
         .click();
       await page.locator("device-selection-view device-card").first().click();
-      await next(page).click();
       await page.locator("drive-selection-view drive-card").first().click();
       await next(page).click();
       await skipWifiStep(page);

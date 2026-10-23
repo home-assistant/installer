@@ -8,7 +8,6 @@ import {
 import { customElement } from "lit/decorators.js";
 import type { Device, DeviceCategory } from "../../api/index.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
-import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../components/device-card.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 import { loadStateStyles } from "../../utils/load-state.js";
@@ -58,14 +57,12 @@ export class DeviceSelectionView extends LitElement {
       )}
       ${this._catalog.render(
         () => html`
-          <wa-radio-group
+          <div
             class="devices-grid"
-            radio-tag="device-card"
+            role="group"
             aria-label=${localize(
               "views.sbc.device_selection_view.single_board_computer"
             )}
-            .value=${this._catalog.selected ?? ""}
-            @change=${this._catalog.onChange}
           >
             ${this._catalog.devices.map(
               (device) => html`
@@ -73,10 +70,11 @@ export class DeviceSelectionView extends LitElement {
                   .value=${device.id}
                   .name=${device.name}
                   .image=${device.image_url || ""}
+                  @click=${this._catalog.onPick}
                 ></device-card>
               `
             )}
-          </wa-radio-group>
+          </div>
         `
       )}
     `;

@@ -16,9 +16,8 @@ async function startFlash(page: Page) {
     .getByRole("button", { name: "Raspberry Pi & other boards" })
     .click();
   await page
-    .getByRole("radio", { name: "Raspberry Pi 5", exact: true })
+    .getByRole("button", { name: "Raspberry Pi 5", exact: true })
     .click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("radio").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await skipWifiStep(page);

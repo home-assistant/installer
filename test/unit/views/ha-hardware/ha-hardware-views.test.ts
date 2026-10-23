@@ -15,6 +15,8 @@ import "../../../../src/views/sbc/drive-selection-view.js";
 import "../../../../src/views/sbc/progress-view.js";
 import type { HaHardwareDeviceSelectionView } from "../../../../src/views/ha-hardware/device-selection-view.js";
 import type { HaHardwareConnectInstructions } from "../../../../src/views/ha-hardware/connect-instructions.js";
+import type { CardButton } from "../../../../src/components/card-button.js";
+import type { OptionCard } from "../../../../src/components/option-card.js";
 import {
   HA_HARDWARE,
   findHaHardware,
@@ -53,6 +55,18 @@ function select(id: HaHardwareId, name: string) {
 }
 
 const text = (root: ShadowRoot) => root.textContent!.replace(/\s+/g, " ");
+
+/** The cards of the step `el` shows */
+const cardsOf = (el: Element) => [
+  ...el.shadowRoot!.querySelectorAll<CardButton>("device-card, option-card"),
+];
+
+/** Pick the card for `value` on the step `el` shows */
+function pick(el: Element, value: string) {
+  cardsOf(el)
+    .find((card) => card.value === value)!
+    .click();
+}
 
 describe("Home Assistant hardware views", () => {
   afterEach(() => {
@@ -158,9 +172,7 @@ describe("Home Assistant hardware views", () => {
           html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
         );
         await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
-        const group = el.shadowRoot!.querySelector("wa-radio-group")!;
-        group.value = value;
-        group.dispatchEvent(new Event("change"));
+        pick(el, value);
         const selections = wizardState.getState().selections;
         expect(selections.device).to.equal(value);
         expect(selections.haHardware).to.equal(id);
@@ -178,9 +190,7 @@ describe("Home Assistant hardware views", () => {
         html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
       );
       await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
-      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
-      group.value = "ha-yellow";
-      group.dispatchEvent(new Event("change"));
+      pick(el, "ha-yellow");
       const { selections, steps } = wizardState.getState();
       expect(selections.device).to.equal("ha-yellow");
       expect(selections.deviceName).to.equal("Home Assistant Yellow");
@@ -204,9 +214,7 @@ describe("Home Assistant hardware views", () => {
         html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
       );
       await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
-      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
-      group.value = "ha-yellow";
-      group.dispatchEvent(new Event("change"));
+      pick(el, "ha-yellow");
       const { selections } = wizardState.getState();
       expect(selections.haHardware).to.equal("yellow-cm5");
       expect(selections.deviceName).to.equal("Home Assistant Yellow with CM5");
@@ -219,15 +227,12 @@ describe("Home Assistant hardware views", () => {
         html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
       );
       await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
-      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
-      group.value = "ha-green";
-      group.dispatchEvent(new Event("change"));
+      pick(el, "ha-green");
       expect(
         wizardState.getState().steps.map((step) => step.id)
       ).not.to.include("module");
 
-      group.value = "ha-yellow";
-      group.dispatchEvent(new Event("change"));
+      pick(el, "ha-yellow");
       const { selections, steps } = wizardState.getState();
       expect(selections.haHardware).to.equal(undefined);
       expect(selections.deviceName).to.equal("Home Assistant Yellow");
@@ -264,9 +269,7 @@ describe("Home Assistant hardware views", () => {
         (card) => card.value
       );
       expect(values).to.deep.equal(["ha-green", "ha-yellow"]);
-      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
-      group.value = "ha-yellow";
-      group.dispatchEvent(new Event("change"));
+      pick(el, "ha-yellow");
       expect(
         wizardState.getState().selections.yellowModules!.map(({ id }) => id)
       ).to.deep.equal(["yellow-cm4"]);
@@ -279,16 +282,12 @@ describe("Home Assistant hardware views", () => {
         html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
       );
       await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
-      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
-
-      group.value = "ha-yellow";
-      group.dispatchEvent(new Event("change"));
+      pick(el, "ha-yellow");
       expect(wizardState.getState().selections.drive).to.equal(
         MOCK_BLOCK_DEVICES[2].id
       );
 
-      group.value = "ha-green";
-      group.dispatchEvent(new Event("change"));
+      pick(el, "ha-green");
       expect(wizardState.getState().selections.drive).to.equal(undefined);
     });
 
@@ -301,9 +300,7 @@ describe("Home Assistant hardware views", () => {
         html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`
       );
       await waitUntil(() => el.shadowRoot!.querySelector("device-card"));
-      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
-      group.value = "ha-green";
-      group.dispatchEvent(new Event("change"));
+      pick(el, "ha-green");
       expect(wizardState.getState().selections.drive).to.equal(undefined);
     });
   });
@@ -325,13 +322,15 @@ describe("Home Assistant hardware views", () => {
       const el = await fixture(
         html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
       );
-      const radios = [...el.shadowRoot!.querySelectorAll("wa-radio")];
-      expect(radios.map((radio) => radio.value)).to.deep.equal([
+      const cards = el.shadowRoot!.querySelectorAll<OptionCard>("option-card");
+      expect([...cards].map((card) => card.value)).to.deep.equal([
         "yellow-cm4",
         "yellow-cm5",
       ]);
-      expect(text(el.shadowRoot!)).to.contain("Compute Module 4");
-      expect(text(el.shadowRoot!)).to.contain("Compute Module 5");
+      expect([...cards].map((card) => card.heading)).to.deep.equal([
+        "Compute Module 4",
+        "Compute Module 5",
+      ]);
       expect(text(el.shadowRoot!)).to.contain("4 or 5 inside");
     });
 
@@ -345,9 +344,10 @@ describe("Home Assistant hardware views", () => {
         const el = await fixture(
           html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
         );
-        const group = el.shadowRoot!.querySelector("wa-radio-group")!;
-        group.value = id;
-        group.dispatchEvent(new Event("change"));
+        let wentOn = 0;
+        el.addEventListener("wizard-next", () => wentOn++);
+        pick(el, id);
+        expect(wentOn).to.equal(1);
         const selections = wizardState.getState().selections;
         expect(selections.device).to.equal("ha-yellow");
         expect(selections.haHardware).to.equal(id);
@@ -356,51 +356,20 @@ describe("Home Assistant hardware views", () => {
       });
     }
 
-    it("marks the chosen compute module with a check, not only a color", async () => {
-      pickYellow();
-      const el = await fixture(
-        html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
-      );
-      const radios = [...el.shadowRoot!.querySelectorAll("wa-radio")];
-      const checks = () =>
-        radios.map((radio) => !!radio.querySelector(".selected-indicator"));
-      expect(checks()).to.deep.equal([false, false]);
-
-      radios[1].click();
-      await waitUntil(() => checks()[1], "choice never marked");
-      expect(checks()).to.deep.equal([false, true]);
-      const check = radios[1].querySelector(".selected-indicator")!;
-      expect(check.getAttribute("aria-hidden")).to.equal("true");
-      // The check sits in the radio's corner, out of the centered content
-      const radioBox = radios[1].getBoundingClientRect();
-      const checkBox = check.getBoundingClientRect();
-      expect(checkBox.width).to.be.greaterThan(0);
-      expect(radioBox.right - checkBox.right).to.be.within(8, 10);
-      expect(checkBox.top - radioBox.top).to.be.within(8, 10);
-
-      radios[0].click();
-      await waitUntil(() => checks()[0], "new choice never marked");
-      expect(checks()).to.deep.equal([true, false]);
-    });
-
     it("forgets the drive when switching to another compute module", async () => {
       pickYellow();
       const el = await fixture(
         html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
       );
-      const group = el.shadowRoot!.querySelector("wa-radio-group")!;
-      group.value = "yellow-cm4";
-      group.dispatchEvent(new Event("change"));
+      pick(el, "yellow-cm4");
       storeDriveSelection(MOCK_BLOCK_DEVICES[2]);
 
-      group.value = "yellow-cm4";
-      group.dispatchEvent(new Event("change"));
+      pick(el, "yellow-cm4");
       expect(wizardState.getState().selections.drive).to.equal(
         MOCK_BLOCK_DEVICES[2].id
       );
 
-      group.value = "yellow-cm5";
-      group.dispatchEvent(new Event("change"));
+      pick(el, "yellow-cm5");
       expect(wizardState.getState().selections.drive).to.equal(undefined);
     });
 
@@ -417,11 +386,8 @@ describe("Home Assistant hardware views", () => {
         { id: "yellow-cm4", config: configFor("yellow-cm4") },
         { id: "yellow-cm5", config: reloaded },
       ]);
-      const el = await fixture(
+      await fixture(
         html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`
-      );
-      expect(el.shadowRoot!.querySelector("wa-radio-group")!.value).to.equal(
-        "yellow-cm5"
       );
       expect(wizardState.getState().selections.deviceConfig).to.equal(reloaded);
     });

@@ -1,6 +1,7 @@
 import { css, type LitElement, type ReactiveController } from "lit";
-import type WaRadioGroup from "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import { getManifest, type Device, type DeviceManifest } from "../api/index.js";
+import type { CardButton } from "../components/card-button.js";
+import { goToNextStep } from "../components/wizard-steps.js";
 import { localize } from "../localization/localize.js";
 import { wizardState, type WizardSelections } from "../state/wizard-state.js";
 import { InstallDiagnostics } from "./diagnostics.js";
@@ -28,8 +29,8 @@ export interface DeviceCatalogOptions<T> {
 
 /**
  * The catalog's devices a picker step offers, and the one chosen. The step
- * loads the catalog each time it shows, and Next waits until it has, so a
- * device the catalog no longer offers is dropped before anyone goes on.
+ * loads the catalog each time it shows, and offers no device until it has,
+ * so a device the catalog no longer offers is dropped before anyone goes on.
  */
 export class DeviceCatalog<T> implements ReactiveController {
   devices: T[] = [];
@@ -109,10 +110,15 @@ export class DeviceCatalog<T> implements ReactiveController {
     return choices();
   }
 
-  /** For the change event of the step's radio group */
-  readonly onChange = (e: Event) => {
-    const device = this._find((e.target as WaRadioGroup).value);
-    if (device) this.choose(device);
+  /**
+   * For the click on a device's card, whose value is its id: choose it, and
+   * go on as Next would.
+   */
+  readonly onPick = (e: Event) => {
+    const device = this._find((e.currentTarget as CardButton).value);
+    if (!device) return;
+    this.choose(device);
+    goToNextStep(this.host);
   };
 
   /**
@@ -155,18 +161,16 @@ export function deviceSelections(device: Device): Partial<WizardSelections> {
   };
 }
 
-/** Device cards in a radio group, as a grid of tiles. */
+/**
+ * Device cards as a grid of tiles. Empty columns collapse, so a short row of
+ * devices still spans the width.
+ */
 export const deviceGridStyles = css`
   .devices-grid {
-    width: 100%;
-    max-width: 700px;
-  }
-
-  /* The group's default layout is a flex column. Empty columns collapse, so
-     a short row of devices still spans the width. */
-  .devices-grid::part(form-control-input) {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 1rem;
+    width: 100%;
+    max-width: 700px;
   }
 `;

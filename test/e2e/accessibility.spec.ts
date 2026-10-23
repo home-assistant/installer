@@ -342,9 +342,8 @@ test("cancelling the erase question returns to Install", async ({ page }) => {
     .getByRole("button", { name: "Raspberry Pi & other boards" })
     .click();
   await page
-    .getByRole("radio", { name: "Raspberry Pi 5", exact: true })
+    .getByRole("button", { name: "Raspberry Pi 5", exact: true })
     .click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("radio").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await skipWifiStep(page);
@@ -487,7 +486,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     });
   });
 
-  test(`${colorScheme} architecture cards keep their text readable when selected or hovered`, async ({
+  test(`${colorScheme} architecture cards keep their text readable under the pointer`, async ({
     page,
   }) => {
     await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
@@ -498,27 +497,25 @@ for (const colorScheme of ["light", "dark"] as const) {
       .click();
     await page
       .locator("minipc-setup-method-view")
-      .locator("option-card, wa-radio")
+      .locator("option-card")
       .filter({ hasText: "I can connect the drive" })
       .click();
     const cards = page
       .locator("minipc-architecture-selection-view")
-      .locator("wa-radio");
-    const selected = cards.filter({ hasText: "Intel/AMD" });
-    const hovered = cards.filter({ hasText: "ARM" });
-    await selected.click();
-    await expect(selected).toHaveAttribute("aria-checked", "true");
-    await hovered.hover();
-    for (const card of [selected, hovered]) {
-      const { fill, background, text } = await card.evaluate((radio) => ({
-        fill: getComputedStyle(radio).backgroundColor,
+      .locator("option-card");
+    await expect(cards).toHaveCount(2);
+    await cards.last().hover();
+    for (const card of [cards.first(), cards.last()]) {
+      const { fill, background, text } = await card.evaluate((card) => ({
+        fill: getComputedStyle(card.shadowRoot!.querySelector(".card")!)
+          .backgroundColor,
         // The cards sit straight on the page
         background: getComputedStyle(document.documentElement).backgroundColor,
         text: [
-          ...radio.querySelectorAll(".option-description, .option-examples"),
+          card.shadowRoot!.querySelector(".description")!,
+          card.querySelector(".option-examples")!,
         ].map((line) => getComputedStyle(line).color),
       }));
-      expect(text).toHaveLength(2);
       for (const color of text) {
         expect(contrast(color, fill, background)).toBeGreaterThanOrEqual(4.5);
       }
@@ -526,9 +523,7 @@ for (const colorScheme of ["light", "dark"] as const) {
   });
 }
 
-test("forced colors keep step states and the chosen architecture apart", async ({
-  page,
-}, testInfo) => {
+test("forced colors keep step states apart", async ({ page }, testInfo) => {
   // Forced colors paint backgrounds like the page and give every border the
   // same color, unless a rule asks for system colors
   await page.emulateMedia({ forcedColors: "active" });
@@ -547,7 +542,6 @@ test("forced colors keep step states and the chosen architecture apart", async (
       canvasText: resolve("CanvasText"),
       grayText: resolve("GrayText"),
       highlight: resolve("Highlight"),
-      highlightText: resolve("HighlightText"),
     };
     probe.remove();
     return colors;
@@ -568,17 +562,6 @@ test("forced colors keep step states and the chosen architecture apart", async (
   await expect(dots.nth(2)).toHaveCSS("border-top-width", "2px");
   await expect(dots.nth(2)).toHaveCSS("border-top-color", system.grayText);
 
-  const choices = page.locator("minipc-architecture-selection-view wa-radio");
-  const x86 = choices.filter({ hasText: "Intel/AMD (x86-64)" });
-  const arm = choices.filter({ hasText: "ARM (aarch64)" });
-  await x86.click();
-  await expect(x86).toHaveCSS("border-top-color", system.highlight);
-  await expect(arm).not.toHaveCSS("border-top-color", system.highlight);
-  const check = x86.locator(".selected-indicator");
-  await expect(check).toBeVisible();
-  await expect(check).toHaveCSS("background-color", system.highlight);
-  await expect(check).toHaveCSS("color", system.highlightText);
-  await expect(arm.locator(".selected-indicator")).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("forced-colors.png") });
 
   // The install's stage list draws its dots the same way
@@ -734,9 +717,8 @@ test("disk installation keeps heading focus after the confirmation dialog closes
     .getByRole("button", { name: "Raspberry Pi & other boards" })
     .click();
   await page
-    .getByRole("radio", { name: "Raspberry Pi 5", exact: true })
+    .getByRole("button", { name: "Raspberry Pi 5", exact: true })
     .click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("radio").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await skipWifiStep(page);

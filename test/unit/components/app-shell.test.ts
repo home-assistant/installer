@@ -307,16 +307,22 @@ describe("app-shell", () => {
       await waitUntil(
         () => wizardState.getState().selections.deviceCatalogReady === true
       );
+      // Picking a device goes on, so the step has no Next to hold
+      expect(shellOf(el).hideNext).to.equal(true);
+      const view = shellOf(el).firstElementChild!;
+
       wizardState.setSelection("device", "saved-device");
       wizardState.setSelection("deviceCatalogReady", false);
-      await el.updateComplete;
-      expect(shellOf(el).nextDisabled).to.equal(true);
+      fire(view, "wizard-next");
+      await settle();
+      expect(wizardState.currentStep!.id).to.equal(step);
+
       wizardState.setSelection("deviceCatalogReady", true);
-      await el.updateComplete;
-      expect(shellOf(el).nextDisabled).to.equal(false);
       wizardState.setSelection("device", undefined);
-      await el.updateComplete;
-      expect(shellOf(el).nextDisabled).to.equal(true);
+      fire(view, "wizard-next");
+      await settle();
+      expect(wizardState.currentStep!.id).to.equal(step);
+      expect(shellOf(el).nextBusy).to.equal(false);
     });
   }
 
@@ -467,10 +473,11 @@ describe("app-shell", () => {
         "minipc-architecture-selection-view"
       )!;
       await waitUntil(
-        () => architectures.shadowRoot!.querySelectorAll("wa-radio").length > 0
+        () =>
+          architectures.shadowRoot!.querySelectorAll("option-card").length > 0
       );
       // The architectures open where the card was
-      click(architectures.shadowRoot!.querySelector("wa-radio")!, 2);
+      click(architectures.shadowRoot!.querySelector("option-card")!, 2);
       await settle();
 
       expect(wizardState.currentStep!.id).to.equal("architecture");
@@ -589,31 +596,72 @@ describe("app-shell", () => {
     }
   });
 
-  it("leaves Next as it is while the reinstall question is open", async () => {
-    await enterSbcFlow(el);
-    wizardState.startFlow("ha-hardware");
-    wizardState.setSelection("device", "ha-green");
-    await el.updateComplete;
-    await waitUntil(
-      () => wizardState.getState().selections.deviceCatalogReady === true
-    );
-    await el.updateComplete;
-    const question = () =>
-      shellOf(el)
-        .querySelector("ha-hardware-device-selection-view")!
-        .shadowRoot!.querySelector("info-dialog") as InfoDialog;
+  describe("steps that go on when a card is picked", () => {
+    const view = () => shellOf(el).firstElementChild as LitElement;
+    const card = (selector: string) =>
+      view().shadowRoot!.querySelector<HTMLElement>(selector)!;
 
-    fire(shellOf(el), "wizard-next");
-    await waitUntil(() => question().open);
-    await el.updateComplete;
-    // Not disabled, so the question returns the focus to it
-    expect(shellOf(el).nextDisabled).to.be.false;
-    expect(shellOf(el).nextBusy).to.be.false;
-    expect(shellOf(el).nextLabel).to.equal("Next");
+    it("show no Next, where the drive step keeps it", async () => {
+      await enterSbcFlow(el);
+      await el.updateComplete;
+      expect(shellOf(el).hideNext).to.be.true;
 
-    fire(question(), "dialog-secondary");
-    await settle();
-    expect(wizardState.currentStep?.id).to.equal("device");
+      await goToStep(el, "drive");
+      expect(shellOf(el).hideNext).to.be.false;
+    });
+
+    it("goes on to the drive once a board is picked", async () => {
+      await enterSbcFlow(el);
+      await waitUntil(() => view().shadowRoot?.querySelector("device-card"));
+
+      card('device-card[value="rpi4"]').click();
+      await el.updateComplete;
+
+      expect(wizardState.currentStep!.id).to.equal("drive");
+      expect(wizardState.getState().selections.device).to.equal("rpi4");
+    });
+
+    it("goes on from the compute module the Yellow has", async () => {
+      await enterSbcFlow(el);
+      wizardState.startFlow("ha-hardware");
+      wizardState.setSelection("device", "ha-yellow");
+      wizardState.setSelection("yellowModules", [
+        { id: "yellow-cm4", config: MOCK_MANIFEST.devices[0].haos },
+        { id: "yellow-cm5", config: MOCK_MANIFEST.devices[0].haos },
+      ]);
+      await goToStep(el, "module");
+      expect(shellOf(el).hideNext).to.equal(true);
+
+      card('option-card[value="yellow-cm5"]').click();
+      await el.updateComplete;
+
+      expect(wizardState.currentStep!.id).to.equal("drive");
+      expect(wizardState.getState().selections.haHardware).to.equal(
+        "yellow-cm5"
+      );
+    });
+
+    it("asks before reinstalling the hardware picked, and stays on Go back", async () => {
+      await enterSbcFlow(el);
+      wizardState.startFlow("ha-hardware");
+      await el.updateComplete;
+      await waitUntil(() => view().shadowRoot?.querySelector("device-card"));
+      // Rendered once a device is chosen
+      const question = () =>
+        view().shadowRoot!.querySelector<InfoDialog>("info-dialog");
+
+      card('device-card[value="ha-green"]').click();
+      await waitUntil(() => question()?.open, "never asked");
+      fire(question()!, "dialog-secondary");
+      await settle();
+      expect(wizardState.currentStep!.id).to.equal("device");
+
+      card('device-card[value="ha-green"]').click();
+      await waitUntil(() => question()!.open, "never asked again");
+      fire(question()!, "dialog-primary");
+      await settle();
+      expect(wizardState.currentStep!.id).to.equal("drive");
+    });
   });
 
   describe("selected drive check before erasing", () => {

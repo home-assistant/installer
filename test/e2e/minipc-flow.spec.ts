@@ -53,7 +53,7 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
     const setupView = page.locator("minipc-setup-method-view");
     await expect(setupView).toBeVisible();
     const connectDriveOption = setupView
-      .locator("option-card, wa-radio")
+      .locator("option-card")
       .filter({ hasText: "I can connect the drive" });
     await connectDriveOption.click();
   });
@@ -63,10 +63,13 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
   }) => {
     const archView = page.locator("minipc-architecture-selection-view");
     await archView
-      .locator("option-card, wa-radio")
+      .locator("option-card")
       .filter({ hasText: "Intel/AMD" })
       .click();
+    await expect(page.locator("drive-selection-view")).toBeVisible();
     const back = page.getByRole("button", { name: "Back", exact: false });
+    await back.click();
+    await expect(archView).toBeVisible();
     await back.click();
 
     const setupView = page.locator("minipc-setup-method-view");
@@ -89,8 +92,13 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
       .filter({ hasText: "I can connect the drive" })
       .click();
     await expect(archView).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Next", exact: true })
-    ).toBeDisabled();
+    const picked = await page.evaluate(async () => {
+      const state = "/src/state/wizard-state.ts";
+      const { wizardState } = (await import(
+        state
+      )) as typeof import("../../src/state/wizard-state.js");
+      return wizardState.getState().selections.device ?? null;
+    });
+    expect(picked).toBeNull();
   });
 });

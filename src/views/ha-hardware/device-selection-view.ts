@@ -18,7 +18,6 @@ import {
   type HaHardware,
 } from "./hardware.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
-import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../components/device-card.js";
 import "../../components/info-dialog.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
@@ -116,23 +115,22 @@ export class HaHardwareDeviceSelectionView extends LitElement {
       )}
       ${this._catalog.render(
         () => html`
-          <wa-radio-group
+          <div
             class="devices-grid"
-            radio-tag="device-card"
+            role="group"
             aria-label=${localize("common.home_assistant_hardware")}
-            .value=${this._catalog.selected ?? ""}
-            @change=${this._catalog.onChange}
           >
             ${this._cards().map(
-              (hardware) => html`
+              (choice) => html`
                 <device-card
-                  .value=${hardware.deviceId}
-                  .name=${haDeviceName(hardware)}
-                  .image=${hardware.image}
+                  .value=${choice.hardware.deviceId}
+                  .name=${haDeviceName(choice.hardware)}
+                  .image=${choice.hardware.image}
+                  @click=${this._catalog.onPick}
                 ></device-card>
               `
             )}
-          </wa-radio-group>
+          </div>
 
           ${this._renderReinstallDialog()}
         `
@@ -141,14 +139,13 @@ export class HaHardwareDeviceSelectionView extends LitElement {
   }
 
   /** One card per device, so the Yellow shows once whatever its module. */
-  private _cards(): HaHardware[] {
-    return this._catalog.devices
-      .map(({ hardware }) => hardware)
-      .filter(
-        (hardware, index, all) =>
-          all.findIndex(({ deviceId }) => deviceId === hardware.deviceId) ===
-          index
-      );
+  private _cards(): HardwareChoice[] {
+    return this._catalog.devices.filter(
+      ({ hardware }, index, all) =>
+        all.findIndex(
+          (other) => other.hardware.deviceId === hardware.deviceId
+        ) === index
+    );
   }
 
   private _renderReinstallDialog() {

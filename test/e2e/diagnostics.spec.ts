@@ -267,7 +267,6 @@ test("flash failure keeps the failed stage in its report", async ({
     .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
   await page.locator("device-selection-view device-card").first().click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.locator("drive-selection-view drive-card").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await skipWifiStep(page);

@@ -53,13 +53,10 @@ test.describe("Wizard Flow", () => {
 
     const wizardShell = page.locator("wizard-shell");
 
-    // Wait for devices to load and select one
+    // Wait for devices to load; picking one goes on to the second step
     const deviceCard = page.locator("device-card").first();
     await expect(deviceCard).toBeVisible({ timeout: 5000 });
     await deviceCard.click();
-
-    // Go to second step
-    await wizardShell.locator(".footer-right wa-button").click();
     await expect(page.locator("drive-selection-view")).toBeVisible();
 
     const backButton = wizardShell.locator(".header wa-button");
@@ -83,14 +80,10 @@ test.describe("SBC Confirmation", () => {
       .click();
     await expect(page.locator("wizard-shell")).toBeVisible();
 
-    // Select a device and proceed
+    // Select a device, which goes on
     const deviceCard = page.locator("device-card").first();
     await expect(deviceCard).toBeVisible({ timeout: 5000 });
     await deviceCard.click();
-    await page
-      .locator("wizard-shell")
-      .locator(".footer-right wa-button")
-      .click();
 
     // Select a drive and proceed
     await expect(page.locator("drive-selection-view")).toBeVisible();
@@ -151,15 +144,11 @@ test.describe("SBC Success", () => {
       .click();
     await expect(page.locator("wizard-shell")).toBeVisible();
 
-    // Select a device and proceed
+    // Select a device, which goes on
     const deviceCard = page.locator("device-card").first();
     await expect(deviceCard).toBeVisible({ timeout: 5000 });
     selectedDeviceName = await deviceCard.locator(".name").innerText();
     await deviceCard.click();
-    await page
-      .locator("wizard-shell")
-      .locator(".footer-right wa-button")
-      .click();
 
     // Select a drive and proceed
     await expect(page.locator("drive-selection-view")).toBeVisible();
