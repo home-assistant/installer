@@ -206,7 +206,13 @@ export class DriveCard extends WaRadio {
 
   private _getDetails(): string {
     const parts: string[] = [];
-    if (this.vendor) parts.push(this.vendor);
+    // Models often start with their vendor already ("Samsung EVO Plus")
+    const vendorInModel =
+      this.vendor &&
+      `${this.model.toLowerCase()} `.startsWith(
+        `${this.vendor.toLowerCase()} `
+      );
+    if (this.vendor && !vendorInModel) parts.push(this.vendor);
     if (this.model) parts.push(this.model);
     if (parts.length === 0) {
       parts.push(this._getTypeLabel());

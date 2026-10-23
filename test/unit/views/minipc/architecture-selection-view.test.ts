@@ -119,7 +119,7 @@ describe("minipc-architecture-selection-view choices", () => {
 
     const groups = findByRole(await fullA11ySnapshot(), "radiogroup");
     expect(groups).to.have.length(1);
-    expect(groups[0]!.name).to.equal("CPU architecture");
+    expect(groups[0]!.name).to.equal("Processor");
     expect(findByRole(groups[0]!, "radio")).to.have.length(2);
   });
 

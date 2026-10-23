@@ -208,14 +208,16 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
     await expect(archSelectionView).toBeVisible();
 
     const title = archSelectionView.locator("h2");
-    await expect(title).toContainText("Select your architecture");
+    await expect(title).toContainText(
+      "Which processor does your mini PC have?"
+    );
   });
 
-  test("shows subtitle with CPU architecture mention", async ({ page }) => {
+  test("shows where to find the processor", async ({ page }) => {
     const subtitle = page
       .locator("minipc-architecture-selection-view")
       .locator(".subtitle");
-    await expect(subtitle).toContainText("CPU architecture");
+    await expect(subtitle).toContainText("specifications");
   });
 
   test("displays x86-64 architecture option", async ({ page }) => {

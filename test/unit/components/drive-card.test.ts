@@ -141,6 +141,23 @@ describe("drive-card", () => {
     expect(details!.textContent!.trim()).to.equal("SanDisk Ultra");
   });
 
+  it("does not repeat a vendor the model already starts with", async () => {
+    for (const [vendor, model, expected] of [
+      ["Samsung", "Samsung EVO Plus", "Samsung EVO Plus"],
+      ["APPLE", "Apple SD Card Reader", "Apple SD Card Reader"],
+      ["Samsung", "Samsung", "Samsung"],
+      // Only a whole word counts
+      ["Sam", "Samsung EVO Plus", "Sam Samsung EVO Plus"],
+    ]) {
+      const el = await fixture<DriveCard>(html`
+        <drive-card name="Test" vendor=${vendor} model=${model}></drive-card>
+      `);
+
+      const details = el.shadowRoot!.querySelector(".details");
+      expect(details!.textContent!.trim()).to.equal(expected);
+    }
+  });
+
   it("displays type label when vendor/model not provided", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test" device-type="usb_drive"></drive-card>
