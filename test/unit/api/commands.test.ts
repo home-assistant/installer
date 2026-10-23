@@ -50,6 +50,12 @@ function expectStageLocal(events: FlashProgress[]) {
   expect(percentages).to.deep.equal([...percentages].sort((a, b) => a - b));
 }
 
+/** No view shows a message, so the mocks leave it empty rather than translate it. */
+function expectNoMessages(events: FlashProgress[]) {
+  expect(events).to.not.be.empty;
+  for (const event of events) expect(event.message).to.equal("");
+}
+
 function expectBytes(events: FlashProgress[], total: number) {
   for (const event of events) expect(event.total_bytes).to.equal(total);
   expect(events[0].bytes_processed).to.equal(0);
@@ -93,6 +99,7 @@ describe("api/commands", () => {
         stage: "complete",
         progress: 100,
       });
+      expectNoMessages(progressOf(steps));
     });
 
     it("reports the UTM download and extraction against the compressed image", async () => {
@@ -107,6 +114,7 @@ describe("api/commands", () => {
       expectStageLocal(progressOf(steps, "extracting"));
       expectBytes(downloading, compressed);
       expectBytes(progressOf(steps, "extracting"), compressed);
+      expectNoMessages(progressOf(steps));
     });
 
     it("sends the Proxmox upload over 5-95% and reports 100 after processing", async () => {
@@ -170,6 +178,7 @@ describe("api/commands", () => {
         .slice(lastTransfer + 1, done)
         .map((step) => (step as { wait: number }).wait);
       expect(Math.max(...processing)).to.be.greaterThan(stepWait);
+      expectNoMessages(progressOf(steps));
     });
   });
 
