@@ -30,8 +30,10 @@ interface WizardShell extends HTMLElement {
   nextDisabled: boolean;
   nextBusy: boolean;
   hideFooter: boolean;
+  hideBack: boolean;
   hideNext: boolean;
   hideCancel: boolean;
+  updateComplete: Promise<boolean>;
 }
 
 interface ErrorFlags {
@@ -893,6 +895,72 @@ describe("app-shell", () => {
 
     expect(shellOf(el).hideFooter).to.be.false;
     expect(wizardState.currentStep?.id).to.equal("flash");
+  });
+
+  // "Try again" writes the same drive and Cancel drops every choice, so Back
+  // is the way to change the drive or the Wi-Fi once the flash ended
+  describe("Back after the flash ended", () => {
+    /** Click Back in the header, as the user would. */
+    async function clickBack(el: AppShell) {
+      await shellOf(el).updateComplete;
+      shellOf(el)
+        .shadowRoot!.querySelector<HTMLElement>(".header wa-button")!
+        .click();
+      await el.updateComplete;
+    }
+
+    beforeEach(async () => {
+      await enterSbcFlow(el);
+    });
+
+    it("returns to the confirmation once stopped, which asks again before erasing", async () => {
+      selectTargets();
+      await goToStep(el, "flash");
+      expect(shellOf(el).hideBack).to.be.true;
+
+      fire(shellOf(el), "wizard-cancel");
+      await el.updateComplete;
+      fire(
+        el.shadowRoot!.querySelector("info-dialog.stop-dialog")!,
+        "dialog-primary"
+      );
+      await el.updateComplete;
+      // Not while the flash winds down
+      expect(shellOf(el).hideBack).to.be.true;
+      await waitUntil(() => shellOf(el).nextLabel === "Try again");
+      expect(shellOf(el).hideBack).to.be.false;
+
+      await clickBack(el);
+      expect(wizardState.currentStep?.id).to.equal("confirm");
+      expect(shellOf(el).querySelector("progress-view")).to.equal(null);
+      expect(shellOf(el).nextLabel).to.equal("Install");
+      expect((el as unknown as ErrorFlags)._flashError).to.be.false;
+
+      fire(shellOf(el), "wizard-next");
+      await waitForDialogOpen(el);
+      fire(dialogOf(el), "dialog-confirm");
+      await finishDialogHide(el);
+      await waitUntil(() => wizardState.currentStep?.id === "flash");
+      await el.updateComplete;
+
+      // A new write: Cancel only, nothing left over from the stopped one
+      expect(shellOf(el).hideBack).to.be.true;
+      expect(shellOf(el).hideNext).to.be.true;
+      expect(shellOf(el).hideFooter).to.be.false;
+    });
+
+    it("is there beside Choose another drive", async () => {
+      // Without a board there is nothing to download, so no write starts:
+      // the progress view reports the flash error itself.
+      selectTargets({ withBoard: false });
+      await goToStep(el, "flash");
+      await waitUntil(() => shellOf(el).nextLabel === "Choose another drive");
+      expect(shellOf(el).hideBack).to.be.false;
+
+      await clickBack(el);
+      expect(wizardState.currentStep?.id).to.equal("confirm");
+      expect((el as unknown as ErrorFlags)._flashError).to.be.false;
+    });
   });
 
   describe("cancelling a running VM install", () => {

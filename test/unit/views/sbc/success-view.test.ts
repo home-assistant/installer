@@ -77,9 +77,8 @@ describe("success-view next steps", () => {
     expect(text(el)).to.contain("If your computer still shows the drive");
     expect(text(el)).to.contain("eject it before you disconnect it");
     expect(text(el)).not.to.contain("safely ejected");
-    expect(text(el)).to.contain(
-      "if it offers to format or initialize the drive, choose Cancel or Ignore"
-    );
+    const success = el.shadowRoot!.querySelector("install-success")!;
+    expect(success.formatWarning).to.equal(true);
   });
 
   for (const board of ["odroid-n2", "odroid-m1s"]) {

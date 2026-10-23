@@ -6,6 +6,9 @@ import type { WifiView } from "../../../../src/views/sbc/wifi-view.js";
 import { findByRole, fullA11ySnapshot } from "../../helpers/a11y.js";
 import { settle } from "../../tauri-ipc.js";
 
+/** The error colour without the app's theme, which the unit tests don't load */
+const ERROR_COLOR = "rgb(179, 5, 50)";
+
 /** The view with the switch turned on, and its two fields. */
 async function mountOn() {
   wizardState.startFlow("sbc");
@@ -197,9 +200,35 @@ describe("wifi-view", () => {
     await ssid.updateComplete;
     const textbox = findByRole(await fullA11ySnapshot(), "textbox").find(
       (node) => node.name === "Network name"
-    ) as { description?: string } | undefined;
+    );
     expect(textbox?.description).to.equal(
       "Remove tabs and other invisible characters from the network name."
     );
+    expect(textbox?.invalid).to.equal("true");
+  });
+
+  it("marks a wrong field invalid to screen readers and shows it as an error", async () => {
+    const { ssid, password } = await mountOn();
+    const hint = password.querySelector<HTMLElement>('[slot="hint"]')!;
+    const icon = () => getComputedStyle(hint, "::before");
+    expect(ssid.input.getAttribute("aria-invalid")).to.equal("false");
+    expect(password.input.getAttribute("aria-invalid")).to.equal("false");
+    expect(getComputedStyle(hint).color).not.to.equal(ERROR_COLOR);
+    expect(icon().content).to.equal("none");
+
+    await type(password, "1234567");
+    await leave(password);
+    expect(hintOf(password)).to.equal("Use at least 8 characters.");
+    // The <input> screen readers read, not just the wa-input around it
+    expect(password.input.getAttribute("aria-invalid")).to.equal("true");
+    expect(ssid.input.getAttribute("aria-invalid")).to.equal("true");
+    // In the error colour and with an icon, not like the grey hint before it
+    expect(getComputedStyle(hint).color).to.equal(ERROR_COLOR);
+    expect(icon().content).to.equal('""');
+
+    await type(password, "12345678");
+    expect(password.input.getAttribute("aria-invalid")).to.equal("false");
+    expect(getComputedStyle(hint).color).not.to.equal(ERROR_COLOR);
+    expect(icon().content).to.equal("none");
   });
 });

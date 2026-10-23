@@ -58,6 +58,7 @@ export class HaHardwareSuccessView extends LitElement {
         .subtitle=${writesHaos
           ? localize("common.success.subtitle")
           : localize("views.ha_hardware.success_view.subtitle")}
+        .formatWarning=${true}
         .steps=${[
           localize("common.success.step_eject"),
           ...this._steps(hardware),

@@ -48,13 +48,15 @@ test.describe("Navigation Flow", () => {
       )
     ).toBeVisible();
     await expect(
-      pathSelectionView.locator('option-card[heading="Generic (mini) PC"]')
+      pathSelectionView.locator(
+        'option-card[heading="Mini PC or other computer"]'
+      )
     ).toBeVisible();
     await expect(
       pathSelectionView.locator('option-card[heading="Proxmox server"]')
     ).toBeVisible();
     await expect(
-      pathSelectionView.locator('option-card[heading="Others"]')
+      pathSelectionView.locator('option-card[heading="Other options"]')
     ).toBeVisible();
   });
 
@@ -123,8 +125,13 @@ test.describe("Path Selection Options", () => {
   });
 
   test("Mini PC option has correct description", async ({ page }) => {
-    const card = page.locator('option-card[heading="Generic (mini) PC"]');
-    await expect(card).toHaveAttribute("description", /x86-64.*ARM64/);
+    const card = page.locator(
+      'option-card[heading="Mini PC or other computer"]'
+    );
+    await expect(card).toHaveAttribute(
+      "description",
+      /Intel NUC.*a PC you no longer use/
+    );
   });
 
   test("Proxmox option has correct description", async ({ page }) => {

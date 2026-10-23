@@ -4,9 +4,8 @@
 
 :root {
   /* Home Assistant brand colors */
-  /* HA frontend core tokens: primary-30/20/70, red-40/70. */
+  /* HA frontend core tokens: primary-30/70, red-40/70. */
   --ha-primary-color: #006787;
-  --ha-primary-color-dark: #004156;
   --ha-primary-fill: #006787;
   --ha-error-color: #b30532;
   --ha-error-fill: #b30532;

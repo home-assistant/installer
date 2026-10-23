@@ -141,7 +141,7 @@ test.describe("UTM Installation Flow", () => {
     await page.getByRole("button", { name: "Let's go" }).click();
     const vmOption = page.locator('option-card[heading="Virtual machine"]');
     // Answered as an Apple silicon Mac, not one that can't run the VM
-    await expect(vmOption).toContainText("Run Home Assistant in UTM");
+    await expect(vmOption).toContainText("in the free UTM app");
     await vmOption.click();
 
     const checkView = page.locator("utm-check-view");

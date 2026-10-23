@@ -1,7 +1,9 @@
 import { isTauri } from "@tauri-apps/api/core";
 
 /** One-shot failures for browser development and E2E tests, never native IPC. */
-export function failMockOperation(operation: "flash" | "proxmox" | "utm") {
+export function failMockOperation(
+  operation: "flash" | "proxmox" | "proxmox-download" | "utm"
+) {
   if (!import.meta.env.DEV || isTauri()) return;
 
   const key = "hai:mock-failure";
@@ -41,6 +43,13 @@ export function failMockOperation(operation: "flash" | "proxmox" | "utm") {
       code: "proxmox_api",
       message: "Proxmox API error: storage unavailable",
       retryable: false,
+    },
+    // Before the VM is being created, so the native install keeps its retry
+    "proxmox-download": {
+      operation: "proxmox-download",
+      code: "download_failed",
+      message: "Download failed: connection reset",
+      retryable: true,
     },
     "utm-create": {
       operation: "utm",

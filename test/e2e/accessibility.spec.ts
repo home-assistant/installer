@@ -401,7 +401,6 @@ for (const colorScheme of ["light", "dark"] as const) {
       ["--ha-primary-color", "--ha-background-color"],
       ["--ha-error-color", "--ha-background-color"],
       ["--ha-error-color", "--ha-card-background"],
-      ["--ha-primary-color-dark", "#18bcf2"],
       // Placeholders, like the example formats in the Proxmox connect form
       [
         "--wa-form-control-placeholder-color",
@@ -490,7 +489,9 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
     await page.goto("/");
     await page.getByRole("button", { name: "Let's go" }).click();
-    await page.locator('option-card[heading="Generic (mini) PC"]').click();
+    await page
+      .locator('option-card[heading="Mini PC or other computer"]')
+      .click();
     await page
       .locator("minipc-setup-method-view")
       .locator("option-card, wa-radio")
@@ -529,7 +530,7 @@ test("forced colors keep step states and the chosen architecture apart", async (
   await page.emulateMedia({ forcedColors: "active" });
   await page.goto("/");
   await page.getByRole("button", { name: "Let's go" }).click();
-  await page.getByRole("button", { name: "Generic (mini) PC" }).click();
+  await page.getByRole("button", { name: "Mini PC or other computer" }).click();
   await page.getByRole("button", { name: "I can connect the drive" }).click();
   const system = await page.evaluate(() => {
     const probe = document.createElement("span");

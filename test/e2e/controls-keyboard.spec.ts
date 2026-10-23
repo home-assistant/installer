@@ -29,7 +29,7 @@ async function next(page: Page) {
 test("Mini PC choices work with Tab, Space, and arrow keys", async ({
   page,
 }) => {
-  await start(page, "Generic (mini) PC");
+  await start(page, "Mini PC or other computer");
   await activate(
     page,
     page.getByRole("button", { name: "I need to boot from USB" }),
@@ -107,7 +107,7 @@ test("every external installation guide can be opened with the keyboard", async 
       return null;
     };
   });
-  await start(page, "Others");
+  await start(page, "Other options");
   const guides = page.locator("other-options-view option-card");
   const urls = [
     "linux#docker-compose",

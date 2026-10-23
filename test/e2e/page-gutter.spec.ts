@@ -31,7 +31,7 @@ for (const [width, height, gutter] of [
     }
 
     await expectGutter("path-selection-view");
-    await page.getByRole("button", { name: "Others" }).click();
+    await page.getByRole("button", { name: "Other options" }).click();
     await expectGutter("other-options-view");
     await back.click();
     await page

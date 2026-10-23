@@ -285,9 +285,10 @@ export class AppShell extends LitElement {
       (flashRunning && this._stoppingFlash) ||
       (vmRunning && !this._vmStoppable && !this._vmLeavable);
 
-    // Determine when to hide back button
+    // Determine when to hide back button. A flash that failed or was stopped
+    // goes back to the confirmation, to change the drive or the Wi-Fi first
     const hideBack =
-      currentStep?.id === "flash" ||
+      flashRunning ||
       currentStep?.id === "success" ||
       (flow === "vm" && currentStep?.id === "install") ||
       (flow === "proxmox" && currentStep?.id === "install");
@@ -312,6 +313,7 @@ export class AppShell extends LitElement {
         .hideNext=${hideNext}
         .hideCancel=${hideCancel}
         @wizard-cancel=${this._onWizardCancel}
+        @wizard-back=${this._onWizardBack}
         @wizard-exit=${this._onWizardExit}
         @wizard-next=${this._onWizardNext}
         @flash-complete=${this._onFlashComplete}
@@ -432,6 +434,14 @@ export class AppShell extends LitElement {
     this._resetErrorState();
     wizardState.reset();
     this._currentView = "welcome";
+  }
+
+  /**
+   * Back from a failed or stopped flash leaves its error behind. Install on
+   * the confirmation then checks the drive and asks before erasing it again.
+   */
+  private _onWizardBack() {
+    this._resetErrorState();
   }
 
   /** Back on the first step returns to where the flow was picked. */

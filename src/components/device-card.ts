@@ -119,6 +119,21 @@ export class DeviceCard extends WaRadio {
         font-size: 14px;
       }
 
+      /* Forced colors would draw every card with the same border and paint
+       * the check's circle like the card, leaving only a small tick on the
+       * chosen one */
+      @media (forced-colors: active) {
+        :host(:state(checked)) .card {
+          border-color: Highlight;
+        }
+
+        .selected-indicator {
+          forced-color-adjust: none;
+          background-color: Highlight;
+          color: HighlightText;
+        }
+      }
+
       .card-wrapper {
         position: relative;
       }
