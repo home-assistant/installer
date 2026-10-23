@@ -7,9 +7,10 @@ edition.workspace = true
 description = "Core library for Home Assistant Installer"
 
 [features]
-default = ["proxmox", "utm"]
+default = ["proxmox", "utm", "live-usb"]
 proxmox = []
 utm = []
+live-usb = ["dep:fscommon", "dep:flate2", "dep:gpt", "dep:hadris-iso", "dep:tar"]
 mock = []
 
 [dependencies]
@@ -30,6 +31,13 @@ fs2 = { workspace = true }
 fatfs = { workspace = true }
 urlencoding = { workspace = true }
 tempfile = { workspace = true }
+
+# Live USB image building
+fscommon = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
+gpt = { workspace = true, optional = true }
+hadris-iso = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
 
 # macOS specific
 [target.'cfg(target_os = "macos")'.dependencies]

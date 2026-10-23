@@ -151,3 +151,73 @@ test("catalog check keeps a key with the file that renders it", () => {
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("catalog check holds translations to the English", () => {
+  const checker = fileURLToPath(
+    new URL("./check-localization.mjs", import.meta.url)
+  );
+  const catalogPath = fileURLToPath(
+    new URL("../src/localization/en.json", import.meta.url)
+  );
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "hai-localization-"));
+  const fixture = path.join(directory, "en.json");
+  const check = (filename, translation) => {
+    const translationPath = path.join(directory, filename);
+    fs.writeFileSync(translationPath, JSON.stringify(translation));
+    try {
+      return spawnSync(process.execPath, [checker, fixture], {
+        encoding: "utf8",
+      });
+    } finally {
+      fs.rmSync(translationPath);
+    }
+  };
+  try {
+    fs.copyFileSync(catalogPath, fixture);
+
+    // Missing and empty translations show the English
+    const partial = check("de.json", {
+      "common.next": "Weiter",
+      "common.back": "",
+    });
+    assert.equal(partial.status, 0, partial.stderr);
+
+    for (const [filename, translation, error] of [
+      [
+        "de.json",
+        { "common.nope": "Nein" },
+        /de\.json: unknown key common\.nope/,
+      ],
+      [
+        "de.json",
+        { "common.next": 1 },
+        /de\.json: common\.next: messages must be plain text/,
+      ],
+      [
+        "de.json",
+        { "common.next": "<b>Weiter</b>" },
+        /de\.json: common\.next: HTML belongs in Lit/,
+      ],
+      [
+        "de.json",
+        { "utm.update_timeout": "Öffne {link}" },
+        /de\.json: utm\.update_timeout placeholder mismatch/,
+      ],
+      [
+        "pl.json",
+        {
+          "components.install_progress.minutes_remaining":
+            "Jeszcze {minutes, plural, one {# minuta} few {# minuty}}",
+        },
+        /pl\.json: components\.install_progress\.minutes_remaining: MISSING_OTHER_CLAUSE/,
+      ],
+      ["pt_BR.json", {}, /pt_BR\.json: name a catalog after its language tag/],
+    ]) {
+      const result = check(filename, translation);
+      assert.equal(result.status, 1, filename);
+      assert.match(result.stderr, error);
+    }
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

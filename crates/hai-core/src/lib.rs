@@ -24,6 +24,9 @@ pub mod manifest;
 pub mod message;
 pub mod types;
 
+#[cfg(feature = "live-usb")]
+pub mod live_usb;
+
 #[cfg(feature = "mock")]
 pub mod mock;
 

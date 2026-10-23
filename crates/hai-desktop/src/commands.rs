@@ -46,14 +46,14 @@ impl PendingUtmImages {
 // =============================================================================
 
 /// Adapter that bridges Tauri's Channel with hai-core's ProgressCallback trait
-struct TauriProgressCallback<'a> {
+pub(crate) struct TauriProgressCallback<'a> {
     channel: &'a Channel<FlashProgress>,
-    operation: Operation,
+    pub(crate) operation: Operation,
     cancelled: Option<Arc<AtomicBool>>,
 }
 
 impl<'a> TauriProgressCallback<'a> {
-    fn new(channel: &'a Channel<FlashProgress>, name: &'static str) -> Self {
+    pub(crate) fn new(channel: &'a Channel<FlashProgress>, name: &'static str) -> Self {
         Self {
             channel,
             operation: Operation::new(name),
@@ -62,7 +62,7 @@ impl<'a> TauriProgressCallback<'a> {
     }
 
     /// Let the operation stop once `cancelled` is set.
-    fn cancellable(mut self, cancelled: Arc<AtomicBool>) -> Self {
+    pub(crate) fn cancellable(mut self, cancelled: Arc<AtomicBool>) -> Self {
         self.cancelled = Some(cancelled);
         self
     }
@@ -99,7 +99,7 @@ impl<'a> ProgressCallback for TauriProgressCallback<'a> {
 
 /// Keep the computer awake while a long job runs. Not getting that is only
 /// logged: the job itself works fine as long as the computer stays awake.
-async fn keep_awake(reason: &str) -> Option<KeepAwake> {
+pub(crate) async fn keep_awake(reason: &str) -> Option<KeepAwake> {
     KeepAwake::acquire(reason)
         .await
         .inspect_err(|_| crate::diagnostics::warning("keep_awake_unavailable"))
@@ -232,7 +232,7 @@ pub fn cancel_flash(attempt: String, state: tauri::State<'_, FlashState>) {
 }
 
 /// Stop between steps when the user cancelled.
-fn check_cancelled<P: ProgressCallback>(callback: &P) -> Result<(), CommandError> {
+pub(crate) fn check_cancelled<P: ProgressCallback>(callback: &P) -> Result<(), CommandError> {
     if callback.is_cancelled() {
         return Err(hai_core::Error::Cancelled.into());
     }

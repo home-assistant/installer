@@ -77,13 +77,13 @@ describe("drive-card", () => {
     expect(size!.textContent).to.equal("2 TB");
   });
 
-  it("displays 0 B for zero size", async () => {
+  it("displays 0 bytes for zero size", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test" drive-size="0"></drive-card>
     `);
 
     const size = el.shadowRoot!.querySelector(".size");
-    expect(size!.textContent).to.equal("0 B");
+    expect(size!.textContent).to.equal("0 bytes");
   });
 
   it("shows the selected indicator when checked", async () => {

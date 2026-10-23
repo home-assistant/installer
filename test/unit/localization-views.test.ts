@@ -40,14 +40,14 @@ describe("localized view contracts", () => {
   afterEach(() => {
     restoreTauriIpc();
     Object.assign(messages, original);
-    setLanguage(["en"]);
+    setLanguage("en");
     Date.now = now;
     wizardState.reset();
   });
 
   function replace(key: MessageKey, text: string) {
     messages[key] = text;
-    setLanguage(["en"]);
+    setLanguage("en");
   }
 
   it("preserves the default unnamed-drive warning and installed UTM version", () => {
@@ -232,7 +232,7 @@ describe("localized view contracts", () => {
   }
 
   it("uses regional Intl grouping in VM formatters without changing size units", () => {
-    setLanguage(["en-IN"]);
+    setLanguage("en-IN");
     const drive = view("drive-card", { driveSize: 1.5 * 1000 ** 4 });
     expect(output(drive).querySelector(".size")?.textContent).to.equal(
       "1.5 TB"
@@ -249,7 +249,7 @@ describe("localized view contracts", () => {
   });
 
   it("install-progress formats the actual rendered percentage", () => {
-    setLanguage(["en-IN"]);
+    setLanguage("en-IN");
     const element = view("install-progress", {
       stage: "downloading",
       totalBytes: 100,
