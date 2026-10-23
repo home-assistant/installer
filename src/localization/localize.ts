@@ -2,25 +2,19 @@ import { IntlMessageFormat, type PrimitiveType } from "intl-messageformat";
 import messages from "./en.json";
 
 export type MessageKey = keyof typeof messages;
+/** A translation of en.json. A key it lacks shows the English. */
+export type Catalog = Record<string, unknown>;
 
 let language = "en";
-const formatters = new Map<MessageKey, IntlMessageFormat>();
+// English text needs English plural rules, even in another language's UI
+let english = "en";
+let translation: Catalog = {};
+const formatters = new Map<string, IntlMessageFormat>();
 
-export function resolveLanguage(preferences: readonly string[]): string {
-  for (const preference of preferences) {
-    try {
-      const [locale] = Intl.getCanonicalLocales(preference);
-      // English is the only shipped catalog. Preserve its regional formatting.
-      if (locale?.split("-")[0] === "en") return locale;
-    } catch {
-      // Invalid OS/browser locale tags must not prevent startup.
-    }
-  }
-  return "en";
-}
-
-export function setLanguage(preferences: readonly string[]): void {
-  language = resolveLanguage(preferences);
+export function setLanguage(tag: string, catalog: Catalog = {}): void {
+  language = tag;
+  english = new Intl.Locale(tag).language === "en" ? tag : "en";
+  translation = catalog;
   formatters.clear();
 }
 
@@ -28,23 +22,40 @@ export function getLanguage(): string {
   return language;
 }
 
-function formatter(key: MessageKey): IntlMessageFormat {
-  let result = formatters.get(key);
+function formatter(message: string, locale: string): IntlMessageFormat {
+  const id = `${locale}:${message}`;
+  let result = formatters.get(id);
   if (!result) {
     // Catalog values are text, never HTML. Rich placeholders come from Lit code.
-    result = new IntlMessageFormat(messages[key], language, undefined, {
+    result = new IntlMessageFormat(message, locale, undefined, {
       ignoreTag: true,
     });
-    formatters.set(key, result);
+    formatters.set(id, result);
   }
   return result;
+}
+
+function format<T = void>(
+  key: MessageKey,
+  values?: Record<string, PrimitiveType | T>
+): string | T | (string | T)[] {
+  const translated = translation[key];
+  // An export can list untranslated keys with empty text
+  if (typeof translated === "string" && translated.trim()) {
+    try {
+      return formatter(translated, language).format<T>(values);
+    } catch {
+      // A broken translation must not hide the English
+    }
+  }
+  return formatter(messages[key], english).format<T>(values);
 }
 
 export function localize(
   key: MessageKey,
   values?: Record<string, PrimitiveType>
 ): string {
-  return formatter(key).format(values) as string;
+  return format(key, values) as string;
 }
 
 /**
@@ -87,7 +98,7 @@ export function localizeBackend(
 
   let text: string;
   try {
-    text = formatter(key as MessageKey).format(params) as string;
+    text = format(key as MessageKey, params) as string;
   } catch {
     // A parameter the catalog expects is missing: the English is better
     return undefined;
@@ -101,7 +112,7 @@ export function localizeContent(
   key: MessageKey,
   values?: Record<string, unknown>
 ): unknown {
-  return formatter(key).format<unknown>(values);
+  return format<unknown>(key, values);
 }
 
 export function formatNumber(

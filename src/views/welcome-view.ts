@@ -79,6 +79,11 @@ export class WelcomeView extends LitElement {
         margin: 0 0 3rem;
       }
 
+      /* The arrow points the way the page reads */
+      wa-button [slot="end"]:dir(rtl) {
+        transform: scaleX(-1);
+      }
+
       /* Report a problem, the foundation logo and Learn more, with the logo
          in the middle however wide the two sides are */
       .welcome-footer {

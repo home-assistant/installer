@@ -75,7 +75,7 @@ describe("installer errors", () => {
     );
   });
 
-  it("shows permission, two-factor, rate-limit and drive-size errors from the catalog", () => {
+  it("shows permission, two-factor, rate-limit and size errors from the catalog", () => {
     for (const [code, key, params, expected] of [
       [
         "permission_denied",
@@ -96,10 +96,22 @@ describe("installer errors", () => {
         "Wait at least 3 minutes, then try again.",
       ],
       [
+        "rate_limited",
+        "backend.download.github_rate_limited",
+        { minutes: 1 },
+        "Wait at least 1 minute, then try again.",
+      ],
+      [
         "drive_too_small",
         "backend.disk.drive_too_small",
-        { size: "32" },
+        { size: 32 },
         "At least a 32 GB drive is required.",
+      ],
+      [
+        "proxmox_action_required",
+        "backend.proxmox.import_storage_too_small",
+        { size_mb: 1536, storages: "local" },
+        "Not enough free space for the 1,536 MB image on import storage: local.",
       ],
     ] as const) {
       const result = installerError(

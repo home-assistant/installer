@@ -472,12 +472,10 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
                     .as_secs();
                 let seconds = rate_limit_wait(&headers, now);
                 let minutes = seconds.div_ceil(60).max(1);
-                // Backend messages can't use plurals, so one minute has its own
-                return Err(Error::RateLimited(if minutes == 1 {
-                    crate::message!("backend.download.github_rate_limited_one_minute")
-                } else {
-                    crate::message!("backend.download.github_rate_limited", minutes = minutes)
-                }));
+                return Err(Error::RateLimited(crate::message!(
+                    "backend.download.github_rate_limited",
+                    minutes = minutes,
+                )));
             }
             return Err(Error::ServiceUnavailable(crate::message!(
                 "backend.download.github_refused",
