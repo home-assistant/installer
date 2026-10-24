@@ -55,11 +55,11 @@ export class ConfirmationView extends LitElement {
         align-items: center;
         justify-content: center;
         background-color: var(--ha-border-color);
-        border-radius: 8px;
+        border-radius: var(--ha-small-border-radius);
       }
 
       .drive-path {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-family: var(--ha-font-family-code);
       }
 
       inline-notice {

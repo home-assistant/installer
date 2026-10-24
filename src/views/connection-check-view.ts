@@ -27,7 +27,7 @@ export class ConnectionCheckView extends LitElement {
         gap: 1.5rem;
       }
       p {
-        max-width: 32rem;
+        max-width: var(--ha-content-width);
         overflow-wrap: anywhere;
         margin: 0;
         color: var(--ha-secondary-text-color);

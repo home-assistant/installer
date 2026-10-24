@@ -54,7 +54,7 @@ export class DiagnosticsActions extends LitElement {
         box-sizing: border-box;
         width: 100%;
         height: 12rem;
-        font: 0.8125rem monospace;
+        font: 0.8125rem var(--ha-font-family-code);
         color: var(--ha-text-color);
         background: var(--ha-background-color);
         border: 1px solid var(--ha-border-color);

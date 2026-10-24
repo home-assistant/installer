@@ -19,7 +19,7 @@ export class HaHardwareConnectInstructions extends LitElement {
       :host {
         display: block;
         width: 100%;
-        max-width: 500px;
+        max-width: var(--ha-content-width);
         margin-bottom: 1.5rem;
       }
 
@@ -59,7 +59,7 @@ export class HaHardwareConnectInstructions extends LitElement {
       }
 
       code {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-family: var(--ha-font-family-code);
         font-size: 0.8125rem;
         overflow-wrap: anywhere;
       }

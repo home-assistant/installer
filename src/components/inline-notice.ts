@@ -17,7 +17,7 @@ export class InlineNotice extends LitElement {
       align-items: flex-start;
       gap: 0.75rem;
       width: 100%;
-      max-width: 500px;
+      max-width: var(--ha-content-width);
       box-sizing: border-box;
       padding: 1rem;
       background-color: var(--ha-warning-background);

@@ -40,7 +40,7 @@ export class DeviceCard extends CardButton {
         width: 80px;
         height: 80px;
         background-color: var(--ha-primary-color);
-        border-radius: 12px;
+        border-radius: var(--ha-card-border-radius);
         opacity: 0.2;
       }
 

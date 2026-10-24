@@ -35,7 +35,8 @@ export function showStartupFailure(error: unknown) {
   // The auto margins center the message, and let it scroll from the top
   // once it doesn't fit
   const content = document.createElement("div");
-  content.style.cssText = "margin: auto; max-width: 32rem; text-align: center";
+  content.style.cssText =
+    "margin: auto; max-width: var(--ha-content-width); text-align: center";
   content.append(heading, description, report);
   const main = document.createElement("main");
   main.style.cssText =

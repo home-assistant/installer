@@ -1,4 +1,5 @@
 import { css } from "lit";
+import { veryNarrowWindow } from "./breakpoints.js";
 
 /**
  * A choice between a few options, as `option-card`s in a container of class
@@ -9,7 +10,7 @@ export const optionCardStyles = css`
     display: flex;
     gap: 1rem;
     width: 100%;
-    max-width: 700px;
+    max-width: var(--ha-content-wide-width);
   }
 
   .options option-card {
@@ -17,7 +18,7 @@ export const optionCardStyles = css`
     min-width: 0;
   }
 
-  @media (max-width: 500px) {
+  @media ${veryNarrowWindow} {
     .options {
       flex-direction: column;
     }

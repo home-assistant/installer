@@ -20,6 +20,10 @@ import { renderExternalLink } from "../utils/external-link.js";
 import { linkStyles } from "../utils/link-styles.js";
 import { statusDotStyles } from "../utils/status-dot-styles.js";
 import {
+  noRoomForCloudBeside,
+  roomForMascotBeside,
+} from "../utils/breakpoints.js";
+import {
   LiveStatus,
   ViewAccessibility,
   reducedMotionStyles,
@@ -98,7 +102,7 @@ export class InstallProgress extends LitElement {
 
       .progress-section {
         width: 100%;
-        max-width: 400px;
+        max-width: var(--ha-content-narrow-width);
         margin-bottom: 1rem;
       }
 
@@ -150,7 +154,7 @@ export class InstallProgress extends LitElement {
         color: var(--ha-error-color);
         font-size: 0.9375rem;
         margin: 0.5rem 0 1.5rem 0;
-        max-width: 400px;
+        max-width: var(--ha-content-narrow-width);
         overflow-wrap: anywhere;
       }
 
@@ -158,7 +162,7 @@ export class InstallProgress extends LitElement {
         display: grid;
         gap: 0.5rem;
         width: 100%;
-        max-width: 400px;
+        max-width: var(--ha-content-narrow-width);
         margin: 1rem 0 1.5rem;
         padding: 0;
         list-style: none;
@@ -208,7 +212,7 @@ export class InstallProgress extends LitElement {
 
       /* Too narrow for the cloud beside Casita, which takes 510px: stack it
          above instead, clear of the roof */
-      @container (max-width: 520px) {
+      @container ${noRoomForCloudBeside} {
         .layout {
           padding-top: 5px;
         }
@@ -227,7 +231,7 @@ export class InstallProgress extends LitElement {
       /* Always there, as a live region, but takes no room while empty */
       .warning {
         width: 100%;
-        max-width: 400px;
+        max-width: var(--ha-content-narrow-width);
       }
 
       .warning inline-notice {
@@ -253,7 +257,7 @@ export class InstallProgress extends LitElement {
       /* Wide enough, Casita and the cloud stand beside the details, under the
          heading, so the artwork doesn't push the progress down and out of
          view */
-      @container (min-width: 640px) {
+      @container ${roomForMascotBeside} {
         .layout {
           flex-flow: row wrap;
           justify-content: center;
@@ -273,7 +277,7 @@ export class InstallProgress extends LitElement {
         .details {
           align-items: stretch;
           flex: 1 1 0;
-          max-width: 400px;
+          max-width: var(--ha-content-narrow-width);
           min-width: 0;
         }
 

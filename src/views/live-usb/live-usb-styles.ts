@@ -24,12 +24,12 @@ export const liveUsbStyles = css`
     color: var(--ha-secondary-text-color);
     margin: 0 0 1.5rem 0;
     text-align: center;
-    max-width: 500px;
+    max-width: var(--ha-content-width);
   }
 
   .card {
     width: 100%;
-    max-width: 500px;
+    max-width: var(--ha-content-width);
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -37,9 +37,9 @@ export const liveUsbStyles = css`
 
   .notice {
     width: 100%;
-    max-width: 500px;
+    max-width: var(--ha-content-width);
     padding: 1rem;
-    border-radius: 8px;
+    border-radius: var(--ha-small-border-radius);
     font-size: 0.875rem;
     line-height: 1.5;
     color: var(--ha-text-color);

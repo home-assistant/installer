@@ -7,6 +7,7 @@ import { localize } from "../localization/localize.js";
 import { renderDriveIcon } from "./drive-icon.js";
 import { driveModelLabel } from "../utils/drive-selection.js";
 import { reducedMotionStyles } from "../utils/view-accessibility.js";
+import { veryNarrowWindow } from "../utils/breakpoints.js";
 import {
   selectableCardStyles,
   selectedIndicatorStyles,
@@ -100,7 +101,7 @@ export class DriveCard extends WaRadio {
       }
 
       .path {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-family: var(--ha-font-family-code);
         font-size: 0.8125rem;
         color: var(--ha-secondary-text-color);
         margin: 0.125rem 0 0 0;
@@ -142,7 +143,7 @@ export class DriveCard extends WaRadio {
         }
       }
 
-      @media (max-width: 480px) {
+      @media ${veryNarrowWindow} {
         .card {
           grid-template-columns: 32px minmax(0, 1fr) auto 24px;
           gap: 0.75rem;

@@ -56,7 +56,7 @@ export class ConfirmDialog extends DialogBase {
       }
 
       .detail-value.path {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-family: var(--ha-font-family-code);
       }
 
       .password-note {

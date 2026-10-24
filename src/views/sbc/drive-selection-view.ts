@@ -68,9 +68,9 @@ export class DriveSelectionView extends LitElement {
 
       .relaunch-error {
         width: 100%;
-        max-width: 500px;
+        max-width: var(--ha-content-width);
         margin: 0;
-        color: var(--ha-error-color, #db4437);
+        color: var(--ha-error-color);
         overflow-wrap: anywhere;
       }
 
@@ -79,13 +79,13 @@ export class DriveSelectionView extends LitElement {
         align-items: center;
         justify-content: space-between;
         width: 100%;
-        max-width: 500px;
+        max-width: var(--ha-content-width);
         margin-bottom: 1rem;
       }
 
       .drives-list {
         width: 100%;
-        max-width: 500px;
+        max-width: var(--ha-content-width);
       }
 
       /* Named by its label, which the heading above already shows. */

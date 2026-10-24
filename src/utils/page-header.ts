@@ -1,5 +1,6 @@
 import { css, html } from "lit";
 import { localize } from "../localization/localize.js";
+import { lowWindow } from "./breakpoints.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 
 /**
@@ -23,7 +24,7 @@ export const pageHeaderStyles = css`
      lowers it too: the smallest window, 750px high, is 375px at 200%. Back
      keeps its size: in the install flow, the name of the current step beside
      it may need that height for two lines. */
-  @media (max-height: 600px) {
+  @media ${lowWindow} {
     .header {
       padding-block: 0.5rem;
     }
@@ -78,7 +79,7 @@ export const pageStyles = css`
     color: var(--ha-secondary-text-color);
     margin: 0.5rem 0 2rem;
     text-align: center;
-    max-width: 500px;
+    max-width: var(--ha-content-width);
   }
 `;
 

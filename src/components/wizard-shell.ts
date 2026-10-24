@@ -10,6 +10,7 @@ import { WizardStateController } from "../state/wizard-state-controller.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "./step-indicator.js";
 import { pageHeaderStyles } from "../utils/page-header.js";
+import { lowWindow, narrowWindow } from "../utils/breakpoints.js";
 import { fireEvent } from "../utils/fire-event.js";
 import {
   dialogHasFocus,
@@ -62,7 +63,7 @@ export class WizardShell extends LitElement {
         min-width: 80px;
       }
 
-      @media (max-width: 600px) {
+      @media ${narrowWindow} {
         .header-right {
           min-width: 0;
         }
@@ -95,7 +96,7 @@ export class WizardShell extends LitElement {
       /* Thinner on a low window, like the header. Cancel and Next have no
          step name beside them, so unlike Back they get lower too; their text
          keeps its size. */
-      @media (max-height: 600px) {
+      @media ${lowWindow} {
         .footer {
           padding-block: 0.5rem;
         }

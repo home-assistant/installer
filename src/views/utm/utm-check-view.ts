@@ -63,7 +63,7 @@ export class UtmCheckView extends LitElement {
       }
 
       .testing-note {
-        max-width: 500px;
+        max-width: var(--ha-content-width);
         margin: 0 0 1.5rem;
         font-size: 0.875rem;
         line-height: 1.5;

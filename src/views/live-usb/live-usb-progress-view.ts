@@ -48,9 +48,9 @@ export class LiveUsbProgressView extends InstallProgressView {
     }
     .keep-plugged-in {
       margin: 0 auto 1rem;
-      max-width: 500px;
+      max-width: var(--ha-content-width);
       padding: 0.75rem 1rem;
-      border-radius: 8px;
+      border-radius: var(--ha-small-border-radius);
       text-align: center;
       font-weight: 500;
       color: var(--ha-error-color);

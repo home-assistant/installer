@@ -5,6 +5,7 @@ import {
   reducedMotionStyles,
 } from "../utils/view-accessibility.js";
 import { logFrontendError } from "../utils/diagnostics.js";
+import { narrowWindow, tooLowForWelcome } from "../utils/breakpoints.js";
 import { customElement, state } from "lit/decorators.js";
 import { renderExternalLink } from "../utils/external-link.js";
 import {
@@ -39,7 +40,7 @@ export class WelcomeView extends LitElement {
         text-align: center;
       }
 
-      @media (max-height: 700px) {
+      @media ${tooLowForWelcome} {
         :host {
           min-height: 0;
           overflow-y: auto;
@@ -88,7 +89,7 @@ export class WelcomeView extends LitElement {
       }
 
       .intro {
-        max-width: 520px;
+        max-width: var(--ha-content-width);
         color: var(--ha-secondary-text-color);
         line-height: 1.6;
         margin: 0 0 3rem;
@@ -124,7 +125,7 @@ export class WelcomeView extends LitElement {
       }
 
       /* Too narrow for three columns: stack them around the logo */
-      @media (max-width: 600px) {
+      @media ${narrowWindow} {
         .welcome-footer {
           grid-template-columns: auto;
           justify-items: center;

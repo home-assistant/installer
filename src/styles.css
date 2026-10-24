@@ -49,6 +49,16 @@
   /* Between the window's edges and the header, content and footer of every
    * screen, so Back, Cancel, Next and the content line up */
   --ha-page-gutter: 2rem;
+  /* The most a screen's content spreads out: the column of cards, panels,
+   * notices and text most screens show; the narrower one of the install
+   * progress; and the wider one of tiles and choices set side by side */
+  --ha-content-width: 500px;
+  --ha-content-narrow-width: 400px;
+  --ha-content-wide-width: 700px;
+  /* Device paths, fingerprints and other text to read character by
+   * character */
+  --ha-font-family-code:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Map Web Awesome color tokens onto our theme colors. wa-button reads these
    * through its variant -> generic token chain (e.g. variant="brand" resolves
@@ -136,7 +146,9 @@ body {
 }
 
 /* A narrow window leaves more of its width to the content. Zooming in narrows
- * it too: the smallest window, 800px wide, is 400px at 200%. */
+ * it too: the smallest window, 800px wide, is 400px at 200%. The components
+ * take this width from narrowWindow in src/utils/breakpoints.ts; a custom
+ * property can't be used here. */
 @media (max-width: 600px) {
   :root {
     --ha-page-gutter: 1rem;

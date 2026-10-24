@@ -4,6 +4,7 @@ import { localize } from "../localization/localize.js";
 import { renderExternalLink } from "../utils/external-link.js";
 import { linkStyles } from "../utils/link-styles.js";
 import { panelStyles } from "../utils/panel-styles.js";
+import { roomForMascotBeside } from "../utils/breakpoints.js";
 import { sectionLabelStyles } from "../utils/section-label-styles.js";
 import { getPlatform } from "../utils/platform.js";
 import { mdiApple, mdiGooglePlay } from "../utils/icons.js";
@@ -74,7 +75,7 @@ export class InstallSuccess extends LitElement {
 
       .next-steps {
         width: 100%;
-        max-width: 500px;
+        max-width: var(--ha-content-width);
         text-align: start;
         margin-bottom: 2rem;
       }
@@ -181,7 +182,7 @@ export class InstallSuccess extends LitElement {
       .tip-section {
         width: 100%;
         box-sizing: border-box;
-        max-width: 500px;
+        max-width: var(--ha-content-width);
         margin-bottom: 2rem;
         padding: 1rem;
         background-color: rgba(3, 169, 244, 0.1);
@@ -201,7 +202,7 @@ export class InstallSuccess extends LitElement {
 
       /* Wide enough, Casita stands beside the next steps, under the heading,
          so the artwork doesn't push them down and out of view */
-      @container (min-width: 640px) {
+      @container ${roomForMascotBeside} {
         /* Casita stays level with the top of the next steps, however far
            down they run */
         .layout {
@@ -228,7 +229,7 @@ export class InstallSuccess extends LitElement {
         .details {
           align-items: stretch;
           flex: 1 1 0;
-          max-width: 500px;
+          max-width: var(--ha-content-width);
           min-width: 0;
         }
 

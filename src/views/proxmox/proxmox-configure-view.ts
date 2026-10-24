@@ -93,7 +93,7 @@ export class ProxmoxConfigureView extends LitElement {
     css`
       wa-details {
         width: 100%;
-        max-width: 500px;
+        max-width: var(--ha-content-width);
         margin-top: 1rem;
         flex-shrink: 0;
       }
@@ -129,7 +129,7 @@ export class ProxmoxConfigureView extends LitElement {
         align-items: flex-start;
         gap: 0.5rem;
         width: 100%;
-        max-width: 500px;
+        max-width: var(--ha-content-width);
         margin-top: auto;
         font-size: 0.875rem;
         line-height: 1.4;

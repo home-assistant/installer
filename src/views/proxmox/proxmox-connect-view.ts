@@ -95,7 +95,7 @@ export class ProxmoxConnectView extends LitElement {
         margin-bottom: 0.25rem;
       }
       .fingerprint {
-        font-family: monospace;
+        font-family: var(--ha-font-family-code);
         font-size: 0.8125rem;
         line-height: 1.6;
       }

@@ -36,7 +36,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
         color: var(--ha-secondary-text-color);
         margin: 1rem 0 2rem 0;
         text-align: center;
-        max-width: 500px;
+        max-width: var(--ha-content-width);
       }
 
       .option-examples {

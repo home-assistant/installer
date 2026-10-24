@@ -171,6 +171,6 @@ export const deviceGridStyles = css`
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 1rem;
     width: 100%;
-    max-width: 700px;
+    max-width: var(--ha-content-wide-width);
   }
 `;

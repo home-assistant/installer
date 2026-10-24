@@ -8,6 +8,7 @@ import {
   srOnlyStyles,
 } from "../utils/view-accessibility.js";
 import { statusDotStyles } from "../utils/status-dot-styles.js";
+import { narrowWindow } from "../utils/breakpoints.js";
 
 @customElement("step-indicator")
 export class StepIndicator extends LitElement {
@@ -87,7 +88,7 @@ export class StepIndicator extends LitElement {
         width: 16px;
       }
 
-      @media (max-width: 600px) {
+      @media ${narrowWindow} {
         .steps {
           gap: 0.25rem;
         }

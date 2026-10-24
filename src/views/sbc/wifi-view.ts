@@ -28,7 +28,7 @@ export class WifiView extends LitElement {
       }
 
       .note {
-        max-width: 500px;
+        max-width: var(--ha-content-width);
         margin: 1rem 0 0 0;
         font-size: 0.875rem;
         line-height: 1.5;

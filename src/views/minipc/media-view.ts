@@ -43,7 +43,7 @@ export class MiniPCMediaView extends LitElement {
       color: var(--ha-secondary-text-color);
       margin: 0 0 2rem 0;
       text-align: center;
-      max-width: 500px;
+      max-width: var(--ha-content-width);
     }
 
     .options {
@@ -51,7 +51,7 @@ export class MiniPCMediaView extends LitElement {
       flex-direction: column;
       gap: 1rem;
       width: 100%;
-      max-width: 500px;
+      max-width: var(--ha-content-width);
     }
   `;
 
