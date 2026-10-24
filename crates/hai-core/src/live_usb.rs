@@ -8,7 +8,9 @@ mod disk_image;
 mod downloads;
 mod iso;
 
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::error::{Error, Result};
 use crate::{ProgressCallback, ReleaseSource};
@@ -124,20 +126,77 @@ pub async fn prepare<B: ReleaseSource, P: ProgressCallback>(
     })
 }
 
-/// Writes `<out_dir>/hai-live-haos-<version>.iso` and returns its path.
-pub fn write_iso(contents: &Contents, out_dir: &Path) -> Result<PathBuf> {
+/// Writes `<out_dir>/hai-live-haos-<version>.iso` and returns its path. Setting `stop` ends
+/// the build at its next write, with [`Error::Cancelled`].
+pub fn write_iso(contents: &Contents, out_dir: &Path, stop: &AtomicBool) -> Result<PathBuf> {
     std::fs::create_dir_all(out_dir)?;
     let path = out_dir.join(format!("{}.iso", contents.stem()));
-    iso::build(&contents.files, &contents.extra, &contents.label, &path)?;
+    iso::build(
+        &contents.files,
+        &contents.extra,
+        &contents.label,
+        &path,
+        stop,
+    )
+    .map_err(|error| stopped_or(stop, error))?;
     Ok(path)
 }
 
-/// Writes `<out_dir>/hai-live-haos-<version>.img` (a raw disk image, handy for VMs) and returns its path.
-pub fn write_image(contents: &Contents, out_dir: &Path) -> Result<PathBuf> {
+/// Writes `<out_dir>/hai-live-haos-<version>.img` (a raw disk image, handy for VMs) and returns
+/// its path. Setting `stop` ends the build at its next write, with [`Error::Cancelled`].
+pub fn write_image(contents: &Contents, out_dir: &Path, stop: &AtomicBool) -> Result<PathBuf> {
     std::fs::create_dir_all(out_dir)?;
     let path = out_dir.join(format!("{}.img", contents.stem()));
-    disk_image::build(&path, &contents.files, &contents.extra)?;
+    disk_image::build(&path, &contents.files, &contents.extra, stop)
+        .map_err(|error| stopped_or(stop, error))?;
     Ok(path)
+}
+
+/// The libraries wrap a failed write in their own errors; a stop is what caused it.
+fn stopped_or(stop: &AtomicBool, error: Error) -> Error {
+    if stop.load(Ordering::Acquire) {
+        Error::Cancelled
+    } else {
+        error
+    }
+}
+
+/// A file that refuses every write once `stop` is set. The ISO and disk image libraries write
+/// gigabytes in one call, and this is the one place a stop can get in.
+struct StopWriter<'a, F> {
+    file: F,
+    stop: &'a AtomicBool,
+}
+
+impl<'a, F> StopWriter<'a, F> {
+    fn new(file: F, stop: &'a AtomicBool) -> Self {
+        Self { file, stop }
+    }
+}
+
+impl<F: Write> Write for StopWriter<'_, F> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.stop.load(Ordering::Acquire) {
+            return Err(std::io::Error::other("the build was stopped"));
+        }
+        self.file.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.flush()
+    }
+}
+
+impl<F: Read> Read for StopWriter<'_, F> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.file.read(buf)
+    }
+}
+
+impl<F: Seek> Seek for StopWriter<'_, F> {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        self.file.seek(position)
+    }
 }
 
 /// Unpacks the Alpine ISO into the cache once per version and returns the folder.
@@ -379,6 +438,35 @@ mod tests {
         assert!(!dir.join(".unpacked").exists());
     }
 
+    #[test]
+    fn a_stop_ends_both_builds() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = dir.path().join("files");
+        std::fs::create_dir_all(files.join("boot/grub")).unwrap();
+        std::fs::write(files.join("boot/grub/efi.img"), vec![1u8; 4096]).unwrap();
+        let contents = Contents {
+            files,
+            extra: vec![StickFile {
+                name: "haos_generic-x86-64-18.3.img.xz".into(),
+                source: Source::Bytes(vec![9u8; 1024 * 1024]),
+            }],
+            label: "alpine-std 3.24.2 x86_64".into(),
+            haos_version: "18.3".into(),
+        };
+        let stopped = AtomicBool::new(true);
+        let out = dir.path().join("out");
+
+        let iso = write_iso(&contents, &out, &stopped);
+        assert!(matches!(iso, Err(Error::Cancelled)), "{iso:?}");
+        let image = write_image(&contents, &out, &stopped);
+        assert!(matches!(image, Err(Error::Cancelled)), "{image:?}");
+
+        // Without a stop, the same contents build fine
+        let keep_going = AtomicBool::new(false);
+        assert!(write_iso(&contents, &out, &keep_going).is_ok());
+        assert!(write_image(&contents, &out, &keep_going).is_ok());
+    }
+
     /// Builds a real ISO and disk image, without writing to any disk. Set `LIVE_USB_OUT_DIR`
     /// to keep the files; otherwise they go to a temporary folder.
     #[tokio::test]
@@ -393,8 +481,9 @@ mod tests {
         let contents = prepare(&crate::Backend, Path::new(&hai_live), &crate::NoOpProgress)
             .await
             .unwrap();
-        let iso = write_iso(&contents, &out).unwrap();
-        let image = write_image(&contents, &out).unwrap();
+        let keep_going = AtomicBool::new(false);
+        let iso = write_iso(&contents, &out, &keep_going).unwrap();
+        let image = write_image(&contents, &out, &keep_going).unwrap();
 
         assert_eq!(iso::read_label(&iso).unwrap(), contents.label);
         assert!(std::fs::metadata(&image).unwrap().len() > 0);

@@ -26,6 +26,8 @@ import { InstallProgressView } from "../install-progress-view.js";
  */
 const LOCATION_FAILURES = [
   "file_exists",
+  "file_name_not_portable",
+  "folder_in_cache",
   "folder_name_taken",
   "folder_not_found",
   "invalid_file_name",
@@ -174,7 +176,9 @@ export class LiveUsbProgressView extends InstallProgressView {
       <install-progress
         .stages=${stages.map((id) => ({ id, label: this._describe(id) }))}
         .stage=${stage}
-        .stageTitle=${this._title(stage)}
+        .stageTitle=${this._stopping
+          ? localize("common.install.stopping")
+          : this._title(stage)}
         .description=${this._describe(stage)}
         .progress=${this._progress?.progress || 0}
         .bytesProcessed=${this._progress?.bytes_processed || 0}

@@ -116,6 +116,32 @@ describe("live-usb-progress-view", () => {
     );
   });
 
+  it("says it is stopping while a stopped ISO build winds down", async () => {
+    wizardState.setSelection("liveMedia", "iso");
+    wizardState.setSelection("liveIsoFolder", "/home/me");
+    wizardState.setSelection("liveIsoName", "stick.iso");
+    const calls = mockCommands();
+    const el = fixtureSync<LiveUsbProgressView>(
+      html`<live-usb-progress-view></live-usb-progress-view>`
+    );
+    await settle();
+    calls[0].args.progressChannel.onmessage({
+      stage: "extracting",
+      progress: 0,
+      bytes_processed: 0,
+      total_bytes: 0,
+      message: "",
+    });
+    await settle();
+    const layout = el.shadowRoot!.querySelector("install-progress")!;
+    expect(layout.stageTitle).to.equal("Building");
+
+    el.stop();
+    await settle();
+    expect(calls.map(({ cmd }) => cmd)).to.include("cancel_flash");
+    expect(layout.stageTitle).to.equal("Stopping");
+  });
+
   it("leaves a flow started since alone when an earlier ISO save ends", async () => {
     wizardState.setSelection("liveMedia", "iso");
     wizardState.setSelection("liveIsoFolder", "/home/me");
@@ -198,6 +224,8 @@ describe("live-usb-progress-view", () => {
     ["usb", "io", false],
     ["usb", "json", false],
     ["iso", "file_exists", true],
+    ["iso", "file_name_not_portable", true],
+    ["iso", "folder_in_cache", true],
     ["iso", "io", true],
     ["iso", "json", false],
   ] as const) {
