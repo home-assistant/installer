@@ -20,6 +20,7 @@
 //! - https://forum.proxmox.com/threads/api-equivalent-of-qm-importdisk.157457/
 //! - https://forum.proxmox.com/threads/guide-install-home-assistant-os-in-a-vm.143251/
 
+mod api;
 pub mod tls;
 
 use crate::error::{Error, Result};
@@ -29,6 +30,7 @@ use crate::types::{
     ProxmoxVmResult, VmStatusInfo,
 };
 use crate::{Backend, ProgressCallback, ProxmoxBackend, ReleaseSource};
+use api::{send, send_change, task_upid, Api};
 use std::collections::HashSet;
 
 /// Minimum required Proxmox VE version for disk image import via API.
@@ -70,24 +72,6 @@ fn validate_vm_name(name: &str) -> Result<()> {
 
 /// How often to send progress updates (every N bytes)
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
-
-/// Create a configured HTTP client for Proxmox API calls.
-fn create_client(session: &ProxmoxSession, timeout_secs: u64) -> Result<reqwest::Client> {
-    tls::client(
-        &session.server_url,
-        session.certificate_sha256.as_deref(),
-        timeout_secs,
-    )
-}
-
-/// The API URL of a node, with the node name encoded as a path segment.
-fn node_url(session: &ProxmoxSession, node: &str) -> String {
-    format!(
-        "{}/api2/json/nodes/{}",
-        session.server_url.trim_end_matches('/'),
-        urlencoding::encode(node)
-    )
-}
 
 fn request_error(error: reqwest::Error, context: &str) -> Error {
     tls::certificate_error(&error)
@@ -348,31 +332,18 @@ async fn authenticate(credentials: &ProxmoxCredentials) -> Result<ProxmoxSession
 
 /// List available nodes on the Proxmox cluster
 async fn list_nodes(session: &ProxmoxSession) -> Result<Vec<ProxmoxNode>> {
-    let client = create_client(session, 30)?;
-
-    let url = format!(
-        "{}/api2/json/nodes",
-        session.server_url.trim_end_matches('/')
-    );
-
-    let response = client
-        .get(&url)
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .send()
-        .await
-        .map_err(|e| {
-            if let Some(error) = tls::certificate_error(&e) {
-                error
-            } else if e.is_timeout() {
-                Error::ProxmoxActionRequired(crate::message!(
-                    "backend.proxmox.list_nodes_timed_out"
-                ))
-            } else if e.is_connect() {
-                Error::ProxmoxActionRequired(crate::message!("backend.proxmox.unreachable"))
-            } else {
-                Error::ProxmoxApi(format!("Network error while listing nodes: {}", e))
-            }
-        })?;
+    let api = Api::new(session, 30)?;
+    let response = api.get(&api.url("/nodes")).send().await.map_err(|e| {
+        if let Some(error) = tls::certificate_error(&e) {
+            error
+        } else if e.is_timeout() {
+            Error::ProxmoxActionRequired(crate::message!("backend.proxmox.list_nodes_timed_out"))
+        } else if e.is_connect() {
+            Error::ProxmoxActionRequired(crate::message!("backend.proxmox.unreachable"))
+        } else {
+            Error::ProxmoxApi(format!("Network error while listing nodes: {}", e))
+        }
+    })?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -445,29 +416,15 @@ fn api_flag(value: Option<&serde_json::Value>) -> bool {
 
 /// `any_bridge` includes Linux/OVS bridges and access-filtered, node-local running SDN VNets.
 async fn list_bridges(session: &ProxmoxSession, node: &str) -> Result<Vec<ProxmoxBridge>> {
-    let client = create_client(session, 30)?;
-    let response = client
-        .get(format!(
-            "{}/network?type=any_bridge",
-            node_url(session, node)
-        ))
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .send()
-        .await
-        .map_err(|e| request_error(e, "Failed to list network bridges"))?;
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(Error::ProxmoxSessionExpired);
-    }
-    if !response.status().is_success() {
-        return Err(Error::ProxmoxApi(format!(
-            "Failed to list network bridges: {}",
-            response.status()
-        )));
-    }
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| Error::ProxmoxApi(format!("Failed to parse network bridges: {}", e)))?;
+    let api = Api::new(session, 30)?;
+    let json = api
+        .get_json(
+            &api.node_url(node, "/network?type=any_bridge"),
+            "Failed to list network bridges",
+            "Failed to parse network bridges",
+            None,
+        )
+        .await?;
     let data = json.get("data").and_then(|v| v.as_array()).ok_or_else(|| {
         Error::ProxmoxApi("Invalid network response: missing 'data' array".to_string())
     })?;
@@ -533,32 +490,15 @@ async fn ensure_bridge_available(
 
 /// List available storage on a node
 async fn list_storage(session: &ProxmoxSession, node: &str) -> Result<Vec<ProxmoxStorage>> {
-    let client = create_client(session, 30)?;
-
-    let url = format!("{}/storage", node_url(session, node));
-
-    let response = client
-        .get(&url)
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .send()
-        .await
-        .map_err(|e| request_error(e, "Failed to list storage"))?;
-
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(Error::ProxmoxSessionExpired);
-    }
-
-    if !response.status().is_success() {
-        return Err(Error::ProxmoxApi(format!(
-            "Failed to list storage: {}",
-            response.status()
-        )));
-    }
-
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| Error::ProxmoxApi(format!("Failed to parse storage list: {}", e)))?;
+    let api = Api::new(session, 30)?;
+    let json = api
+        .get_json(
+            &api.node_url(node, "/storage"),
+            "Failed to list storage",
+            "Failed to parse storage list",
+            None,
+        )
+        .await?;
 
     let data = json
         .get("data")
@@ -607,39 +547,20 @@ async fn enable_storage_import(
         digest: String,
     }
 
-    let client = create_client(session, 30)?;
-    let url = format!(
-        "{}/api2/json/storage/{}",
-        session.server_url.trim_end_matches('/'),
-        urlencoding::encode(storage)
-    );
-    let response = client
-        .get(&url)
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .send()
-        .await
-        .map_err(|e| request_error(e, "Failed to read storage configuration"))?;
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(Error::ProxmoxSessionExpired);
-    }
-    // PVE only shows a storage's configuration to users who may also change it.
-    if response.status() == reqwest::StatusCode::FORBIDDEN {
-        return Err(Error::ProxmoxActionRequired(crate::message!(
-            "backend.proxmox.missing_datastore_allocate",
-            storage = storage,
-        )));
-    }
-    if !response.status().is_success() {
-        return Err(Error::ProxmoxApi(format!(
-            "Failed to read storage configuration: {}",
-            response.status()
-        )));
-    }
-
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| request_error(e, "Failed to parse storage configuration"))?;
+    let api = Api::new(session, 30)?;
+    let url = api.url(&format!("/storage/{}", urlencoding::encode(storage)));
+    let json = api
+        .get_json(
+            &url,
+            "Failed to read storage configuration",
+            "Failed to parse storage configuration",
+            // PVE only shows a storage's configuration to users who may also change it.
+            Some(Error::ProxmoxActionRequired(crate::message!(
+                "backend.proxmox.missing_datastore_allocate",
+                storage = storage,
+            ))),
+        )
+        .await?;
     let config: StorageConfig = serde_json::from_value(json["data"].clone())
         .map_err(|e| Error::ProxmoxApi(format!("Invalid storage configuration: {}", e)))?;
     if config.digest.len() != 40 || !config.digest.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -688,17 +609,12 @@ async fn enable_storage_import(
     } else {
         format!("{},import", config.content)
     };
-    let response = client
-        .put(&url)
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .header("CSRFPreventionToken", &session.csrf_token)
-        .form(&[("content", content), ("digest", config.digest)])
-        .send()
-        .await
-        .map_err(|e| request_error(e, "Failed to enable storage import"))?;
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(Error::ProxmoxSessionExpired);
-    }
+    let response = send(
+        api.put(&url)
+            .form(&[("content", content), ("digest", config.digest)]),
+        "Failed to enable storage import",
+    )
+    .await?;
     if !response.status().is_success() {
         // A changed digest or revoked permission both land here; the response
         // body is the server's, so the guidance stays installer-authored.
@@ -834,14 +750,11 @@ fn check_disk_storage(
 async fn ensure_vm_id_free(session: &ProxmoxSession, vm_id: u32) -> Result<()> {
     let response = send_nextid_request(session, Some(vm_id)).await?;
 
+    // Also runs right before the upload, after a download that can outlast the
+    // ticket: an expired one is already an error by now
     let status = response.status();
     if status.is_success() {
         return Ok(());
-    }
-
-    // Also runs right before the upload, after a download that can outlast the ticket
-    if status == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(Error::ProxmoxSessionExpired);
     }
 
     if status != reqwest::StatusCode::BAD_REQUEST {
@@ -859,24 +772,18 @@ async fn ensure_vm_id_free(session: &ProxmoxSession, vm_id: u32) -> Result<()> {
 }
 
 /// Call `/cluster/nextid`; with `vm_id` set, Proxmox checks that ID cluster-wide instead of picking one.
+/// An expired session is an error; every other status is the caller's to judge.
 async fn send_nextid_request(
     session: &ProxmoxSession,
     vm_id: Option<u32>,
 ) -> Result<reqwest::Response> {
-    let mut url = format!(
-        "{}/api2/json/cluster/nextid",
-        session.server_url.trim_end_matches('/')
-    );
+    let api = Api::new(session, 30)?;
+    let mut url = api.url("/cluster/nextid");
     if let Some(vm_id) = vm_id {
         url.push_str(&format!("?vmid={}", vm_id));
     }
 
-    create_client(session, 30)?
-        .get(&url)
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .send()
-        .await
-        .map_err(|e| request_error(e, "Failed to query VM ID"))
+    send(api.get(&url), "Failed to query VM ID").await
 }
 
 /// Fail early if the node is missing from the cluster or not online.
@@ -929,36 +836,19 @@ const VM_CREATE_PRIVILEGES: &[&str] = &[
 
 /// Privileges the logged-in user has on `path`, including inherited ones.
 async fn fetch_privileges(session: &ProxmoxSession, path: &str) -> Result<HashSet<String>> {
-    let client = create_client(session, 30)?;
-
-    let url = format!(
-        "{}/api2/json/access/permissions?path={}",
-        session.server_url.trim_end_matches('/'),
+    let api = Api::new(session, 30)?;
+    let url = api.url(&format!(
+        "/access/permissions?path={}",
         urlencoding::encode(path)
-    );
-
-    let response = client
-        .get(&url)
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .send()
-        .await
-        .map_err(|e| request_error(e, "Failed to check permissions"))?;
-
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(Error::ProxmoxSessionExpired);
-    }
-
-    if !response.status().is_success() {
-        return Err(Error::ProxmoxApi(format!(
-            "Failed to check permissions: {}",
-            response.status()
-        )));
-    }
-
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| Error::ProxmoxApi(format!("Failed to parse permissions: {}", e)))?;
+    ));
+    let json = api
+        .get_json(
+            &url,
+            "Failed to check permissions",
+            "Failed to parse permissions",
+            None,
+        )
+        .await?;
 
     Ok(json
         .get("data")
@@ -1014,35 +904,22 @@ async fn ensure_bridge_access(session: &ProxmoxSession, config: &ProxmoxVmConfig
     let zone = if bridge.network_type == "vnet" {
         // GuestHelpers::check_vnet_access checks the edited config, even when
         // a zone move has not been applied. Do not request running=1 here.
-        let client = create_client(session, 30)?;
-        let response = client
-            .get(format!(
-                "{}/api2/json/cluster/sdn/vnets/{}",
-                session.server_url.trim_end_matches('/'),
-                urlencoding::encode(&bridge.name)
-            ))
-            .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-            .send()
-            .await
-            .map_err(|e| request_error(e, "Failed to check SDN VNet configuration"))?;
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(Error::ProxmoxSessionExpired);
-        }
-        if response.status() == reqwest::StatusCode::FORBIDDEN {
-            return Err(Error::ProxmoxActionRequired(crate::message!(
-                "backend.proxmox.missing_sdn_audit",
-                vnet = bridge.name,
-            )));
-        }
-        if !response.status().is_success() {
-            return Err(Error::ProxmoxApi(format!(
-                "Cannot read the selected SDN VNet's configuration: {}",
-                response.status()
-            )));
-        }
-        let json: serde_json::Value = response.json().await.map_err(|e| {
-            Error::ProxmoxApi(format!("Failed to parse SDN VNet configuration: {}", e))
-        })?;
+        let api = Api::new(session, 30)?;
+        let url = api.url(&format!(
+            "/cluster/sdn/vnets/{}",
+            urlencoding::encode(&bridge.name)
+        ));
+        let json = api
+            .get_json(
+                &url,
+                "Failed to check SDN VNet configuration",
+                "Failed to parse SDN VNet configuration",
+                Some(Error::ProxmoxActionRequired(crate::message!(
+                    "backend.proxmox.missing_sdn_audit",
+                    vnet = bridge.name,
+                ))),
+            )
+            .await?;
         json.get("data")
             .and_then(|v| v.get("zone"))
             .and_then(|v| v.as_str())
@@ -1144,10 +1021,6 @@ async fn recheck_before_upload(
 async fn get_next_vm_id(session: &ProxmoxSession) -> Result<u32> {
     let response = send_nextid_request(session, None).await?;
 
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(Error::ProxmoxSessionExpired);
-    }
-
     if !response.status().is_success() {
         return Err(Error::ProxmoxApi(format!(
             "Failed to get next VM ID: {}",
@@ -1213,13 +1086,8 @@ enum TaskPoll {
 /// Check a task's status once. The body is read in here too: headers can
 /// arrive and the connection still drop before the body does, which is the
 /// same hiccup as a failed request.
-async fn poll_task_status(client: &reqwest::Client, url: &str, ticket: &str) -> Result<TaskPoll> {
-    let response = match client
-        .get(url)
-        .header("Cookie", format!("PVEAuthCookie={}", ticket))
-        .send()
-        .await
-    {
+async fn poll_task_status(api: &Api<'_>, url: &str) -> Result<TaskPoll> {
+    let response = match api.get(url).send().await {
         Ok(response) => response,
         Err(error) => {
             return match request_error(error, "Failed to check task status") {
@@ -1282,13 +1150,12 @@ async fn wait_for_task_completion(
     timeout_secs: u64,
     stopped: &mut bool,
 ) -> Result<()> {
-    let url = format!(
-        "{}/tasks/{}/status",
-        node_url(session, task_node(upid).unwrap_or(node)),
-        urlencoding::encode(upid)
+    let api = Api::new(session, 30)?;
+    let url = api.node_url(
+        task_node(upid).unwrap_or(node),
+        &format!("/tasks/{}/status", urlencoding::encode(upid)),
     );
 
-    let client = create_client(session, 30)?;
     let start = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs(timeout_secs);
     let mut failed_polls = 0;
@@ -1304,7 +1171,7 @@ async fn wait_for_task_completion(
         // The task keeps running on Proxmox whatever happens to one status
         // check. Giving up on a single network hiccup or a busy API (5xx)
         // leaves a VM behind that is never resized or started.
-        let json = match poll_task_status(&client, &url, &session.ticket).await? {
+        let json = match poll_task_status(&api, &url).await? {
             TaskPoll::Status(json) => json,
             TaskPoll::Retry(error) => {
                 failed_polls += 1;
@@ -1409,15 +1276,12 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
         ),
     });
 
-    // Upload to Proxmox using multipart form
-    let url = format!(
-        "{}/storage/{}/upload",
-        node_url(session, node),
-        urlencoding::encode(storage_name)
+    // Upload to Proxmox using multipart form, with a longer timeout for large uploads
+    let api = Api::new(session, 1800)?; // 30 minutes
+    let url = api.node_url(
+        node,
+        &format!("/storage/{}/upload", urlencoding::encode(storage_name)),
     );
-
-    // Create client with longer timeout for large uploads
-    let client = create_client(session, 1800)?; // 30 minutes
 
     // The body owns the file; a watch channel keeps progress bounded while the
     // caller retains its borrowed callback. Reads follow HTTP backpressure.
@@ -1446,12 +1310,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
         .text("content", "import")
         .part("filename", file_part);
 
-    let request = client
-        .post(&url)
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .header("CSRFPreventionToken", &session.csrf_token)
-        .multipart(form)
-        .send();
+    let request = api.post(&url).multipart(form).send();
     tokio::pin!(request);
     let mut progress_open = true;
     // A stop must land even while the server reads nothing
@@ -1514,14 +1373,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
         )));
     }
 
-    // Parse the response to get the task UPID
-    let json: serde_json::Value = serde_json::from_str(&response_text)
-        .map_err(|e| Error::ProxmoxApi(format!("Failed to parse upload response: {}", e)))?;
-
-    let upid = json
-        .get("data")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::ProxmoxApi("Upload response missing task UPID".to_string()))?;
+    let upid = task_upid(&response_text, "upload")?;
 
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Uploading,
@@ -1532,7 +1384,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     });
 
     // Wait for the upload task to complete
-    wait_for_task(session, node, upid, 1800).await?;
+    wait_for_task(session, node, &upid, 1800).await?;
 
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Uploading,
@@ -1562,9 +1414,8 @@ async fn create_vm_with_disk(
         *source_unused = true;
         return Err(error);
     }
-    let url = format!("{}/qemu", node_url(session, &config.node));
-
-    let client = create_client(session, 300)?; // 5 minutes for VM creation with disk import
+    let api = Api::new(session, 300)?; // 5 minutes for VM creation with disk import
+    let url = api.node_url(&config.node, "/qemu");
 
     // Build the disk import specification
     // Format: storage:0,import-from="storage name":import/filename.qcow2
@@ -1576,10 +1427,8 @@ async fn create_vm_with_disk(
     // EFI disk specification for UEFI boot
     let efidisk0_spec = format!("{}:1,efitype=4m,pre-enrolled-keys=0", config.storage);
 
-    let response = client
+    let response = api
         .post(&url)
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .header("CSRFPreventionToken", &session.csrf_token)
         .form(&[
             ("vmid", config.vm_id.to_string()),
             ("name", config.name.clone()),
@@ -1624,18 +1473,10 @@ async fn create_vm_with_disk(
         )));
     }
 
-    // Parse the response to get the task UPID
-    let json: serde_json::Value = serde_json::from_str(&response_text)
-        .map_err(|e| Error::ProxmoxApi(format!("Failed to parse VM creation response: {}", e)))?;
-
     // VM creation returns a task UPID since it involves disk import
-    let upid = json
-        .get("data")
-        .and_then(|v| v.as_str())
-        .filter(|upid| !upid.is_empty())
-        .ok_or_else(|| Error::ProxmoxApi("VM creation response missing task UPID".to_string()))?;
+    let upid = task_upid(&response_text, "VM creation")?;
     // Deleting the source is only safe after confirmed import completion.
-    wait_for_task_completion(session, &config.node, upid, 600, source_unused).await?;
+    wait_for_task_completion(session, &config.node, &upid, 600, source_unused).await?;
 
     resize_vm_disk(session, config)
         .await
@@ -1660,45 +1501,19 @@ fn resize_error(config: &ProxmoxVmConfig, error: Error) -> Error {
 /// Apply an absolute size, including the minimum, so Proxmox checks the actual
 /// imported volume and rejects shrinking if a future HAOS image is larger.
 async fn resize_vm_disk(session: &ProxmoxSession, config: &ProxmoxVmConfig) -> Result<()> {
-    let url = format!(
-        "{}/qemu/{}/resize",
-        node_url(session, &config.node),
-        config.vm_id
-    );
-    let client = create_client(session, 60)?;
-    let response = client
-        .put(&url)
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .header("CSRFPreventionToken", &session.csrf_token)
-        .form(&[
+    let api = Api::new(session, 60)?;
+    let url = api.node_url(&config.node, &format!("/qemu/{}/resize", config.vm_id));
+    let body = send_change(
+        api.put(&url).form(&[
             ("disk", "scsi0".to_string()),
             ("size", format!("{}G", config.disk_size_gb)),
-        ])
-        .send()
-        .await
-        .map_err(|e| request_error(e, "Failed to resize VM disk"))?;
+        ]),
+        "Failed to resize VM disk",
+    )
+    .await?;
 
-    let status = response.status();
-    let response_text = response.text().await.unwrap_or_default();
-    if status == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(Error::ProxmoxSessionExpired);
-    }
-    if !status.is_success() {
-        return Err(Error::ProxmoxApi(format!(
-            "Failed to resize VM disk ({}): {}",
-            status, response_text
-        )));
-    }
-
-    let json: serde_json::Value = serde_json::from_str(&response_text)
-        .map_err(|e| Error::ProxmoxApi(format!("Failed to parse disk resize response: {}", e)))?;
-    let upid = json
-        .get("data")
-        .and_then(|v| v.as_str())
-        .filter(|upid| !upid.is_empty())
-        .ok_or_else(|| Error::ProxmoxApi("Disk resize response missing task UPID".to_string()))?;
-
-    wait_for_task(session, &config.node, upid, 600).await
+    let upid = task_upid(&body, "disk resize")?;
+    wait_for_task(session, &config.node, &upid, 600).await
 }
 
 async fn delete_import_image(
@@ -1708,38 +1523,29 @@ async fn delete_import_image(
     filename: &str,
 ) -> Result<()> {
     let volume = format!("{storage}:import/{filename}");
-    let url = format!(
-        "{}/storage/{}/content/{}",
-        node_url(session, node),
-        urlencoding::encode(storage),
-        urlencoding::encode(&volume)
+    let api = Api::new(session, 60)?;
+    let url = api.node_url(
+        node,
+        &format!(
+            "/storage/{}/content/{}",
+            urlencoding::encode(storage),
+            urlencoding::encode(&volume)
+        ),
     );
-    let response = create_client(session, 60)?
-        .delete(url)
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .header("CSRFPreventionToken", &session.csrf_token)
-        .send()
-        .await
-        .map_err(|e| request_error(e, "Could not delete import volume"))?;
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(Error::ProxmoxSessionExpired);
-    }
+    let response = send(api.delete(&url), "Could not delete import volume").await?;
     if !response.status().is_success() {
         return Err(Error::ProxmoxApi(format!(
             "Could not delete import volume {volume}: HTTP {}",
             response.status()
         )));
     }
-    let json: serde_json::Value = response.json().await?;
-    let upid = json
-        .get("data")
-        .and_then(|value| value.as_str())
-        .filter(|upid| !upid.is_empty())
-        .ok_or_else(|| {
-            Error::ProxmoxApi("Import deletion response missing task UPID".to_string())
-        })?;
-    wait_for_task(session, node, upid, 120).await?;
-    Ok(())
+
+    let body = response
+        .text()
+        .await
+        .map_err(|error| request_error(error, "Could not read the import deletion response"))?;
+    let upid = task_upid(&body, "import deletion")?;
+    wait_for_task(session, node, &upid, 120).await
 }
 
 async fn import_and_cleanup_image(
@@ -1774,31 +1580,9 @@ async fn import_and_cleanup_image(
 
 /// Start a VM.
 async fn start_vm(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<()> {
-    let url = format!("{}/qemu/{}/status/start", node_url(session, node), vm_id);
-
-    let client = create_client(session, 60)?;
-
-    let response = client
-        .post(&url)
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .header("CSRFPreventionToken", &session.csrf_token)
-        .send()
-        .await
-        .map_err(|e| request_error(e, "Failed to start VM"))?;
-
-    let status = response.status();
-    let response_text = response.text().await.unwrap_or_default();
-
-    if status == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(Error::ProxmoxSessionExpired);
-    }
-
-    if !status.is_success() {
-        return Err(Error::ProxmoxApi(format!(
-            "Failed to start VM ({}): {}",
-            status, response_text
-        )));
-    }
+    let api = Api::new(session, 60)?;
+    let url = api.node_url(node, &format!("/qemu/{vm_id}/status/start"));
+    let response_text = send_change(api.post(&url), "Failed to start VM").await?;
 
     // Parse the response to get the task UPID
     let json: serde_json::Value = serde_json::from_str(&response_text)
@@ -1818,39 +1602,22 @@ async fn start_vm(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<()
 /// The address comes from the QEMU guest agent and stays `None` until the
 /// agent reports one.
 async fn vm_status(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<VmStatusInfo> {
-    let vm_url = format!("{}/qemu/{}", node_url(session, node), vm_id);
-
-    let client = create_client(session, 10)?;
-    let response = client
-        .get(format!("{}/status/current", vm_url))
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
-        .send()
-        .await
-        .map_err(|e| request_error(e, "Failed to get VM status"))?;
+    let api = Api::new(session, 10)?;
+    let vm_url = api.node_url(node, &format!("/qemu/{vm_id}"));
 
     // The frontend polls this. Login and permission problems need their own
     // errors, so it can stop and say what to fix instead of waiting out its
     // timeout on a request that can never succeed.
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(Error::ProxmoxSessionExpired);
-    }
-    if response.status() == reqwest::StatusCode::FORBIDDEN {
-        return Err(Error::ProxmoxActionRequired(crate::message!(
-            "backend.proxmox.vm_status_denied"
-        )));
-    }
-
-    if !response.status().is_success() {
-        return Err(Error::ProxmoxApi(format!(
-            "Failed to get VM status: {}",
-            response.status()
-        )));
-    }
-
-    let json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| Error::ProxmoxApi(format!("Failed to parse VM status: {}", e)))?;
+    let json = api
+        .get_json(
+            &format!("{vm_url}/status/current"),
+            "Failed to get VM status",
+            "Failed to parse VM status",
+            Some(Error::ProxmoxActionRequired(crate::message!(
+                "backend.proxmox.vm_status_denied"
+            ))),
+        )
+        .await?;
 
     let status = json
         .get("data")
@@ -1861,7 +1628,7 @@ async fn vm_status(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<V
 
     // A stopped VM has no guest agent to ask
     let ip_address = if status == "running" {
-        get_vm_ip(&client, &vm_url, session).await
+        get_vm_ip(&api, &vm_url).await
     } else {
         None
     };
@@ -1873,14 +1640,9 @@ async fn vm_status(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<V
 ///
 /// Any failure means "not yet": right after boot the guest agent is often not
 /// running, so requests fail or return an error until it is.
-async fn get_vm_ip(
-    client: &reqwest::Client,
-    vm_url: &str,
-    session: &ProxmoxSession,
-) -> Option<String> {
-    let response = client
-        .get(format!("{}/agent/network-get-interfaces", vm_url))
-        .header("Cookie", format!("PVEAuthCookie={}", session.ticket))
+async fn get_vm_ip(api: &Api<'_>, vm_url: &str) -> Option<String> {
+    let response = api
+        .get(&format!("{vm_url}/agent/network-get-interfaces"))
         .send()
         .await
         .ok()?;
@@ -4787,7 +4549,7 @@ mod tests {
             let temp_dir = tempfile::tempdir().unwrap();
             let image = temp_dir.path().join("image.qcow2");
             std::fs::write(&image, b"test image content").unwrap();
-            let no_upid = || Api("Import deletion response missing task UPID");
+            let no_upid = || Api("The import deletion response has no task UPID");
             // (row, call, status, body, outcome)
             for (row, call, status, body, expected) in [
                 (
@@ -4810,7 +4572,7 @@ mod tests {
                     Upload,
                     200,
                     r#"{"data": null}"#,
-                    Api("Upload response missing task UPID"),
+                    Api("The upload response has no task UPID"),
                 ),
                 (
                     "start 500",

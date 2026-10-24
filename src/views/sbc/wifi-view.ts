@@ -32,7 +32,7 @@ export class WifiView extends LitElement {
         margin: 1rem 0 0 0;
         font-size: 0.875rem;
         line-height: 1.5;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
       }
     `,
   ];

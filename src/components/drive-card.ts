@@ -49,7 +49,7 @@ export class DriveCard extends WaRadio {
       :host(:state(disabled)) .card {
         border-color: color-mix(
           in srgb,
-          var(--ha-border-color, #e0e0e0) 50%,
+          var(--ha-border-color) 50%,
           transparent
         );
         pointer-events: none;
@@ -71,11 +71,11 @@ export class DriveCard extends WaRadio {
       .icon-container svg {
         width: 40px;
         height: 40px;
-        fill: var(--ha-secondary-text-color, #727272);
+        fill: var(--ha-secondary-text-color);
       }
 
       :host(:state(checked)) .icon-container svg {
-        fill: var(--ha-primary-color, #03a9f4);
+        fill: var(--ha-primary-color);
       }
 
       /* A long name wraps, even mid-word, so the whole of it shows; so do
@@ -89,20 +89,20 @@ export class DriveCard extends WaRadio {
       .name {
         font-size: 1rem;
         font-weight: 500;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         margin: 0 0 0.25rem 0;
       }
 
       .details {
         font-size: 0.8125rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         margin: 0;
       }
 
       .path {
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         font-size: 0.8125rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         margin: 0.125rem 0 0 0;
         overflow-wrap: anywhere;
       }
@@ -110,7 +110,7 @@ export class DriveCard extends WaRadio {
       .size {
         font-size: 1rem;
         font-weight: 500;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         flex-shrink: 0;
       }
 

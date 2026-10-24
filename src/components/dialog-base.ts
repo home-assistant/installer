@@ -44,11 +44,11 @@ export abstract class DialogBase extends LitElement {
         display: inline-flex;
         align-items: center;
         gap: 0.75rem;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
       }
 
       .dialog-title.warning {
-        color: var(--ha-error-color, #db4437);
+        color: var(--ha-error-color);
       }
 
       .info-icon {
@@ -60,7 +60,7 @@ export abstract class DialogBase extends LitElement {
       .info-icon svg {
         width: 100%;
         height: 100%;
-        fill: var(--ha-primary-color, #03a9f4);
+        fill: var(--ha-primary-color);
       }
 
       .warning-icon {
@@ -69,7 +69,7 @@ export abstract class DialogBase extends LitElement {
 
       .dialog-message {
         font-size: 0.9375rem;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         line-height: 1.6;
         margin: 0;
       }

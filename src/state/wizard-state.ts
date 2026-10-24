@@ -78,6 +78,11 @@ export interface WizardSelections {
 
   /** UTM was found on the requirements step. */
   utmInstalled?: boolean;
+  /**
+   * macOS lets the installer control UTM. It keeps the answer, so going back
+   * to the requirements step doesn't ask again.
+   */
+  utmControlAllowed?: boolean;
 
   /** Mini PC path: connect the drive here, or boot the mini PC from USB. */
   installMethod?: "direct" | "usb-boot";

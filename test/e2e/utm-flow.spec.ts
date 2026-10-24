@@ -1,5 +1,5 @@
 import { type Page } from "@playwright/test";
-import { test, expect } from "./fixtures.js";
+import { allowUtmControl, test, expect } from "./fixtures.js";
 
 test.use({ platform: "macos" });
 
@@ -76,6 +76,9 @@ test.describe("UTM Installation Flow", () => {
     await expect(checkView.locator(".status-title")).toHaveText(
       "UTM is installed (v4.6.0)"
     );
+    // Found, but macOS is only asked once the user chooses to
+    await expect(next).toHaveJSProperty("disabled", true);
+    await allowUtmControl(page);
     await expect(next).toHaveJSProperty("disabled", false);
     expect(
       await page.evaluate(
@@ -140,11 +143,14 @@ test.describe("UTM Installation Flow", () => {
     // Step 1: Check UTM
     await expect(page.locator("utm-check-view")).toBeVisible();
 
-    // Verify we can proceed (UTM installed in mock mode)
+    // UTM is installed in mock mode, and the installer may control it once
+    // the user allows it
     const nextButton = page
       .locator("wizard-shell")
       .locator(".footer-right wa-button");
 
+    await expect(nextButton).toHaveJSProperty("disabled", true);
+    await allowUtmControl(page);
     await expect(nextButton).toHaveJSProperty("disabled", false);
 
     await nextButton.click();
@@ -190,7 +196,8 @@ async function navigateToUtmStep2(page: Page) {
     .locator("wizard-shell")
     .locator(".footer-right wa-button");
 
-  // Enabled once the UTM check found UTM installed
+  // Enabled once the UTM check found UTM, and the user let it be controlled
+  await allowUtmControl(page);
   await expect(nextButton).toHaveJSProperty("disabled", false);
   await nextButton.click();
   await expect(page.locator("utm-configure-view")).toBeVisible();

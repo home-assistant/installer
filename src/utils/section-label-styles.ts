@@ -13,7 +13,7 @@ export const sectionLabelStyles = css`
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--ha-secondary-text-color, #727272);
+    color: var(--ha-secondary-text-color);
     margin: 0;
   }
 `;

@@ -28,12 +28,12 @@ export class DiagnosticsActions extends LitElement {
         border: 0;
         background: none;
         font: inherit;
-        color: var(--diagnostics-link-color, var(--ha-primary-color, #006787));
+        color: var(--diagnostics-link-color, var(--ha-primary-color));
         text-decoration: underline;
         cursor: pointer;
       }
       .launcher:focus-visible {
-        outline: 2px solid var(--wa-color-focus, currentColor);
+        outline: 2px solid var(--wa-color-focus);
         outline-offset: 2px;
         border-radius: 2px;
       }
@@ -42,7 +42,7 @@ export class DiagnosticsActions extends LitElement {
       wa-dialog {
         text-align: start;
         font-size: 1rem;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
       }
       .actions {
         display: flex;
@@ -57,7 +57,7 @@ export class DiagnosticsActions extends LitElement {
         font: 0.8125rem monospace;
         color: var(--ha-text-color);
         background: var(--ha-background-color);
-        border: 1px solid var(--ha-border-color, #ccc);
+        border: 1px solid var(--ha-border-color);
         border-radius: var(--wa-form-control-border-radius);
         padding: 0.5rem;
       }

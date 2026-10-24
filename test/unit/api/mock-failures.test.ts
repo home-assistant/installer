@@ -9,6 +9,7 @@ describe("browser mock failures", () => {
   });
 
   for (const [scenario, operation, code, retryable] of [
+    ["drives-admin", "drives", "permission_denied", false],
     ["flash-write", "flash", "device_busy", true],
     ["flash-disconnected", "flash", "drive_disconnected", false],
     ["flash-permission", "flash", "permission_denied", false],

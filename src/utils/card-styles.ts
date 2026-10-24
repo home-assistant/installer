@@ -16,9 +16,9 @@ export const selectableCardStyles = css`
 
   .card {
     box-sizing: border-box;
-    background-color: var(--ha-card-background, #ffffff);
-    border: 2px solid var(--ha-border-color, #e0e0e0);
-    border-radius: var(--ha-card-border-radius, 12px);
+    background-color: var(--ha-card-background);
+    border: 2px solid var(--ha-border-color);
+    border-radius: var(--ha-card-border-radius);
     transition:
       border-color 0.2s ease,
       box-shadow 0.2s ease,
@@ -26,7 +26,7 @@ export const selectableCardStyles = css`
   }
 
   .card:hover {
-    border-color: var(--ha-primary-color, #03a9f4);
+    border-color: var(--ha-primary-color);
     box-shadow: var(--ha-card-hover-shadow);
   }
 
@@ -50,7 +50,7 @@ export const selectableCardStyles = css`
   }
 
   :host(:state(checked)) .card {
-    border-color: var(--ha-primary-color, #03a9f4);
+    border-color: var(--ha-primary-color);
     box-shadow: var(--ha-card-selected-shadow);
   }
 
@@ -70,12 +70,12 @@ export const selectedIndicatorStyles = css`
   .selected-indicator {
     width: 24px;
     height: 24px;
-    background-color: var(--ha-primary-fill, #006787);
+    background-color: var(--ha-primary-fill);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--wa-color-brand-on-loud, white);
+    color: var(--wa-color-brand-on-loud);
     font-size: 14px;
   }
 

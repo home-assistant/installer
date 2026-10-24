@@ -5,6 +5,7 @@ import {
   html,
   waitUntil,
 } from "@open-wc/testing";
+import { wizardStep } from "../../../../src/components/wizard-steps.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/utm/utm-check-view.js";
 import type { UtmCheckView } from "../../../../src/views/utm/utm-check-view.js";
@@ -15,6 +16,17 @@ import {
   restoreTauriIpc,
   settle,
 } from "../../tauri-ipc.js";
+
+/** Whether the step lets the user on to Configure VM */
+function nextAllowed() {
+  return wizardStep("vm", "check")!.ready!(wizardState.getState().selections);
+}
+
+function allowButton(el: Element) {
+  return [...el.shadowRoot!.querySelectorAll("wa-button")].find((button) =>
+    button.textContent!.includes("Allow control of UTM")
+  ) as HTMLElement & { loading: boolean };
+}
 
 describe("utm-check-view", () => {
   beforeEach(() => {
@@ -28,7 +40,6 @@ describe("utm-check-view", () => {
   it("keeps Next gated after a string rejection and supports checking again", async () => {
     let attempts = 0;
     mockTauriIpc((cmd) => {
-      if (cmd === "check_utm_automation") return undefined;
       expect(cmd).to.equal("check_utm_status");
       return ++attempts === 1
         ? Promise.reject(ipcError("utm", "Status check failed", true))
@@ -44,12 +55,12 @@ describe("utm-check-view", () => {
     await settle();
     expect(attempts).to.equal(2);
     expect(wizardState.getState().selections.utmInstalled).to.be.true;
-    expect(el.shadowRoot!.textContent).to.contain(
-      "Ready to create a Home Assistant virtual machine"
-    );
+    // Found: asking macOS is left, and waits for the user
+    expect(nextAllowed()).to.be.false;
+    expect(allowButton(el)).to.exist;
   });
 
-  it("asks for Automation before the download, and gates Next on it", async () => {
+  it("asks for Automation only when the user chooses to, and gates Next on it", async () => {
     const automation = deferred<void>();
     const calls: string[] = [];
     mockTauriIpc((cmd) => {
@@ -64,42 +75,54 @@ describe("utm-check-view", () => {
       throw new Error(`Unexpected IPC command: ${cmd}`);
     });
     const el = fixtureSync(html`<utm-check-view></utm-check-view>`);
+    await settle();
+    // Found UTM: it isn't opened, and macOS doesn't ask over the step yet
+    expect(calls).to.deep.equal(["check_utm_status"]);
+    expect(el.shadowRoot!.textContent).to.contain(
+      "macOS asks for your permission"
+    );
+    expect(nextAllowed()).to.be.false;
+
+    allowButton(el).click();
     await waitUntil(() => calls.includes("check_utm_automation"));
     await settle();
     // macOS is asking: say what to do, and don't let the user on yet
     expect(el.shadowRoot!.textContent).to.contain(
       "Allow the installer to control UTM"
     );
-    expect(wizardState.getState().selections.utmInstalled).to.not.be.true;
+    expect(nextAllowed()).to.be.false;
 
     automation.resolve();
     await settle();
-    expect(wizardState.getState().selections.utmInstalled).to.be.true;
+    expect(nextAllowed()).to.be.true;
     expect(el.shadowRoot!.textContent).to.contain(
       "Ready to create a Home Assistant virtual machine"
     );
+    expect(allowButton(el)).to.equal(undefined);
   });
 
-  it("keeps Next gated on re-entry until the new check succeeds", async () => {
+  it("keeps Next gated on re-entry until the new check succeeds, without asking macOS again", async () => {
     // Back from Configure, where the previous check had allowed Next
-    wizardState.setSelection("utmInstalled", true);
-    const automation = deferred<void>();
+    wizardState.setSelections({ utmInstalled: true, utmControlAllowed: true });
+    const status = deferred<unknown>();
     mockTauriIpc((cmd) => {
-      if (cmd === "check_utm_status")
-        return {
-          installed: true,
-          path: "/Applications/UTM.app",
-          version: "4.5.0",
-        };
-      if (cmd === "check_utm_automation") return automation.promise;
+      if (cmd === "check_utm_status") return status.promise;
       throw new Error(`Unexpected IPC command: ${cmd}`);
     });
-    fixtureSync(html`<utm-check-view></utm-check-view>`);
+    const el = fixtureSync(html`<utm-check-view></utm-check-view>`);
     await settle();
-    expect(wizardState.getState().selections.utmInstalled).to.be.false;
-    automation.resolve();
+    expect(nextAllowed()).to.be.false;
+    status.resolve({
+      installed: true,
+      path: "/Applications/UTM.app",
+      version: "4.5.0",
+    });
     await settle();
-    expect(wizardState.getState().selections.utmInstalled).to.be.true;
+    expect(nextAllowed()).to.be.true;
+    expect(el.shadowRoot!.textContent).to.contain(
+      "Ready to create a Home Assistant virtual machine"
+    );
+    expect(allowButton(el)).to.equal(undefined);
   });
 
   for (const outcome of ["success", "failure"] as const) {
@@ -124,20 +147,24 @@ describe("utm-check-view", () => {
         throw new Error(`Unexpected IPC command: ${cmd}`);
       });
       const old = fixtureSync(html`<utm-check-view></utm-check-view>`);
+      await settle();
+      allowButton(old).click();
       await waitUntil(() => checks === 1);
       // The user left the step and started the flow again
       old.remove();
       wizardState.startFlow("vm");
       const current = fixtureSync(html`<utm-check-view></utm-check-view>`);
       await settle();
+      allowButton(current).click();
+      await settle();
       const allowed = outcome === "failure";
-      expect(wizardState.getState().selections.utmInstalled).to.equal(allowed);
+      expect(nextAllowed()).to.equal(allowed);
 
       if (outcome === "success") automation.resolve();
       else
         automation.reject(ipcError("utm", "Not allowed to control UTM", true));
       await settle();
-      expect(wizardState.getState().selections.utmInstalled).to.equal(allowed);
+      expect(nextAllowed()).to.equal(allowed);
       expect(current.shadowRoot!.querySelector("[data-focus-alert]")).to.equal(
         null
       );
@@ -166,16 +193,20 @@ describe("utm-check-view", () => {
     });
     const el = fixtureSync(html`<utm-check-view></utm-check-view>`);
     await settle();
+    allowButton(el).click();
+    await settle();
     await settle();
     expect(
       el.shadowRoot!.querySelector("[data-focus-alert]")!.textContent
     ).to.contain("Privacy & Security > Automation");
-    expect(wizardState.getState().selections.utmInstalled).to.be.false;
+    expect(nextAllowed()).to.be.false;
 
-    el.shadowRoot!.querySelector("wa-button")!.click();
+    const retry = el.shadowRoot!.querySelector("wa-button")!;
+    expect(retry.textContent).to.contain("Try again");
+    retry.click();
     await settle();
     expect(asked).to.equal(2);
-    expect(wizardState.getState().selections.utmInstalled).to.be.true;
+    expect(nextAllowed()).to.be.true;
   });
 
   it("keeps focus through a check started from the page, and announces its result", async () => {
@@ -219,21 +250,34 @@ describe("utm-check-view", () => {
       path: "/Applications/UTM.app",
       version: "4.5.0",
     });
-    await waitUntil(() => status.textContent!.includes("control UTM"));
-
-    // Found, but still asking for Automation: the button stays, busy
-    expect(installedIt.isConnected).to.be.true;
-    expect(installedIt.loading).to.be.true;
-    expect(el.shadowRoot!.activeElement === installedIt).to.be.true;
-
-    automation.resolve();
     await waitUntil(() => !installedIt.isConnected);
     await el.updateComplete;
 
     // Found: the buttons are gone, so focus continues from the result
-    const title = status.querySelector(".status-title")!;
+    let title = status.querySelector(".status-title")!;
     expect(title.textContent).to.contain("installed");
     expect(el.shadowRoot!.activeElement).to.equal(title);
+
+    const allow = allowButton(el);
+    allow.focus();
+    allow.click();
+    await waitUntil(() =>
+      status.textContent!.includes("Allow the installer to control UTM")
+    );
+
+    // macOS is asking: the button stays, busy
+    expect(allow.isConnected).to.be.true;
+    expect(allow.loading).to.be.true;
+    expect(el.shadowRoot!.activeElement === allow).to.be.true;
+
+    automation.resolve();
+    await waitUntil(() => !allow.isConnected);
+    await el.updateComplete;
+
+    // Allowed: focus continues from the result again
+    title = status.querySelector(".status-title")!;
+    expect(title.textContent).to.contain("installed");
+    expect(el.shadowRoot!.activeElement === title).to.be.true;
   });
 
   it("keeps a missing UTM installation gated and offers its download", async () => {

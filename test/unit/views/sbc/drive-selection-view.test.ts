@@ -196,6 +196,96 @@ describe("drive-selection-view", () => {
     }
   });
 
+  describe("without administrator rights", () => {
+    const notElevated = ipcError(
+      "permission_denied",
+      "Administrator access is required to write a drive.",
+      false,
+      { message_key: "backend.disk.run_as_administrator", message_params: {} }
+    );
+
+    afterEach(() => restoreTauriIpc());
+
+    async function mountRefused(relaunch: () => unknown) {
+      const calls: string[] = [];
+      mockTauriIpc((cmd) => {
+        calls.push(cmd);
+        if (cmd === "list_block_devices") return Promise.reject(notElevated);
+        if (cmd === "relaunch_as_admin") return relaunch();
+        throw new Error(`unexpected command ${cmd}`);
+      });
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      await waitUntil(
+        () => el.shadowRoot!.querySelector(".admin-needed"),
+        "the scan was never refused"
+      );
+      await el.updateComplete;
+      return { el, calls };
+    }
+
+    for (const flow of ["sbc", "minipc"] as const) {
+      it(`offers to restart as administrator (${flow})`, async () => {
+        wizardState.startFlow(flow);
+        const { el, calls } = await mountRefused(() => undefined);
+        const root = el.shadowRoot!;
+        const notice = root.querySelector(".admin-needed")!;
+        expect(notice.textContent).to.contain("needs administrator access");
+        expect(notice.textContent).to.contain(
+          "starts again from the beginning"
+        );
+        // Read out when it appears, like any failed scan
+        expect(root.activeElement === notice).to.be.true;
+        // Scanning again can't help: the rights last until a restart
+        expect(root.querySelector(".error") === null).to.be.true;
+        const buttons = [...root.querySelectorAll("wa-button")];
+        expect(
+          buttons.map((button) => button.textContent!.trim())
+        ).to.deep.equal(["Restart as administrator"]);
+
+        (buttons[0] as HTMLElement).click();
+        await waitUntil(() => calls.includes("relaunch_as_admin"));
+      });
+    }
+
+    it("says so when the restart is declined", async () => {
+      const declined = "The installer wasn't restarted as administrator.";
+      const { el } = await mountRefused(() =>
+        Promise.reject(ipcError("relaunch_cancelled", declined, true))
+      );
+      const root = el.shadowRoot!;
+      (root.querySelector(".admin-needed wa-button") as HTMLElement).click();
+      await waitUntil(() => root.querySelector(".relaunch-error"));
+      await el.updateComplete;
+
+      const error = root.querySelector(".relaunch-error")!;
+      expect(error.textContent!.trim()).to.equal(declined);
+      // Read out on its own, not the notice again
+      expect(root.activeElement === error).to.be.true;
+    });
+
+    it("leaves other permission errors to the failed scan", async () => {
+      mockTauriIpc((cmd) => {
+        if (cmd === "list_block_devices") {
+          return Promise.reject(
+            ipcError("permission_denied", "Not authorized", false, {
+              message_key: "backend.disk.not_authorized",
+              message_params: {},
+            })
+          );
+        }
+        throw new Error(`unexpected command ${cmd}`);
+      });
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      await waitUntil(() => el.shadowRoot!.querySelector(".error-message"));
+
+      expect(el.shadowRoot!.querySelector(".admin-needed") === null).to.be.true;
+    });
+  });
+
   it("keeps a selection whose drive is still connected", async () => {
     storeDriveSelection(CONNECTED);
 

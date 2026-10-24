@@ -84,9 +84,16 @@ import {
  */
 export async function listBlockDevices(): Promise<BlockDevice[]> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
+    failMockOperation("drives");
     return MOCK_BLOCK_DEVICES;
   }
   return invoke<BlockDevice[]>("list_block_devices");
+}
+
+/** Restart as administrator. The app closes if Windows grants it. */
+export async function relaunchAsAdmin(): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) return;
+  await invoke("relaunch_as_admin");
 }
 
 /**

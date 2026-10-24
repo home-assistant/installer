@@ -63,7 +63,7 @@ export class DeviceSetupView extends LitElement {
         max-width: 400px;
         margin: 0 0 1rem;
         font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         overflow-wrap: anywhere;
       }
 

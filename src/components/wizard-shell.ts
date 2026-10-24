@@ -41,7 +41,7 @@ export class WizardShell extends LitElement {
 
       .header {
         justify-content: space-between;
-        border-bottom: 1px solid var(--ha-border-color, #e0e0e0);
+        border-bottom: 1px solid var(--ha-border-color);
       }
 
       .header-center {
@@ -71,15 +71,15 @@ export class WizardShell extends LitElement {
       .content {
         flex: 1;
         overflow-y: auto;
-        padding: 2rem var(--ha-page-gutter, 2rem);
+        padding: 2rem var(--ha-page-gutter);
       }
 
       .footer {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 1rem var(--ha-page-gutter, 2rem);
-        border-top: 1px solid var(--ha-border-color, #e0e0e0);
+        padding: 1rem var(--ha-page-gutter);
+        border-top: 1px solid var(--ha-border-color);
       }
 
       .footer-left {

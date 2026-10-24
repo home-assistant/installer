@@ -1,7 +1,12 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 import type { NodeResult } from "axe-core";
-import { approveProxmoxImport, expect, test } from "./fixtures.js";
+import {
+  allowUtmControl,
+  approveProxmoxImport,
+  expect,
+  test,
+} from "./fixtures.js";
 
 // Every screen of every flow, with its dialogs and error states, checked
 // against WCAG 2.1 A and AA plus axe's best practices. A screen reader still
@@ -443,6 +448,12 @@ for (const colorScheme of ["light", "dark"] as const) {
           page.locator("utm-check-view casita-mascot")
         ).toHaveAttribute("mood", "happy");
         await expectAccessible(page, page.locator("utm-check-view"), "check");
+        await allowUtmControl(page);
+        await expectAccessible(
+          page,
+          page.locator("utm-check-view"),
+          "check allowed"
+        );
         await next(page).click();
 
         await expectAccessible(
@@ -482,6 +493,7 @@ for (const colorScheme of ["light", "dark"] as const) {
         await expect(
           page.locator("utm-check-view casita-mascot")
         ).toHaveAttribute("mood", "happy");
+        await allowUtmControl(page);
         await next(page).click();
         await expect(page.locator("utm-configure-view")).toBeVisible();
         await next(page).click();

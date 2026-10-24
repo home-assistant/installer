@@ -35,7 +35,7 @@ export class WelcomeView extends LitElement {
         align-items: center;
         box-sizing: border-box;
         height: 100%;
-        padding: 2rem var(--ha-page-gutter, 2rem) 1rem;
+        padding: 2rem var(--ha-page-gutter) 1rem;
         text-align: center;
       }
 
@@ -89,7 +89,7 @@ export class WelcomeView extends LitElement {
 
       .intro {
         max-width: 520px;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         line-height: 1.6;
         margin: 0 0 3rem;
       }
@@ -109,12 +109,12 @@ export class WelcomeView extends LitElement {
         align-items: center;
         gap: 1rem;
         font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
       }
 
       .report {
         justify-self: start;
-        --diagnostics-link-color: var(--ha-secondary-text-color, #727272);
+        --diagnostics-link-color: var(--ha-secondary-text-color);
       }
 
       .learn-more {

@@ -33,7 +33,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
     css`
       .mac-note {
         font-size: 1rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         margin: 1rem 0 2rem 0;
         text-align: center;
         max-width: 500px;
@@ -41,7 +41,7 @@ export class MiniPCArchitectureSelectionView extends LitElement {
 
       .option-examples {
         font-size: 0.8125rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         text-align: center;
         margin: 0.75rem 0 0 0;
         line-height: 1.4;

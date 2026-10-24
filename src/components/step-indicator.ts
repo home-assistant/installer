@@ -41,12 +41,12 @@ export class StepIndicator extends LitElement {
 
       .step-label {
         font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         transition: color 0.2s ease;
       }
 
       .step-label.active {
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         font-weight: 500;
       }
 
@@ -54,12 +54,12 @@ export class StepIndicator extends LitElement {
         flex-shrink: 0;
         width: 24px;
         height: 2px;
-        background-color: var(--ha-inactive-color, #8c8c8c);
+        background-color: var(--ha-inactive-color);
         transition: background-color 0.2s ease;
       }
 
       .step-connector.completed {
-        background-color: var(--ha-primary-color, #03a9f4);
+        background-color: var(--ha-primary-color);
       }
 
       /* Forced colors would paint the lines like the page, out of sight */

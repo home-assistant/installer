@@ -91,7 +91,7 @@ export class InstallProgress extends LitElement {
       h2 {
         font-size: 1.25rem;
         font-weight: 500;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         margin: 0 0 0.25rem 0;
         text-align: center;
       }
@@ -108,12 +108,12 @@ export class InstallProgress extends LitElement {
         align-items: flex-start;
         margin-top: 0.75rem;
         font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
       }
 
       .percentage {
         font-weight: 500;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
       }
 
       .progress-right {
@@ -125,7 +125,7 @@ export class InstallProgress extends LitElement {
 
       .eta {
         font-size: 0.75rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         min-height: 1.125rem;
       }
 
@@ -142,12 +142,12 @@ export class InstallProgress extends LitElement {
 
       .speed {
         font-size: 0.75rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         min-height: 1.125rem;
       }
 
       .error-message {
-        color: var(--ha-error-color, #db4437);
+        color: var(--ha-error-color);
         font-size: 0.9375rem;
         margin: 0.5rem 0 1.5rem 0;
         max-width: 400px;
@@ -171,12 +171,12 @@ export class InstallProgress extends LitElement {
         gap: 0.75rem;
         font-size: 0.875rem;
         line-height: 1.4;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         overflow-wrap: anywhere;
       }
 
       .stage[aria-current="step"] {
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         font-weight: 600;
       }
 
@@ -236,7 +236,7 @@ export class InstallProgress extends LitElement {
 
       .address {
         font-size: 0.9375rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         margin: 0 0 1rem 0;
         text-align: center;
         overflow-wrap: anywhere;
@@ -245,7 +245,7 @@ export class InstallProgress extends LitElement {
       .stage-description {
         font-size: 0.9375rem;
         font-weight: 400;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         margin: 0 0 1.5rem 0;
         text-align: center;
       }

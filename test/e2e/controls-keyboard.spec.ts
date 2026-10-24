@@ -143,6 +143,13 @@ for (const flow of ["proxmox", "utm"] as const) {
         await page.keyboard.press("ControlOrMeta+A");
         await page.keyboard.type(value);
       }
+    } else {
+      const allow = page.getByRole("button", {
+        name: "Allow control of UTM",
+        exact: true,
+      });
+      await activate(page, allow);
+      await expect(allow).toHaveCount(0);
     }
     await next(page);
     const view = page.locator(`${flow}-configure-view`);

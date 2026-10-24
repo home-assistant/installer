@@ -1,5 +1,10 @@
 import { type Page } from "@playwright/test";
-import { approveProxmoxImport, test, expect } from "./fixtures.js";
+import {
+  allowUtmControl,
+  approveProxmoxImport,
+  test,
+  expect,
+} from "./fixtures.js";
 
 // Enter in a form's text field does what Next does, through the same path:
 // it goes on once Next can, and does nothing while Next is off. Switches,
@@ -60,7 +65,8 @@ test.describe("on a Mac", () => {
     page,
   }) => {
     await start(page, "Virtual machine");
-    // Once the UTM check found UTM installed
+    // Once the UTM check found UTM, and the user let it be controlled
+    await allowUtmControl(page);
     await expect(next(page)).toHaveJSProperty("disabled", false);
     await next(page).click();
     const configure = page.locator("utm-configure-view");

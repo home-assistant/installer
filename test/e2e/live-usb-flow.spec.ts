@@ -155,17 +155,17 @@ test("asks for administrator access before listing sticks", async ({
   page,
 }) => {
   await page.addInitScript(() =>
-    sessionStorage.setItem("hai:mock-live-usb", "needs-admin")
+    sessionStorage.setItem("hai:mock-failure", "drives-admin")
   );
   await openMediaChoice(page);
   await chooseMedia(page, "USB stick");
 
-  const gate = page.locator("live-usb-gate");
-  await expect(gate).toContainText("Administrator access needed");
+  const drives = page.locator("drive-selection-view");
+  await expect(drives).toContainText("needs administrator access");
   await expect(
-    gate.getByRole("button", { name: "Restart as administrator" })
+    drives.getByRole("button", { name: "Restart as administrator" })
   ).toBeVisible();
-  await expect(page.locator("drive-selection-view")).toBeHidden();
+  await expect(drives.locator("drive-card")).toHaveCount(0);
   await expect(nextButton(page)).toBeDisabled();
 });
 

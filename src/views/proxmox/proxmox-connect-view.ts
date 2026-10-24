@@ -86,12 +86,12 @@ export class ProxmoxConnectView extends LitElement {
         overflow-wrap: anywhere;
       }
       .certificate-changed {
-        color: var(--ha-error-color, #b30532);
+        color: var(--ha-error-color);
         font-weight: 500;
       }
       .fingerprint-label {
         font-size: 0.8125rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         margin-bottom: 0.25rem;
       }
       .fingerprint {

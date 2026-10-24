@@ -1,4 +1,5 @@
 import { esbuildPlugin } from "@web/dev-server-esbuild";
+import { chromeLauncher } from "@web/test-runner";
 
 // The built-in `a11ySnapshot` command only returns "interesting" nodes, which
 // drops structural roles like radiogroup. This one returns the full tree so
@@ -21,6 +22,23 @@ function fullA11ySnapshotPlugin() {
 
 export default {
   files: "test/unit/**/*.test.ts",
+  // Load the app's theme, as index.html does, so components get its tokens.
+  // They have no fallbacks of their own.
+  testRunnerHtml: (testFramework) =>
+    `<!DOCTYPE html><html><head><link rel="stylesheet" href="/src/styles.css" /></head><body><script type="module" src="${testFramework}"></script></body></html>`,
+  // Chrome follows the OS's light or dark mode, and so does the theme. Light
+  // everywhere, so a test reads the same colours on every machine.
+  browsers: [
+    chromeLauncher({
+      async createPage({ context }) {
+        const page = await context.newPage();
+        await page.emulateMediaFeatures([
+          { name: "prefers-color-scheme", value: "light" },
+        ]);
+        return page;
+      },
+    }),
+  ],
   // Covers launching Chrome and opening the first page, not any test. Cold CI
   // runners have taken up to 27s of the default 30s.
   browserStartTimeout: 60000,

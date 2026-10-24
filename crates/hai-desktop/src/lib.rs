@@ -23,7 +23,8 @@ use commands::{
     get_system_info, get_utm_haos_release, get_utm_vm_status, list_block_devices,
     proxmox_certificate_fingerprint, proxmox_check_vm_config, proxmox_connect, proxmox_create_vm,
     proxmox_enable_storage_import, proxmox_get_next_vm_id, proxmox_get_vm_status,
-    proxmox_list_bridges, proxmox_list_nodes, proxmox_list_storage, start_utm_vm, utm_supported,
+    proxmox_list_bridges, proxmox_list_nodes, proxmox_list_storage, relaunch_as_admin,
+    start_utm_vm, utm_supported,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -74,6 +75,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             check_connection,
             list_block_devices,
+            relaunch_as_admin,
             flash_image,
             cancel_flash,
             get_manifest,
@@ -114,8 +116,7 @@ pub fn run() {
             live_usb::create_live_usb,
             live_usb::save_live_iso,
             live_usb::check_iso_location,
-            live_usb::reveal_in_folder,
-            live_usb::relaunch_as_admin
+            live_usb::reveal_in_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

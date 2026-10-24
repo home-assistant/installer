@@ -22,7 +22,7 @@ describe("live-iso-location-view", () => {
     location = deferred();
     mockTauriIpc((cmd) => {
       if (cmd === "live_usb_status") {
-        return { hai_live_found: true, needs_admin: false };
+        return { hai_live_found: true };
       }
       if (cmd === "check_iso_location") return location.promise;
       throw new Error(`unexpected command ${cmd}`);

@@ -16,7 +16,7 @@
   --ha-background-color: #ffffff;
   --ha-card-background: #ffffff;
   --ha-text-color: #212121;
-  /* Borders, dividers and empty tracks; components used to fall back to these */
+  /* Borders, dividers and empty tracks */
   --ha-border-color: #e0e0e0;
   /* Steps and stages not reached yet. Their rings need 3:1 to the page. */
   --ha-inactive-color: #8c8c8c;

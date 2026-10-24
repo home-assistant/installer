@@ -24,14 +24,14 @@ export const loadStateStyles = css`
     justify-content: center;
     gap: 1rem;
     padding: 3rem;
-    color: var(--ha-secondary-text-color, #727272);
+    color: var(--ha-secondary-text-color);
   }
 
   .loading loading-spinner {
     font-size: 40px;
     --track-width: 3px;
-    --track-color: var(--ha-border-color, #e0e0e0);
-    --indicator-color: var(--ha-primary-color, #03a9f4);
+    --track-color: var(--ha-border-color);
+    --indicator-color: var(--ha-primary-color);
   }
 
   .error {
@@ -46,11 +46,11 @@ export const loadStateStyles = css`
     width: 48px;
     height: 48px;
     margin-bottom: 1rem;
-    fill: var(--ha-error-color, #db4437);
+    fill: var(--ha-error-color);
   }
 
   .error-message {
-    color: var(--ha-error-color, #db4437);
+    color: var(--ha-error-color);
     margin-bottom: 1rem;
     overflow-wrap: anywhere;
   }
@@ -155,9 +155,9 @@ export const statusRowStyles = css`
     width: 100%;
     box-sizing: border-box;
     padding: 1rem;
-    border-radius: var(--ha-small-border-radius, 8px);
-    background-color: var(--ha-error-background, rgba(219, 68, 55, 0.1));
-    border: 1px solid var(--ha-error-border, rgba(219, 68, 55, 0.3));
+    border-radius: var(--ha-small-border-radius);
+    background-color: var(--ha-error-background);
+    border: 1px solid var(--ha-error-border);
   }
 
   /* As tall as the title's first line, which it stands next to */
@@ -173,22 +173,22 @@ export const statusRowStyles = css`
   }
 
   .status-success .status-icon {
-    color: var(--ha-success-color, #00883c);
+    color: var(--ha-success-color);
   }
 
   .status-warning .status-icon {
-    color: var(--ha-warning-color, #b45f04);
+    color: var(--ha-warning-color);
   }
 
   .status-error .status-icon {
-    color: var(--ha-error-color, #b30532);
+    color: var(--ha-error-color);
   }
 
   .status-row loading-spinner {
     font-size: 24px;
     --track-width: 2px;
-    --track-color: var(--ha-border-color, #e0e0e0);
-    --indicator-color: var(--ha-primary-color, #006787);
+    --track-color: var(--ha-border-color);
+    --indicator-color: var(--ha-primary-color);
   }
 
   .status-text {
@@ -202,18 +202,18 @@ export const statusRowStyles = css`
   .status-title {
     font-size: 1rem;
     font-weight: 500;
-    color: var(--ha-text-color, #212121);
+    color: var(--ha-text-color);
     margin: 0;
   }
 
   .status-description {
     font-size: 0.8125rem;
-    color: var(--ha-secondary-text-color, #727272);
+    color: var(--ha-secondary-text-color);
     margin: 0;
   }
 
   .status-error .status-description {
-    color: var(--ha-error-color, #b30532);
+    color: var(--ha-error-color);
   }
 
   .status-text .error-help {

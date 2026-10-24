@@ -53,9 +53,9 @@ export class LiveUsbProgressView extends InstallProgressView {
       border-radius: 8px;
       text-align: center;
       font-weight: 500;
-      color: var(--ha-error-color, #db4437);
-      background-color: rgba(219, 68, 55, 0.1);
-      border: 1px solid rgba(219, 68, 55, 0.3);
+      color: var(--ha-error-color);
+      background-color: var(--ha-error-background);
+      border: 1px solid var(--ha-error-border);
     }
   `;
 

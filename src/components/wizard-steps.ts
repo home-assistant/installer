@@ -251,7 +251,8 @@ export const WIZARD_STEPS: Record<
   vm: {
     check: {
       render: () => html`<utm-check-view></utm-check-view>`,
-      ready: (selections) => !!selections.utmInstalled,
+      ready: (selections) =>
+        !!selections.utmInstalled && !!selections.utmControlAllowed,
     },
     configure: {
       render: () => html`<utm-configure-view></utm-configure-view>`,
@@ -344,7 +345,7 @@ export const LIVE_USB_STEPS: Record<string, WizardStepDefinition> = {
   },
   drive: {
     render: () =>
-      html`<live-usb-gate admin
+      html`<live-usb-gate
         ><drive-selection-view></drive-selection-view
       ></live-usb-gate>`,
     ready: (selections) => drive.ready!(selections) && !!selections.liveReady,

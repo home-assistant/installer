@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, skipWifiStep, test } from "./fixtures.js";
+import { allowUtmControl, expect, skipWifiStep, test } from "./fixtures.js";
 
 // A dialog leaves the rest of the page inert while it is open, and gives the
 // focus back to what opened it as it closes. When the screen changes under
@@ -126,7 +126,8 @@ test.describe("on a Mac", () => {
     await page.getByRole("button", { name: "Let's go" }).click();
     await page.getByRole("button", { name: "Virtual machine" }).click();
     const next = page.locator("wizard-shell .footer-right wa-button");
-    // Enabled once the UTM check found UTM installed
+    // Enabled once the UTM check found UTM, and the user let it be controlled
+    await allowUtmControl(page);
     await expect(next).toHaveJSProperty("disabled", false);
     await next.click();
     await expect(page.locator("utm-configure-view")).toBeVisible();

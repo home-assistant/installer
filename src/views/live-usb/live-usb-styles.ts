@@ -14,14 +14,14 @@ export const liveUsbStyles = css`
   h2 {
     font-size: 1.5rem;
     font-weight: 400;
-    color: var(--ha-text-color, #212121);
+    color: var(--ha-text-color);
     margin: 0 0 0.5rem 0;
     text-align: center;
   }
 
   .subtitle {
     font-size: 1rem;
-    color: var(--ha-secondary-text-color, #727272);
+    color: var(--ha-secondary-text-color);
     margin: 0 0 1.5rem 0;
     text-align: center;
     max-width: 500px;
@@ -42,15 +42,15 @@ export const liveUsbStyles = css`
     border-radius: 8px;
     font-size: 0.875rem;
     line-height: 1.5;
-    color: var(--ha-text-color, #212121);
-    background-color: rgba(255, 152, 0, 0.1);
-    border: 1px solid rgba(255, 152, 0, 0.3);
+    color: var(--ha-text-color);
+    background-color: var(--ha-warning-background);
+    border: 1px solid var(--ha-warning-border);
     box-sizing: border-box;
   }
 
   .notice.error {
-    background-color: rgba(219, 68, 55, 0.1);
-    border-color: rgba(219, 68, 55, 0.3);
+    background-color: var(--ha-error-background);
+    border-color: var(--ha-error-border);
   }
 
   .notice p {
@@ -63,16 +63,5 @@ export const liveUsbStyles = css`
 
   code {
     overflow-wrap: anywhere;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    .notice {
-      background-color: rgba(255, 152, 0, 0.15);
-      border-color: rgba(255, 152, 0, 0.4);
-    }
-    .notice.error {
-      background-color: rgba(219, 68, 55, 0.15);
-      border-color: rgba(219, 68, 55, 0.4);
-    }
   }
 `;

@@ -21,7 +21,7 @@ export class ConnectionCheckView extends LitElement {
     css`
       :host {
         text-align: center;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
       }
       .content {
         gap: 1.5rem;
@@ -30,7 +30,7 @@ export class ConnectionCheckView extends LitElement {
         max-width: 32rem;
         overflow-wrap: anywhere;
         margin: 0;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
       }
       .error-help {
         margin-top: 1rem;

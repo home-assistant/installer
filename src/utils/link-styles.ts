@@ -8,7 +8,7 @@ import { css } from "lit";
  */
 export const linkStyles = css`
   a {
-    color: var(--ha-primary-color, #006787);
+    color: var(--ha-primary-color);
     text-decoration: underline;
   }
 `;

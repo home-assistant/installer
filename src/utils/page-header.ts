@@ -11,7 +11,7 @@ export const pageHeaderStyles = css`
   .header {
     display: flex;
     align-items: center;
-    padding: 1rem var(--ha-page-gutter, 2rem);
+    padding: 1rem var(--ha-page-gutter);
   }
 
   /* Back points the way the page reads */
@@ -52,7 +52,7 @@ export const pageStyles = css`
     flex-direction: column;
     align-items: center;
     overflow-y: auto;
-    padding: 1rem var(--ha-page-gutter, 2rem) 2rem;
+    padding: 1rem var(--ha-page-gutter) 2rem;
   }
 
   /* The auto margins center the content while it fits; once it doesn't, it
@@ -68,14 +68,14 @@ export const pageStyles = css`
   h1 {
     font-size: 1.75rem;
     font-weight: 400;
-    color: var(--ha-text-color, #212121);
+    color: var(--ha-text-color);
     margin: 0;
     text-align: center;
   }
 
   .subtitle {
     font-size: 1rem;
-    color: var(--ha-secondary-text-color, #727272);
+    color: var(--ha-secondary-text-color);
     margin: 0.5rem 0 2rem;
     text-align: center;
     max-width: 500px;
