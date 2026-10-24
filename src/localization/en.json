@@ -573,6 +573,7 @@
   "utils.installer_error.invalid_config": "The installer couldn't prepare this installation. Report the problem if it continues.",
   "utils.installer_error.drive_disconnected": "The storage device was disconnected. Reconnect it and select your drive again.",
   "utils.installer_error.write_protected": "The drive is write-protected. Unlock the SD card or choose another drive.",
+  "utils.installer_error.unsupported_sector_size": "This drive uses a sector size Home Assistant can't start from. Choose another drive.",
   "utils.installer_error.unsupported_platform": "This installation method is not available on this computer. Choose another installation method.",
   "utils.installer_error.json": "The installer received an unexpected response. Report the problem if it continues.",
   "utils.installer_error.download_failed": "The image could not be downloaded. Check your connection and available storage.",

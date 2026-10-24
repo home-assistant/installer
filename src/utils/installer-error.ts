@@ -31,6 +31,8 @@ const messages: Record<string, () => string> = {
   drive_disconnected: () =>
     localize("utils.installer_error.drive_disconnected"),
   write_protected: () => localize("utils.installer_error.write_protected"),
+  unsupported_sector_size: () =>
+    localize("utils.installer_error.unsupported_sector_size"),
   unsupported_platform: () =>
     localize("utils.installer_error.unsupported_platform"),
   json: () => localize("utils.installer_error.json"),
@@ -115,6 +117,7 @@ const DRIVE_FAILURES = [
   "drive_disconnected",
   "drive_too_small",
   "image_too_large",
+  "unsupported_sector_size",
   "write_protected",
 ];
 

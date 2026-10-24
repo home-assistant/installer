@@ -90,6 +90,7 @@ impl From<Error> for CommandError {
             Error::UtmVmCreated(message) => return Self::with_message("utm_vm_created", message, false),
             Error::DriveDisconnected => ("drive_disconnected", "The drive was disconnected. Reconnect it and select it again.", false),
             Error::WriteProtected => ("write_protected", "The drive is write-protected. Unlock the SD card or choose another drive.", false),
+            Error::UnsupportedSectorSize(_) => ("unsupported_sector_size", "This drive uses a sector size Home Assistant can't start from. Choose another drive.", false),
             Error::UnsupportedPlatform(_) => ("unsupported_platform", "This installation method is not available on this computer.", false),
             Error::Json(_) => ("json", "The installer received an unexpected response.", false),
             Error::InvalidConfig(message) => ("invalid_config", message.as_str(), false),

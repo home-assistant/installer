@@ -1,7 +1,7 @@
 //! Windows disk writing via direct physical-drive access (requires Administrator).
 
 use super::super::*;
-use super::volumes::{control, disk_length, lock_disk_volumes, refresh_properties};
+use super::volumes::{control, disk_length, lock_disk_volumes, refresh_properties, sector_size};
 use std::fs::File;
 use std::os::windows::fs::OpenOptionsExt;
 use std::sync::mpsc;
@@ -24,6 +24,8 @@ pub async fn write_image<P: ProgressCallback>(
     // The serial is read from the handle we write through, so a different
     // drive that took over this disk number is refused.
     check_handle_serial(&device, expected)?;
+    check_handle_size(&device, expected)?;
+    ensure_supported_sector_size(sector_size(&device)?)?;
     ensure_media_writable(&device)?;
     // The disk number can belong to another drive by the time the write is
     // done, so remember which drive this is while that is certain
@@ -114,6 +116,21 @@ fn check_handle_serial(device: &File, expected: &ExpectedDevice) -> Result<()> {
     if serial.as_ref() != Some(expected_serial) {
         return Err(Error::DeviceNotFound(
             "The selected drive's serial changed or is unavailable. Select it again.".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Many card readers report no serial, which leaves nothing on the handle to
+/// tell a different drive on the same disk number apart. The capacity at least
+/// has to be the one the user selected.
+fn check_handle_size(device: &File, expected: &ExpectedDevice) -> Result<()> {
+    if expected.serial.is_some() {
+        return Ok(());
+    }
+    if Some(disk_length(device)?) != expected.size {
+        return Err(Error::DeviceNotFound(
+            "The selected drive changed or was disconnected. Select it again.".into(),
         ));
     }
     Ok(())

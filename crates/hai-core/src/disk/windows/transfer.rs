@@ -61,6 +61,18 @@ pub(super) fn transfer(
     let mut prefix = vec![0; prefix_size];
     source.read_exact(&mut prefix)?;
 
+    // Getting the volume locks can take a while, and a stop in that time must
+    // leave the disk as it was. Ask once more before wiping it.
+    send_progress(
+        progress,
+        FlashProgress::new(
+            FlashStage::Writing,
+            0,
+            image_size,
+            "Writing image to device...",
+        ),
+    )?;
+
     // MSFT_Disk.Clear zeroes the first and last MiB. Do the same through our
     // retained handle: Clear-Disk's separate process cannot own our locks.
     let zeros = vec![0; METADATA_SIZE];
@@ -410,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_stops_before_the_prefix_is_published() {
+    fn cancel_before_the_wipe_leaves_the_disk_untouched() {
         let mut image = source(2 * METADATA_SIZE);
         let mut disk = Disk::new();
         // A dropped receiver is how a cancel reaches the writer
@@ -426,9 +438,8 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, Error::Cancelled), "{error:?}");
-        assert!(disk.bytes.get_ref()[..METADATA_SIZE]
-            .iter()
-            .all(|&b| b == 0));
+        assert!(disk.events.is_empty(), "{:?}", disk.events);
+        assert!(disk.bytes.get_ref().iter().all(|&byte| byte == 0xaa));
     }
 
     #[test]
@@ -586,11 +597,13 @@ mod tests {
         )
         .unwrap();
         let updates: Vec<_> = rx.try_iter().collect();
-        let writing = updates
+        let writing: Vec<_> = updates
             .iter()
-            .find(|update| update.stage == FlashStage::Writing)
-            .unwrap();
-        assert_eq!(writing.bytes_processed, (size - METADATA_SIZE) as u64);
+            .filter(|update| update.stage == FlashStage::Writing)
+            .collect();
+        // The first one is the last chance to stop before the wipe
+        assert_eq!(writing[0].bytes_processed, 0);
+        assert_eq!(writing[1].bytes_processed, (size - METADATA_SIZE) as u64);
         let verifying: Vec<_> = updates
             .iter()
             .filter(|update| update.stage == FlashStage::Verifying)
