@@ -353,7 +353,9 @@ starts; older ones announce `version=0.0.0` and no `uuid`. The step first
 notes what announces itself already, then takes the first landing page that
 wasn't there for the device, and follows it at the address it announces.
 Home Assistant itself is never taken for it. The Start device step before it,
-which comes as soon as the drive is written, notes what is there. Only
+which comes as soon as the drive is written, notes what is there, then
+watches for the device while it stays open, in case Home Assistant replaces
+the landing page before Next. Only
 lookups in that first minute count, before the device can have started; when
 none answered by then, any landing page is the device. `find_home_assistants` listens
 for three seconds: on Windows through the system's DNS-SD
