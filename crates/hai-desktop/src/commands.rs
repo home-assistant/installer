@@ -1521,6 +1521,30 @@ mod tests {
 
     #[cfg(feature = "mock")]
     #[tokio::test]
+    // Isolated from other tests that clear the tail or record lookups
+    #[serial_test::serial]
+    async fn find_home_assistants_forwards_a_lookup_and_records_only_its_counts() {
+        crate::diagnostics::clear_test_log_tail();
+
+        // The mock finds a landing page each lookup didn't before
+        let found = find_home_assistants().await.unwrap();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].landing_page);
+        assert_eq!(found[0].address, "192.168.1.101");
+
+        let tail = crate::diagnostics::test_log_tail().join("\n");
+        assert!(
+            tail.contains(" home_assistant_lookup found=1 landing_pages=1"),
+            "{tail}"
+        );
+        // Never which one, or where
+        for private in [found[0].id.as_str(), found[0].address.as_str()] {
+            assert!(!tail.contains(private), "{tail}");
+        }
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
     async fn ha_setup_status_mock_has_no_landing_page() {
         // The mock's Home Assistant is ready at once, so its landing page is gone
         assert_eq!(get_ha_setup_status("192.168.1.100".into()).await, None);
