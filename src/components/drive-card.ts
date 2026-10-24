@@ -8,10 +8,7 @@ import { renderDriveIcon } from "./drive-icon.js";
 import { driveModelLabel } from "../utils/drive-selection.js";
 import { reducedMotionStyles } from "../utils/view-accessibility.js";
 import { veryNarrowWindow } from "../utils/breakpoints.js";
-import {
-  selectableCardStyles,
-  selectedIndicatorStyles,
-} from "../utils/card-styles.js";
+import { selectableCardStyles, badgeStyles } from "../utils/card-styles.js";
 
 /**
  * A drive row that behaves as a radio inside a `<wa-radio-group>`.
@@ -30,7 +27,7 @@ export class DriveCard extends WaRadio {
   static css = [
     reducedMotionStyles,
     selectableCardStyles,
-    selectedIndicatorStyles,
+    badgeStyles,
     css`
       :host(:state(disabled)) {
         cursor: not-allowed;
@@ -205,7 +202,7 @@ export class DriveCard extends WaRadio {
         </div>
         <span class="size">${formatBytes(this.driveSize)}</span>
         ${this.checked
-          ? html`<span class="selected-indicator" aria-hidden="true">✓</span>`
+          ? html`<span class="badge" aria-hidden="true">✓</span>`
           : nothing}
         ${!this.disabled && this.capacityWarning
           ? html`<p class="capacity-warning">${this.capacityWarning}</p>`

@@ -2,6 +2,7 @@ import { LitElement, html, css, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { localize } from "../localization/localize.js";
 import { renderExternalLink } from "../utils/external-link.js";
+import { badgeStyles } from "../utils/card-styles.js";
 import { linkStyles } from "../utils/link-styles.js";
 import { panelStyles } from "../utils/panel-styles.js";
 import { roomForMascotBeside } from "../utils/breakpoints.js";
@@ -23,6 +24,7 @@ export class InstallSuccess extends LitElement {
 
   static styles = [
     reducedMotionStyles,
+    badgeStyles,
     linkStyles,
     sectionLabelStyles,
     css`
@@ -103,18 +105,8 @@ export class InstallSuccess extends LitElement {
         gap: 0.75rem;
       }
 
-      .step-number {
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        background-color: var(--ha-primary-fill);
-        color: var(--wa-color-brand-on-loud);
-        font-size: 0.875rem;
+      .badge {
         font-weight: 500;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
       }
 
       .step-text {
@@ -185,7 +177,7 @@ export class InstallSuccess extends LitElement {
         max-width: var(--ha-content-width);
         margin-bottom: 2rem;
         padding: 1rem;
-        background-color: rgba(3, 169, 244, 0.1);
+        background-color: var(--wa-color-brand-fill-quiet);
         border-radius: var(--ha-small-border-radius);
         font-size: 0.875rem;
         color: var(--ha-text-color);
@@ -287,7 +279,7 @@ export class InstallSuccess extends LitElement {
               ${this.steps.map(
                 (step, index) => html`
                   <li class="step-item">
-                    <span class="step-number">${index + 1}</span>
+                    <span class="badge">${index + 1}</span>
                     <span class="step-text">${step}</span>
                   </li>
                 `

@@ -92,12 +92,12 @@ describe("drive-card", () => {
       <drive-card name="Test"></drive-card>
     `);
 
-    expect(el.shadowRoot!.querySelector(".selected-indicator")).to.be.null;
+    expect(el.shadowRoot!.querySelector(".badge")).to.be.null;
 
     el.checked = true;
     await el.updateComplete;
 
-    expect(el.shadowRoot!.querySelector(".selected-indicator")).to.exist;
+    expect(el.shadowRoot!.querySelector(".badge")).to.exist;
   });
 
   it("reports disabled to assistive technology", async () => {

@@ -63,11 +63,13 @@ export const selectableCardStyles = css`
 `;
 
 /**
- * The check on the chosen card, as a `.selected-indicator`. Where it sits is
- * up to the card.
+ * The round badge that holds a check or a number, as a `.badge`: the check on
+ * the chosen card and the number of a next step. Where it sits is up to its
+ * parent.
  */
-export const selectedIndicatorStyles = css`
-  .selected-indicator {
+export const badgeStyles = css`
+  .badge {
+    flex-shrink: 0;
     width: 24px;
     height: 24px;
     background-color: var(--ha-primary-fill);
@@ -79,10 +81,10 @@ export const selectedIndicatorStyles = css`
     font-size: 14px;
   }
 
-  /* Forced colors would paint the circle like the card, or hide it behind a
-   * backplate, leaving only a small tick */
+  /* Forced colors would paint the circle like what it sits on, or hide it
+   * behind a backplate, leaving only a small tick or number */
   @media (forced-colors: active) {
-    .selected-indicator {
+    .badge {
       forced-color-adjust: none;
       background-color: Highlight;
       color: HighlightText;

@@ -49,11 +49,11 @@ async function expectChosen(
     "border-top-color",
     system.highlight
   );
-  const check = chosen.locator(".selected-indicator");
+  const check = chosen.locator(".badge");
   await expect(check).toBeVisible();
   await expect(check).toHaveCSS("background-color", system.highlight);
   await expect(check).toHaveCSS("color", system.highlightText);
-  await expect(other.locator(".selected-indicator")).toHaveCount(0);
+  await expect(other.locator(".badge")).toHaveCount(0);
 }
 
 // The ring sits outside the border. On a radio it has a color of its own, so

@@ -51,6 +51,10 @@ export default [
     // tests included. A fallback would never show, so nothing would notice it
     // going stale, as the old HA blue had. --ha-icon-display is no theme
     // token but ha-svg-icon's own hook, which nothing sets by default.
+    //
+    // The old Home Assistant blue, #03a9f4, is no theme color any more, but
+    // the success screen's tip box kept drawing it as a raw rgba(), which the
+    // fallback rule can't see. It is rejected however it is written.
     files: ["src/**/*.ts"],
     rules: {
       "no-restricted-syntax": [
@@ -66,6 +70,18 @@ export default [
             "Literal[value=/var\\(\\s*--ha-(?!icon-display\\s*,)[\\w-]+\\s*,/]",
           message:
             "Use var(--ha-…) without a fallback: src/styles.css sets every theme token.",
+        },
+        {
+          selector:
+            "TemplateElement[value.raw=/#03a9f4|rgba?\\(\\s*3[\\s,]+169[\\s,]+244\\b/i]",
+          message:
+            "#03a9f4 is the old Home Assistant blue: take the theme's color from src/styles.css, such as color-mix() on var(--ha-primary-color).",
+        },
+        {
+          selector:
+            "Literal[value=/#03a9f4|rgba?\\(\\s*3[\\s,]+169[\\s,]+244\\b/i]",
+          message:
+            "#03a9f4 is the old Home Assistant blue: take the theme's color from src/styles.css, such as color-mix() on var(--ha-primary-color).",
         },
       ],
     },

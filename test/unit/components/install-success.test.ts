@@ -5,6 +5,7 @@ import {
   html,
   waitUntil,
 } from "@open-wc/testing";
+import { emulateMedia } from "@web/test-runner-commands";
 import "../../../src/components/install-success.js";
 import type { InstallSuccess } from "../../../src/components/install-success.js";
 import {
@@ -12,6 +13,7 @@ import {
   fullA11ySnapshot,
   headingOutline,
 } from "../helpers/a11y.js";
+import { contrast } from "../helpers/contrast.js";
 import { expectThemeLink } from "../helpers/link-style.js";
 
 const USER_AGENTS = {
@@ -32,8 +34,9 @@ function setUserAgent(platform: keyof typeof USER_AGENTS) {
 
 describe("install-success", () => {
   // The stub shadows the prototype getter; deleting it restores the real UA.
-  afterEach(() => {
+  afterEach(async () => {
     delete (window.navigator as { userAgent?: string }).userAgent;
+    await emulateMedia({ colorScheme: "light" });
   });
 
   it("puts Casita beside the next steps under the heading when wide, and above it when narrow", async () => {
@@ -88,7 +91,7 @@ describe("install-success", () => {
     expect(list.getAttribute("aria-label")).to.equal("Next steps");
     const steps = [...list.querySelectorAll("li")];
     expect(
-      steps.map((step) => step.querySelector(".step-number")!.textContent)
+      steps.map((step) => step.querySelector(".badge")!.textContent)
     ).to.deep.equal(["1", "2", "3"]);
     expect(
       steps.map((step) =>
@@ -225,4 +228,50 @@ describe("install-success", () => {
       expect(link.rel).to.equal("noopener noreferrer");
     }
   });
+
+  it("draws the step numbers as the badge the drive cards use", async () => {
+    const el = await fixture<InstallSuccess>(
+      html`<install-success .steps=${["Power it on"]}></install-success>`
+    );
+    const badge = getComputedStyle(el.shadowRoot!.querySelector(".badge")!);
+    const probe = document.body.appendChild(document.createElement("span"));
+    probe.style.color = "var(--ha-primary-fill)";
+    const fill = getComputedStyle(probe).color;
+    probe.remove();
+
+    expect(badge.width).to.equal("24px");
+    expect(badge.height).to.equal("24px");
+    expect(badge.backgroundColor).to.equal(fill);
+  });
+
+  for (const colorScheme of ["light", "dark"] as const) {
+    it(`tints the tip with the theme's color, readably, in ${colorScheme} mode`, async () => {
+      await emulateMedia({ colorScheme });
+      const el = await fixture<InstallSuccess>(
+        html`<install-success
+          .tip=${html`<strong>Tip:</strong> You can manage it anytime.`}
+        ></install-success>`
+      );
+      const tip = el.shadowRoot!.querySelector(".tip-section")!;
+      const probe = document.body.appendChild(document.createElement("span"));
+      probe.style.backgroundColor = "var(--wa-color-brand-fill-quiet)";
+      const tint = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const background = getComputedStyle(tip).backgroundColor;
+      const page = getComputedStyle(document.documentElement).backgroundColor;
+
+      // Not the old Home Assistant blue, which the theme left behind
+      expect(background).to.equal(tint);
+      expect(
+        contrast(getComputedStyle(tip).color, background, page)
+      ).to.be.at.least(4.5);
+      expect(
+        contrast(
+          getComputedStyle(tip.querySelector("strong")!).color,
+          background,
+          page
+        )
+      ).to.be.at.least(4.5);
+    });
+  }
 });
