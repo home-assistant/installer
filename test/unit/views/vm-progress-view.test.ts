@@ -269,10 +269,10 @@ describe("vm-progress-view", () => {
     const stoppable: boolean[] = [];
     const leavable: boolean[] = [];
     el.addEventListener("install-stoppable", (event) =>
-      stoppable.push((event as CustomEvent).detail.stoppable)
+      stoppable.push(event.detail.stoppable)
     );
     el.addEventListener("install-leavable", (event) =>
-      leavable.push((event as CustomEvent).detail.leavable)
+      leavable.push(event.detail.leavable)
     );
 
     await el.updateComplete;

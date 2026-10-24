@@ -5,6 +5,7 @@ import type {
   ProxmoxStorage,
 } from "../../../../src/api/types.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
+import { fireEvent } from "../../../../src/utils/fire-event.js";
 import "../../../../src/views/proxmox/proxmox-configure-view.js";
 import type { ProxmoxConfigureView } from "../../../../src/views/proxmox/proxmox-configure-view.js";
 import type { ProxmoxTargetLookup } from "../../../../src/views/proxmox/proxmox-target-lookup.js";
@@ -115,9 +116,7 @@ describe("proxmox-configure-view announcements", () => {
   async function approveImport(el: ProxmoxConfigureView) {
     // A test page in the background never finishes the dialog's animations
     lookupOf(el).importStorage.dialog = true;
-    el.shadowRoot!.querySelector("info-dialog")!.dispatchEvent(
-      new CustomEvent("dialog-primary")
-    );
+    fireEvent(el.shadowRoot!.querySelector("info-dialog")!, "dialog-primary");
     await settle();
     await el.updateComplete;
   }

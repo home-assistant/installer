@@ -3,7 +3,6 @@ import { ifDefined } from "lit/directives/if-defined.js";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import "../components/vm-resources.js";
-import type { VmResourceValues } from "../components/vm-resources.js";
 import { nextOnEnter } from "../components/wizard-steps.js";
 import { localize } from "../localization/localize.js";
 import {
@@ -14,6 +13,7 @@ import {
 } from "../state/vm-defaults.js";
 import type { WizardSelections } from "../state/wizard-state.js";
 import { fieldError } from "./field-error.js";
+import type { HAIEvent } from "./fire-event.js";
 import { renderIcon } from "./render-icon.js";
 import { mdiLabelOutline } from "./icons.js";
 import { panelStyles } from "./panel-styles.js";
@@ -112,7 +112,7 @@ export class VmSettings {
     this._options.save();
   };
 
-  private readonly _onResourcesChange = (e: CustomEvent<VmResourceValues>) => {
+  private readonly _onResourcesChange = (e: HAIEvent<"resources-change">) => {
     const { cpuCores, memoryMb, diskSizeGb } = e.detail;
     this.set({ cpuCores, memoryMb, diskSizeGb });
     this._options.save();

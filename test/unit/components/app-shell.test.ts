@@ -12,6 +12,7 @@ import {
 } from "../../../src/api/mock-data.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
 import { storeDriveSelection } from "../../../src/utils/drive-selection.js";
+import { fireEvent } from "../../../src/utils/fire-event.js";
 import { flush, holdDeviceScan } from "../helpers/hold-device-scan.js";
 import { showsError } from "../helpers/progress-error.js";
 import {
@@ -42,9 +43,10 @@ interface ErrorFlags {
   _installError: boolean;
 }
 
-function fire(target: Element, type: string, detail?: unknown) {
-  target.dispatchEvent(
-    new CustomEvent(type, { detail, bubbles: true, composed: true })
+/** Web Awesome's own event, which `fireEvent` doesn't know */
+function afterHide(dialog: Element) {
+  dialog.dispatchEvent(
+    new CustomEvent("wa-after-hide", { bubbles: true, composed: true })
   );
 }
 
@@ -67,7 +69,7 @@ async function finishDialogHide(el: AppShell) {
   await el.updateComplete;
   await dialogOf(el).updateComplete;
   // Model the overlay lifecycle here; both browser engines test the actual close.
-  fire(dialogOf(el).shadowRoot!.querySelector("wa-dialog")!, "wa-after-hide");
+  afterHide(dialogOf(el).shadowRoot!.querySelector("wa-dialog")!);
   await flush();
 }
 
@@ -101,13 +103,17 @@ async function enterProxmoxConfigure(
   el: AppShell,
   check: () => Promise<unknown>
 ) {
-  fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+  fireEvent(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
     view: "path-selection",
   });
   await el.updateComplete;
-  fire(el.shadowRoot!.querySelector("path-selection-view")!, "select-path", {
-    path: "proxmox",
-  });
+  fireEvent(
+    el.shadowRoot!.querySelector("path-selection-view")!,
+    "select-path",
+    {
+      path: "proxmox",
+    }
+  );
   await el.updateComplete;
   wizardState.setSelection("proxmoxSession", {
     server_url: "https://pve:8006",
@@ -138,13 +144,17 @@ async function enterProxmoxConfigure(
 
 /** Walk in through the real welcome → path-selection → wizard route. */
 async function enterSbcFlow(el: AppShell) {
-  fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+  fireEvent(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
     view: "path-selection",
   });
   await el.updateComplete;
-  fire(el.shadowRoot!.querySelector("path-selection-view")!, "select-path", {
-    path: "sbc",
-  });
+  fireEvent(
+    el.shadowRoot!.querySelector("path-selection-view")!,
+    "select-path",
+    {
+      path: "sbc",
+    }
+  );
   await waitUntil(() => !!shellOf(el));
 }
 
@@ -168,13 +178,17 @@ describe("app-shell", () => {
   });
 
   it("keeps Next disabled until restored Proxmox choices have been verified", async () => {
-    fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+    fireEvent(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
       view: "path-selection",
     });
     await el.updateComplete;
-    fire(el.shadowRoot!.querySelector("path-selection-view")!, "select-path", {
-      path: "proxmox",
-    });
+    fireEvent(
+      el.shadowRoot!.querySelector("path-selection-view")!,
+      "select-path",
+      {
+        path: "proxmox",
+      }
+    );
     await el.updateComplete;
     wizardState.setSelection("proxmoxSession", {
       server_url: "https://pve:8006",
@@ -239,13 +253,13 @@ describe("app-shell", () => {
     let check = deferred<unknown>();
     await enterProxmoxConfigure(el, () => check.promise);
 
-    fire(shellOf(el), "wizard-next");
+    fireEvent(shellOf(el), "wizard-next");
     await waitUntil(() => shellOf(el).nextLabel === "Checking settings...");
     // Busy rather than disabled, so it keeps the focus
     expect(shellOf(el).nextBusy).to.be.true;
     expect(shellOf(el).nextDisabled).to.be.false;
     // Nothing else sends the step on meanwhile either
-    fire(shellOf(el), "wizard-next");
+    fireEvent(shellOf(el), "wizard-next");
     check.reject(
       ipcError(
         "proxmox_action_required",
@@ -261,7 +275,7 @@ describe("app-shell", () => {
     ).to.contain("VM ID 100 can't be used.");
 
     check = deferred<unknown>();
-    fire(shellOf(el), "wizard-next");
+    fireEvent(shellOf(el), "wizard-next");
     check.resolve(null);
     await waitUntil(() => wizardState.currentStep?.id === "confirm");
   });
@@ -269,7 +283,7 @@ describe("app-shell", () => {
   it("leaves a settings check behind when the user goes back", async () => {
     const check = deferred<unknown>();
     await enterProxmoxConfigure(el, () => check.promise);
-    fire(shellOf(el), "wizard-next");
+    fireEvent(shellOf(el), "wizard-next");
     await waitUntil(() => shellOf(el).nextLabel === "Checking settings...");
 
     wizardState.previousStep();
@@ -286,7 +300,7 @@ describe("app-shell", () => {
   it("keeps a settings check when an edit leaves the settings as they were", async () => {
     const check = deferred<unknown>();
     await enterProxmoxConfigure(el, () => check.promise);
-    fire(shellOf(el), "wizard-next");
+    fireEvent(shellOf(el), "wizard-next");
     await waitUntil(() => shellOf(el).nextLabel === "Checking settings...");
 
     // Every edit saves all settings again; a leading zero keeps the VM ID
@@ -322,13 +336,13 @@ describe("app-shell", () => {
 
       wizardState.setSelection("device", "saved-device");
       wizardState.setSelection("deviceCatalogReady", false);
-      fire(view, "wizard-next");
+      fireEvent(view, "wizard-next");
       await settle();
       expect(wizardState.currentStep!.id).to.equal(step);
 
       wizardState.setSelection("deviceCatalogReady", true);
       wizardState.setSelection("device", undefined);
-      fire(view, "wizard-next");
+      fireEvent(view, "wizard-next");
       await settle();
       expect(wizardState.currentStep!.id).to.equal(step);
       expect(shellOf(el).nextBusy).to.equal(false);
@@ -356,15 +370,19 @@ describe("app-shell", () => {
     expect(welcome.shadowRoot!.querySelector("main h1")).to.exist;
     expect(welcome.shadowRoot!.querySelector("main footer")).to.be.null;
 
-    fire(welcome, "navigate", { view: "path-selection" });
+    fireEvent(welcome, "navigate", { view: "path-selection" });
     await el.updateComplete;
     expect(
       el.shadowRoot!.querySelector("path-selection-view")!.getAttribute("role")
     ).to.equal("main");
 
-    fire(el.shadowRoot!.querySelector("path-selection-view")!, "navigate", {
-      view: "other-options",
-    });
+    fireEvent(
+      el.shadowRoot!.querySelector("path-selection-view")!,
+      "navigate",
+      {
+        view: "other-options",
+      }
+    );
     await el.updateComplete;
     expect(
       el.shadowRoot!.querySelector("other-options-view")!.getAttribute("role")
@@ -383,11 +401,11 @@ describe("app-shell", () => {
             )
           : retry.promise;
       });
-      fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+      fireEvent(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
         view: "path-selection",
       });
       await el.updateComplete;
-      fire(
+      fireEvent(
         el.shadowRoot!.querySelector("path-selection-view")!,
         "select-path",
         { path: "proxmox" }
@@ -414,7 +432,13 @@ describe("app-shell", () => {
       expect(calls).to.equal(2);
     });
 
-    for (const path of ["sbc", "minipc", "ha-hardware", "vm", "proxmox"]) {
+    for (const path of [
+      "sbc",
+      "minipc",
+      "ha-hardware",
+      "vm",
+      "proxmox",
+    ] as const) {
       it(`checks connectivity before starting ${path} and allows Back`, async () => {
         const pending = deferred<void>();
         const calls: string[] = [];
@@ -424,11 +448,11 @@ describe("app-shell", () => {
           calls.push(command);
           return pending.promise;
         });
-        fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+        fireEvent(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
           view: "path-selection",
         });
         await el.updateComplete;
-        fire(
+        fireEvent(
           el.shadowRoot!.querySelector("path-selection-view")!,
           "select-path",
           { path }
@@ -459,7 +483,7 @@ describe("app-shell", () => {
       wizardState.setSelection("device", "rpi5");
       if (step) await goToStep(el, step);
 
-      fire(shellOf(el), event);
+      fireEvent(shellOf(el), event);
       await el.updateComplete;
 
       expect(el.shadowRoot!.querySelector("path-selection-view")).to.exist;
@@ -494,7 +518,7 @@ describe("app-shell", () => {
     // Back to how to start the device, which can be read again
     expect(shellOf(el).hideBack).to.be.false;
 
-    fire(shellOf(el), "wizard-next");
+    fireEvent(shellOf(el), "wizard-next");
     await el.updateComplete;
     expect(wizardState.currentStep?.id).to.equal("done");
     expect(shellOf(el).querySelector("device-done-view")).to.exist;
@@ -594,7 +618,7 @@ describe("app-shell", () => {
       throw new Error(cmd);
     });
     const enterProxmox = async () => {
-      fire(
+      fireEvent(
         el.shadowRoot!.querySelector("path-selection-view")!,
         "select-path",
         {
@@ -605,7 +629,7 @@ describe("app-shell", () => {
         () => !!shellOf(el)?.querySelector("proxmox-connect-view")
       );
     };
-    fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+    fireEvent(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
       view: "path-selection",
     });
     await el.updateComplete;
@@ -615,11 +639,11 @@ describe("app-shell", () => {
       _password: "test",
     });
 
-    fire(shellOf(el), "wizard-next");
+    fireEvent(shellOf(el), "wizard-next");
     await waitUntil(() => shellOf(el).nextBusy);
     expect(shellOf(el).nextLabel).to.equal("Connecting...");
     expect(shellOf(el).nextDisabled).to.be.false;
-    fire(shellOf(el), "wizard-exit");
+    fireEvent(shellOf(el), "wizard-exit");
     await el.updateComplete;
     await enterProxmox();
 
@@ -644,9 +668,9 @@ describe("app-shell", () => {
     await goToStep(el, "confirm");
     expect(shellOf(el).querySelector("confirmation-view")).to.exist;
 
-    fire(shellOf(el), "wizard-next");
+    fireEvent(shellOf(el), "wizard-next");
     await waitForDialogOpen(el);
-    fire(dialogOf(el), "dialog-primary");
+    fireEvent(dialogOf(el), "dialog-primary");
     await finishDialogHide(el);
     await waitUntil(() => wizardState.currentStep?.id === "flash");
     expect(shellOf(el).querySelector("progress-view")).to.exist;
@@ -733,7 +757,7 @@ describe("app-shell", () => {
 
         card('device-card[value="ha-green"]').click();
         await waitUntil(() => question()?.open, "never asked");
-        fire(question()!, answer);
+        fireEvent(question()!, answer);
         await settle();
         expect(wizardState.currentStep!.id).to.equal(step);
       });
@@ -748,10 +772,10 @@ describe("app-shell", () => {
     });
 
     it("writes to the drive when it is still connected", async () => {
-      fire(shellOf(el), "wizard-next");
+      fireEvent(shellOf(el), "wizard-next");
       await waitForDialogOpen(el);
 
-      fire(dialogOf(el), "dialog-primary");
+      fireEvent(dialogOf(el), "dialog-primary");
       expect(wizardState.currentStep!.id).to.equal("confirm");
       await finishDialogHide(el);
 
@@ -759,27 +783,24 @@ describe("app-shell", () => {
         () => wizardState.currentStep?.id === "flash",
         "never reached the write step"
       );
-      fire(
-        dialogOf(el).shadowRoot!.querySelector("wa-dialog")!,
-        "wa-after-hide"
-      );
+      afterHide(dialogOf(el).shadowRoot!.querySelector("wa-dialog")!);
       await flush();
       expect(wizardState.currentStep!.id).to.equal("flash");
     });
 
     it("does not advance if the selected configuration changes while the dialog closes", async () => {
-      fire(shellOf(el), "wizard-next");
+      fireEvent(shellOf(el), "wizard-next");
       await waitForDialogOpen(el);
-      fire(dialogOf(el), "dialog-primary");
+      fireEvent(dialogOf(el), "dialog-primary");
       wizardState.setSelection("device", "different-device");
       await finishDialogHide(el);
       expect(wizardState.currentStep!.id).to.equal("confirm");
     });
 
     it("does not advance after cancelling the dialog", async () => {
-      fire(shellOf(el), "wizard-next");
+      fireEvent(shellOf(el), "wizard-next");
       await waitForDialogOpen(el);
-      fire(dialogOf(el), "dialog-secondary");
+      fireEvent(dialogOf(el), "dialog-secondary");
       await finishDialogHide(el);
       expect(wizardState.currentStep!.id).to.equal("confirm");
     });
@@ -787,7 +808,7 @@ describe("app-shell", () => {
     it("returns to drive selection when the path names a different disk", async () => {
       wizardState.setSelection("driveModel", "A Completely Different Stick");
 
-      fire(shellOf(el), "wizard-next");
+      fireEvent(shellOf(el), "wizard-next");
 
       await waitUntil(
         () => wizardState.getState().selections.drive === undefined,
@@ -805,7 +826,7 @@ describe("app-shell", () => {
         if (cmd === "list_block_devices") return scans[calls++].promise;
         throw new Error(cmd);
       });
-      fire(shellOf(el), "wizard-next");
+      fireEvent(shellOf(el), "wizard-next");
       await waitUntil(() => shellOf(el).nextLabel === "Checking drive...");
       scans[0].reject(ipcError("operation_failed", "Scan failed"));
       await waitUntil(() => wizardState.currentStep?.id === "drive");
@@ -830,7 +851,7 @@ describe("app-shell", () => {
     it("ignores a check that finishes after the user went back", async () => {
       const scan = holdDeviceScan();
       try {
-        fire(shellOf(el), "wizard-next");
+        fireEvent(shellOf(el), "wizard-next");
         await waitUntil(() => shellOf(el).nextLabel === "Checking drive...");
 
         wizardState.previousStep();
@@ -856,14 +877,14 @@ describe("app-shell", () => {
         return invoke();
       };
       try {
-        fire(shellOf(el), "wizard-next");
+        fireEvent(shellOf(el), "wizard-next");
         await waitUntil(() => shellOf(el).nextLabel === "Checking drive...");
         // Busy rather than disabled: the erase dialog then returns the focus
         // to it when cancelled
         expect(shellOf(el).nextBusy).to.be.true;
         expect(shellOf(el).nextDisabled).to.be.false;
 
-        fire(shellOf(el), "wizard-next");
+        fireEvent(shellOf(el), "wizard-next");
         scan.resolve(MOCK_BLOCK_DEVICES);
         await waitForDialogOpen(el);
         expect(scans).to.equal(1);
@@ -877,11 +898,11 @@ describe("app-shell", () => {
     // The dialog can stay open for any length of time, so the device is
     // checked again on confirm.
     it("re-checks between opening the dialog and the write", async () => {
-      fire(shellOf(el), "wizard-next");
+      fireEvent(shellOf(el), "wizard-next");
       await waitForDialogOpen(el);
 
       wizardState.setSelection("driveModel", "Swapped While You Read This");
-      fire(dialogOf(el), "dialog-primary");
+      fireEvent(dialogOf(el), "dialog-primary");
       await finishDialogHide(el);
 
       await waitUntil(
@@ -891,7 +912,7 @@ describe("app-shell", () => {
     });
 
     it("rechecks the board minimum before erasing", async () => {
-      fire(shellOf(el), "wizard-next");
+      fireEvent(shellOf(el), "wizard-next");
       await waitUntil(() => dialogOf(el).hasAttribute("open"));
 
       wizardState.setSelection("deviceConfig", {
@@ -899,7 +920,7 @@ describe("app-shell", () => {
         minimum_storage_bytes: CONNECTED.size * 2,
         recommended_storage_bytes: CONNECTED.size * 2,
       });
-      fire(dialogOf(el), "dialog-primary");
+      fireEvent(dialogOf(el), "dialog-primary");
       await finishDialogHide(el);
       await waitUntil(() => wizardState.currentStep?.id === "drive");
       await waitUntil(
@@ -945,7 +966,7 @@ describe("app-shell", () => {
     it("drops the password once it is on the drive", async () => {
       wizardState.setSelection("wifi", { ssid: "Home", password: "12345678" });
       await goToStep(el, "flash");
-      fire(shellOf(el), "install-complete");
+      fireEvent(shellOf(el), "install-complete");
       await el.updateComplete;
       expect(wizardState.currentStep?.id).to.equal("success");
       expect(wizardState.getState().selections.wifi).to.deep.equal({
@@ -970,11 +991,11 @@ describe("app-shell", () => {
       expect(shellOf(el).hideFooter).to.be.false;
       expect(shellOf(el).hideNext).to.be.true;
 
-      fire(shellOf(el), "wizard-cancel");
+      fireEvent(shellOf(el), "wizard-cancel");
       await el.updateComplete;
       expect(stopDialogOf(el).open).to.be.true;
 
-      fire(stopDialogOf(el), "dialog-secondary");
+      fireEvent(stopDialogOf(el), "dialog-secondary");
       await el.updateComplete;
       expect(stopDialogOf(el).open).to.be.false;
       expect(wizardState.currentStep?.id).to.equal("flash");
@@ -982,9 +1003,9 @@ describe("app-shell", () => {
     });
 
     it("stops the flash and offers to install again", async () => {
-      fire(shellOf(el), "wizard-cancel");
+      fireEvent(shellOf(el), "wizard-cancel");
       await el.updateComplete;
-      fire(stopDialogOf(el), "dialog-primary");
+      fireEvent(stopDialogOf(el), "dialog-primary");
       await el.updateComplete;
       // No buttons while the flash winds down
       expect(shellOf(el).hideFooter).to.be.true;
@@ -1008,9 +1029,9 @@ describe("app-shell", () => {
     });
     await goToStep(el, "flash");
 
-    fire(shellOf(el), "wizard-cancel");
+    fireEvent(shellOf(el), "wizard-cancel");
     await el.updateComplete;
-    fire(
+    fireEvent(
       el.shadowRoot!.querySelector("info-dialog.stop-dialog")!,
       "dialog-primary"
     );
@@ -1042,9 +1063,9 @@ describe("app-shell", () => {
       await goToStep(el, "flash");
       expect(shellOf(el).hideBack).to.be.true;
 
-      fire(shellOf(el), "wizard-cancel");
+      fireEvent(shellOf(el), "wizard-cancel");
       await el.updateComplete;
-      fire(
+      fireEvent(
         el.shadowRoot!.querySelector("info-dialog.stop-dialog")!,
         "dialog-primary"
       );
@@ -1060,9 +1081,9 @@ describe("app-shell", () => {
       expect(shellOf(el).nextLabel).to.equal("Install");
       expect((el as unknown as ErrorFlags)._installError).to.be.false;
 
-      fire(shellOf(el), "wizard-next");
+      fireEvent(shellOf(el), "wizard-next");
       await waitForDialogOpen(el);
-      fire(dialogOf(el), "dialog-primary");
+      fireEvent(dialogOf(el), "dialog-primary");
       await finishDialogHide(el);
       await waitUntil(() => wizardState.currentStep?.id === "flash");
       await el.updateComplete;
@@ -1118,7 +1139,7 @@ describe("app-shell", () => {
     });
 
     async function fail(detail: { retryable: boolean; changeChoice: boolean }) {
-      fire(
+      fireEvent(
         shellOf(el).querySelector("progress-view")!,
         "install-error",
         detail
@@ -1131,7 +1152,7 @@ describe("app-shell", () => {
       expect(shellOf(el).nextLabel).to.equal("Choose another drive");
       expect(shellOf(el).hideNext).to.be.false;
 
-      fire(shellOf(el), "wizard-next");
+      fireEvent(shellOf(el), "wizard-next");
       await el.updateComplete;
       expect(wizardState.currentStep?.id).to.equal("drive");
     });
@@ -1147,7 +1168,7 @@ describe("app-shell", () => {
       expect(shellOf(el).hideBack).to.be.false;
 
       // Nothing else sends the flash on to the drive step either
-      fire(shellOf(el), "wizard-next");
+      fireEvent(shellOf(el), "wizard-next");
       await el.updateComplete;
       expect(wizardState.currentStep?.id).to.equal("flash");
     });
@@ -1159,11 +1180,11 @@ describe("app-shell", () => {
 
     /** `mockBackend` runs once the flow is entered, before the install starts */
     async function enterProxmoxInstall(mockBackend?: () => void) {
-      fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+      fireEvent(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
         view: "path-selection",
       });
       await el.updateComplete;
-      fire(
+      fireEvent(
         el.shadowRoot!.querySelector("path-selection-view")!,
         "select-path",
         { path: "proxmox" }
@@ -1184,12 +1205,12 @@ describe("app-shell", () => {
       await waitUntil(() => !shellOf(el).hideFooter, "Cancel never showed");
       expect(shellOf(el).hideNext).to.be.true;
 
-      fire(shellOf(el), "wizard-cancel");
+      fireEvent(shellOf(el), "wizard-cancel");
       await el.updateComplete;
       expect(stopDialogOf(el).open).to.be.true;
       expect(stopDialogOf(el).message).to.contain("nothing is left behind");
 
-      fire(stopDialogOf(el), "dialog-primary");
+      fireEvent(stopDialogOf(el), "dialog-primary");
       await waitUntil(() => shellOf(el).nextLabel === "Try again");
       expect(shellOf(el).hideFooter).to.be.false;
       expect(wizardState.currentStep?.id).to.equal("install");
@@ -1220,7 +1241,7 @@ describe("app-shell", () => {
         "info-dialog.leave-dialog"
       ) as InfoDialog;
 
-      fire(shellOf(el), "wizard-cancel");
+      fireEvent(shellOf(el), "wizard-cancel");
       await el.updateComplete;
       expect(leaveDialog.open).to.be.true;
       expect(stopDialogOf(el).open).to.be.false;
@@ -1228,14 +1249,14 @@ describe("app-shell", () => {
       expect(leaveDialog.message).to.contain("http://192.0.2.50");
       expect(leaveDialog.message).not.to.contain("Import");
 
-      fire(leaveDialog, "dialog-secondary");
+      fireEvent(leaveDialog, "dialog-secondary");
       await el.updateComplete;
       expect(leaveDialog.open).to.be.false;
       expect(wizardState.currentStep?.id).to.equal("install");
 
-      fire(shellOf(el), "wizard-cancel");
+      fireEvent(shellOf(el), "wizard-cancel");
       await el.updateComplete;
-      fire(leaveDialog, "dialog-primary");
+      fireEvent(leaveDialog, "dialog-primary");
       await el.updateComplete;
       expect(el.shadowRoot!.querySelector("path-selection-view")).to.exist;
       expect(wizardState.getState().selections.proxmoxVmResult).to.be.undefined;
@@ -1261,7 +1282,7 @@ describe("app-shell", () => {
         "info-dialog.leave-dialog"
       ) as InfoDialog;
 
-      fire(shellOf(el), "wizard-cancel");
+      fireEvent(shellOf(el), "wizard-cancel");
       await el.updateComplete;
       expect(leaveDialog.open).to.be.true;
       expect(leaveDialog.message).to.contain("http://homeassistant.local");
@@ -1279,7 +1300,7 @@ describe("app-shell", () => {
         await enterProxmoxInstall(enableImport);
         await waitUntil(() => !shellOf(el).hideFooter, "Cancel never showed");
 
-        fire(shellOf(el), "wizard-cancel");
+        fireEvent(shellOf(el), "wizard-cancel");
         await el.updateComplete;
         expect(stopDialogOf(el).open).to.be.true;
         expect(stopDialogOf(el).message).to.contain(
@@ -1312,7 +1333,7 @@ describe("app-shell", () => {
           "info-dialog.leave-dialog"
         ) as InfoDialog;
 
-        fire(shellOf(el), "wizard-cancel");
+        fireEvent(shellOf(el), "wizard-cancel");
         await el.updateComplete;
         expect(leaveDialog.open).to.be.true;
         expect(leaveDialog.message).to.contain("http://192.0.2.50");
@@ -1343,12 +1364,12 @@ describe("app-shell", () => {
       const leaveDialog = el.shadowRoot!.querySelector(
         "info-dialog.leave-dialog"
       ) as InfoDialog;
-      fire(shellOf(el), "wizard-cancel");
+      fireEvent(shellOf(el), "wizard-cancel");
       await el.updateComplete;
       expect(leaveDialog.open).to.be.true;
 
       // Without waiting for the view to report it can no longer be left
-      fire(
+      fireEvent(
         el.shadowRoot!.querySelector("proxmox-progress-view")!,
         "install-complete"
       );
@@ -1401,7 +1422,7 @@ describe("app-shell", () => {
         "https://pve:8006"
       );
 
-      fire(shellOf(el), "wizard-next");
+      fireEvent(shellOf(el), "wizard-next");
       await waitUntil(
         () => !!shellOf(el).querySelector("proxmox-connect-view"),
         "Reconnect did not open the connect step"
@@ -1412,7 +1433,7 @@ describe("app-shell", () => {
       Object.assign(shellOf(el).querySelector("proxmox-connect-view")!, {
         _password: "test",
       });
-      fire(shellOf(el), "wizard-next");
+      fireEvent(shellOf(el), "wizard-next");
 
       // The VM exists: past its settings, straight back to waiting for it
       await waitUntil(
@@ -1448,7 +1469,7 @@ describe("app-shell", () => {
       await waitUntil(() => !shellOf(el).hideFooter, "Cancel never showed");
 
       // The dialog was open when the install moved on: nothing left to ask
-      fire(shellOf(el), "wizard-cancel");
+      fireEvent(shellOf(el), "wizard-cancel");
       await el.updateComplete;
       report("creating_vm");
       await waitUntil(() => shellOf(el).hideFooter, "Cancel stayed");
@@ -1461,15 +1482,15 @@ describe("app-shell", () => {
         mockTauriIpc(() => new Promise(() => {}))
       );
       await waitUntil(() => !shellOf(el).hideFooter, "Cancel never showed");
-      fire(shellOf(el), "wizard-cancel");
+      fireEvent(shellOf(el), "wizard-cancel");
       await el.updateComplete;
       expect(stopDialogOf(el).open).to.be.true;
 
       // Without waiting for the view to report it can no longer stop
-      fire(
+      fireEvent(
         el.shadowRoot!.querySelector("proxmox-progress-view")!,
         "install-error",
-        { retryable: true }
+        { retryable: true, changeChoice: false }
       );
       await el.updateComplete;
       expect(stopDialogOf(el).open).to.be.false;
@@ -1489,7 +1510,7 @@ describe("app-shell", () => {
         showsError(shellOf(el).querySelector("progress-view")!)
       );
 
-      fire(shellOf(el), "wizard-cancel");
+      fireEvent(shellOf(el), "wizard-cancel");
       await el.updateComplete;
 
       // Re-enter without going through path selection, so only the cancel
@@ -1497,9 +1518,13 @@ describe("app-shell", () => {
       wizardState.startFlow("sbc");
       selectTargets();
       await goToStep(el, "flash");
-      fire(el.shadowRoot!.querySelector("path-selection-view")!, "navigate", {
-        view: "wizard",
-      });
+      fireEvent(
+        el.shadowRoot!.querySelector("path-selection-view")!,
+        "navigate",
+        {
+          view: "wizard",
+        }
+      );
       await el.updateComplete;
 
       // The live write offers Cancel only, no stale "Try again"
@@ -1590,7 +1615,7 @@ describe("app-shell", () => {
       parent.appendChild(el);
       await settle();
       await goToStep(el, "flash");
-      fire(shellOf(el), "wizard-cancel");
+      fireEvent(shellOf(el), "wizard-cancel");
       await el.updateComplete;
       const stopDialog = el.shadowRoot!.querySelector(
         "info-dialog.stop-dialog"
@@ -1620,14 +1645,19 @@ describe("app-shell", () => {
         wizardState.startFlow(flow);
         if (flow === "sbc") selectTargets();
         await goToStep(el, step);
-        fire(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
+        fireEvent(el.shadowRoot!.querySelector("welcome-view")!, "navigate", {
           view: "wizard",
         });
         await el.updateComplete;
         await blockClose();
         expect(quitDialogOf(el).open).to.be.true;
 
-        fire(shellOf(el), ended);
+        if (ended === "install-complete") fireEvent(shellOf(el), ended);
+        else
+          fireEvent(shellOf(el), ended, {
+            retryable: false,
+            changeChoice: false,
+          });
         await el.updateComplete;
 
         expect(quitDialogOf(el).open).to.be.false;

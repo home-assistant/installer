@@ -177,9 +177,7 @@ describe("live-usb-progress-view", () => {
     );
     const errors: boolean[] = [];
     el.addEventListener("install-error", (event) =>
-      errors.push(
-        (event as CustomEvent<{ retryable: boolean }>).detail.retryable
-      )
+      errors.push(event.detail.retryable)
     );
     await settle();
 
@@ -212,9 +210,7 @@ describe("live-usb-progress-view", () => {
       );
       const reports: boolean[] = [];
       el.addEventListener("install-error", (event) =>
-        reports.push(
-          (event as CustomEvent<{ changeChoice: boolean }>).detail.changeChoice
-        )
+        reports.push(event.detail.changeChoice)
       );
       await settle();
 

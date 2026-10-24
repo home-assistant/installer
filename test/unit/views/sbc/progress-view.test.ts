@@ -68,9 +68,7 @@ function mockFlash(haos = MOCK_MANIFEST.devices[0].haos) {
 function reportsOf(el: ProgressView): boolean[] {
   const reports: boolean[] = [];
   el.addEventListener("install-stoppable", (event) =>
-    reports.push(
-      (event as CustomEvent<{ stoppable: boolean }>).detail.stoppable
-    )
+    reports.push(event.detail.stoppable)
   );
   return reports;
 }
@@ -387,8 +385,7 @@ describe("progress-view", () => {
       const { el, attempts } = mockFlash();
       let retryable: boolean | undefined;
       el.addEventListener("install-error", (event) => {
-        retryable = (event as CustomEvent<{ retryable: boolean }>).detail
-          .retryable;
+        retryable = event.detail.retryable;
       });
       attempts[0].result.reject({
         code,
@@ -413,8 +410,7 @@ describe("progress-view", () => {
       const { el, attempts } = mockFlash();
       let changeChoice: boolean | undefined;
       el.addEventListener("install-error", (event) => {
-        changeChoice = (event as CustomEvent<{ changeChoice: boolean }>).detail
-          .changeChoice;
+        changeChoice = event.detail.changeChoice;
       });
       if (stage) {
         attempts[0].progressChannel.onmessage({

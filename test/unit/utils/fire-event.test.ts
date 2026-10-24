@@ -38,4 +38,16 @@ describe("fireEvent", () => {
     expect(heard).to.have.length(1);
     expect(heard[0].detail).to.equal(null);
   });
+
+  it("rejects an event or detail the app doesn't declare at build time", () => {
+    const send = () => {
+      // @ts-expect-error: misspelled event
+      fireEvent(sender, "wizard-nxt");
+      // @ts-expect-error: wrong detail
+      fireEvent(sender, "navigate", { view: "nowhere" });
+      // @ts-expect-error: no detail
+      fireEvent(sender, "resources-change");
+    };
+    expect(send).to.be.a("function");
+  });
 });

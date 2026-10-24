@@ -2,6 +2,7 @@ import { expect, fixtureSync, html, waitUntil } from "@open-wc/testing";
 import { wizardState } from "../../../src/state/wizard-state.js";
 import { MOCK_BLOCK_DEVICES } from "../../../src/api/mock-data.js";
 import { storeDriveSelection } from "../../../src/utils/drive-selection.js";
+import { fireEvent } from "../../../src/utils/fire-event.js";
 import { ipcError, mockTauriIpc, restoreTauriIpc } from "../tauri-ipc.js";
 import { expectThemeLink } from "../helpers/link-style.js";
 import "../../../src/components/app-shell.js";
@@ -165,9 +166,7 @@ describe("structured IPC errors in views", () => {
       // A running flash shows only Cancel; the failure brings back Next
       await waitUntil(() => !shell.hideNext);
       expect(shell.hideFooter).to.equal(false);
-      shell.dispatchEvent(
-        new CustomEvent("wizard-next", { bubbles: true, composed: true })
-      );
+      fireEvent(shell, "wizard-next");
       await app.updateComplete;
       expect(attempts).to.equal(retryable ? 2 : 1);
       if (!retryable) expect(wizardState.currentStep?.id).to.equal("drive");

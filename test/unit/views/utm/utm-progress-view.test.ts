@@ -652,9 +652,7 @@ describe("utm-progress-view", () => {
     const leavable: boolean[] = [];
     const el = mount();
     el.addEventListener("install-leavable", (event) =>
-      leavable.push(
-        (event as CustomEvent<{ leavable: boolean }>).detail.leavable
-      )
+      leavable.push(event.detail.leavable)
     );
     await waitUntil(() => statusCalls === 1);
     await el.updateComplete;

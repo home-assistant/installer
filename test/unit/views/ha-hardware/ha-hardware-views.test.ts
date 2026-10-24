@@ -34,6 +34,7 @@ import {
   isEligibleFlashTarget,
   storeDriveSelection,
 } from "../../../../src/utils/drive-selection.js";
+import { fireEvent } from "../../../../src/utils/fire-event.js";
 import { deferred, mockTauriIpc, restoreTauriIpc } from "../../tauri-ipc.js";
 import { expectThemeLink } from "../../helpers/link-style.js";
 
@@ -141,12 +142,12 @@ describe("Home Assistant hardware views", () => {
         expect(dialog.primaryLabel).to.equal(action);
         expect(dialog.emphasis).to.equal(emphasis);
         expect(dialog.textContent).to.contain(note);
-        dialog.dispatchEvent(new CustomEvent("dialog-secondary"));
+        fireEvent(dialog, "dialog-secondary");
         expect(await declined).to.equal(false);
 
         const confirmed = el.confirmReinstall();
         await el.updateComplete;
-        dialog.dispatchEvent(new CustomEvent("dialog-primary"));
+        fireEvent(dialog, "dialog-primary");
         expect(await confirmed).to.equal(true);
         await el.updateComplete;
         expect(dialog.open).to.equal(false);

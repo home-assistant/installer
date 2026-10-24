@@ -1,6 +1,7 @@
 import { expect, fixtureSync, html } from "@open-wc/testing";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
+import { fireEvent } from "../../../../src/utils/fire-event.js";
 import "../../../../src/views/live-usb/live-iso-location-view.js";
 import type { LiveIsoLocationView } from "../../../../src/views/live-usb/live-iso-location-view.js";
 import {
@@ -42,9 +43,7 @@ describe("live-iso-location-view", () => {
     location.resolve({ exists: true });
     await settle();
 
-    el.shadowRoot!.querySelector("info-dialog")!.dispatchEvent(
-      new CustomEvent("dialog-primary")
-    );
+    fireEvent(el.shadowRoot!.querySelector("info-dialog")!, "dialog-primary");
     expect(await checking).to.equal(true);
     expect(wizardState.getState().selections.liveIsoOverwrite).to.equal(true);
   });

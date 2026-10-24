@@ -10,6 +10,7 @@ import "../../../../src/views/proxmox/proxmox-configure-view.js";
 import "../../../../src/views/proxmox/proxmox-success-view.js";
 import type { ProxmoxConfigureView } from "../../../../src/views/proxmox/proxmox-configure-view.js";
 import type { InfoDialog } from "../../../../src/components/info-dialog.js";
+import { fireEvent } from "../../../../src/utils/fire-event.js";
 import {
   deferred,
   ipcError,
@@ -118,9 +119,7 @@ describe("Proxmox import consent", () => {
 
   async function approve(el: ProxmoxConfigureView) {
     await click(el, "Enable Import...");
-    el.shadowRoot!.querySelector("info-dialog")!.dispatchEvent(
-      new CustomEvent("dialog-primary")
-    );
+    fireEvent(el.shadowRoot!.querySelector("info-dialog")!, "dialog-primary");
     await settle();
     await el.updateComplete;
   }
@@ -138,7 +137,7 @@ describe("Proxmox import consent", () => {
     expect(dialog.message).to.contain('"other"');
     expect(dialog.message).to.contain("cluster-wide");
     expect(dialog.message).to.contain("not automatically restore");
-    dialog.dispatchEvent(new CustomEvent("dialog-secondary"));
+    fireEvent(dialog, "dialog-secondary");
     await el.updateComplete;
     expect(writes).to.deep.equal([]);
     expect(wizardState.getState().selections.proxmoxImportChanges).to.be
@@ -266,7 +265,7 @@ describe("Proxmox import consent", () => {
     expect(dialog.message).to.contain('"other"');
 
     // Once it is no longer a candidate, the first one is offered instead
-    dialog.dispatchEvent(new CustomEvent("dialog-secondary"));
+    fireEvent(dialog, "dialog-secondary");
     storages = [
       directory,
       disk,

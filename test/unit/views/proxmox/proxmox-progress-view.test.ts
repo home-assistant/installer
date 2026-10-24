@@ -802,7 +802,7 @@ describe("proxmox-progress-view", () => {
       const el = mount();
       const reported: boolean[] = [];
       el.addEventListener("install-stoppable", (event) => {
-        reported.push((event as CustomEvent).detail.stoppable);
+        reported.push(event.detail.stoppable);
       });
       await install.created;
       install.report("uploading");

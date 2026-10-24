@@ -4,6 +4,7 @@ import { live } from "lit/directives/live.js";
 import type WaSlider from "@home-assistant/webawesome/dist/components/slider/slider.js";
 import "@home-assistant/webawesome/dist/components/slider/slider.js";
 import { localize } from "../localization/localize.js";
+import { fireEvent } from "../utils/fire-event.js";
 import { formatDiskSize, formatMemory } from "../utils/format.js";
 import { mdiChip, mdiDatabase, mdiMemory } from "../utils/icons.js";
 import { renderIcon } from "../utils/render-icon.js";
@@ -95,18 +96,12 @@ export class VmResources extends LitElement {
   @property({ attribute: false }) diskSizeGb = 0;
 
   private _change(change: Partial<VmResourceValues>) {
-    this.dispatchEvent(
-      new CustomEvent<VmResourceValues>("resources-change", {
-        detail: {
-          cpuCores: this.cpuCores,
-          memoryMb: this.memoryMb,
-          diskSizeGb: this.diskSizeGb,
-          ...change,
-        },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "resources-change", {
+      cpuCores: this.cpuCores,
+      memoryMb: this.memoryMb,
+      diskSizeGb: this.diskSizeGb,
+      ...change,
+    });
   }
 
   private _onCoresInput(e: Event) {
@@ -214,5 +209,9 @@ export class VmResources extends LitElement {
 declare global {
   interface HTMLElementTagNameMap {
     "vm-resources": VmResources;
+  }
+
+  interface HAIEvents {
+    "resources-change": VmResourceValues;
   }
 }
