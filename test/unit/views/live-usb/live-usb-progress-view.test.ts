@@ -224,4 +224,63 @@ describe("live-usb-progress-view", () => {
       expect(reports).to.deep.equal([changeChoice]);
     });
   }
+
+  // The stick is fine: offer to write it again, not to pick another one
+  for (const code of ["permission_denied", "disk_service_unavailable"]) {
+    it(`writes the same stick again once ${code} is fixed`, async () => {
+      wizardState.setSelection("liveMedia", "usb");
+      storeDriveSelection(MOCK_BLOCK_DEVICES[0]);
+      const calls = mockCommands();
+      const el = fixtureSync<LiveUsbProgressView>(
+        html`<live-usb-progress-view></live-usb-progress-view>`
+      );
+      const reports: unknown[] = [];
+      el.addEventListener("install-error", (event) =>
+        reports.push((event as CustomEvent).detail)
+      );
+      await settle();
+
+      // The administrator prompt comes up as the write starts
+      calls[0].args.progressChannel.onmessage({
+        stage: "writing",
+        progress: 0,
+        bytes_processed: 0,
+        total_bytes: 1000,
+        message: "",
+      });
+      calls[0].result.reject(ipcError(code, "Allow access, then try again."));
+      await settle();
+      expect(reports).to.deep.equal([{ retryable: true, changeChoice: false }]);
+
+      el.retry();
+      await settle();
+      expect(calls).to.have.length(2);
+      expect(calls[1].cmd).to.equal("create_live_usb");
+      expect(calls[1].args.deviceId).to.equal(calls[0].args.deviceId);
+      expect(calls[1].args.expectedDevice).to.deep.equal(
+        calls[0].args.expectedDevice
+      );
+    });
+  }
+
+  it("leaves an ISO save's failures as retryable as the backend says", async () => {
+    wizardState.setSelection("liveMedia", "iso");
+    wizardState.setSelection("liveIsoFolder", "/home/me");
+    wizardState.setSelection("liveIsoName", "stick.iso");
+    const calls = mockCommands();
+    const el = fixtureSync<LiveUsbProgressView>(
+      html`<live-usb-progress-view></live-usb-progress-view>`
+    );
+    const reports: boolean[] = [];
+    el.addEventListener("install-error", (event) =>
+      reports.push(
+        (event as CustomEvent<{ retryable: boolean }>).detail.retryable
+      )
+    );
+    await settle();
+
+    calls[0].result.reject(ipcError("permission_denied", "Not allowed"));
+    await settle();
+    expect(reports).to.deep.equal([false]);
+  });
 });

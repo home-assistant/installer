@@ -10,7 +10,9 @@ import {
 } from "../../api/index.js";
 import { readDriveSelection } from "../../utils/drive-selection.js";
 import {
+  installerError,
   isDriveFailure,
+  retryableOnceFixed,
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { throwIfCancelled } from "../../utils/polling.js";
@@ -135,6 +137,13 @@ export class LiveUsbProgressView extends InstallProgressView {
       throwIfCancelled(signal);
       wizardState.setSelection("liveIsoPath", path);
     }
+  }
+
+  // Only the stick's write needs administrator access and the disk service;
+  // saving the ISO asks for neither
+  protected _installerError(error: unknown): InstallerError {
+    const installer = installerError(error);
+    return this._usb ? retryableOnceFixed(installer) : installer;
   }
 
   protected _choiceCanFix(error: InstallerError): boolean {

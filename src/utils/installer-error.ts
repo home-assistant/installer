@@ -131,6 +131,26 @@ export function isDriveFailure(code: string, reachedDrive: boolean): boolean {
   );
 }
 
+/**
+ * Failures the user fixes on this computer: a declined password prompt or
+ * blocked access, or a stopped disk service. Nothing was written, and the
+ * same drive can be tried again once fixed, as the message says. The
+ * backend marks them not retryable because trying again right away fails
+ * the same way.
+ */
+const FIXED_ON_THIS_COMPUTER = [
+  "permission_denied",
+  "disk_service_unavailable",
+];
+
+/** `error`, which a drive write can also try again once fixed on this computer */
+export function retryableOnceFixed(error: InstallerError): InstallerError {
+  return {
+    ...error,
+    retryable: error.retryable || FIXED_ON_THIS_COMPUTER.includes(error.code),
+  };
+}
+
 /** Fixed destinations only: error text, paths, and credentials never enter URLs. */
 export function renderErrorHelp() {
   // Reporting goes through the diagnostics dialog, which shows exactly what

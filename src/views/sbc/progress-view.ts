@@ -2,6 +2,7 @@ import { localize } from "../../localization/localize.js";
 import {
   installerError,
   isDriveFailure,
+  retryableOnceFixed,
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { html } from "lit";
@@ -17,18 +18,6 @@ import { selectedWifi } from "../../utils/wifi.js";
 import { findInstaller } from "../../state/ha-hardware.js";
 import "../../components/install-progress.js";
 import { InstallProgressView } from "../install-progress-view.js";
-
-/**
- * Failures the user fixes on this computer: a cancelled password prompt or
- * blocked access, or a stopped disk service. Nothing was written, and the
- * same drive can be tried again once fixed, as the message says. The
- * backend marks them not retryable because trying again right away fails
- * the same way.
- */
-const FIXED_ON_THIS_COMPUTER = [
-  "permission_denied",
-  "disk_service_unavailable",
-];
 
 /** The stages a flash goes through, in order */
 const STAGES: readonly FlashStage[] = [
@@ -117,12 +106,7 @@ export class ProgressView extends InstallProgressView {
   }
 
   protected _installerError(error: unknown): InstallerError {
-    const installer = installerError(error);
-    return {
-      ...installer,
-      retryable:
-        installer.retryable || FIXED_ON_THIS_COMPUTER.includes(installer.code),
-    };
+    return retryableOnceFixed(installerError(error));
   }
 
   // Only what is wrong with the drive leads back to the drive step. Space on
