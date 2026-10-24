@@ -57,16 +57,16 @@ export class DeviceFinder {
 
   /**
    * Note what is there, while lookups still may. A lookup that fails
-   * rejects; the next call asks again.
+   * rejects; the next call asks again. Calls can overlap, as both steps ask.
    */
   async survey(signal: AbortSignal): Promise<void> {
     while (this._surveying) {
       // No lookup after the wait ended
       throwIfCancelled(signal);
       const found = await findHomeAssistants();
-      // One that only answered once the device could have started might
-      // see it already
-      if (!this._early) return;
+      // An answer that came once the device could have started might see
+      // it already, and so might one an overlapping call no longer needed
+      if (!this._surveying) return;
       for (const { id } of found) this._known.add(id);
       this._surveyed++;
     }
@@ -84,9 +84,12 @@ export class DeviceFinder {
       await this.survey(signal);
       return null;
     }
-    this._device = (await findHomeAssistants()).find(
+    const found = (await findHomeAssistants()).find(
       ({ id, landing_page }) => landing_page && !this._known.has(id)
     )?.address;
+    // An overlapping call may have found it meanwhile, in an answer that
+    // came before Home Assistant replaced its landing page
+    this._device ??= found;
     return this._device ?? null;
   }
 }

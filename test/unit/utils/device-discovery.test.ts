@@ -10,10 +10,12 @@ import {
 import type { InstallerError } from "../../../src/utils/installer-error.js";
 import { isCancelled } from "../../../src/utils/polling.js";
 import {
+  deferred,
   ipcError,
   mockTauriIpc,
   restoreTauriIpc,
   settle,
+  type Deferred,
 } from "../tauri-ipc.js";
 
 const landingPage = (id: string, address = "192.0.2.50"): HaAnnouncement => ({
@@ -39,6 +41,18 @@ function answer(
     return Array.isArray(lookup) ? lookup : Promise.reject(lookup);
   });
   return () => asked;
+}
+
+/** Hold each lookup open, so a test answers them in the order it wants */
+function hold(): Deferred<HaAnnouncement[]>[] {
+  const lookups: Deferred<HaAnnouncement[]>[] = [];
+  mockTauriIpc((cmd) => {
+    expect(cmd).to.equal("find_home_assistants");
+    const lookup = deferred<HaAnnouncement[]>();
+    lookups.push(lookup);
+    return lookup.promise;
+  });
+  return lookups;
 }
 
 /** A step that notes what is on the network, as the start step does */
@@ -174,6 +188,46 @@ describe("device-discovery", () => {
       await finder.find(signal).catch(() => {});
       clockOffset += 61 * 1000;
       expect(await finder.find(signal)).to.equal("192.0.2.60");
+    });
+  });
+
+  describe("asked by both steps at once", () => {
+    it("keeps the device one lookup found when another answers later", async () => {
+      answer([], []);
+      const finder = new DeviceFinder();
+      await finder.survey(signal);
+
+      const lookups = hold();
+      const starting = finder.find(signal);
+      const waiting = finder.find(signal);
+      await settle();
+      lookups[0].resolve([landingPage("device")]);
+      // Home Assistant replaced the landing page by the other's answer
+      lookups[1].resolve([homeAssistant("installed")]);
+
+      expect(await starting).to.equal("192.0.2.50");
+      expect(await waiting).to.equal("192.0.2.50");
+      expect(await finder.find(signal)).to.equal("192.0.2.50");
+      expect(lookups).to.have.length(2);
+    });
+
+    it("notes no more than the lookups it needs to", async () => {
+      const lookups = hold();
+      const finder = new DeviceFinder();
+      const starting = finder.survey(signal);
+      const waiting = finder.survey(signal);
+      await settle();
+      lookups[0].resolve([landingPage("being-set-up")]);
+      lookups[1].resolve([]);
+      await settle();
+      // The first call asks once more, but the second already noted enough
+      lookups[2].resolve([landingPage("device")]);
+      await Promise.all([starting, waiting]);
+
+      const looking = finder.find(signal);
+      await settle();
+      lookups[3].resolve([landingPage("being-set-up"), landingPage("device")]);
+      expect(await looking).to.equal("192.0.2.50");
     });
   });
 
