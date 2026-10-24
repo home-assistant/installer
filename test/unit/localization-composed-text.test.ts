@@ -222,7 +222,7 @@ describe("composed text", () => {
       expect(root.querySelector("dd:nth-of-type(2)")!.textContent).to.equal(
         "My stick (32 GB)"
       );
-      expect(root.querySelector(".notice strong")!.textContent).to.equal(
+      expect(root.querySelector("inline-notice strong")!.textContent).to.equal(
         "My stick (32 GB)"
       );
     });
@@ -233,7 +233,7 @@ describe("composed text", () => {
         "{name}（{size}）"
       );
       const root = await stick();
-      expect(root.querySelector(".notice strong")!.textContent).to.equal(
+      expect(root.querySelector("inline-notice strong")!.textContent).to.equal(
         "My stick（32 GB）"
       );
     });
@@ -251,7 +251,7 @@ describe("composed text", () => {
       );
       await settle();
       expect(
-        view.shadowRoot!.querySelector(".notice strong")!.textContent
+        view.shadowRoot!.querySelector("inline-notice strong")!.textContent
       ).to.equal("My stick");
     });
   });

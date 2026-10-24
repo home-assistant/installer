@@ -2,8 +2,14 @@ import { expect, fixtureSync, html } from "@open-wc/testing";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import { fireEvent } from "../../../../src/utils/fire-event.js";
+import type { InlineNotice } from "../../../../src/components/inline-notice.js";
 import "../../../../src/views/live-usb/live-iso-location-view.js";
 import type { LiveIsoLocationView } from "../../../../src/views/live-usb/live-iso-location-view.js";
+import {
+  findByRole,
+  fullA11ySnapshot,
+  type AXNode,
+} from "../../helpers/a11y.js";
 import {
   deferred,
   ipcError,
@@ -11,6 +17,16 @@ import {
   restoreTauriIpc,
   settle,
 } from "../../tauri-ipc.js";
+
+type FocusedAXNode = AXNode & { focused?: boolean; children?: FocusedAXNode[] };
+
+function focusedNode(node: FocusedAXNode): FocusedAXNode | undefined {
+  for (const child of node.children ?? []) {
+    const focused = focusedNode(child);
+    if (focused) return focused;
+  }
+  return node.focused && node.role !== "RootWebArea" ? node : undefined;
+}
 
 describe("live-iso-location-view", () => {
   let location: ReturnType<typeof deferred<{ exists: boolean }>>;
@@ -61,7 +77,29 @@ describe("live-iso-location-view", () => {
 
     expect(await checking).to.equal(false);
     await settle();
-    expect(el.shadowRoot!.querySelector(".notice.error")).to.not.exist;
+    expect(el.shadowRoot!.querySelector("inline-notice")).to.not.exist;
+  });
+
+  it("shows a problem with the location in an error notice, which takes the focus", async () => {
+    const el = fixtureSync<LiveIsoLocationView>(
+      html`<live-iso-location-view></live-iso-location-view>`
+    );
+    await settle();
+    const checking = el.check();
+    location.reject(ipcError("invalid_file_name", "No separators"));
+    expect(await checking).to.equal(false);
+    await settle();
+
+    const notice = el.shadowRoot!.querySelector<InlineNotice>(
+      ".card inline-notice"
+    )!;
+    expect(notice.variant).to.equal("error");
+    expect(notice.textContent!.trim()).to.equal("No separators");
+    expect(el.shadowRoot!.activeElement).to.equal(notice);
+    // Focused, it is read out by what it says
+    const focused = focusedNode(await fullA11ySnapshot());
+    expect(focused?.name?.trim()).to.equal("No separators");
+    expect(findByRole(await fullA11ySnapshot(), "alert")).to.have.length(0);
   });
 
   it("asks for Next on Enter in the folder or the file name, not on Browse", async () => {

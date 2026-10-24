@@ -4,9 +4,12 @@ import { customElement, state } from "lit/decorators.js";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { getHaosRelease } from "../../api/index.js";
 import { formatBytes } from "../../utils/format.js";
-import { wizardState } from "../../state/wizard-state.js";
+import type { WizardState } from "../../state/wizard-state.js";
+import { WizardStateController } from "../../state/wizard-state-controller.js";
+import { renderStepHeading } from "../../utils/step-styles.js";
 import { isoTargetPath } from "./live-usb-paths.js";
 import { liveUsbStyles } from "./live-usb-styles.js";
+import "../../components/inline-notice.js";
 
 /** What is about to happen, before anything is downloaded or written. */
 @customElement("live-usb-summary-view")
@@ -29,8 +32,18 @@ export class LiveUsbSummaryView extends LitElement {
         color: var(--ha-text-color);
         overflow-wrap: anywhere;
       }
+
+      inline-notice {
+        margin-top: 1.5rem;
+      }
     `,
   ];
+
+  private readonly _wizard = new WizardStateController(this);
+
+  private get _wizardState(): WizardState {
+    return this._wizard.state;
+  }
 
   @state()
   private _version: string | null = null;
@@ -53,7 +66,7 @@ export class LiveUsbSummaryView extends LitElement {
   }
 
   render() {
-    const selections = wizardState.getState().selections;
+    const { selections } = this._wizardState;
     const usb = selections.liveMedia !== "iso";
     const version =
       this._version ??
@@ -69,14 +82,12 @@ export class LiveUsbSummaryView extends LitElement {
       : driveName;
 
     return html`
-      <h2>
-        ${localize("views.live_usb.live_usb_summary_view.ready_to_create")}
-      </h2>
-      <p class="subtitle">
-        ${usb
+      ${renderStepHeading(
+        localize("views.live_usb.live_usb_summary_view.ready_to_create"),
+        usb
           ? localize("views.live_usb.live_usb_summary_view.what_happens_usb")
-          : localize("views.live_usb.live_usb_summary_view.what_happens_iso")}
-      </p>
+          : localize("views.live_usb.live_usb_summary_view.what_happens_iso")
+      )}
       <div class="card">
         <dl>
           <dt>
@@ -107,17 +118,19 @@ export class LiveUsbSummaryView extends LitElement {
                     : ""}
                 </dd>`}
         </dl>
-        ${usb
-          ? html`<div class="notice">
+      </div>
+      ${usb
+        ? html`<inline-notice>
+            <p>
               ${localizeContent(
                 "views.live_usb.live_usb_summary_view.erase_warning",
                 {
                   stick: html`<strong>${stick}</strong>`,
                 }
               )}
-            </div>`
-          : ""}
-      </div>
+            </p>
+          </inline-notice>`
+        : ""}
     `;
   }
 }

@@ -5,7 +5,7 @@ import {
   html,
   waitUntil,
 } from "@open-wc/testing";
-import { LitElement, nothing } from "lit";
+import { LitElement } from "lit";
 import { property } from "lit/decorators.js";
 import {
   ViewAccessibility,
@@ -65,19 +65,9 @@ customElements.define("retry-test-view", RetryTestView);
 class ErrorsTestView extends LitElement {
   @property() storage = "";
   @property() bridges = "";
-  /** As alerts rather than marked, like views not moved to the marker */
-  @property({ type: Boolean }) alerts = false;
   protected readonly _accessibility = new ViewAccessibility(this);
   private _error(name: string, text: string) {
-    return text
-      ? html`<p
-          class=${name}
-          role=${this.alerts ? "alert" : nothing}
-          ?data-focus-alert=${!this.alerts}
-        >
-          ${text}
-        </p>`
-      : "";
+    return text ? html`<p class=${name} data-focus-alert>${text}</p>` : "";
   }
   render() {
     return html`<h2>Step heading</h2>
@@ -173,36 +163,33 @@ describe("view accessibility", () => {
     expect(findByRole(tree, "alert")).to.have.length(0);
   });
 
-  for (const alerts of [false, true]) {
-    const kind = alerts ? "alert" : "marked error";
-    it(`focuses each new ${kind} of several, not one left when another goes`, async () => {
-      const el = await fixture<ErrorsTestView>(
-        html`<errors-test-view ?alerts=${alerts}></errors-test-view>`
-      );
-      const root = el.shadowRoot!;
-      const input = root.querySelector("input")!;
-      input.focus();
-      el.storage = "No storage";
-      await el.updateComplete;
-      expect(root.activeElement === root.querySelector(".storage")).to.be.true;
+  it("focuses each new error of several, not one left when another goes", async () => {
+    const el = await fixture<ErrorsTestView>(
+      html`<errors-test-view></errors-test-view>`
+    );
+    const root = el.shadowRoot!;
+    const input = root.querySelector("input")!;
+    input.focus();
+    el.storage = "No storage";
+    await el.updateComplete;
+    expect(root.activeElement === root.querySelector(".storage")).to.be.true;
 
-      input.focus();
-      el.bridges = "No bridges";
-      await el.updateComplete;
-      // New as well, although an earlier one still shows
-      expect(root.activeElement === root.querySelector(".bridges")).to.be.true;
+    input.focus();
+    el.bridges = "No bridges";
+    await el.updateComplete;
+    // New as well, although an earlier one still shows
+    expect(root.activeElement === root.querySelector(".bridges")).to.be.true;
 
-      input.focus();
-      el.storage = "";
-      await el.updateComplete;
-      // The one left was read out already
-      expect(root.activeElement === input).to.be.true;
+    input.focus();
+    el.storage = "";
+    await el.updateComplete;
+    // The one left was read out already
+    expect(root.activeElement === input).to.be.true;
 
-      el.bridges = "Still no bridges";
-      await el.updateComplete;
-      expect(root.activeElement === root.querySelector(".bridges")).to.be.true;
-    });
-  }
+    el.bridges = "Still no bridges";
+    await el.updateComplete;
+    expect(root.activeElement === root.querySelector(".bridges")).to.be.true;
+  });
 
   it("focuses the first of several errors that show at once", async () => {
     const el = await fixture<ErrorsTestView>(

@@ -11,10 +11,12 @@ import {
 import { installerError } from "../../utils/installer-error.js";
 import { wizardState } from "../../state/wizard-state.js";
 import { nextOnEnter } from "../../components/wizard-steps.js";
+import { renderStepHeading } from "../../utils/step-styles.js";
 import { liveUsbStyles } from "./live-usb-styles.js";
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/info-dialog.js";
+import "../../components/inline-notice.js";
 import "./live-usb-gate.js";
 
 const FALLBACK_NAME = "hai-live-haos.iso";
@@ -175,12 +177,10 @@ export class LiveIsoLocationView extends LitElement {
   render() {
     return html`
       <live-usb-gate>
-        <h2>
-          ${localize("views.live_usb.live_iso_location_view.where_to_save")}
-        </h2>
-        <p class="subtitle">
-          ${localize("views.live_usb.live_iso_location_view.subtitle")}
-        </p>
+        ${renderStepHeading(
+          localize("views.live_usb.live_iso_location_view.where_to_save"),
+          localize("views.live_usb.live_iso_location_view.subtitle")
+        )}
         <div class="card">
           <div class="folder-row">
             <wa-input
@@ -194,11 +194,13 @@ export class LiveIsoLocationView extends LitElement {
             </wa-button>
           </div>
           ${this._browseFailed
-            ? html`<p class="notice error" data-focus-alert>
-                ${localize(
-                  "views.live_usb.live_iso_location_view.browse_failed"
-                )}
-              </p>`
+            ? html`<inline-notice variant="error" data-focus-alert>
+                <p>
+                  ${localize(
+                    "views.live_usb.live_iso_location_view.browse_failed"
+                  )}
+                </p>
+              </inline-notice>`
             : ""}
           <wa-input
             label=${localize("views.live_usb.live_iso_location_view.file_name")}
@@ -207,9 +209,9 @@ export class LiveIsoLocationView extends LitElement {
             @keydown=${nextOnEnter}
           ></wa-input>
           ${this._problem
-            ? html`<p class="notice error" data-focus-alert>
-                ${this._problem}
-              </p>`
+            ? html`<inline-notice variant="error" data-focus-alert>
+                <p>${this._problem}</p>
+              </inline-notice>`
             : ""}
         </div>
         <info-dialog

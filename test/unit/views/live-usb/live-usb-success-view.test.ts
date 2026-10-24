@@ -34,7 +34,25 @@ describe("live-usb-success-view", () => {
     )!;
     expect(row.assignedSlot).to.exist;
     expect(row.scrollWidth).to.be.at.most(row.clientWidth);
+    // From the view's sheet, not an inline style
+    expect(row.hasAttribute("style")).to.be.false;
     expect(getComputedStyle(row).display).to.equal("flex");
+  });
+
+  it("shows where the ISO was saved as the selections change", async () => {
+    wizardState.startFlow("minipc");
+    wizardState.setSelection("liveMedia", "iso");
+    wizardState.setSelection("liveIsoPath", "/home/me/haos.iso");
+    const view = fixtureSync<LiveUsbSuccessView>(
+      html`<live-usb-success-view></live-usb-success-view>`
+    );
+    await view.updateComplete;
+
+    wizardState.setSelection("liveIsoPath", "/home/me/other.iso");
+    await view.updateComplete;
+    expect(
+      view.shadowRoot!.querySelector(".saved-row bdi")!.textContent
+    ).to.equal("/home/me/other.iso");
   });
 
   it("reads the ISO path left to right even when its folders are Hebrew", async () => {
@@ -47,7 +65,7 @@ describe("live-usb-success-view", () => {
     await view.updateComplete;
     await view.shadowRoot!.querySelector("install-success")!.updateComplete;
 
-    expectReadsLeftToRight(view.shadowRoot!.querySelector(".saved bdi")!);
+    expectReadsLeftToRight(view.shadowRoot!.querySelector(".saved-row bdi")!);
   });
 
   it("warns not to format a written stick, not a saved ISO", async () => {
@@ -116,8 +134,12 @@ describe("live-usb-success-view", () => {
     await layout.updateComplete;
 
     expect(shown).to.deep.equal([{ path: "/home/me/haos.iso" }]);
-    expect(
-      view.shadowRoot!.querySelector('.saved-row [role="alert"]')?.textContent
-    ).to.contain("The folder couldn't be opened.");
+    // Read out once, by taking the focus, like every other error
+    const error = view.shadowRoot!.querySelector(
+      ".saved-row [data-focus-alert]"
+    );
+    expect(error?.textContent).to.contain("The folder couldn't be opened.");
+    expect(view.shadowRoot!.activeElement).to.equal(error);
+    expect(view.shadowRoot!.querySelector('[role="alert"]')).to.not.exist;
   });
 });

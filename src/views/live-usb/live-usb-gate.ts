@@ -4,6 +4,7 @@ import { customElement, query, state } from "lit/decorators.js";
 import {
   ViewAccessibility,
   activeElement,
+  focusHeading,
 } from "../../utils/view-accessibility.js";
 import {
   installerError,
@@ -12,8 +13,14 @@ import {
 import { getLiveUsbStatus, type LiveUsbStatus } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
 import { LatestRequest } from "../../utils/latest-request.js";
-import { renderRetryButton } from "../../utils/load-state.js";
+import { linkStyles } from "../../utils/link-styles.js";
+import {
+  loadStateStyles,
+  renderLoadError,
+  renderLoading,
+} from "../../utils/load-state.js";
 import { liveUsbStyles } from "./live-usb-styles.js";
+import "../../components/inline-notice.js";
 
 /**
  * Shows its content only once the live USB flow can run: the program for the
@@ -26,6 +33,8 @@ export class LiveUsbGate extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     liveUsbStyles,
+    loadStateStyles,
+    linkStyles,
     css`
       :host {
         width: 100%;
@@ -77,8 +86,7 @@ export class LiveUsbGate extends LitElement {
         : (element.shadowRoot?.querySelector("h1, h2") ??
           element.querySelector("h1, h2"));
       if (heading instanceof HTMLElement) {
-        heading.tabIndex = -1;
-        heading.focus();
+        focusHeading(heading);
         return;
       }
     }
@@ -106,24 +114,24 @@ export class LiveUsbGate extends LitElement {
 
   render() {
     if (this._error) {
-      // Empty while checking, like renderLoadError(): the same failure coming
-      // back is then new text, and read out again
-      return html`
-        <div class="notice error">
-          <p data-focus-alert>${this._checking ? "" : this._error.message}</p>
-          ${renderRetryButton(this._checking, () => this._check())}
-        </div>
-      `;
+      // Only this computer is checked, so checking again is always safe
+      return renderLoadError(
+        { ...this._error, retryable: true },
+        this._checking,
+        () => this._check()
+      );
     }
     if (!this._status) {
-      return html`<p class="subtitle">${localize("common.loading")}</p>`;
+      return renderLoading(localize("common.loading"));
     }
     if (!this._status.hai_live_found) {
+      // The notice itself takes the focus: what it slots in can't be
+      // focused until it has rendered
       return html`
         <h2>
           ${localize("views.live_usb.live_usb_gate.hai_live_missing_title")}
         </h2>
-        <div class="notice error" data-focus-alert>
+        <inline-notice variant="error" data-focus-alert>
           <p>${localize("views.live_usb.live_usb_gate.hai_live_missing")}</p>
           <p>
             <code
@@ -134,7 +142,7 @@ export class LiveUsbGate extends LitElement {
           <p>
             ${localize("views.live_usb.live_usb_gate.hai_live_missing_env")}
           </p>
-        </div>
+        </inline-notice>
       `;
     }
     return html`<slot></slot>`;

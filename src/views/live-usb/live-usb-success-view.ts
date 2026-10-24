@@ -2,8 +2,10 @@ import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { revealInFolder } from "../../api/index.js";
-import { wizardState } from "../../state/wizard-state.js";
+import type { WizardState } from "../../state/wizard-state.js";
+import { WizardStateController } from "../../state/wizard-state-controller.js";
 import { renderExternalLink } from "../../utils/external-link.js";
+import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { DeviceSurvey } from "../../utils/device-discovery.js";
 import { GENERIC_X86_GUIDE_URL } from "../../utils/urls.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
@@ -17,7 +19,35 @@ export class LiveUsbSuccessView extends LitElement {
       display: block;
       min-height: 100%;
     }
+
+    /* Lined up with the next steps above it */
+    .saved-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem 1rem;
+      margin-bottom: 1.5rem;
+      text-align: start;
+      overflow-wrap: anywhere;
+    }
+
+    /* On a line of its own, under the button that failed */
+    .reveal-error {
+      flex-basis: 100%;
+      margin: 0;
+      color: var(--ha-error-color);
+    }
   `;
+
+  // Focuses the folder that couldn't be shown, which reads it out.
+  // install-success focuses its own heading.
+  protected readonly _accessibility = new ViewAccessibility(this);
+
+  private readonly _wizard = new WizardStateController(this);
+
+  private get _wizardState(): WizardState {
+    return this._wizard.state;
+  }
 
   // Notes what is on the network before the computer starts Home Assistant
   protected readonly _survey = new DeviceSurvey(this);
@@ -29,7 +59,7 @@ export class LiveUsbSuccessView extends LitElement {
   private _onReveal = () => void this._reveal();
 
   private async _reveal() {
-    const path = wizardState.getState().selections.liveIsoPath;
+    const path = this._wizardState.selections.liveIsoPath;
     if (!path) return;
     this._revealFailed = false;
     try {
@@ -40,7 +70,7 @@ export class LiveUsbSuccessView extends LitElement {
   }
 
   render() {
-    const selections = wizardState.getState().selections;
+    const { selections } = this._wizardState;
     const iso = selections.liveMedia === "iso";
     const path = selections.liveIsoPath ?? "";
     const boot = [
@@ -85,11 +115,8 @@ export class LiveUsbSuccessView extends LitElement {
         )}
       >
         ${iso
-          ? html`<span
-              class="saved-row"
-              style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-bottom: 1.5rem; overflow-wrap: anywhere"
-            >
-              <span class="saved"
+          ? html`<div class="saved-row">
+              <span
                 >${localizeContent(
                   "views.live_usb.live_usb_success_view.saved_to",
                   { path: html`<bdi dir="ltr">${path}</bdi>` }
@@ -106,13 +133,13 @@ export class LiveUsbSuccessView extends LitElement {
                   >`
                 : ""}
               ${this._revealFailed
-                ? html`<span role="alert"
-                    >${localize(
+                ? html`<p class="reveal-error" data-focus-alert>
+                    ${localize(
                       "views.live_usb.live_usb_success_view.show_failed"
-                    )}</span
-                  >`
+                    )}
+                  </p>`
                 : ""}
-            </span>`
+            </div>`
           : ""}
       </install-success>
     `;

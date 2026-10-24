@@ -23,6 +23,7 @@ describe("live-usb-gate", () => {
 
   afterEach(() => {
     restoreTauriIpc();
+    wizardState.reset();
   });
 
   async function revealAfterSlowStatus(gate: LiveUsbGate) {
@@ -37,7 +38,60 @@ describe("live-usb-gate", () => {
     );
     await revealAfterSlowStatus(gate);
 
-    expect(document.activeElement).to.equal(gate.querySelector("h2"));
+    const heading = gate.querySelector("h2")!;
+    expect(document.activeElement).to.equal(heading);
+    // Like every other step's heading, which is nothing to act on
+    expect(heading.style.outline).to.equal("none");
+  });
+
+  it("shows a spinner, like other steps, while it checks", async () => {
+    const gate = fixtureSync<LiveUsbGate>(
+      html`<live-usb-gate><h2>Where to save</h2></live-usb-gate>`
+    );
+    await gate.updateComplete;
+
+    const loading = gate.shadowRoot!.querySelector(".loading")!;
+    expect(loading.querySelector("loading-spinner")).to.exist;
+    expect(loading.textContent).to.contain("Loading");
+    expect(gate.shadowRoot!.querySelector("slot")).to.not.exist;
+  });
+
+  it("explains a failed check like other steps that failed to load", async () => {
+    const gate = fixtureSync<LiveUsbGate>(
+      html`<live-usb-gate><h2>Where to save</h2></live-usb-gate>`
+    );
+    // A failed call carries no retryable flag, but checking is always safe
+    status.reject("No answer");
+    await settle();
+
+    const root = gate.shadowRoot!;
+    const message = root.querySelector(".error [data-focus-alert]")!;
+    expect(message.textContent!.trim()).to.equal("No answer");
+    expect(root.activeElement).to.equal(message);
+    expect(root.querySelector(".error .error-icon")).to.exist;
+    expect(root.querySelector(".error .error-help a")).to.exist;
+    expect(root.querySelector(".error diagnostics-actions")).to.exist;
+    expect(
+      root.querySelector(".error wa-button")!.textContent!.trim()
+    ).to.equal("Try again");
+    expect(root.querySelector("slot")).to.not.exist;
+    expect(wizardState.getState().selections.liveReady).to.equal(false);
+  });
+
+  it("explains a missing program in an error notice, which takes the focus", async () => {
+    const gate = fixtureSync<LiveUsbGate>(
+      html`<live-usb-gate><h2>Where to save</h2></live-usb-gate>`
+    );
+    status.resolve({ hai_live_found: false });
+    await settle();
+
+    const root = gate.shadowRoot!;
+    const notice = root.querySelector("inline-notice")!;
+    expect(notice.variant).to.equal("error");
+    expect(notice.textContent).to.contain("HAI_LIVE_PATH");
+    expect(root.activeElement).to.equal(notice);
+    expect(root.querySelector("slot")).to.not.exist;
+    expect(wizardState.getState().selections.liveReady).to.equal(false);
   });
 
   it("leaves focus alone when the user moved on during the check", async () => {

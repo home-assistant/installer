@@ -6,10 +6,9 @@ const CONTROLS = "a[href], button, input, select, wa-button, wa-select";
 /**
  * Errors that `ViewAccessibility` focuses when they appear, which is what
  * reads them out. They carry `data-focus-alert`, not role="alert": an alert
- * is read out on its own, and again when it takes the focus. Alerts are
- * still followed, for views that haven't moved to the marker yet.
+ * is read out on its own, and again when it takes the focus.
  */
-const ALERTS = '[data-focus-alert], [role="alert"]';
+const ALERTS = "[data-focus-alert]";
 
 export function activeElement(): Element | null {
   let active = document.activeElement;
