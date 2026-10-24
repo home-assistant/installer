@@ -47,6 +47,7 @@ pub fn run() {
     builder
         .manage(flash_state::FlashState::default())
         .manage(commands::PendingUtmImages::default())
+        .manage(commands::SessionDownload::default())
         .manage(install_jobs::InstallJobs::default())
         .plugin(diagnostics::plugin())
         .setup(|app| {
