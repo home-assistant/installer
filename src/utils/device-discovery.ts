@@ -7,7 +7,7 @@
 import type { ReactiveController, ReactiveControllerHost } from "lit";
 import { findHomeAssistants } from "../api/commands.js";
 import { wizardState } from "../state/wizard-state.js";
-import { pollUntil, throwIfCancelled } from "./polling.js";
+import { delay, isCancelled, throwIfCancelled } from "./polling.js";
 
 /**
  * How long to look for the device. It is set up and started first, and
@@ -27,8 +27,8 @@ const SURVEY_LOOKUPS = 2;
  */
 const SURVEY_TIME_MS = 60 * 1000;
 
-/** Delay between lookups that failed, while noting what is there */
-const SURVEY_RETRY_MS = 2000;
+/** Delay between the lookups of the step that says how to start the device */
+const WATCH_INTERVAL_MS = 2000;
 
 /**
  * Looks for the device: first it notes the Home Assistants already there,
@@ -105,6 +105,11 @@ export function flowDeviceFinder(): DeviceFinder {
  * Notes what is on the network while its host, the step that says how to
  * start the device, is on screen. That step comes as soon as the drive is
  * done, before the device can have started.
+ *
+ * Then it watches for the device for as long as the step stays on screen,
+ * so the finder knows it even when Home Assistant replaced its landing page
+ * before Next: a device that installs while the step is open is followed
+ * all the same.
  */
 export class DeviceSurvey implements ReactiveController {
   private _controller?: AbortController;
@@ -117,20 +122,24 @@ export class DeviceSurvey implements ReactiveController {
     const finder = flowDeviceFinder();
     const controller = new AbortController();
     this._controller = controller;
-    // Lookups that fail are asked again, until it is too late to note
-    // anything. Nothing waits on this: the waiting step asks on its own.
-    void pollUntil(
-      async () => {
-        await finder.survey(controller.signal);
-        return true;
-      },
-      {
-        interval: SURVEY_RETRY_MS,
-        timeout: SURVEY_TIME_MS,
-        signal: controller.signal,
-        timeoutMessage: "",
+    // Nothing waits on this: the waiting step asks on its own
+    void this._watch(finder, controller.signal);
+  }
+
+  private async _watch(finder: DeviceFinder, signal: AbortSignal) {
+    // Until the device is found: lookups that fail are asked again
+    for (;;) {
+      try {
+        if (await finder.find(signal)) return;
+      } catch (error) {
+        if (isCancelled(error)) return;
       }
-    ).catch(() => {});
+      try {
+        await delay(WATCH_INTERVAL_MS, signal);
+      } catch {
+        return;
+      }
+    }
   }
 
   hostDisconnected() {

@@ -9,7 +9,12 @@ import {
 } from "../../../src/utils/device-discovery.js";
 import type { InstallerError } from "../../../src/utils/installer-error.js";
 import { isCancelled } from "../../../src/utils/polling.js";
-import { ipcError, mockTauriIpc, restoreTauriIpc } from "../tauri-ipc.js";
+import {
+  ipcError,
+  mockTauriIpc,
+  restoreTauriIpc,
+  settle,
+} from "../tauri-ipc.js";
 
 const landingPage = (id: string, address = "192.0.2.50"): HaAnnouncement => ({
   id,
@@ -191,6 +196,29 @@ describe("device-discovery", () => {
     expect(asked).to.equal(1);
   });
 
+  it("knows the device that installed while the step said how to start it", async () => {
+    wizardState.startFlow("sbc");
+    const asked = answer(
+      [],
+      [],
+      [landingPage("device")],
+      // Home Assistant has replaced the landing page by Next
+      [homeAssistant("installed")]
+    );
+    const step = await fixture(
+      html`<test-surveying-step></test-surveying-step>`
+    );
+
+    await waitUntil(() => asked() === 3, "it stopped watching", {
+      timeout: 4000,
+    });
+    await settle();
+    step.remove();
+    expect(await flowDeviceFinder().find(signal)).to.equal("192.0.2.50");
+    // Found once, it isn't looked for again
+    expect(asked()).to.equal(3);
+  });
+
   it("keeps one finder for the flow, and a new one for the next", () => {
     wizardState.startFlow("sbc");
     const finder = flowDeviceFinder();
@@ -212,6 +240,8 @@ describe("device-discovery", () => {
     );
 
     await waitUntil(() => asked() === 2);
+    // Its answer is in before the step goes
+    await settle();
     step.remove();
     // What the waiting step finds next is new
     expect(await flowDeviceFinder().find(signal)).to.equal("192.0.2.50");
