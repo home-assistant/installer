@@ -627,7 +627,9 @@ jobs:
           sudo install -d -o _apt /tmp/apt-archives/partial
           echo 'Dir::Cache::Archives "/tmp/apt-archives";' | sudo tee /etc/apt/apt.conf.d/90-ci-archives > /dev/null
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          # The AppImage bundles these GStreamer plugins, so its WebKit can play audio
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio
           sudo apt-get autoclean
           echo "key=$APT_CACHE_KEY$(printf '%s\n' /tmp/apt-archives/*.deb | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
 

@@ -171,5 +171,7 @@ mod tests {
         ] {
             assert!(dependencies.unwrap().iter().any(|name| name == "udisks2"));
         }
+        // Without its own GStreamer plugins, the AppImage's WebKit aborts on any audio
+        assert!(config.bundle.linux.appimage.bundle_media_framework);
     }
 }
