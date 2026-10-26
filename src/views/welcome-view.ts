@@ -250,16 +250,27 @@ export class WelcomeView extends LitElement {
 
     // Play sound after 5 clicks
     if (this._logoClickCount === 5) {
-      this._playEasterEgg();
+      void this._playEasterEgg();
       this._logoClickCount = 0;
     }
   }
 
-  private _playEasterEgg() {
-    const audio = new Audio("/assets/audio/home-assistant.mp3");
-    audio.play().catch((error) => {
+  // WebKitGTK can't play media from tauri:// URLs, so decode it with Web Audio
+  private async _playEasterEgg() {
+    const context = new AudioContext();
+    try {
+      const response = await fetch("/assets/audio/home-assistant.mp3");
+      const source = context.createBufferSource();
+      source.buffer = await context.decodeAudioData(
+        await response.arrayBuffer()
+      );
+      source.connect(context.destination);
+      source.onended = () => void context.close();
+      source.start();
+    } catch (error) {
+      void context.close();
       logFrontendError(error);
-    });
+    }
   }
 
   private _onLetsGo() {
