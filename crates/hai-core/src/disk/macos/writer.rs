@@ -1029,6 +1029,7 @@ mod tests {
 
         fn layout(&self, total_size: u64, buffer_len: usize) -> Layout {
             let (block_size, device_size) = device_geometry(self.disk_id());
+            let block_size = block_size.expect("diskutil reports the RAM disk's block size");
             assert_eq!(
                 device_size,
                 Some(Self::SIZE),
