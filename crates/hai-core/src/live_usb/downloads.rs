@@ -81,18 +81,16 @@ pub async fn fetch_haos<B: ReleaseSource, P: ProgressCallback>(
     let version = release.version.clone();
     // The version becomes a folder name.
     if parse_version(&version).is_none() {
-        return Err(Error::LiveUsbReleaseUnusable(format!(
+        return Err(Error::ReleaseUnusable(format!(
             "unexpected version {version:?}"
         )));
     }
     let image = release
         .image_for(HAOS_BOARD, ImageFormat::Raw)
-        .ok_or_else(|| {
-            Error::LiveUsbReleaseUnusable(format!("{version} has no generic x86-64 image"))
-        })?;
-    let sha256 = expected_sha256(image).map(hex::encode).map_err(|_| {
-        Error::LiveUsbReleaseUnusable(format!("{version} has no usable SHA-256 checksum"))
-    })?;
+        .ok_or_else(|| Error::ReleaseUnusable(format!("{version} has no generic x86-64 image")))?;
+    let sha256 = expected_sha256(image)
+        .map(hex::encode)
+        .map_err(|_| Error::ReleaseUnusable(format!("{version} has no usable SHA-256 checksum")))?;
 
     let path = cache
         .join("haos")

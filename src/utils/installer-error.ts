@@ -42,6 +42,8 @@ const messages: Record<string, () => string> = {
   operation_in_progress: () =>
     localize("utils.installer_error.operation_in_progress"),
   internal: () => localize("utils.installer_error.internal"),
+  release_unavailable: () =>
+    localize("utils.installer_error.release_unavailable"),
 };
 
 /** Tauri rejects with JSON values, not JavaScript Error instances. */

@@ -993,9 +993,7 @@ async fn check_install<B: ReleaseSource>(
     let image = release
         .image_for("ova", ImageFormat::Qcow2)
         .cloned()
-        .ok_or_else(|| {
-            Error::DownloadFailed(format!("No OVA image in HAOS release {}", release.version))
-        })?;
+        .ok_or_else(|| Error::ReleaseUnusable(format!("No OVA image in {}", release.version)))?;
 
     pre_install_checks(session, config, image.size).await?;
     Ok(image)
@@ -1254,15 +1252,8 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
         message: format!("Preparing {} for upload...", filename),
     });
 
-    let file = File::open(local_path)
-        .await
-        .map_err(|e| Error::ProxmoxApi(format!("Failed to open image file: {}", e)))?;
-
-    let file_size = file
-        .metadata()
-        .await
-        .map_err(|e| Error::ProxmoxApi(format!("Failed to get file metadata: {}", e)))?
-        .len();
+    let file = File::open(local_path).await?;
+    let file_size = file.metadata().await?.len();
 
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Uploading,
@@ -4045,6 +4036,32 @@ mod tests {
             nodes_mock.assert_async().await;
         }
 
+        #[tokio::test]
+        async fn test_check_install_blames_a_release_without_an_ova_image() {
+            let release = OvaRelease {
+                image: HaosImage {
+                    board: "ova".into(),
+                    format: ImageFormat::Raw,
+                    download_url: String::new(),
+                    size: 1,
+                    digest: None,
+                },
+                cache: None,
+            };
+
+            // Port 0 refuses any request, though none should be made
+            let result = check_install(
+                &release,
+                &session("http://127.0.0.1:0".into()),
+                &vm_config(),
+            )
+            .await;
+            assert!(
+                matches!(result, Err(Error::ReleaseUnusable(_))),
+                "{result:?}"
+            );
+        }
+
         /// How waiting for a task handles each answer to its status check.
         #[tokio::test]
         async fn test_wait_for_task_answers() {
@@ -5400,8 +5417,9 @@ mod tests {
             let result =
                 upload_image_to_proxmox(&session, "pve", &nonexistent_file, &progress, "local")
                     .await;
+            // A local file problem, not the server's
             assert!(
-                matches!(&result, Err(Error::ProxmoxApi(msg)) if msg.contains("Failed to open image file")),
+                matches!(&result, Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound),
                 "{result:?}"
             );
         }

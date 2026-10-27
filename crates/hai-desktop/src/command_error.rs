@@ -98,7 +98,7 @@ impl From<Error> for CommandError {
             // Names the service, so the frontend doesn't say the image failed
             Error::ServiceUnavailable(message) => return Self::with_message("network", message, true),
             Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and available storage.", true),
-            Error::ExtractionFailed(_) => ("extraction_failed", "The image could not be unpacked. Check available storage.", true),
+            Error::ExtractionFailed(_) => ("extraction_failed", "The downloaded image is damaged and couldn't be unpacked. Try again to download a new copy.", true),
             Error::VerificationFailed(_) => ("verification_failed", "The image could not be verified. Installation stopped to protect your device. See the installation help before continuing.", false),
             Error::ImageTooLarge { written, image_size, drive_size } => {
                 let mut result = Self::new("image_too_large", "The image does not fit on this drive. Choose a larger drive.", false);
@@ -106,7 +106,7 @@ impl From<Error> for CommandError {
                 return result;
             }
             Error::LiveUsbInvalidHaiLive => ("hai_live_invalid", "The program for the USB stick (hai-live) is not the Linux build. Rebuild it for x86_64-unknown-linux-musl, then try again.", true),
-            Error::LiveUsbReleaseUnusable(_) => ("release_unavailable", "The latest Home Assistant OS release can't be used right now. Try again later.", true),
+            Error::ReleaseUnusable(_) => ("release_unavailable", "The latest Home Assistant OS release can't be used right now. Try again later.", true),
             Error::LiveUsbBuild(_) => ("image_build_failed", "The bootable media could not be built. Check available storage, then try again.", true),
         };
         Self::new(code, message, retryable)
@@ -137,6 +137,19 @@ mod tests {
                 "retryable": false, "details": { "written": 0, "image_size": 2048, "drive_size": 1024 }
             })
         );
+    }
+
+    #[test]
+    fn release_and_unpacking_failures_name_what_failed() {
+        let release = CommandError::from(Error::ReleaseUnusable("No raw image in release".into()));
+        assert_eq!(release.code, "release_unavailable");
+        assert!(release.retryable);
+
+        // A damaged download, not this computer's storage
+        let extraction = CommandError::from(Error::ExtractionFailed("corrupt".into()));
+        assert!(extraction.message.contains("damaged"), "{extraction}");
+        assert!(!extraction.message.contains("storage"), "{extraction}");
+        assert!(extraction.retryable);
     }
 
     #[test]

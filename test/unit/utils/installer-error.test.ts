@@ -26,6 +26,16 @@ describe("installer errors", () => {
     ).to.contain("Reconnect to Proxmox");
   });
 
+  it("says when the release, not the installer, is the problem", () => {
+    const result = installerError(
+      ipcError("release_unavailable", "No raw image in release", true)
+    );
+    expect(result.message).to.equal(
+      "The latest Home Assistant OS release can't be used right now. Try again later."
+    );
+    expect(result.retryable).to.be.true;
+  });
+
   it("formats structured capacity details and rejects unsafe retry", () => {
     const result = installerError(
       ipcError("image_too_large", "raw bytes", false, {
