@@ -66,13 +66,18 @@ fn archive_name(image: &HaosImage) -> Result<&str> {
 }
 
 /// Earlier images are only kept for a retry. With little room to spare for
-/// `archive` and its extraction, everything else in the cache folder goes.
+/// `archive` and its extraction, everything else in the cache folder goes,
+/// except what UTM may still be importing.
 fn make_room(archive: &Path, size: u64, available: u64) -> Result<()> {
     if available >= size.saturating_mul(MAX_EXPECTED_XZ_RATIO + 1) {
         return Ok(());
     }
+    let importing = IMPORTING.lock().unwrap_or_else(|e| e.into_inner());
     for entry in std::fs::read_dir(archive.parent().unwrap())? {
         let entry = entry?;
+        if importing.contains(&entry.path()) {
+            continue;
+        }
         let result = if entry.file_type()?.is_dir() {
             std::fs::remove_dir_all(entry.path())
         } else {
@@ -83,6 +88,18 @@ fn make_room(archive: &Path, size: u64, available: u64) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Copies UTM may still be importing, kept until the installer closes.
+static IMPORTING: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+/// Keep `path` from `make_room`: UTM didn't answer whether it finished reading it.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn keep_for_import(path: PathBuf) {
+    IMPORTING
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(path);
 }
 
 /// Where `path` is written until it is complete. What an earlier attempt left
@@ -2228,13 +2245,20 @@ mod tests {
         let earlier = cache.path().join("haos_ova-17.0.qcow2");
         std::fs::write(&earlier, b"image").unwrap();
         std::fs::create_dir(cache.path().join("live-usb")).unwrap();
+        let importing = cache.path().join("haos_ova-17.0.1a2b.qcow2");
+        std::fs::write(&importing, b"copy").unwrap();
+        keep_for_import(importing.clone());
 
         let enough = 100 * (MAX_EXPECTED_XZ_RATIO + 1);
         make_room(&archive, 100, enough).unwrap();
         assert!(earlier.exists());
 
         make_room(&archive, 100, enough - 1).unwrap();
-        assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
+        let left: Vec<_> = std::fs::read_dir(cache.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(left, [importing]);
     }
 
     #[tokio::test]
