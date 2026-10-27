@@ -174,7 +174,8 @@ is always complete; a failed or cancelled attempt leaves only the `.part`, which
 the next attempt removes before checking the free space. The archive is removed
 once extracted. A retry uses the image or the archive an earlier attempt left,
 and with little free space the other files in the folder are removed before a
-download, except a copy UTM may still be importing. The live USB files in
+download, except a copy UTM may still be importing and, for a live USB download,
+`live-usb/`. The live USB files in
 `downloads/live-usb/` go once the stick or ISO is made. Nothing else is removed
 while the installer runs. UTM imports a copy of the image grown to the chosen
 disk size (an APFS clone), and Proxmox receives it under a unique name.

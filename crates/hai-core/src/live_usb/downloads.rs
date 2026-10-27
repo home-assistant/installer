@@ -119,6 +119,15 @@ async fn fetch<B: ReleaseSource, P: ProgressCallback>(
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
+    // What the other flows left goes before this build's own files
+    let downloads = backend.cache_dir()?;
+    let available = fs2::available_space(&downloads)?;
+    crate::download::make_room(
+        &downloads,
+        Some(&downloads.join(FOLDER)),
+        image.size,
+        available,
+    )?;
     // Verifies size and SHA-256, and only moves the file into place once both match.
     backend.download_image(image, path, progress).await?;
     Ok(())

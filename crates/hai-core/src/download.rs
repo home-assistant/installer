@@ -35,7 +35,12 @@ pub async fn fetch_image<B: ReleaseSource, P: ProgressCallback>(
     }
     if !archive.is_file() {
         let cache_dir = archive.parent().unwrap();
-        make_room(&archive, source.size, fs2::available_space(cache_dir)?)?;
+        make_room(
+            cache_dir,
+            None,
+            source.size,
+            fs2::available_space(cache_dir)?,
+        )?;
         backend
             .download_image(source, &archive, progress_callback)
             .await?;
@@ -65,17 +70,22 @@ fn archive_name(image: &HaosImage) -> Result<&str> {
         .ok_or_else(|| Error::InvalidConfig("The image has an unexpected file name.".into()))
 }
 
-/// Earlier images are only kept for a retry. With little room to spare for
-/// `archive` and its extraction, everything else in the cache folder goes,
-/// except what UTM may still be importing.
-fn make_room(archive: &Path, size: u64, available: u64) -> Result<()> {
+/// Earlier images are only kept for a retry. With little room to spare for a
+/// download of `size` and its extraction, everything in `cache_dir` goes,
+/// except `keep` and what UTM may still be importing.
+pub(crate) fn make_room(
+    cache_dir: &Path,
+    keep: Option<&Path>,
+    size: u64,
+    available: u64,
+) -> Result<()> {
     if available >= size.saturating_mul(MAX_EXPECTED_XZ_RATIO + 1) {
         return Ok(());
     }
     let importing = IMPORTING.lock().unwrap_or_else(|e| e.into_inner());
-    for entry in std::fs::read_dir(archive.parent().unwrap())? {
+    for entry in std::fs::read_dir(cache_dir)? {
         let entry = entry?;
-        if importing.contains(&entry.path()) {
+        if keep == Some(entry.path().as_path()) || importing.contains(&entry.path()) {
             continue;
         }
         let result = if entry.file_type()?.is_dir() {
@@ -2241,24 +2251,31 @@ mod tests {
     #[test]
     fn make_room_clears_the_cache_only_when_space_runs_short() {
         let cache = tempfile::tempdir().unwrap();
-        let archive = cache.path().join("haos_rpi5-64-17.0.img.xz");
         let earlier = cache.path().join("haos_ova-17.0.qcow2");
         std::fs::write(&earlier, b"image").unwrap();
-        std::fs::create_dir(cache.path().join("live-usb")).unwrap();
+        let live_usb = cache.path().join("live-usb");
+        std::fs::create_dir(&live_usb).unwrap();
         let importing = cache.path().join("haos_ova-17.0.1a2b.qcow2");
         std::fs::write(&importing, b"copy").unwrap();
         keep_for_import(importing.clone());
+        let left = || {
+            let mut left: Vec<_> = std::fs::read_dir(cache.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect();
+            left.sort();
+            left
+        };
 
         let enough = 100 * (MAX_EXPECTED_XZ_RATIO + 1);
-        make_room(&archive, 100, enough).unwrap();
+        make_room(cache.path(), None, 100, enough).unwrap();
         assert!(earlier.exists());
 
-        make_room(&archive, 100, enough - 1).unwrap();
-        let left: Vec<_> = std::fs::read_dir(cache.path())
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .collect();
-        assert_eq!(left, [importing]);
+        make_room(cache.path(), Some(&live_usb), 100, enough - 1).unwrap();
+        assert_eq!(left(), [importing.clone(), live_usb]);
+
+        make_room(cache.path(), None, 100, enough - 1).unwrap();
+        assert_eq!(left(), [importing]);
     }
 
     #[tokio::test]
