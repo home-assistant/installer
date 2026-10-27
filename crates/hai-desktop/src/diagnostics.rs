@@ -143,7 +143,7 @@ fn scrub(text: &str) -> String {
             // Names may have spaces, so a folder's name runs to the next separator.
             // It takes balanced parentheses, but not the one closing a path in them.
             (r#"(?i)([a-z]:[\\/]+users[\\/]+|/home/|/users/|/(?:run/)?media/)(?:\([^\\/:"()]*\)|[^\\/:")])+"#, "${1}<user>"),
-            (r"(?i)\bbearer\s+\S+", "Bearer <redacted>"),
+            (r"(?i)\b(basic|bearer)\s+\S+", "${1} <redacted>"),
             (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|\S+)"#, "${1}=<redacted>"),
             (r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<id>"),
             (r"[\w.+-]+@[\w.-]+", "<user>"),
@@ -623,6 +623,10 @@ mod tests {
             (
                 "ticket=PVE:root@pam:ABC CSRFPreventionToken: s3cret Authorization: Bearer abc",
                 "ticket=<redacted> CSRFPreventionToken=<redacted> Authorization=<redacted> <redacted>",
+            ),
+            (
+                "Authorization: Basic dXNlcjpwYXNz",
+                "Authorization=<redacted> <redacted>",
             ),
             (
                 "from 192.168.1.20 and fe80::1ff:fe23:4567:890a as root@pam",
