@@ -197,12 +197,7 @@ fn write_and_verify(
     if verify {
         let checksum =
             source_checksum.expect("Checksum should have been computed when verify=true");
-        verify_device(&mut device, &checksum, device_path, layout, &progress_tx).map_err(|e| {
-            match e {
-                Error::VerificationFailed(_) | Error::DriveDisconnected | Error::Cancelled => e,
-                other => Error::VerificationFailed(other.to_string()),
-            }
-        })?;
+        verify_device(&mut device, &checksum, device_path, layout, &progress_tx)?;
     }
 
     // Closed here, before the caller ejects it: diskutil can't eject an open disk
@@ -514,12 +509,7 @@ fn verify_device(
             .map_err(|e| map_device_io_error(e, device_path))?;
 
         if (filled as u64) < wanted {
-            return Err(Error::VerificationFailed(format!(
-                "{} returned only {} of {} bytes",
-                device_path,
-                bytes_hashed + filled as u64,
-                total_size
-            )));
+            return Err(Error::DriveVerificationFailed);
         }
 
         hasher.update(&buffer[..wanted as usize]);
@@ -543,9 +533,7 @@ fn verify_device(
     let device_checksum = hex::encode(hasher.finalize());
 
     if source_checksum != device_checksum {
-        return Err(Error::VerificationFailed(
-            "Checksum mismatch after write".to_string(),
-        ));
+        return Err(Error::DriveVerificationFailed);
     }
 
     let _ = progress_tx.send(FlashProgress::new(
@@ -854,9 +842,7 @@ mod tests {
             layout,
             &progress_tx,
         ) {
-            Err(Error::VerificationFailed(msg)) => {
-                assert!(msg.contains("Checksum mismatch"), "{msg}")
-            }
+            Err(Error::DriveVerificationFailed) => {}
             other => panic!("expected a checksum mismatch, got {other:?}"),
         }
     }
@@ -875,10 +861,7 @@ mod tests {
             layout,
             &progress_tx,
         ) {
-            Err(Error::VerificationFailed(msg)) => {
-                assert!(msg.contains("returned only"), "{msg}");
-                assert!(msg.contains("10000"), "{msg}");
-            }
+            Err(Error::DriveVerificationFailed) => {}
             other => panic!("expected a short-read failure, got {other:?}"),
         }
     }

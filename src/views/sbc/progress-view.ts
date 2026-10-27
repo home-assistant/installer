@@ -112,7 +112,7 @@ export class ProgressView extends InstallProgressView {
   // Only what is wrong with the drive leads back to the drive step. Space on
   // this computer or an unexpected response can't be fixed there.
   protected _choiceCanFix(error: InstallerError): boolean {
-    return isDriveFailure(error.code, this._reachedDrive);
+    return isDriveFailure(error.code);
   }
 
   protected _stoppedMessage(): string {

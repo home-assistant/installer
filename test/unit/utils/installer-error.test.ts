@@ -235,25 +235,25 @@ describe("installer errors", () => {
     for (const code of [
       "device_not_found",
       "drive_disconnected",
+      "drive_in_system_use",
+      "drive_io",
       "drive_too_small",
+      "drive_verification_failed",
       "image_too_large",
       "write_protected",
     ]) {
-      it(`blames the drive for ${code} at any stage`, () => {
-        expect(isDriveFailure(code, false)).to.be.true;
-        expect(isDriveFailure(code, true)).to.be.true;
-      });
-    }
-
-    // Before the write, these are about this computer's storage or the image
-    for (const code of ["io", "verification_failed"]) {
-      it(`blames the drive for ${code} only once the write reached it`, () => {
-        expect(isDriveFailure(code, false)).to.be.false;
-        expect(isDriveFailure(code, true)).to.be.true;
+      it(`blames the drive for ${code}`, () => {
+        expect(isDriveFailure(code)).to.be.true;
       });
     }
 
     for (const code of [
+      // This computer's storage, or the image's checksums
+      "io",
+      "verification_failed",
+      // Other drives on this computer, or what holds this one
+      "drive_check_failed",
+      "device_busy",
       "json",
       "invalid_config",
       "internal",
@@ -262,8 +262,7 @@ describe("installer errors", () => {
       "unknown",
     ]) {
       it(`never blames the drive for ${code}`, () => {
-        expect(isDriveFailure(code, false)).to.be.false;
-        expect(isDriveFailure(code, true)).to.be.false;
+        expect(isDriveFailure(code)).to.be.false;
       });
     }
   });

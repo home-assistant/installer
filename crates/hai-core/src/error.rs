@@ -69,6 +69,13 @@ pub enum Error {
     #[error("Drive disconnected")]
     DriveDisconnected,
 
+    /// The drive failed a read or write, like a worn card or a faulty reader.
+    #[error("Drive I/O error: {0}")]
+    DriveIo(std::io::Error),
+
+    #[error("The drive didn't read back what was written")]
+    DriveVerificationFailed,
+
     #[error(
         "The drive is write-protected. If it's an SD card, slide the lock switch on its side up and try again."
     )]

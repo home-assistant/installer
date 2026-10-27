@@ -148,7 +148,7 @@ export class LiveUsbProgressView extends InstallProgressView {
 
   protected _choiceCanFix(error: InstallerError): boolean {
     return this._usb
-      ? isDriveFailure(error.code, this._reachedDrive)
+      ? isDriveFailure(error.code)
       : LOCATION_FAILURES.includes(error.code);
   }
 
