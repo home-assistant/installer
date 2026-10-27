@@ -562,7 +562,9 @@ jobs:
           LOKALISE_TOKEN: ${{ secrets.LOKALISE_TOKEN }}
         run: |
           docker pull -q "$LOKALISE"
-          if [[ $(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha) != "$GITHUB_SHA" ]]; then
+          # Assigned on its own line so a failed lookup fails the step
+          main=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [[ $main != "$GITHUB_SHA" ]]; then
             echo "::notice::Not uploading en.json: main has moved on to a newer one"
             exit 0
           fi
