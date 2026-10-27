@@ -555,11 +555,13 @@ jobs:
       # Unverified automation), and the download leaves those out until a
       # translator updates them. A run of an older commit, like a re-run once
       # main has moved on, would put back English that main has changed since.
+      # The image is pulled first, so the upload follows that check at once.
       - name: Upload the English catalog
         env:
           GH_TOKEN: ${{ github.token }}
           LOKALISE_TOKEN: ${{ secrets.LOKALISE_TOKEN }}
         run: |
+          docker pull -q "$LOKALISE"
           if [[ $(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha) != "$GITHUB_SHA" ]]; then
             echo "::notice::Not uploading en.json: main has moved on to a newer one"
             exit 0
