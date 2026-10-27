@@ -128,9 +128,10 @@ const MAX_ERROR_CHARS: usize = 300;
 /// addresses or volume IDs. Best effort, as people review an issue before
 /// posting it.
 fn scrub(text: &str) -> String {
-    // Stops at a backslash, which may escape a quote in a credential's value
+    // Takes balanced parentheses, but not the one closing a URL in them, and
+    // stops at a backslash, which may escape a quote in a credential's value
     static URL: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*)://(?:[^\s/@<>"]*@)?(\[[^\]]*\]|[^\s/:?#()<>"'\\]+)(?::\d+)?([^\s?#()<>"'\\]*)[^\s()<>"'\\]*"#).unwrap()
+        Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*)://(?:[^\s/@<>"]*@)?(\[[^\]]*\]|[^\s/:?#()<>"'\\]+)(?::\d+)?((?:\([^\s?#()<>"'\\]*\)|[^\s?#)<>"'\\])*)(?:\([^\s()<>"'\\]*\)|[^\s)<>"'\\])*"#).unwrap()
     });
     static IPV6: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?i)(^|[^\w:.])([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,8}(?:\.\d{1,3}){0,3})")
@@ -638,6 +639,14 @@ mod tests {
             (
                 "GET https://admin:before(visible-secret)after@pve.lan/path",
                 "GET https://<host>",
+            ),
+            (
+                "(url https://github.com/a(1)?token=before(visible-secret)after)",
+                "(url https://github.com/a(1))",
+            ),
+            (
+                "(url https://pve.lan/a?token=before(visible-secret)after)",
+                "(url https://<host>)",
             ),
             (
                 r"at path C:\Users\Sean O'Brien\AppData",
