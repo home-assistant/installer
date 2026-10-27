@@ -76,9 +76,10 @@ pub fn error(error: &hai_core::Error) {
     }
 }
 
-/// Catalog parameters that hold names the user chose, like a Proxmox node's.
-const USER_NAMED: [&str; 7] = [
-    "node", "storage", "storages", "bridge", "vnet", "volume", "name",
+/// Catalog parameters that hold names the user chose, like a Proxmox node's,
+/// or a path through them, like `/storage/<storage>`.
+const USER_NAMED: [&str; 8] = [
+    "node", "storage", "storages", "bridge", "vnet", "volume", "name", "path",
 ];
 
 fn describe(error: &hai_core::Error) -> String {
@@ -717,6 +718,15 @@ mod tests {
             minutes = 5,
         ));
         assert!(describe(&limited).contains("5 minutes"));
+        let denied = hai_core::Error::ProxmoxActionRequired(hai_core::message!(
+            "backend.proxmox.missing_privileges",
+            privileges = "SDN.Use",
+            path = "/sdn/zones/family-zone/private-bridge",
+        ));
+        assert_eq!(
+            describe(&denied),
+            "Your Proxmox user is missing SDN.Use on <name>."
+        );
     }
 
     #[test]
