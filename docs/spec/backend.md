@@ -171,9 +171,10 @@ Everything is downloaded into `downloads/` in the app's cache folder, which
 download and the extraction write to `<name>.part` and rename it once complete, so
 a file under its final name (`haos_rpi5-64-17.0.img.xz`, `haos_rpi5-64-17.0.img`)
 is always complete; a failed or cancelled attempt leaves only the `.part`, which
-the next attempt overwrites. The archive is removed once extracted. A retry uses
-the image or the archive an earlier attempt left, and with little free space the
-other files in the folder are removed before a download. The live USB files in
+the next attempt removes before checking the free space. The archive is removed
+once extracted. A retry uses the image or the archive an earlier attempt left,
+and with little free space the other files in the folder are removed before a
+download. The live USB files in
 `downloads/live-usb/` go once the stick or ISO is made. Nothing else is removed
 while the installer runs. UTM imports a copy of the image grown to the chosen
 disk size (an APFS clone), and Proxmox receives it under a unique name.

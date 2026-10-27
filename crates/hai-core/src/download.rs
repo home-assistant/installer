@@ -85,10 +85,12 @@ fn make_room(archive: &Path, size: u64, available: u64) -> Result<()> {
     Ok(())
 }
 
-/// Where `path` is written until it is complete. A retry overwrites it.
-fn part_path(path: &Path) -> PathBuf {
+/// Where `path` is written until it is complete. What an earlier attempt left
+/// there goes first, so it doesn't count against the free space.
+fn fresh_part(path: &Path) -> PathBuf {
     let mut part = path.as_os_str().to_owned();
     part.push(".part");
+    let _ = std::fs::remove_file(&part);
     part.into()
 }
 
@@ -645,6 +647,8 @@ async fn download_image_with_client<P: ProgressCallback>(
     let directory = dest_path.parent().ok_or_else(|| {
         Error::InvalidConfig("Image destination must have a parent directory".into())
     })?;
+    // Unverified bytes never get the final name
+    let part = fresh_part(dest_path);
     let available = available_space(directory)?;
     check_space(directory, image.size, available)?;
 
@@ -678,8 +682,6 @@ async fn download_image_with_client<P: ProgressCallback>(
         message: "Starting download...".to_string(),
     });
 
-    // Unverified bytes never get the final name
-    let part = part_path(dest_path);
     let mut file = std::fs::File::create(&part)?;
     let mut downloaded: u64 = 0;
     let mut last_progress_update: u64 = 0;
@@ -817,6 +819,7 @@ fn extract_archive(
     let directory = destination.parent().ok_or_else(|| {
         Error::InvalidConfig("Image destination must have a parent directory".into())
     })?;
+    let part = fresh_part(destination);
     let available = available_space(directory)?;
     let mut input = std::fs::File::open(archive)?;
     let mut progress = ExtractionProgress {
@@ -843,7 +846,6 @@ fn extract_archive(
     input.rewind()?;
     let mut decoder = xz_decoder(&mut input)?;
     let mut buffer = [0; 64 * 1024];
-    let part = part_path(destination);
     let mut output = std::fs::File::create(&part)?;
     let mut extracted = 0;
     loop {
@@ -2233,6 +2235,48 @@ mod tests {
 
         make_room(&archive, 100, enough - 1).unwrap();
         assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn partials_an_earlier_attempt_left_do_not_take_the_free_space() {
+        let data = compressed(b"1234567890");
+        let mut server = mockito::Server::new_async().await;
+        let request = server
+            .mock("GET", "/image.xz")
+            .with_body(&data)
+            .create_async()
+            .await;
+        let directory = tempfile::tempdir().unwrap();
+        let archive = directory.path().join("image.xz");
+        let destination = directory.path().join("image.img");
+        let archive_part = directory.path().join("image.xz.part");
+        let image_part = directory.path().join("image.img.part");
+        std::fs::write(&archive_part, b"earlier").unwrap();
+        std::fs::write(&image_part, b"earlier").unwrap();
+        // As if each partial filled the disk
+        let space = |part: &Path| if part.exists() { 0 } else { u64::MAX };
+
+        download_image_with_client(
+            &image_for_data(&format!("{}/image.xz", server.url()), &data),
+            &archive,
+            &crate::NoOpProgress,
+            shared_client().unwrap(),
+            |_| Ok(space(&archive_part)),
+        )
+        .await
+        .unwrap();
+        let (tx, _rx) = std::sync::mpsc::channel();
+        extract_archive(
+            &archive,
+            &destination,
+            &tx,
+            |_| Ok(space(&image_part)),
+            MAX_EXTRACTED_SIZE,
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"1234567890");
+        request.assert_async().await;
     }
 
     #[test]
