@@ -131,7 +131,8 @@ fn scrub(text: &str) -> String {
         Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*)://(?:[^\s/@<>"]*@)?(\[[^\]]*\]|[^\s/:?#()<>"']+)(?::\d+)?([^\s?#()<>"']*)[^\s()<>"']*"#).unwrap()
     });
     static IPV6: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)(^|[^\w:.])([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,8})").unwrap()
+        Regex::new(r"(?i)(^|[^\w:.])([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,8}(?:\.\d{1,3}){0,3})")
+            .unwrap()
     });
     static RULES: LazyLock<Vec<(Regex, &str)>> = LazyLock::new(|| {
         [
@@ -168,11 +169,9 @@ fn scrub(text: &str) -> String {
             }
         })
         .into_owned();
-    for (rule, replacement) in RULES.iter() {
-        line = rule.replace_all(&line, *replacement).into_owned();
-    }
-    // Only what parses as an IPv6 address, not times or Rust paths
-    let line = IPV6
+    // Only what parses as an IPv6 address, not times or Rust paths. Before
+    // IPv4, which would otherwise take the tail of `::ffff:192.0.2.1`.
+    line = IPV6
         .replace_all(&line, |caps: &Captures| {
             let (address, colon) = match caps[2].strip_suffix(':') {
                 Some(address) if address.parse::<Ipv6Addr>().is_ok() => (address, ":"),
@@ -184,6 +183,9 @@ fn scrub(text: &str) -> String {
             }
         })
         .into_owned();
+    for (rule, replacement) in RULES.iter() {
+        line = rule.replace_all(&line, *replacement).into_owned();
+    }
     // The root cause comes last, so a long line loses its middle
     let chars: Vec<char> = line.chars().collect();
     if chars.len() <= MAX_ERROR_CHARS {
@@ -625,6 +627,10 @@ mod tests {
             (
                 "fd12:3456:: and ::dead:beef at 14:07:29 in std::io",
                 "<ip> and <ip> at 14:07:29 in std::io",
+            ),
+            (
+                "to 2001:db8:0:1:2:3:192.168.1.20 and ::ffff:192.168.1.20",
+                "to <ip> and <ip>",
             ),
             (
                 "GET https://admin:before(visible-secret)after@pve.lan/path",
