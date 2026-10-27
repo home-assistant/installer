@@ -409,12 +409,11 @@ mod tests {
 
     #[test]
     fn an_unrecognised_errno_is_the_drives() {
-        let err = map_device_io_error(
-            std::io::Error::from_raw_os_error(5), // EIO
-            "/dev/rdisk4",
-        );
+        // EIO, or ERROR_IO_DEVICE where these tests also run on Windows
+        let code = if cfg!(windows) { 1117 } else { 5 };
+        let err = map_device_io_error(std::io::Error::from_raw_os_error(code), "/dev/rdisk4");
         match err {
-            Error::DriveIo(inner) => assert_eq!(inner.raw_os_error(), Some(5)),
+            Error::DriveIo(inner) => assert_eq!(inner.raw_os_error(), Some(code)),
             other => panic!("expected DriveIo, got {other:?}"),
         }
     }
