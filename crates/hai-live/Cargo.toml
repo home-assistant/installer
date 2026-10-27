@@ -2,7 +2,8 @@
 name = "hai-live"
 version.workspace = true
 authors.workspace = true
-license.workspace = true
+# The Terminus console font in fonts/ is under the SIL OFL 1.1
+license = "Apache-2.0 AND OFL-1.1"
 edition.workspace = true
 description = "Install program on the live USB stick: writes Home Assistant OS to the internal drive"
 

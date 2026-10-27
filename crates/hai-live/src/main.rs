@@ -2,6 +2,7 @@
 //!
 //! Lists internal disks, and after a typed confirmation writes the bundled HAOS image to one.
 
+mod console_font;
 mod drives;
 mod i18n;
 mod image;

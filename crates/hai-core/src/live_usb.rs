@@ -31,7 +31,7 @@ pub fn remove_cache(cache: &Path) -> Result<()> {
 pub struct Contents {
     /// Unpacked Alpine ISO files.
     files: PathBuf,
-    /// Our files at the root: apkovl, HAOS image and its checksum.
+    /// Our files at the root: apkovl, console font licence, HAOS image and its checksum.
     extra: Vec<StickFile>,
     /// Alpine's ISO volume label, which our ISO must keep.
     label: String,
@@ -104,6 +104,10 @@ pub async fn prepare<B: ReleaseSource, P: ProgressCallback>(
         StickFile {
             name: apkovl::APKOVL_NAME.into(),
             source: Source::Bytes(apkovl::build(&hai_live)?),
+        },
+        StickFile {
+            name: FONT_LICENCE_NAME.into(),
+            source: Source::Bytes(FONT_LICENCE.to_vec()),
         },
         StickFile {
             name: format!("{haos_name}.sha256"),
@@ -184,6 +188,11 @@ fn retitle_boot_menu(grub_cfg: &Path) -> Result<()> {
 
 /// What GRUB says it is starting.
 const BOOT_MENU_TITLE: &str = "Home Assistant Installer";
+
+/// `hai-live` has the Terminus console font built in, and the font's licence (SIL OFL 1.1)
+/// must come with every copy of it.
+const FONT_LICENCE_NAME: &str = "terminus-font-OFL.txt";
+const FONT_LICENCE: &[u8] = include_bytes!("../../hai-live/fonts/OFL.txt");
 
 /// Whether the file at `path` is the static Linux build of `hai-live` that the stick can run.
 pub fn is_usable_hai_live(path: &Path) -> bool {
@@ -295,6 +304,13 @@ mod tests {
         retitle_boot_menu(&grub_cfg).unwrap();
         assert_eq!(std::fs::read_to_string(&grub_cfg).unwrap(), config);
         retitle_boot_menu(&dir.path().join("missing.cfg")).unwrap();
+    }
+
+    #[test]
+    fn font_licence_is_terminus_ofl() {
+        let licence = std::str::from_utf8(FONT_LICENCE).unwrap();
+        assert!(licence.starts_with("Copyright (C) 2020 Dimitar Toshkov Zhekov,"));
+        assert!(licence.contains("SIL OPEN FONT LICENSE Version 1.1"));
     }
 
     #[test]

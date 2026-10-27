@@ -1,8 +1,8 @@
 //! Full-screen text interface on the Linux console: one centered card per step.
 //!
 //! Screens are plain data, drawn by [`render`], so they can be tested without a console. The
-//! console's built-in font only has the old PC character set, so the drawing sticks to its
-//! straight box lines, blocks and arrows.
+//! console font ([`console_font`]) has only 512 glyphs, so the drawing sticks to its straight
+//! box lines, blocks and arrows.
 
 use std::io::{self, Stdout, Write};
 use std::time::Duration;
@@ -16,6 +16,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Padding, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
 
+use crate::console_font;
 use crate::i18n::{Args, Language};
 use crate::safety::{Hidden, Problem};
 
@@ -33,7 +34,8 @@ const HOME_ASSISTANT_URL: &str = "http://homeassistant.local";
 const CARD_WIDTH: u16 = 80;
 
 /// The Home Assistant mark in half blocks: each character is two pixels, top and bottom.
-/// Rendered from the mark's SVG at 32 pixels; the gaps are the tree.
+/// Rendered from the mark's SVG at 32 pixels; the gaps are the tree. Terminus has no half blocks:
+/// [`console_font`] patches them in.
 const LOGO: [&str; 13] = [
     "           ▄██▄",
     "         ▄██████▄",
@@ -531,9 +533,15 @@ pub struct Ui {
 }
 
 impl Ui {
-    /// Takes over the console, to draw in `language`.
+    /// Takes over the console, to draw in `language`. On the Linux console, it first loads a font
+    /// that can show every language.
     pub fn start(language: Language) -> io::Result<Self> {
         let linux_console = std::env::var("TERM").is_ok_and(|term| term == "linux");
+        if linux_console {
+            // Before anything is drawn or the size is read: the console keeps glyph numbers, and
+            // a font of another height changes its rows
+            console_font::load();
+        }
         terminal::enable_raw_mode()?;
         let mut stdout = io::stdout();
         if linux_console {
@@ -601,7 +609,7 @@ mod tests {
     use super::*;
     use crate::drives::Reason;
     use ratatui::backend::TestBackend;
-    use ratatui::buffer::Buffer;
+    use ratatui::buffer::{Buffer, Cell};
     use ratatui::style::Modifier;
 
     /// The text of `screen` drawn in English on a `width` x `height` console, one string per row.
@@ -859,6 +867,25 @@ mod tests {
             overflow_of(&"Failed ".repeat(11), String::new()),
             Some("title")
         );
+    }
+
+    #[test]
+    fn the_console_font_has_every_glyph_the_screens_draw() {
+        for lang in Language::all() {
+            for screen in every_screen(lang) {
+                // Large enough for the logo, besides the markers, arrows, bars, borders and the
+                // key bar's non-breaking spaces
+                let buffer = buffer(lang, &screen, 160, 50);
+                let drawn = buffer.content().iter().map(Cell::symbol);
+                for c in drawn.flat_map(str::chars) {
+                    let code = u32::from(c);
+                    assert!(
+                        console_font::covers(c),
+                        "{lang:?} draws {c:?} (U+{code:04X}), which the console font lacks"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
