@@ -584,7 +584,7 @@ mod macos {
         // UTM ignores `guest size` for an imported drive and keeps the size
         // of the image, so the image gets the chosen size before the import.
         let disk_size_bytes = u64::from(config.disk_size_gb) * 1024 * 1024 * 1024;
-        qcow2::grow(image_path, disk_size_bytes)?;
+        let source = qcow2::grown_copy(image_path, disk_size_bytes)?;
 
         let cpu_cores = config.cpu_cores.to_string();
         let memory_mb = config.memory_mb.to_string();
@@ -592,7 +592,7 @@ mod macos {
             CREATE_SCRIPT,
             &[
                 &config.name,
-                &config.image_path,
+                &source.to_string_lossy(),
                 &network_interface,
                 &cpu_cores,
                 &memory_mb,

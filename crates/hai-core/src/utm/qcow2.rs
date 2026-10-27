@@ -1,8 +1,8 @@
 //! Growing the virtual size of a qcow2 image in place.
 //!
 //! UTM ignores `guest size` for a drive imported from a `source` file, and
-//! its own `qemu-img` is an embedded framework we can't call. So the image
-//! is grown before UTM imports it, while it is still our own temporary file.
+//! its own `qemu-img` is an embedded framework we can't call. So a copy of
+//! the image is grown before UTM imports it.
 //!
 //! Only the header and the L1 table change. The extra L1 entries must fit in
 //! the clusters the table already occupies, so no cluster is allocated and
@@ -11,7 +11,7 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
@@ -24,6 +24,19 @@ const HEADER_V3_LENGTH: usize = 104;
 /// affects how compressed clusters are read. Dirty, corrupt, external data
 /// file and extended L2 images are refused.
 const INCOMPATIBLE_COMPRESSION_TYPE: u64 = 1 << 3;
+
+/// A copy of the image at `path` for one VM, grown to `size_bytes`. The image
+/// stays as downloaded for the next VM. APFS clones it: instant and shared.
+pub fn grown_copy(path: &Path, size_bytes: u64) -> Result<PathBuf> {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let copy = path.with_extension(format!("{nanos:x}.qcow2"));
+    std::fs::copy(path, &copy)?;
+    grow(&copy, size_bytes)?;
+    Ok(copy)
+}
 
 /// Grow the virtual size of the qcow2 image at `path` to `size_bytes`.
 ///
@@ -235,6 +248,17 @@ mod tests {
 
     fn read_header(path: &Path) -> Header {
         Header::read(&mut File::open(path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn grown_copy_leaves_the_image_as_downloaded() {
+        let (_dir, path, before) = image_with(&haos_like_header());
+
+        let copy = grown_copy(&path, 512 * GIB).unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(read_header(&copy).size, 512 * GIB);
+        assert_eq!(copy.parent(), path.parent());
     }
 
     #[test]

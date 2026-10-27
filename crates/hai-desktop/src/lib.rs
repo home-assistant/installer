@@ -57,14 +57,9 @@ pub fn run() {
             if let Ok(dir) = app.path().resource_dir() {
                 live_usb::set_resource_dir(dir);
             }
-            if let Ok(cache) = hai_core::ReleaseSource::cache_dir(&backend::Backend) {
-                if hai_core::download::prune_cached_images(&cache).is_err() {
-                    diagnostics::warning("cache_prune_failed");
-                }
-                // Left by a session that closed before its stick or ISO was made
-                if hai_core::live_usb::remove_cache(&cache).is_err() {
-                    diagnostics::warning("live_usb_cache_cleanup_failed");
-                }
+            clear_cache();
+            if hai_core::download::remove_legacy_downloads().is_err() {
+                diagnostics::warning("legacy_cache_cleanup_failed");
             }
             Ok(())
         })
@@ -118,8 +113,22 @@ pub fn run() {
             live_usb::check_iso_location,
             live_usb::reveal_in_folder
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|_, event| {
+            if let tauri::RunEvent::Exit = event {
+                clear_cache();
+            }
+        });
+}
+
+/// Downloads live for one session. Single instance: nothing else uses them.
+fn clear_cache() {
+    let cleared = hai_core::ReleaseSource::cache_dir(&backend::Backend)
+        .and_then(|cache| hai_core::download::clear_cache(&cache));
+    if cleared.is_err() {
+        diagnostics::warning("cache_clear_failed");
+    }
 }
 
 /// Modules in the host's GIO_EXTRA_MODULES (gvfs and dconf on NixOS) are built against
