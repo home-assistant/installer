@@ -67,16 +67,34 @@ for (const filename of fs.readdirSync(path.dirname(catalogPath))) {
     language,
     `${filename}: name a catalog after its language tag, like pt-BR.json`
   );
-  const translation = read(path.join(path.dirname(catalogPath), filename));
+  const translationPath = path.join(path.dirname(catalogPath), filename);
+  const translation = read(translationPath);
+  let dropped = false;
   for (const [key, message] of Object.entries(translation)) {
-    assert(parameters.has(key), `${filename}: unknown key ${key}`);
-    // An export can list untranslated keys with empty text
-    if (typeof message === "string" && !message.trim()) continue;
-    assert.deepEqual(
-      placeholders(`${filename}: ${key}`, message),
-      parameters.get(key),
-      `${filename}: ${key} placeholder mismatch`
-    );
+    try {
+      assert(parameters.has(key), `${filename}: unknown key ${key}`);
+      // An export can list untranslated keys with empty text
+      if (typeof message === "string" && !message.trim()) continue;
+      assert.deepEqual(
+        placeholders(`${filename}: ${key}`, message),
+        parameters.get(key),
+        `${filename}: ${key} placeholder mismatch`
+      );
+    } catch (error) {
+      // CI sets this for the translations it downloads from Lokalise, so a
+      // community string that doesn't fit shows the English instead of
+      // blocking every build until someone fixes it there.
+      if (process.env.LOCALIZATION_PRUNE !== "1") throw error;
+      console.log(`::warning::Dropped ${error.message}`);
+      delete translation[key];
+      dropped = true;
+    }
+  }
+  if (dropped) {
+    // An empty catalog would stop the app from trying the next language
+    if (Object.keys(translation).length)
+      fs.writeFileSync(translationPath, JSON.stringify(translation, null, 2));
+    else fs.rmSync(translationPath);
   }
 }
 

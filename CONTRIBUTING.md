@@ -102,7 +102,12 @@ by several screens goes under `common.*`, grouped by where it appears, like
 `common.install.*` for the progress of every flow or `common.vm.*` for UTM and
 Proxmox. Only `backend.*` falls outside both, for the messages the Rust code
 sends. `npm run localization:check` enforces both the namespace and the
-placeholder names. No keys have been published to a translation service yet.
+placeholder names.
+
+Translators work in Lokalise. CI uploads `en.json` from `main`, and builds of
+`main` bundle the translations that fit it (see
+[Translations](docs/spec/ci-cd.md#translations)). Pull request and local builds
+only have the catalogs in this folder.
 
 Startup reads the OS locale through Tauri's locale-only command permission before
 loading component modules. Browser development uses `navigator.languages`.
