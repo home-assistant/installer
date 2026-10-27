@@ -3,18 +3,20 @@
 //! Lists internal disks, and after a typed confirmation writes the bundled HAOS image to one.
 
 mod drives;
+mod i18n;
 mod image;
 mod safety;
 mod ui;
 mod writer;
 
-use std::fs::File;
+use std::fs::{self, File};
 use std::io;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use drives::{Disk, Entry};
+use drives::{Disk, Entry, Model};
+use i18n::Language;
 use image::BundledImage;
 use ratatui::crossterm::event::KeyCode;
 use ui::{DiskRow, Screen, Ui};
@@ -22,19 +24,22 @@ use ui::{DiskRow, Screen, Ui};
 const SYS_BLOCK: &str = "/sys/block";
 const DEV: &str = "/dev";
 const MEDIA: &str = "/media";
-const DISK_CHANGED: &str =
-    "The disk changed, disappeared or could not be checked again. Nothing was written.";
+/// The language to start in: one BCP 47 tag, the desktop installer's when it prepared the stick.
+const LANGUAGE: &str = "/etc/hai-live/language";
 /// How often the disk list looks again, so a disk connected later shows up by itself.
 const REFRESH: Duration = Duration::from_secs(2);
 
 fn main() {
-    let mut ui = match Ui::start() {
+    // Without the file, or for a language without a catalog, English
+    let language = Language::for_tag(fs::read_to_string(LANGUAGE).unwrap_or_default().trim());
+    let mut ui = match Ui::start(language) {
         Ok(ui) => ui,
         // No console to draw on. Exit rather than spin; init restarts hai-live on tty1.
         Err(_) => std::process::exit(1),
     };
     let mut selected: Option<String> = None;
     loop {
+        let lang = ui.language;
         let image = image::find(Path::new(MEDIA));
         let (review, scan_error) = match review_disks(image.as_ref()) {
             Ok(review) => (review, None),
@@ -53,12 +58,12 @@ fn main() {
                 .choices
                 .iter()
                 .map(|choice| DiskRow {
-                    label: describe(&choice.disk),
+                    label: describe(lang, &choice.disk),
                     problem: choice.problem,
                 })
                 .collect(),
             selected: index,
-            hidden: ui::hidden_summary(&review.hidden),
+            hidden: review.hidden,
             scan_error,
         });
 
@@ -73,16 +78,22 @@ fn main() {
             KeyCode::Down | KeyCode::Char('j') => {
                 selected = review.choices.get((index + 1).min(last)).map(name_of);
             }
-            KeyCode::Char('r' | 'R') => run(&mut ui, "reboot"),
-            KeyCode::Char('p' | 'P') => run(&mut ui, "poweroff"),
+            KeyCode::Char('r' | 'R') => run(&mut ui, "reboot", "live.main.restart_failed.title"),
+            KeyCode::Char('p' | 'P') => {
+                run(&mut ui, "poweroff", "live.main.power_off_failed.title")
+            }
+            KeyCode::Char('l' | 'L') => choose_language(&mut ui),
             KeyCode::Enter => {
                 if let (Some(image), Some(choice)) = (&image, review.choices.get(index)) {
                     match choice.problem {
-                        Some(problem) => message(
-                            &mut ui,
-                            "This disk can't be used",
-                            &format!("{} can't be used: {problem}.", choice.disk.name),
-                        ),
+                        Some(problem) => {
+                            let problem = lang.text(problem.key());
+                            let body = lang.format(
+                                "live.main.unusable.body",
+                                &[("disk", &choice.disk.name), ("problem", &problem)],
+                            );
+                            message(&mut ui, lang.text("live.main.unusable.title"), vec![body])
+                        }
                         None => install(&mut ui, image, &choice.disk),
                     }
                 }
@@ -101,33 +112,31 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
     if !confirm_erase(ui, image, disk) {
         return;
     }
+    let lang = ui.language;
 
     let mut step = Step::start();
+    let title = lang.text("live.main.checking.title");
+    let detail = lang.text("live.main.checking.detail");
     let verified = image::verify(image, &mut |read, total| {
-        show_progress(
-            ui,
-            &mut step,
-            "Checking the image",
-            "Making sure the Home Assistant OS image on the USB stick is complete.",
-            read,
-            total,
-        )
+        show_progress(ui, &mut step, &title, &detail, read, total)
     });
     match verified {
         Ok(true) => {}
         Ok(false) => {
             return message(
                 ui,
-                "The image is damaged",
-                "The Home Assistant OS image on the USB stick is damaged. Nothing was written.\n\
-                 Prepare the stick again with the Home Assistant Installer.",
+                lang.text("live.main.image_damaged.title"),
+                vec![
+                    lang.text("live.main.image_damaged.body"),
+                    lang.text("live.main.image_damaged.hint"),
+                ],
             )
         }
         Err(error) => {
             return message(
                 ui,
-                "Could not read the image",
-                &format!("{error}\nNothing was written."),
+                lang.text("live.main.read_failed.title"),
+                vec![error.to_string(), lang.text("live.main.nothing_written")],
             )
         }
     }
@@ -138,7 +147,11 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
         safety::still_usable(disk, current, sys_block, dev, boot_disk.as_deref())
     });
     if !usable {
-        return message(ui, "Nothing was written", DISK_CHANGED);
+        return message(
+            ui,
+            lang.text("live.main.disk_changed.title"),
+            vec![lang.text("live.main.disk_changed.body")],
+        );
     }
     let path = dev.join(&disk.name);
     let mut target = match writer::open_disk(&path) {
@@ -146,12 +159,15 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
         Err(error) => {
             return message(
                 ui,
-                "Could not open the disk",
-                &format!(
-                    "Could not open {}: {error}\nNothing was written.",
-                    disk.name
-                ),
-            )
+                lang.text("live.main.open_failed.title"),
+                vec![
+                    lang.format(
+                        "live.main.open_failed.body",
+                        &[("disk", &disk.name), ("error", &error)],
+                    ),
+                    lang.text("live.main.nothing_written"),
+                ],
+            );
         }
     };
     // Checked again after opening, so the disk can't be swapped between the check and the write.
@@ -159,7 +175,11 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
         .is_ok_and(|current| current.contains(&Entry::Disk(disk.clone())))
         && writer::is_same_device(&target, &path);
     if !unchanged {
-        return message(ui, "Nothing was written", DISK_CHANGED);
+        return message(
+            ui,
+            lang.text("live.main.disk_changed.title"),
+            vec![lang.text("live.main.disk_changed.body")],
+        );
     }
     // Opened before the disk is wiped, so a stick pulled out by now leaves the disk as it was
     let image_file = match File::open(&image.path) {
@@ -167,45 +187,47 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
         Err(error) => {
             return message(
                 ui,
-                "Could not read the image",
-                &format!("{error}\nNothing was written."),
+                lang.text("live.main.read_failed.title"),
+                vec![error.to_string(), lang.text("live.main.nothing_written")],
             )
         }
     };
 
     let mut step = Step::start();
+    let title = lang.text("live.main.writing.title");
     let result = writer::write_image(
         image_file,
         &mut target,
         disk.size_bytes,
         &mut |read, total, written| {
-            let detail = format!("To {}: {:.1} GB written.", disk.name, written as f64 / 1e9);
-            show_progress(
-                ui,
-                &mut step,
-                "Writing Home Assistant OS",
-                &detail,
-                read,
-                total,
-            )
+            let gigabytes = format!("{:.1}", written as f64 / 1e9);
+            let detail = lang.format(
+                "live.main.writing.detail",
+                &[("disk", &disk.name), ("gigabytes", &gigabytes)],
+            );
+            show_progress(ui, &mut step, &title, &detail, read, total)
         },
     );
     if let Err(error) = result {
         return message(
             ui,
-            "Writing failed",
-            &format!("{error}\nThe disk is now incomplete. Install again to fix it."),
+            lang.text("live.main.write_failed.title"),
+            vec![error.to_string(), lang.text("live.main.write_failed.body")],
         );
     }
 
     ui.show(&Screen::Progress {
-        title: "Finishing".into(),
-        detail: "Making sure everything is on the disk.".into(),
+        title: lang.text("live.main.finishing.title"),
+        detail: lang.text("live.main.finishing.detail"),
         percent: 100,
         time_left: None,
     });
     if let Err(error) = target.sync_all() {
-        return message(ui, "Finishing failed", &error.to_string());
+        return message(
+            ui,
+            lang.text("live.main.finish_failed.title"),
+            vec![error.to_string()],
+        );
     }
     drop(target);
 
@@ -214,8 +236,37 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
             disk: disk.name.clone(),
         });
         match ui.key(None) {
-            Some(KeyCode::Char('r' | 'R')) => run(ui, "reboot"),
-            Some(KeyCode::Char('p' | 'P')) => run(ui, "poweroff"),
+            Some(KeyCode::Char('r' | 'R')) => run(ui, "reboot", "live.main.restart_failed.title"),
+            Some(KeyCode::Char('p' | 'P')) => {
+                run(ui, "poweroff", "live.main.power_off_failed.title")
+            }
+            Some(KeyCode::Char('l' | 'L')) => choose_language(ui),
+            _ => {}
+        }
+    }
+}
+
+/// Lets the user switch every screen to another language. Esc keeps the current one.
+fn choose_language(ui: &mut Ui) {
+    let languages = Language::all();
+    let mut index = languages
+        .iter()
+        .position(|language| *language == ui.language)
+        .unwrap_or(0);
+    loop {
+        ui.show(&Screen::Languages {
+            selected: languages[index],
+        });
+        match ui.key(None) {
+            Some(KeyCode::Up | KeyCode::Char('k')) => index = index.saturating_sub(1),
+            Some(KeyCode::Down | KeyCode::Char('j')) => {
+                index = (index + 1).min(languages.len() - 1);
+            }
+            Some(KeyCode::Enter) => {
+                ui.language = languages[index];
+                return;
+            }
+            Some(KeyCode::Esc) => return,
             _ => {}
         }
     }
@@ -227,7 +278,7 @@ fn confirm_erase(ui: &mut Ui, image: &BundledImage, disk: &Disk) -> bool {
     let mut mistyped = false;
     loop {
         ui.show(&Screen::Confirm {
-            disk: describe(disk),
+            disk: describe(ui.language, disk),
             os: image.name(),
             typed: typed.clone(),
             mistyped,
@@ -249,12 +300,17 @@ fn confirm_erase(ui: &mut Ui, image: &BundledImage, disk: &Disk) -> bool {
     }
 }
 
-fn describe(disk: &Disk) -> String {
+fn describe(lang: Language, disk: &Disk) -> String {
+    let model = match &disk.model {
+        Model::Reported(model) => model.clone(),
+        Model::Virtio => lang.text("live.drives.model.virtio"),
+        Model::Unknown => lang.text("live.drives.model.unknown"),
+    };
     format!(
         "{:<8} {:<6} {:<30} {:>8.1} GB",
         disk.name,
         disk.kind.label(),
-        disk.model,
+        model,
         disk.size_bytes as f64 / 1e9,
     )
 }
@@ -262,7 +318,7 @@ fn describe(disk: &Disk) -> String {
 /// A long step: when it started, and what was last drawn for it.
 struct Step {
     started: Instant,
-    shown: Option<(u64, Option<String>)>,
+    shown: Option<(u64, Option<ui::TimeLeft>)>,
 }
 
 impl Step {
@@ -278,7 +334,7 @@ impl Step {
 fn show_progress(ui: &mut Ui, step: &mut Step, title: &str, detail: &str, done: u64, total: u64) {
     let percent = (done * 100).checked_div(total).unwrap_or(0).min(100);
     let time_left = ui::time_left(step.started.elapsed(), done, total);
-    let now = Some((percent, time_left.clone()));
+    let now = Some((percent, time_left));
     if step.shown != now {
         step.shown = now;
         ui.show(&Screen::Progress {
@@ -290,13 +346,11 @@ fn show_progress(ui: &mut Ui, step: &mut Step, title: &str, detail: &str, done: 
     }
 }
 
-/// Shows `body` until Enter or Esc.
-fn message(ui: &mut Ui, title: &str, body: &str) {
+/// Shows `body`, one paragraph each, until Enter or Esc.
+fn message(ui: &mut Ui, title: String, body: Vec<String>) {
+    let screen = Screen::Message { title, body };
     loop {
-        ui.show(&Screen::Message {
-            title: title.into(),
-            body: body.into(),
-        });
+        ui.show(&screen);
         if matches!(ui.key(None), Some(KeyCode::Enter | KeyCode::Esc)) {
             return;
         }
@@ -319,10 +373,13 @@ fn boot_disk(image: &BundledImage) -> Option<String> {
     drives::disk_holding(Path::new(SYS_BLOCK), &image.path)
 }
 
-fn run(ui: &mut Ui, command: &str) {
-    match Command::new(command).status() {
-        Ok(status) if status.success() => {}
-        Ok(status) => message(ui, &format!("{command} failed"), &status.to_string()),
-        Err(error) => message(ui, &format!("{command} failed"), &error.to_string()),
-    }
+/// Runs `command`, and shows the message `failed` with why where it fails.
+fn run(ui: &mut Ui, command: &str, failed: &str) {
+    let why = match Command::new(command).status() {
+        Ok(status) if status.success() => return,
+        Ok(status) => status.to_string(),
+        Err(error) => error.to_string(),
+    };
+    let title = ui.language.text(failed);
+    message(ui, title, vec![why]);
 }

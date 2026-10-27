@@ -11,10 +11,13 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::crossterm::{cursor, execute, terminal};
 use ratatui::layout::{Constraint, Flex, Layout};
-use ratatui::style::{Color, Modifier, Style, Stylize};
+use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Padding, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
+
+use crate::i18n::{Args, Language};
+use crate::safety::{Hidden, Problem};
 
 /// Accent color. On the Linux console, palette entries 4 and 12 are set to Home Assistant blue:
 /// the console shows bold blue text in its bright blue, entry 12.
@@ -48,13 +51,33 @@ const LOGO: [&str; 13] = [
 ];
 const LOGO_WIDTH: u16 = 26;
 
+/// A key under the card, and the message for what it does.
+type Hint = (&'static str, &'static str);
+const CHOOSE: Hint = ("\u{2191}\u{2193}", "live.ui.keys.choose");
+const INSTALL: Hint = ("Enter", "live.ui.keys.install");
+const RESTART: Hint = ("R", "live.ui.keys.restart");
+const POWER_OFF: Hint = ("P", "live.ui.keys.power_off");
+const SHELL: Hint = ("Alt+F2", "live.ui.keys.shell");
+const LANGUAGE: Hint = ("L", "live.ui.keys.language");
+const CONTINUE: Hint = ("Enter", "live.ui.keys.continue");
+const APPLY: Hint = ("Enter", "live.ui.keys.apply");
+const BACK: Hint = ("Esc", "live.ui.keys.back");
+
 /// One disk in the list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiskRow {
     /// Name, type, model and size on one line.
     pub label: String,
     /// Why it can't be used, if it can't.
-    pub problem: Option<&'static str>,
+    pub problem: Option<Problem>,
+}
+
+/// Roughly how long a step still takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimeLeft {
+    LessThanAMinute,
+    /// Rounded up.
+    Minutes(u64),
 }
 
 /// What the console shows.
@@ -66,8 +89,8 @@ pub enum Screen {
         os: Option<String>,
         disks: Vec<DiskRow>,
         selected: usize,
-        /// Hidden devices, one line per reason.
-        hidden: Vec<String>,
+        /// Hidden devices, and why.
+        hidden: Vec<(String, Hidden)>,
         /// Why the disks couldn't be listed, when they couldn't.
         scan_error: Option<String>,
     },
@@ -86,24 +109,30 @@ pub enum Screen {
         detail: String,
         percent: u16,
         /// Roughly how long the step still takes, once that can be told.
-        time_left: Option<String>,
+        time_left: Option<TimeLeft>,
     },
     /// Something went wrong; Enter goes back.
-    Message { title: String, body: String },
+    Message {
+        title: String,
+        /// One paragraph each.
+        body: Vec<String>,
+    },
     /// Home Assistant OS is on the disk.
     Done { disk: String },
+    /// The languages to switch to.
+    Languages { selected: Language },
 }
 
-/// Draws `screen`: a centered card with the keys to press under it, and the Home Assistant logo
-/// above it where the console is tall enough.
-pub fn render(frame: &mut Frame, screen: &Screen) {
+/// Draws `screen` in `lang`: a centered card with the keys to press under it, and the Home
+/// Assistant logo above it where the console is tall enough.
+pub fn render(frame: &mut Frame, screen: &Screen, lang: Language) {
     let Card {
         title,
         lines,
         progress: gauge,
         keys,
         focus,
-    } = content(screen);
+    } = content(screen, lang);
 
     let width = CARD_WIDTH.min(frame.area().width.saturating_sub(2));
     // Borders and padding take 5 columns on each side, padding 2 rows above and below
@@ -177,7 +206,8 @@ pub fn render(frame: &mut Frame, screen: &Screen) {
 
     frame.render_widget(
         Paragraph::new(keys).fg(MUTED).wrap(Wrap { trim: true }),
-        keys_area.offset(ratatui::layout::Offset { x: 1, y: 0 }),
+        // In line with the card's border on both sides
+        keys_area.inner(ratatui::layout::Margin::new(1, 0)),
     );
 }
 
@@ -204,8 +234,8 @@ struct Card {
     focus: Option<std::ops::Range<usize>>,
 }
 
-/// The card of `screen`.
-fn content(screen: &Screen) -> Card {
+/// The card of `screen`, in `lang`.
+fn content(screen: &Screen, lang: Language) -> Card {
     match screen {
         Screen::Disks {
             os,
@@ -214,56 +244,42 @@ fn content(screen: &Screen) -> Card {
             hidden,
             scan_error,
         } => {
-            let mut lines = Vec::new();
+            let title = lang.text("live.ui.disks.title");
             let Some(os) = os else {
-                lines.push(Line::from(
-                    "There is no Home Assistant OS image on this USB stick. \
-                     Prepare the stick again with the Home Assistant Installer.",
-                ));
                 return Card {
-                    title: "Home Assistant Installer".into(),
-                    lines,
+                    title,
+                    lines: vec![Line::from(lang.text("live.ui.disks.no_image"))],
                     progress: None,
-                    keys: "R restart   P power off".into(),
+                    keys: key_bar(lang, &[RESTART, POWER_OFF, LANGUAGE]),
                     focus: None,
                 };
             };
-            lines.push(Line::from(format!(
-                "Choose the disk to install {os} on. Everything on it is erased."
-            )));
-            lines.push(Line::default());
+            let mut lines = vec![
+                Line::from(lang.format("live.ui.disks.subtitle", &[("os", os)])),
+                Line::default(),
+            ];
             if let Some(error) = scan_error {
                 lines.push(
-                    Line::from(format!(
-                        "The disks could not be listed: {error}. Trying again by itself."
-                    ))
-                    .fg(WARNING)
-                    .bold(),
+                    Line::from(lang.format("live.ui.disks.scan_failed", &[("error", error)]))
+                        .fg(WARNING)
+                        .bold(),
                 );
             } else if disks.is_empty() {
-                lines.push(Line::from(
-                    "No internal disk found. Connect one; this list updates by itself.",
-                ));
+                lines.push(Line::from(lang.text("live.ui.disks.none_found")));
             }
             let mut focus = None;
             for (index, disk) in disks.iter().enumerate() {
                 let chosen = index == *selected;
                 let first = lines.len();
-                let marker = if chosen { "\u{25ba} " } else { "  " };
-                let mut style = Style::new();
-                if chosen {
-                    style = style.fg(ACCENT).add_modifier(Modifier::BOLD);
-                }
-                if disk.problem.is_some() {
-                    style = style.fg(MUTED);
-                }
-                lines.push(Line::from(format!("{marker}{}", disk.label)).style(style));
-                if let Some(problem) = disk.problem {
-                    lines.push(
-                        Line::from(format!("  Can't be used: {problem}"))
-                            .fg(WARNING)
-                            .bold(),
-                    );
+                let line = choice(&disk.label, chosen);
+                match disk.problem {
+                    None => lines.push(line),
+                    Some(problem) => {
+                        lines.push(line.fg(MUTED));
+                        let problem = lang.text(problem.key());
+                        let text = lang.format("live.ui.disks.problem", &[("problem", &problem)]);
+                        lines.push(Line::from(format!("  {text}")).fg(WARNING).bold());
+                    }
                 }
                 if chosen {
                     focus = Some(first..lines.len());
@@ -271,21 +287,24 @@ fn content(screen: &Screen) -> Card {
             }
             if !hidden.is_empty() {
                 lines.push(Line::default());
-                lines.push(Line::from("Not shown:").fg(MUTED));
-                for line in hidden {
+                lines.push(Line::from(lang.text("live.ui.disks.hidden_title")).fg(MUTED));
+                for line in hidden_summary(lang, hidden) {
                     lines.push(Line::from(format!("  {line}")).fg(MUTED));
                 }
             }
             let keys = if disks.is_empty() {
-                "R restart   P power off   Alt+F2 shell"
+                key_bar(lang, &[RESTART, POWER_OFF, SHELL, LANGUAGE])
             } else {
-                "\u{2191}\u{2193} choose   Enter install   R restart   P power off   Alt+F2 shell"
+                key_bar(
+                    lang,
+                    &[CHOOSE, INSTALL, RESTART, POWER_OFF, SHELL, LANGUAGE],
+                )
             };
             Card {
-                title: "Home Assistant Installer".into(),
+                title,
                 lines,
                 progress: None,
-                keys: keys.into(),
+                keys,
                 focus,
             }
         }
@@ -295,33 +314,32 @@ fn content(screen: &Screen) -> Card {
             typed,
             mistyped,
         } => {
+            let erase: &Args = &[("word", &"erase")];
+            let mut prompt = spans(lang, "live.ui.confirm.prompt", erase, Style::new().bold());
+            prompt.push(Span::from(" "));
+            prompt.push(Span::from(format!("{typed}_")).fg(ACCENT).bold());
             let mut lines = vec![
                 Line::from(Span::from(disk.clone()).bold()),
                 Line::default(),
-                Line::from("Everything on this disk will be erased.")
+                Line::from(lang.text("live.ui.confirm.warning"))
                     .fg(WARNING)
                     .bold(),
-                Line::from(format!("{os} will be written to it.")),
+                Line::from(lang.format("live.ui.confirm.os", &[("os", os)])),
                 Line::default(),
-                Line::from(vec![
-                    Span::from("Type "),
-                    Span::from("erase").bold(),
-                    Span::from(" to continue: "),
-                    Span::from(format!("{typed}_")).fg(ACCENT).bold(),
-                ]),
+                Line::from(prompt),
             ];
             if *mistyped {
                 lines.push(
-                    Line::from("Type erase exactly, or press Esc to go back.")
+                    Line::from(lang.format("live.ui.confirm.mistyped", erase))
                         .fg(WARNING)
                         .bold(),
                 );
             }
             Card {
-                title: "Erase this disk?".into(),
+                title: lang.text("live.ui.confirm.title"),
                 lines,
                 progress: None,
-                keys: "Enter continue   Esc back".into(),
+                keys: key_bar(lang, &[CONTINUE, BACK]),
                 focus: None,
             }
         }
@@ -333,12 +351,12 @@ fn content(screen: &Screen) -> Card {
         } => {
             let lines = vec![
                 Line::from(detail.clone()),
-                Line::from("Keep the USB stick connected.").fg(MUTED),
+                Line::from(lang.text("live.ui.progress.keep_connected")).fg(MUTED),
             ];
             Card {
                 title: title.clone(),
                 lines,
-                progress: Some((*percent, time_left.clone())),
+                progress: Some((*percent, time_left.map(|left| time_left_text(lang, left)))),
                 keys: String::new(),
                 focus: None,
             }
@@ -346,36 +364,98 @@ fn content(screen: &Screen) -> Card {
         Screen::Message { title, body } => Card {
             title: title.clone(),
             lines: body
-                .lines()
+                .iter()
+                .flat_map(|paragraph| paragraph.lines())
                 .map(|line| Line::from(line.to_string()))
                 .collect(),
             progress: None,
-            keys: "Enter back".into(),
+            keys: key_bar(lang, &[("Enter", "live.ui.keys.back")]),
             focus: None,
         },
         Screen::Done { disk } => Card {
-            title: "Home Assistant OS is installed".into(),
+            title: lang.text("live.ui.done.title"),
             lines: vec![
-                Line::from(format!("Home Assistant OS is on {disk}.")),
+                Line::from(lang.format("live.ui.done.installed", &[("disk", disk)])),
                 Line::default(),
-                Line::from("Remove the USB stick, then restart the computer."),
-                Line::from(vec![
-                    Span::from("Home Assistant starts by itself. After a few minutes, open "),
+                Line::from(lang.text("live.ui.done.remove_stick")),
+                Line::from(spans(
+                    lang,
+                    "live.ui.done.open_home_assistant",
+                    &[("url", &HOME_ASSISTANT_URL)],
                     // Can't be selected on the console, so it stands out as the thing to type
-                    Span::from(HOME_ASSISTANT_URL).fg(ACCENT).bold(),
-                    Span::from(" in a browser."),
-                ]),
+                    Style::new().fg(ACCENT).bold(),
+                )),
             ],
             progress: None,
-            keys: "R restart   P power off".into(),
+            keys: key_bar(lang, &[RESTART, POWER_OFF, LANGUAGE]),
             focus: None,
         },
+        Screen::Languages { selected } => {
+            let languages = Language::all();
+            let index = languages.iter().position(|language| language == selected);
+            Card {
+                title: and_language(lang, lang.text("live.ui.languages.title")),
+                lines: languages
+                    .iter()
+                    .map(|language| choice(&language.name(), language == selected))
+                    .collect(),
+                progress: None,
+                keys: key_bar(lang, &[CHOOSE, APPLY, BACK]),
+                focus: index.map(|index| index..index + 1),
+            }
+        }
     }
 }
 
-/// Roughly how long a step that has done `done` of `total` in `elapsed` still takes, worded like
-/// the desktop installer. `None` until there's enough to go on.
-pub fn time_left(elapsed: Duration, done: u64, total: u64) -> Option<String> {
+/// A line of a list, marked and in the accent color where it's the one chosen.
+fn choice(text: &str, chosen: bool) -> Line<'static> {
+    if chosen {
+        Line::from(format!("\u{25ba} {text}")).fg(ACCENT).bold()
+    } else {
+        Line::from(format!("  {text}"))
+    }
+}
+
+/// The message `key` as spans, with every placeholder's value in `style`.
+fn spans(lang: Language, key: &str, args: &Args, style: Style) -> Vec<Span<'static>> {
+    lang.segments(key, args)
+        .into_iter()
+        .map(|segment| match segment.placeholder {
+            Some(_) => Span::styled(segment.text, style),
+            None => Span::from(segment.text),
+        })
+        .collect()
+}
+
+/// The keys under the card. A key stays on the same row as what it does where the bar wraps.
+fn key_bar(lang: Language, hints: &[Hint]) -> String {
+    hints
+        .iter()
+        .map(|&hint| {
+            let (key, action) = hint;
+            let mut action = lang.text(action);
+            if hint == LANGUAGE {
+                action = and_language(lang, action);
+            }
+            format!("{key} {action}").replace(' ', "\u{a0}")
+        })
+        .collect::<Vec<_>>()
+        .join("   ")
+}
+
+/// `text`, followed by "/Language" outside English, so that someone who can't read the
+/// language still finds the way to another one.
+fn and_language(lang: Language, text: String) -> String {
+    if lang.is_english() {
+        return text;
+    }
+    let language = Language::english().text("live.ui.languages.title");
+    format!("{text}/{language}")
+}
+
+/// Roughly how long a step that has done `done` of `total` in `elapsed` still takes. `None` until
+/// there's enough to go on.
+pub fn time_left(elapsed: Duration, done: u64, total: u64) -> Option<TimeLeft> {
     let elapsed = elapsed.as_secs_f64();
     if total == 0 || done == 0 || elapsed < 1.0 {
         return None;
@@ -383,15 +463,25 @@ pub fn time_left(elapsed: Duration, done: u64, total: u64) -> Option<String> {
 
     let seconds = (total.saturating_sub(done)) as f64 / (done as f64 / elapsed);
     if seconds < 60.0 {
-        return Some("Less than a minute remaining".into());
+        return Some(TimeLeft::LessThanAMinute);
     }
-    // Rounded up once, before splitting: 59m 50s left is "1h 0m", never "60 minutes"
-    let minutes = (seconds / 60.0).ceil() as u64;
-    Some(match minutes {
-        1 => "About 1 minute remaining".into(),
-        2..60 => format!("About {minutes} minutes remaining"),
-        _ => format!("About {}h {}m remaining", minutes / 60, minutes % 60),
-    })
+    // Rounded up once, before it's split into hours: 59m 50s left is "1h 0m", never "60 minutes"
+    Some(TimeLeft::Minutes((seconds / 60.0).ceil() as u64))
+}
+
+/// `time_left` worded like the desktop installer.
+fn time_left_text(lang: Language, time_left: TimeLeft) -> String {
+    match time_left {
+        TimeLeft::LessThanAMinute => lang.text("live.ui.progress.less_than_a_minute_remaining"),
+        TimeLeft::Minutes(minutes @ ..60) => lang.format(
+            "live.ui.progress.minutes_remaining",
+            &[("minutes", &minutes)],
+        ),
+        TimeLeft::Minutes(minutes) => lang.format(
+            "live.ui.progress.hours_remaining",
+            &[("hours", &(minutes / 60)), ("minutes", &(minutes % 60))],
+        ),
+    }
 }
 
 /// Rows `lines` takes when word-wrapped to `width` columns, exactly as the card draws them.
@@ -402,8 +492,8 @@ fn wrapped_height(lines: &[Line], width: u16) -> u16 {
 }
 
 /// One line per reason a device is hidden. Long lists are counted, not named.
-pub fn hidden_summary(hidden: &[(String, &'static str)]) -> Vec<String> {
-    let mut reasons: Vec<&str> = hidden.iter().map(|(_, reason)| *reason).collect();
+fn hidden_summary(lang: Language, hidden: &[(String, Hidden)]) -> Vec<String> {
+    let mut reasons: Vec<Hidden> = hidden.iter().map(|(_, reason)| *reason).collect();
     reasons.sort_unstable();
     reasons.dedup();
     reasons
@@ -414,10 +504,19 @@ pub fn hidden_summary(hidden: &[(String, &'static str)]) -> Vec<String> {
                 .filter(|(_, r)| *r == reason)
                 .map(|(name, _)| name.as_str())
                 .collect();
+            let reason = lang.text(reason.key());
             if names.len() > 4 {
-                format!("{reason}: {} devices", names.len())
+                let count = names.len();
+                lang.format(
+                    "live.ui.disks.hidden_count",
+                    &[("reason", &reason), ("count", &count)],
+                )
             } else {
-                format!("{reason}: {}", names.join(" "))
+                let devices = names.join(" ");
+                lang.format(
+                    "live.ui.disks.hidden_devices",
+                    &[("reason", &reason), ("devices", &devices)],
+                )
             }
         })
         .collect()
@@ -427,11 +526,13 @@ pub fn hidden_summary(hidden: &[(String, &'static str)]) -> Vec<String> {
 pub struct Ui {
     terminal: Terminal<CrosstermBackend<Stdout>>,
     linux_console: bool,
+    /// What every screen is drawn in.
+    pub language: Language,
 }
 
 impl Ui {
-    /// Takes over the console.
-    pub fn start() -> io::Result<Self> {
+    /// Takes over the console, to draw in `language`.
+    pub fn start(language: Language) -> io::Result<Self> {
         let linux_console = std::env::var("TERM").is_ok_and(|term| term == "linux");
         terminal::enable_raw_mode()?;
         let mut stdout = io::stdout();
@@ -447,12 +548,14 @@ impl Ui {
         Ok(Self {
             terminal: Terminal::new(CrosstermBackend::new(stdout))?,
             linux_console,
+            language,
         })
     }
 
     /// Draws `screen`.
     pub fn show(&mut self, screen: &Screen) {
-        let _ = self.terminal.draw(|frame| render(frame, screen));
+        let language = self.language;
+        let _ = self.terminal.draw(|frame| render(frame, screen, language));
     }
 
     /// The next key pressed, or `None` once `timeout` passes without one.
@@ -496,23 +599,44 @@ fn no_console() -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drives::Reason;
     use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
+    use ratatui::style::Modifier;
 
-    /// The text of `screen` drawn on a `width` x `height` console, one string per row.
+    /// The text of `screen` drawn in English on a `width` x `height` console, one string per row.
     fn draw(screen: &Screen, width: u16, height: u16) -> Vec<String> {
-        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-        terminal.draw(|frame| render(frame, screen)).unwrap();
-        let buffer = terminal.backend().buffer();
+        draw_in(Language::english(), screen, width, height)
+    }
+
+    fn draw_in(lang: Language, screen: &Screen, width: u16, height: u16) -> Vec<String> {
+        let buffer = buffer(lang, screen, width, height);
         (0..height)
             .map(|y| (0..width).map(|x| buffer[(x, y)].symbol()).collect())
+            // The key bar's non-breaking spaces read as spaces
+            .map(|row: String| row.replace('\u{a0}', " "))
             .collect()
+    }
+
+    fn buffer(lang: Language, screen: &Screen, width: u16, height: u16) -> Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|frame| render(frame, screen, lang)).unwrap();
+        terminal.backend().buffer().clone()
     }
 
     fn shows(rows: &[String], text: &str) -> bool {
         rows.iter().any(|row| row.contains(text))
     }
 
+    fn row_of(rows: &[String], text: &str) -> Option<usize> {
+        rows.iter().position(|row| row.contains(text))
+    }
+
     fn disks() -> Screen {
+        let mut hidden: Vec<(String, Hidden)> = (0..16)
+            .map(|n| (format!("ram{n}"), Hidden::Skipped(Reason::RamDisk)))
+            .collect();
+        hidden.push(("sr0".into(), Hidden::Skipped(Reason::OpticalDrive)));
         Screen::Disks {
             os: Some("Home Assistant OS 18.3".into()),
             disks: vec![
@@ -522,11 +646,11 @@ mod tests {
                 },
                 DiskRow {
                     label: "sda      SATA   Tiny SSD             16.0 GB".into(),
-                    problem: Some("smaller than 32 GB"),
+                    problem: Some(Problem::TooSmall),
                 },
             ],
             selected: 0,
-            hidden: vec!["optical drive: sr0".into(), "RAM disk: 16 devices".into()],
+            hidden,
             scan_error: None,
         }
     }
@@ -539,6 +663,8 @@ mod tests {
         assert!(shows(&rows, "Can't be used: smaller than 32 GB"));
         assert!(shows(&rows, "optical drive: sr0"));
         assert!(shows(&rows, "Enter install"));
+        assert!(shows(&rows, "L language"));
+        assert!(!shows(&rows, "/Language"));
     }
 
     #[test]
@@ -547,7 +673,7 @@ mod tests {
             .map(|n| DiskRow {
                 label: format!("sd{}      SATA   Disk {n:<24}  64.0 GB", (b'a' + n) as char),
                 // Every other one also needs a line for why it can't be used
-                problem: (n % 2 == 1).then_some("smaller than 32 GB"),
+                problem: (n % 2 == 1).then_some(Problem::TooSmall),
             })
             .collect();
         let screen = |selected| Screen::Disks {
@@ -567,34 +693,172 @@ mod tests {
         assert!(shows(&rows, "Choose the disk"));
     }
 
-    #[test]
-    fn every_screen_fits_the_smallest_console() {
-        let screens = [
+    /// Every screen, with each text `main` passes in as `lang` has it.
+    fn every_screen(lang: Language) -> Vec<Screen> {
+        let os = Some("Home Assistant OS 18.3".to_string());
+        // The longest error text the OS gives for a disk
+        let error = "Inappropriate ioctl for device (os error 25)";
+        let disk_list = |os: Option<String>, scan_error: Option<&str>| Screen::Disks {
+            os,
+            disks: vec![],
+            selected: 0,
+            hidden: vec![],
+            scan_error: scan_error.map(String::from),
+        };
+        let mut screens = vec![
             disks(),
+            disk_list(None, None),
+            disk_list(os.clone(), None),
+            disk_list(os, Some(error)),
             Screen::Confirm {
                 disk: "vda      VirtIO VirtIO disk          34.4 GB".into(),
                 os: "Home Assistant OS 18.3".into(),
                 typed: "eras".into(),
                 mistyped: true,
             },
-            Screen::Progress {
-                title: "Writing Home Assistant OS".into(),
-                detail: "To vda: 0.9 GB written".into(),
-                percent: 51,
-                time_left: Some("About 2 minutes remaining".into()),
+            Screen::Done {
+                disk: "nvme0n1".into(),
             },
-            Screen::Message {
-                title: "Nothing was written".into(),
-                body: "The disk changed, disappeared or could not be checked again.".into(),
-            },
-            Screen::Done { disk: "vda".into() },
+            Screen::Languages { selected: lang },
         ];
-        for screen in screens {
-            // 80 x 25 is the plain VGA text console, the smallest one there is
-            let rows = draw(&screen, 80, 25);
-            let corners = rows.iter().filter(|row| row.contains('\u{2518}')).count();
-            assert_eq!(corners, 1, "{screen:?}\n{}", rows.join("\n"));
+
+        let writing = lang.format(
+            "live.main.writing.detail",
+            &[("disk", &"nvme0n1"), ("gigabytes", &"100.0")],
+        );
+        let steps = [
+            (
+                "live.main.checking.title",
+                lang.text("live.main.checking.detail"),
+            ),
+            ("live.main.writing.title", writing),
+            (
+                "live.main.finishing.title",
+                lang.text("live.main.finishing.detail"),
+            ),
+        ];
+        let times = [
+            None,
+            Some(TimeLeft::LessThanAMinute),
+            Some(TimeLeft::Minutes(59)),
+            Some(TimeLeft::Minutes(119)),
+        ];
+        for (title, detail) in steps {
+            for time_left in times {
+                screens.push(Screen::Progress {
+                    title: lang.text(title),
+                    detail: detail.clone(),
+                    percent: 100,
+                    time_left,
+                });
+            }
         }
+
+        let text = |key| lang.text(key);
+        let problem = text("live.safety.problem.too_small");
+        let unusable: &Args = &[("disk", &"nvme0n1"), ("problem", &problem)];
+        let open_failed: &Args = &[("disk", &"nvme0n1"), ("error", &error)];
+        let messages = [
+            (
+                "live.main.unusable.title",
+                vec![lang.format("live.main.unusable.body", unusable)],
+            ),
+            (
+                "live.main.image_damaged.title",
+                vec![
+                    text("live.main.image_damaged.body"),
+                    text("live.main.image_damaged.hint"),
+                ],
+            ),
+            (
+                "live.main.read_failed.title",
+                vec![error.into(), text("live.main.nothing_written")],
+            ),
+            (
+                "live.main.disk_changed.title",
+                vec![text("live.main.disk_changed.body")],
+            ),
+            (
+                "live.main.open_failed.title",
+                vec![
+                    lang.format("live.main.open_failed.body", open_failed),
+                    text("live.main.nothing_written"),
+                ],
+            ),
+            (
+                "live.main.write_failed.title",
+                vec![error.into(), text("live.main.write_failed.body")],
+            ),
+            ("live.main.finish_failed.title", vec![error.into()]),
+            ("live.main.restart_failed.title", vec![error.into()]),
+            ("live.main.power_off_failed.title", vec![error.into()]),
+        ];
+        for (title, body) in messages {
+            screens.push(Screen::Message {
+                title: text(title),
+                body,
+            });
+        }
+        screens
+    }
+
+    /// The part of `card` that doesn't fit an 80 x 25 console, if any. Measured on the card
+    /// itself, because [`render`] cuts off whatever doesn't fit the screen.
+    fn overflow(card: &Card) -> Option<&'static str> {
+        // On 80 columns the card is 78 wide, 68 inside its borders and padding
+        let (width, inner_width) = (78, 68);
+        let gauge_height = if card.progress.is_some() { 3 } else { 0 };
+        // A card with a focus scrolls to it instead
+        let height = wrapped_height(&card.lines, inner_width) + gauge_height + 6;
+        if card.focus.is_none() && height > 23 {
+            return Some("text");
+        }
+        if Line::from(format!(" {} ", card.title)).width() > usize::from(width - 2) {
+            return Some("title");
+        }
+        if let Some((percent, time_left)) = &card.progress {
+            let row = format!("{}{percent}%", time_left.as_deref().unwrap_or_default());
+            if Line::from(row).width() > usize::from(inner_width) {
+                return Some("time left");
+            }
+        }
+        // The key bar has two rows under the card, one column in from each side
+        let keys = Paragraph::new(card.keys.as_str()).wrap(Wrap { trim: true });
+        if keys.line_count(width - 2) > 2 {
+            return Some("key bar");
+        }
+        None
+    }
+
+    #[test]
+    fn every_screen_fits_the_smallest_console() {
+        for lang in Language::all() {
+            for screen in every_screen(lang) {
+                // 80 x 25 is the plain VGA text console, the smallest one there is
+                if let Some(part) = overflow(&content(&screen, lang)) {
+                    let rows = draw_in(lang, &screen, 80, 25);
+                    panic!("{lang:?}: the {part} doesn't fit\n{}", rows.join("\n"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_overlong_card_does_not_fit() {
+        let overflow_of = |title: &str, body: String| {
+            let screen = Screen::Message {
+                title: title.into(),
+                body: vec![body],
+            };
+            overflow(&content(&screen, Language::english()))
+        };
+        let sentence = "Nothing was written. ";
+        assert_eq!(overflow_of("Failed", sentence.repeat(30)), None);
+        assert_eq!(overflow_of("Failed", sentence.repeat(60)), Some("text"));
+        assert_eq!(
+            overflow_of(&"Failed ".repeat(11), String::new()),
+            Some("title")
+        );
     }
 
     #[test]
@@ -615,13 +879,34 @@ mod tests {
     }
 
     #[test]
+    fn confirm_and_done_style_the_word_to_type_and_the_address() {
+        let bold = |screen: &Screen, text: &str| {
+            let card = content(screen, Language::english());
+            card.lines.iter().flat_map(|line| &line.spans).any(|span| {
+                span.content == text && span.style.add_modifier.contains(Modifier::BOLD)
+            })
+        };
+        let confirm = Screen::Confirm {
+            disk: "vda".into(),
+            os: "Home Assistant OS 18.3".into(),
+            typed: String::new(),
+            mistyped: false,
+        };
+        assert!(bold(&confirm, "erase"));
+        assert!(bold(
+            &Screen::Done { disk: "vda".into() },
+            HOME_ASSISTANT_URL
+        ));
+    }
+
+    #[test]
     fn progress_shows_the_percentage() {
         let rows = draw(
             &Screen::Progress {
                 title: "Writing Home Assistant OS".into(),
                 detail: "To vda".into(),
                 percent: 51,
-                time_left: Some("About 2 minutes remaining".into()),
+                time_left: Some(TimeLeft::Minutes(2)),
             },
             80,
             25,
@@ -646,6 +931,7 @@ mod tests {
         );
         assert!(shows(&rows, "no Home Assistant OS image"));
         assert!(!shows(&rows, "Enter install"));
+        assert!(shows(&rows, "L language"));
     }
 
     #[test]
@@ -674,7 +960,10 @@ mod tests {
 
     #[test]
     fn time_left_is_worded_like_the_desktop_installer() {
-        let left = |elapsed, done, total| time_left(Duration::from_secs(elapsed), done, total);
+        let left = |elapsed, done, total| {
+            let left = time_left(Duration::from_secs(elapsed), done, total);
+            left.map(|left| time_left_text(Language::english(), left))
+        };
         assert_eq!(left(0, 10, 100), None);
         assert_eq!(left(10, 0, 100), None);
         assert_eq!(
@@ -695,7 +984,7 @@ mod tests {
 
     #[test]
     fn done_points_to_home_assistant_without_a_port() {
-        let card = content(&Screen::Done { disk: "vda".into() });
+        let card = content(&Screen::Done { disk: "vda".into() }, Language::english());
         let text: Vec<String> = card.lines.iter().map(ToString::to_string).collect();
         let text = text.join(" ");
         assert!(
@@ -707,12 +996,33 @@ mod tests {
 
     #[test]
     fn hidden_devices_are_grouped_and_long_lists_counted() {
-        let mut hidden: Vec<(String, &'static str)> =
-            (0..16).map(|n| (format!("ram{n}"), "RAM disk")).collect();
-        hidden.push(("sr0".into(), "optical drive"));
+        let Screen::Disks { hidden, .. } = disks() else {
+            unreachable!()
+        };
         assert_eq!(
-            hidden_summary(&hidden),
+            hidden_summary(Language::english(), &hidden),
             ["RAM disk: 16 devices", "optical drive: sr0"]
         );
+    }
+
+    #[test]
+    fn the_language_picker_marks_the_active_language() {
+        let german = Language::for_tag("de");
+        let rows = draw(&Screen::Languages { selected: german }, 80, 25);
+        assert!(shows(&rows, " Language "), "{}", rows.join("\n"));
+        assert!(shows(&rows, "\u{25ba} Deutsch"));
+        assert!(shows(&rows, "  English"));
+        // Sorted by their own names
+        assert!(row_of(&rows, "Deutsch") < row_of(&rows, "English"));
+        assert!(shows(&rows, "Enter apply"));
+    }
+
+    #[test]
+    fn outside_english_the_language_is_also_labeled_in_english() {
+        let german = Language::for_tag("de");
+        let rows = draw_in(german, &disks(), 80, 25);
+        assert!(shows(&rows, "/Language"), "{}", rows.join("\n"));
+        let rows = draw_in(german, &Screen::Languages { selected: german }, 80, 25);
+        assert!(shows(&rows, "/Language "), "{}", rows.join("\n"));
     }
 }

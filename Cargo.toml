@@ -48,6 +48,9 @@ lzma-rs = "0.3"
 
 # Full-screen text interface of hai-live on the Linux console
 ratatui = { version = "0.30", default-features = false, features = ["crossterm", "unstable-rendered-line-info"] }
+# Plural rules for hai-live's translations (same ICU4X release idna already uses)
+icu_plurals = "2.4"
+icu_locale_core = { version = "2.4", features = ["alloc"] }
 
 # Live USB image building (hai-core's live-usb feature)
 fscommon = "0.1"
