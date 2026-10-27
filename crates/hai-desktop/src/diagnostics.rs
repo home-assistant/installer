@@ -139,7 +139,8 @@ fn scrub(text: &str) -> String {
         [
             // User folders, also other users' and drives mounted per user.
             // Names may have spaces, so a folder's name runs to the next separator.
-            (r#"(?i)([a-z]:[\\/]+users[\\/]+|/home/|/users/|/(?:run/)?media/)[^\\/:")]+"#, "${1}<user>"),
+            // It takes balanced parentheses, but not the one closing a path in them.
+            (r#"(?i)([a-z]:[\\/]+users[\\/]+|/home/|/users/|/(?:run/)?media/)(?:\([^\\/:"()]*\)|[^\\/:")])+"#, "${1}<user>"),
             (r"(?i)\bbearer\s+\S+", "Bearer <redacted>"),
             (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|\S+)"#, "${1}=<redacted>"),
             (r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<id>"),
@@ -648,6 +649,10 @@ mod tests {
             (
                 r#"{"password":"prefix\"visible-secret"}"#,
                 r#"{"password=<redacted>}"#,
+            ),
+            (
+                r"(in C:\Users\Jane (Work) Doe\AppData and C:\Users\Jane (Work) Doe)",
+                r"(in C:\Users\<user>\AppData and C:\Users\<user>)",
             ),
             ("first line\nInjected line", "first line Injected line"),
         ] {
