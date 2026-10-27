@@ -133,6 +133,29 @@ own message from the sizes, even over a `message_key`. Never infer a code from
 English error text. Copy added by other branches must be extracted when
 those changes are integrated.
 
+### Live USB Localization
+
+`hai-live`, the installer on the live USB stick's console, has its own
+catalogs in `crates/hai-live/locales/`, which its `build.rs` compiles in. They
+follow the frontend's conventions above, with keys under `live.` and the
+module that names them (`live.ui.*`, `live.drives.*`), so they never collide
+with the frontend's in Lokalise. Messages support `{name}` and ICU plurals.
+Adding a language is adding `<tag>.json` with at least `live.language_name`,
+the language's name in itself, which the stick's language picker (`L`) lists.
+Keys it leaves out or empty show the English, and so does a message that
+fails to format. The stick starts in the app's language when it was prepared,
+or in English where no catalog matches. The word typed to confirm the erase
+stays `erase` in every language, because the console keeps the US keymap.
+
+`cargo test -p hai-live` checks that the code and `en.json` name the same
+keys, that every translation's placeholders match the English, that its
+plurals use only forms its language has, and that every screen fits the
+smallest console, 80x25, in every language. The console font has only 512
+glyphs, so a language works only where that font has every character it
+uses: Latin, Greek and Cyrillic, not CJK or right-to-left scripts. The font
+coverage test in `crates/hai-live/src/console_font.rs` rejects a catalog
+with a character the font lacks.
+
 ### Code Style
 
 - **Rust**: Follow `rustfmt` defaults, run `cargo fmt` before committing

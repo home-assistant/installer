@@ -74,10 +74,12 @@ impl StickFile {
 }
 
 /// Downloads (or reuses) Alpine and HAOS and assembles the stick contents.
-/// `hai_live` is the static Linux build of the `hai-live` program.
+/// `hai_live` is the static Linux build of the `hai-live` program, and `language` the BCP 47
+/// tag of the language it starts in.
 pub async fn prepare<B: ReleaseSource, P: ProgressCallback>(
     backend: &B,
     hai_live: &Path,
+    language: &str,
     progress: &P,
 ) -> Result<Contents> {
     let hai_live = std::fs::read(hai_live)?;
@@ -103,7 +105,7 @@ pub async fn prepare<B: ReleaseSource, P: ProgressCallback>(
     let extra = vec![
         StickFile {
             name: apkovl::APKOVL_NAME.into(),
-            source: Source::Bytes(apkovl::build(&hai_live)?),
+            source: Source::Bytes(apkovl::build(&hai_live, language)?),
         },
         StickFile {
             name: FONT_LICENCE_NAME.into(),
@@ -396,19 +398,26 @@ mod tests {
     }
 
     /// Builds a real ISO and disk image, without writing to any disk. Set `LIVE_USB_OUT_DIR`
-    /// to keep the files; otherwise they go to a temporary folder.
+    /// to keep the files; otherwise they go to a temporary folder. `LIVE_USB_LANGUAGE` picks
+    /// the language `hai-live` starts in (English by default).
     #[tokio::test]
     #[ignore = "downloads Alpine and HAOS and needs HAI_LIVE_PATH; run explicitly"]
     async fn builds_iso_and_disk_image() {
         let hai_live = std::env::var_os("HAI_LIVE_PATH")
             .expect("set HAI_LIVE_PATH to the Linux build of hai-live");
+        let language = std::env::var("LIVE_USB_LANGUAGE").unwrap_or_else(|_| "en".into());
         let temp = tempfile::tempdir().unwrap();
         let out = std::env::var_os("LIVE_USB_OUT_DIR")
             .map_or_else(|| temp.path().to_path_buf(), PathBuf::from);
 
-        let contents = prepare(&crate::Backend, Path::new(&hai_live), &crate::NoOpProgress)
-            .await
-            .unwrap();
+        let contents = prepare(
+            &crate::Backend,
+            Path::new(&hai_live),
+            &language,
+            &crate::NoOpProgress,
+        )
+        .await
+        .unwrap();
         let iso = write_iso(&contents, &out).unwrap();
         let image = write_image(&contents, &out).unwrap();
 
