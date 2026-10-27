@@ -2,6 +2,7 @@
 //! identifies the user or their network. The tail goes into public issues.
 
 use std::collections::VecDeque;
+use std::net::Ipv6Addr;
 use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -61,7 +62,7 @@ pub fn warning(code: &'static str) {
 
 /// Record what failed, with its causes, as one scrubbed line. A poll can
 /// fail the same way for minutes, so a line still in the tail isn't repeated.
-pub fn error(error: &(dyn std::error::Error + 'static)) {
+pub fn error(error: &hai_core::Error) {
     let line = format!("rust error: {}", describe(error));
     let logged = TAIL.lock().is_ok_and(|tail| {
         tail.iter().any(|logged| {
@@ -75,9 +76,32 @@ pub fn error(error: &(dyn std::error::Error + 'static)) {
     }
 }
 
-fn describe(error: &(dyn std::error::Error + 'static)) -> String {
+/// Catalog parameters that hold names the user chose, like a Proxmox node's.
+const USER_NAMED: [&str; 7] = [
+    "node", "storage", "storages", "bridge", "vnet", "volume", "name",
+];
+
+fn describe(error: &hai_core::Error) -> String {
+    use hai_core::Error::*;
+    if let PermissionDenied(message)
+    | ProxmoxTwoFactor(message)
+    | ProxmoxActionRequired(message)
+    | RateLimited(message)
+    | ServiceUnavailable(message)
+    | Utm(message)
+    | UtmOperationUncertain(message)
+    | UtmVmCreated(message) = error
+    {
+        let mut message = message.clone();
+        for (name, value) in &mut message.params {
+            if USER_NAMED.contains(name) {
+                *value = "<name>".into();
+            }
+        }
+        return scrub(&message.to_string());
+    }
     let mut text = error.to_string();
-    let mut source = error.source();
+    let mut source = std::error::Error::source(error);
     while let Some(cause) = source {
         let cause_text = cause.to_string();
         // Wrappers often repeat their cause's text already
@@ -104,7 +128,10 @@ const MAX_ERROR_CHARS: usize = 300;
 /// posting it.
 fn scrub(text: &str) -> String {
     static URL: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*)://(?:[^\s/@()<>"']*@)?(\[[^\]]*\]|[^\s/:?#()<>"']+)(?::\d+)?([^\s?#()<>"']*)[^\s()<>"']*"#).unwrap()
+        Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*)://(?:[^\s/@<>"]*@)?(\[[^\]]*\]|[^\s/:?#()<>"']+)(?::\d+)?([^\s?#()<>"']*)[^\s()<>"']*"#).unwrap()
+    });
+    static IPV6: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)(^|[^\w:.])([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,8})").unwrap()
     });
     static RULES: LazyLock<Vec<(Regex, &str)>> = LazyLock::new(|| {
         [
@@ -112,11 +139,10 @@ fn scrub(text: &str) -> String {
             // Names may have spaces, so a folder's name runs to the next separator.
             (r#"(?i)([a-z]:[\\/]+users[\\/]+|/home/|/users/|/(?:run/)?media/)[^\\/:")]+"#, "${1}<user>"),
             (r"(?i)\bbearer\s+\S+", "Bearer <redacted>"),
-            (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"[^"]*"|\S+)"#, "${1}=<redacted>"),
+            (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|\S+)"#, "${1}=<redacted>"),
             (r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<id>"),
             (r"[\w.+-]+@[\w.-]+", "<user>"),
             (r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "<ip>"),
-            (r"(?i)\b[0-9a-f]{1,4}(?::[0-9a-f]{0,4}){2,7}\b", "<ip>"),
         ]
         .into_iter()
         .map(|(pattern, replacement)| (Regex::new(pattern).unwrap(), replacement))
@@ -145,6 +171,19 @@ fn scrub(text: &str) -> String {
     for (rule, replacement) in RULES.iter() {
         line = rule.replace_all(&line, *replacement).into_owned();
     }
+    // Only what parses as an IPv6 address, not times or Rust paths
+    let line = IPV6
+        .replace_all(&line, |caps: &Captures| {
+            let (address, colon) = match caps[2].strip_suffix(':') {
+                Some(address) if address.parse::<Ipv6Addr>().is_ok() => (address, ":"),
+                _ => (&caps[2], ""),
+            };
+            match address.parse::<Ipv6Addr>() {
+                Ok(_) => format!("{}<ip>{colon}", &caps[1]),
+                Err(_) => caps[0].to_owned(),
+            }
+        })
+        .into_owned();
     // The root cause comes last, so a long line loses its middle
     let chars: Vec<char> = line.chars().collect();
     if chars.len() <= MAX_ERROR_CHARS {
@@ -584,12 +623,24 @@ mod tests {
                 "from <ip> and <ip> as <user>",
             ),
             (
+                "fd12:3456:: and ::dead:beef at 14:07:29 in std::io",
+                "<ip> and <ip> at 14:07:29 in std::io",
+            ),
+            (
+                "GET https://admin:before(visible-secret)after@pve.lan/path",
+                "GET https://<host>",
+            ),
+            (
                 r"at path C:\Users\Sean O'Brien\AppData",
                 r"at path C:\Users\<user>\AppData",
             ),
             (
                 r#"body {"password":"hunter2","ticket":"PVE:x"} password: "hunter 2""#,
                 r#"body {"password=<redacted>,"ticket=<redacted>} password=<redacted>"#,
+            ),
+            (
+                r#"{"password":"prefix\"visible-secret"}"#,
+                r#"{"password=<redacted>}"#,
             ),
             ("first line\nInjected line", "first line Injected line"),
         ] {
@@ -643,6 +694,23 @@ mod tests {
             describe(&hai_core::Error::Io(std::io::Error::other(Connect))),
             "IO error: client error (Connect): dns error: No such host is known. (os error 11001)"
         );
+    }
+
+    #[test]
+    fn catalog_messages_leave_out_the_names_the_user_chose() {
+        let offline = hai_core::Error::ProxmoxActionRequired(hai_core::message!(
+            "backend.proxmox.node_offline",
+            node = "family-server",
+        ));
+        assert_eq!(
+            describe(&offline),
+            "Node \"<name>\" is offline. Choose an online node or start it in Proxmox."
+        );
+        let limited = hai_core::Error::RateLimited(hai_core::message!(
+            "backend.download.github_rate_limited",
+            minutes = 5,
+        ));
+        assert!(describe(&limited).contains("5 minutes"));
     }
 
     #[test]
