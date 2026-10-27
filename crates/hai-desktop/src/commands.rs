@@ -600,7 +600,9 @@ async fn run_utm_creation<B: UtmBackend>(
             true,
         )
     })?;
+    // Import errors are wrapped below rather than converted, so log them here
     image.begin_utm_import().map_err(|error| {
+        crate::diagnostics::error(&error);
         CommandError::with_message(
             "utm",
             &hai_core::message!(
@@ -613,7 +615,8 @@ async fn run_utm_creation<B: UtmBackend>(
     })?;
     // Fully qualified: `create_vm` is defined on both UtmBackend and ProxmoxBackend.
     let result = UtmBackend::create_vm(backend, config, &hai_core::NoOpProgress).await;
-    if let Err(hai_core::Error::UtmOperationUncertain(error)) = &result {
+    if let Err(uncertain @ hai_core::Error::UtmOperationUncertain(error)) = &result {
+        crate::diagnostics::error(uncertain);
         return Err(CommandError::with_message(
             "utm_operation_uncertain",
             &hai_core::message!(
@@ -2141,6 +2144,8 @@ mod mock_tests {
     }
 
     #[tokio::test]
+    // Other tests clear the shared tail, which would drop the logged reasons
+    #[serial_test::serial]
     async fn utm_source_cleanup_requires_a_confirmed_outcome() {
         for outcome in [
             "success",
@@ -2211,6 +2216,16 @@ mod mock_tests {
                             "backend.utm.applescript_lost"
                         }
                     );
+                    // The log keeps the reason the message wraps
+                    let tail = crate::diagnostics::test_log_tail().join("\n");
+                    assert!(
+                        tail.contains(if outcome == "timeout" {
+                            " rust error: AppleEvent timed out (-1712)"
+                        } else {
+                            " rust error: Failed to wait for AppleScript: broken pipe"
+                        }),
+                        "{tail}"
+                    );
                 }
                 if outcome == "start-failed" {
                     let error = result.as_ref().unwrap_err();
@@ -2237,6 +2252,8 @@ mod mock_tests {
                         error.details["message_params"]["path"],
                         path.parent().unwrap().display().to_string()
                     );
+                    let tail = crate::diagnostics::test_log_tail().join("\n");
+                    assert!(tail.contains(" rust error: IO error: "), "{tail}");
                 }
             }
             // This is the same removal used by the frontend's discard command.
