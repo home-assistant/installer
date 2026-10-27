@@ -148,8 +148,10 @@ fn parse(data: &[u8]) -> Option<Font> {
             .collect::<Option<_>>()?
     } else {
         let entries: Vec<u16> = table
-            .chunks_exact(2)
-            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&bytes| u16::from_le_bytes(bytes))
             .collect();
         entries
             .split(|&entry| entry == 0xffff)
