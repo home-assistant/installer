@@ -20,7 +20,7 @@ pub async fn write_image<P: ProgressCallback>(
     let image_size = image.size()?;
     let mut source = image.open()?;
     // Keep this exact handle for clearing, writing, verification and refresh.
-    let mut device = open_device_for_write(device_id)?;
+    let device = open_device_for_write(device_id)?;
     // The serial is read from the handle we write through, so a different
     // drive that took over this disk number is refused.
     check_handle_serial(&device, expected)?;
@@ -42,11 +42,20 @@ pub async fn write_image<P: ProgressCallback>(
         image_size,
         "Writing image to device...",
     ));
-    let (progress_tx, progress_rx) = mpsc::channel::<FlashProgress>();
-    let write_handle = tokio::task::spawn_blocking(move || {
+    let (mut device, disk_size, volumes) = tokio::task::spawn_blocking(move || {
         let disk_size = disk_length(&device)?;
         windows_transfer::validate_sizes(image_size, disk_size)?;
         let volumes = lock_disk_volumes(disk_number)?;
+        Ok::<_, Error>((device, disk_size, volumes))
+    })
+    .await
+    .map_err(|e| Error::Io(std::io::Error::other(e)))??;
+    // Getting the locks can take a while, and a stop in that time must leave
+    // the disk as it was
+    stop_if_requested(progress_callback)?;
+
+    let (progress_tx, progress_rx) = mpsc::channel::<FlashProgress>();
+    let write_handle = tokio::task::spawn_blocking(move || {
         windows_transfer::with_volume_locks(
             &mut device,
             volumes,
