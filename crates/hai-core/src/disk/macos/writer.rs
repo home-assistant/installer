@@ -14,7 +14,7 @@
 use super::super::macos_logic::{
     align_up, aligned_buffer_size, authopen_args, cache_flush_failure_is_benign,
     classify_authopen_failure, fill_buffer, map_authorization_status, map_device_io_error,
-    pad_final_block, sanitize_block_size, write_ran_past_device_end, AuthorizationStep,
+    pad_final_block, reported_block_size, write_ran_past_device_end, AuthorizationStep,
     DEFAULT_BLOCK_SIZE, O_RDWR,
 };
 use super::super::*;
@@ -156,6 +156,12 @@ fn write_and_verify(
     progress_tx: mpsc::Sender<FlashProgress>,
 ) -> Result<()> {
     let (block_size, device_size) = device_geometry(disk_id);
+    // Before the password prompt, so the user isn't asked for nothing. A size
+    // diskutil didn't report is no reason to refuse the drive.
+    if let Some(block_size) = block_size {
+        ensure_supported_sector_size(block_size)?;
+    }
+    let block_size = block_size.unwrap_or(DEFAULT_BLOCK_SIZE);
     let layout = Layout {
         total_size,
         block_size,
@@ -211,26 +217,25 @@ fn write_and_verify(
     Ok(())
 }
 
-/// Block size and capacity from `diskutil`, with a safe fallback block size
-/// and an unknown capacity when it will not say.
-fn device_geometry(disk_id: &str) -> (u64, Option<u64>) {
+/// Block size and capacity from `diskutil`, each unknown when it will not say.
+fn device_geometry(disk_id: &str) -> (Option<u64>, Option<u64>) {
     let Ok(output) = Command::new("diskutil")
         .args(["info", "-plist", disk_id])
         .output()
     else {
-        return (DEFAULT_BLOCK_SIZE, None);
+        return (None, None);
     };
 
     if !output.status.success() {
-        return (DEFAULT_BLOCK_SIZE, None);
+        return (None, None);
     }
 
     match plist::from_bytes::<DiskUtilGeometry>(&output.stdout) {
         Ok(info) => (
-            sanitize_block_size(info.device_block_size),
+            reported_block_size(info.device_block_size),
             (info.total_size > 0).then_some(info.total_size),
         ),
-        Err(_) => (DEFAULT_BLOCK_SIZE, None),
+        Err(_) => (None, None),
     }
 }
 
@@ -636,6 +641,7 @@ mod tests {
     fn test_device_geometry_of_the_boot_disk_is_plausible() {
         // disk0 always exists and is only read here.
         let (block_size, device_size) = device_geometry("disk0");
+        let block_size = block_size.expect("diskutil reports DeviceBlockSize for the boot disk");
         assert!(block_size.is_power_of_two(), "{block_size}");
         assert!((512..=65536).contains(&block_size), "{block_size}");
         let device_size = device_size.expect("diskutil reports TotalSize for the boot disk");
@@ -643,8 +649,8 @@ mod tests {
     }
 
     #[test]
-    fn test_device_geometry_falls_back_for_an_unknown_disk() {
-        assert_eq!(device_geometry("disk999"), (DEFAULT_BLOCK_SIZE, None));
+    fn test_device_geometry_of_an_unknown_disk_is_unknown() {
+        assert_eq!(device_geometry("disk999"), (None, None));
     }
 
     /// Sends `descriptors` over `socket` the way `authopen -stdoutpipe` does.
@@ -1023,6 +1029,7 @@ mod tests {
 
         fn layout(&self, total_size: u64, buffer_len: usize) -> Layout {
             let (block_size, device_size) = device_geometry(self.disk_id());
+            let block_size = block_size.expect("diskutil reports the RAM disk's block size");
             assert_eq!(
                 device_size,
                 Some(Self::SIZE),

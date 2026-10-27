@@ -74,6 +74,12 @@ pub enum Error {
     )]
     WriteProtected,
 
+    /// The drive addresses its storage in blocks other than 512 bytes. The
+    /// images lay out their partitions in 512-byte sectors, so a write would
+    /// verify fine and still never boot.
+    #[error("The drive uses {0}-byte sectors; only 512-byte sectors are supported")]
+    UnsupportedSectorSize(u64),
+
     #[error("Platform not supported: {0}")]
     UnsupportedPlatform(String),
 

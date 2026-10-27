@@ -3,13 +3,14 @@
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 use fatfs::{FatType, FormatVolumeOptions, FsOptions};
 use fscommon::{BufStream, StreamSlice};
 use gpt::disk::LogicalBlockSize;
 use gpt::mbr::ProtectiveMBR;
 
-use super::{Source, StickFile};
+use super::{Source, StickFile, StopWriter};
 use crate::error::{Error, Result};
 
 const SECTOR: u64 = 512;
@@ -23,7 +24,8 @@ fn disk_image_error(error: impl std::fmt::Display) -> Error {
 
 /// Writes a disk image to `out`: everything under `src`, plus `extra` at the partition root.
 /// The image is sized to fit the content with some headroom.
-pub fn build(out: &Path, src: &Path, extra: &[StickFile]) -> Result<()> {
+/// Writing the files fails once `stop` is set.
+pub fn build(out: &Path, src: &Path, extra: &[StickFile], stop: &AtomicBool) -> Result<()> {
     let size = image_size(src, extra)?;
     let mut file = OpenOptions::new()
         .read(true)
@@ -34,7 +36,7 @@ pub fn build(out: &Path, src: &Path, extra: &[StickFile]) -> Result<()> {
     file.set_len(size)?;
 
     let (start, end) = write_partition_table(&mut file, size)?;
-    let mut part = StreamSlice::new(BufStream::new(file), start, end)?;
+    let mut part = StreamSlice::new(BufStream::new(StopWriter::new(file, stop)), start, end)?;
     fatfs::format_volume(
         &mut part,
         FormatVolumeOptions::new()
@@ -163,7 +165,7 @@ mod tests {
         ];
         let out = dir.path().join("stick.img");
 
-        build(&out, &src, &extra).unwrap();
+        build(&out, &src, &extra, &AtomicBool::new(false)).unwrap();
 
         let disk = gpt::GptConfig::new().open(&out).unwrap();
         let (_, part) = disk.partitions().iter().next().unwrap();

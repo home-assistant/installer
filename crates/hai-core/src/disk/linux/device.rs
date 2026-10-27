@@ -33,6 +33,9 @@ pub(super) struct LsblkDevice {
     pub(super) serial: Option<String>,
     #[serde(default)]
     pub(super) hotplug: Option<bool>,
+    /// Logical sector size in bytes
+    #[serde(rename = "log-sec", default)]
+    pub(super) log_sec: Option<u64>,
     // Required in JSON: missing safety information must not mean "safe".
     pub(super) mountpoints: Vec<Option<String>>,
     #[serde(rename = "maj:min")]
@@ -53,7 +56,7 @@ fn read_devices() -> Result<LsblkOutput> {
             "-b",     // Size in bytes
             "--tree", // Include partitions and device-mapper/RAID holders
             "-o",     // Output columns
-            "NAME,SIZE,TYPE,RM,RO,TRAN,MODEL,VENDOR,SERIAL,HOTPLUG,MOUNTPOINTS,MAJ:MIN",
+            "NAME,SIZE,TYPE,RM,RO,TRAN,MODEL,VENDOR,SERIAL,HOTPLUG,LOG-SEC,MOUNTPOINTS,MAJ:MIN",
         ])
         .output()
         .map_err(Error::Io)?;
@@ -268,6 +271,9 @@ fn check_target(lsblk: &LsblkOutput, device_id: &str) -> Result<()> {
     if dev.ro == Some(true) {
         return Err(Error::WriteProtected);
     }
+    if let Some(sector_size) = dev.log_sec {
+        ensure_supported_sector_size(sector_size)?;
+    }
     Ok(())
 }
 
@@ -455,6 +461,23 @@ mod tests {
                 Err(Error::WriteProtected)
             ));
         }
+    }
+
+    #[test]
+    fn rejects_drives_without_512_byte_sectors() {
+        let mut tree = disk(partition(serde_json::json!([null])));
+        tree.blockdevices[0].log_sec = Some(512);
+        assert!(check_target(&tree, "/dev/sdb").is_ok());
+
+        tree.blockdevices[0].log_sec = Some(4096);
+        assert!(matches!(
+            check_target(&tree, "/dev/sdb"),
+            Err(Error::UnsupportedSectorSize(4096))
+        ));
+
+        // Older lsblk versions don't report it; the drive isn't refused for that
+        tree.blockdevices[0].log_sec = None;
+        assert!(check_target(&tree, "/dev/sdb").is_ok());
     }
 
     #[test]

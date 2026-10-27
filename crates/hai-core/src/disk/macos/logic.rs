@@ -27,13 +27,14 @@ pub fn align_up(value: u64, block_size: u64) -> u64 {
     value.div_ceil(block_size) * block_size
 }
 
+/// A plausible power-of-two block size from `diskutil`, or none at all.
+pub fn reported_block_size(reported: u64) -> Option<u64> {
+    (reported <= MAX_BLOCK_SIZE && reported.is_power_of_two()).then_some(reported)
+}
+
 /// Accept a plausible power-of-two block size from `diskutil`, or fall back.
 pub fn sanitize_block_size(reported: u64) -> u64 {
-    if reported == 0 || reported > MAX_BLOCK_SIZE || !reported.is_power_of_two() {
-        DEFAULT_BLOCK_SIZE
-    } else {
-        reported
-    }
+    reported_block_size(reported).unwrap_or(DEFAULT_BLOCK_SIZE)
 }
 
 /// Round `desired` up to a whole number of blocks: every write to the raw
@@ -256,6 +257,14 @@ mod tests {
         assert_eq!(sanitize_block_size(513), DEFAULT_BLOCK_SIZE); // not a power of two
         assert_eq!(sanitize_block_size(u64::MAX), DEFAULT_BLOCK_SIZE);
         assert_eq!(sanitize_block_size(MAX_BLOCK_SIZE * 2), DEFAULT_BLOCK_SIZE);
+    }
+
+    #[test]
+    fn a_missing_block_size_is_unknown_not_the_fallback() {
+        assert_eq!(reported_block_size(4096), Some(4096));
+        for reported in [0, 513, MAX_BLOCK_SIZE * 2] {
+            assert_eq!(reported_block_size(reported), None);
+        }
     }
 
     #[test]
