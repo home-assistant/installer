@@ -97,7 +97,9 @@ impl From<Error> for CommandError {
             Error::RateLimited(message) => return Self::with_message("rate_limited", message, true),
             // Names the service, so the frontend doesn't say the image failed
             Error::ServiceUnavailable(message) => return Self::with_message("network", message, true),
-            Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and available storage.", true),
+            Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and try again.", true),
+            // Rounded apart, so the text never reads as if it fits
+            Error::NotEnoughSpace { needed, free } => return Self::with_message("not_enough_space", &hai_core::message!("backend.download.not_enough_space", needed_mb = needed.div_ceil(1_000_000), free_mb = free / 1_000_000), true),
             Error::ExtractionFailed(_) => ("extraction_failed", "The image could not be unpacked. Check available storage.", true),
             Error::VerificationFailed(_) => ("verification_failed", "The image could not be verified. Installation stopped to protect your device. See the installation help before continuing.", false),
             Error::ImageTooLarge { written, image_size, drive_size } => {
@@ -135,6 +137,27 @@ mod tests {
             json!({
                 "code": "image_too_large", "message": "The image does not fit on this drive. Choose a larger drive.",
                 "retryable": false, "details": { "written": 0, "image_size": 2048, "drive_size": 1024 }
+            })
+        );
+    }
+
+    #[test]
+    fn low_space_on_this_computer_is_its_own_failure() {
+        let error = CommandError::from(Error::NotEnoughSpace {
+            needed: 452_000_001,
+            free: 120_999_999,
+        });
+        assert_eq!(error.code, "not_enough_space");
+        assert!(error.retryable);
+        assert_eq!(
+            error.message,
+            "Not enough free space on this computer for the image: 453 MB needed, 120 MB free. Free up space and try again."
+        );
+        assert_eq!(
+            error.details,
+            json!({
+                "message_key": "backend.download.not_enough_space",
+                "message_params": { "needed_mb": 453, "free_mb": 120 }
             })
         );
     }

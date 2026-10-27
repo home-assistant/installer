@@ -297,12 +297,9 @@ fn client_unavailable() -> Error {
     Error::ServiceUnavailable(crate::message!("backend.download.client_unavailable"))
 }
 
-fn check_space(path: &Path, required: u64, available: u64) -> Result<()> {
-    if available < required {
-        return Err(Error::DownloadFailed(format!(
-            "Not enough free space in {}: need {required} bytes, but only {available} bytes are available. Free up disk space and try again.",
-            path.display()
-        )));
+fn check_space(needed: u64, free: u64) -> Result<()> {
+    if free < needed {
+        return Err(Error::NotEnoughSpace { needed, free });
     }
     Ok(())
 }
@@ -729,14 +726,14 @@ async fn download_image_with_client<P: ProgressCallback>(
         Error::InvalidConfig("Image destination must have a parent directory".into())
     })?;
     let available = available_space(directory)?;
-    check_space(directory, image.size, available)?;
+    check_space(image.size, available)?;
 
     // Every download is extracted next to itself. With little room to spare,
     // ask the archive how large it gets, instead of finding out after a
     // download of several gigabytes.
     if available < image.size.saturating_mul(MAX_EXPECTED_XZ_RATIO + 1) {
         if let Some(extracted) = extracted_size_on_server(client, image).await {
-            check_space(directory, image.size.saturating_add(extracted), available)?;
+            check_space(image.size.saturating_add(extracted), available)?;
         }
     }
 
@@ -922,7 +919,7 @@ fn extract_archive(
             "Image exceeds the supported extracted size of 64 GiB.".into(),
         ));
     }
-    check_space(directory, expected_size, available)?;
+    check_space(expected_size, available)?;
 
     input.rewind()?;
     let mut decoder = xz_decoder(&mut input)?;
@@ -1300,13 +1297,12 @@ mod tests {
             |_| Ok(room),
         )
         .await
-        .unwrap_err()
-        .to_string();
+        .unwrap_err();
 
-        let needed = archive.len() + 100_000;
+        let needed = archive.len() as u64 + 100_000;
         assert!(
-            error.contains(&format!("need {needed} bytes, but only {room} bytes")),
-            "{error}"
+            matches!(error, Error::NotEnoughSpace { needed: n, free } if n == needed && free == room),
+            "{error:?}"
         );
         tail.assert_async().await;
         download.assert_async().await;
@@ -1413,11 +1409,11 @@ mod tests {
                 },
             )
             .await
-            .unwrap_err()
-            .to_string();
-            assert!(error.contains("need 4 bytes, but only 3 bytes"));
-            assert!(error.contains("Free up disk space"));
-            assert!(error.contains(directory.path().to_str().unwrap()));
+            .unwrap_err();
+            assert!(
+                matches!(error, Error::NotEnoughSpace { needed: 4, free: 3 }),
+                "{error:?}"
+            );
             if existing_destination {
                 assert_eq!(std::fs::read(&destination).unwrap(), b"previous image");
             } else {
@@ -1535,9 +1531,17 @@ mod tests {
                 },
                 MAX_EXTRACTED_SIZE,
             )
-            .unwrap_err()
-            .to_string();
-            assert!(error.contains("need 10 bytes, but only 9 bytes"), "{error}");
+            .unwrap_err();
+            assert!(
+                matches!(
+                    error,
+                    Error::NotEnoughSpace {
+                        needed: 10,
+                        free: 9
+                    }
+                ),
+                "{error:?}"
+            );
             assert_eq!(space_lookups, 1);
             // The size comes from the index, so nothing was decompressed
             assert!(rx.try_iter().next().is_none());

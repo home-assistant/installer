@@ -282,6 +282,7 @@ pub enum ErrorCategory {
     #[serde(alias = "network")]
     NetworkError,
     DownloadFailed,
+    NotEnoughSpace,
     ExtractionFailed,
     ProxmoxError,
     #[serde(alias = "utm")]
@@ -578,6 +579,7 @@ mod tests {
             "invalid_config",
             "rate_limited",
             "download_failed",
+            "not_enough_space",
             "extraction_failed",
             "verification_failed",
             "image_too_large",
