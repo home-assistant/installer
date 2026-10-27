@@ -1,7 +1,7 @@
 //! Windows disk writing via direct physical-drive access (requires Administrator).
 
 use super::super::*;
-use super::volumes::{control, disk_length, lock_disk_volumes, refresh_properties};
+use super::volumes::{control, disk_length, lock_disk_volumes, refresh_properties, sector_size};
 use std::fs::File;
 use std::os::windows::fs::OpenOptionsExt;
 use std::sync::mpsc;
@@ -20,10 +20,12 @@ pub async fn write_image<P: ProgressCallback>(
     let image_size = image.size()?;
     let mut source = image.open()?;
     // Keep this exact handle for clearing, writing, verification and refresh.
-    let mut device = open_device_for_write(device_id)?;
+    let device = open_device_for_write(device_id)?;
     // The serial is read from the handle we write through, so a different
     // drive that took over this disk number is refused.
     check_handle_serial(&device, expected)?;
+    check_handle_size(&device, expected)?;
+    ensure_supported_sector_size(sector_size(&device)?)?;
     ensure_media_writable(&device)?;
     // The disk number can belong to another drive by the time the write is
     // done, so remember which drive this is while that is certain
@@ -40,11 +42,20 @@ pub async fn write_image<P: ProgressCallback>(
         image_size,
         "Writing image to device...",
     ));
-    let (progress_tx, progress_rx) = mpsc::channel::<FlashProgress>();
-    let write_handle = tokio::task::spawn_blocking(move || {
+    let (mut device, disk_size, volumes) = tokio::task::spawn_blocking(move || {
         let disk_size = disk_length(&device)?;
         windows_transfer::validate_sizes(image_size, disk_size)?;
         let volumes = lock_disk_volumes(disk_number)?;
+        Ok::<_, Error>((device, disk_size, volumes))
+    })
+    .await
+    .map_err(|e| Error::Io(std::io::Error::other(e)))??;
+    // Getting the locks can take a while, and a stop in that time must leave
+    // the disk as it was
+    stop_if_requested(progress_callback)?;
+
+    let (progress_tx, progress_rx) = mpsc::channel::<FlashProgress>();
+    let write_handle = tokio::task::spawn_blocking(move || {
         windows_transfer::with_volume_locks(
             &mut device,
             volumes,
@@ -114,6 +125,21 @@ fn check_handle_serial(device: &File, expected: &ExpectedDevice) -> Result<()> {
     if serial.as_ref() != Some(expected_serial) {
         return Err(Error::DeviceNotFound(
             "The selected drive's serial changed or is unavailable. Select it again.".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Many card readers report no serial, which leaves nothing on the handle to
+/// tell a different drive on the same disk number apart. The capacity at least
+/// has to be the one the user selected.
+fn check_handle_size(device: &File, expected: &ExpectedDevice) -> Result<()> {
+    if expected.serial.is_some() {
+        return Ok(());
+    }
+    if Some(disk_length(device)?) != expected.size {
+        return Err(Error::DeviceNotFound(
+            "The selected drive changed or was disconnected. Select it again.".into(),
         ));
     }
     Ok(())

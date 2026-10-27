@@ -3,6 +3,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use hadris_iso::boot::options::{BootEntryOptions, BootOptions, BootSectionOptions};
@@ -14,7 +15,7 @@ use hadris_iso::write::{
     FileSource, InputEntry, InputEntryKind, InputMetadata, InputTree, IsoImageWriter,
 };
 
-use super::{Source, StickFile};
+use super::{Source, StickFile, StopWriter};
 use crate::error::{Error, Result};
 
 const ISO_SECTOR: u64 = 2048;
@@ -86,7 +87,14 @@ fn safe_name(raw: &str) -> Result<String> {
 /// Writes `src` plus `extra` root files to `out` as a UEFI-bootable ISO labelled `label`.
 ///
 /// The label must match the Alpine ISO's: Alpine's GRUB searches for it to find its config.
-pub fn build(src: &Path, extra: &[StickFile], label: &str, out: &Path) -> Result<()> {
+/// Writing it fails once `stop` is set.
+pub fn build(
+    src: &Path,
+    extra: &[StickFile],
+    label: &str,
+    out: &Path,
+    stop: &AtomicBool,
+) -> Result<()> {
     let mut entries = tree_from_dir(src)?;
     for item in extra {
         let kind = match &item.source {
@@ -138,7 +146,7 @@ pub fn build(src: &Path, extra: &[StickFile], label: &str, out: &Path) -> Result
         .truncate(true)
         .open(out)?;
     let tree = InputTree::new(PathSeparator::ForwardSlash, entries);
-    IsoImageWriter::create(file, tree, options).map_err(iso_error)?;
+    IsoImageWriter::create(StopWriter::new(file, stop), tree, options).map_err(iso_error)?;
     Ok(())
 }
 
@@ -206,7 +214,14 @@ mod tests {
         ];
         let iso = dir.path().join("out.iso");
 
-        build(&src, &extra, "alpine-std 3.24.2 x86_64", &iso).unwrap();
+        build(
+            &src,
+            &extra,
+            "alpine-std 3.24.2 x86_64",
+            &iso,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
         assert_eq!(read_label(&iso).unwrap(), "alpine-std 3.24.2 x86_64");
 
         let back = dir.path().join("back");

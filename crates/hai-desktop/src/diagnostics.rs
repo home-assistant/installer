@@ -274,6 +274,7 @@ pub enum ErrorCategory {
     ChecksumMismatch,
     VerificationFailed,
     WriteProtected,
+    UnsupportedSectorSize,
     DriveDisconnected,
     PermissionDenied,
     DiskServiceUnavailable,
@@ -308,6 +309,18 @@ pub enum ErrorCategory {
     TemporaryImageUnavailable,
     OperationInProgress,
     Internal,
+    // The live USB stick and ISO, and restarting as administrator for them
+    HaiLiveMissing,
+    HaiLiveInvalid,
+    ReleaseUnavailable,
+    ImageBuildFailed,
+    FileExists,
+    InvalidFileName,
+    FileNameNotPortable,
+    FolderNotFound,
+    FolderInCache,
+    FolderNameTaken,
+    RelaunchCancelled,
     /// A problem Supervisor reported held up installing Home Assistant: the
     /// frontend's `home_assistant_` codes, one per `HaSetupProblem`.
     HomeAssistantNoInternet,
@@ -573,6 +586,7 @@ mod tests {
             "utm_vm_created",
             "drive_disconnected",
             "write_protected",
+            "unsupported_sector_size",
             "unsupported_platform",
             "json",
             "invalid_config",
@@ -585,6 +599,17 @@ mod tests {
             "temporary_image_unavailable",
             "operation_in_progress",
             "internal",
+            "hai_live_missing",
+            "hai_live_invalid",
+            "release_unavailable",
+            "image_build_failed",
+            "file_exists",
+            "invalid_file_name",
+            "file_name_not_portable",
+            "folder_not_found",
+            "folder_in_cache",
+            "folder_name_taken",
+            "relaunch_cancelled",
         ] {
             let category = serde_json::from_value::<ErrorCategory>(code.into()).unwrap();
             assert!(

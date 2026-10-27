@@ -167,10 +167,10 @@ async fn run_create_live_usb<P: ProgressCallback>(
         .prefix("usb-image-")
         .tempdir_in(hai_core::live_usb::cache_dir(&Backend)?)?;
     let out_dir = temp.path().to_path_buf();
-    let image =
-        tokio::task::spawn_blocking(move || hai_core::live_usb::write_image(&contents, &out_dir))
-            .await
-            .map_err(|_| stopped())??;
+    let image = build_until_stopped(callback, move |stop| {
+        hai_core::live_usb::write_image(&contents, &out_dir, stop)
+    })
+    .await?;
 
     // Last point where the stick is still untouched
     check_cancelled(callback)?;
@@ -297,11 +297,10 @@ async fn run_save_live_iso<P: ProgressCallback>(
 
         report(callback, FlashStage::Extracting, "Building the ISO...");
         let out_dir = temp.path().to_path_buf();
-        let built =
-            tokio::task::spawn_blocking(move || hai_core::live_usb::write_iso(&contents, &out_dir))
-                .await
-                .map_err(|_| stopped())??;
-        check_cancelled(callback)?;
+        let built = build_until_stopped(callback, move |stop| {
+            hai_core::live_usb::write_iso(&contents, &out_dir, stop)
+        })
+        .await?;
         // hai-core picks its own name; building in a temporary folder means an existing
         // file with that name next to the target is never overwritten.
         iso_target(folder, file_name, overwrite)?;
@@ -357,7 +356,7 @@ fn iso_target(folder: &Path, file_name: &str, overwrite: bool) -> Result<PathBuf
     }
     if !is_portable_file_name(name) {
         return Err(CommandError::new(
-            "invalid_file_name",
+            "file_name_not_portable",
             "This file name can't be used. Leave out < > : \" | ? * and don't use names like CON or NUL.",
             false,
         ));
@@ -494,7 +493,44 @@ fn hai_live_missing() -> CommandError {
     )
 }
 
-#[cfg_attr(feature = "mock", allow(dead_code))]
+/// Run a blocking build of the stick or ISO, stopping it as soon as the user stops. Building
+/// takes minutes and only notices `stop` at its next write. Even then it's awaited, so the
+/// half-built file is no longer being written once its folder is removed.
+#[cfg(not(feature = "mock"))]
+async fn build_until_stopped<P, T>(
+    callback: &P,
+    build: impl FnOnce(&std::sync::atomic::AtomicBool) -> hai_core::Result<T> + Send + 'static,
+) -> Result<T, CommandError>
+where
+    P: ProgressCallback,
+    T: Send + 'static,
+{
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut task = tokio::task::spawn_blocking({
+        let stop = stop.clone();
+        move || build(&stop)
+    });
+    let mut check = tokio::time::interval(std::time::Duration::from_millis(100));
+    loop {
+        tokio::select! {
+            built = &mut task => {
+                let built = built.map_err(|_| stopped())?;
+                check_cancelled(callback)?;
+                return Ok(built?);
+            }
+            _ = check.tick() => {
+                if callback.is_cancelled() {
+                    stop.store(true, Ordering::Release);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(not(feature = "mock"))]
 fn stopped() -> CommandError {
     CommandError::new(
         "internal",
@@ -591,12 +627,14 @@ mod tests {
             iso_target(dir.path(), " stick.iso ", false).unwrap(),
             dir.path().join("stick.iso")
         );
+        for name in ["", "  ", "..", "sub/stick.iso", "sub\\stick.iso"] {
+            assert_eq!(
+                iso_target(dir.path(), name, true).unwrap_err().code,
+                "invalid_file_name",
+                "{name:?}"
+            );
+        }
         for name in [
-            "",
-            "  ",
-            "..",
-            "sub/stick.iso",
-            "sub\\stick.iso",
             "CON.iso",
             "nul",
             "com1.iso",
@@ -607,7 +645,7 @@ mod tests {
         ] {
             assert_eq!(
                 iso_target(dir.path(), name, true).unwrap_err().code,
-                "invalid_file_name",
+                "file_name_not_portable",
                 "{name:?}"
             );
         }
