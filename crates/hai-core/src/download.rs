@@ -33,14 +33,14 @@ pub async fn fetch_image<B: ReleaseSource, P: ProgressCallback>(
     if image.is_file() {
         return Ok(image);
     }
+    let cache_dir = archive.parent().unwrap();
+    make_room(
+        cache_dir,
+        &archive,
+        source.size,
+        fs2::available_space(cache_dir)?,
+    )?;
     if !archive.is_file() {
-        let cache_dir = archive.parent().unwrap();
-        make_room(
-            cache_dir,
-            None,
-            source.size,
-            fs2::available_space(cache_dir)?,
-        )?;
         backend
             .download_image(source, &archive, progress_callback)
             .await?;
@@ -73,19 +73,14 @@ fn archive_name(image: &HaosImage) -> Result<&str> {
 /// Earlier images are only kept for a retry. With little room to spare for a
 /// download of `size` and its extraction, everything in `cache_dir` goes,
 /// except `keep` and what UTM may still be importing.
-pub(crate) fn make_room(
-    cache_dir: &Path,
-    keep: Option<&Path>,
-    size: u64,
-    available: u64,
-) -> Result<()> {
+pub(crate) fn make_room(cache_dir: &Path, keep: &Path, size: u64, available: u64) -> Result<()> {
     if available >= size.saturating_mul(MAX_EXPECTED_XZ_RATIO + 1) {
         return Ok(());
     }
     let importing = IMPORTING.lock().unwrap_or_else(|e| e.into_inner());
     for entry in std::fs::read_dir(cache_dir)? {
         let entry = entry?;
-        if keep == Some(entry.path().as_path()) || importing.contains(&entry.path()) {
+        if entry.path() == keep || importing.contains(&entry.path()) {
             continue;
         }
         let result = if entry.file_type()?.is_dir() {
@@ -2251,6 +2246,8 @@ mod tests {
     #[test]
     fn make_room_clears_the_cache_only_when_space_runs_short() {
         let cache = tempfile::tempdir().unwrap();
+        let archive = cache.path().join("haos_rpi5-64-17.0.img.xz");
+        std::fs::write(&archive, b"archive").unwrap();
         let earlier = cache.path().join("haos_ova-17.0.qcow2");
         std::fs::write(&earlier, b"image").unwrap();
         let live_usb = cache.path().join("live-usb");
@@ -2268,14 +2265,16 @@ mod tests {
         };
 
         let enough = 100 * (MAX_EXPECTED_XZ_RATIO + 1);
-        make_room(cache.path(), None, 100, enough).unwrap();
-        assert!(earlier.exists());
+        make_room(cache.path(), &archive, 100, enough).unwrap();
+        assert_eq!(left().len(), 4);
 
-        make_room(cache.path(), Some(&live_usb), 100, enough - 1).unwrap();
-        assert_eq!(left(), [importing.clone(), live_usb]);
+        // A retry keeps the archive it is about to extract
+        make_room(cache.path(), &archive, 100, enough - 1).unwrap();
+        assert_eq!(left(), [importing.clone(), archive]);
 
-        make_room(cache.path(), None, 100, enough - 1).unwrap();
-        assert_eq!(left(), [importing]);
+        std::fs::create_dir(&live_usb).unwrap();
+        make_room(cache.path(), &live_usb, 100, enough - 1).unwrap();
+        assert_eq!(left(), [importing, live_usb]);
     }
 
     #[tokio::test]
