@@ -73,8 +73,15 @@ for (const filename of fs.readdirSync(path.dirname(catalogPath))) {
   for (const [key, message] of Object.entries(translation)) {
     try {
       assert(parameters.has(key), `${filename}: unknown key ${key}`);
-      // An export can list untranslated keys with empty text
-      if (typeof message === "string" && !message.trim()) continue;
+      // An export can list untranslated keys with empty text. Pruning drops
+      // them, so a catalog of nothing else is removed like an empty one.
+      if (typeof message === "string" && !message.trim()) {
+        if (process.env.LOCALIZATION_PRUNE === "1") {
+          delete translation[key];
+          dropped = true;
+        }
+        continue;
+      }
       assert.deepEqual(
         placeholders(`${filename}: ${key}`, message),
         parameters.get(key),
