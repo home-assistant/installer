@@ -64,6 +64,9 @@ fatfs = { version = "0.3", default-features = false, features = ["std", "alloc"]
 # URL encoding
 urlencoding = "2"
 
+# Scrubbing error text for the diagnostics log
+regex = "1"
+
 # mDNS lookup of Home Assistant on the local network (Windows uses its own)
 mdns-sd = { version = "0.21", default-features = false }
 

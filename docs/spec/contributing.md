@@ -149,7 +149,7 @@ body:
     id: error
     attributes:
       label: Error Category
-      description: Diagnostics omit raw error details for privacy.
+      description: The logs below hold the details. User names, hosts and addresses are removed where recognized; check before posting.
 
   - type: input
     id: version

@@ -32,6 +32,7 @@ tauri-plugin-log = { workspace = true }
 tauri-plugin-os = { workspace = true }
 log = { workspace = true }
 os_info = { workspace = true }
+regex = { workspace = true }
 
 # Serialization (for Tauri commands)
 serde = { workspace = true }

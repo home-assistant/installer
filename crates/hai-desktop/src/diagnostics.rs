@@ -1,9 +1,11 @@
-//! Local diagnostics deliberately exclude free-form errors, paths and network data.
+//! Local diagnostics: fixed categories, and error text without what
+//! identifies the user or their network. The tail goes into public issues.
 
 use std::collections::VecDeque;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::Instant;
 
+use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
@@ -30,7 +32,8 @@ fn log_builder() -> tauri_plugin_log::Builder {
         )])
 }
 
-// Only callers with compile-time strings or deserialized enums can record data.
+// Only callers with compile-time strings, deserialized enums or scrubbed
+// error text can record data.
 fn record(level: log::Level, message: String) {
     let elapsed = START.get_or_init(Instant::now).elapsed().as_millis();
     let line = format!("{elapsed}ms {message}");
@@ -54,6 +57,102 @@ pub fn init() {
 
 pub fn warning(code: &'static str) {
     record(log::Level::Warn, format!("warning {code}"));
+}
+
+/// Record what failed, with its causes, as one scrubbed line. A poll can
+/// fail the same way for minutes, so a line still in the tail isn't repeated.
+pub fn error(error: &(dyn std::error::Error + 'static)) {
+    let line = format!("rust error: {}", describe(error));
+    let logged = TAIL.lock().is_ok_and(|tail| {
+        tail.iter().any(|logged| {
+            logged
+                .split_once(' ')
+                .is_some_and(|(_, logged)| logged == line)
+        })
+    });
+    if !logged {
+        record(log::Level::Error, line);
+    }
+}
+
+fn describe(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut text = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        let cause_text = cause.to_string();
+        // Wrappers often repeat their cause's text already
+        if !text.contains(&cause_text) {
+            text = format!("{text}: {cause_text}");
+        }
+        source = cause.source();
+    }
+    scrub(&text)
+}
+
+/// Hosts of the services the installer uses; any other host is the user's.
+const PUBLIC_HOSTS: [&str; 5] = [
+    "github.com",
+    "githubusercontent.com",
+    "home-assistant.io",
+    "alpinelinux.org",
+    "sigstore.dev",
+];
+const MAX_ERROR_CHARS: usize = 300;
+
+/// `text` on one line, without user names, credentials, private hosts,
+/// addresses or volume IDs. Best effort, as people review an issue before
+/// posting it.
+fn scrub(text: &str) -> String {
+    static URL: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*)://(?:[^\s/@()<>"']*@)?(\[[^\]]*\]|[^\s/:?#()<>"']+)(?::\d+)?([^\s?#()<>"']*)[^\s()<>"']*"#).unwrap()
+    });
+    static RULES: LazyLock<Vec<(Regex, &str)>> = LazyLock::new(|| {
+        [
+            // User folders, also other users' and drives mounted per user.
+            // Names may have spaces, so a folder's name runs to the next separator.
+            (r#"(?i)([a-z]:[\\/]+users[\\/]+|/home/|/users/|/(?:run/)?media/)[^\\/:")]+"#, "${1}<user>"),
+            (r"(?i)\bbearer\s+\S+", "Bearer <redacted>"),
+            (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"[^"]*"|\S+)"#, "${1}=<redacted>"),
+            (r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<id>"),
+            (r"[\w.+-]+@[\w.-]+", "<user>"),
+            (r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "<ip>"),
+            (r"(?i)\b[0-9a-f]{1,4}(?::[0-9a-f]{0,4}){2,7}\b", "<ip>"),
+        ]
+        .into_iter()
+        .map(|(pattern, replacement)| (Regex::new(pattern).unwrap(), replacement))
+        .collect()
+    });
+
+    let line: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut line = URL
+        .replace_all(&line, |caps: &Captures| {
+            let host = caps[2].to_ascii_lowercase();
+            let public = PUBLIC_HOSTS
+                .iter()
+                .any(|public| host == *public || host.ends_with(&format!(".{public}")));
+            // The paths of the user's own server name its nodes and users
+            if public {
+                format!("{}://{}{}", &caps[1], &caps[2], &caps[3])
+            } else {
+                format!("{}://<host>", &caps[1])
+            }
+        })
+        .into_owned();
+    for (rule, replacement) in RULES.iter() {
+        line = rule.replace_all(&line, *replacement).into_owned();
+    }
+    // The root cause comes last, so a long line loses its middle
+    let chars: Vec<char> = line.chars().collect();
+    if chars.len() <= MAX_ERROR_CHARS {
+        return line;
+    }
+    let half = MAX_ERROR_CHARS / 2;
+    let (head, tail) = (&chars[..half], &chars[chars.len() - half..]);
+    format!("{}…{}", String::from_iter(head), String::from_iter(tail))
 }
 
 /// The setup status last recorded, as the install polls it every few seconds.
@@ -407,7 +506,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn raw_error_details_never_enter_diagnostics() {
+    fn text_errors_enter_diagnostics_only_as_a_category() {
         for message in [
             "Proxmox API error: https://admin:password@private.example ticket=secret",
             "IO error: /home/private-user/private-file",
@@ -417,7 +516,12 @@ mod tests {
             let operation = Operation::new("privacy-test");
             let _ = operation.finish::<(), String>(Err(message.into()));
         }
-        let tail = test_log_tail().join("\n");
+        // Other tests log their own errors alongside
+        let tail = test_log_tail()
+            .into_iter()
+            .filter(|line| line.contains("privacy-test"))
+            .collect::<Vec<_>>()
+            .join("\n");
         for secret in ["password", "private", "secret", "Injected", "csrf"] {
             assert!(!tail.contains(secret), "{tail}");
         }
@@ -430,11 +534,11 @@ mod tests {
     #[test]
     // A UTM command test clears the shared tail, which would drop this line
     #[serial_test::serial]
-    fn busy_failures_log_their_reason_without_the_message() {
+    fn busy_failures_log_their_reason_and_scrubbed_message() {
         let operation = Operation::new("busy-test");
         let error = crate::command_error::CommandError::from(hai_core::Error::DeviceBusy(
             hai_core::BusyReason::VolumeUnreadable,
-            "Cannot inspect volume private-volume".into(),
+            r"Cannot inspect volume \\?\Volume{2a9c1f0e-1d3b-4c5e-9f00-123456789abc}\: Access is denied".into(),
         ));
         let _ = operation.finish::<(), _>(Err(error));
 
@@ -443,7 +547,102 @@ mod tests {
             tail.contains("rust busy-test preparing device_busy_volume_unreadable"),
             "{tail}"
         );
-        assert!(!tail.contains("private-volume"), "{tail}");
+        assert!(
+            tail.contains(
+                "rust error: Device is busy: Cannot inspect volume \\\\?\\Volume{<id>}\\"
+            ),
+            "{tail}"
+        );
+        assert!(!tail.contains("2a9c1f0e"), "{tail}");
+    }
+
+    #[test]
+    fn scrubbed_error_text_keeps_what_failed_but_not_who_or_where() {
+        for (text, scrubbed) in [
+            (
+                r"Not enough free space in C:\Users\Jane Doe\AppData\Local\io.home-assistant.installer",
+                r"Not enough free space in C:\Users\<user>\AppData\Local\io.home-assistant.installer",
+            ),
+            (
+                "Permission denied: /home/jane/.cache and /run/media/jane/STICK",
+                "Permission denied: /home/<user>/.cache and /run/media/<user>/STICK",
+            ),
+            (
+                "error sending request for url (https://github.com/home-assistant/operating-system/releases/download/16.3/haos.img.xz?token=x)",
+                "error sending request for url (https://github.com/home-assistant/operating-system/releases/download/16.3/haos.img.xz)",
+            ),
+            (
+                "POST https://admin:pw@pve.lan:8006/api2/json/nodes?x=1 failed",
+                "POST https://<host> failed",
+            ),
+            (
+                "ticket=PVE:root@pam:ABC CSRFPreventionToken: s3cret Authorization: Bearer abc",
+                "ticket=<redacted> CSRFPreventionToken=<redacted> Authorization=<redacted> <redacted>",
+            ),
+            (
+                "from 192.168.1.20 and fe80::1ff:fe23:4567:890a as root@pam",
+                "from <ip> and <ip> as <user>",
+            ),
+            (
+                r"at path C:\Users\Sean O'Brien\AppData",
+                r"at path C:\Users\<user>\AppData",
+            ),
+            (
+                r#"body {"password":"hunter2","ticket":"PVE:x"} password: "hunter 2""#,
+                r#"body {"password=<redacted>,"ticket=<redacted>} password=<redacted>"#,
+            ),
+            ("first line\nInjected line", "first line Injected line"),
+        ] {
+            assert_eq!(scrub(text), scrubbed);
+        }
+        let long = scrub(&format!("{} (os error 10060)", "x".repeat(1000)));
+        assert_eq!(long.chars().count(), MAX_ERROR_CHARS + 1);
+        assert!(long.ends_with("(os error 10060)"), "{long}");
+    }
+
+    #[test]
+    // Other tests clear the shared tail
+    #[serial_test::serial]
+    fn a_repeated_error_is_logged_once_while_in_the_tail() {
+        let failure = || hai_core::Error::DownloadFailed("HTTP 503 while polling".into());
+        error(&failure());
+        error(&failure());
+        let logged = test_log_tail()
+            .iter()
+            .filter(|line| line.ends_with(" rust error: Download failed: HTTP 503 while polling"))
+            .count();
+        assert_eq!(logged, 1);
+    }
+
+    #[test]
+    fn errors_are_described_with_their_causes() {
+        #[derive(Debug)]
+        struct Cause;
+        impl std::fmt::Display for Cause {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("dns error: No such host is known. (os error 11001)")
+            }
+        }
+        impl std::error::Error for Cause {}
+
+        #[derive(Debug)]
+        struct Connect;
+        impl std::fmt::Display for Connect {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("client error (Connect)")
+            }
+        }
+        impl std::error::Error for Connect {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&Cause)
+            }
+        }
+
+        // The io::Error repeats its wrapper's text, so it is left out
+        assert_eq!(
+            describe(&hai_core::Error::Io(std::io::Error::other(Connect))),
+            "IO error: client error (Connect): dns error: No such host is known. (os error 11001)"
+        );
     }
 
     #[test]
@@ -519,10 +718,6 @@ mod tests {
                 "home_assistant_lookup failed network_error",
             ]
         );
-        let tail = tail.join("\n");
-        for private in ["private", "192.168"] {
-            assert!(!tail.contains(private), "{tail}");
-        }
     }
 
     #[test]
@@ -802,14 +997,20 @@ mod tests {
     #[serial_test::serial]
     fn report_has_no_user_data() {
         let app = tauri::test::mock_app();
-        let _ = Operation::new("report-privacy-test")
-            .finish::<(), String>(Err("IO error: /home/private-user/private-file".into()));
+        let error = crate::command_error::CommandError::from(hai_core::Error::Io(
+            std::io::Error::other("cannot open /home/private-user/haos.img"),
+        ));
+        let _ = Operation::new("report-privacy-test").finish::<(), _>(Err(error));
 
         let report = serde_json::to_value(get_diagnostics(app.handle().clone())).unwrap();
         let report = report.as_object().unwrap();
         let tail = report["log_tail"].as_str().unwrap();
         assert!(
-            tail.contains("rust report-privacy-test preparing operation_failed duration_ms="),
+            tail.contains("rust error: IO error: cannot open /home/<user>/haos.img"),
+            "{tail}"
+        );
+        assert!(
+            tail.contains("rust report-privacy-test preparing io duration_ms="),
             "{tail}"
         );
         // Users paste the report into public issues
@@ -829,7 +1030,7 @@ mod tests {
         let home = app.path().home_dir().unwrap();
         for value in report.values() {
             let value = value.as_str().unwrap();
-            assert!(!value.contains("private"), "{value}");
+            assert!(!value.contains("private-user"), "{value}");
             // A root home dir (some containers) is part of every path
             assert!(
                 home.parent().is_none() || !value.contains(&*home.to_string_lossy()),
