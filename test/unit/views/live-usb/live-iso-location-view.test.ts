@@ -94,11 +94,15 @@ describe("live-iso-location-view", () => {
       ".card inline-notice"
     )!;
     expect(notice.variant).to.equal("error");
-    expect(notice.textContent!.trim()).to.equal("No separators");
+    expect(notice.textContent!.trim()).to.equal(
+      "Enter a file name without folder separators."
+    );
     expect(el.shadowRoot!.activeElement).to.equal(notice);
     // Focused, it is read out by what it says
     const focused = focusedNode(await fullA11ySnapshot());
-    expect(focused?.name?.trim()).to.equal("No separators");
+    expect(focused?.name?.trim()).to.equal(
+      "Enter a file name without folder separators."
+    );
     expect(findByRole(await fullA11ySnapshot(), "alert")).to.have.length(0);
   });
 
