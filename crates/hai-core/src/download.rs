@@ -310,8 +310,16 @@ fn version_service_unreachable() -> crate::Message {
     crate::message!("backend.download.version_service_unreachable")
 }
 
+fn version_service_invalid() -> crate::Message {
+    crate::message!("backend.download.version_service_invalid_response")
+}
+
 fn github_unreachable() -> crate::Message {
     crate::message!("backend.download.github_unreachable")
+}
+
+fn github_invalid() -> crate::Message {
+    crate::message!("backend.download.github_invalid_response")
 }
 static RELEASE_CACHE: LazyLock<Mutex<HashMap<String, HaosRelease>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -369,7 +377,7 @@ async fn get_stable_version_from_url(url: &str) -> Result<StableVersionInfo> {
         Error::ServiceUnavailable(if error.is_timeout() {
             version_service_unreachable()
         } else {
-            crate::message!("backend.download.version_service_invalid_response")
+            version_service_invalid()
         })
     })?;
     Ok(version_info)
@@ -393,7 +401,7 @@ async fn get_latest_haos_version() -> Result<String> {
     let version_info = get_stable_version().await?;
 
     newest_version(version_info.hassos.values())
-        .ok_or_else(|| Error::DownloadFailed("No HAOS versions found in stable.json".to_string()))
+        .ok_or_else(|| Error::ServiceUnavailable(version_service_invalid()))
 }
 
 /// The HAOS version stable.json lists for `board`.
@@ -406,10 +414,7 @@ async fn get_latest_haos_version_for_board(board: &str) -> Result<String> {
 
 fn version_for_board(version_info: &StableVersionInfo, board: &str) -> Result<String> {
     version_info.hassos.get(board).cloned().ok_or_else(|| {
-        Error::DownloadFailed(format!(
-            "Home Assistant OS has no current release for board: {}",
-            board
-        ))
+        Error::ReleaseUnusable(format!("stable.json has no release for board {board}"))
     })
 }
 
@@ -437,9 +442,7 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
     // stable.json and the frontend supply the version; anything but a plain
     // version number could steer the URL to another repository.
     if parse_version(version).is_none() {
-        return Err(Error::DownloadFailed(format!(
-            "Invalid Home Assistant OS version: {version}"
-        )));
+        return Err(Error::ServiceUnavailable(version_service_invalid()));
     }
     let client = shared_client()?;
     let response = client
@@ -492,10 +495,13 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
         )));
     }
 
-    let release: GitHubRelease = response
-        .json()
-        .await
-        .map_err(|error| metadata_request_error(error, github_unreachable))?;
+    let release: GitHubRelease = response.json().await.map_err(|error| {
+        Error::ServiceUnavailable(if error.is_timeout() {
+            github_unreachable()
+        } else {
+            github_invalid()
+        })
+    })?;
     parse_github_release(release, version)
 }
 
@@ -557,10 +563,7 @@ async fn get_haos_release(version: &str) -> Result<HaosRelease> {
 /// `HAOS_DOWNLOADS`; anything else fails the whole release.
 fn parse_github_release(release: GitHubRelease, version: &str) -> Result<HaosRelease> {
     if release.tag_name != version {
-        return Err(Error::DownloadFailed(format!(
-            "GitHub returned release {} instead of {version}",
-            release.tag_name
-        )));
+        return Err(Error::ServiceUnavailable(github_invalid()));
     }
     let mut images = Vec::new();
 
@@ -583,10 +586,7 @@ fn parse_github_release(release: GitHubRelease, version: &str) -> Result<HaosRel
         // Exact match: a prefix check could be escaped with dot segments.
         let expected_url = format!("{HAOS_DOWNLOADS}/{version}/{}", asset.name);
         if asset.browser_download_url != expected_url {
-            return Err(Error::DownloadFailed(format!(
-                "GitHub listed an unexpected download location for {}",
-                asset.name
-            )));
+            return Err(Error::ServiceUnavailable(github_invalid()));
         }
 
         images.push(HaosImage {
@@ -737,14 +737,12 @@ async fn download_image_with_client<P: ProgressCallback>(
         }
     }
 
-    let url = &image.download_url;
-    let response = client.get(url).send().await?;
+    let response = client.get(&image.download_url).send().await?;
 
     if !response.status().is_success() {
-        return Err(Error::DownloadFailed(format!(
-            "HTTP {} for {}",
-            response.status(),
-            url
+        return Err(Error::ServiceUnavailable(crate::message!(
+            "backend.download.image_unavailable",
+            status = response.status().as_u16(),
         )));
     }
 
@@ -1951,8 +1949,8 @@ mod tests {
         let stable = stable_with(&[("rpi5-64", "18.3")]);
 
         match version_for_board(&stable, "tinker") {
-            Err(Error::DownloadFailed(msg)) => assert!(msg.contains("tinker"), "{msg}"),
-            other => panic!("Expected DownloadFailed, got {other:?}"),
+            Err(Error::ReleaseUnusable(msg)) => assert!(msg.contains("tinker"), "{msg}"),
+            other => panic!("Expected ReleaseUnusable, got {other:?}"),
         }
     }
 
@@ -2099,17 +2097,15 @@ mod tests {
                     .await
                     .unwrap_err()
             };
-            // The version service's answer is checked as a whole; GitHub's
-            // release JSON keeps its parse error
-            if github {
-                assert!(matches!(error, Error::Network(error) if error.is_decode()));
+            let expected = if github {
+                "backend.download.github_invalid_response"
             } else {
-                assert!(matches!(
-                    &error,
-                    Error::ServiceUnavailable(message)
-                        if message.key == "backend.download.version_service_invalid_response"
-                ));
-            }
+                "backend.download.version_service_invalid_response"
+            };
+            assert!(
+                matches!(&error, Error::ServiceUnavailable(message) if message.key == expected),
+                "{error:?}"
+            );
             response.assert_async().await;
         }
     }
@@ -2651,6 +2647,10 @@ mod tests {
                 "14.2",
             )
         };
+        let rejected = |result: Result<HaosRelease>| {
+            matches!(result, Err(Error::ServiceUnavailable(message))
+                if message.key == "backend.download.github_invalid_response")
+        };
 
         // Names that would put dot segments or a query into the URL are skipped.
         let parsed = parse(
@@ -2677,16 +2677,13 @@ mod tests {
             let mut asset = official("haos_rpi5-64-14.2.img.xz");
             asset.browser_download_url = url.to_string();
             let assets = vec![official("haos_ova-14.2.qcow2.xz"), asset];
-            assert!(
-                matches!(parse("14.2", assets), Err(Error::DownloadFailed(_))),
-                "{url}"
-            );
+            assert!(rejected(parse("14.2", assets)), "{url}");
         }
 
-        assert!(matches!(
-            parse("1.0", vec![official("haos_rpi5-64-1.0.img.xz")]),
-            Err(Error::DownloadFailed(_))
-        ));
+        assert!(rejected(parse(
+            "1.0",
+            vec![official("haos_rpi5-64-1.0.img.xz")]
+        )));
     }
 
     #[tokio::test]
@@ -2708,7 +2705,11 @@ mod tests {
             let error = fetch_release_from_api(&server.url(), version)
                 .await
                 .unwrap_err();
-            assert!(matches!(error, Error::DownloadFailed(_)), "{version}");
+            assert!(
+                matches!(&error, Error::ServiceUnavailable(message)
+                    if message.key == "backend.download.version_service_invalid_response"),
+                "{version}"
+            );
         }
         any_request.assert_async().await;
     }
@@ -2809,10 +2810,13 @@ mod tests {
             &crate::NoOpProgress,
         )
         .await;
-        assert!(
-            matches!(result, Err(Error::DownloadFailed(_))),
-            "{result:?}"
-        );
+        // The server answered, so it names the server, not the connection
+        let Err(Error::ServiceUnavailable(message)) = result else {
+            panic!("{result:?}");
+        };
+        assert_eq!(message.key, "backend.download.image_unavailable");
+        assert_eq!(message.params_json()["status"], 404);
+        assert!(!message.to_string().contains("missing.img.xz"), "{message}");
 
         redirect_mock.assert_async().await;
         actual_mock.assert_async().await;
