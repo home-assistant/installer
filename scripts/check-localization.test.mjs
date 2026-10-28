@@ -270,6 +270,53 @@ test("catalog check holds translations to the English", () => {
   }
 });
 
+test("catalog check drops downloaded translations that don't fit", () => {
+  const checker = fileURLToPath(
+    new URL("./check-localization.mjs", import.meta.url)
+  );
+  const catalogPath = fileURLToPath(
+    new URL("../src/localization/en.json", import.meta.url)
+  );
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "hai-localization-"));
+  try {
+    const fixture = path.join(directory, "en.json");
+    fs.copyFileSync(catalogPath, fixture);
+    const german = path.join(directory, "de.json");
+    fs.writeFileSync(
+      german,
+      JSON.stringify({
+        "common.next": "Weiter",
+        "common.vm.update_timeout": "Öffne {link}",
+      })
+    );
+    // In ICU, the apostrophe quotes the placeholder away
+    const french = path.join(directory, "fr.json");
+    fs.writeFileSync(
+      french,
+      JSON.stringify({ "common.vm.update_timeout": "Ouvrez l'{address}" })
+    );
+    // Blank text translates nothing, like a missing key
+    const italian = path.join(directory, "it.json");
+    fs.writeFileSync(italian, JSON.stringify({ "common.next": " " }));
+    const result = spawnSync(process.execPath, [checker, fixture], {
+      encoding: "utf8",
+      env: { ...process.env, LOCALIZATION_PRUNE: "1" },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /::warning::Dropped de\.json: common\.vm\.update_timeout placeholder mismatch/
+    );
+    assert.deepEqual(JSON.parse(fs.readFileSync(german, "utf8")), {
+      "common.next": "Weiter",
+    });
+    assert(!fs.existsSync(french));
+    assert(!fs.existsSync(italian));
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("catalog check keeps text from being localized when a module loads", () => {
   const checker = fileURLToPath(
     new URL("./check-localization.mjs", import.meta.url)
