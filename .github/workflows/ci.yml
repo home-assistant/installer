@@ -60,9 +60,12 @@ jobs:
       # on every advisory that isn't accepted below. Only accept one that has
       # no fixed release yet, and say here why it can't hurt us. Separate the
       # IDs with spaces.
+      #
+      # GHSA-gcqx-w48m-w2h4 (deepmerge): only the test runner's dev server
+      # uses it, to merge its defaults with our own test config.
       - name: Audit npm dependencies
         env:
-          ACCEPTED_ADVISORIES: ""
+          ACCEPTED_ADVISORIES: "GHSA-gcqx-w48m-w2h4"
         run: |
           npm audit --package-lock-only --json > "$RUNNER_TEMP/audit.json" || true
           jq -nr --arg accepted "$ACCEPTED_ADVISORIES" '
