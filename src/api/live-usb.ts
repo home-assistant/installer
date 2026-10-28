@@ -1,4 +1,5 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { getLanguage } from "../localization/localize.js";
 import { failMockOperation } from "./mock-failures.js";
 import type { ExpectedDevice, FlashProgress } from "./types.js";
 
@@ -26,7 +27,8 @@ export async function getLiveUsbStatus(): Promise<LiveUsbStatus> {
 
 /**
  * Build the bootable stick and write it to `deviceId`, with verification.
- * `attempt` names this run, so `cancelLiveUsb` can never stop another.
+ * The stick starts in the app's language. `attempt` names this run, so
+ * `cancelLiveUsb` can never stop another.
  */
 export async function createLiveUsb(
   deviceId: string,
@@ -47,12 +49,16 @@ export async function createLiveUsb(
   await invoke("create_live_usb", {
     deviceId,
     expectedDevice,
+    language: getLanguage(),
     attempt,
     progressChannel: channel,
   });
 }
 
-/** Build the ISO and save it as `folder/fileName`. Resolves to the saved path. */
+/**
+ * Build the ISO and save it as `folder/fileName`. It starts in the app's
+ * language. Resolves to the saved path.
+ */
 export async function saveLiveIso(
   folder: string,
   fileName: string,
@@ -70,6 +76,7 @@ export async function saveLiveIso(
     folder,
     fileName,
     overwrite,
+    language: getLanguage(),
     attempt,
     progressChannel: channel,
   });

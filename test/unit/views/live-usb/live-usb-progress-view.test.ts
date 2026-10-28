@@ -2,6 +2,7 @@ import { expect, fixtureSync, html } from "@open-wc/testing";
 import type { Channel } from "@tauri-apps/api/core";
 import type { FlashProgress } from "../../../../src/api/types.js";
 import { MOCK_BLOCK_DEVICES } from "../../../../src/api/mock-data.js";
+import { setLanguage } from "../../../../src/localization/localize.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import { storeDriveSelection } from "../../../../src/utils/drive-selection.js";
 import "../../../../src/views/live-usb/live-usb-progress-view.js";
@@ -38,11 +39,14 @@ describe("live-usb-progress-view", () => {
   afterEach(() => {
     wizardState.reset();
     restoreTauriIpc();
+    setLanguage("en");
   });
 
   it("writes the stick to the selected drive and reports completion", async () => {
     wizardState.setSelection("liveMedia", "usb");
     storeDriveSelection(MOCK_BLOCK_DEVICES[0]);
+    // The stick starts in the app's language
+    setLanguage("de-AT");
     const calls = mockCommands();
     const el = fixtureSync<LiveUsbProgressView>(
       html`<live-usb-progress-view></live-usb-progress-view>`
@@ -60,6 +64,7 @@ describe("live-usb-progress-view", () => {
       vendor: MOCK_BLOCK_DEVICES[0].vendor,
       serial: MOCK_BLOCK_DEVICES[0].serial,
     });
+    expect(calls[0].args.language).to.equal("de-AT");
 
     calls[0].args.progressChannel.onmessage({
       stage: "writing",
@@ -98,6 +103,7 @@ describe("live-usb-progress-view", () => {
     wizardState.setSelection("liveIsoFolder", "/home/me");
     wizardState.setSelection("liveIsoName", "stick.iso");
     wizardState.setSelection("liveIsoOverwrite", true);
+    setLanguage("de-AT");
     const calls = mockCommands();
     fixtureSync(html`<live-usb-progress-view></live-usb-progress-view>`);
     await settle();
@@ -107,6 +113,7 @@ describe("live-usb-progress-view", () => {
       folder: "/home/me",
       fileName: "stick.iso",
       overwrite: true,
+      language: "de-AT",
     });
 
     calls[0].result.resolve("/home/me/stick.iso");
