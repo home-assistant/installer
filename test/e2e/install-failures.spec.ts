@@ -48,7 +48,7 @@ for (const scenario of [
     failure: "proxmox-download",
     flow: "proxmox",
     message:
-      "The image could not be downloaded. Check your connection and available storage.",
+      "The image could not be downloaded. Check your connection and try again.",
     recovery: "retry",
   },
   {

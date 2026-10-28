@@ -165,17 +165,6 @@ fn find_flash_target<'a>(
         .find(|d| d.id == device_id)
         .ok_or_else(|| CommandError::from(hai_core::Error::DeviceNotFound(device_id.into())))?;
 
-    if !device.removable {
-        return Err(CommandError::new(
-            "invalid_config",
-            format!(
-                "{} is not a removable drive and cannot be overwritten",
-                device_id
-            ),
-            false,
-        ));
-    }
-
     if !expected.matches(device) {
         return Err(CommandError::new(
             "device_not_found",
@@ -186,6 +175,10 @@ fn find_flash_target<'a>(
             ),
             false,
         ));
+    }
+
+    if !device.removable {
+        return Err(CommandError::drive_in_system_use());
     }
 
     let config = hai_core::manifest::storage_requirements(board).ok_or_else(|| {
@@ -1649,7 +1642,7 @@ mod tests {
         let devices = [flash_target("\\\\.\\PhysicalDrive1", false)];
         let err = find_flash_target(&devices, "\\\\.\\PhysicalDrive1", &expected(), "rpi5-64")
             .unwrap_err();
-        assert!(err.message.contains("not a removable drive"), "{err}");
+        assert_eq!(err.code, "drive_in_system_use");
     }
 
     #[test]
@@ -2743,7 +2736,7 @@ mod mock_tests {
         )
         .await
         .unwrap_err();
-        assert!(err.message.contains("not a removable drive"));
+        assert_eq!(err.code, "drive_in_system_use");
     }
 
     #[tokio::test]

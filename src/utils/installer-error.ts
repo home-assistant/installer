@@ -31,6 +31,8 @@ const messages: Record<string, () => string> = {
   drive_disconnected: () =>
     localize("utils.installer_error.drive_disconnected"),
   write_protected: () => localize("utils.installer_error.write_protected"),
+  unsupported_sector_size: () =>
+    localize("utils.installer_error.unsupported_sector_size"),
   unsupported_platform: () =>
     localize("utils.installer_error.unsupported_platform"),
   json: () => localize("utils.installer_error.json"),
@@ -42,6 +44,21 @@ const messages: Record<string, () => string> = {
   operation_in_progress: () =>
     localize("utils.installer_error.operation_in_progress"),
   internal: () => localize("utils.installer_error.internal"),
+  hai_live_missing: () => localize("utils.installer_error.hai_live_missing"),
+  hai_live_invalid: () => localize("utils.installer_error.hai_live_invalid"),
+  release_unavailable: () =>
+    localize("utils.installer_error.release_unavailable"),
+  image_build_failed: () =>
+    localize("utils.installer_error.image_build_failed"),
+  file_exists: () => localize("utils.installer_error.file_exists"),
+  invalid_file_name: () => localize("utils.installer_error.invalid_file_name"),
+  file_name_not_portable: () =>
+    localize("utils.installer_error.file_name_not_portable"),
+  folder_not_found: () => localize("utils.installer_error.folder_not_found"),
+  folder_in_cache: () => localize("utils.installer_error.folder_in_cache"),
+  folder_name_taken: () => localize("utils.installer_error.folder_name_taken"),
+  relaunch_cancelled: () =>
+    localize("utils.installer_error.relaunch_cancelled"),
 };
 
 /** Tauri rejects with JSON values, not JavaScript Error instances. */
@@ -113,22 +130,18 @@ export function installerError(
 const DRIVE_FAILURES = [
   "device_not_found",
   "drive_disconnected",
+  "drive_in_system_use",
+  "drive_io",
   "drive_too_small",
+  "drive_verification_failed",
   "image_too_large",
+  "unsupported_sector_size",
   "write_protected",
 ];
 
-/**
- * Whether the failure with `code` is the drive's, so another drive can fix
- * it. A read or write error, or a failed check, is the drive's only once
- * the write reached it: before that, it is about this computer's storage or
- * the image.
- */
-export function isDriveFailure(code: string, reachedDrive: boolean): boolean {
-  return (
-    DRIVE_FAILURES.includes(code) ||
-    (reachedDrive && (code === "io" || code === "verification_failed"))
-  );
+/** Whether the failure with `code` is the drive's, so another drive can fix it */
+export function isDriveFailure(code: string): boolean {
+  return DRIVE_FAILURES.includes(code);
 }
 
 /**

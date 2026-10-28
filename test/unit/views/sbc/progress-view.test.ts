@@ -444,12 +444,13 @@ describe("progress-view", () => {
     }
 
     for (const [code, stage, drive] of [
-      // The release's checksums, or this computer's storage
-      ["verification_failed", "downloading", false],
-      ["io", "extracting", false],
       // Reading back or writing the drive itself
-      ["verification_failed", "verifying", true],
-      ["io", "writing", true],
+      ["drive_verification_failed", "verifying", true],
+      ["drive_io", "writing", true],
+      // The release's checksums
+      ["verification_failed", "downloading", false],
+      // This computer's storage, even once the write reached the drive
+      ["io", "writing", false],
     ] as const) {
       it(`says ${drive ? "so" : "not"} for ${code} while ${stage}`, async () => {
         expect(await changeChoiceAfter(code, stage)).to.equal(drive);

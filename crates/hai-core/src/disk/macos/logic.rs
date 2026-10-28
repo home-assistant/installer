@@ -27,13 +27,14 @@ pub fn align_up(value: u64, block_size: u64) -> u64 {
     value.div_ceil(block_size) * block_size
 }
 
+/// A plausible power-of-two block size from `diskutil`, or none at all.
+pub fn reported_block_size(reported: u64) -> Option<u64> {
+    (reported <= MAX_BLOCK_SIZE && reported.is_power_of_two()).then_some(reported)
+}
+
 /// Accept a plausible power-of-two block size from `diskutil`, or fall back.
 pub fn sanitize_block_size(reported: u64) -> u64 {
-    if reported == 0 || reported > MAX_BLOCK_SIZE || !reported.is_power_of_two() {
-        DEFAULT_BLOCK_SIZE
-    } else {
-        reported
-    }
+    reported_block_size(reported).unwrap_or(DEFAULT_BLOCK_SIZE)
 }
 
 /// Round `desired` up to a whole number of blocks: every write to the raw
@@ -84,17 +85,10 @@ pub fn device_busy_message(device_id: &str) -> String {
 
 /// Map an I/O error from the device descriptor onto an [`Error`].
 pub fn map_device_io_error(err: std::io::Error, device_id: &str) -> Error {
-    if super::is_drive_disconnected(&err) {
-        return Error::DriveDisconnected;
-    }
-    if super::is_write_protected(&err) {
-        return Error::WriteProtected;
-    }
-
     match err.raw_os_error() {
         Some(EBUSY) => Error::DeviceBusy(BusyReason::InUse, device_busy_message(device_id)),
         Some(EACCES) | Some(EPERM) => Error::PermissionDenied(removable_volumes_message(device_id)),
-        _ => Error::Io(err),
+        _ => super::device_io_error(err),
     }
 }
 
@@ -259,6 +253,14 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_block_size_is_unknown_not_the_fallback() {
+        assert_eq!(reported_block_size(4096), Some(4096));
+        for reported in [0, 513, MAX_BLOCK_SIZE * 2] {
+            assert_eq!(reported_block_size(reported), None);
+        }
+    }
+
+    #[test]
     fn aligned_buffer_size_keeps_64_mib_when_it_already_divides() {
         let sixty_four_mib = 64 * 1024 * 1024;
         assert_eq!(aligned_buffer_size(sixty_four_mib, 512), sixty_four_mib);
@@ -390,7 +392,7 @@ mod tests {
 
     #[test]
     fn a_disconnect_still_wins_over_the_errno_mapping() {
-        // ENXIO would otherwise fall through to Error::Io. This logic also
+        // ENXIO would otherwise fall through to Error::DriveIo. This logic also
         // compiles in Windows test runs, where 6 is another error entirely.
         #[cfg(unix)]
         {
@@ -415,14 +417,13 @@ mod tests {
     }
 
     #[test]
-    fn an_unrecognised_errno_is_passed_through_as_io() {
-        let err = map_device_io_error(
-            std::io::Error::from_raw_os_error(5), // EIO
-            "/dev/rdisk4",
-        );
+    fn an_unrecognised_errno_is_the_drives() {
+        // EIO, or ERROR_IO_DEVICE where these tests also run on Windows
+        let code = if cfg!(windows) { 1117 } else { 5 };
+        let err = map_device_io_error(std::io::Error::from_raw_os_error(code), "/dev/rdisk4");
         match err {
-            Error::Io(inner) => assert_eq!(inner.raw_os_error(), Some(5)),
-            other => panic!("expected Io, got {other:?}"),
+            Error::DriveIo(inner) => assert_eq!(inner.raw_os_error(), Some(code)),
+            other => panic!("expected DriveIo, got {other:?}"),
         }
     }
 
