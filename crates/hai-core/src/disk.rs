@@ -275,14 +275,16 @@ fn is_write_protected(io_err: &std::io::Error) -> bool {
 /// Map an I/O error from reading or writing the device onto an [`Error`]:
 /// a disconnect and write protection get their own errors, so the user is
 /// told what to do about them.
-#[cfg(any(target_os = "linux", target_os = "windows", test))]
 fn device_io_error(io_err: std::io::Error) -> Error {
     if is_drive_disconnected(&io_err) {
         Error::DriveDisconnected
     } else if is_write_protected(&io_err) {
         Error::WriteProtected
-    } else {
+    } else if io_err.kind() == std::io::ErrorKind::PermissionDenied {
+        // Something on this computer, like security software, refused access
         Error::Io(io_err)
+    } else {
+        Error::DriveIo(io_err)
     }
 }
 
@@ -630,8 +632,7 @@ mod tests {
             (kind(ErrorKind::ReadOnlyFilesystem), "write-protected"),
             (kind(ErrorKind::StorageFull), "full"),
             (kind(ErrorKind::PermissionDenied), "io"),
-            (IoError::other("unknown"), "io"),
-            (os(1), "io"), // EPERM / ERROR_INVALID_FUNCTION
+            (IoError::other("unknown"), "drive"),
         ];
         #[cfg(unix)]
         cases.extend([
@@ -639,6 +640,8 @@ mod tests {
             (os(19), "disconnected"),    // ENODEV
             (os(30), "write-protected"), // EROFS
             (os(28), "full"),            // ENOSPC
+            (os(5), "drive"),            // EIO
+            (os(1), "io"),               // EPERM
         ]);
         // The Unix numbers mean something else on Windows: 6 is
         // ERROR_INVALID_HANDLE and 19 ERROR_WRITE_PROTECT, a locked SD card.
@@ -647,10 +650,15 @@ mod tests {
             (os(21), "disconnected"),   // ERROR_NOT_READY
             (os(433), "disconnected"),  // ERROR_NO_SUCH_DEVICE
             (os(1167), "disconnected"), // ERROR_DEVICE_NOT_CONNECTED
-            (os(6), "io"),
+            (os(1), "drive"),           // ERROR_INVALID_FUNCTION
+            (os(6), "drive"),
             (os(19), "write-protected"),
-            (os(39), "full"),  // ERROR_HANDLE_DISK_FULL
-            (os(112), "full"), // ERROR_DISK_FULL
+            (os(39), "full"),    // ERROR_HANDLE_DISK_FULL
+            (os(112), "full"),   // ERROR_DISK_FULL
+            (os(23), "drive"),   // ERROR_CRC
+            (os(31), "drive"),   // ERROR_GEN_FAILURE
+            (os(121), "drive"),  // ERROR_SEM_TIMEOUT
+            (os(1117), "drive"), // ERROR_IO_DEVICE
         ]);
 
         for (error, expected) in cases {
@@ -663,6 +671,7 @@ mod tests {
                     image_size: 20,
                     drive_size: None,
                 } => "full",
+                Error::DriveIo(_) => "drive",
                 Error::Io(_) => "io",
                 other => panic!("{case}: {other:?}"),
             };

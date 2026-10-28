@@ -5,6 +5,7 @@ use super::volumes::{control, disk_length, lock_disk_volumes, refresh_properties
 use std::fs::File;
 use std::os::windows::fs::OpenOptionsExt;
 use std::sync::mpsc;
+use windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION;
 use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE};
 use windows_sys::Win32::System::Ioctl::IOCTL_DISK_IS_WRITABLE;
 
@@ -105,10 +106,11 @@ fn open_device_for_write(device_path: &str) -> Result<File> {
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
         .open(device_path)
         .map_err(|error| {
-            if is_write_protected(&error) {
-                Error::WriteProtected
-            } else if error.kind() == std::io::ErrorKind::PermissionDenied {
-                Error::PermissionDenied(crate::message!("backend.disk.run_as_administrator"))
+            // Drives are only listed once elevated, so something else refused access
+            if error.kind() == std::io::ErrorKind::PermissionDenied {
+                Error::PermissionDenied(crate::message!("backend.disk.write_blocked"))
+            } else if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION as i32) {
+                Error::DeviceBusy(crate::BusyReason::InUse, error.to_string())
             } else {
                 device_io_error(error)
             }

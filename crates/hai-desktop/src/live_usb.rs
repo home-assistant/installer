@@ -220,19 +220,15 @@ fn find_live_usb_target<'a>(
         .iter()
         .find(|d| d.id == device_id)
         .ok_or_else(|| hai_core::Error::DeviceNotFound(device_id.into()))?;
-    if !device.removable {
-        return Err(CommandError::new(
-            "invalid_config",
-            "The selected drive is not removable, so it won't be written.",
-            false,
-        ));
-    }
     if !expected.matches(device) {
         return Err(CommandError::new(
             "device_not_found",
             "The USB stick is no longer the one you selected. Select it again.",
             false,
         ));
+    }
+    if !device.removable {
+        return Err(CommandError::drive_in_system_use());
     }
     hai_core::disk::ensure_image_fits(image_size, device.size)?;
     Ok(device)
@@ -722,7 +718,10 @@ mod tests {
             error.code
         };
 
-        assert_eq!(refused(&fixed.id, &expected(&fixed), 1), "invalid_config");
+        assert_eq!(
+            refused(&fixed.id, &expected(&fixed), 1),
+            "drive_in_system_use"
+        );
 
         let mut swapped = expected(&stick);
         swapped.size = Some(4_000_000_000);
