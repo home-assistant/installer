@@ -105,7 +105,9 @@ sends. `npm run localization:check` enforces both the namespace and the
 placeholder names. No keys have been published to a translation service yet.
 
 Startup reads the OS locale through Tauri's locale-only command permission before
-loading component modules. Browser development uses `navigator.languages`.
+loading component modules. A language tag in `HAI_LANGUAGE` takes its place, so
+`HAI_LANGUAGE=de npm run tauri dev` shows a translation without changing the OS.
+Browser development uses `navigator.languages`.
 The first preference with a catalog wins, matching its exact tag, then its
 script (`zh-TW` loads `zh-Hant.json`), then its base language (`de-AT` loads
 `de.json`); with none, the app uses the bundled `en`. The preferred tag

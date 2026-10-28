@@ -287,6 +287,11 @@ export async function getSystemInfo(): Promise<SystemInfo> {
   return invoke<SystemInfo>("get_system_info");
 }
 
+/** The language tag HAI_LANGUAGE sets in place of the OS locale, if any. */
+export async function getLanguageOverride(): Promise<string | null> {
+  return invoke<string | null>("language_override");
+}
+
 // ============================================================================
 // UTM Commands (macOS only)
 // ============================================================================

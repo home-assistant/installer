@@ -1,5 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { locale } from "@tauri-apps/plugin-os";
+import { getLanguageOverride } from "../api/commands.js";
 import {
   type Catalog,
   getLanguage,
@@ -11,6 +12,9 @@ import {
 // variable import of the importing module's own folder written as `./`.
 const loadCatalog = async (name: string): Promise<Catalog> =>
   (await import(`../localization/${name}.json`)).default;
+
+// HAI_LANGUAGE stands in for the OS locale
+const osLocale = async () => (await getLanguageOverride()) ?? locale();
 
 // Locale discovery is optional: after an error or a one-second wait, the UI
 // starts with what it has.
@@ -62,7 +66,7 @@ export async function detectLanguage(
 }
 
 export async function initializeLocalization(): Promise<void> {
-  await detectLanguage(navigator.languages, isTauri() ? locale : undefined);
+  await detectLanguage(navigator.languages, isTauri() ? osLocale : undefined);
   document.documentElement.lang = getLanguage();
   const tag = new Intl.Locale(getLanguage()) as Intl.Locale & {
     getTextInfo?(): { direction: string };
