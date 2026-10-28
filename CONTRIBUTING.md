@@ -114,8 +114,10 @@ script (`zh-TW` loads `zh-Hant.json`), then its base language (`de-AT` loads
 itself sets `lang`, `dir` and `Intl` formatting, so `en-IN` gets English text
 with Indian number grouping. Invalid tags are skipped. A native lookup or
 catalog load that fails or takes over a second also falls back, so locale
-detection cannot leave an empty window. Locale selection happens once at
-startup, not during a running flow.
+detection cannot leave an empty window. Once a translation ships, the welcome
+screen also lists every catalog, each in its own language. A choice there
+shows the running app in that language until it closes; nothing else changes
+the language after startup.
 The OS plugin also injects static platform/version/architecture/family/type,
 executable-extension and line-ending metadata into the first-party webview;
 these fields are not gated by command permissions. Other OS commands,

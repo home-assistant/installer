@@ -1,8 +1,17 @@
 import { expect, fixture, html, oneEvent } from "@open-wc/testing";
+import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 import "../../../src/views/welcome-view.js";
 import type { WelcomeView } from "../../../src/views/welcome-view.js";
+import {
+  getLanguage,
+  setLanguage,
+} from "../../../src/localization/localize.js";
 
 describe("welcome-view", () => {
+  afterEach(() => {
+    setLanguage("en");
+    document.documentElement.lang = "";
+  });
   it("renders the Home Assistant logo", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
@@ -88,6 +97,50 @@ describe("welcome-view", () => {
     expect(footer.querySelector("diagnostics-actions.report")).to.exist;
     expect(footer.querySelector(".learn-more")!.textContent!.trim()).to.equal(
       "Learn more Opens in your browser."
+    );
+  });
+
+  it("offers each shipped language by its own name", async () => {
+    const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
+
+    const select = el.shadowRoot!.querySelector<WaSelect>("wa-select")!;
+    expect(select.label).to.equal("Language");
+    expect(select.value).to.equal("en");
+    const options = Array.from(select.querySelectorAll("wa-option"));
+    expect(options.map((option) => option.textContent)).to.deep.equal([
+      "Deutsch",
+      "English",
+    ]);
+    expect(options.map((option) => option.lang)).to.deep.equal(["de", "en"]);
+  });
+
+  it("selects the shipped language a regional one uses", async () => {
+    setLanguage("de-AT");
+    const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
+
+    expect(el.shadowRoot!.querySelector<WaSelect>("wa-select")!.value).to.equal(
+      "de"
+    );
+  });
+
+  it("shows the page in the chosen language", async () => {
+    const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
+    const select = el.shadowRoot!.querySelector<WaSelect>("wa-select")!;
+
+    select.value = "de";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve));
+    await el.updateComplete;
+
+    expect(getLanguage()).to.equal("de");
+    expect(document.documentElement.lang).to.equal("de");
+    expect(document.title).to.equal("Home Assistant Installationsprogramm");
+    expect(el.shadowRoot!.querySelector("wa-button")!.textContent).to.include(
+      "Los geht's"
+    );
+    // Untranslated text stays English
+    expect(el.shadowRoot!.querySelector(".learn-more")!.textContent).to.include(
+      "Learn more"
     );
   });
 });
