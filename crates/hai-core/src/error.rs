@@ -69,6 +69,13 @@ pub enum Error {
     #[error("Drive disconnected")]
     DriveDisconnected,
 
+    /// The drive failed a read or write, like a worn card or a faulty reader.
+    #[error("Drive I/O error: {0}")]
+    DriveIo(std::io::Error),
+
+    #[error("The drive didn't read back what was written")]
+    DriveVerificationFailed,
+
     #[error(
         "The drive is write-protected. If it's an SD card, slide the lock switch on its side up and try again."
     )]
@@ -91,6 +98,10 @@ pub enum Error {
 
     #[error("Download failed: {0}")]
     DownloadFailed(String),
+
+    /// This computer has no room for an image it downloads or unpacks.
+    #[error("Not enough free space: {needed} bytes needed, {free} bytes free")]
+    NotEnoughSpace { needed: u64, free: u64 },
 
     #[error("Extraction failed: {0}")]
     ExtractionFailed(String),

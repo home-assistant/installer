@@ -1,6 +1,6 @@
 //! Public, credential-free error contract for Tauri commands.
 
-use hai_core::{Error, Message};
+use hai_core::{BusyReason, Error, Message};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -39,6 +39,15 @@ impl CommandError {
         }
     }
 
+    /// A drive that is part of this computer's storage: only another drive helps.
+    pub fn drive_in_system_use() -> Self {
+        Self::with_message(
+            "drive_in_system_use",
+            &hai_core::message!("backend.disk.drive_in_system_use"),
+            false,
+        )
+    }
+
     /// A read-only query can be repeated after the user restores access or service.
     pub fn from_query(error: Error) -> Self {
         let mut error = Self::from(error);
@@ -68,7 +77,13 @@ impl From<Error> for CommandError {
             Error::Io(_) => ("io", "Could not read or write a file. Check available storage and access permissions.", false),
             Error::DeviceNotFound(_) => ("device_not_found", "The selected drive is no longer available. Select your drive again.", false),
             Error::DeviceBusy(reason, _) => {
-                let mut result = Self::new("device_busy", "The drive is in use. Close any applications using it.", true);
+                let mut result = match reason {
+                    BusyReason::InUse | BusyReason::UnmountFailed | BusyReason::VolumeChanged | BusyReason::EjectFailed => Self::new("device_busy", "The drive is in use. Close any applications using it.", true),
+                    // Another volume on this computer, like a locked BitLocker one, is what failed
+                    BusyReason::VolumeUnreadable => Self::with_message("drive_check_failed", &hai_core::message!("backend.disk.drive_check_failed"), true),
+                    BusyReason::UnknownBacking => Self::with_message("drive_check_failed", &hai_core::message!("backend.disk.unknown_backing"), true),
+                    BusyReason::SystemStorage | BusyReason::VolumeSpansDisks => Self::drive_in_system_use(),
+                };
                 result.diagnostic = reason.code();
                 return result;
             }
@@ -89,6 +104,8 @@ impl From<Error> for CommandError {
             Error::UtmOperationUncertain(message) => return Self::with_message("utm_operation_uncertain", message, false),
             Error::UtmVmCreated(message) => return Self::with_message("utm_vm_created", message, false),
             Error::DriveDisconnected => ("drive_disconnected", "The drive was disconnected. Reconnect it and select it again.", false),
+            Error::DriveIo(_) => return Self::with_message("drive_io", &hai_core::message!("backend.disk.drive_io"), true),
+            Error::DriveVerificationFailed => return Self::with_message("drive_verification_failed", &hai_core::message!("backend.disk.drive_verification_failed"), false),
             Error::WriteProtected => ("write_protected", "The drive is write-protected. Unlock the SD card or choose another drive.", false),
             Error::UnsupportedSectorSize(_) => ("unsupported_sector_size", "This drive uses a sector size Home Assistant can't start from. Choose another drive.", false),
             Error::UnsupportedPlatform(_) => ("unsupported_platform", "This installation method is not available on this computer.", false),
@@ -98,7 +115,9 @@ impl From<Error> for CommandError {
             Error::RateLimited(message) => return Self::with_message("rate_limited", message, true),
             // Names the service, so the frontend doesn't say the image failed
             Error::ServiceUnavailable(message) => return Self::with_message("network", message, true),
-            Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and available storage.", true),
+            Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and try again.", true),
+            // Rounded apart, so the text never reads as if it fits
+            Error::NotEnoughSpace { needed, free } => return Self::with_message("not_enough_space", &hai_core::message!("backend.download.not_enough_space", needed_mb = needed.div_ceil(1_000_000), free_mb = free / 1_000_000), true),
             Error::ExtractionFailed(_) => ("extraction_failed", "The image could not be unpacked. Check available storage.", true),
             Error::VerificationFailed(_) => ("verification_failed", "The image could not be verified. Installation stopped to protect your device. See the installation help before continuing.", false),
             Error::ImageTooLarge { written, image_size, drive_size } => {
@@ -141,17 +160,98 @@ mod tests {
     }
 
     #[test]
+    fn low_space_on_this_computer_is_its_own_failure() {
+        let error = CommandError::from(Error::NotEnoughSpace {
+            needed: 452_000_001,
+            free: 120_999_999,
+        });
+        assert_eq!(error.code, "not_enough_space");
+        assert!(error.retryable);
+        assert_eq!(
+            error.message,
+            "Not enough free space on this computer for the image: 453 MB needed, 120 MB free. Free up space and try again."
+        );
+        assert_eq!(
+            error.details,
+            json!({
+                "message_key": "backend.download.not_enough_space",
+                "message_params": { "needed_mb": 453, "free_mb": 120 }
+            })
+        );
+    }
+
+    #[test]
     fn busy_reason_reaches_the_log_but_not_the_frontend() {
         let error = CommandError::from(Error::DeviceBusy(
             hai_core::BusyReason::VolumeUnreadable,
             "Cannot inspect volume \\\\?\\Volume{private}: Access is denied".into(),
         ));
-        assert_eq!(error.code, "device_busy");
+        assert_eq!(error.code, "drive_check_failed");
         assert_eq!(error.diagnostic, "device_busy_volume_unreadable");
 
         let serialized = serde_json::to_string(&error).unwrap();
         assert!(!serialized.contains("diagnostic"), "{serialized}");
         assert!(!serialized.contains("private"), "{serialized}");
+    }
+
+    #[test]
+    fn busy_drives_say_whether_closing_apps_helps() {
+        for (reason, code, retryable) in [
+            (BusyReason::InUse, "device_busy", true),
+            (BusyReason::UnmountFailed, "device_busy", true),
+            (BusyReason::VolumeChanged, "device_busy", true),
+            (BusyReason::EjectFailed, "device_busy", true),
+            (BusyReason::VolumeUnreadable, "drive_check_failed", true),
+            (BusyReason::UnknownBacking, "drive_check_failed", true),
+            (BusyReason::SystemStorage, "drive_in_system_use", false),
+            (BusyReason::VolumeSpansDisks, "drive_in_system_use", false),
+        ] {
+            let error = CommandError::from(Error::DeviceBusy(reason, "detail".into()));
+            assert_eq!(
+                (error.code, error.retryable),
+                (code, retryable),
+                "{reason:?}"
+            );
+            assert_eq!(error.diagnostic, reason.code());
+            assert_eq!(
+                error.message.contains("Close any applications"),
+                code == "device_busy",
+                "{reason:?}: {}",
+                error.message
+            );
+        }
+        // Unlocking another drive helps only with the Windows volume check
+        let unknown = CommandError::from(Error::DeviceBusy(BusyReason::UnknownBacking, "".into()));
+        assert_eq!(
+            unknown.details["message_key"],
+            "backend.disk.unknown_backing"
+        );
+    }
+
+    #[test]
+    fn drive_failures_blame_the_drive() {
+        let failed = CommandError::from(Error::DriveIo(std::io::Error::from_raw_os_error(5)));
+        assert_eq!(failed.code, "drive_io");
+        assert_eq!(failed.details["message_key"], "backend.disk.drive_io");
+        assert!(
+            failed.message.contains("use another drive"),
+            "{}",
+            failed.message
+        );
+        assert!(failed.retryable);
+
+        let unverified = CommandError::from(Error::DriveVerificationFailed);
+        assert_eq!(unverified.code, "drive_verification_failed");
+        assert_eq!(
+            unverified.details["message_key"],
+            "backend.disk.drive_verification_failed"
+        );
+        assert!(!unverified.retryable);
+
+        for error in [failed, unverified] {
+            assert!(!error.message.contains("storage"), "{}", error.message);
+            assert!(!error.message.contains("image"), "{}", error.message);
+        }
     }
 
     #[test]

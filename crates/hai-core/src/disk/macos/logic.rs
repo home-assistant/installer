@@ -85,17 +85,10 @@ pub fn device_busy_message(device_id: &str) -> String {
 
 /// Map an I/O error from the device descriptor onto an [`Error`].
 pub fn map_device_io_error(err: std::io::Error, device_id: &str) -> Error {
-    if super::is_drive_disconnected(&err) {
-        return Error::DriveDisconnected;
-    }
-    if super::is_write_protected(&err) {
-        return Error::WriteProtected;
-    }
-
     match err.raw_os_error() {
         Some(EBUSY) => Error::DeviceBusy(BusyReason::InUse, device_busy_message(device_id)),
         Some(EACCES) | Some(EPERM) => Error::PermissionDenied(removable_volumes_message(device_id)),
-        _ => Error::Io(err),
+        _ => super::device_io_error(err),
     }
 }
 
@@ -399,7 +392,7 @@ mod tests {
 
     #[test]
     fn a_disconnect_still_wins_over_the_errno_mapping() {
-        // ENXIO would otherwise fall through to Error::Io. This logic also
+        // ENXIO would otherwise fall through to Error::DriveIo. This logic also
         // compiles in Windows test runs, where 6 is another error entirely.
         #[cfg(unix)]
         {
@@ -424,14 +417,13 @@ mod tests {
     }
 
     #[test]
-    fn an_unrecognised_errno_is_passed_through_as_io() {
-        let err = map_device_io_error(
-            std::io::Error::from_raw_os_error(5), // EIO
-            "/dev/rdisk4",
-        );
+    fn an_unrecognised_errno_is_the_drives() {
+        // EIO, or ERROR_IO_DEVICE where these tests also run on Windows
+        let code = if cfg!(windows) { 1117 } else { 5 };
+        let err = map_device_io_error(std::io::Error::from_raw_os_error(code), "/dev/rdisk4");
         match err {
-            Error::Io(inner) => assert_eq!(inner.raw_os_error(), Some(5)),
-            other => panic!("expected Io, got {other:?}"),
+            Error::DriveIo(inner) => assert_eq!(inner.raw_os_error(), Some(code)),
+            other => panic!("expected DriveIo, got {other:?}"),
         }
     }
 
