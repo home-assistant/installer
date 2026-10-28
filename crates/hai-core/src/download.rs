@@ -20,113 +20,100 @@ use tokio::sync::Mutex;
 
 pub(crate) mod sha256sums;
 
-/// Files owned by one installation attempt, never paths supplied by a caller.
-/// Clones keep background extraction alive until its file handles are closed.
-#[derive(Clone, Debug)]
-pub struct TemporaryImage {
-    directory: std::sync::Arc<ImageDirectory>,
-    format: ImageFormat,
-}
-
-const IMAGE_OWNER_MARKER: &str = "hai-temporary-image-v1";
-const UTM_IMPORT_MARKER: &str = ".utm-import";
-
-#[derive(Debug)]
-struct ImageDirectory {
-    directory: Option<tempfile::TempDir>,
-    lock: Option<std::fs::File>,
-}
-
-impl ImageDirectory {
-    fn path(&self) -> &Path {
-        self.directory.as_ref().unwrap().path()
+/// The extracted image of `source`, in the cache folder under its release's
+/// file name. A file only gets its final name once complete, so a retry in this
+/// session continues from whatever an earlier attempt finished.
+pub async fn fetch_image<B: ReleaseSource, P: ProgressCallback>(
+    backend: &B,
+    source: &HaosImage,
+    progress_callback: &P,
+) -> Result<PathBuf> {
+    let archive = backend.cache_dir()?.join(archive_name(source)?);
+    let image = archive.with_extension("");
+    if image.is_file() {
+        return Ok(image);
     }
-}
-
-impl Drop for ImageDirectory {
-    fn drop(&mut self) {
-        // No installer ever adopts an existing temporary directory. Once the
-        // last owner releases this lock, startup recovery may also remove it
-        // unless an external UTM import still needs the source.
-        drop(self.lock.take());
-        if let Some(directory) = self.directory.take() {
-            if let Err(error) = remove_image_directory(&directory.keep()) {
-                eprintln!("Could not remove temporary image directory: {error}");
-            }
+    let cache_dir = archive.parent().unwrap();
+    make_room(
+        cache_dir,
+        &archive,
+        source.size,
+        fs2::available_space(cache_dir)?,
+    )?;
+    if !archive.is_file() {
+        backend
+            .download_image(source, &archive, progress_callback)
+            .await?;
+        if progress_callback.is_cancelled() {
+            return Err(Error::Cancelled);
         }
     }
+    backend
+        .extract_xz(&archive, &image, progress_callback)
+        .await?;
+    Ok(image)
 }
 
-impl TemporaryImage {
-    /// Create a private, locked directory for one installation's image files.
-    pub fn new(cache_dir: &Path, format: ImageFormat) -> Result<Self> {
-        use std::io::Write;
-        let directory = tempfile::Builder::new()
-            .prefix("hai-image-")
-            .rand_bytes(16)
-            .tempdir_in(cache_dir)?;
-        let mut lock = std::fs::File::options()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(directory.path().join(".owner"))?;
-        lock.lock()?;
-        lock.write_all(IMAGE_OWNER_MARKER.as_bytes())?;
-        Ok(Self {
-            directory: std::sync::Arc::new(ImageDirectory {
-                directory: Some(directory),
-                lock: Some(lock),
-            }),
-            format,
+/// The release's file name, like `haos_rpi5-64-17.0.img.xz`.
+fn archive_name(image: &HaosImage) -> Result<&str> {
+    image
+        .download_url
+        .rsplit_once('/')
+        .map(|(_, name)| name)
+        .filter(|name| {
+            name.ends_with(".xz")
+                && !name.starts_with('.')
+                && name
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
         })
-    }
+        .ok_or_else(|| Error::InvalidConfig("The image has an unexpected file name.".into()))
+}
 
-    /// Path of the extracted image inside this installation's directory.
-    pub fn path(&self) -> PathBuf {
-        let extension = match self.format {
-            ImageFormat::Raw => "img",
-            ImageFormat::Qcow2 => "qcow2",
-        };
-        // The unique name also prevents overwriting another Proxmox import.
-        self.directory.path().join(format!(
-            "{}.{}",
-            self.directory.path().file_name().unwrap().to_string_lossy(),
-            extension
-        ))
+/// Earlier images are only kept for a retry. With little room to spare for a
+/// download of `size` and its extraction, everything in `cache_dir` goes,
+/// except `keep` and what UTM may still be importing.
+pub(crate) fn make_room(cache_dir: &Path, keep: &Path, size: u64, available: u64) -> Result<()> {
+    if available >= size.saturating_mul(MAX_EXPECTED_XZ_RATIO + 1) {
+        return Ok(());
     }
-
-    /// Path used to download the compressed archive before extraction.
-    pub fn archive_path(&self) -> PathBuf {
-        self.directory.path().join("download.xz")
-    }
-
-    /// Persist before dispatch: UTM can outlive the installer or its AppleEvent.
-    /// An unconfirmed import requires manual cleanup after UTM has finished.
-    pub fn begin_utm_import(&self) -> Result<()> {
-        let marker = self.directory.path().join(UTM_IMPORT_MARKER);
-        let file = std::fs::File::options()
-            .write(true)
-            .create_new(true)
-            .open(&marker)?;
-        if let Err(error) = file.sync_all() {
-            drop(file);
-            // No command was sent. Undo only the marker we just created.
-            if let Err(cleanup_error) = std::fs::remove_file(&marker) {
-                eprintln!(
-                    "Could not remove UTM import marker {}: {cleanup_error}",
-                    marker.display()
-                );
-            }
-            return Err(error.into());
+    let importing = IMPORTING.lock().unwrap_or_else(|e| e.into_inner());
+    for entry in std::fs::read_dir(cache_dir)? {
+        let entry = entry?;
+        if entry.path() == keep || importing.contains(&entry.path()) {
+            continue;
         }
-        Ok(())
+        let result = if entry.file_type()?.is_dir() {
+            std::fs::remove_dir_all(entry.path())
+        } else {
+            std::fs::remove_file(entry.path())
+        };
+        if let Err(error) = result {
+            eprintln!("Could not make room in the cache folder: {error}");
+        }
     }
+    Ok(())
+}
 
-    /// Allow cleanup only after UTM has replied with completion or rejection.
-    pub fn finish_utm_import(&self) -> Result<()> {
-        std::fs::remove_file(self.directory.path().join(UTM_IMPORT_MARKER))?;
-        Ok(())
-    }
+/// Copies UTM may still be importing, kept until the installer closes.
+static IMPORTING: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+/// Keep `path` from `make_room`: UTM didn't answer whether it finished reading it.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn keep_for_import(path: PathBuf) {
+    IMPORTING
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(path);
+}
+
+/// Where `path` is written until it is complete. What an earlier attempt left
+/// there goes first, so it doesn't count against the free space.
+fn fresh_part(path: &Path) -> PathBuf {
+    let mut part = path.as_os_str().to_owned();
+    part.push(".part");
+    let _ = std::fs::remove_file(&part);
+    part.into()
 }
 
 fn valid_board(board: &str) -> bool {
@@ -148,25 +135,42 @@ pub(crate) fn parse_version(version: &str) -> Option<Vec<u64>> {
     parts.into_iter().map(|part| part.parse().ok()).collect()
 }
 
-/// Remove images earlier installer versions left behind and recover owned
-/// temporary directories after a process exit. Downloads are not retained
-/// between installs. Other names, unowned directories, and symlinks are left
-/// alone.
-pub fn prune_cached_images(cache_dir: &Path) -> Result<()> {
-    for entry in std::fs::read_dir(cache_dir)? {
+/// Remove `cache_dir` with everything in it. The installer runs as a single
+/// instance, so at startup and exit nothing in it is still needed. A file still
+/// open (Windows) fails the removal; the next start retries.
+pub fn clear_cache(cache_dir: &Path) -> Result<()> {
+    match std::fs::remove_dir_all(cache_dir) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+        _ => Ok(()),
+    }
+}
+
+/// Remove what earlier versions downloaded straight into the app's cache
+/// folder, which also holds the logs and the web view's data.
+pub fn remove_legacy_downloads() -> Result<()> {
+    remove_legacy_downloads_in(&app_cache_dir()?)
+}
+
+fn remove_legacy_downloads_in(app_cache_dir: &Path) -> Result<()> {
+    let entries = match std::fs::read_dir(app_cache_dir) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        entries => entries?,
+    };
+    for entry in entries {
         let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            remove_abandoned_image(&entry.path());
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let file_type = entry.file_type()?;
+        let result = if file_type.is_dir() && (name == "live-usb" || name.starts_with("hai-image-"))
+        {
+            std::fs::remove_dir_all(entry.path())
+        } else if file_type.is_file() && is_left_behind_image(&name) {
+            std::fs::remove_file(entry.path())
+        } else {
             continue;
-        }
-        if !entry.file_type()?.is_file() {
-            continue;
-        }
-        if !is_left_behind_image(&entry.file_name().to_string_lossy()) {
-            continue;
-        }
-        if let Err(error) = std::fs::remove_file(entry.path()) {
-            eprintln!("Could not remove an image an earlier version left behind: {error}");
+        };
+        if let Err(error) = result {
+            eprintln!("Could not remove {name} from the cache folder: {error}");
         }
     }
     Ok(())
@@ -174,8 +178,7 @@ pub fn prune_cached_images(cache_dir: &Path) -> Result<()> {
 
 /// Whether `name` is an image an earlier installer version kept directly in the
 /// cache folder: `haos_<board>[-<version>]` as a compressed archive or unpacked,
-/// any version including prereleases. Current versions only write inside their
-/// own temporary directories and `live-usb/`, never loose `haos_` files.
+/// any version including prereleases.
 fn is_left_behind_image(name: &str) -> bool {
     let Some(rest) = name.strip_prefix("haos_") else {
         return false;
@@ -190,72 +193,6 @@ fn is_left_behind_image(name: &str) -> bool {
         && stem.bytes().all(|c| {
             c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'-' | b'_' | b'.')
         })
-}
-
-fn remove_abandoned_image(path: &Path) {
-    let Some(suffix) = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .and_then(|name| name.strip_prefix("hai-image-"))
-    else {
-        return;
-    };
-    if suffix.len() != 16 || !suffix.bytes().all(|c| c.is_ascii_alphanumeric()) {
-        return;
-    }
-    let marker = path.join(".owner");
-    if !std::fs::symlink_metadata(&marker).is_ok_and(|metadata| metadata.is_file()) {
-        return;
-    }
-    let Ok(mut lock) = std::fs::File::options().read(true).write(true).open(marker) else {
-        return;
-    };
-    if lock.try_lock().is_err() {
-        return;
-    }
-    use std::io::Read;
-    let mut contents = String::new();
-    if lock
-        .by_ref()
-        .take(64)
-        .read_to_string(&mut contents)
-        .is_err()
-        || contents != IMAGE_OWNER_MARKER
-    {
-        return;
-    }
-    drop(lock);
-    if let Err(error) = remove_image_directory(path) {
-        if error.kind() != std::io::ErrorKind::NotFound {
-            eprintln!(
-                "Could not remove abandoned image {}: {error}",
-                path.display()
-            );
-        }
-    }
-}
-
-fn remove_image_directory(path: &Path) -> std::io::Result<()> {
-    // An AppleEvent timeout or installer exit does not cancel UTM's import.
-    // Retain these sources across both owner drop and startup recovery.
-    if path.join(UTM_IMPORT_MARKER).try_exists()? {
-        return Ok(());
-    }
-    // Keep the ownership marker if a busy file prevents cleanup, so startup
-    // can retry instead of treating the partially removed directory as unowned.
-    for entry in std::fs::read_dir(path)? {
-        let entry = entry?;
-        if entry.file_name() == ".owner" {
-            continue;
-        }
-        if entry.file_type()?.is_dir() {
-            std::fs::remove_dir_all(entry.path())?;
-        } else {
-            std::fs::remove_file(entry.path())?;
-        }
-    }
-    std::fs::remove_file(path.join(".owner"))?;
-    std::fs::remove_dir(path)
 }
 
 /// Home Assistant version API for stable releases
@@ -319,17 +256,21 @@ static RELEASE_CACHE: LazyLock<Mutex<HashMap<String, HaosRelease>>> =
 /// How often to send progress updates (every N bytes)
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
 
-/// Get the cache directory for downloaded images
+/// The folder for everything the installer downloads, created if missing.
 pub(crate) fn get_cache_dir() -> Result<PathBuf> {
-    let base_dirs = BaseDirs::new()
-        .ok_or_else(|| Error::InvalidConfig("Could not determine cache directory".to_string()))?;
-
-    // The same place as Tauri's `app_cache_dir`, so the cache sits next to
-    // the logs and app data on every platform.
-    let cache_dir = base_dirs.cache_dir().join(crate::APP_IDENTIFIER);
+    // A subfolder: `clear_cache` must not take the logs or the web view's data.
+    let cache_dir = app_cache_dir()?.join("downloads");
     std::fs::create_dir_all(&cache_dir)?;
 
     Ok(cache_dir)
+}
+
+/// The same place as Tauri's `app_cache_dir`, next to the logs and app data on
+/// every platform.
+fn app_cache_dir() -> Result<PathBuf> {
+    let base_dirs = BaseDirs::new()
+        .ok_or_else(|| Error::InvalidConfig("Could not determine cache directory".to_string()))?;
+    Ok(base_dirs.cache_dir().join(crate::APP_IDENTIFIER))
 }
 
 /// Fetch the device manifest
@@ -725,6 +666,8 @@ async fn download_image_with_client<P: ProgressCallback>(
     let directory = dest_path.parent().ok_or_else(|| {
         Error::InvalidConfig("Image destination must have a parent directory".into())
     })?;
+    // Unverified bytes never get the final name
+    let part = fresh_part(dest_path);
     let available = available_space(directory)?;
     check_space(image.size, available)?;
 
@@ -758,10 +701,7 @@ async fn download_image_with_client<P: ProgressCallback>(
         message: "Starting download...".to_string(),
     });
 
-    // Keep unverified bytes private, and remove them on error or cancellation.
-    // Installation downloads live inside an owned TemporaryImage directory;
-    // startup pruning reclaims abandoned directories, including nested temp files.
-    let mut file = tempfile::NamedTempFile::new_in(directory)?;
+    let mut file = std::fs::File::create(&part)?;
     let mut downloaded: u64 = 0;
     let mut last_progress_update: u64 = 0;
     let mut stream = response.bytes_stream();
@@ -818,8 +758,8 @@ async fn download_image_with_client<P: ProgressCallback>(
             actual: hex::encode(actual),
         });
     }
-    file.persist(dest_path)
-        .map_err(|error| Error::Io(error.error))?;
+    drop(file);
+    std::fs::rename(&part, dest_path)?;
 
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
@@ -898,6 +838,7 @@ fn extract_archive(
     let directory = destination.parent().ok_or_else(|| {
         Error::InvalidConfig("Image destination must have a parent directory".into())
     })?;
+    let part = fresh_part(destination);
     let available = available_space(directory)?;
     let mut input = std::fs::File::open(archive)?;
     let mut progress = ExtractionProgress {
@@ -924,7 +865,7 @@ fn extract_archive(
     input.rewind()?;
     let mut decoder = xz_decoder(&mut input)?;
     let mut buffer = [0; 64 * 1024];
-    let mut output = tempfile::NamedTempFile::new_in(directory)?;
+    let mut output = std::fs::File::create(&part)?;
     let mut extracted = 0;
     loop {
         let count = read_xz(&mut decoder, &mut buffer)?;
@@ -945,10 +886,9 @@ fn extract_archive(
             "Extracted image size changed.".into(),
         ));
     }
-    output.as_file().sync_all()?;
-    output
-        .persist(destination)
-        .map_err(|error| Error::Io(error.error))?;
+    output.sync_all()?;
+    drop(output);
+    std::fs::rename(&part, destination)?;
     Ok(extracted)
 }
 
@@ -958,21 +898,19 @@ pub(crate) async fn extract_xz<P: ProgressCallback>(
     dest_path: &Path,
     progress_callback: &P,
 ) -> Result<()> {
-    extract_xz_owned(
+    extract_xz_limited(
         archive_path,
         dest_path,
         progress_callback,
-        None,
         MAX_EXTRACTED_SIZE,
     )
     .await
 }
 
-async fn extract_xz_owned<P: ProgressCallback>(
+async fn extract_xz_limited<P: ProgressCallback>(
     archive_path: &Path,
     dest_path: &Path,
     progress_callback: &P,
-    owner: Option<TemporaryImage>,
     max_extracted_size: u64,
 ) -> Result<()> {
     use std::sync::mpsc;
@@ -995,7 +933,6 @@ async fn extract_xz_owned<P: ProgressCallback>(
     let dest_path_clone = dest_path.to_path_buf();
 
     let extract_handle = tokio::task::spawn_blocking(move || {
-        let _owner = owner;
         let result = extract_archive(
             &archive_path_clone,
             &dest_path_clone,
@@ -1003,7 +940,7 @@ async fn extract_xz_owned<P: ProgressCallback>(
             |path| fs2::available_space(path),
             max_extracted_size,
         );
-        if matches!(result, Err(Error::ExtractionFailed(_))) {
+        if matches!(result, Ok(_) | Err(Error::ExtractionFailed(_))) {
             // All archive handles are closed before removal (also on Windows).
             let _ = std::fs::remove_file(&archive_path_clone);
         }
@@ -1090,21 +1027,6 @@ impl ReleaseSource for Backend {
         extract_xz(archive_path, dest_path, progress_callback).await
     }
 
-    async fn extract_temporary_image<P: ProgressCallback>(
-        &self,
-        image: &TemporaryImage,
-        progress_callback: &P,
-    ) -> Result<()> {
-        extract_xz_owned(
-            &image.archive_path(),
-            &image.path(),
-            progress_callback,
-            Some(image.clone()),
-            MAX_EXTRACTED_SIZE,
-        )
-        .await
-    }
-
     fn cache_dir(&self) -> Result<PathBuf> {
         get_cache_dir()
     }
@@ -1122,6 +1044,21 @@ mod tests {
             size: data.len() as u64,
             digest: Some(format!("sha256:{}", hex::encode(Sha256::digest(data)))),
         }
+    }
+
+    /// Files under a final name. A failed attempt leaves only a `.part` behind.
+    fn finished(directory: &Path) -> usize {
+        std::fs::read_dir(directory)
+            .unwrap()
+            .filter(|entry| {
+                !entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with(".part")
+            })
+            .count()
     }
 
     fn compressed(data: &[u8]) -> Vec<u8> {
@@ -1165,7 +1102,7 @@ mod tests {
             .await;
             assert!(matches!(result, Err(Error::Network(error)) if error.is_timeout()));
             assert_eq!(std::fs::read(&destination).unwrap(), b"previous image");
-            assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+            assert_eq!(finished(directory.path()), 1);
             server.join().unwrap();
         }
     }
@@ -1235,7 +1172,7 @@ mod tests {
         .to_string();
         server.join().unwrap();
         assert!(error.contains("Incomplete image: expected 4 bytes, received 3"));
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+        assert_eq!(finished(directory.path()), 0);
     }
 
     /// Data that barely compresses, like most of a real image.
@@ -1306,7 +1243,7 @@ mod tests {
         );
         tail.assert_async().await;
         download.assert_async().await;
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+        assert_eq!(finished(directory.path()), 0);
     }
 
     #[tokio::test]
@@ -1420,7 +1357,7 @@ mod tests {
                 assert!(!destination.exists());
             }
             assert_eq!(
-                std::fs::read_dir(directory.path()).unwrap().count(),
+                finished(directory.path()),
                 usize::from(existing_destination)
             );
         }
@@ -1438,7 +1375,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancelled_download_leaves_nothing_behind() {
+    async fn cancelled_download_publishes_nothing() {
         let mut server = mockito::Server::new_async().await;
         let request = server
             .mock("GET", "/image.xz")
@@ -1454,12 +1391,12 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(error, Error::Cancelled), "{error:?}");
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+        assert_eq!(finished(directory.path()), 0);
         request.assert_async().await;
     }
 
     #[test]
-    fn cancelled_extraction_keeps_the_archive_and_drops_partial_output() {
+    fn cancelled_extraction_keeps_the_archive() {
         let directory = tempfile::tempdir().unwrap();
         let archive = directory.path().join("image.xz");
         let destination = directory.path().join("image.img");
@@ -1481,7 +1418,7 @@ mod tests {
         assert!(matches!(error, Error::Cancelled), "{error:?}");
         assert!(!destination.exists());
         assert_eq!(std::fs::read(&archive).unwrap(), data);
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+        assert_eq!(finished(directory.path()), 1);
     }
 
     #[tokio::test]
@@ -1502,7 +1439,7 @@ mod tests {
                 download_image(&image, &destination, &crate::NoOpProgress).await,
                 Err(Error::DownloadFailed(_))
             ));
-            assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+            assert_eq!(finished(directory.path()), 0);
         }
         request.assert_async().await;
     }
@@ -1552,7 +1489,7 @@ mod tests {
                 assert!(!destination.exists());
             }
             assert_eq!(
-                std::fs::read_dir(directory.path()).unwrap().count(),
+                finished(directory.path()),
                 1 + usize::from(existing_destination)
             );
         }
@@ -1701,7 +1638,7 @@ mod tests {
             }
             assert!(!archive.exists());
             assert_eq!(
-                std::fs::read_dir(directory.path()).unwrap().count(),
+                finished(directory.path()),
                 usize::from(existing_destination),
             );
         }
@@ -1721,12 +1658,11 @@ mod tests {
                     std::fs::write(&destination, b"previous image").unwrap();
                 }
                 let result =
-                    extract_xz_owned(&archive, &destination, &crate::NoOpProgress, None, LIMIT)
-                        .await;
+                    extract_xz_limited(&archive, &destination, &crate::NoOpProgress, LIMIT).await;
                 if size <= LIMIT {
                     result.unwrap();
                     assert_eq!(std::fs::read(&destination).unwrap(), contents);
-                    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 2);
+                    assert_eq!(finished(directory.path()), 1);
                 } else {
                     assert!(matches!(
                         result,
@@ -1740,7 +1676,7 @@ mod tests {
                     }
                     assert!(!archive.exists());
                     assert_eq!(
-                        std::fs::read_dir(directory.path()).unwrap().count(),
+                        finished(directory.path()),
                         usize::from(existing_destination),
                     );
                 }
@@ -1749,7 +1685,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_extraction_promotion_removes_partial_file() {
+    async fn failed_extraction_promotion_publishes_nothing() {
         let directory = tempfile::tempdir().unwrap();
         let archive = directory.path().join("image.xz");
         let destination = directory.path().join("image.img");
@@ -1759,7 +1695,7 @@ mod tests {
             .await
             .is_err());
         assert!(destination.is_dir());
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 2);
+        assert_eq!(finished(directory.path()), 2);
     }
 
     #[tokio::test]
@@ -1791,7 +1727,7 @@ mod tests {
             assert_eq!(std::fs::read(&destination).unwrap(), b"existing image");
         }
         request.assert_async().await;
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+        assert_eq!(finished(directory.path()), 1);
     }
 
     #[tokio::test]
@@ -1817,7 +1753,7 @@ mod tests {
             download_image(&image, &destination, &crate::NoOpProgress).await,
             Err(Error::ChecksumMismatch { .. })
         ));
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+        assert_eq!(finished(directory.path()), 0);
         std::fs::write(&destination, b"previous verified image").unwrap();
         assert!(matches!(
             download_image(&image, &destination, &crate::NoOpProgress).await,
@@ -1827,12 +1763,12 @@ mod tests {
             std::fs::read(&destination).unwrap(),
             b"previous verified image"
         );
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+        assert_eq!(finished(directory.path()), 1);
         request.assert_async().await;
     }
 
     #[tokio::test]
-    async fn download_removes_unverified_partial_on_stream_error() {
+    async fn stream_error_publishes_nothing() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/image.xz", listener.local_addr().unwrap());
@@ -1857,12 +1793,12 @@ mod tests {
         )
         .await;
         assert!(matches!(result, Err(Error::Network(_))));
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+        assert_eq!(finished(directory.path()), 0);
         server.await.unwrap();
     }
 
     #[tokio::test]
-    async fn download_removes_temporary_file_when_promotion_fails() {
+    async fn failed_download_promotion_publishes_nothing() {
         let data = b"published";
         let mut server = mockito::Server::new_async().await;
         let request = server
@@ -1879,7 +1815,7 @@ mod tests {
             Err(Error::Io(_))
         ));
         assert!(destination.is_dir());
-        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+        assert_eq!(finished(directory.path()), 1);
         request.assert_async().await;
     }
 
@@ -2239,40 +2175,6 @@ mod tests {
         other.assert_async().await;
     }
 
-    #[test]
-    fn temporary_images_are_isolated_and_live_until_last_owner() {
-        let cache = tempfile::tempdir().unwrap();
-        let first = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
-        let second = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
-        let path = first.path();
-        std::fs::write(&path, b"first").unwrap();
-        std::fs::write(second.path(), b"second").unwrap();
-        let worker = first.clone();
-        drop(first);
-        assert!(path.exists());
-        drop(worker);
-        assert!(!path.exists());
-        assert_eq!(std::fs::read(second.path()).unwrap(), b"second");
-        let second_path = second.path();
-        drop(second);
-        assert!(!second_path.exists());
-    }
-
-    #[tokio::test]
-    async fn failed_extraction_removes_owned_files() {
-        let cache = tempfile::tempdir().unwrap();
-        let image = TemporaryImage::new(cache.path(), ImageFormat::Raw).unwrap();
-        let path = image.path();
-        std::fs::write(image.archive_path(), b"not xz").unwrap();
-        assert!(Backend
-            .extract_temporary_image(&image, &crate::NoOpProgress)
-            .await
-            .is_err());
-        drop(image);
-        assert!(!path.exists());
-        assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
-    }
-
     #[tokio::test]
     async fn cancel_after_the_last_progress_update_still_cancels() {
         use std::sync::atomic::{AtomicBool, Ordering};
@@ -2299,42 +2201,131 @@ mod tests {
         }
 
         let cache = tempfile::tempdir().unwrap();
-        let image = TemporaryImage::new(cache.path(), ImageFormat::Raw).unwrap();
-        std::fs::write(image.archive_path(), compressed(b"1234567890")).unwrap();
+        let archive = cache.path().join("haos.img.xz");
+        let image = cache.path().join("haos.img");
+        std::fs::write(&archive, compressed(b"1234567890")).unwrap();
         let callback = CancelAtTheEnd::default();
 
-        let error = Backend
-            .extract_temporary_image(&image, &callback)
-            .await
-            .unwrap_err();
+        let error = extract_xz(&archive, &image, &callback).await.unwrap_err();
 
         assert!(matches!(error, Error::Cancelled), "{error:?}");
         assert!(!callback.completed.load(Ordering::SeqCst));
-        drop(image);
-        assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
-    }
-
-    #[tokio::test]
-    async fn cancelled_attempt_removes_owned_files() {
-        let cache = tempfile::tempdir().unwrap();
-        let image = TemporaryImage::new(cache.path(), ImageFormat::Raw).unwrap();
-        let path = image.path();
-        std::fs::write(&path, b"partial").unwrap();
-        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
-        let handle = tokio::spawn(async move {
-            let _image = image;
-            ready_tx.send(()).unwrap();
-            std::future::pending::<()>().await;
-        });
-        ready_rx.await.unwrap();
-        handle.abort();
-        assert!(handle.await.unwrap_err().is_cancelled());
-        assert!(!path.exists());
+        // It was complete by then, so a retry can use it
+        assert_eq!(std::fs::read(&image).unwrap(), b"1234567890");
+        assert!(!archive.exists());
     }
 
     #[test]
-    fn cleanup_removes_left_behind_images_and_preserves_unrecognized_files() {
+    fn clear_cache_removes_the_folder() {
+        let parent = tempfile::tempdir().unwrap();
+        let cache = parent.path().join("downloads");
+        std::fs::create_dir_all(cache.join("live-usb/alpine")).unwrap();
+        std::fs::write(cache.join("haos_rpi5-64-17.0.img"), b"image").unwrap();
+        std::fs::write(cache.join("live-usb/alpine/alpine.iso"), b"iso").unwrap();
+
+        clear_cache(&cache).unwrap();
+        assert!(!cache.exists());
+        // Also when there is nothing to remove
+        clear_cache(&cache).unwrap();
+    }
+
+    #[test]
+    fn images_are_kept_under_their_release_name() {
+        let mut image = image_for_data(
+            "https://github.com/home-assistant/operating-system/releases/download/17.0/haos_rpi5-64-17.0.img.xz",
+            b"",
+        );
+        assert_eq!(archive_name(&image).unwrap(), "haos_rpi5-64-17.0.img.xz");
+        for url in [
+            "https://example.com/",
+            "https://example.com/..",
+            "https://example.com/a b.xz",
+            "https://example.com/haos.img",
+        ] {
+            image.download_url = url.into();
+            assert!(archive_name(&image).is_err(), "{url}");
+        }
+    }
+
+    #[test]
+    fn make_room_clears_the_cache_only_when_space_runs_short() {
         let cache = tempfile::tempdir().unwrap();
+        let archive = cache.path().join("haos_rpi5-64-17.0.img.xz");
+        std::fs::write(&archive, b"archive").unwrap();
+        let earlier = cache.path().join("haos_ova-17.0.qcow2");
+        std::fs::write(&earlier, b"image").unwrap();
+        let live_usb = cache.path().join("live-usb");
+        std::fs::create_dir(&live_usb).unwrap();
+        let importing = cache.path().join("haos_ova-17.0.1a2b.qcow2");
+        std::fs::write(&importing, b"copy").unwrap();
+        keep_for_import(importing.clone());
+        let left = || {
+            let mut left: Vec<_> = std::fs::read_dir(cache.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect();
+            left.sort();
+            left
+        };
+
+        let enough = 100 * (MAX_EXPECTED_XZ_RATIO + 1);
+        make_room(cache.path(), &archive, 100, enough).unwrap();
+        assert_eq!(left().len(), 4);
+
+        // A retry keeps the archive it is about to extract
+        make_room(cache.path(), &archive, 100, enough - 1).unwrap();
+        assert_eq!(left(), [importing.clone(), archive]);
+
+        std::fs::create_dir(&live_usb).unwrap();
+        make_room(cache.path(), &live_usb, 100, enough - 1).unwrap();
+        assert_eq!(left(), [importing, live_usb]);
+    }
+
+    #[tokio::test]
+    async fn partials_an_earlier_attempt_left_do_not_take_the_free_space() {
+        let data = compressed(b"1234567890");
+        let mut server = mockito::Server::new_async().await;
+        let request = server
+            .mock("GET", "/image.xz")
+            .with_body(&data)
+            .create_async()
+            .await;
+        let directory = tempfile::tempdir().unwrap();
+        let archive = directory.path().join("image.xz");
+        let destination = directory.path().join("image.img");
+        let archive_part = directory.path().join("image.xz.part");
+        let image_part = directory.path().join("image.img.part");
+        std::fs::write(&archive_part, b"earlier").unwrap();
+        std::fs::write(&image_part, b"earlier").unwrap();
+        // As if each partial filled the disk
+        let space = |part: &Path| if part.exists() { 0 } else { u64::MAX };
+
+        download_image_with_client(
+            &image_for_data(&format!("{}/image.xz", server.url()), &data),
+            &archive,
+            &crate::NoOpProgress,
+            shared_client().unwrap(),
+            |_| Ok(space(&archive_part)),
+        )
+        .await
+        .unwrap();
+        let (tx, _rx) = std::sync::mpsc::channel();
+        extract_archive(
+            &archive,
+            &destination,
+            &tx,
+            |_| Ok(space(&image_part)),
+            MAX_EXTRACTED_SIZE,
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"1234567890");
+        request.assert_async().await;
+    }
+
+    #[test]
+    fn legacy_cleanup_takes_only_what_earlier_versions_downloaded() {
+        let root = tempfile::tempdir().unwrap();
         let retained = [
             "user-image.qcow2",
             "unfinished.part",
@@ -2344,8 +2335,7 @@ mod tests {
             "haos_.img",
             "haos_rpi5 64.img",
         ];
-        // What earlier versions left: compressed or unpacked, with or without
-        // a version, prereleases too
+        // Compressed or unpacked, with or without a version, prereleases too
         let removed = [
             "haos_rpi5-64-17.9.img.xz",
             "haos_rpi5-64-9.12.img.xz",
@@ -2357,134 +2347,49 @@ mod tests {
             "haos_generic-aarch64.qcow2",
             "haos_rpi5-64.img",
         ];
-        for name in retained.iter().chain(removed.iter()) {
-            std::fs::write(cache.path().join(name), b"archive").unwrap();
+        for name in retained.iter().chain(&removed) {
+            std::fs::write(root.path().join(name), b"image").unwrap();
         }
-        // The live USB flow keeps its files in a folder of its own
-        let live_usb = cache.path().join("live-usb").join("haos").join("18.3");
-        std::fs::create_dir_all(&live_usb).unwrap();
-        std::fs::write(live_usb.join("haos_generic-x86-64-18.3.img.xz"), b"live").unwrap();
-        let active = TemporaryImage::new(cache.path(), ImageFormat::Raw).unwrap();
-        std::fs::write(active.archive_path(), b"active").unwrap();
-
-        prune_cached_images(cache.path()).unwrap();
-        for name in retained {
-            assert!(cache.path().join(name).exists(), "{name}");
+        for dir in ["hai-image-1234567890123456", "live-usb/haos/17.0"] {
+            std::fs::create_dir_all(root.path().join(dir)).unwrap();
+            std::fs::write(root.path().join(dir).join("image"), b"image").unwrap();
         }
-        for name in removed {
-            assert!(!cache.path().join(name).exists(), "{name}");
+        let tauri = ["logs", "EBWebView", "WebKit", "downloads"];
+        for dir in tauri {
+            std::fs::create_dir(root.path().join(dir)).unwrap();
         }
-        assert!(live_usb.join("haos_generic-x86-64-18.3.img.xz").exists());
-        assert!(active.archive_path().exists());
-    }
 
-    #[cfg(unix)]
-    #[test]
-    fn cleanup_leaves_a_symlink_named_like_an_image_alone() {
-        let cache = tempfile::tempdir().unwrap();
-        let target = tempfile::NamedTempFile::new().unwrap();
-        let link = cache.path().join("haos_rpi5-64.img");
-        std::os::unix::fs::symlink(target.path(), &link).unwrap();
-
-        prune_cached_images(cache.path()).unwrap();
-        assert!(std::fs::symlink_metadata(&link).is_ok());
-        assert!(target.path().exists());
-    }
-
-    #[test]
-    fn startup_reclaims_only_unlocked_owned_directories() {
-        use std::io::Write;
-        let cache = tempfile::tempdir().unwrap();
-        let live = TemporaryImage::new(cache.path(), ImageFormat::Raw).unwrap();
-        std::fs::write(live.path(), b"live").unwrap();
-        let live_partial = live.archive_path().with_file_name(".tmp-live-partial");
-        std::fs::write(&live_partial, b"partial").unwrap();
-        let abandoned = cache.path().join("hai-image-1234567890123456");
-        std::fs::create_dir(&abandoned).unwrap();
-        std::fs::write(abandoned.join("image.img"), b"abandoned").unwrap();
-        let abandoned_partial = abandoned.join(".tmp-abandoned-partial");
-        std::fs::write(&abandoned_partial, b"partial").unwrap();
-        let mut lock = std::fs::File::create(abandoned.join(".owner")).unwrap();
-        lock.lock().unwrap();
-        lock.write_all(IMAGE_OWNER_MARKER.as_bytes()).unwrap();
-        let unowned = cache.path().join("hai-image-0000000000000000");
-        std::fs::create_dir(&unowned).unwrap();
-        std::fs::write(unowned.join(".owner"), b"not an installer image").unwrap();
-        let importing = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
-        let retained_partial = importing
-            .archive_path()
-            .with_file_name(".tmp-retained-partial");
-        std::fs::write(&retained_partial, b"partial").unwrap();
-        importing.begin_utm_import().unwrap();
-        drop(importing);
-        prune_cached_images(cache.path()).unwrap();
-        assert!(
-            abandoned.exists(),
-            "separately held lock must protect the directory"
-        );
-        assert!(live.path().exists());
-        assert!(live_partial.exists());
-        assert!(abandoned_partial.exists());
-        assert!(retained_partial.exists());
-        // Make the unlocked fixture independent of when all descriptors close.
-        lock.unlock().unwrap();
-        drop(lock);
-        prune_cached_images(cache.path()).unwrap();
-        assert!(!abandoned.exists());
-        assert!(!abandoned_partial.exists());
-        assert!(live.path().exists());
-        assert!(live_partial.exists());
-        assert!(retained_partial.exists());
-        assert!(unowned.exists());
+        remove_legacy_downloads_in(root.path()).unwrap();
+        let mut left: Vec<_> = std::fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        left.sort();
+        let mut expected: Vec<_> = retained.iter().chain(&tauri).copied().collect();
+        expected.sort();
+        assert_eq!(left, expected);
+        assert!(remove_legacy_downloads_in(&root.path().join("missing")).is_ok());
     }
 
     #[test]
     #[cfg(unix)]
-    fn startup_does_not_follow_directory_or_marker_symlinks() {
-        let cache = tempfile::tempdir().unwrap();
+    fn legacy_cleanup_does_not_follow_symlinks() {
+        let root = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
-        std::fs::write(outside.path().join(".owner"), IMAGE_OWNER_MARKER).unwrap();
+        std::fs::write(outside.path().join("haos_ova-17.0.qcow2"), b"image").unwrap();
         std::os::unix::fs::symlink(
             outside.path(),
-            cache.path().join("hai-image-1234567890123456"),
+            root.path().join("hai-image-1234567890123456"),
         )
         .unwrap();
-        let linked_marker = cache.path().join("hai-image-0000000000000000");
-        std::fs::create_dir(&linked_marker).unwrap();
-        std::os::unix::fs::symlink(outside.path().join(".owner"), linked_marker.join(".owner"))
-            .unwrap();
-        prune_cached_images(cache.path()).unwrap();
-        assert!(outside.path().join(".owner").exists());
-        assert!(linked_marker.exists());
-        assert!(cache.path().join("hai-image-1234567890123456").is_symlink());
-    }
+        std::os::unix::fs::symlink(
+            outside.path().join("haos_ova-17.0.qcow2"),
+            root.path().join("haos_ova-17.0.qcow2"),
+        )
+        .unwrap();
 
-    #[test]
-    #[cfg(unix)]
-    fn failed_cleanup_retains_marker_for_startup_retry() {
-        use std::os::unix::fs::PermissionsExt;
-        let cache = tempfile::tempdir().unwrap();
-        let image = TemporaryImage::new(cache.path(), ImageFormat::Raw).unwrap();
-        // Hold the owner lock explicitly so each retry sees a known lock state.
-        let lock = image.directory.lock.as_ref().unwrap().try_clone().unwrap();
-        let directory = image.path().parent().unwrap().to_path_buf();
-        let blocked = directory.join("blocked");
-        std::fs::create_dir(&blocked).unwrap();
-        std::fs::write(blocked.join("image"), b"data").unwrap();
-        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o0)).unwrap();
-        drop(image);
-        // Observe the failed removal itself: opening ReadDir can succeed even
-        // when reading or removing entries is denied. Root may remove it all.
-        if directory.exists() {
-            assert!(directory.join(".owner").exists());
-            std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700)).unwrap();
-            prune_cached_images(cache.path()).unwrap();
-            assert!(directory.exists(), "the shared lock must prevent recovery");
-            assert_eq!(std::fs::read(blocked.join("image")).unwrap(), b"data");
-            lock.unlock().unwrap();
-            prune_cached_images(cache.path()).unwrap();
-        }
-        assert!(!directory.exists());
+        remove_legacy_downloads_in(root.path()).unwrap();
+        assert!(outside.path().join("haos_ova-17.0.qcow2").exists());
     }
 
     #[tokio::test]

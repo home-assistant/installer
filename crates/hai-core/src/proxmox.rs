@@ -1225,11 +1225,12 @@ async fn wait_for_task_completion(
 
 /// Upload a disk image to Proxmox storage with progress reporting.
 ///
-/// Uploads to `storage_name` with content type "import".
+/// Uploads to `storage_name` as `filename`, with content type "import".
 async fn upload_image_to_proxmox<P: ProgressCallback>(
     session: &ProxmoxSession,
     node: &str,
     local_path: &std::path::PathBuf,
+    filename: &str,
     progress_callback: &P,
     storage_name: &str,
 ) -> Result<String> {
@@ -1238,13 +1239,6 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     use tokio::io::AsyncReadExt;
     use tokio::sync::watch;
     use tokio_util::io::ReaderStream;
-
-    // Get the filename from the path
-    let filename = local_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| Error::ProxmoxApi("Invalid file path".to_string()))?
-        .to_string();
 
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Uploading,
@@ -1302,7 +1296,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     // Create the multipart part with streaming body
     let body = reqwest::Body::wrap_stream(progress_stream);
     let file_part = reqwest::multipart::Part::stream_with_length(body, file_size)
-        .file_name(filename.clone())
+        .file_name(filename.to_string())
         .mime_str("application/octet-stream")
         .map_err(|e| Error::ProxmoxApi(format!("Failed to create file part: {}", e)))?;
 
@@ -1394,7 +1388,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
         message: "Upload complete".to_string(),
     });
 
-    Ok(filename)
+    Ok(filename.to_string())
 }
 
 /// Create a VM with the disk imported during creation.
@@ -1743,7 +1737,7 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
     let image = check_install(backend, session, config).await?;
     stop_if_cancelled(progress_callback)?;
 
-    // Step 2: Download the compressed image locally
+    // Step 2: Download and extract the image, or reuse an earlier attempt's
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
         progress: 5,
@@ -1752,44 +1746,26 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
         message: "Downloading HAOS image...".to_string(),
     });
 
-    let cache_dir = backend.cache_dir()?;
-    let temporary_image =
-        crate::download::TemporaryImage::new(&cache_dir, crate::ImageFormat::Qcow2)?;
-    let compressed_path = temporary_image.archive_path();
-
-    // Download the image
-    backend
-        .download_image(&image, &compressed_path, progress_callback)
-        .await?;
-
-    // Step 3: Extract the compressed image
-    progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Extracting,
-        progress: 0,
-        bytes_processed: 0,
-        total_bytes: 0,
-        message: "Extracting image...".to_string(),
-    });
-
-    let extracted_path = temporary_image.path();
-
-    backend
-        .extract_temporary_image(&temporary_image, progress_callback)
-        .await?;
+    let extracted_path = crate::download::fetch_image(backend, &image, progress_callback).await?;
 
     let storage_name = recheck_before_upload(session, config, &extracted_path).await?;
     stop_if_cancelled(progress_callback)?;
 
-    // Step 4: Upload the extracted image to Proxmox storage, fetched dynamically with import flag
+    // Step 3: Upload the extracted image to Proxmox storage, fetched dynamically with import flag.
+    // A name of its own, so it never meets an earlier upload on the server.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
     let image_filename = upload_image_to_proxmox(
         session,
         &config.node,
         &extracted_path,
+        &format!("hai-image-{nanos:x}.qcow2"),
         progress_callback,
         &storage_name,
     )
     .await?;
-    drop(temporary_image);
 
     // The last moment a stop leaves nothing behind: past this, the VM exists
     discard_upload_if_stopped(
@@ -1801,7 +1777,7 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
     )
     .await?;
 
-    // Step 5: Create the VM with disk import and apply the selected size
+    // Step 4: Create the VM with disk import and apply the selected size
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::CreatingVm,
         progress: 0,
@@ -1812,7 +1788,7 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
 
     import_and_cleanup_image(session, config, &image_filename, &storage_name).await?;
 
-    // Step 6: Start the VM
+    // Step 5: Start the VM
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::StartingVm,
         progress: 0,
@@ -3976,8 +3952,13 @@ mod tests {
                 matches!(result, Err(Error::ChecksumMismatch { .. })),
                 "unexpected result: {result:?}"
             );
+            // Only the unverified `.part`, which a retry overwrites
             let cache = backend.cache.unwrap();
-            assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
+            assert!(std::fs::read_dir(cache.path()).unwrap().all(|entry| entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".part")));
             asset_mock.assert_async().await;
             no_upload.assert_async().await;
 
@@ -4646,6 +4627,7 @@ mod tests {
                         &session,
                         "pve",
                         &image,
+                        "hai.qcow2",
                         &crate::NoOpProgress,
                         "local",
                     )
@@ -4782,7 +4764,14 @@ mod tests {
             };
 
             // The upload must wait for Proxmox, so the image can be deleted
-            let upload = upload_image_to_proxmox(&session, "pve", &path, &progress, "local-import");
+            let upload = upload_image_to_proxmox(
+                &session,
+                "pve",
+                &path,
+                "hai.qcow2",
+                &progress,
+                "local-import",
+            );
             let (_, result) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
                 tokio::join!(server, upload)
             })
@@ -4819,7 +4808,8 @@ mod tests {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 while socket.read(&mut buffer).await.unwrap_or(0) > 0 {}
             };
-            let upload = upload_image_to_proxmox(&session, "pve", &path, &progress, "local");
+            let upload =
+                upload_image_to_proxmox(&session, "pve", &path, "hai.qcow2", &progress, "local");
             let (_, result) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
                 tokio::join!(server, upload)
             })
@@ -5259,6 +5249,7 @@ mod tests {
                 &session(server.url()),
                 "pve",
                 &temp_file,
+                "test-image.qcow2",
                 &callback,
                 "local-import",
             )
@@ -5311,7 +5302,8 @@ mod tests {
                     .all(|update| update.progress > 5 && update.progress < 95));
                 // Dropping the socket makes the in-flight request fail.
             };
-            let upload = upload_image_to_proxmox(&session, "pve", &path, &callback, "local");
+            let upload =
+                upload_image_to_proxmox(&session, "pve", &path, "hai.qcow2", &callback, "local");
             let (_, result) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
                 tokio::join!(server, upload)
             })
@@ -5358,7 +5350,7 @@ mod tests {
             let callback = TruncateOnUpload(&path);
             let result = tokio::time::timeout(
                 std::time::Duration::from_secs(10),
-                upload_image_to_proxmox(&session, "pve", &path, &callback, "local"),
+                upload_image_to_proxmox(&session, "pve", &path, "hai.qcow2", &callback, "local"),
             )
             .await
             .expect("short body must fail without waiting for the upload timeout");
@@ -5378,9 +5370,10 @@ mod tests {
             std::fs::write(temp_dir.path().join("image.qcow2"), b"image").unwrap();
             let path = temp_dir.path().to_path_buf();
             let callback = TestProgress::default();
-            let error = upload_image_to_proxmox(&session, "pve", &path, &callback, "local")
-                .await
-                .unwrap_err();
+            let error =
+                upload_image_to_proxmox(&session, "pve", &path, "hai.qcow2", &callback, "local")
+                    .await
+                    .unwrap_err();
             let cause = std::io::Error::from_raw_os_error(libc::EISDIR).to_string();
             assert!(error.to_string().contains(&cause), "{error}");
             assert!(callback
@@ -5397,9 +5390,15 @@ mod tests {
 
             let session = session(server.url());
             let progress = crate::NoOpProgress;
-            let result =
-                upload_image_to_proxmox(&session, "pve", &nonexistent_file, &progress, "local")
-                    .await;
+            let result = upload_image_to_proxmox(
+                &session,
+                "pve",
+                &nonexistent_file,
+                "hai.qcow2",
+                &progress,
+                "local",
+            )
+            .await;
             assert!(
                 matches!(&result, Err(Error::ProxmoxApi(msg)) if msg.contains("Failed to open image file")),
                 "{result:?}"

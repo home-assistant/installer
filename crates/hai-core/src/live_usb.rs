@@ -18,9 +18,9 @@ use crate::{ProgressCallback, ReleaseSource};
 pub use downloads::{cache_dir, fetch_alpine, fetch_haos, Download, ALPINE_VERSION, HAOS_BOARD};
 
 /// Remove everything the live USB flow downloaded and unpacked into `cache`, the
-/// installer's cache folder. For after a stick or ISO is made, and at startup:
-/// people make one, so nothing is kept for a next time. During a session it stays,
-/// so trying again doesn't download it all again.
+/// installer's cache folder. For after a stick or ISO is made: people make one, so
+/// nothing is kept for a next time. Until then it stays, so trying again doesn't
+/// download it all again.
 pub fn remove_cache(cache: &Path) -> Result<()> {
     match std::fs::remove_dir_all(cache.join(downloads::FOLDER)) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),

@@ -10,7 +10,6 @@ use crate::diagnostics::Operation;
 use crate::flash_state::FlashState;
 use crate::install_jobs::InstallJobs;
 use hai_core::disk::Image;
-use hai_core::download::TemporaryImage;
 use hai_core::keep_awake::KeepAwake;
 use hai_core::{
     BlockDevice, DeviceBackend, DeviceManifest, ExpectedDevice, FlashProgress, FlashRequest,
@@ -23,20 +22,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::ipc::Channel;
 
+/// The images `download_utm_image` handed out, so a VM is only ever created
+/// from one of them, never from a path the frontend passes in.
 #[derive(Default)]
-pub struct PendingUtmImages(std::sync::Mutex<std::collections::HashMap<String, TemporaryImage>>);
+pub struct PendingUtmImages(std::sync::Mutex<std::collections::HashSet<String>>);
 
 impl PendingUtmImages {
-    fn insert(&self, image_path: String, image: TemporaryImage) {
-        self.lock().insert(image_path, image);
+    fn insert(&self, image_path: String) {
+        self.lock().insert(image_path);
     }
 
-    fn take(&self, image_path: &str) -> Option<TemporaryImage> {
+    fn take(&self, image_path: &str) -> bool {
         self.lock().remove(image_path)
     }
 
-    /// A single insert or remove can't leave the map half-changed after a panic.
-    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, TemporaryImage>> {
+    /// A single insert or remove can't leave the set half-changed after a panic.
+    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashSet<String>> {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
@@ -306,23 +307,7 @@ where
         message: "Starting download...".to_string(),
     });
 
-    // Get cache directory and download
-    let cache_dir = backend.cache_dir().map_err(CommandError::from)?;
-    let temporary_image =
-        TemporaryImage::new(&cache_dir, ImageFormat::Raw).map_err(CommandError::from)?;
-    let compressed_path = temporary_image.archive_path();
-
-    backend
-        .download_image(&image, &compressed_path, callback)
-        .await
-        .map_err(CommandError::from)?;
-
-    // Extract the image
-    let extracted_path = temporary_image.path();
-
-    check_cancelled(callback)?;
-    backend
-        .extract_temporary_image(&temporary_image, callback)
+    let extracted_path = hai_core::download::fetch_image(backend, &image, callback)
         .await
         .map_err(CommandError::from)?;
 
@@ -364,8 +349,6 @@ where
         )
         .await
         .map_err(CommandError::from)?;
-
-    drop(temporary_image);
 
     let duration = start_time.elapsed();
 
@@ -487,8 +470,8 @@ pub async fn download_utm_image(
     let image = callback
         .operation
         .finish(run_utm_download(&Backend, board, &callback).await)?;
-    let path = image.path().to_string_lossy().into_owned();
-    pending.insert(path.clone(), image);
+    let path = image.to_string_lossy().into_owned();
+    pending.insert(path.clone());
     Ok(path)
 }
 
@@ -499,7 +482,7 @@ async fn run_utm_download<B, P>(
     backend: &B,
     arch: &str,
     callback: &P,
-) -> Result<TemporaryImage, CommandError>
+) -> Result<std::path::PathBuf, CommandError>
 where
     B: ReleaseSource,
     P: ProgressCallback,
@@ -521,18 +504,7 @@ where
         hai_core::Error::InvalidConfig("No compatible virtual-machine image was found.".into())
     })?;
 
-    let cache_dir = backend.cache_dir().map_err(CommandError::from)?;
-    let temporary_image =
-        TemporaryImage::new(&cache_dir, ImageFormat::Qcow2).map_err(CommandError::from)?;
-    let compressed_path = temporary_image.archive_path();
-
-    backend
-        .download_image(image, &compressed_path, callback)
-        .await
-        .map_err(CommandError::from)?;
-
-    backend
-        .extract_temporary_image(&temporary_image, callback)
+    let path = hai_core::download::fetch_image(backend, image, callback)
         .await
         .map_err(CommandError::from)?;
 
@@ -544,11 +516,11 @@ where
         message: "Download complete!".to_string(),
     });
 
-    Ok(temporary_image)
+    Ok(path)
 }
 
-/// Release a downloaded image abandoned before VM creation. Unknown paths are
-/// never deleted, and an image being imported has already left this registry.
+/// Forget a downloaded image abandoned before VM creation. The file stays for
+/// a retry; the cache folder is cleared when the installer closes.
 #[tauri::command]
 pub fn discard_utm_image(image_path: String, pending: tauri::State<'_, PendingUtmImages>) {
     pending.take(&image_path);
@@ -586,40 +558,21 @@ async fn run_utm_creation<B: UtmBackend>(
     config: &hai_core::UtmVmConfig,
     pending: &PendingUtmImages,
 ) -> Result<String, CommandError> {
-    let image = pending.take(&config.image_path).ok_or_else(|| {
-        CommandError::with_message(
+    if !pending.take(&config.image_path) {
+        return Err(CommandError::with_message(
             "temporary_image_unavailable",
             &hai_core::message!("backend.utm.temporary_image_gone"),
             true,
-        )
-    })?;
-    image.begin_utm_import().map_err(|error| {
-        CommandError::with_message(
-            "utm",
-            &hai_core::message!(
-                "backend.utm.import_not_prepared",
-                detail = error.to_string(),
-                path = image.path().parent().unwrap().display().to_string(),
-            ),
-            false,
-        )
-    })?;
+        ));
+    }
     // Fully qualified: `create_vm` is defined on both UtmBackend and ProxmoxBackend.
     let result = UtmBackend::create_vm(backend, config, &hai_core::NoOpProgress).await;
     if let Err(hai_core::Error::UtmOperationUncertain(error)) = &result {
         return Err(CommandError::with_message(
             "utm_operation_uncertain",
-            &hai_core::message!(
-                "backend.utm.import_uncertain",
-                detail = error,
-                path = image.path().parent().unwrap().display().to_string(),
-            ),
+            &hai_core::message!("backend.utm.import_uncertain", detail = error),
             false,
         ));
-    }
-    // A completed creation or confirmed rejection no longer needs the source.
-    if image.finish_utm_import().is_err() {
-        crate::diagnostics::warning("utm_source_cleanup_failed");
     }
     result.map(|result| result.id).map_err(CommandError::from)
 }
@@ -1856,11 +1809,38 @@ mod mock_tests {
     use hai_core::{BackendMock, NoOpProgress};
     use serial_test::serial;
 
+    /// Images stay in the mock cache like in a session; a test that needs a
+    /// download starts without them.
+    fn clear_mock_cache() {
+        hai_core::download::clear_cache(&BackendMock.cache_dir().unwrap()).unwrap();
+    }
+
     struct LifecycleBackend {
         cache: tempfile::TempDir,
         outcome: &'static str,
         extracted: std::sync::Mutex<Option<std::path::PathBuf>>,
         write_started: tokio::sync::Notify,
+        downloads: std::sync::atomic::AtomicUsize,
+    }
+
+    impl LifecycleBackend {
+        fn new(outcome: &'static str) -> Self {
+            Self {
+                cache: tempfile::tempdir().unwrap(),
+                outcome,
+                extracted: Default::default(),
+                write_started: Default::default(),
+                downloads: Default::default(),
+            }
+        }
+
+        /// Everything left in the cache folder.
+        fn cached(&self) -> Vec<std::path::PathBuf> {
+            std::fs::read_dir(self.cache.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect()
+        }
     }
 
     impl ReleaseSource for LifecycleBackend {
@@ -1878,7 +1858,12 @@ mod mock_tests {
             &self,
             board: &str,
         ) -> hai_core::Result<HaosRelease> {
-            BackendMock.get_latest_haos_release_for_board(board).await
+            // A checksum, as real releases have, so the session keeps the image
+            let mut release = BackendMock.get_latest_haos_release_for_board(board).await?;
+            for image in &mut release.images {
+                image.digest = Some(format!("sha256:{}", "ab".repeat(32)));
+            }
+            Ok(release)
         }
         async fn download_image<P: ProgressCallback>(
             &self,
@@ -1886,22 +1871,25 @@ mod mock_tests {
             dest: &std::path::Path,
             _: &P,
         ) -> hai_core::Result<()> {
+            self.downloads.fetch_add(1, Ordering::SeqCst);
             std::fs::write(dest, b"archive")?;
             Ok(())
         }
         async fn extract_xz<P: ProgressCallback>(
             &self,
-            _: &std::path::Path,
+            archive: &std::path::Path,
             dest: &std::path::Path,
             _: &P,
         ) -> hai_core::Result<()> {
             *self.extracted.lock().unwrap() = Some(dest.to_path_buf());
-            std::fs::write(dest, b"image")?;
+            // Like the real one: the archive goes, the image only appears complete
+            std::fs::remove_file(archive)?;
             if self.outcome == "extract" {
                 return Err(hai_core::Error::ExtractionFailed(
                     "test extraction failure".into(),
                 ));
             }
+            std::fs::write(dest, b"image")?;
             Ok(())
         }
         fn cache_dir(&self) -> hai_core::Result<std::path::PathBuf> {
@@ -1947,7 +1935,7 @@ mod mock_tests {
     }
 
     #[tokio::test]
-    async fn flash_releases_extraction_on_every_exit() {
+    async fn flash_keeps_only_a_complete_image_on_every_exit() {
         for outcome in [
             "success",
             "extract",
@@ -1956,12 +1944,7 @@ mod mock_tests {
             "suspend",
             "oversized",
         ] {
-            let backend = LifecycleBackend {
-                cache: tempfile::tempdir().unwrap(),
-                outcome,
-                extracted: Default::default(),
-                write_started: Default::default(),
-            };
+            let backend = LifecycleBackend::new(outcome);
             let mut request = request("mock-sd-card-32gb", "rpi5-64").await;
             if outcome == "oversized" {
                 request.expected_device.size = Some(4);
@@ -1993,61 +1976,62 @@ mod mock_tests {
                 _ => assert!(result.unwrap().is_err()),
             }
             let path = backend.extracted.lock().unwrap().clone().unwrap();
-            assert!(!path.exists(), "{outcome}");
-            assert!(!path.parent().unwrap().exists(), "{outcome}");
-            assert_eq!(std::fs::read_dir(backend.cache.path()).unwrap().count(), 0);
+            let kept: &[_] = if outcome == "extract" { &[] } else { &[path] };
+            assert_eq!(backend.cached(), kept, "{outcome}");
         }
     }
 
     #[tokio::test]
-    async fn utm_download_keeps_images_private_until_owner_releases_them() {
+    async fn flash_retry_reuses_the_extracted_image() {
+        let backend = LifecycleBackend::new("write");
+        let request = request("mock-sd-card-32gb", "rpi5-64").await;
+        for _ in 0..2 {
+            // The writer checks it gets the extracted image
+            assert!(run_flash(&backend, &request, &NoOpProgress).await.is_err());
+        }
+        assert_eq!(backend.downloads.load(Ordering::SeqCst), 1);
+        assert_eq!(backend.cached().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn utm_retry_reuses_the_extracted_image() {
+        let backend = LifecycleBackend::new("success");
+        let first = run_utm_download(&backend, "generic-aarch64", &NoOpProgress)
+            .await
+            .unwrap();
+        let second = run_utm_download(&backend, "generic-aarch64", &NoOpProgress)
+            .await
+            .unwrap();
+        assert_eq!(backend.downloads.load(Ordering::SeqCst), 1);
+        assert_eq!(first, second);
+        assert_eq!(backend.cached(), [first]);
+    }
+
+    #[tokio::test]
+    async fn utm_download_keeps_only_a_complete_image() {
         for outcome in ["success", "extract"] {
-            let backend = LifecycleBackend {
-                cache: tempfile::tempdir().unwrap(),
-                outcome,
-                extracted: Default::default(),
-                write_started: Default::default(),
-            };
+            let backend = LifecycleBackend::new(outcome);
             let result = run_utm_download(&backend, "generic-aarch64", &NoOpProgress).await;
             assert_eq!(result.is_ok(), outcome == "success");
-            if let Ok(image) = &result {
-                assert!(image.path().exists());
-                assert!(image.archive_path().exists());
-            }
-            drop(result);
-            let path = backend.extracted.lock().unwrap().clone().unwrap();
-            assert!(!path.exists());
-            assert_eq!(std::fs::read_dir(backend.cache.path()).unwrap().count(), 0);
+            let kept: Vec<_> = result.into_iter().collect();
+            assert_eq!(backend.cached(), kept);
         }
     }
 
     #[test]
-    fn utm_registry_never_deletes_unknown_or_in_use_images() {
-        let cache = tempfile::tempdir().unwrap();
-        let user_file = cache.path().join("user.qcow2");
-        std::fs::write(&user_file, b"user image").unwrap();
+    fn utm_registry_only_accepts_images_it_handed_out() {
         let pending = PendingUtmImages::default();
-        assert!(pending.take(user_file.to_str().unwrap()).is_none());
-        assert!(user_file.exists());
-        let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
-        let path = image.path().to_string_lossy().into_owned();
-        std::fs::write(&path, b"owned image").unwrap();
-        pending.insert(path.clone(), image);
-        let importing = pending.take(&path).unwrap();
-        assert!(pending.take(&path).is_none());
-        assert!(std::path::Path::new(&path).exists());
-        drop(importing);
-        assert!(!std::path::Path::new(&path).exists());
-        assert!(user_file.exists());
+        assert!(!pending.take("/Users/someone/user.qcow2"));
+        pending.insert("/cache/haos.qcow2".into());
+        assert!(pending.take("/cache/haos.qcow2"));
+        assert!(!pending.take("/cache/haos.qcow2"));
     }
 
     #[test]
     fn utm_registry_keeps_working_after_a_panic_while_locked() {
-        let cache = tempfile::tempdir().unwrap();
         let pending = PendingUtmImages::default();
-        let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
-        let path = image.path().to_string_lossy().into_owned();
-        pending.insert(path.clone(), image);
+        let path = "/cache/haos.qcow2".to_string();
+        pending.insert(path.clone());
         std::thread::scope(|scope| {
             let panicked = scope.spawn(|| {
                 let _images = pending.0.lock().unwrap();
@@ -2057,11 +2041,9 @@ mod mock_tests {
         });
         assert!(pending.0.is_poisoned());
 
-        assert!(pending.take(&path).is_some());
-        let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
-        let path = image.path().to_string_lossy().into_owned();
-        pending.insert(path.clone(), image);
-        assert!(pending.take(&path).is_some());
+        assert!(pending.take(&path));
+        pending.insert(path.clone());
+        assert!(pending.take(&path));
     }
 
     struct UtmCreationBackend {
@@ -2083,21 +2065,9 @@ mod mock_tests {
             config: &hai_core::UtmVmConfig,
             _: &P,
         ) -> hai_core::Result<hai_core::UtmVmResult> {
-            let source = std::path::Path::new(&config.image_path);
-            assert!(source.exists());
-            assert!(source.parent().unwrap().join(".utm-import").exists());
+            assert!(std::path::Path::new(&config.image_path).exists());
             self.started.notify_one();
             match self.outcome {
-                "release-failure" => {
-                    let marker = source.parent().unwrap().join(".utm-import");
-                    std::fs::remove_file(&marker).unwrap();
-                    std::fs::create_dir(marker).unwrap();
-                    Ok(hai_core::UtmVmResult {
-                        id: "stable-utm-id".into(),
-                        name: config.name.clone(),
-                        path: None,
-                    })
-                }
                 "success" => Ok(hai_core::UtmVmResult {
                     id: "stable-utm-id".into(),
                     name: config.name.clone(),
@@ -2134,7 +2104,7 @@ mod mock_tests {
     }
 
     #[tokio::test]
-    async fn utm_source_cleanup_requires_a_confirmed_outcome() {
+    async fn utm_creation_keeps_the_image_for_the_session() {
         for outcome in [
             "success",
             "rejected",
@@ -2142,18 +2112,12 @@ mod mock_tests {
             "timeout",
             "transport",
             "cancelled",
-            "marker-failure",
-            "release-failure",
         ] {
             let cache = tempfile::tempdir().unwrap();
-            let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
-            let path = image.path();
+            let path = cache.path().join("haos_generic-aarch64-17.0.qcow2");
             std::fs::write(&path, b"source image").unwrap();
-            if outcome == "marker-failure" {
-                std::fs::create_dir(path.parent().unwrap().join(".utm-import")).unwrap();
-            }
             let pending = PendingUtmImages::default();
-            pending.insert(path.to_string_lossy().into_owned(), image);
+            pending.insert(path.to_string_lossy().into_owned());
             let config = hai_core::UtmVmConfig {
                 name: "Test VM".into(),
                 image_path: path.to_string_lossy().into_owned(),
@@ -2173,27 +2137,16 @@ mod mock_tests {
                     _ = &mut creation => panic!("Creation must still be pending"),
                     _ = backend.started.notified() => {}
                 }
-                assert!(pending.take(&config.image_path).is_none());
-                assert!(path.exists());
             } else {
                 let result = run_utm_creation(&backend, &config, &pending).await;
-                assert_eq!(
-                    result.is_ok(),
-                    matches!(outcome, "success" | "release-failure"),
-                    "{outcome}"
-                );
+                assert_eq!(result.is_ok(), outcome == "success", "{outcome}");
                 if let Ok(id) = &result {
                     assert_eq!(id, "stable-utm-id");
                     assert_ne!(id, &config.name);
                 }
                 if matches!(outcome, "timeout" | "transport") {
                     let error = result.as_ref().unwrap_err();
-                    assert!(error.message.contains(&format!(
-                        "Source retained at {}.",
-                        path.parent().unwrap().display()
-                    )));
-                    assert!(!error.message.contains(&config.image_path));
-                    assert!(error.message.contains("manually"));
+                    assert!(error.message.contains("keep the installer open"));
                     // The frontend translates the sentence and the reason inside it
                     assert_eq!(error.details["message_key"], "backend.utm.import_uncertain");
                     assert_eq!(
@@ -2215,32 +2168,10 @@ mod mock_tests {
                         "backend.utm.vm_created_not_started"
                     );
                 }
-                if outcome == "marker-failure" {
-                    let error = result.unwrap_err();
-                    assert!(error.message.contains("UTM was not contacted"));
-                    assert!(error
-                        .message
-                        .contains(path.parent().unwrap().to_str().unwrap()));
-                    assert!(error.message.contains("manually"));
-                    assert_eq!(
-                        error.details["message_key"],
-                        "backend.utm.import_not_prepared"
-                    );
-                    assert_eq!(
-                        error.details["message_params"]["path"],
-                        path.parent().unwrap().display().to_string()
-                    );
-                }
             }
-            // This is the same removal used by the frontend's discard command.
-            assert!(pending.take(&config.image_path).is_none());
-            drop(pending);
-            hai_core::download::prune_cached_images(cache.path()).unwrap();
-            assert_eq!(
-                path.exists(),
-                !matches!(outcome, "success" | "rejected" | "start-failed"),
-                "{outcome}"
-            );
+            // A creation takes the image out of the registry, never off the disk
+            assert!(!pending.take(&config.image_path));
+            assert!(path.exists(), "{outcome}");
         }
     }
 
@@ -2658,6 +2589,7 @@ mod mock_tests {
     #[tokio::test]
     #[serial] // all share the mock cache directory
     async fn run_flash_writes_the_pinned_installer_without_a_release_lookup() {
+        clear_mock_cache();
         for installer in &hai_core::hardware_installer::INSTALLERS {
             let backend = PinnedInstallerBackend::default();
             run_flash(
@@ -2678,6 +2610,7 @@ mod mock_tests {
     #[tokio::test]
     #[serial] // all share the mock cache directory
     async fn run_flash_cancelled_before_writing_never_touches_the_drive() {
+        clear_mock_cache();
         let callback = CancelDuringExtraction::default();
 
         let error = run_flash(
@@ -2745,13 +2678,11 @@ mod mock_tests {
         assert!(image
             .download_url
             .ends_with(&format!("haos_{board}-16.3.qcow2.xz")));
-        let image = run_utm_download(&BackendMock, board, &NoOpProgress)
+        let path = run_utm_download(&BackendMock, board, &NoOpProgress)
             .await
             .unwrap();
-        let path = image.path();
+        assert!(path.ends_with(format!("haos_{board}-16.3.qcow2")));
         assert!(path.exists());
-        drop(image);
-        assert!(!path.exists());
     }
 
     #[tokio::test]
@@ -2779,9 +2710,16 @@ mod mock_tests {
             .0
             .lock()
             .unwrap()
-            .contains_key(&path));
+            .contains(&path));
         discard_utm_image(path.clone(), app.state());
-        assert!(!std::path::Path::new(&path).exists());
+        assert!(!app
+            .state::<PendingUtmImages>()
+            .0
+            .lock()
+            .unwrap()
+            .contains(&path));
+        // Kept for a retry until the installer closes
+        assert!(std::path::Path::new(&path).exists());
     }
 
     #[tokio::test]

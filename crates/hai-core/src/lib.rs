@@ -91,18 +91,8 @@ pub trait ReleaseSource {
         progress_callback: &P,
     ) -> Result<()>;
 
-    /// Extract into an owned temporary image. Background workers must retain a
-    /// clone until they stop using the directory, even if the caller is cancelled.
-    async fn extract_temporary_image<P: ProgressCallback>(
-        &self,
-        image: &download::TemporaryImage,
-        progress_callback: &P,
-    ) -> Result<()> {
-        self.extract_xz(&image.archive_path(), &image.path(), progress_callback)
-            .await
-    }
-
-    /// Directory where downloaded images are cached.
+    /// Folder for everything the installer downloads. hai-desktop empties it at
+    /// startup and on exit, so nothing in it outlives a session.
     fn cache_dir(&self) -> Result<PathBuf>;
 }
 

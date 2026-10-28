@@ -323,7 +323,7 @@ export async function checkUtmAutomation(): Promise<void> {
   return invoke<void>("check_utm_automation");
 }
 
-/** Release a temporary image which was not consumed by VM creation. */
+/** Forget a downloaded image which was not consumed by VM creation. */
 export async function discardUtmImage(imagePath: string): Promise<void> {
   if (MOCK_ALLOWED && isBrowserOnly()) return;
   await invoke("discard_utm_image", { imagePath });
