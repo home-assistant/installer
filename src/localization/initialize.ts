@@ -116,9 +116,16 @@ export async function initializeLocalization(): Promise<void> {
   showLanguage();
 }
 
+// One choice at a time: a catalog that loads slowly must not replace a later
+// choice
+let choosing = Promise.resolve();
+
 /** Shows the running UI in one of `shippedLanguages()` */
-export async function chooseLanguage(name: string): Promise<void> {
-  await detectLanguage([name]);
-  showLanguage();
-  renderAgain(document);
+export function chooseLanguage(name: string): Promise<void> {
+  choosing = choosing.then(async () => {
+    await detectLanguage([name]);
+    showLanguage();
+    renderAgain(document);
+  });
+  return choosing;
 }
