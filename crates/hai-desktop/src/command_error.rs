@@ -71,6 +71,8 @@ impl std::fmt::Display for CommandError {
 
 impl From<Error> for CommandError {
     fn from(error: Error) -> Self {
+        // The log keeps what the frontend only names by its code
+        crate::diagnostics::error(&error);
         let (code, message, retryable) = match &error {
             // Never serialize URLs, response bodies, or authentication data from remote errors.
             Error::Network(_) => ("network", "Could not connect. Check your internet connection.", true),

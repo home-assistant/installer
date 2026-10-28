@@ -2110,6 +2110,7 @@ dependencies = [
  "objc2-app-kit",
  "os_info",
  "plist",
+ "regex",
  "serde",
  "serde_json",
  "serial_test",
