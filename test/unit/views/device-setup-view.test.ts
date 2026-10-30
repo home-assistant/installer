@@ -116,9 +116,32 @@ describe("device-setup-view", () => {
     expect(progress.indeterminate).to.be.false;
     // Worded for a device, not a VM
     expect(progress.warning).to.contain("Install it on a larger drive.");
-    expect(progress.address).to.equal("http://192.0.2.60");
+    // Found, so the address is the installer's business
+    expect(progress.address).to.be.null;
     // Found, so no need to say how to find it
     expect(view.shadowRoot!.querySelector('[slot="help"]')).to.be.null;
+  });
+
+  it("links to Home Assistant by name when it doesn't finish installing", async () => {
+    device({
+      updated: () => {
+        clockOffset += 61 * MINUTE;
+        return false;
+      },
+    });
+    await noted();
+    const { view, progress } = await render();
+
+    await waitUntil(() => progress.error, "it never gave up");
+    expect(progress.errorHeading).to.equal("Home Assistant isn't ready yet");
+    expect(progress.error).to.equal(
+      "Home Assistant did not finish installing within 60 minutes."
+    );
+    const help = view.shadowRoot!.querySelector('.help[slot="help"]')!;
+    expect(help.textContent!.replace(/\s+/g, " ").trim()).to.equal(
+      "Open Home Assistant to see how it's doing, or try again to keep waiting."
+    );
+    expect(help.querySelector("a")!.href).to.equal("http://192.0.2.60/");
   });
 
   it("moves on to where to find Home Assistant once it's ready", async () => {
