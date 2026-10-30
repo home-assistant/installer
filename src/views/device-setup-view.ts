@@ -25,13 +25,20 @@ import { linkStyles } from "../utils/link-styles.js";
 import { renderRetryButton } from "../utils/load-state.js";
 import { isCancelled } from "../utils/polling.js";
 import {
-  WAIT_STAGES,
   checkedAddress,
   waitError,
   waitForHomeAssistant,
   type WaitStage,
 } from "../utils/vm-wait.js";
 import "../components/install-progress.js";
+
+/**
+ * The waits it shows. Home Assistant answering where the device turned up
+ * is part of finding it, as the device is found by its landing page.
+ */
+const DEVICE_STAGES = ["waiting", "updating"] as const satisfies WaitStage[];
+
+type DeviceStage = (typeof DEVICE_STAGES)[number];
 
 /**
  * Waiting for Home Assistant on the device the drive was written for, the
@@ -142,16 +149,17 @@ export class DeviceSetupView extends LitElement {
 
   render() {
     const stage = this._stage;
+    const shown = this._shownStage();
     const { progress, problem } = this._setup;
     const measurable = stage === "updating" && progress !== null;
 
     return html`
       <install-progress
-        .stages=${WAIT_STAGES.map((id) => ({
+        .stages=${DEVICE_STAGES.map((id) => ({
           id,
           label: this._stageLabel(id),
         }))}
-        .stage=${stage}
+        .stage=${shown}
         .stageTitle=${this._stageTitle()}
         .description=${this._description()}
         .progress=${measurable ? Math.round(progress) : 0}
@@ -166,7 +174,7 @@ export class DeviceSetupView extends LitElement {
           ? haSetupProblemMessage(problem, "device")
           : null}
         .address=${checkedAddress(
-          stage,
+          shown,
           this._wizard.state.selections.ipAddress
         )}
         .leavable=${true}
@@ -188,12 +196,15 @@ export class DeviceSetupView extends LitElement {
     `;
   }
 
-  private _stageLabel(stage: WaitStage): string {
+  /** The stage it shows for the wait at `_stage` */
+  private _shownStage(): DeviceStage | "complete" {
+    return this._stage === "ready" ? "waiting" : this._stage;
+  }
+
+  private _stageLabel(stage: DeviceStage): string {
     switch (stage) {
       case "waiting":
         return localize("views.device_setup_view.looking_for_device");
-      case "ready":
-        return localize("views.device_setup_view.waiting_for_home_assistant");
       case "updating":
         return localize("views.device_setup_view.installing_latest");
     }
@@ -201,11 +212,9 @@ export class DeviceSetupView extends LitElement {
 
   /** The stage in the thinking cloud, which the live region reads out */
   private _stageTitle(): string {
-    switch (this._stage) {
+    switch (this._shownStage()) {
       case "waiting":
         return localize("views.device_setup_view.looking");
-      case "ready":
-        return localize("views.device_setup_view.waiting");
       case "updating":
         return localize("views.device_setup_view.installing");
       case "complete":
@@ -214,13 +223,14 @@ export class DeviceSetupView extends LitElement {
   }
 
   private _description(): string {
-    switch (this._stage) {
+    const stage = this._shownStage();
+    switch (stage) {
       case "updating":
         return localize("views.device_setup_view.installing_description");
       case "complete":
         return localize("common.install.installation_complete");
       default:
-        return this._stageLabel(this._stage);
+        return this._stageLabel(stage);
     }
   }
 }
