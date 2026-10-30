@@ -178,8 +178,9 @@ describe("device-setup-view", () => {
       "Home Assistant did not finish installing within 60 minutes."
     );
     const help = view.shadowRoot!.querySelector('.help[slot="help"]')!;
+    // The sentence doesn't say it opens in the browser, so the link does
     expect(help.textContent!.replace(/\s+/g, " ").trim()).to.equal(
-      "Open Home Assistant to see how it's doing, or try again to keep waiting."
+      "Open Home Assistant Opens in your browser. to see how it's doing, or try again to keep waiting."
     );
     expect(help.querySelector("a")!.href).to.equal("http://192.0.2.60/");
   });

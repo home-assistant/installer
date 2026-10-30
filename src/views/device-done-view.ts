@@ -39,7 +39,8 @@ export class DeviceDoneView extends LitElement {
           ...(ready ? [] : [localize("views.device_done_view.step_wait")]),
           ipAddress
             ? html`${localizeContent("views.device_done_view.step_open", {
-                url: renderHomeAssistantLink(ipAddress),
+                // The step already says it opens in the browser
+                url: renderHomeAssistantLink(ipAddress, { hint: false }),
               })}`
             : html`${localizeContent(
                 "views.device_done_view.step_open_or_find",
