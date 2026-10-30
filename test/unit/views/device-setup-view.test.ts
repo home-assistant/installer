@@ -31,11 +31,13 @@ describe("device-setup-view", () => {
    */
   function device({
     starts = true,
+    ready = () => true,
     updated = () => true,
     setup = () => null,
     onLookup = () => {},
   }: {
     starts?: boolean;
+    ready?: () => boolean;
     updated?: () => boolean;
     setup?: () => HaSetupStatus | null;
     onLookup?: (lookup: number) => void;
@@ -49,7 +51,7 @@ describe("device-setup-view", () => {
             ? []
             : [{ id: "device", address: "192.0.2.60", landing_page: true }];
         case "check_ha_ready":
-          return true;
+          return ready();
         case "check_ha_updated":
           return updated();
         case "get_ha_setup_status":
@@ -90,7 +92,6 @@ describe("device-setup-view", () => {
     );
     expect(progress.stages.map(({ label }) => label)).to.deep.equal([
       "Looking for your device on the network",
-      "Waiting for Home Assistant",
       "Installing latest Home Assistant",
     ]);
     // Leaving loses nothing: the device carries on without the installer
@@ -136,6 +137,27 @@ describe("device-setup-view", () => {
     expect(details.textContent!.replace(/\s+/g, " ")).to.contain(
       "then open http://<IP address>."
     );
+  });
+
+  it("still looks while the device it found doesn't answer yet", async () => {
+    let asked = false;
+    device({
+      ready: () => {
+        asked = true;
+        return false;
+      },
+    });
+    await noted();
+    const { view, progress } = await render();
+
+    await waitUntil(() => asked, "it never asked the device");
+    expect(progress.stage).to.equal("waiting");
+    expect(progress.description).to.equal(
+      "Looking for your device on the network"
+    );
+    expect(progress.address).to.be.null;
+    // Found, so no need to say how to find it
+    expect(view.shadowRoot!.querySelector('[slot="help"]')).to.be.null;
   });
 
   it("shows what the landing page reports while Home Assistant installs", async () => {
