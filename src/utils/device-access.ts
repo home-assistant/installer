@@ -4,7 +4,10 @@
  */
 import { html } from "lit";
 import { localize } from "../localization/localize.js";
-import { renderExternalLink } from "./external-link.js";
+import {
+  renderExternalLink,
+  type ExternalLinkOptions,
+} from "./external-link.js";
 import { HOME_ASSISTANT_HOST, homeAssistantUrl } from "./external-url.js";
 
 /** The name Home Assistant announces, as a link its sentence introduces */
@@ -16,12 +19,14 @@ export function renderAnnouncedName() {
 }
 
 /** Home Assistant at the address the installer found it at, by name */
-export function renderHomeAssistantLink(ipAddress: string | undefined) {
-  // The sentence already says it opens in the browser
+export function renderHomeAssistantLink(
+  ipAddress: string | undefined,
+  options?: ExternalLinkOptions
+) {
   return renderExternalLink(
     homeAssistantUrl(ipAddress),
     localize("common.device.home_assistant"),
-    { hint: false }
+    options
   );
 }
 
