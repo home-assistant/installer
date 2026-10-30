@@ -72,6 +72,15 @@ describe("composed text", () => {
       );
     });
 
+    it("leaves the address to the link a device's view shows", () => {
+      expect(
+        new HaSetupStalledError("no_internet", "http://192.0.2.50", "device")
+          .message
+      ).to.equal(
+        `${haSetupProblemMessage("no_internet", "device")} The installation made no progress for 10 minutes.`
+      );
+    });
+
     it("lets a translation put the problem anywhere", () => {
       replace("utils.ha_setup.stalled", "{address} / {problem}");
       expect(

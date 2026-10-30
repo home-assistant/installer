@@ -6,13 +6,13 @@ import { wizardState } from "../state/wizard-state.js";
 import { goToNextStep } from "../components/wizard-steps.js";
 import {
   renderAnnouncedName,
+  renderHomeAssistantLink,
   renderIpUrlPlaceholder,
 } from "../utils/device-access.js";
 import {
   DEVICE_ADDRESS_TIMEOUT_MS,
   flowDeviceFinder,
 } from "../utils/device-discovery.js";
-import { homeAssistantUrl } from "../utils/external-url.js";
 import {
   haSetupProblemMessage,
   type HaSetupProgress,
@@ -26,7 +26,6 @@ import { renderRetryButton } from "../utils/load-state.js";
 import { isCancelled } from "../utils/polling.js";
 import {
   WAIT_STAGES,
-  checkedAddress,
   waitError,
   waitForHomeAssistant,
   type WaitStage,
@@ -50,6 +49,9 @@ const SLOW_SEARCH_MS = 5 * 60 * 1000;
  * Next skips the wait, so nothing here holds anyone up. Once looking takes
  * longer than usual, it also says what to check and how to find the device
  * without it.
+ *
+ * It names Home Assistant rather than the address it found: only finding
+ * the device without the installer takes one.
  */
 @customElement("device-setup-view")
 export class DeviceSetupView extends LitElement {
@@ -171,12 +173,9 @@ export class DeviceSetupView extends LitElement {
         onSetup: (setup) => (this._setup = setup),
         messages: {
           noAddress: localize("views.device_setup_view.not_found"),
-          notResponding: (ipAddress) =>
-            localize("views.device_setup_view.not_responding", {
-              address: homeAssistantUrl(ipAddress),
-            }),
-          notUpdated: (address) =>
-            localize("views.device_setup_view.not_updated", { address }),
+          notResponding: () =>
+            localize("views.device_setup_view.not_responding"),
+          notUpdated: () => localize("views.device_setup_view.not_updated"),
         },
         host: "device",
         signal: controller.signal,
@@ -216,12 +215,17 @@ export class DeviceSetupView extends LitElement {
         .warning=${stage === "updating" && problem
           ? haSetupProblemMessage(problem, "device")
           : null}
-        .address=${checkedAddress(
-          stage,
-          this._wizard.state.selections.ipAddress
-        )}
         .leavable=${true}
       >
+        ${this._error && stage === "updating"
+          ? html`<p class="help" slot="help">
+              ${localizeContent("views.device_setup_view.check_on_it", {
+                url: renderHomeAssistantLink(
+                  this._wizard.state.selections.ipAddress
+                ),
+              })}
+            </p>`
+          : nothing}
         ${this._error?.retryable
           ? html`<div slot="help">
               ${renderRetryButton(false, () => this._wait())}

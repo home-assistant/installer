@@ -4,10 +4,9 @@ import { localize, localizeContent } from "../localization/localize.js";
 import { WizardStateController } from "../state/wizard-state-controller.js";
 import {
   renderAnnouncedName,
+  renderHomeAssistantLink,
   renderIpUrlPlaceholder,
 } from "../utils/device-access.js";
-import { renderExternalLink } from "../utils/external-link.js";
-import { homeAssistantUrl } from "../utils/external-url.js";
 import "../components/install-success.js";
 
 /**
@@ -30,7 +29,6 @@ export class DeviceDoneView extends LitElement {
   render() {
     const { ipAddress, homeAssistantReady } = this._wizard.state.selections;
     const ready = !!ipAddress && !!homeAssistantReady;
-    const url = ipAddress ? homeAssistantUrl(ipAddress) : "";
 
     return html`
       <install-success
@@ -41,8 +39,7 @@ export class DeviceDoneView extends LitElement {
           ...(ready ? [] : [localize("views.device_done_view.step_wait")]),
           ipAddress
             ? html`${localizeContent("views.device_done_view.step_open", {
-                // The step already says it opens in the browser
-                url: renderExternalLink(url, url, { hint: false }),
+                url: renderHomeAssistantLink(ipAddress),
               })}`
             : html`${localizeContent(
                 "views.device_done_view.step_open_or_find",

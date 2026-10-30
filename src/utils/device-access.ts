@@ -1,6 +1,6 @@
 /**
- * Reaching Home Assistant on a device without the installer finding it,
- * as the waiting step and the last step both explain.
+ * Reaching Home Assistant on a device, where the installer found it or
+ * without that, as the waiting step and the last step both explain.
  */
 import { html } from "lit";
 import { localize } from "../localization/localize.js";
@@ -13,6 +13,16 @@ export function renderAnnouncedName() {
   return renderExternalLink(homeAssistantUrl(), HOME_ASSISTANT_HOST, {
     hint: false,
   });
+}
+
+/** Home Assistant at the address the installer found it at, by name */
+export function renderHomeAssistantLink(ipAddress: string | undefined) {
+  // The sentence already says it opens in the browser
+  return renderExternalLink(
+    homeAssistantUrl(ipAddress),
+    localize("common.device.home_assistant"),
+    { hint: false }
+  );
 }
 
 /** `http://<IP address>`, for the address a router or display shows */
