@@ -207,6 +207,26 @@ describe("device-setup-view", () => {
     expect(help.querySelector("a")!.href).to.equal("http://192.0.2.60/");
   });
 
+  it("links to Home Assistant by name when the device it found doesn't answer", async () => {
+    device({
+      ready: () => {
+        clockOffset += 6 * MINUTE;
+        return false;
+      },
+    });
+    await noted();
+    const { view, progress } = await render();
+
+    await waitUntil(() => progress.error, "it never gave up");
+    expect(progress.errorHeading).to.equal("Home Assistant isn't ready yet");
+    expect(progress.error).to.equal(
+      "Home Assistant did not respond within 5 minutes. Check that your device is still on."
+    );
+    const help = view.shadowRoot!.querySelector('.help[slot="help"]')!;
+    expect(help.textContent).to.contain("Open Home Assistant");
+    expect(help.querySelector("a")!.href).to.equal("http://192.0.2.60/");
+  });
+
   it("moves on to where to find Home Assistant once it's ready", async () => {
     device();
     await noted();

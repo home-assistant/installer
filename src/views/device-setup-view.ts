@@ -225,7 +225,7 @@ export class DeviceSetupView extends LitElement {
           : null}
         .leavable=${true}
       >
-        ${this._error && stage === "updating"
+        ${this._error && stage !== "waiting"
           ? html`<p class="help" slot="help">
               ${localizeContent("views.device_setup_view.check_on_it", {
                 url: renderHomeAssistantLink(

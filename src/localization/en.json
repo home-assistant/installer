@@ -345,7 +345,7 @@
   "views.device_setup_view.not_found_title": "Your device didn't show up",
   "views.device_setup_view.not_ready_title": "Home Assistant isn't ready yet",
   "views.device_setup_view.not_found": "Nothing new appeared on your network within 30 minutes.",
-  "views.device_setup_view.not_responding": "Home Assistant did not respond within 5 minutes. Check that your device is still on, then try again to keep waiting for it.",
+  "views.device_setup_view.not_responding": "Home Assistant did not respond within 5 minutes. Check that your device is still on.",
   "views.device_setup_view.not_updated": "Home Assistant did not finish installing within 60 minutes.",
   "views.device_setup_view.check_on_it": "Open {url} to see how it's doing, or try again to keep waiting.",
   "views.device_done_view.subtitle_ready": "Home Assistant is ready on your device",
