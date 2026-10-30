@@ -74,7 +74,13 @@ describe("device-setup-view", () => {
     return { view, progress };
   }
 
-  it("looks for the device, and says how to find it without that", async () => {
+  /** The help below the progress, its whitespace collapsed */
+  function helpText(view: DeviceSetupView) {
+    const help = view.shadowRoot!.querySelector('.help[slot="help"]')!;
+    return help.textContent!.replace(/\s+/g, " ");
+  }
+
+  it("looks for the device, saying only how long that usually takes", async () => {
     device({ starts: false });
     const { view, progress } = await render();
 
@@ -89,12 +95,46 @@ describe("device-setup-view", () => {
     ]);
     // Leaving loses nothing: the device carries on without the installer
     expect(progress.leavable).to.be.true;
-    const help = view.shadowRoot!.querySelector('[slot="help"]')!;
-    expect(help.textContent!.replace(/\s+/g, " ")).to.contain(
-      "Doesn't it show up? Open homeassistant.local in your browser, or find the device's IP address in your router or on an attached display, then open http://<IP address>."
+    expect(helpText(view).trim()).to.equal(
+      "This usually takes a few minutes after you turn the device on."
     );
-    expect(help.querySelector("a")!.href).to.equal(
-      "http://homeassistant.local/"
+  });
+
+  it("says what to check once looking takes longer than usual", async () => {
+    device({
+      starts: false,
+      onLookup: (lookup) => {
+        if (lookup === 0) clockOffset += 6 * MINUTE;
+      },
+    });
+    const { view } = await render();
+
+    // Seen at the next lookup
+    await waitUntil(
+      () => helpText(view).includes("This is taking longer than usual."),
+      "it never said so",
+      { timeout: 3000 }
+    );
+    expect(helpText(view)).to.contain(
+      "Check that the device is on and connected to your network."
+    );
+    expect(helpText(view)).to.contain(
+      "Make sure this computer is on the same network, not a guest network or VPN."
+    );
+    expect(helpText(view)).to.contain(
+      "Try opening homeassistant.local in your browser."
+    );
+    expect(
+      view.shadowRoot!.querySelector<HTMLAnchorElement>(".help a")!.href
+    ).to.equal("http://homeassistant.local/");
+    // The IP address only for who asks for it
+    const details = view.shadowRoot!.querySelector(".help wa-details")!;
+    expect(details.getAttribute("summary")).to.equal(
+      "Other ways to find your device"
+    );
+    expect(details.hasAttribute("open")).to.be.false;
+    expect(details.textContent!.replace(/\s+/g, " ")).to.contain(
+      "then open http://<IP address>."
     );
   });
 
@@ -148,12 +188,18 @@ describe("device-setup-view", () => {
 
     await waitUntil(() => progress.error, "it never gave up");
     expect(progress.errorHeading).to.equal("Your device didn't show up");
-    expect(progress.error).to.contain(
-      "Nothing new appeared on your network within 30 minutes"
+    expect(progress.error).to.equal(
+      "Nothing new appeared on your network within 30 minutes."
     );
-    const help = view.shadowRoot!.querySelectorAll('[slot="help"]');
-    expect(help).to.have.length(2);
-    expect(help[1].textContent).to.contain("Doesn't it show up?");
+    // What to check, with every way to find it, as the error says enough
+    // about it taking long
+    expect(helpText(view)).to.contain(
+      "Check that the device is on and connected to your network."
+    );
+    expect(helpText(view)).not.to.contain("taking longer");
+    expect(
+      view.shadowRoot!.querySelector(".help wa-details")!.hasAttribute("open")
+    ).to.be.true;
     expect(lookups()).to.equal(2);
 
     const next = oneEvent(view, "wizard-next");

@@ -31,7 +31,14 @@ import {
   waitForHomeAssistant,
   type WaitStage,
 } from "../utils/vm-wait.js";
+import "@home-assistant/webawesome/dist/components/details/details.js";
 import "../components/install-progress.js";
+
+/**
+ * When looking for the device takes longer than usual: Home Assistant OS
+ * takes a few minutes to start the first time.
+ */
+const SLOW_SEARCH_MS = 5 * 60 * 1000;
 
 /**
  * Waiting for Home Assistant on the device the drive was written for, the
@@ -40,8 +47,9 @@ import "../components/install-progress.js";
  * landing page reports while it installs the latest Home Assistant. Then it
  * moves on to the last step, which links to it.
  *
- * Next skips the wait, so nothing here holds anyone up: while it looks, it
- * also says how to find the device without it.
+ * Next skips the wait, so nothing here holds anyone up. Once looking takes
+ * longer than usual, it also says what to check and how to find the device
+ * without it.
  */
 @customElement("device-setup-view")
 export class DeviceSetupView extends LitElement {
@@ -67,6 +75,38 @@ export class DeviceSetupView extends LitElement {
         overflow-wrap: anywhere;
       }
 
+      .help p,
+      .help ul {
+        margin: 0 0 0.5rem;
+      }
+
+      .help ul {
+        padding-inline-start: 1.25rem;
+      }
+
+      /* Lined up with the list, in the same quiet text */
+      .help wa-details {
+        --spacing: 0.25rem;
+        --wa-color-text-normal: var(--ha-secondary-text-color);
+      }
+
+      .help wa-details::part(header),
+      .help wa-details::part(content) {
+        padding-inline: 0;
+      }
+
+      /* Web Awesome animates the expand from script for these durations */
+      @media (prefers-reduced-motion: reduce) {
+        wa-details {
+          --show-duration: 0s;
+          --hide-duration: 0s;
+        }
+
+        wa-details::part(icon) {
+          transition: none;
+        }
+      }
+
       wa-button {
         margin-bottom: 1rem;
       }
@@ -85,6 +125,13 @@ export class DeviceSetupView extends LitElement {
   /** Why the wait at `_stage` ended, until it is tried again */
   @state()
   private _error: InstallerError | null = null;
+
+  /** Whether looking for the device has taken longer than usual */
+  @state()
+  private _slow = false;
+
+  /** Since the step opened: a retry comes after looking took long already */
+  private readonly _shownAt = Date.now();
 
   private _controller?: AbortController;
 
@@ -109,7 +156,11 @@ export class DeviceSetupView extends LitElement {
     const finder = flowDeviceFinder();
     try {
       await waitForHomeAssistant({
-        address: (signal) => finder.find(signal),
+        address: (signal) => {
+          // Checked as it looks again, every few seconds
+          this._slow ||= Date.now() - this._shownAt >= SLOW_SEARCH_MS;
+          return finder.find(signal);
+        },
         addressTimeout: DEVICE_ADDRESS_TIMEOUT_MS,
         // The device may still start; looking again can always find it
         stopOn: () => false,
@@ -176,16 +227,50 @@ export class DeviceSetupView extends LitElement {
               ${renderRetryButton(false, () => this._wait())}
             </div>`
           : nothing}
-        ${stage === "waiting"
-          ? html`<p class="help" slot="help">
-              ${localizeContent("views.device_setup_view.find_it_yourself", {
-                url: renderAnnouncedName(),
-                ip_url: renderIpUrlPlaceholder(),
-              })}
-            </p>`
-          : nothing}
+        ${stage === "waiting" ? this._renderSearchHelp() : nothing}
       </install-progress>
     `;
+  }
+
+  /**
+   * How long looking usually takes, and once it takes longer, what to check
+   * and how to find the device without the installer. The IP address comes
+   * last, folded away, as few need it.
+   */
+  private _renderSearchHelp() {
+    const failed = !!this._error;
+    const slow = this._slow || failed;
+    return html`<div class="help" slot="help">
+      ${failed
+        ? nothing
+        : // One live region whose text changes, so the change is announced
+          html`<p role="status">
+            ${slow
+              ? localize("views.device_setup_view.taking_longer")
+              : localize("views.device_setup_view.usually_minutes")}
+          </p>`}
+      ${slow
+        ? html`<ul>
+              <li>${localize("views.device_setup_view.check_device")}</li>
+              <li>${localize("views.device_setup_view.check_network")}</li>
+              <li>
+                ${localizeContent("views.device_setup_view.try_name", {
+                  url: renderAnnouncedName(),
+                })}
+              </li>
+            </ul>
+            <wa-details
+              appearance="plain"
+              icon-placement="start"
+              summary=${localize("views.device_setup_view.other_ways")}
+              ?open=${failed}
+            >
+              ${localizeContent("views.device_setup_view.find_ip", {
+                ip_url: renderIpUrlPlaceholder(),
+              })}
+            </wa-details>`
+        : nothing}
+    </div>`;
   }
 
   private _stageLabel(stage: WaitStage): string {
