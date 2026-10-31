@@ -201,7 +201,8 @@ describe("install-success", () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success><p id="extra">Reminder</p></install-success>`
     );
-    const slot = el.shadowRoot!.querySelector("slot")!;
+    const slot =
+      el.shadowRoot!.querySelector<HTMLSlotElement>("slot:not([name])")!;
     expect(slot.assignedElements().map((element) => element.id)).to.deep.equal([
       "extra",
     ]);
@@ -210,6 +211,21 @@ describe("install-success", () => {
     expect(
       mascot.querySelector("casita-mascot")!.getAttribute("mood")
     ).to.equal("happy");
+  });
+
+  it("puts the step's action under the subtitle", async () => {
+    const el = await fixture<InstallSuccess>(
+      html`<install-success .subtitle=${"Ready"}
+        ><p slot="action" id="open">Open</p></install-success
+      >`
+    );
+    const slot = el.shadowRoot!.querySelector<HTMLSlotElement>(
+      'slot[name="action"]'
+    )!;
+    expect(slot.assignedElements().map((element) => element.id)).to.deep.equal([
+      "open",
+    ]);
+    expect(slot.previousElementSibling!.className).to.equal("subtitle");
   });
 
   it("links both companion app stores", async () => {

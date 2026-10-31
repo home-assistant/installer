@@ -36,6 +36,7 @@ describe("device-done-view", () => {
       success.shadowRoot!.querySelector<HTMLElement>(".next-steps")!.hidden
     ).to.be.true;
     const button = success.querySelector("wa-button")!;
+    expect(button.parentElement!.assignedSlot!.name).to.equal("action");
     expect(button.getAttribute("variant")).to.equal("brand");
     expect(button.getAttribute("href")).to.equal("http://192.0.2.60");
     expect(button.textContent).to.equal(

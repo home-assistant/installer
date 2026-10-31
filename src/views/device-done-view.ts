@@ -32,7 +32,6 @@ export class DeviceDoneView extends LitElement {
       min-height: 100%;
     }
 
-    /* As far above the companion app as the next steps would be */
     .open {
       margin: 0 0 2rem;
     }
@@ -47,7 +46,7 @@ export class DeviceDoneView extends LitElement {
         <install-success
           .subtitle=${localize("views.device_done_view.subtitle_ready")}
         >
-          <p class="open">
+          <p class="open" slot="action">
             <wa-button
               variant="brand"
               href=${homeAssistantUrl(ipAddress)}

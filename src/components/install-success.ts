@@ -235,7 +235,7 @@ export class InstallSuccess extends LitElement {
   /** What the heading says, if not that all is set */
   @property({ attribute: false }) heading: string | null = null;
   @property({ attribute: false }) subtitle: string | TemplateResult = "";
-  /** Without any, the step's own content takes their place */
+  /** Under "Next steps", which is left out without any */
   @property({ attribute: false }) steps: (string | TemplateResult)[] = [];
   @property({ attribute: false }) tip: string | TemplateResult = "";
   /** Warns not to format the written drive, where the OS offers to. */
@@ -263,6 +263,8 @@ export class InstallSuccess extends LitElement {
         <div class="heading">
           <h2>${title}</h2>
           <p class="subtitle">${this.subtitle}</p>
+          <!-- On the heading's axis, not the column's beside Casita -->
+          <slot name="action"></slot>
         </div>
         <div class="details">
           <div class="next-steps" ?hidden=${!this.steps.length}>
