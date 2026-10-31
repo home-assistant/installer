@@ -74,6 +74,30 @@ describe("install-success", () => {
     );
   });
 
+  it("keeps Casita above the heading without next steps, however wide", async () => {
+    const container = fixtureSync<HTMLDivElement>(html`
+      <div style="width: 736px">
+        <install-success .subtitle=${"Ready."}
+          ><p slot="action">Open</p></install-success
+        >
+      </div>
+    `);
+    const el = container.querySelector("install-success")!;
+    await el.updateComplete;
+    const bounds = (selector: string) =>
+      el.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+
+    expect(bounds(".mascot-container").bottom).to.be.at.most(bounds("h2").top);
+    expect(bounds(".heading").bottom).to.be.at.most(bounds(".details").top);
+    // One center for Casita, the heading and the companion app
+    const center = (selector: string) => {
+      const { left, right } = bounds(selector);
+      return (left + right) / 2;
+    };
+    expect(center(".mascot-container")).to.be.closeTo(center("h2"), 1);
+    expect(center(".companion-section")).to.be.closeTo(center("h2"), 1);
+  });
+
   it("numbers the next steps in a labelled list", async () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success
@@ -201,7 +225,8 @@ describe("install-success", () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success><p id="extra">Reminder</p></install-success>`
     );
-    const slot = el.shadowRoot!.querySelector("slot")!;
+    const slot =
+      el.shadowRoot!.querySelector<HTMLSlotElement>("slot:not([name])")!;
     expect(slot.assignedElements().map((element) => element.id)).to.deep.equal([
       "extra",
     ]);
@@ -210,6 +235,21 @@ describe("install-success", () => {
     expect(
       mascot.querySelector("casita-mascot")!.getAttribute("mood")
     ).to.equal("happy");
+  });
+
+  it("puts the step's action under the subtitle", async () => {
+    const el = await fixture<InstallSuccess>(
+      html`<install-success .subtitle=${"Ready"}
+        ><p slot="action" id="open">Open</p></install-success
+      >`
+    );
+    const slot = el.shadowRoot!.querySelector<HTMLSlotElement>(
+      'slot[name="action"]'
+    )!;
+    expect(slot.assignedElements().map((element) => element.id)).to.deep.equal([
+      "open",
+    ]);
+    expect(slot.previousElementSibling!.className).to.equal("subtitle");
   });
 
   it("links both companion app stores", async () => {
