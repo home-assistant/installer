@@ -37,7 +37,7 @@ export class InstallSuccess extends LitElement {
         container-type: inline-size;
       }
 
-      /* Narrow, Casita stands above the heading and the next steps */
+      /* Narrow, or without next steps, Casita stands above the heading */
       .layout {
         display: flex;
         flex-direction: column;
@@ -197,7 +197,7 @@ export class InstallSuccess extends LitElement {
       @container ${roomForMascotBeside} {
         /* Casita stays level with the top of the next steps, however far
            down they run */
-        .layout {
+        .beside {
           flex-flow: row wrap;
           justify-content: center;
           align-items: flex-start;
@@ -206,7 +206,7 @@ export class InstallSuccess extends LitElement {
 
         /* Casita is hidden from assistive technology, so moving the heading
            above it leaves the reading order as it was */
-        .heading {
+        .beside .heading {
           order: -1;
           flex-basis: 100%;
         }
@@ -218,14 +218,14 @@ export class InstallSuccess extends LitElement {
 
         /* No basis, so the details share Casita's line even where they have
            to narrow to fit */
-        .details {
+        .beside .details {
           align-items: stretch;
           flex: 1 1 0;
           max-width: var(--ha-content-width);
           min-width: 0;
         }
 
-        .mascot-container {
+        .beside .mascot-container {
           flex-shrink: 0;
           margin-bottom: 0;
         }
@@ -256,14 +256,14 @@ export class InstallSuccess extends LitElement {
           : "";
 
     return html`
-      <div class="layout">
+      <div class=${this.steps.length ? "layout beside" : "layout"}>
         <div class="mascot-container" aria-hidden="true">
           ${renderCasitaHappy()}
         </div>
         <div class="heading">
           <h2>${title}</h2>
           <p class="subtitle">${this.subtitle}</p>
-          <!-- On the heading's axis, not the column's beside Casita -->
+          <!-- On the heading's axis, with what it follows from -->
           <slot name="action"></slot>
         </div>
         <div class="details">
