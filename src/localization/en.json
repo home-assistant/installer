@@ -354,6 +354,7 @@
   "views.device_done_view.step_open": "Open {url} in your browser",
   "views.device_done_view.step_open_or_find": "Open {url} in your browser. If it doesn't open, find the device's IP address in your router or on an attached display, then open {ip_url}.",
   "views.device_done_view.step_onboard": "Create your user account and start automating!",
+  "views.device_done_view.open_home_assistant": "Open Home Assistant",
   "views.sbc.confirmation_view.subtitle": "Review your selections before installing",
   "common.target_drive": "Target drive",
   "common.unknown_size": "Unknown size",

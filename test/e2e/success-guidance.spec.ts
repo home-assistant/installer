@@ -142,13 +142,14 @@ test("waits for the device the drive starts until Home Assistant is ready", asyn
   // Found, so the address is the installer's business
   await expect(setup).not.toContainText("192.168.1.101");
 
-  // Once it's ready, the last step links to it
+  // Once it's ready, the last step opens it
   const done = page.locator("device-done-view");
   await expect(done).toContainText("Home Assistant is ready on your device", {
     timeout: 30000,
   });
   await expect(
-    done.getByRole("link", { name: "Home Assistant", exact: true })
+    done.getByRole("link", { name: "Open Home Assistant" })
   ).toHaveAttribute("href", "http://192.168.1.101");
+  await expect(done.getByRole("list", { name: "Next steps" })).toBeHidden();
   await expect(next(page)).toHaveText("Done");
 });

@@ -140,7 +140,7 @@ describe("shared install layouts", () => {
       const layout = view.shadowRoot!.querySelector("install-success")!;
       const content = layout.shadowRoot!;
       expect(content.querySelectorAll(".step-item").length).to.equal(
-        flow === "sbc" ? 2 : 3
+        flow === "sbc" ? 0 : 3
       );
       expect(content.querySelector(".subtitle")!.textContent).to.contain(
         flow === "sbc" ? "ready on your device" : "My home"
@@ -153,7 +153,10 @@ describe("shared install layouts", () => {
           "pve-test"
         );
       }
-      const link = content.querySelector<HTMLAnchorElement>(".step-text a")!;
+      const link =
+        flow === "sbc"
+          ? layout.querySelector("wa-button")!
+          : content.querySelector<HTMLAnchorElement>(".step-text a")!;
       link.click();
       for (const appLink of content.querySelectorAll<HTMLAnchorElement>(
         ".app-link"

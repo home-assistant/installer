@@ -235,6 +235,7 @@ export class InstallSuccess extends LitElement {
   /** What the heading says, if not that all is set */
   @property({ attribute: false }) heading: string | null = null;
   @property({ attribute: false }) subtitle: string | TemplateResult = "";
+  /** Without any, the step's own content takes their place */
   @property({ attribute: false }) steps: (string | TemplateResult)[] = [];
   @property({ attribute: false }) tip: string | TemplateResult = "";
   /** Warns not to format the written drive, where the OS offers to. */
@@ -264,7 +265,7 @@ export class InstallSuccess extends LitElement {
           <p class="subtitle">${this.subtitle}</p>
         </div>
         <div class="details">
-          <div class="next-steps">
+          <div class="next-steps" ?hidden=${!this.steps.length}>
             <h3 class="section-label next-steps-title">
               ${localize("components.install_success.next_steps")}
             </h3>

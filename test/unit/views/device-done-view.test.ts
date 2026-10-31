@@ -22,20 +22,25 @@ describe("device-done-view", () => {
     };
   }
 
-  it("links to Home Assistant where the device answered", async () => {
+  it("opens Home Assistant with one button where the device answered", async () => {
     wizardState.setSelections({
       ipAddress: "192.0.2.60",
       homeAssistantReady: true,
     });
-    const { success, steps, links } = await render();
+    const { success, steps } = await render();
 
     expect(success.shadowRoot!.textContent).to.contain("You're all set!");
     expect(success.subtitle).to.equal("Home Assistant is ready on your device");
-    expect(steps).to.deep.equal([
-      "Open Home Assistant in your browser",
-      "Create your user account and start automating!",
-    ]);
-    expect(links).to.deep.equal(["http://192.0.2.60/"]);
+    expect(steps).to.be.empty;
+    expect(
+      success.shadowRoot!.querySelector<HTMLElement>(".next-steps")!.hidden
+    ).to.be.true;
+    const button = success.querySelector("wa-button")!;
+    expect(button.getAttribute("variant")).to.equal("brand");
+    expect(button.getAttribute("href")).to.equal("http://192.0.2.60");
+    expect(button.textContent).to.equal(
+      "Open Home Assistant Opens in your browser."
+    );
     expect(success.companion).to.be.true;
   });
 
