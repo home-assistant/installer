@@ -1,6 +1,12 @@
 import { test, expect } from "./fixtures.js";
 
-for (const mode of ["native", "invalid", "rejected", "stalled"] as const) {
+for (const mode of [
+  "native",
+  "override",
+  "invalid",
+  "rejected",
+  "stalled",
+] as const) {
   test(`locale discovery ${mode} still starts the English UI`, async ({
     page,
   }) => {
@@ -15,6 +21,9 @@ for (const mode of ["native", "invalid", "rejected", "stalled"] as const) {
           invoke: async (command: string) => {
             // The app shell listens for blocked closes on startup
             if (command === "plugin:event|listen") return 1;
+            // HAI_LANGUAGE
+            if (command === "language_override")
+              return mode === "override" ? "en-AU" : null;
             if (command !== "plugin:os|locale")
               throw new Error(`Unexpected command: ${command}`);
             if (mode === "rejected") throw new Error("Locale unavailable");
@@ -33,7 +42,7 @@ for (const mode of ["native", "invalid", "rejected", "stalled"] as const) {
     await expect(page.getByRole("button", { name: "Let's go" })).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute(
       "lang",
-      mode === "native" ? "en-IN" : "en-GB"
+      { native: "en-IN", override: "en-AU" }[mode as string] ?? "en-GB"
     );
     await expect(page).toHaveTitle("Home Assistant Installer");
     if (mode === "native" || mode === "invalid") {

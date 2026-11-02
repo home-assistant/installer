@@ -38,7 +38,7 @@ describe("vm-wait", () => {
     expect(WAIT_STAGES.map(waitStageDescription)).to.deep.equal([
       "Waiting for network connection",
       "Waiting for Home Assistant",
-      "Installing latest Home Assistant (this can take up to 20 minutes)",
+      "Installing Home Assistant (this can take up to 20 minutes)",
     ]);
   });
 

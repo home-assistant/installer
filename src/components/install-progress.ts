@@ -353,6 +353,8 @@ export class InstallProgress extends LitElement {
   stageStartTime: number | null = null;
   @property({ type: Number, attribute: "stage-start-bytes" })
   stageStartBytes = 0;
+  /** The percent at `stageStartTime`, to estimate from where no bytes count */
+  @property({ attribute: false }) stageStartProgress: number | null = null;
   @property({ type: Boolean }) indeterminate = false;
   @property({ type: Boolean }) measurable = true;
   @property({ type: Boolean, attribute: "show-unknown-bytes" })
@@ -508,7 +510,9 @@ export class InstallProgress extends LitElement {
                           : ""}</span
                       >
                       <span class="eta"
-                        >${this.measurable && this.totalBytes > 0
+                        >${this.measurable &&
+                        (this.totalBytes > 0 ||
+                          this.stageStartProgress !== null)
                           ? this._calculateEta() ||
                             localize("components.install_progress.calculating")
                           : ""}</span
@@ -574,19 +578,19 @@ export class InstallProgress extends LitElement {
   private _calculateEta(): string | null {
     if (!this.stageStartTime) return null;
 
-    // No ETA for stages without byte tracking
-    if (this.totalBytes === 0) return null;
+    // In bytes where the stage counts them, otherwise in percent
+    const [done, start, total] =
+      this.totalBytes > 0
+        ? [this.bytesProcessed, this.stageStartBytes, this.totalBytes]
+        : [this.progress, this.stageStartProgress, 100];
+    if (start === null) return null;
 
     const elapsed = (Date.now() - this.stageStartTime) / 1000;
-    const bytesInStage = this.bytesProcessed - this.stageStartBytes;
+    const doneInStage = done - start;
 
-    if (elapsed < 1 || bytesInStage <= 0) return null;
+    if (elapsed < 1 || doneInStage <= 0) return null;
 
-    const bytesPerSecond = bytesInStage / elapsed;
-    if (bytesPerSecond <= 0) return null;
-
-    const remainingBytes = this.totalBytes - this.bytesProcessed;
-    const remainingSeconds = remainingBytes / bytesPerSecond;
+    const remainingSeconds = (total - done) / (doneInStage / elapsed);
 
     if (remainingSeconds < 0 || !isFinite(remainingSeconds)) return null;
 
