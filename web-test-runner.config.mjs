@@ -23,9 +23,10 @@ function fullA11ySnapshotPlugin() {
 export default {
   files: "test/unit/**/*.test.ts",
   // Load the app's theme, as index.html does, so components get its tokens.
-  // They have no fallbacks of their own.
+  // They have no fallbacks of their own. The translations load before the
+  // code that lists them.
   testRunnerHtml: (testFramework) =>
-    `<!DOCTYPE html><html><head><link rel="stylesheet" href="/src/styles.css" /></head><body><script type="module" src="${testFramework}"></script></body></html>`,
+    `<!DOCTYPE html><html><head><link rel="stylesheet" href="/src/styles.css" /></head><body><script type="module" src="/test/unit/helpers/translations.ts"></script><script type="module" src="${testFramework}"></script></body></html>`,
   // Chrome follows the OS's light or dark mode, and so does the theme. Light
   // everywhere, so a test reads the same colours on every machine.
   browsers: [
@@ -57,9 +58,13 @@ export default {
       // The plugin passes raw config to esbuild, which does not resolve
       // extends. Read the shared compiler settings directly.
       tsconfig: "./tsconfig.json",
-      // Vite sets this; the unit tests run through esbuild instead, and use
-      // the same browser mock as the dev server.
-      define: { "import.meta.env.DEV": "true" },
+      // Vite sets the first and fills in the second; the unit tests run
+      // through esbuild instead. They use the same browser mock as the dev
+      // server, and the translations of helpers/translations.ts.
+      define: {
+        "import.meta.env.DEV": "true",
+        "import.meta.glob": "translations",
+      },
     }),
   ],
   testFramework: {
