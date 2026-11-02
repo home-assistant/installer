@@ -260,11 +260,10 @@ describe("progress-view", () => {
           attempts[0].attempt,
         ]);
         const layout = el.shadowRoot!.querySelector("install-progress")!;
-        expect(layout.stageTitle).to.equal("Stopping");
-        // The thinking cloud adds the ellipsis to the stage title
+        expect(layout.stopping).to.be.true;
         await layout.updateComplete;
         expect(
-          layout.shadowRoot!.querySelector(".cloud-text")!.textContent!.trim()
+          layout.shadowRoot!.querySelector("h2")!.textContent!.trim()
         ).to.equal("Stopping...");
 
         attempts[0].result.reject(cancelled);
@@ -303,9 +302,8 @@ describe("progress-view", () => {
       expect(stoppable).to.deep.equal([true, false]);
       await settle();
       expect(stoppable).to.deep.equal([true, false, true]);
-      expect(
-        el.shadowRoot!.querySelector("install-progress")!.stageTitle
-      ).to.not.equal("Stopping");
+      expect(el.shadowRoot!.querySelector("install-progress")!.stopping).to.be
+        .false;
       expect(showsError(el)).to.be.false;
       expect(attempts).to.have.length(1);
     });
@@ -338,9 +336,8 @@ describe("progress-view", () => {
       await settle();
       // Still stopping: Cancel stays hidden
       expect(stoppable).to.deep.equal([]);
-      expect(
-        el.shadowRoot!.querySelector("install-progress")!.stageTitle
-      ).to.equal("Stopping");
+      expect(el.shadowRoot!.querySelector("install-progress")!.stopping).to.be
+        .true;
 
       cancels[1].result.resolve();
       attempts[1].result.reject(cancelled);

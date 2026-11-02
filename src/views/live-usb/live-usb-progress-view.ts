@@ -51,11 +51,9 @@ export class LiveUsbProgressView extends InstallProgressView {
       flex: 1;
     }
     .keep-plugged-in {
-      margin: 0 auto 1rem;
-      max-width: var(--ha-content-width);
+      margin: 0 0 1rem;
       padding: 0.75rem 1rem;
       border-radius: var(--ha-small-border-radius);
-      text-align: center;
       font-weight: 500;
       color: var(--ha-error-color);
       background-color: var(--ha-error-background);
@@ -176,9 +174,8 @@ export class LiveUsbProgressView extends InstallProgressView {
       <install-progress
         .stages=${stages.map((id) => ({ id, label: this._describe(id) }))}
         .stage=${stage}
-        .stageTitle=${this._stopping
-          ? localize("common.install.stopping")
-          : this._title(stage)}
+        .stageTitle=${this._title(stage)}
+        .stopping=${this._stopping}
         .description=${this._describe(stage)}
         .progress=${this._progress?.progress || 0}
         .bytesProcessed=${this._progress?.bytes_processed || 0}

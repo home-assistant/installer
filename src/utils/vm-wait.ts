@@ -25,8 +25,8 @@ export function isWaitStage(stage: string): stage is WaitStage {
 }
 
 /**
- * A wait's name in the thinking cloud. The progress's live region announces
- * only this, so each wait needs its own.
+ * A wait's short name. The progress's live region announces only this, so
+ * each wait needs its own.
  */
 export function waitStageTitle(stage: WaitStage): string {
   switch (stage) {

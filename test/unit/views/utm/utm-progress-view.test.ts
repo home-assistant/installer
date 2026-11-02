@@ -1196,11 +1196,10 @@ describe("utm-progress-view", () => {
       await settle();
       expect(install.stops).to.deep.equal([install.attempt()]);
       const layout = el.shadowRoot!.querySelector("install-progress")!;
-      expect(layout.stageTitle).to.equal("Stopping");
-      // The thinking cloud adds the ellipsis to the stage title
+      expect(layout.stopping).to.be.true;
       await layout.updateComplete;
       expect(
-        layout.shadowRoot!.querySelector(".cloud-text")!.textContent!.trim()
+        layout.shadowRoot!.querySelector("h2")!.textContent!.trim()
       ).to.equal("Stopping...");
 
       const failed = oneEvent(el, "install-error");

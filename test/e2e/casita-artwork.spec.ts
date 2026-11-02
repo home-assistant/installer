@@ -2,7 +2,7 @@ import { expect, test } from "./fixtures.js";
 
 // Below the native 800px minimum, in a padded page; install-progress's unit
 // tests measure the bare layout from 320 to 639px
-test("sbc artwork and caption fit at 320px", async ({ page }) => {
+test("sbc artwork and heading fit at 320px", async ({ page }) => {
   const width = 320;
   await page.setViewportSize({ width, height: 844 });
   await page.goto("/");
@@ -47,18 +47,23 @@ test("sbc artwork and caption fit at 320px", async ({ page }) => {
     document.body.append(view);
   });
   const mascot = page.locator("casita-mascot");
-  const caption = page.locator(".cloud-text");
-  await expect(mascot).toBeVisible();
-  await expect(caption).toBeVisible();
-  for (const graphic of [mascot, caption, page.locator(".thinking-cloud")]) {
-    const bounds = await graphic.boundingBox();
+  const parts = page.getByRole("button", { name: /^part 1 of 5$/i });
+  const heading = page.getByRole("heading", {
+    name: "Downloading the Home Assistant image",
+  });
+  for (const part of [mascot, parts, heading]) {
+    await expect(part).toBeVisible();
+    const bounds = await part.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
     expect(bounds!.y).toBeGreaterThanOrEqual(0);
   }
-  const cloud = await page.locator(".thinking-cloud").boundingBox();
+  // Casita stands above the column, which starts with the part
   const mascotBounds = await mascot.boundingBox();
-  expect(cloud!.y + cloud!.height).toBeLessThanOrEqual(mascotBounds!.y);
+  const partsBounds = await parts.boundingBox();
+  expect(mascotBounds!.y + mascotBounds!.height).toBeLessThanOrEqual(
+    partsBounds!.y
+  );
 });
 
 for (const [width, height] of [

@@ -331,7 +331,7 @@ describe("vm-progress-view", () => {
       expect(el.stoppable, "a second stop has nothing to add").to.be.false;
       expect(stopped).to.deep.equal([attempts[0]]);
       await el.updateComplete;
-      expect(layoutOf(el).stageTitle).to.equal("Stopping");
+      expect(layoutOf(el).stopping).to.be.true;
 
       const failed = oneEvent(el, "install-error");
       steps[0].reject(
@@ -352,7 +352,7 @@ describe("vm-progress-view", () => {
 
       expect(el.stoppable).to.be.true;
       await el.updateComplete;
-      expect(layoutOf(el).stageTitle).to.equal("Fetching");
+      expect(layoutOf(el).stopping).to.be.false;
     });
 
     it("leaves a retry alone when an earlier stop request fails late", async () => {
@@ -374,7 +374,7 @@ describe("vm-progress-view", () => {
       stops[0].reject(new Error("IPC unavailable"));
       await settle();
       await el.updateComplete;
-      expect(layoutOf(el).stageTitle).to.equal("Stopping");
+      expect(layoutOf(el).stopping).to.be.true;
       expect(el.stoppable).to.be.false;
     });
   });
