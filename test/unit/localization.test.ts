@@ -1,6 +1,9 @@
 import { expect } from "@open-wc/testing";
 import { html, render } from "lit";
-import { detectLanguage } from "../../src/localization/initialize.js";
+import {
+  chooseLanguage,
+  detectLanguage,
+} from "../../src/localization/initialize.js";
 import {
   type Catalog,
   formatNumber,
@@ -154,6 +157,14 @@ describe("localization", () => {
     );
     expect(getLanguage()).to.equal("en-GB");
     await detectLanguage(["de"], undefined, () => new Promise(() => undefined));
+    expect(getLanguage()).to.equal("en");
+  });
+
+  it("keeps the last language chosen while an earlier catalog loads", async () => {
+    // German loads its catalog; English is bundled and would apply first
+    const german = chooseLanguage("de");
+    await chooseLanguage("en");
+    await german;
     expect(getLanguage()).to.equal("en");
   });
 
