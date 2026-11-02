@@ -41,7 +41,12 @@ export function driveModelLabel(
  * model and name in its own way.
  */
 export function isComputeModuleEmmc(drive: BlockDevice): boolean {
-  return /\bmmcblk0\b/i.test([drive.vendor, drive.model, drive.name].join(" "));
+  // The gadget is always a USB disk. Linux names a built-in SD reader
+  // `mmcblk0` when it reports no vendor or model.
+  return (
+    !drive.id.startsWith("/dev/mmcblk") &&
+    /\bmmcblk0\b/i.test([drive.vendor, drive.model, drive.name].join(" "))
+  );
 }
 
 export function driveIdentity(drive: BlockDevice): DriveIdentity {

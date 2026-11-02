@@ -212,6 +212,8 @@ describe("isComputeModuleEmmc", () => {
     { vendor: "nvme0n1", model: null },
     { vendor: "mmcblk0p1", model: null },
     { vendor: null, model: null, name: "mmcblk01" },
+    // A built-in SD reader on Linux, named after its kernel device
+    { id: "/dev/mmcblk0", vendor: null, model: null, name: "mmcblk0" },
   ]) {
     it(`passes over ${JSON.stringify(drive)}`, () => {
       expect(isComputeModuleEmmc(makeDrive(drive))).to.be.false;
