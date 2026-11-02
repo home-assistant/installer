@@ -131,6 +131,12 @@ export class DeviceSetupView extends LitElement {
   @state()
   private _setup: HaSetupProgress = { progress: null, problem: null };
 
+  /**
+   * When the download was first measured, and its percent then, to estimate
+   * the rest from. Null once it is done.
+   */
+  private _downloadStart: { time: number; progress: number } | null = null;
+
   /** Why the wait at `_stage` ended, until it is tried again */
   @state()
   private _error: InstallerError | null = null;
@@ -177,7 +183,18 @@ export class DeviceSetupView extends LitElement {
           this._stage = stage;
           this._setup = { progress: null, problem: null };
         },
-        onSetup: (setup) => (this._setup = setup),
+        onSetup: (setup) => {
+          const { progress } = setup;
+          const last = this._setup.progress;
+          // Timed afresh when the download starts over
+          this._downloadStart =
+            progress === null || progress >= 100
+              ? null
+              : last === null || progress < last
+                ? { time: Date.now(), progress: Math.round(progress) }
+                : this._downloadStart;
+          this._setup = setup;
+        },
         messages: {
           noAddress: localize("views.device_setup_view.not_found"),
           notResponding: () =>
@@ -213,6 +230,8 @@ export class DeviceSetupView extends LitElement {
         .stageTitle=${this._stageTitle()}
         .description=${this._description()}
         .progress=${measurable ? Math.round(progress) : 0}
+        .stageStartTime=${this._downloadStart?.time ?? null}
+        .stageStartProgress=${this._downloadStart?.progress ?? null}
         .indeterminate=${stage !== "complete" && !measurable}
         .measurable=${measurable}
         .hideEmptyDetails=${true}
@@ -315,7 +334,10 @@ export class DeviceSetupView extends LitElement {
     const stage = this._shownStage();
     switch (stage) {
       case "updating":
-        return localize("views.device_setup_view.installing_description");
+        // Once the download is measured, its estimate replaces the usual time
+        return this._setup.progress === null
+          ? localize("views.device_setup_view.installing_description")
+          : this._stageLabel(stage);
       case "complete":
         return localize("common.install.installation_complete");
       default:

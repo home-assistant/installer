@@ -155,8 +155,9 @@ Assistants announce themselves on the network, before the device can start.
 
 The waits of a VM install, for the device: looking for it on the network
 (a landing page that wasn't there before), waiting for Home Assistant to
-answer, then the Core download its landing page reports. Skip goes on
-without it; while it looks, it says how to find the device without it.
+answer, then the Core download its landing page reports, with the time it
+has left at the pace it goes. Skip goes on without it; while it looks, it
+says how to find the device without it.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐

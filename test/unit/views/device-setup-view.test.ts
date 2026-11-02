@@ -1,5 +1,5 @@
 import { expect, fixture, html, oneEvent, waitUntil } from "@open-wc/testing";
-import type { HaSetupStatus } from "../../../src/api/types.js";
+import type { HaSetupProblem, HaSetupStatus } from "../../../src/api/types.js";
 import type { InstallProgress } from "../../../src/components/install-progress.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
 import { flowDeviceFinder } from "../../../src/utils/device-discovery.js";
@@ -74,6 +74,25 @@ describe("device-setup-view", () => {
     const progress =
       view.shadowRoot!.querySelector<InstallProgress>("install-progress")!;
     return { view, progress };
+  }
+
+  /** What the landing page reports, with the downloads at these percents */
+  function status(
+    core: number | null,
+    supervisor: number | null = null,
+    problems: HaSetupProblem[] = []
+  ): HaSetupStatus {
+    return {
+      core_install_progress: core,
+      supervisor_update_progress: supervisor,
+      problems,
+    };
+  }
+
+  /** The time left the progress shows, once it showed what it was given */
+  async function eta(progress: InstallProgress) {
+    await progress.updateComplete;
+    return progress.shadowRoot!.querySelector(".eta")?.textContent ?? "";
   }
 
   /** The help below the progress, its whitespace collapsed */
@@ -176,12 +195,78 @@ describe("device-setup-view", () => {
     expect(progress.stage).to.equal("updating");
     expect(progress.progress).to.equal(42);
     expect(progress.indeterminate).to.be.false;
+    // Its estimate says how long, instead of the usual time
+    expect(progress.description).to.equal("Installing latest Home Assistant");
+    expect(await eta(progress)).to.equal("Calculating...");
     // Worded for a device, not a VM
     expect(progress.warning).to.contain("Install it on a larger drive.");
     // Found, so the address is the installer's business
     expect(progress.address).to.be.null;
     // Found, so no need to say how to find it
     expect(view.shadowRoot!.querySelector('[slot="help"]')).to.be.null;
+  });
+
+  it("says the usual time while the landing page reports no download", async () => {
+    device({
+      updated: () => false,
+      // Supervisor updates itself first
+      setup: () => status(null, 30, ["update_failed"]),
+    });
+    await noted();
+    const { progress } = await render();
+
+    await waitUntil(() => progress.warning, "the report never showed");
+    expect(progress.description).to.equal(
+      "Installing latest Home Assistant (this can take up to 20 minutes)"
+    );
+    expect(progress.indeterminate).to.be.true;
+    expect(progress.measurable).to.be.false;
+  });
+
+  it("estimates the time left from how fast the download goes", async () => {
+    const reports = [10, 20];
+    device({
+      updated: () => false,
+      setup: () => status(reports.length > 1 ? reports.shift()! : reports[0]),
+    });
+    await noted();
+    const { progress } = await render();
+
+    await waitUntil(
+      () => progress.progress === 10,
+      "the download never showed"
+    );
+    expect(await eta(progress)).to.equal("Calculating...");
+    clockOffset += 5 * MINUTE;
+
+    // 10% in a little over 5 minutes leaves 80% for a little over 40
+    await waitUntil(() => progress.progress === 20, "it never moved", {
+      timeout: 3000,
+    });
+    expect(await eta(progress)).to.equal("About 41 minutes remaining");
+  });
+
+  it("times a download afresh when it starts over, but not once it's done", async () => {
+    const reports = [100, 20];
+    device({
+      updated: () => false,
+      setup: () => status(reports.length > 1 ? reports.shift()! : reports[0]),
+    });
+    await noted();
+    const { progress } = await render();
+
+    // Supervisor starts Home Assistant next, which the download doesn't time
+    await waitUntil(
+      () => progress.progress === 100,
+      "the download never showed"
+    );
+    expect(await eta(progress)).to.equal("");
+
+    await waitUntil(() => progress.progress === 20, "it never started over", {
+      timeout: 3000,
+    });
+    expect(progress.stageStartProgress).to.equal(20);
+    expect(await eta(progress)).to.equal("Calculating...");
   });
 
   it("links to Home Assistant by name when it doesn't finish installing", async () => {

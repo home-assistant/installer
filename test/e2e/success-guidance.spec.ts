@@ -139,6 +139,10 @@ test("waits for the device the drive starts until Home Assistant is ready", asyn
       .locator('[aria-current="step"]')
   ).toContainText("Installing latest Home Assistant", { timeout: 20000 });
   await expect(setup.getByRole("progressbar")).toBeVisible();
+  // Estimated from how fast the landing page reports the download going
+  await expect(setup.locator(".eta")).toContainText("remaining", {
+    timeout: 10000,
+  });
   // Found, so the address is the installer's business
   await expect(setup).not.toContainText("192.168.1.101");
 
