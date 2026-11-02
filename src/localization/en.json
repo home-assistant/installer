@@ -440,6 +440,7 @@
   "views.utm.utm_progress_view.stopped_nothing_created": "Installation stopped. No virtual machine was created in UTM.",
   "views.utm.utm_success_view.subtitle": "Home Assistant is now running in UTM as \"{name}\"",
   "views.utm.utm_success_view.manage_tip": "{tip_prefix} You can manage your Home Assistant virtual machine anytime by opening UTM. The virtual machine will continue running in the background even after closing this installer.",
+  "views.welcome_view.language": "Language",
   "views.welcome_view.learn_more": "Learn more",
   "views.welcome_view.let_s_go": "Let's go",
   "views.welcome_view.open_home_foundation": "Open Home Foundation",

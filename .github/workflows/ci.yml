@@ -108,7 +108,7 @@ jobs:
 
       - name: Install cargo-audit
         if: steps.lock.outputs.audit == 'true'
-        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
           tool: cargo-audit@0.22.2
 
@@ -266,7 +266,7 @@ jobs:
 
       - name: Install cargo-shear
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
           tool: cargo-shear
 
@@ -466,7 +466,7 @@ jobs:
 
       - name: Install cargo-llvm-cov
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
           tool: cargo-llvm-cov
 
