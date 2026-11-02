@@ -195,7 +195,7 @@ export abstract class VmProgressView<
           id,
           label:
             id === "updating"
-              ? localize("common.vm.installing_latest_home_assistant")
+              ? localize("common.install.installing_home_assistant")
               : this._getStageDescription(id),
         }))}
         .stage=${stage}

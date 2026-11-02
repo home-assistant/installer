@@ -43,7 +43,7 @@ describe("success-view next steps", () => {
     expect(text(el)).to.contain("with internet access");
     expect(text(el)).to.contain("Then connect power");
     expect(text(el)).to.contain("Once the device is on, select Next");
-    expect(text(el)).to.contain("installs the latest Home Assistant");
+    expect(text(el)).to.contain("installs Home Assistant");
     expect(text(el)).to.contain("about 20 minutes");
     expect(text(el)).to.contain("Keep power and Ethernet connected");
     expect(text(el)).not.to.contain("Wait a few minutes");

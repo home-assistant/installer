@@ -388,6 +388,29 @@ describe("install-progress", () => {
     expect(await eta(120 * 60 - 10)).to.equal("About 2h 0m remaining");
   });
 
+  it("estimates from the percent where a stage counts no bytes, given where it started", async () => {
+    const el = await fixture<InstallProgress>(
+      html`<install-progress
+        .progress=${40}
+        .stageStartProgress=${10}
+        .stageStartTime=${Date.now() - 290_000}
+      ></install-progress>`
+    );
+    const eta = async () => {
+      await el.updateComplete;
+      return el.shadowRoot!.querySelector(".eta")!.textContent;
+    };
+    // 30% in just under 5 minutes leaves 60% for just under 10
+    expect(await eta()).to.equal("About 10 minutes remaining");
+
+    el.stageStartTime = Date.now();
+    expect(await eta()).to.equal("Calculating...");
+
+    // Without a start, as a VM shows the download, there is no estimate
+    el.stageStartProgress = null;
+    expect(await eta()).to.equal("");
+  });
+
   it("shows error text safely while leaving retry to the owning flow's footer", async () => {
     const el = await fixture<InstallProgress>(
       html`<install-progress
