@@ -34,6 +34,16 @@ export function driveModelLabel(
   return [vendorInModel ? "" : vendor, model].filter(Boolean).join(" ");
 }
 
+/**
+ * Whether this is a Compute Module's eMMC, shown as a drive by rpiboot's mass
+ * storage gadget. The gadget reports the module's device name, `mmcblk0`, as
+ * the drive's SCSI inquiry string, which each OS spreads over the vendor,
+ * model and name in its own way.
+ */
+export function isComputeModuleEmmc(drive: BlockDevice): boolean {
+  return /\bmmcblk0\b/i.test([drive.vendor, drive.model, drive.name].join(" "));
+}
+
 export function driveIdentity(drive: BlockDevice): DriveIdentity {
   return {
     id: drive.id,

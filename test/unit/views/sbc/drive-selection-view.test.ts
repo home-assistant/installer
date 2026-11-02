@@ -523,6 +523,49 @@ describe("drive-selection-view", () => {
     });
   }
 
+  // rpiboot shows the eMMC as a small drive among bigger ones
+  for (const [flow, haHardware, highlighted] of [
+    ["ha-hardware", "yellow-cm5", true],
+    ["ha-hardware", "yellow-cm4", false],
+    ["sbc", undefined, false],
+  ] as const) {
+    it(`${highlighted ? "lists the Compute Module's eMMC first, tagged" : "sorts an eMMC drive by size"} (${haHardware ?? flow})`, async () => {
+      wizardState.startFlow(flow);
+      wizardState.setSelection("deviceConfig", config);
+      if (haHardware) wizardState.setSelection("haHardware", haHardware);
+      const scan = holdDeviceScan();
+      try {
+        const el = await fixture<DriveSelectionView>(
+          html`<drive-selection-view></drive-selection-view>`
+        );
+        scan.resolve([
+          drive({ id: "/dev/sdb", size: 128_000_000_000 }),
+          drive({ id: "/dev/sdc", size: 32_000_000_000, vendor: "mmcblk0" }),
+        ]);
+        await waitUntil(
+          () => el.shadowRoot!.querySelectorAll("drive-card").length === 2
+        );
+        const cards = [...el.shadowRoot!.querySelectorAll("drive-card")];
+
+        expect(cards.map((card) => [card.value, card.tag])).to.deep.equal(
+          highlighted
+            ? [
+                ["/dev/sdc", "Compute Module eMMC"],
+                ["/dev/sdb", ""],
+              ]
+            : [
+                ["/dev/sdb", ""],
+                ["/dev/sdc", ""],
+              ]
+        );
+        // Highlighted, not picked
+        expect(selectedIds(el)).to.deep.equal([]);
+      } finally {
+        scan.restore();
+      }
+    });
+  }
+
   it("keeps undersized drives visible and disables them with the board minimum", async () => {
     const scan = holdDeviceScan();
     try {

@@ -53,7 +53,7 @@ export class DriveCard extends WaRadio {
         pointer-events: none;
       }
 
-      :host(:state(disabled)) :is(.icon-container, .name, .size) {
+      :host(:state(disabled)) :is(.icon-container, .tag, .name, .size) {
         opacity: 0.5;
       }
 
@@ -89,6 +89,18 @@ export class DriveCard extends WaRadio {
         font-weight: 500;
         color: var(--ha-text-color);
         margin: 0 0 0.25rem 0;
+      }
+
+      .tag {
+        display: inline-block;
+        margin: 0 0 0.25rem 0;
+        padding: 0 0.5rem;
+        /* Forced colors drop the fill, but show the border */
+        border: 1px solid transparent;
+        border-radius: var(--ha-small-border-radius);
+        background-color: var(--wa-color-brand-fill-quiet);
+        color: var(--wa-color-brand-on-quiet);
+        font-size: 0.75rem;
       }
 
       .details {
@@ -176,6 +188,10 @@ export class DriveCard extends WaRadio {
   @property({ type: String })
   vendor = "";
 
+  /** A short note above the name that singles this drive out */
+  @property({ type: String })
+  tag = "";
+
   @property({ type: String, attribute: "disabled-reason" })
   disabledReason = "";
 
@@ -190,6 +206,7 @@ export class DriveCard extends WaRadio {
           ${renderDriveIcon(this.deviceType)}
         </div>
         <div class="info">
+          ${this.tag ? html`<p class="tag">${this.tag}</p>` : nothing}
           <p class="name">${this.name}</p>
           <p class="details">
             ${this.disabled && this.disabledReason

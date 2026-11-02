@@ -126,6 +126,7 @@ describe("drive-card", () => {
     const el = await fixture<DriveCard>(html`
       <drive-card
         name="Test"
+        tag="Compute Module eMMC"
         disabled
         disabled-reason="Drive is too small"
       ></drive-card>
@@ -133,7 +134,7 @@ describe("drive-card", () => {
     const opacity = (selector: string) =>
       getComputedStyle(el.shadowRoot!.querySelector(selector)!).opacity;
 
-    for (const selector of [".icon-container", ".name", ".size"]) {
+    for (const selector of [".icon-container", ".tag", ".name", ".size"]) {
       expect(opacity(selector), selector).to.equal("0.5");
     }
     // Opacity on any of these would fade the reason with it
@@ -222,6 +223,23 @@ describe("drive-card", () => {
 
     expect(findByRole(tree, "image")).to.deep.equal([]);
     expect(findByRole(tree, "radio")[0]!.name).to.contain("SanDisk");
+  });
+
+  it("shows a tag only when given one, and reads it with the drive", async () => {
+    const el = await fixture<DriveCard>(html`
+      <drive-card name="Test"></drive-card>
+    `);
+    expect(el.shadowRoot!.querySelector(".tag")).to.be.null;
+
+    el.tag = "Compute Module eMMC";
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector(".tag")!.textContent).to.equal(
+      "Compute Module eMMC"
+    );
+    const tree = await fullA11ySnapshot();
+    expect(findByRole(tree, "radio")[0]!.name).to.contain(
+      "Compute Module eMMC"
+    );
   });
 
   it("displays vendor and model in details", async () => {

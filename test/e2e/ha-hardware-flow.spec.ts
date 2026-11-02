@@ -124,6 +124,34 @@ test.describe("Home Assistant hardware flow", () => {
     await expect(page.locator("drive-selection-view")).toBeVisible();
   });
 
+  test("the Yellow with a CM5 lists the module's eMMC first, without picking it", async ({
+    page,
+  }) => {
+    await openHaHardware(page);
+    // What rpiboot's mass storage gadget shows on Linux
+    await page.evaluate(async () => {
+      const path = "/src/api/mock-data.ts";
+      const { MOCK_BLOCK_DEVICES } = (await import(
+        path
+      )) as typeof import("../../src/api/mock-data.js");
+      MOCK_BLOCK_DEVICES.push({
+        ...MOCK_BLOCK_DEVICES[0],
+        id: "/dev/sdx",
+        name: "mmcblk0",
+        vendor: "mmcblk0",
+        model: null,
+        serial: null,
+      });
+    });
+    await pickDevice(page, "ha-yellow");
+    await pickModule(page, "yellow-cm5");
+
+    const drives = page.locator("drive-selection-view").getByRole("radio");
+    await expect(drives.first()).toContainText("Compute Module eMMC");
+    await expect(drives.first()).toContainText("/dev/sdx");
+    await expect(drives.first()).not.toBeChecked();
+  });
+
   test("Back keeps the device and Cancel leaves the flow", async ({ page }) => {
     await openHaHardware(page);
     await pickDevice(page, "ha-yellow");

@@ -9,6 +9,7 @@ import {
   findDrive,
   isSameDrive,
   getDriveFit,
+  isComputeModuleEmmc,
   readDriveSelection,
   storeDriveSelection,
 } from "../../../src/utils/drive-selection.js";
@@ -192,4 +193,28 @@ describe("driveModelLabel", () => {
       );
     }
   });
+});
+
+// Where the gadget's `mmcblk0` lands differs by OS
+describe("isComputeModuleEmmc", () => {
+  for (const drive of [
+    { vendor: "mmcblk0", model: null },
+    { vendor: null, model: " MMCBLK0 " },
+    { vendor: null, model: null, name: "mmcblk0 USB Device" },
+  ]) {
+    it(`recognises ${JSON.stringify(drive)}`, () => {
+      expect(isComputeModuleEmmc(makeDrive(drive))).to.be.true;
+    });
+  }
+
+  for (const drive of [
+    {},
+    { vendor: "nvme0n1", model: null },
+    { vendor: "mmcblk0p1", model: null },
+    { vendor: null, model: null, name: "mmcblk01" },
+  ]) {
+    it(`passes over ${JSON.stringify(drive)}`, () => {
+      expect(isComputeModuleEmmc(makeDrive(drive))).to.be.false;
+    });
+  }
 });
