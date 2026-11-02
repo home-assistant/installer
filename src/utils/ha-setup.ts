@@ -60,11 +60,12 @@ export class HaSetupStalledError extends Error implements InstallerError {
     address: string,
     host: HaosHost = "vm"
   ) {
+    const message = haSetupProblemMessage(problem, host);
     super(
-      localize("utils.ha_setup.stalled", {
-        problem: haSetupProblemMessage(problem, host),
-        address,
-      })
+      // A device's view links to Home Assistant by name instead
+      host === "device"
+        ? localize("utils.ha_setup.stalled_device", { problem: message })
+        : localize("utils.ha_setup.stalled", { problem: message, address })
     );
     this.name = "HaSetupStalledError";
     // A fixed category for diagnostics, one per problem

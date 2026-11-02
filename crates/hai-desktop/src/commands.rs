@@ -428,6 +428,14 @@ pub fn get_system_info() -> Result<SystemInfo, CommandError> {
     Backend.system_info().map_err(CommandError::from)
 }
 
+/// The language HAI_LANGUAGE asks for, like `de` or `pt-BR`, in place of the OS's
+#[tauri::command]
+pub fn language_override() -> Option<String> {
+    std::env::var("HAI_LANGUAGE")
+        .ok()
+        .filter(|tag| !tag.is_empty())
+}
+
 // =============================================================================
 // UTM Commands (macOS only)
 // =============================================================================

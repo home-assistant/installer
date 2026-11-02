@@ -105,15 +105,19 @@ sends. `npm run localization:check` enforces both the namespace and the
 placeholder names. No keys have been published to a translation service yet.
 
 Startup reads the OS locale through Tauri's locale-only command permission before
-loading component modules. Browser development uses `navigator.languages`.
+loading component modules. A language tag in `HAI_LANGUAGE` takes its place, so
+`HAI_LANGUAGE=de npm run tauri dev` shows a translation without changing the OS.
+Browser development uses `navigator.languages`.
 The first preference with a catalog wins, matching its exact tag, then its
 script (`zh-TW` loads `zh-Hant.json`), then its base language (`de-AT` loads
 `de.json`); with none, the app uses the bundled `en`. The preferred tag
 itself sets `lang`, `dir` and `Intl` formatting, so `en-IN` gets English text
 with Indian number grouping. Invalid tags are skipped. A native lookup or
 catalog load that fails or takes over a second also falls back, so locale
-detection cannot leave an empty window. Locale selection happens once at
-startup, not during a running flow.
+detection cannot leave an empty window. Once a translation ships, the welcome
+screen also lists every catalog, each in its own language. A choice there
+shows the running app in that language until it closes; nothing else changes
+the language after startup.
 The OS plugin also injects static platform/version/architecture/family/type,
 executable-extension and line-ending metadata into the first-party webview;
 these fields are not gated by command permissions. Other OS commands,
