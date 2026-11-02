@@ -133,11 +133,14 @@ test("waits for the device the drive starts until Home Assistant is ready", asyn
   const setup = page.locator("device-setup-view");
   await expect(setup).toBeVisible();
   await expect(next(page)).toHaveText("Skip");
+  // The last part, whose heading is the current row of the list it opens
+  const parts = setup.getByRole("button", { name: /^part 3 of 3$/i });
+  await parts.click({ timeout: 20000 });
   await expect(
     setup
       .getByRole("list", { name: "Installation stages" })
       .locator('[aria-current="step"]')
-  ).toContainText("Installing latest Home Assistant", { timeout: 20000 });
+  ).toContainText("Installing latest Home Assistant");
   await expect(setup.getByRole("progressbar")).toBeVisible();
   await expect(setup).toContainText(
     "Checking Home Assistant at http://192.168.1.101"

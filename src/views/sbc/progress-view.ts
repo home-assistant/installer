@@ -131,9 +131,8 @@ export class ProgressView extends InstallProgressView {
           label: this._getStageDescription(id),
         }))}
         .stage=${stage}
-        .stageTitle=${this._stopping
-          ? localize("common.install.stopping")
-          : this._getStageTitle(stage)}
+        .stageTitle=${this._getStageTitle(stage)}
+        .stopping=${this._stopping}
         .description=${this._getStageDescription(stage)}
         .progress=${this._progress?.progress || 0}
         .bytesProcessed=${this._progress?.bytes_processed || 0}

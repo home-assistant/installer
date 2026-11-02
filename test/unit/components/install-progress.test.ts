@@ -10,31 +10,15 @@ import "../../../src/components/install-progress.js";
 import { captureOpenedUrls, restoreTauriIpc, settle } from "../tauri-ipc.js";
 import { expectThemeLink } from "../helpers/link-style.js";
 
-describe("install-progress", () => {
-  it("keeps the thought bubble inside a short scroll container", async () => {
-    const container = fixtureSync<HTMLDivElement>(html`
-      <div style="width: 650px; height: 300px; overflow-y: auto">
-        <install-progress
-          .stages=${Array.from({ length: 7 }, (_, id) => ({
-            id: `${id}`,
-            label: "A wrapping installation stage description",
-          }))}
-          stage="1"
-        ></install-progress>
-      </div>
-    `);
-    const layout = container.querySelector("install-progress")!;
-    await layout.updateComplete;
-    const cloud = layout.shadowRoot!.querySelector(".thinking-cloud")!;
-    const bounds = container.getBoundingClientRect();
-    const bubble = cloud.getBoundingClientRect();
-    expect(bubble.top).to.be.at.least(bounds.top);
-    expect(bubble.left).to.be.at.least(bounds.left);
-    expect(bubble.right).to.be.at.most(bounds.right);
-    expect(container.scrollHeight).to.be.greaterThan(container.clientHeight);
-  });
+/** End the open or close transitions, which a background page never paints */
+function finishTransitions(el: InstallProgress) {
+  for (const animation of el.shadowRoot!.getAnimations()) {
+    if (animation instanceof CSSTransition) animation.finish();
+  }
+}
 
-  it("puts Casita beside the stages under the heading when wide, and above it when narrow", async () => {
+describe("install-progress", () => {
+  it("puts Casita beside the column the heading starts when wide, and above it when narrow", async () => {
     const container = fixtureSync<HTMLDivElement>(html`
       <div style="width: 736px">
         <install-progress
@@ -51,15 +35,15 @@ describe("install-progress", () => {
     const bounds = (selector: string) =>
       el.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
 
-    // The smallest window leaves 736px: the cloud fits beside Casita, the
-    // stages beside both, and the heading spans them all
-    expect(bounds(".thinking-cloud").right).to.be.at.most(
+    // The smallest window leaves 736px: Casita stands beside the column, and
+    // all of its text starts on the same edge, the heading's included
+    expect(bounds("casita-mascot").right).to.be.at.most(
       bounds(".details").left
     );
-    expect(bounds("h2").bottom).to.be.at.most(bounds(".thinking-cloud").top);
-    expect(bounds("h2").bottom).to.be.at.most(bounds(".details").top);
-    expect(bounds("h2").left).to.be.at.most(bounds("casita-mascot").left);
-    expect(bounds("h2").right).to.be.at.least(bounds(".details").right);
+    expect(bounds(".parts").top).to.equal(bounds(".details").top);
+    for (const selector of [".parts", "h2", "progress-bar"]) {
+      expect(bounds(selector).left, selector).to.equal(bounds(".details").left);
+    }
     expect(bounds("casita-mascot").width).to.equal(120);
     expect(bounds(".details").right).to.be.at.most(
       container.getBoundingClientRect().right
@@ -67,41 +51,48 @@ describe("install-progress", () => {
 
     container.style.width = "500px";
     await waitUntil(
-      () => bounds("casita-mascot").bottom <= bounds("h2").top,
-      "Casita should stand above the heading"
+      () => bounds("casita-mascot").bottom <= bounds(".parts").top,
+      "Casita should stand above the column"
     );
+    expect(bounds("h2").left).to.equal(bounds(".details").left);
   });
 
-  for (const width of [320, 440, 520, 521, 560, 600, 639]) {
-    it(`keeps the cloud inside ${width}px and clear of Casita's roof`, async () => {
+  for (const width of [320, 440, 639]) {
+    it(`fits the open stages and the progress into ${width}px`, async () => {
+      const label = "Downloading and preparing the Home Assistant OS install";
       const container = fixtureSync<HTMLDivElement>(html`
-        <div><install-progress stage="downloading"></install-progress></div>
+        <div>
+          <install-progress
+            .stages=${["a", "b", "c"].map((id) => ({ id, label }))}
+            stage="b"
+            .description=${label}
+            .bytesProcessed=${512}
+            .totalBytes=${1024}
+            .address=${"http://192.0.2.50"}
+          ></install-progress>
+        </div>
       `);
       container.style.width = `${width}px`;
       const el = container.querySelector("install-progress")!;
       await el.updateComplete;
-      // The bumps, not the box they sit in: some reach past it
-      const bumps = [...el.shadowRoot!.querySelectorAll(".cloud-bump")].map(
-        (bump) => bump.getBoundingClientRect()
-      );
-      const cloud = {
-        top: Math.min(...bumps.map((bump) => bump.top)),
-        bottom: Math.max(...bumps.map((bump) => bump.bottom)),
-        left: Math.min(...bumps.map((bump) => bump.left)),
-        right: Math.max(...bumps.map((bump) => bump.right)),
-      };
+      el.shadowRoot!.querySelector<HTMLElement>(".parts")!.click();
+      await el.updateComplete;
+      finishTransitions(el);
+
+      const outer = container.getBoundingClientRect();
+      for (const part of el.shadowRoot!.querySelectorAll(".details *")) {
+        const box = part.getBoundingClientRect();
+        if (!box.width) continue;
+        expect(box.left, part.className).to.be.at.least(outer.left);
+        expect(box.right, part.className).to.be.at.most(outer.right);
+      }
       const casita = el
         .shadowRoot!.querySelector("casita-mascot")!
         .getBoundingClientRect();
-      const outer = container.getBoundingClientRect();
-      expect(cloud.left).to.be.at.least(outer.left);
-      expect(cloud.right).to.be.at.most(outer.right);
-      expect(cloud.top).to.be.at.least(outer.top);
-      // Above Casita, or beside its roof's peak, never over it
-      expect(
-        cloud.bottom <= casita.top ||
-          cloud.left >= casita.left + casita.width / 2
-      ).to.be.true;
+      const toggle = el
+        .shadowRoot!.querySelector(".parts")!
+        .getBoundingClientRect();
+      expect(casita.bottom).to.be.at.most(toggle.top);
     });
   }
 
@@ -156,6 +147,10 @@ describe("install-progress", () => {
       "the stage was never announced",
       { timeout: 3000 }
     );
+
+    el.stopping = true;
+    await el.updateComplete;
+    expect(region.textContent?.trim()).to.equal("Stopping...");
 
     // It stays through an error, so a retry is announced too
     el.error = "Cannot write this drive";
@@ -226,7 +221,7 @@ describe("install-progress", () => {
     expect(keepOpen()).to.equal("");
   });
 
-  it("renders the stage labels, active stage and completion", async () => {
+  it("names the part, and keeps the other stages hidden until asked", async () => {
     const el = await fixture<InstallProgress>(
       html`<install-progress
         .stages=${[
@@ -235,48 +230,132 @@ describe("install-progress", () => {
           { id: "verifying", label: "Verify image" },
         ]}
         stage="writing"
+        description="Writing the image"
       ></install-progress>`
     );
-    const dots = el.shadowRoot!.querySelectorAll(".status-dot");
-    const stages = el.shadowRoot!.querySelectorAll(".stage");
-    expect(
-      el.shadowRoot!.querySelector("ol")!.getAttribute("aria-label")
-    ).to.equal("Installation stages");
-    expect(stages[0].querySelector(".stage-label")!.textContent).to.equal(
-      "Download image (completed)"
+    const root = el.shadowRoot!;
+    const toggle = root.querySelector<HTMLButtonElement>("button.parts")!;
+    const list = root.querySelector("ol")!;
+    expect(toggle.textContent!.trim()).to.equal("Part 2 of 3");
+    expect(toggle.getAttribute("aria-expanded")).to.equal("false");
+    expect(root.getElementById(toggle.getAttribute("aria-controls")!)).to.equal(
+      list
     );
-    expect(stages[1].querySelector(".stage-label")!.textContent).to.equal(
-      "Write image"
+    // Closed, only the heading shows, and it isn't a list of one
+    expect(list.getAttribute("role")).to.equal("none");
+    expect(list.hasAttribute("aria-label")).to.be.false;
+    expect(root.querySelector("[aria-current]")).to.not.exist;
+    expect(root.querySelector("h2")!.textContent!.trim()).to.equal(
+      "Writing the image"
     );
-    expect(stages[2].querySelector(".stage-label")!.textContent).to.equal(
-      "Verify image"
+    for (const stage of root.querySelectorAll(".stage")) {
+      expect(getComputedStyle(stage).visibility).to.equal("hidden");
+    }
+    expect(root.querySelector("casita-mascot")!.mood).to.equal("focusing");
+  });
+
+  it("opens the stages around the heading, which becomes the current stage's row", async () => {
+    const el = await fixture<InstallProgress>(
+      html`<install-progress
+        .stages=${[
+          { id: "downloading", label: "Download image" },
+          { id: "writing", label: "Write image" },
+          { id: "verifying", label: "Verify image" },
+        ]}
+        stage="writing"
+        description="Writing the image"
+      ></install-progress>`
     );
-    expect(stages[0].hasAttribute("aria-current")).to.be.false;
-    expect(stages[1].getAttribute("aria-current")).to.equal("step");
-    expect(stages[2].hasAttribute("aria-current")).to.be.false;
-    expect(
-      Array.from(dots).every(
-        (dot) => dot.getAttribute("aria-hidden") === "true"
-      )
-    ).to.be.true;
-    expect(el.shadowRoot!.querySelector(".stages-indicator [tabindex]")).to.not
-      .exist;
-    expect(dots[0].classList.contains("completed")).to.be.true;
-    expect(dots[1].classList.contains("active")).to.be.true;
-    expect(el.shadowRoot!.querySelector("casita-mascot")!.mood).to.equal(
-      "focusing"
-    );
-    el.stage = "complete";
+    const root = el.shadowRoot!;
+    const toggle = root.querySelector<HTMLButtonElement>("button.parts")!;
+    const heading = root.querySelector("h2")!;
+    toggle.click();
     await el.updateComplete;
+
+    const list = root.querySelector("ol")!;
+    expect(toggle.getAttribute("aria-expanded")).to.equal("true");
+    expect(list.getAttribute("role")).to.equal("list");
+    expect(list.getAttribute("aria-label")).to.equal("Installation stages");
+    const items = [...list.children];
+    expect(items.map((item) => item.textContent!.trim())).to.deep.equal([
+      "Download image (completed)",
+      "Writing the image",
+      "Verify image",
+    ]);
+    // Nothing shows twice: the heading is the current stage's row
+    expect(items[1].getAttribute("aria-current")).to.equal("step");
+    expect(items[1].querySelector("h2")).to.equal(heading);
+    expect(root.querySelectorAll("[aria-current]").length).to.equal(1);
+    for (const stage of root.querySelectorAll(".stage")) {
+      expect(getComputedStyle(stage).visibility).to.equal("visible");
+    }
+    const dots = [...root.querySelectorAll(".status-dot")];
     expect(
-      el.shadowRoot!.querySelectorAll(".status-dot.completed").length
-    ).to.equal(3);
-    expect(el.shadowRoot!.querySelectorAll("li .sr-only").length).to.equal(3);
-    expect(el.shadowRoot!.querySelector("[aria-current]")).to.not.exist;
-    expect(el.shadowRoot!.querySelector(".thinking-cloud")).to.not.exist;
-    expect(el.shadowRoot!.querySelector("casita-mascot")!.mood).to.equal(
-      "happy"
+      dots.map((dot) =>
+        ["completed", "active"].filter((state) => dot.classList.contains(state))
+      )
+    ).to.deep.equal([["completed"], ["active"], []]);
+    expect(dots.every((dot) => dot.closest('[aria-hidden="true"]') !== null)).to
+      .be.true;
+
+    // Open across stages: the next one takes the heading's place
+    el.stage = "verifying";
+    el.description = "Verifying the image";
+    await el.updateComplete;
+    expect(toggle.getAttribute("aria-expanded")).to.equal("true");
+    expect(root.querySelector("h2")).to.equal(heading);
+    expect(
+      [...list.children].map((item) => item.textContent!.trim())
+    ).to.deep.equal([
+      "Download image (completed)",
+      "Write image (completed)",
+      "Verifying the image",
+    ]);
+    expect(toggle.textContent!.trim()).to.equal("Part 3 of 3");
+
+    toggle.click();
+    await el.updateComplete;
+    expect(toggle.getAttribute("aria-expanded")).to.equal("false");
+    expect(list.getAttribute("role")).to.equal("none");
+    expect(root.querySelector("[aria-current]")).to.not.exist;
+    expect(root.querySelector("h2")).to.equal(heading);
+  });
+
+  it("has no parts to open for a single stage, once complete, or while stopping", async () => {
+    const el = await fixture<InstallProgress>(
+      html`<install-progress
+        .stages=${[{ id: "waiting", label: "Wait" }]}
+        stage="waiting"
+        description="Waiting"
+      ></install-progress>`
     );
+    const root = el.shadowRoot!;
+    expect(root.querySelector(".parts")).to.not.exist;
+
+    el.stages = [
+      { id: "downloading", label: "Download image" },
+      { id: "writing", label: "Write image" },
+    ];
+    el.stage = "complete";
+    el.description = "Done";
+    await el.updateComplete;
+    expect(root.querySelector(".parts")).to.not.exist;
+    expect(root.querySelector("h2")!.textContent!.trim()).to.equal("Done");
+    expect(root.querySelector("casita-mascot")!.mood).to.equal("happy");
+
+    // The heading says it stops instead of naming a stage to list it with
+    el.stage = "writing";
+    el.stopping = true;
+    await el.updateComplete;
+    expect(root.querySelector(".parts")).to.not.exist;
+    expect(root.querySelector("ol")!.className).to.not.contain("open");
+    expect(root.querySelector("h2")!.textContent!.trim()).to.equal(
+      "Stopping..."
+    );
+
+    el.stopping = false;
+    await el.updateComplete;
+    expect(root.querySelector(".parts")).to.exist;
   });
 
   it("draws each stage state as its own shape, not only its own color", async () => {
@@ -424,6 +503,13 @@ describe("install-progress", () => {
     await el.updateComplete;
     expect((await progressbar()).getAttribute("aria-label")).to.equal(
       "Waiting for Home Assistant"
+    );
+
+    // Like the heading and the live region
+    el.stopping = true;
+    await el.updateComplete;
+    expect((await progressbar()).getAttribute("aria-label")).to.equal(
+      "Stopping..."
     );
   });
 

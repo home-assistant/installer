@@ -628,6 +628,14 @@ for (const tag of [
       "animation-name",
       "none"
     );
+    // Nor do the other stages slide in around the heading
+    await page.getByRole("button", { name: /^part 1 of \d+$/i }).click();
+    for (const part of ["h2", ".stage"]) {
+      await expect(page.locator(`install-progress ${part}`).first()).toHaveCSS(
+        "transition-duration",
+        "0s"
+      );
+    }
     await page.screenshot({
       path: testInfo.outputPath(`${tag}-reduced-motion.png`),
     });

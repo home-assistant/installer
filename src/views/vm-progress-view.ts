@@ -199,9 +199,8 @@ export abstract class VmProgressView<
               : this._getStageDescription(id),
         }))}
         .stage=${stage}
-        .stageTitle=${this._stopping
-          ? localize("common.install.stopping")
-          : this._getStageTitle(stage)}
+        .stageTitle=${this._getStageTitle(stage)}
+        .stopping=${this._stopping}
         .description=${this._getStageDescription(stage)}
         .progress=${this._progress}
         .bytesProcessed=${this._bytesProcessed}
