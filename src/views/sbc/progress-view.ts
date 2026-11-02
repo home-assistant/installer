@@ -175,9 +175,9 @@ export class ProgressView extends InstallProgressView {
     switch (stage) {
       case "downloading":
         return installer
-          ? localize("views.sbc.progress_view.fetching_the_installer_image")
+          ? localize("views.sbc.progress_view.downloading_the_installer_image")
           : localize(
-              "views.sbc.progress_view.fetching_the_home_assistant_image"
+              "views.sbc.progress_view.downloading_the_home_assistant_image"
             );
       case "extracting":
         return localize("common.install.extracting_the_image");

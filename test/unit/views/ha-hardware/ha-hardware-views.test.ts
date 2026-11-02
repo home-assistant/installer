@@ -635,7 +635,7 @@ describe("Home Assistant hardware views", () => {
     expect(requests[0].board).to.equal("yellow-installer");
     expect(requests[0].device_id).to.equal(MOCK_BLOCK_DEVICES[2].id);
     const progress = el.shadowRoot!.querySelector("install-progress")!;
-    expect(progress.description).to.equal("Fetching the installer image");
+    expect(progress.description).to.equal("Downloading the installer image");
   });
 
   describe("success", () => {

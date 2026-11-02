@@ -49,7 +49,7 @@ test("sbc artwork and heading fit at 320px", async ({ page }) => {
   const mascot = page.locator("casita-mascot");
   const parts = page.getByRole("button", { name: /^part 1 of 5$/i });
   const heading = page.getByRole("heading", {
-    name: "Fetching the Home Assistant image",
+    name: "Downloading the Home Assistant image",
   });
   for (const part of [mascot, parts, heading]) {
     await expect(part).toBeVisible();
