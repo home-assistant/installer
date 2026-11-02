@@ -430,7 +430,7 @@ describe("vm-progress-view", () => {
       "Building the VM",
       "Waiting for network connection",
       "Waiting for Home Assistant",
-      "Installing latest Home Assistant",
+      "Installing Home Assistant",
     ]);
 
     download.resolve();
