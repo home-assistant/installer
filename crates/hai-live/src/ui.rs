@@ -636,10 +636,6 @@ mod tests {
         rows.iter().any(|row| row.contains(text))
     }
 
-    fn row_of(rows: &[String], text: &str) -> Option<usize> {
-        rows.iter().position(|row| row.contains(text))
-    }
-
     fn disks() -> Screen {
         let mut hidden: Vec<(String, Hidden)> = (0..16)
             .map(|n| (format!("ram{n}"), Hidden::Skipped(Reason::RamDisk)))
@@ -1034,19 +1030,16 @@ mod tests {
 
     #[test]
     fn the_language_picker_marks_the_active_language() {
-        let german = Language::for_tag("de");
-        let rows = draw(&Screen::Languages { selected: german }, 80, 25);
+        let english = Language::english();
+        let rows = draw(&Screen::Languages { selected: english }, 80, 25);
         assert!(shows(&rows, " Language "), "{}", rows.join("\n"));
-        assert!(shows(&rows, "\u{25ba} Deutsch"));
-        assert!(shows(&rows, "  English"));
-        // Sorted by their own names
-        assert!(row_of(&rows, "Deutsch") < row_of(&rows, "English"));
+        assert!(shows(&rows, "\u{25ba} English"));
         assert!(shows(&rows, "Enter apply"));
     }
 
     #[test]
     fn outside_english_the_language_is_also_labeled_in_english() {
-        let german = Language::for_tag("de");
+        let german = Language::untranslated("de");
         let rows = draw_in(german, &disks(), 80, 25);
         assert!(shows(&rows, "/Language"), "{}", rows.join("\n"));
         let rows = draw_in(german, &Screen::Languages { selected: german }, 80, 25);

@@ -34,16 +34,14 @@ impl Language {
 
     /// The catalog for the BCP 47 `tag`: the exact one, else the one with trailing subtags
     /// dropped (`de-AT` gets `de`), else English.
-    pub fn for_tag(mut tag: &str) -> Self {
-        loop {
-            if let Some(catalog) = CATALOGS.iter().find(|c| c.tag.eq_ignore_ascii_case(tag)) {
-                return Self(catalog);
-            }
-            match tag.rsplit_once('-') {
-                Some((shorter, _)) => tag = shorter,
-                None => return Self::english(),
-            }
-        }
+    pub fn for_tag(tag: &str) -> Self {
+        Self(nearest(CATALOGS, tag))
+    }
+
+    /// A language with no messages of its own, so it shows the English.
+    #[cfg(test)]
+    pub fn untranslated(tag: &'static str) -> Self {
+        Self(Box::leak(Box::new(Catalog { tag, messages: &[] })))
     }
 
     /// Every compiled language, sorted by its own name.
@@ -117,6 +115,19 @@ impl Language {
         let messages = self.0.messages;
         let index = messages.binary_search_by_key(&key, |&(key, _)| key).ok()?;
         Some(messages[index].1)
+    }
+}
+
+/// The catalog for `tag` like [`Language::for_tag`], with the first of `catalogs` as English.
+fn nearest(catalogs: &'static [Catalog], mut tag: &str) -> &'static Catalog {
+    loop {
+        if let Some(catalog) = catalogs.iter().find(|c| c.tag.eq_ignore_ascii_case(tag)) {
+            return catalog;
+        }
+        match tag.rsplit_once('-') {
+            Some((shorter, _)) => tag = shorter,
+            None => return &catalogs[0],
+        }
     }
 }
 
@@ -621,6 +632,16 @@ mod tests {
 
     #[test]
     fn finds_the_nearest_catalog_for_a_tag() {
+        static CATALOGS: &[Catalog] = &[
+            Catalog {
+                tag: "en",
+                messages: &[],
+            },
+            Catalog {
+                tag: "de",
+                messages: &[],
+            },
+        ];
         // qaa (private use) and the region ZZ (unknown) never get a catalog
         for (tag, expected) in [
             ("de", "de"),
@@ -632,7 +653,7 @@ mod tests {
             ("deutsch", "en"),
             ("", "en"),
         ] {
-            assert_eq!(Language::for_tag(tag).tag(), expected, "{tag}");
+            assert_eq!(nearest(CATALOGS, tag).tag, expected, "{tag}");
         }
     }
 
