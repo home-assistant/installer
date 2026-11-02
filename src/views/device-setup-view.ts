@@ -314,7 +314,7 @@ export class DeviceSetupView extends LitElement {
       case "waiting":
         return localize("views.device_setup_view.looking_for_device");
       case "updating":
-        return localize("views.device_setup_view.installing_latest");
+        return localize("common.install.installing_home_assistant");
     }
   }
 

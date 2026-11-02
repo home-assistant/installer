@@ -62,7 +62,7 @@ describe("shared install layouts", () => {
           layout
             .shadowRoot!.querySelector(".stage:last-child .stage-label")!
             .textContent?.trim()
-        ).to.equal("Installing latest Home Assistant");
+        ).to.equal("Installing Home Assistant");
       }
       for (const stage of ["downloading", "extracting"] as const) {
         for (const total of [102400, 0]) {

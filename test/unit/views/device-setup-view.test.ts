@@ -111,7 +111,7 @@ describe("device-setup-view", () => {
     );
     expect(progress.stages.map(({ label }) => label)).to.deep.equal([
       "Looking for your device on the network",
-      "Installing latest Home Assistant",
+      "Installing Home Assistant",
     ]);
     // Leaving loses nothing: the device carries on without the installer
     expect(progress.leavable).to.be.true;
@@ -196,7 +196,7 @@ describe("device-setup-view", () => {
     expect(progress.progress).to.equal(42);
     expect(progress.indeterminate).to.be.false;
     // Its estimate says how long, instead of the usual time
-    expect(progress.description).to.equal("Installing latest Home Assistant");
+    expect(progress.description).to.equal("Installing Home Assistant");
     expect(await eta(progress)).to.equal("Calculating...");
     // Worded for a device, not a VM
     expect(progress.warning).to.contain("Install it on a larger drive.");
@@ -217,7 +217,7 @@ describe("device-setup-view", () => {
 
     await waitUntil(() => progress.warning, "the report never showed");
     expect(progress.description).to.equal(
-      "Installing latest Home Assistant (this can take up to 20 minutes)"
+      "Installing Home Assistant (this can take up to 20 minutes)"
     );
     expect(progress.indeterminate).to.be.true;
     expect(progress.measurable).to.be.false;

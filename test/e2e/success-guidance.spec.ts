@@ -137,7 +137,7 @@ test("waits for the device the drive starts until Home Assistant is ready", asyn
     setup
       .getByRole("list", { name: "Installation stages" })
       .locator('[aria-current="step"]')
-  ).toContainText("Installing latest Home Assistant", { timeout: 20000 });
+  ).toContainText("Installing Home Assistant", { timeout: 20000 });
   await expect(setup.getByRole("progressbar")).toBeVisible();
   // Estimated from how fast the landing page reports the download going
   await expect(setup.locator(".eta")).toContainText("remaining", {

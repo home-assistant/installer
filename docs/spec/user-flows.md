@@ -162,10 +162,10 @@ says how to find the device without it.
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │
-│   Installing latest Home Assistant                          │
+│   Installing Home Assistant                                 │
 │   ✓ Looking for your device on the network                  │
 │   ✓ Waiting for Home Assistant                              │
-│   ◉ Installing latest Home Assistant     ████████░░░  42%   │
+│   ◉ Installing Home Assistant            ████████░░░  42%   │
 │   Checking Home Assistant at http://192.168.1.50            │
 │                                                             │
 │   [ Back ] [ Cancel ]                            [ Skip ]   │
