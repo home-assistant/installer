@@ -45,7 +45,8 @@ describe("live-usb-progress-view", () => {
   it("writes the stick to the selected drive and reports completion", async () => {
     wizardState.setSelection("liveMedia", "usb");
     storeDriveSelection(MOCK_BLOCK_DEVICES[0]);
-    // The stick starts in the app's language
+    // The stick starts in the catalog the app shows, not in the locale, so it
+    // picks the same script
     setLanguage("de-AT");
     const calls = mockCommands();
     const el = fixtureSync<LiveUsbProgressView>(
@@ -64,7 +65,7 @@ describe("live-usb-progress-view", () => {
       vendor: MOCK_BLOCK_DEVICES[0].vendor,
       serial: MOCK_BLOCK_DEVICES[0].serial,
     });
-    expect(calls[0].args.language).to.equal("de-AT");
+    expect(calls[0].args.language).to.equal("de");
 
     calls[0].args.progressChannel.onmessage({
       stage: "writing",
@@ -113,7 +114,7 @@ describe("live-usb-progress-view", () => {
       folder: "/home/me",
       fileName: "stick.iso",
       overwrite: true,
-      language: "de-AT",
+      language: "de",
     });
 
     calls[0].result.resolve("/home/me/stick.iso");

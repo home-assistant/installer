@@ -1,5 +1,5 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
-import { getLanguage } from "../localization/localize.js";
+import { shownLanguage } from "../localization/initialize.js";
 import { failMockOperation } from "./mock-failures.js";
 import type { ExpectedDevice, FlashProgress } from "./types.js";
 
@@ -49,7 +49,7 @@ export async function createLiveUsb(
   await invoke("create_live_usb", {
     deviceId,
     expectedDevice,
-    language: getLanguage(),
+    language: shownLanguage(),
     attempt,
     progressChannel: channel,
   });
@@ -76,7 +76,7 @@ export async function saveLiveIso(
     folder,
     fileName,
     overwrite,
-    language: getLanguage(),
+    language: shownLanguage(),
     attempt,
     progressChannel: channel,
   });
