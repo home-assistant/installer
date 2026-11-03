@@ -16,6 +16,7 @@ import type WaInput from "@home-assistant/webawesome/dist/components/input/input
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 import "@home-assistant/webawesome/dist/components/select/select.js";
+import "@home-assistant/webawesome/dist/components/option/option.js";
 import {
   wizardState,
   type WizardSelections,

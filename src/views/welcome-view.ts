@@ -219,6 +219,9 @@ export class WelcomeView extends LitElement {
     `,
   ];
 
+  // Clicking the logo five times is a hidden easter egg, not a control, so
+  // it needs no keyboard way in
+  /* eslint-disable lit-a11y/click-events-have-key-events */
   render() {
     return html`
       ${this._renderLanguages()}
@@ -273,6 +276,7 @@ export class WelcomeView extends LitElement {
       </footer>
     `;
   }
+  /* eslint-enable lit-a11y/click-events-have-key-events */
 
   // Hidden while English is the only language
   private _renderLanguages() {

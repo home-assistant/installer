@@ -1,6 +1,7 @@
 import { css, html } from "lit";
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 import "@home-assistant/webawesome/dist/components/select/select.js";
+import "@home-assistant/webawesome/dist/components/option/option.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/info-dialog.js";
 import { proxmoxEnableStorageImport } from "../../api/commands.js";

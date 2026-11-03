@@ -429,7 +429,7 @@ export class ProxmoxConnectView extends LitElement {
           placeholder="https://192.168.1.100:8006"
           autocomplete="url"
           autocapitalize="off"
-          autocorrect="off"
+          .autocorrect=${false}
           .spellcheck=${false}
           required
           .value=${this._serverUrl}
@@ -456,7 +456,7 @@ export class ProxmoxConnectView extends LitElement {
           placeholder="root@pam"
           autocomplete="username"
           autocapitalize="off"
-          autocorrect="off"
+          .autocorrect=${false}
           .spellcheck=${false}
           required
           .value=${this._username}

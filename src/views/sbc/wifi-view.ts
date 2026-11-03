@@ -72,7 +72,7 @@ export class WifiView extends LitElement {
                 label=${localize("views.sbc.wifi_view.network")}
                 autocomplete="off"
                 autocapitalize="off"
-                autocorrect="off"
+                .autocorrect=${false}
                 .spellcheck=${false}
                 .value=${wifi.ssid}
                 @input=${this._onSsidInput}
