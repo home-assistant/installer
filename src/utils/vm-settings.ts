@@ -3,7 +3,7 @@ import { ifDefined } from "lit/directives/if-defined.js";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import "../components/vm-resources.js";
-import { nextOnEnter } from "./next-step.js";
+import { nextOnEnter } from "../components/wizard-next.js";
 import { localize } from "../localization/localize.js";
 import {
   DEFAULT_CPU_CORES,

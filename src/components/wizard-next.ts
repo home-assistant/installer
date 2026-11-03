@@ -1,4 +1,4 @@
-import { fireEvent } from "./fire-event.js";
+import { fireEvent } from "../utils/fire-event.js";
 
 /**
  * Go on from the step `view` shows, as Next does, once a card is picked.

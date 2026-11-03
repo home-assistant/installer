@@ -9,7 +9,7 @@ import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
 import { LatestRequest } from "../../utils/latest-request.js";
-import { nextOnEnter } from "../../utils/next-step.js";
+import { nextOnEnter } from "../../components/wizard-next.js";
 import { customElement, queryAll, state } from "lit/decorators.js";
 import {
   proxmoxCertificateFingerprint,

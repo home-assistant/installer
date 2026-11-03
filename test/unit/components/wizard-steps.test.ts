@@ -6,7 +6,7 @@ import {
   wizardStep,
   type WizardStepView,
 } from "../../../src/components/wizard-steps.js";
-import { nextOnEnter } from "../../../src/utils/next-step.js";
+import { nextOnEnter } from "../../../src/components/wizard-next.js";
 import {
   MINIPC_STEPS,
   wizardState,
