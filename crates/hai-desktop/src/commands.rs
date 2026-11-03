@@ -288,9 +288,8 @@ where
             // ship a qcow2 under the same board name, which must never be
             // written to a drive.
             release
-                .image_for(&request.board, ImageFormat::Raw)
-                .cloned()
-                .ok_or_else(|| hai_core::Error::ReleaseUnusable("No raw image in release".into()))?
+                .require_image(&request.board, ImageFormat::Raw)?
+                .clone()
         }
     };
 
@@ -521,9 +520,7 @@ where
         .await
         .map_err(CommandError::from)?;
 
-    let image = release.image_for(arch, ImageFormat::Qcow2).ok_or_else(|| {
-        hai_core::Error::ReleaseUnusable("No compatible virtual-machine image was found.".into())
-    })?;
+    let image = release.require_image(arch, ImageFormat::Qcow2)?;
 
     let cache_dir = backend.cache_dir().map_err(CommandError::from)?;
     let temporary_image =
@@ -1320,6 +1317,7 @@ mod tests {
             .unwrap_err();
         // Remote details stay out of the error; the code says what happened
         assert_eq!(error.code, "release_unavailable");
+        assert!(!error.retryable);
     }
 
     #[tokio::test]
@@ -2749,7 +2747,7 @@ mod mock_tests {
             .get_latest_haos_release_for_board(board)
             .await
             .unwrap();
-        let image = release.image_for(board, ImageFormat::Qcow2).unwrap();
+        let image = release.require_image(board, ImageFormat::Qcow2).unwrap();
         assert!(image
             .download_url
             .ends_with(&format!("haos_{board}-16.3.qcow2.xz")));
@@ -2796,10 +2794,10 @@ mod mock_tests {
     async fn mock_release_preserves_raw_intel_image_without_inventing_qcow2() {
         let release = BackendMock.get_haos_release("latest").await.unwrap();
         assert!(release
-            .image_for("generic-x86-64", ImageFormat::Raw)
-            .is_some());
+            .require_image("generic-x86-64", ImageFormat::Raw)
+            .is_ok());
         assert!(release
-            .image_for("generic-x86-64", ImageFormat::Qcow2)
-            .is_none());
+            .require_image("generic-x86-64", ImageFormat::Qcow2)
+            .is_err());
     }
 }

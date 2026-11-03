@@ -85,9 +85,7 @@ pub async fn fetch_haos<B: ReleaseSource, P: ProgressCallback>(
             "unexpected version {version:?}"
         )));
     }
-    let image = release
-        .image_for(HAOS_BOARD, ImageFormat::Raw)
-        .ok_or_else(|| Error::ReleaseUnusable(format!("{version} has no generic x86-64 image")))?;
+    let image = release.require_image(HAOS_BOARD, ImageFormat::Raw)?;
     let sha256 = expected_sha256(image)
         .map(hex::encode)
         .map_err(|_| Error::ReleaseUnusable(format!("{version} has no usable SHA-256 checksum")))?;

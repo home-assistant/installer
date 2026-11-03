@@ -1914,10 +1914,10 @@ mod tests {
             .await
             .unwrap();
 
-        let tinker = release.image_for("tinker", ImageFormat::Raw).unwrap();
+        let tinker = release.require_image("tinker", ImageFormat::Raw).unwrap();
         assert_eq!(tinker.digest, None);
         let mut selected = release
-            .image_for("ova", ImageFormat::Qcow2)
+            .require_image("ova", ImageFormat::Qcow2)
             .unwrap()
             .clone();
         assert_eq!(
@@ -2258,7 +2258,7 @@ mod tests {
         );
         for release in [first.unwrap(), second.unwrap()] {
             assert_eq!(release.version, "18.3");
-            let image = release.image_for("rpi5-64", ImageFormat::Raw).unwrap();
+            let image = release.require_image("rpi5-64", ImageFormat::Raw).unwrap();
             assert_eq!(image.download_url, download_url);
             assert!(image.digest.is_some());
         }

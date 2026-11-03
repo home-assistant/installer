@@ -990,10 +990,7 @@ async fn check_install<B: ReleaseSource>(
     validate_vm_name(&config.name)?;
 
     let release: HaosRelease = backend.get_latest_haos_release_for_board("ova").await?;
-    let image = release
-        .image_for("ova", ImageFormat::Qcow2)
-        .cloned()
-        .ok_or_else(|| Error::ReleaseUnusable(format!("No OVA image in {}", release.version)))?;
+    let image = release.require_image("ova", ImageFormat::Qcow2)?.clone();
 
     pre_install_checks(session, config, image.size).await?;
     Ok(image)

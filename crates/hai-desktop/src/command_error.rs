@@ -55,6 +55,7 @@ impl CommandError {
             error.code,
             "unsupported_platform"
                 | "invalid_config"
+                | "release_unavailable"
                 | "utm_operation_uncertain"
                 | "proxmox_session_expired"
                 | "proxmox_certificate_changed"
@@ -126,7 +127,8 @@ impl From<Error> for CommandError {
                 return result;
             }
             Error::LiveUsbInvalidHaiLive => ("hai_live_invalid", "The program for the USB stick (hai-live) is not the Linux build. Rebuild it for x86_64-unknown-linux-musl, then try again.", true),
-            Error::ReleaseUnusable(_) => ("release_unavailable", "The latest Home Assistant OS release can't be used right now. Try again later.", true),
+            // Release information is cached, so a retry gets the same release
+            Error::ReleaseUnusable(_) => ("release_unavailable", "The latest Home Assistant OS release can't be used for this installation.", false),
             Error::LiveUsbBuild(_) => ("image_build_failed", "The bootable media could not be built. Check available storage, then try again.", true),
         };
         Self::new(code, message, retryable)
@@ -163,7 +165,7 @@ mod tests {
     fn release_and_unpacking_failures_name_what_failed() {
         let release = CommandError::from(Error::ReleaseUnusable("No raw image in release".into()));
         assert_eq!(release.code, "release_unavailable");
-        assert!(release.retryable);
+        assert!(!release.retryable);
 
         // The download was verified, so this computer is what to check
         let extraction = CommandError::from(Error::ExtractionFailed("corrupt".into()));

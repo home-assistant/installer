@@ -28,12 +28,12 @@ describe("installer errors", () => {
 
   it("says when the release, not the installer, is the problem", () => {
     const result = installerError(
-      ipcError("release_unavailable", "No raw image in release", true)
+      ipcError("release_unavailable", "No raw image in release", false)
     );
     expect(result.message).to.equal(
-      "The latest Home Assistant OS release can't be used right now. Try again later."
+      "The latest Home Assistant OS release can't be used for this installation."
     );
-    expect(result.retryable).to.be.true;
+    expect(result.retryable).to.be.false;
   });
 
   it("formats structured capacity details and rejects unsafe retry", () => {
