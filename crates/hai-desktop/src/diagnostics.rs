@@ -78,8 +78,8 @@ pub fn error(error: &hai_core::Error) {
 
 /// Catalog parameters that hold names the user chose, like a Proxmox node's,
 /// or a path through them, like `/storage/<storage>`.
-const USER_NAMED: [&str; 8] = [
-    "node", "storage", "storages", "bridge", "vnet", "volume", "name", "path",
+const USER_NAMED: [&str; 9] = [
+    "node", "storage", "storages", "bridge", "vnet", "volume", "name", "path", "mount",
 ];
 
 fn describe(error: &hai_core::Error) -> String {
@@ -139,10 +139,11 @@ fn scrub(text: &str) -> String {
     });
     static RULES: LazyLock<Vec<(Regex, &str)>> = LazyLock::new(|| {
         [
-            // User folders, also other users' and drives mounted per user. A name
-            // may hold spaces and parentheses where the path goes on after it;
-            // otherwise it ends at a space, so the text after it stays.
-            (r#"(?i)([a-z]:[\\/]+users[\\/]+|/home/|/users/|/(?:run/)?media/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|[^\s\\/:"()]+)"#, "${1}<user>${2}"),
+            // User folders, also other users', and drives mounted per user or by
+            // their label. A name may hold spaces and parentheses where the path
+            // goes on after it; otherwise it ends at a space, so the text after
+            // it stays.
+            (r#"(?i)([a-z]:[\\/]+users[\\/]+|/home/|/users/|/(?:run/)?media/|/volumes/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|[^\s\\/:"()]+)"#, "${1}<user>${2}"),
             // Stops at a quote or backslash, so the next rule still sees where a quoted value ends
             (r#"(?i)\b(basic|bearer)\s+[^\s"\\]+"#, "${1} <redacted>"),
             (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|\S+)"#, "${1}=<redacted>"),
@@ -632,6 +633,10 @@ mod tests {
                 "Permission denied: /home/<user>/.cache and /run/media/<user>/STICK",
             ),
             (
+                "Cannot write /Volumes/STICK/haos.img",
+                "Cannot write /Volumes/<user>/haos.img",
+            ),
+            (
                 "error sending request for url (https://github.com/home-assistant/operating-system/releases/download/16.3/haos.img.xz?token=x)",
                 "error sending request for url (https://github.com/home-assistant/operating-system/releases/download/16.3/haos.img.xz)",
             ),
@@ -793,6 +798,11 @@ mod tests {
             describe(&denied),
             "Your Proxmox user is missing SDN.Use on <name>."
         );
+        let unknown = hai_core::Error::PermissionDenied(hai_core::message!(
+            "backend.disk.system_disk_unknown",
+            mount = "/Volumes/Jane's Backup",
+        ));
+        assert!(describe(&unknown).contains("containing <name>;"));
     }
 
     #[test]
