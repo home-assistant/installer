@@ -1238,7 +1238,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     let filename = local_path
         .file_name()
         .and_then(|n| n.to_str())
-        .ok_or_else(|| Error::ProxmoxApi("Invalid file path".to_string()))?
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid file path"))?
         .to_string();
 
     progress_callback.on_progress(FlashProgress {
@@ -5417,6 +5417,20 @@ mod tests {
             // A local file problem, not the server's
             assert!(
                 matches!(&result, Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound),
+                "{result:?}"
+            );
+
+            // A path without a file name is just as local
+            let result = upload_image_to_proxmox(
+                &session,
+                "pve",
+                &std::path::PathBuf::from("/"),
+                &progress,
+                "local",
+            )
+            .await;
+            assert!(
+                matches!(&result, Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::InvalidInput),
                 "{result:?}"
             );
         }
