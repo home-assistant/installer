@@ -159,11 +159,14 @@ fn scrub(text: &str) -> String {
     });
     static RULES: LazyLock<Vec<(Regex, &str)>> = LazyLock::new(|| {
         [
-            // User folders, also other users', and drives mounted per user or by
-            // their label. A name may hold spaces and parentheses where the path
-            // goes on after it; otherwise it ends at a space, so the text after
-            // it stays.
-            (r#"(?i)([a-z]:[\\/]+users[\\/]+|/home/|/users/|/(?:run/)?media/|/volumes/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|[^\s\\/:"()]+)"#, "${1}<user>${2}"),
+            // Windows user folders and macOS volume labels. A name may hold spaces
+            // and parentheses, so it runs to the next separator, or else to a
+            // quote, comma, colon or `(os error N)`: more text rather than part
+            // of a name.
+            (r#"(?i)([a-z]:[\\/]+users[\\/]+|/volumes/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|(?:\((?:[^o\\/:"()]|o[^s\\/:"()])[^\\/:"()]*\)|[^\s\\/:",;()])+(?:\s+(?:\((?:[^o\\/:"()]|o[^s\\/:"()])[^\\/:"()]*\)|[^\s\\/:",;()])+)*)"#, "${1}<user>${2}"),
+            // Unix user folders, also other users' and drives mounted per user,
+            // whose names hold no spaces
+            (r#"(?i)(/home/|/users/|/(?:run/)?media/)[^\s\\/:"',;()]+"#, "${1}<user>"),
             // Stops at a quote or backslash, so the next rule still sees where a quoted value ends
             (r#"(?i)\b(basic|bearer)\s+[^\s"\\]+"#, "${1} <redacted>"),
             (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|\S+)"#, "${1}=<redacted>"),
@@ -738,7 +741,7 @@ mod tests {
                 r#"{"password=<redacted>}"#,
             ),
             (
-                r"(in C:\Users\Jane (Work) Doe\AppData and C:\Users\Jane)",
+                r"(in C:\Users\Jane (Work) Doe\AppData and C:\Users\Jane (Work) Doe)",
                 r"(in C:\Users\<user>\AppData and C:\Users\<user>)",
             ),
             (
@@ -746,8 +749,17 @@ mod tests {
                 "Cannot open /home/<user> (os error 13); copy /home/<user> and /tmp/x failed",
             ),
             (
+                r#"C:\Users\Jane Doe (os error 5); "C:\Users\Jane Doe", C:\Users\Jane Doe: denied"#,
+                r#"C:\Users\<user> (os error 5); "C:\Users\<user>", C:\Users\<user>: denied"#,
+            ),
+            (
+                r"/Volumes/Jane's Backup; C:\Users\Jane Doe",
+                r"/Volumes/<user>; C:\Users\<user>",
+            ),
+            // Can't tell where the name ends, so it all goes
+            (
                 r"C:\Users\Jane is locked by another process",
-                r"C:\Users\<user> is locked by another process",
+                r"C:\Users\<user>",
             ),
             (
                 r"C:\Users\Jane (Work (Admin)) Doe\AppData and C:\Users\Jane)Doe\AppData",
