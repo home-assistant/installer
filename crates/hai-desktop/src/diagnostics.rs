@@ -604,6 +604,8 @@ mod tests {
     use super::*;
 
     #[test]
+    // The whole tail is checked, so not while other tests log their errors
+    #[serial_test::serial]
     fn text_errors_enter_diagnostics_only_as_a_category() {
         for message in [
             "Proxmox API error: https://admin:password@private.example ticket=secret",
@@ -614,12 +616,7 @@ mod tests {
             let operation = Operation::new("privacy-test");
             let _ = operation.finish::<(), String>(Err(message.into()));
         }
-        // Other tests log their own errors alongside
-        let tail = test_log_tail()
-            .into_iter()
-            .filter(|line| line.contains("privacy-test"))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let tail = test_log_tail().join("\n");
         for secret in ["password", "private", "secret", "Injected", "csrf"] {
             assert!(!tail.contains(secret), "{tail}");
         }
@@ -940,6 +937,10 @@ mod tests {
                 "home_assistant_lookup failed network_error",
             ]
         );
+        let tail = tail.join("\n");
+        for private in ["private", "192.168"] {
+            assert!(!tail.contains(private), "{tail}");
+        }
     }
 
     #[test]
@@ -1269,7 +1270,7 @@ mod tests {
         let home = app.path().home_dir().unwrap();
         for value in report.values() {
             let value = value.as_str().unwrap();
-            assert!(!value.contains("private-user"), "{value}");
+            assert!(!value.contains("private"), "{value}");
             // A root home dir (some containers) is part of every path
             assert!(
                 home.parent().is_none() || !value.contains(&*home.to_string_lossy()),
