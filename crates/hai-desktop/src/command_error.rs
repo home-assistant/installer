@@ -116,6 +116,8 @@ impl From<Error> for CommandError {
             Error::RateLimited(message) => return Self::with_message("rate_limited", message, true),
             // Names the service, so the frontend doesn't say the image failed
             Error::ServiceUnavailable(message) => return Self::with_message("network", message, true),
+            // Generic text; the tag or asset is only for debugging
+            Error::UnexpectedRelease(_) => return Self::with_message("network", &hai_core::message!("backend.download.github_invalid_response"), true),
             Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and try again.", true),
             // A download failure in the log, apart from a metadata service outage
             Error::ImageUnavailable(status) => return Self::with_message("download_failed", &hai_core::message!("backend.download.image_unavailable", status = status), true),
@@ -180,6 +182,9 @@ mod tests {
             image.details["message_key"],
             "backend.download.image_unavailable"
         );
+
+        let unexpected = CommandError::from(Error::UnexpectedRelease("release 1.0".into()));
+        assert!(!unexpected.message.contains("1.0"), "{unexpected}");
     }
 
     #[test]

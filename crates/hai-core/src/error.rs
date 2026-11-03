@@ -99,6 +99,11 @@ pub enum Error {
     #[error("Download failed: {0}")]
     DownloadFailed(String),
 
+    /// GitHub described another release than the one asked for. Names the
+    /// tag or asset for the log; the user sees generic text.
+    #[error("GitHub returned unexpected release information: {0}")]
+    UnexpectedRelease(String),
+
     /// The image server answered the download with this HTTP status.
     #[error("The image server answered HTTP {0}")]
     ImageUnavailable(u16),

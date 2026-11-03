@@ -570,7 +570,10 @@ async fn get_haos_release(version: &str) -> Result<HaosRelease> {
 /// `HAOS_DOWNLOADS`; anything else fails the whole release.
 fn parse_github_release(release: GitHubRelease, version: &str) -> Result<HaosRelease> {
     if release.tag_name != version {
-        return Err(Error::ServiceUnavailable(github_invalid()));
+        return Err(Error::UnexpectedRelease(format!(
+            "release {} instead of {version}",
+            release.tag_name
+        )));
     }
     let mut images = Vec::new();
 
@@ -593,7 +596,10 @@ fn parse_github_release(release: GitHubRelease, version: &str) -> Result<HaosRel
         // Exact match: a prefix check could be escaped with dot segments.
         let expected_url = format!("{HAOS_DOWNLOADS}/{version}/{}", asset.name);
         if asset.browser_download_url != expected_url {
-            return Err(Error::ServiceUnavailable(github_invalid()));
+            return Err(Error::UnexpectedRelease(format!(
+                "download location for {}",
+                asset.name
+            )));
         }
 
         images.push(HaosImage {
@@ -2684,9 +2690,10 @@ mod tests {
                 "14.2",
             )
         };
-        let rejected = |result: Result<HaosRelease>| {
-            matches!(result, Err(Error::ServiceUnavailable(message))
-                if message.key == "backend.download.github_invalid_response")
+        // The log names what didn't match
+        let rejected = |result: Result<HaosRelease>, detail: &str| {
+            matches!(result, Err(Error::UnexpectedRelease(message))
+                if message.contains(detail))
         };
 
         // Names that would put dot segments or a query into the URL are skipped.
@@ -2714,13 +2721,16 @@ mod tests {
             let mut asset = official("haos_rpi5-64-14.2.img.xz");
             asset.browser_download_url = url.to_string();
             let assets = vec![official("haos_ova-14.2.qcow2.xz"), asset];
-            assert!(rejected(parse("14.2", assets)), "{url}");
+            assert!(
+                rejected(parse("14.2", assets), "haos_rpi5-64-14.2.img.xz"),
+                "{url}"
+            );
         }
 
-        assert!(rejected(parse(
-            "1.0",
-            vec![official("haos_rpi5-64-1.0.img.xz")]
-        )));
+        assert!(rejected(
+            parse("1.0", vec![official("haos_rpi5-64-1.0.img.xz")]),
+            "release 1.0"
+        ));
     }
 
     #[tokio::test]
