@@ -110,6 +110,11 @@ fn describe(error: &hai_core::Error) -> String {
         }
         source = cause.source();
     }
+    // Proxmox quotes the names in its replies, like `storage 'x' does not exist`
+    if let ProxmoxApi(_) = error {
+        static QUOTED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(^|\W)'[^']*'").unwrap());
+        text = QUOTED.replace_all(&text, "${1}'<name>'").into_owned();
+    }
     scrub(&text)
 }
 
@@ -820,6 +825,13 @@ mod tests {
         ));
         let created = describe(&created);
         assert!(!created.to_lowercase().contains("jane"), "{created}");
+        let reply = hai_core::Error::ProxmoxApi(
+            "VM creation (500): unable to create VM 100 - volume 'family-nas:vm-100-disk-0' already exists; storage 'jane backup' doesn't exist".into(),
+        );
+        assert_eq!(
+            describe(&reply),
+            "Proxmox API error: VM creation (500): unable to create VM 100 - volume '<name>' already exists; storage '<name>' doesn't exist"
+        );
         let unknown = hai_core::Error::PermissionDenied(hai_core::message!(
             "backend.disk.system_disk_unknown",
             mount = "/Volumes/Jane's Backup",
