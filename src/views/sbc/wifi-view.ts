@@ -13,7 +13,7 @@ import "@home-assistant/webawesome/dist/components/switch/switch.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 import { panelStyles } from "../../utils/panel-styles.js";
 import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
-import { nextOnEnter } from "../../components/wizard-steps.js";
+import { nextOnEnter } from "../../utils/next-step.js";
 
 /** Optional step for boards with built-in Wi-Fi: the network to join. */
 @customElement("wifi-view")

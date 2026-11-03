@@ -10,7 +10,7 @@ import {
 } from "../../api/index.js";
 import { installerError } from "../../utils/installer-error.js";
 import { wizardState } from "../../state/wizard-state.js";
-import { nextOnEnter } from "../../components/wizard-steps.js";
+import { nextOnEnter } from "../../utils/next-step.js";
 import { renderStepHeading } from "../../utils/step-styles.js";
 import { liveUsbStyles } from "./live-usb-styles.js";
 import "@home-assistant/webawesome/dist/components/input/input.js";

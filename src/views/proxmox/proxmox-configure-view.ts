@@ -22,7 +22,7 @@ import {
   type WizardState,
 } from "../../state/wizard-state.js";
 import { proxmoxCheckVmConfig } from "../../api/commands.js";
-import { nextOnEnter } from "../../components/wizard-steps.js";
+import { nextOnEnter } from "../../utils/next-step.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/details/details.js";
 import {

@@ -1,7 +1,7 @@
 import { css, type LitElement, type ReactiveController } from "lit";
 import { getManifest, type Device, type DeviceManifest } from "../api/index.js";
 import type { CardButton } from "../components/card-button.js";
-import { goToNextStep } from "../components/wizard-steps.js";
+import { goToNextStep } from "./next-step.js";
 import { localize } from "../localization/localize.js";
 import { wizardState, type WizardSelections } from "../state/wizard-state.js";
 import { recordFailure } from "./diagnostics.js";

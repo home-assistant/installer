@@ -3,7 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import { localize, localizeContent } from "../localization/localize.js";
 import { WizardStateController } from "../state/wizard-state-controller.js";
 import { wizardState } from "../state/wizard-state.js";
-import { goToNextStep } from "../components/wizard-steps.js";
+import { goToNextStep } from "../utils/next-step.js";
 import {
   renderAnnouncedName,
   renderHomeAssistantLink,

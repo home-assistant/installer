@@ -2,40 +2,11 @@ import { localize } from "../localization/localize.js";
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
 
-// Import views
+// Import views. wizard-steps.ts imports the views of the wizard's steps.
 import "../views/welcome-view.js";
 import "../views/connection-check-view.js";
 import "../views/path-selection-view.js";
 import "../views/other-options-view.js";
-import "../views/sbc/device-selection-view.js";
-import "../views/sbc/drive-selection-view.js";
-import "../views/sbc/confirmation-view.js";
-import "../views/sbc/wifi-view.js";
-import "../views/sbc/progress-view.js";
-import "../views/sbc/success-view.js";
-import "../views/ha-hardware/device-selection-view.js";
-import "../views/ha-hardware/module-selection-view.js";
-import "../views/ha-hardware/success-view.js";
-import "../views/minipc/setup-method-view.js";
-import "../views/minipc/architecture-selection-view.js";
-import "../views/minipc/media-view.js";
-import "../views/live-usb/live-usb-gate.js";
-import "../views/live-usb/live-iso-location-view.js";
-import "../views/live-usb/live-usb-summary-view.js";
-import "../views/live-usb/live-usb-progress-view.js";
-import "../views/live-usb/live-usb-success-view.js";
-import "../views/device-setup-view.js";
-import "../views/device-done-view.js";
-import "../views/utm/utm-check-view.js";
-import "../views/utm/utm-configure-view.js";
-import "../views/utm/utm-confirm-view.js";
-import "../views/utm/utm-progress-view.js";
-import "../views/utm/utm-success-view.js";
-import "../views/proxmox/proxmox-connect-view.js";
-import "../views/proxmox/proxmox-configure-view.js";
-import "../views/proxmox/proxmox-confirm-view.js";
-import "../views/proxmox/proxmox-progress-view.js";
-import "../views/proxmox/proxmox-success-view.js";
 import { enabledImportStorageList } from "../views/proxmox/proxmox-success-view.js";
 
 // Import components
