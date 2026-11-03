@@ -99,6 +99,10 @@ pub enum Error {
     #[error("Download failed: {0}")]
     DownloadFailed(String),
 
+    /// The image server answered the download with this HTTP status.
+    #[error("The image server answered HTTP {0}")]
+    ImageUnavailable(u16),
+
     /// This computer has no room for an image it downloads or unpacks.
     #[error("Not enough free space: {needed} bytes needed, {free} bytes free")]
     NotEnoughSpace { needed: u64, free: u64 },

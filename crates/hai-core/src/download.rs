@@ -747,10 +747,7 @@ async fn download_image_with_client<P: ProgressCallback>(
     let response = client.get(&image.download_url).send().await?;
 
     if !response.status().is_success() {
-        return Err(Error::ServiceUnavailable(crate::message!(
-            "backend.download.image_unavailable",
-            status = response.status().as_u16(),
-        )));
+        return Err(Error::ImageUnavailable(response.status().as_u16()));
     }
 
     let total_size = image.size;
@@ -2851,12 +2848,10 @@ mod tests {
         )
         .await;
         // The server answered, so it names the server, not the connection
-        let Err(Error::ServiceUnavailable(message)) = result else {
-            panic!("{result:?}");
-        };
-        assert_eq!(message.key, "backend.download.image_unavailable");
-        assert_eq!(message.params_json()["status"], 404);
-        assert!(!message.to_string().contains("missing.img.xz"), "{message}");
+        assert!(
+            matches!(result, Err(Error::ImageUnavailable(404))),
+            "{result:?}"
+        );
 
         redirect_mock.assert_async().await;
         actual_mock.assert_async().await;
