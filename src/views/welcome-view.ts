@@ -219,8 +219,7 @@ export class WelcomeView extends LitElement {
     `,
   ];
 
-  // Clicking the logo five times is a hidden easter egg, not a control, so
-  // it needs no keyboard way in
+  // The logo's easter egg is hidden on purpose, so it needs no keyboard way in
   /* eslint-disable lit-a11y/click-events-have-key-events */
   render() {
     return html`

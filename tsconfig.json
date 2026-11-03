@@ -21,8 +21,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
 
-    /* Lit templates, for lit-analyzer and editors. The rules follow the Home
-     * Assistant frontend's. */
+    /* Lit templates, with the Home Assistant frontend's rules */
     "plugins": [
       {
         "name": "ts-lit-plugin",

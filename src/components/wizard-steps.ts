@@ -10,7 +10,6 @@ import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-vi
 import type { ProxmoxConnectView } from "../views/proxmox/proxmox-connect-view.js";
 import { enabledImportStorageList } from "../views/proxmox/proxmox-success-view.js";
 
-// Every view a step renders
 import "../views/sbc/device-selection-view.js";
 import "../views/sbc/drive-selection-view.js";
 import "../views/sbc/confirmation-view.js";

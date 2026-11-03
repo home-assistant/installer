@@ -2,7 +2,7 @@ import { localize } from "../localization/localize.js";
 import { LitElement, html, css, nothing } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
 
-// Import views. wizard-steps.ts imports the views of the wizard's steps.
+// Import views
 import "../views/welcome-view.js";
 import "../views/connection-check-view.js";
 import "../views/path-selection-view.js";

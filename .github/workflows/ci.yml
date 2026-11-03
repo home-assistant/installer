@@ -222,7 +222,6 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
-      # Tags with no definition imported, bindings of the wrong type
       - name: Check Lit templates
         run: npm run lint:lit
 
