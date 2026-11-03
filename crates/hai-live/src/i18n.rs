@@ -5,6 +5,8 @@
 //! intl-messageformat's: `''` is one, `'{` starts quoted text, and "Can't" stays as it is. A
 //! translation that lacks a message, leaves it empty or breaks it shows the English instead.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt::{self, Display};
 
 use icu_locale_core::LanguageIdentifier;
@@ -187,7 +189,7 @@ enum Node<'m> {
 
 /// `message` with its placeholders filled in, choosing plurals by the rules of the language
 /// `tag`. `None` when the message is broken or `args` lacks a value it needs.
-fn format<'m>(message: &'m str, tag: &str, args: &Args) -> Option<Vec<Segment<'m>>> {
+fn format<'m>(message: &'m str, tag: &'static str, args: &Args) -> Option<Vec<Segment<'m>>> {
     let nodes = parse(message)?;
     let mut segments = Vec::new();
     write(&nodes, tag, args, None, &mut segments)?;
@@ -196,7 +198,7 @@ fn format<'m>(message: &'m str, tag: &str, args: &Args) -> Option<Vec<Segment<'m
 
 fn write<'m>(
     nodes: &[Node<'m>],
-    tag: &str,
+    tag: &'static str,
     args: &Args,
     number: Option<&str>,
     out: &mut Vec<Segment<'m>>,
@@ -239,7 +241,7 @@ fn push_text(out: &mut Vec<Segment>, text: &str) {
 fn branch<'a, 'm>(
     branches: &'a [(&'m str, Vec<Node<'m>>)],
     n: u64,
-    tag: &str,
+    tag: &'static str,
 ) -> Option<&'a [Node<'m>]> {
     let find = |matches: &dyn Fn(&str) -> bool| {
         branches
@@ -255,17 +257,28 @@ fn branch<'a, 'm>(
         .or_else(|| find(&|selector| selector == "other"))
 }
 
-fn plural_category(tag: &str, n: u64) -> PluralCategory {
+fn plural_category(tag: &'static str, n: u64) -> PluralCategory {
     plural_rules(tag).map_or(PluralCategory::Other, |rules| rules.category_for(n))
 }
 
-/// The cardinal plural rules of the language `tag`.
-fn plural_rules(tag: &str) -> Option<PluralRules> {
-    let mut language = LanguageIdentifier::try_from_str(tag).ok()?;
-    // CLDR's rules don't depend on the script, but ICU4X takes sr-Latn's from root, where every
-    // number is `other`. The region stays: pt-PT's differ from pt's.
-    language.script = None;
-    PluralRules::try_new_cardinal((&language).into()).ok()
+/// The cardinal plural rules of the language `tag`, built once per language: plural messages
+/// are formatted on every redraw.
+fn plural_rules(tag: &'static str) -> Option<&'static PluralRules> {
+    // Not a static: `PluralRules` isn't `Sync`
+    thread_local! {
+        static BUILT: RefCell<HashMap<&'static str, Option<&'static PluralRules>>> =
+            RefCell::default();
+    }
+    BUILT.with_borrow_mut(|built| {
+        *built.entry(tag).or_insert_with(|| {
+            let mut language = LanguageIdentifier::try_from_str(tag).ok()?;
+            // CLDR's rules don't depend on the script, but ICU4X takes sr-Latn's from root, where
+            // every number is `other`. The region stays: pt-PT's differ from pt's.
+            language.script = None;
+            let rules = PluralRules::try_new_cardinal((&language).into()).ok()?;
+            Some(&*Box::leak(Box::new(rules)))
+        })
+    })
 }
 
 /// Parses `message`, or `None` where it isn't valid.
@@ -422,7 +435,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    fn formatted(message: &str, tag: &str, args: &Args) -> Option<String> {
+    fn formatted(message: &str, tag: &'static str, args: &Args) -> Option<String> {
         let segments = format(message, tag, args)?;
         Some(segments.into_iter().map(|segment| segment.text).collect())
     }
