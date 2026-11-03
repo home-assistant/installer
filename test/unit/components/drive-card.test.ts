@@ -113,6 +113,7 @@ describe("drive-card", () => {
     const el = await fixture<DriveCard>(html`
       <drive-card
         name="Test"
+        highlight="Compute Module eMMC"
         disabled
         disabled-reason="Drive is too small"
       ></drive-card>
@@ -126,7 +127,7 @@ describe("drive-card", () => {
     const el = await fixture<DriveCard>(html`
       <drive-card
         name="Test"
-        tag="Compute Module eMMC"
+        highlight="Compute Module eMMC"
         disabled
         disabled-reason="Drive is too small"
       ></drive-card>
@@ -134,7 +135,12 @@ describe("drive-card", () => {
     const opacity = (selector: string) =>
       getComputedStyle(el.shadowRoot!.querySelector(selector)!).opacity;
 
-    for (const selector of [".icon-container", ".tag", ".name", ".size"]) {
+    for (const selector of [
+      ".icon-container",
+      ".highlight",
+      ".name",
+      ".size",
+    ]) {
       expect(opacity(selector), selector).to.equal("0.5");
     }
     // Opacity on any of these would fade the reason with it
@@ -225,16 +231,20 @@ describe("drive-card", () => {
     expect(findByRole(tree, "radio")[0]!.name).to.contain("SanDisk");
   });
 
-  it("shows a tag only when given one, and reads it with the drive", async () => {
+  it("shows a highlight only when given one, and reads it with the drive", async () => {
     const el = await fixture<DriveCard>(html`
-      <drive-card name="Test"></drive-card>
+      <drive-card name="Test" vendor="mmcblk0"></drive-card>
     `);
-    expect(el.shadowRoot!.querySelector(".tag")).to.be.null;
+    expect(el.shadowRoot!.querySelector(".highlight")).to.be.null;
 
-    el.tag = "Compute Module eMMC";
+    el.highlight = "Compute Module eMMC";
     await el.updateComplete;
-    expect(el.shadowRoot!.querySelector(".tag")!.textContent).to.equal(
+    expect(el.shadowRoot!.querySelector(".highlight")!.textContent).to.equal(
       "Compute Module eMMC"
+    );
+    // The vendor and model stay
+    expect(el.shadowRoot!.querySelector(".details")!.textContent).to.contain(
+      "mmcblk0"
     );
     const tree = await fullA11ySnapshot();
     expect(findByRole(tree, "radio")[0]!.name).to.contain(

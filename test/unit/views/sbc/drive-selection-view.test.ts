@@ -529,7 +529,7 @@ describe("drive-selection-view", () => {
     ["ha-hardware", "yellow-cm4", false],
     ["sbc", undefined, false],
   ] as const) {
-    it(`${highlighted ? "lists the Compute Module's eMMC first, tagged" : "sorts an eMMC drive by size"} (${haHardware ?? flow})`, async () => {
+    it(`${highlighted ? "lists the Compute Module's eMMC first, highlighted" : "sorts an eMMC drive by size"} (${haHardware ?? flow})`, async () => {
       wizardState.startFlow(flow);
       wizardState.setSelection("deviceConfig", config);
       if (haHardware) wizardState.setSelection("haHardware", haHardware);
@@ -547,7 +547,7 @@ describe("drive-selection-view", () => {
         );
         const cards = [...el.shadowRoot!.querySelectorAll("drive-card")];
 
-        expect(cards.map((card) => [card.value, card.tag])).to.deep.equal(
+        expect(cards.map((card) => [card.value, card.highlight])).to.deep.equal(
           highlighted
             ? [
                 ["/dev/sdc", "Compute Module eMMC"],

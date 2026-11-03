@@ -490,7 +490,7 @@ export class DriveSelectionView extends LitElement {
                 .deviceType=${drive.device_type}
                 .model=${drive.model || ""}
                 .vendor=${drive.vendor || ""}
-                .tag=${isModuleEmmc(drive)
+                .highlight=${isModuleEmmc(drive)
                   ? localize(
                       "views.sbc.drive_selection_view.compute_module_emmc"
                     )
