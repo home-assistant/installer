@@ -566,6 +566,8 @@ mod tests {
     #[test]
     fn iso_target_refuses_the_installers_own_cache_folder() {
         let cache = hai_core::ReleaseSource::cache_dir(&Backend).unwrap();
+        // Created by the first download
+        std::fs::create_dir_all(&cache).unwrap();
         let error = iso_target(&cache, "stick.iso", false).unwrap_err();
         assert_eq!(error.code, "folder_in_cache");
     }
