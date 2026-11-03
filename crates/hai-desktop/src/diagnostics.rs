@@ -164,9 +164,10 @@ fn scrub(text: &str) -> String {
             // quote, comma, colon or `(os error N)`: more text rather than part
             // of a name.
             (r#"(?i)([a-z]:[\\/]+users[\\/]+|/volumes/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|(?:\((?:[^o\\/:"()]|o[^s\\/:"()])[^\\/:"()]*\)|[^\s\\/:",;()])+(?:\s+(?:\((?:[^o\\/:"()]|o[^s\\/:"()])[^\\/:"()]*\)|[^\s\\/:",;()])+)*)"#, "${1}<user>${2}"),
-            // Unix user folders, also other users' and drives mounted per user,
-            // whose names hold no spaces
-            (r#"(?i)(/home/|/users/|/(?:run/)?media/)[^\s\\/:"',;()]+"#, "${1}<user>"),
+            // Unix user folders, also other users' and drives mounted per user.
+            // A name runs to the next separator, or else to a space, as only a
+            // separator says it holds one.
+            (r#"(?i)(/home/|/users/|/(?:run/)?media/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|[^\s\\/:"',;()]+)"#, "${1}<user>${2}"),
             // Stops at a quote or backslash, so the next rule still sees where a quoted value ends
             (r#"(?i)\b(basic|bearer)\s+[^\s"\\]+"#, "${1} <redacted>"),
             (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|\S+)"#, "${1}=<redacted>"),
@@ -667,6 +668,10 @@ mod tests {
             (
                 "Permission denied: /home/jane/.cache and /run/media/jane/STICK",
                 "Permission denied: /home/<user>/.cache and /run/media/<user>/STICK",
+            ),
+            (
+                "Saved to /Users/Jane Doe/Downloads/haos.iso and /home/Sean O'Brien/x",
+                "Saved to /Users/<user>/Downloads/haos.iso and /home/<user>/x",
             ),
             (
                 "Cannot write /Volumes/STICK/haos.img",
