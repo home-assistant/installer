@@ -1,5 +1,6 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { failMockOperation } from "./mock-failures.js";
 import { getPlatform } from "../utils/platform.js";
 import type {
@@ -56,6 +57,18 @@ export async function onCloseBlocked(
     return () => {};
   }
   return listen("close-blocked", () => onBlocked());
+}
+
+/**
+ * Close the window, which quits the app. While an installation runs, the
+ * backend holds the close back and asks first, as for the window's own
+ * close button.
+ */
+export async function closeApp(): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return;
+  }
+  return getCurrentWindow().close();
 }
 
 /** Quit the app, even though an installation is still running. */

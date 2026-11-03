@@ -158,5 +158,5 @@ test("waits for the device the drive starts until Home Assistant is ready", asyn
     done.getByRole("link", { name: "Open Home Assistant" })
   ).toHaveAttribute("href", "http://192.168.1.101");
   await expect(done.getByRole("list", { name: "Next steps" })).toBeHidden();
-  await expect(next(page)).toHaveText("Done");
+  await expect(next(page)).toHaveText("Close");
 });
