@@ -3952,13 +3952,9 @@ mod tests {
                 matches!(result, Err(Error::ChecksumMismatch { .. })),
                 "unexpected result: {result:?}"
             );
-            // Only the unverified `.part`, which a retry overwrites
+            // The unverified download is gone
             let cache = backend.cache.unwrap();
-            assert!(std::fs::read_dir(cache.path()).unwrap().all(|entry| entry
-                .unwrap()
-                .file_name()
-                .to_string_lossy()
-                .ends_with(".part")));
+            assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
             asset_mock.assert_async().await;
             no_upload.assert_async().await;
 

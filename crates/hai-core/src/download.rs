@@ -34,12 +34,8 @@ pub async fn fetch_image<B: ReleaseSource, P: ProgressCallback>(
         return Ok(image);
     }
     let cache_dir = archive.parent().unwrap();
-    make_room(
-        cache_dir,
-        &archive,
-        source.size,
-        fs2::available_space(cache_dir)?,
-    )?;
+    std::fs::create_dir_all(cache_dir)?;
+    make_room(cache_dir, &archive, source.size).await?;
     if !archive.is_file() {
         backend
             .download_image(source, &archive, progress_callback)
@@ -72,15 +68,27 @@ fn archive_name(image: &HaosImage) -> Result<&str> {
 
 /// Earlier images are only kept for a retry. With little room to spare for a
 /// download of `size` and its extraction, everything in `cache_dir` goes,
-/// except `keep` and what UTM may still be importing.
-pub(crate) fn make_room(cache_dir: &Path, keep: &Path, size: u64, available: u64) -> Result<()> {
+/// except `keep`, what is being written and what UTM may still be importing.
+pub(crate) async fn make_room(cache_dir: &Path, keep: &Path, size: u64) -> Result<()> {
+    let (cache_dir, keep) = (cache_dir.to_owned(), keep.to_owned());
+    // Deleting gigabytes can take a while, on Windows with antivirus especially
+    tokio::task::spawn_blocking(move || {
+        let available = fs2::available_space(&cache_dir)?;
+        clear_for(&cache_dir, &keep, size, available)
+    })
+    .await
+    .map_err(|error| Error::Io(std::io::Error::other(error)))?
+}
+
+fn clear_for(cache_dir: &Path, keep: &Path, size: u64, available: u64) -> Result<()> {
     if available >= size.saturating_mul(MAX_EXPECTED_XZ_RATIO + 1) {
         return Ok(());
     }
-    let importing = IMPORTING.lock().unwrap_or_else(|e| e.into_inner());
+    let mut busy = locked(&IMPORTING).clone();
+    busy.extend(locked(&WRITING).iter().cloned());
     for entry in std::fs::read_dir(cache_dir)? {
         let entry = entry?;
-        if entry.path() == keep || importing.contains(&entry.path()) {
+        if entry.path() == keep || busy.contains(&entry.path()) {
             continue;
         }
         let result = if entry.file_type()?.is_dir() {
@@ -101,19 +109,45 @@ static IMPORTING: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::ne
 /// Keep `path` from `make_room`: UTM didn't answer whether it finished reading it.
 #[cfg(any(target_os = "macos", test))]
 pub(crate) fn keep_for_import(path: PathBuf) {
-    IMPORTING
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .push(path);
+    locked(&IMPORTING).push(path);
 }
 
-/// Where `path` is written until it is complete. What an earlier attempt left
-/// there goes first, so it doesn't count against the free space.
-fn fresh_part(path: &Path) -> PathBuf {
-    let mut part = path.as_os_str().to_owned();
-    part.push(".part");
-    let _ = std::fs::remove_file(&part);
-    part.into()
+/// The `.part` files being written right now.
+static WRITING: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+fn locked<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Where a file is written until it is complete, then renamed to its final
+/// name. One writer per file: a second one is refused. Whatever is left
+/// unfinished goes when the writer ends, declared before its file handle so
+/// the handle closes first (Windows).
+struct Part(PathBuf);
+
+impl Part {
+    fn claim(path: &Path) -> Result<Self> {
+        let mut part = path.as_os_str().to_owned();
+        part.push(".part");
+        let part = PathBuf::from(part);
+        let mut writing = locked(&WRITING);
+        if writing.contains(&part) {
+            return Err(Error::InvalidConfig(
+                "This image is already being downloaded.".into(),
+            ));
+        }
+        writing.push(part.clone());
+        // What a crashed attempt left must not count against the free space
+        let _ = std::fs::remove_file(&part);
+        Ok(Self(part))
+    }
+}
+
+impl Drop for Part {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+        locked(&WRITING).retain(|path| path != &self.0);
+    }
 }
 
 fn valid_board(board: &str) -> bool {
@@ -259,13 +293,10 @@ static RELEASE_CACHE: LazyLock<Mutex<HashMap<String, HaosRelease>>> =
 /// How often to send progress updates (every N bytes)
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
 
-/// The folder for everything the installer downloads, created if missing.
+/// The folder for everything the installer downloads.
 pub(crate) fn get_cache_dir() -> Result<PathBuf> {
     // A subfolder: `clear_cache` must not take the logs or the web view's data.
-    let cache_dir = app_cache_dir()?.join("downloads");
-    std::fs::create_dir_all(&cache_dir)?;
-
-    Ok(cache_dir)
+    Ok(app_cache_dir()?.join("downloads"))
 }
 
 /// The same place as Tauri's `app_cache_dir`, next to the logs and app data on
@@ -670,7 +701,7 @@ async fn download_image_with_client<P: ProgressCallback>(
         Error::InvalidConfig("Image destination must have a parent directory".into())
     })?;
     // Unverified bytes never get the final name
-    let part = fresh_part(dest_path);
+    let part = Part::claim(dest_path)?;
     let available = available_space(directory)?;
     check_space(directory, image.size, available)?;
 
@@ -704,7 +735,7 @@ async fn download_image_with_client<P: ProgressCallback>(
         message: "Starting download...".to_string(),
     });
 
-    let mut file = std::fs::File::create(&part)?;
+    let mut file = std::fs::File::create(&part.0)?;
     let mut downloaded: u64 = 0;
     let mut last_progress_update: u64 = 0;
     let mut stream = response.bytes_stream();
@@ -762,7 +793,7 @@ async fn download_image_with_client<P: ProgressCallback>(
         });
     }
     drop(file);
-    std::fs::rename(&part, dest_path)?;
+    std::fs::rename(&part.0, dest_path)?;
 
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
@@ -841,7 +872,7 @@ fn extract_archive(
     let directory = destination.parent().ok_or_else(|| {
         Error::InvalidConfig("Image destination must have a parent directory".into())
     })?;
-    let part = fresh_part(destination);
+    let part = Part::claim(destination)?;
     let available = available_space(directory)?;
     let mut input = std::fs::File::open(archive)?;
     let mut progress = ExtractionProgress {
@@ -868,7 +899,7 @@ fn extract_archive(
     input.rewind()?;
     let mut decoder = xz_decoder(&mut input)?;
     let mut buffer = [0; 64 * 1024];
-    let mut output = std::fs::File::create(&part)?;
+    let mut output = std::fs::File::create(&part.0)?;
     let mut extracted = 0;
     loop {
         let count = read_xz(&mut decoder, &mut buffer)?;
@@ -891,7 +922,7 @@ fn extract_archive(
     }
     output.sync_all()?;
     drop(output);
-    std::fs::rename(&part, destination)?;
+    std::fs::rename(&part.0, destination)?;
     Ok(extracted)
 }
 
@@ -1049,19 +1080,9 @@ mod tests {
         }
     }
 
-    /// Files under a final name. A failed attempt leaves only a `.part` behind.
+    /// Files in `directory`. A failed attempt leaves none behind.
     fn finished(directory: &Path) -> usize {
-        std::fs::read_dir(directory)
-            .unwrap()
-            .filter(|entry| {
-                !entry
-                    .as_ref()
-                    .unwrap()
-                    .file_name()
-                    .to_string_lossy()
-                    .ends_with(".part")
-            })
-            .count()
+        std::fs::read_dir(directory).unwrap().count()
     }
 
     fn compressed(data: &[u8]) -> Vec<u8> {
@@ -2255,6 +2276,8 @@ mod tests {
         let importing = cache.path().join("haos_ova-17.0.1a2b.qcow2");
         std::fs::write(&importing, b"copy").unwrap();
         keep_for_import(importing.clone());
+        let writing = Part::claim(&cache.path().join("haos_ova-17.1.qcow2.xz")).unwrap();
+        std::fs::write(&writing.0, b"partial").unwrap();
         let left = || {
             let mut left: Vec<_> = std::fs::read_dir(cache.path())
                 .unwrap()
@@ -2265,16 +2288,29 @@ mod tests {
         };
 
         let enough = 100 * (MAX_EXPECTED_XZ_RATIO + 1);
-        make_room(cache.path(), &archive, 100, enough).unwrap();
-        assert_eq!(left().len(), 4);
+        clear_for(cache.path(), &archive, 100, enough).unwrap();
+        assert_eq!(left().len(), 5);
 
         // A retry keeps the archive it is about to extract
-        make_room(cache.path(), &archive, 100, enough - 1).unwrap();
-        assert_eq!(left(), [importing.clone(), archive]);
+        clear_for(cache.path(), &archive, 100, enough - 1).unwrap();
+        assert_eq!(left(), [importing.clone(), writing.0.clone(), archive]);
 
         std::fs::create_dir(&live_usb).unwrap();
-        make_room(cache.path(), &live_usb, 100, enough - 1).unwrap();
-        assert_eq!(left(), [importing, live_usb]);
+        clear_for(cache.path(), &live_usb, 100, enough - 1).unwrap();
+        assert_eq!(left(), [importing, writing.0.clone(), live_usb]);
+    }
+
+    #[test]
+    fn a_file_has_one_writer_and_its_partial_goes_with_it() {
+        let cache = tempfile::tempdir().unwrap();
+        let image = cache.path().join("haos_ova-17.0.qcow2");
+        let part = Part::claim(&image).unwrap();
+        std::fs::write(&part.0, b"partial").unwrap();
+
+        assert!(Part::claim(&image).is_err());
+        drop(part);
+        assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
+        assert!(Part::claim(&image).is_ok());
     }
 
     #[tokio::test]
