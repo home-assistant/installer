@@ -166,6 +166,10 @@ fn scrub(text: &str) -> String {
             (r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<id>"),
             (r"[\w.+-]+@[\w.-]+", "<user>"),
             (r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "<ip>"),
+            // Hosts outside URLs: a share, a certificate's names, or one with a port
+            (r#"(^|[\s"'(])\\\\[^\\\s?.][^\\\s"']*"#, r"${1}\\<host>"),
+            (r#"(not valid for name |DnsName\()"[^"]*""#, r#"${1}"<host>""#),
+            (r"(?i)\b[a-z][\w-]*(?:\.[\w-]+)*(:\d{1,5})\b", "<host>${1}"),
         ]
         .into_iter()
         .map(|(pattern, replacement)| (Regex::new(pattern).unwrap(), replacement))
@@ -735,6 +739,18 @@ mod tests {
             (
                 r"C:\Users\Jane (Work (Admin)) Doe\AppData and C:\Users\Jane)Doe\AppData",
                 r"C:\Users\<user>\AppData and C:\Users\<user>\AppData",
+            ),
+            (
+                r#"certificate not valid for name "pve.jane-home.lan"; certificate is only valid for DnsName("pve") or IpAddress(192.168.1.5)"#,
+                r#"certificate not valid for name "<host>"; certificate is only valid for DnsName("<host>") or IpAddress(<ip>)"#,
+            ),
+            (
+                r"Cannot open \\JANES-NAS\share\haos.img or \\?\Volume{x}\ or \\.\PhysicalDrive1",
+                r"Cannot open \\<host>\share\haos.img or \\?\Volume{x}\ or \\.\PhysicalDrive1",
+            ),
+            (
+                "connect to janes-macbook.local:8123 failed at 14:07:29 in std::io",
+                "connect to <host>:8123 failed at 14:07:29 in std::io",
             ),
             ("first line\nInjected line", "first line Injected line"),
         ] {
