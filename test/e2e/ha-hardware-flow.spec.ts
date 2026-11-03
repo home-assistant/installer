@@ -77,7 +77,7 @@ test.describe("Home Assistant hardware flow", () => {
     await expect(page.locator('device-card[value="ha-green"]')).toBeFocused();
   });
 
-  test("the Green installs through to the success screen, and Done returns to the start", async ({
+  test("the Green installs through to the success screen, and Start over returns to the start", async ({
     page,
   }) => {
     test.setTimeout(60000);
@@ -102,8 +102,9 @@ test.describe("Home Assistant hardware flow", () => {
     await expect(page.locator("device-setup-view")).toBeVisible();
     await next(page).click();
     await expect(page.locator("device-done-view")).toBeVisible();
-    await next(page).click();
-    await expect(page.locator("path-selection-view")).toBeVisible();
+    await expect(next(page)).toHaveText("Close");
+    await cancel(page).click();
+    await expect(page.locator("welcome-view")).toBeVisible();
   });
 
   test("the Yellow asks for its compute module after the dialog", async ({

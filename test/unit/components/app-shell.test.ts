@@ -1,5 +1,6 @@
 import { expect, fixture, html, waitUntil } from "@open-wc/testing";
 import { emit } from "@tauri-apps/api/event";
+import { mockWindows } from "@tauri-apps/api/mocks";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import type { LitElement } from "lit";
 import "../../../src/components/app-shell.js";
@@ -35,7 +36,7 @@ interface WizardShell extends HTMLElement {
   hideFooter: boolean;
   hideBack: boolean;
   hideNext: boolean;
-  hideCancel: boolean;
+  cancelLabel: string;
   updateComplete: Promise<boolean>;
 }
 
@@ -476,7 +477,6 @@ describe("app-shell", () => {
   for (const [action, event, step] of [
     ["Back leaves the first step", "wizard-exit", undefined],
     ["Cancel is chosen", "wizard-cancel", undefined],
-    ["Done is chosen", "wizard-next", "done"],
   ] as const) {
     it(`returns to path selection when ${action}`, async () => {
       await enterSbcFlow(el);
@@ -493,13 +493,50 @@ describe("app-shell", () => {
     });
   }
 
-  it("offers only Done once the installation succeeded", async () => {
+  it("offers to start over or close once the flow is done", async () => {
     await enterSbcFlow(el);
-    expect(shellOf(el).hideCancel).to.be.false;
+    expect(shellOf(el).cancelLabel).to.equal("Cancel");
+    expect(shellOf(el).nextLabel).to.equal("Next");
 
     await goToStep(el, "done");
-    expect(shellOf(el).hideCancel).to.be.true;
-    expect(shellOf(el).nextLabel).to.equal("Done");
+    expect(shellOf(el).hideBack).to.be.true;
+    expect(shellOf(el).cancelLabel).to.equal("Start over");
+    expect(shellOf(el).nextLabel).to.equal("Close");
+  });
+
+  it("starts over from the welcome screen", async () => {
+    await enterSbcFlow(el);
+    wizardState.setSelection("device", "rpi5");
+    await goToStep(el, "done");
+
+    fireEvent(shellOf(el), "wizard-cancel");
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector("welcome-view")).to.exist;
+    expect(shellOf(el)).to.equal(null);
+    expect(wizardState.getState().currentFlow).to.equal(null);
+    expect(wizardState.getState().selections).to.deep.equal({});
+  });
+
+  it("closes the window, and stays on the last step", async () => {
+    await enterSbcFlow(el);
+    await goToStep(el, "done");
+    const calls: { cmd: string; args: unknown }[] = [];
+    mockTauriIpc((cmd, args) => {
+      calls.push({ cmd, args });
+      return undefined;
+    });
+    mockWindows("main");
+
+    fireEvent(shellOf(el), "wizard-next");
+    await settle();
+
+    expect(calls).to.deep.equal([
+      { cmd: "plugin:window|close", args: { label: "main" } },
+    ]);
+    // The backend may hold the close back and ask first; the step stays
+    expect(wizardState.currentStep?.id).to.equal("done");
+    expect(shellOf(el)).to.exist;
   });
 
   // Back would write the drive again
@@ -507,7 +544,7 @@ describe("app-shell", () => {
     await enterSbcFlow(el);
     await goToStep(el, "success");
     expect(shellOf(el).hideBack).to.be.true;
-    expect(shellOf(el).hideCancel).to.be.false;
+    expect(shellOf(el).cancelLabel).to.equal("Cancel");
     expect(shellOf(el).nextLabel).to.equal("Next");
   });
 

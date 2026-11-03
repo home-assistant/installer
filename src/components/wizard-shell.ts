@@ -162,8 +162,8 @@ export class WizardShell extends LitElement {
   @property({ type: Boolean, attribute: "hide-next" })
   hideNext = false;
 
-  @property({ type: Boolean, attribute: "hide-cancel" })
-  hideCancel = false;
+  @property({ type: String, attribute: "cancel-label" })
+  cancelLabel = localize("common.cancel");
 
   /** Hides the footer's buttons; the footer itself stays */
   @property({ type: Boolean, attribute: "hide-footer" })
@@ -264,11 +264,9 @@ export class WizardShell extends LitElement {
 
       <footer class="footer ${this.hideFooter ? "idle" : ""}">
         <div class="footer-left">
-          ${this.hideCancel
-            ? nothing
-            : html`<wa-button appearance="plain" @click=${this._onCancel}>
-                ${localize("common.cancel")}
-              </wa-button>`}
+          <wa-button appearance="plain" @click=${this._onCancel}>
+            ${this.cancelLabel}
+          </wa-button>
         </div>
         <div class="footer-right">
           <!-- A new label on the focused button isn't always read out -->

@@ -133,8 +133,8 @@ test(`post-install reminder at ${width}px`, async ({ page }, testInfo) => {
     animations: "disabled",
   });
   expect(await writeCount(page)).toBe(1);
-  await page.getByRole("button", { name: "Done", exact: true }).click();
-  await expect(page.locator("path-selection-view")).toBeVisible();
+  await page.getByRole("button", { name: "Start over", exact: true }).click();
+  await expect(page.locator("welcome-view")).toBeVisible();
   expect(await writeCount(page)).toBe(1);
 });
 

@@ -30,7 +30,12 @@ import {
   type WizardState,
 } from "../state/wizard-state.js";
 import { WizardStateController } from "../state/wizard-state-controller.js";
-import { listBlockDevices, onCloseBlocked, quitAnyway } from "../api/index.js";
+import {
+  closeApp,
+  listBlockDevices,
+  onCloseBlocked,
+  quitAnyway,
+} from "../api/index.js";
 import {
   clearDriveSelection,
   driveModelLabel,
@@ -282,9 +287,6 @@ export class AppShell extends LitElement {
       !!step?.noBack ||
       (!!install && (running || !install.backAfterError));
 
-    // Done already leaves the flow, so Cancel would only repeat it
-    const hideCancel = last;
-
     const hideNext =
       running ||
       !!step?.pickToContinue ||
@@ -299,7 +301,9 @@ export class AppShell extends LitElement {
         .hideFooter=${hideFooter}
         .hideBack=${hideBack}
         .hideNext=${hideNext}
-        .hideCancel=${hideCancel}
+        .cancelLabel=${last
+          ? localize("components.app_shell.start_over")
+          : localize("common.cancel")}
         @wizard-cancel=${this._onWizardCancel}
         @wizard-back=${this._onWizardBack}
         @wizard-exit=${this._exitFlow}
@@ -333,7 +337,7 @@ export class AppShell extends LitElement {
       );
     }
     if (wizardState.isLastStep) {
-      return localize("common.done");
+      return localize("components.app_shell.close");
     }
     return step?.nextLabel?.() ?? localize("common.next");
   }
@@ -417,6 +421,12 @@ export class AppShell extends LitElement {
   }
 
   private _onWizardCancel() {
+    // Once the flow is done, the same button starts over
+    if (wizardState.isLastStep) {
+      this._startOver();
+      return;
+    }
+
     // A running install is stopped or left first, never just dropped
     if (this._installRunning) {
       if (this._installStoppable) {
@@ -444,13 +454,23 @@ export class AppShell extends LitElement {
   }
 
   /**
-   * Back on the first step, Cancel, Done and leaving a running VM return to
-   * where the flow was picked. The welcome screen has nothing new by then.
+   * Back on the first step, Cancel and leaving a running VM return to where
+   * the flow was picked. The welcome screen has nothing new by then.
    */
   private _exitFlow() {
     this._resetErrorState();
     wizardState.reset();
     this._currentView = "path-selection";
+  }
+
+  private _startOver() {
+    this._resetErrorState();
+    wizardState.reset();
+    this._currentView = "welcome";
+  }
+
+  private _close() {
+    closeApp().catch(logFrontendError);
   }
 
   /** Stale flags would show "Try again", or no Cancel, over the next install. */
@@ -537,7 +557,7 @@ export class AppShell extends LitElement {
       : -1;
 
     if (wizardState.isLastStep) {
-      this._exitFlow();
+      this._close();
     } else if (skipIndex >= 0) {
       wizardState.goToStep(skipIndex);
     } else {

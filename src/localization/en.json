@@ -51,6 +51,8 @@
   "components.app_shell.quit_while_installing_title": "Stop the installation?",
   "components.app_shell.quit_while_installing_message": "Home Assistant is still being installed. If you close the installer now, the installation stops halfway and you'll have to start over.",
   "components.app_shell.quit_anyway": "Close anyway",
+  "components.app_shell.start_over": "Start over",
+  "components.app_shell.close": "Close",
   "components.wizard_steps.choose_another_location": "Choose another location",
   "components.wizard_steps.skip": "Skip",
   "components.confirm_dialog.erase_warning": "All data on {drive} will be permanently erased. This action cannot be undone.",
