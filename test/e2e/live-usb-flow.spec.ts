@@ -50,7 +50,7 @@ test("writes a bootable USB stick", async ({ page }) => {
     { timeout: 20000 }
   );
   await expect(page.locator("live-usb-success-view")).toContainText(
-    "type erase to confirm"
+    "choose Erase and install"
   );
   await expect(page.locator("live-usb-success-view")).toContainText(
     "eject it before you disconnect it"

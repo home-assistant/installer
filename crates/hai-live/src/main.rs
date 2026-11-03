@@ -1,6 +1,6 @@
 //! Install program that runs on the live USB stick (Alpine, target PC).
 //!
-//! Lists internal disks, and after a typed confirmation writes the bundled HAOS image to one.
+//! Lists internal disks, and after a confirmation writes the bundled HAOS image to one.
 
 mod console_font;
 mod drives;
@@ -20,7 +20,7 @@ use drives::{Disk, Entry, Model};
 use i18n::Language;
 use image::BundledImage;
 use ratatui::crossterm::event::KeyCode;
-use ui::{DiskRow, Screen, Ui};
+use ui::{Action, DiskRow, Screen, Ui};
 
 const SYS_BLOCK: &str = "/sys/block";
 const DEV: &str = "/dev";
@@ -38,7 +38,7 @@ fn main() {
         // No console to draw on. Exit rather than spin; init restarts hai-live on tty1.
         Err(_) => std::process::exit(1),
     };
-    let mut selected: Option<String> = None;
+    let mut selected: Option<Selected> = None;
     loop {
         let lang = ui.language;
         let image = image::find(Path::new(MEDIA));
@@ -47,16 +47,20 @@ fn main() {
             // Shown instead of an empty list; it's tried again on the next refresh
             Err(error) => (safety::Review::default(), Some(error.to_string())),
         };
-        // Keep the same disk selected while the list refreshes
+        // Without an image there's nothing to install, so only the actions are offered
+        let disks = match image {
+            Some(_) => review.choices.as_slice(),
+            None => &[],
+        };
+        // Keep the same line selected while the list refreshes
         let index = selected
             .as_ref()
-            .and_then(|name| review.choices.iter().position(|c| &c.disk.name == name))
+            .and_then(|selected| position(disks, selected))
             .unwrap_or(0);
-        selected = review.choices.get(index).map(|c| c.disk.name.clone());
+        selected = Some(selection(disks, index));
         ui.show(&Screen::Disks {
             os: image.as_ref().map(BundledImage::name),
-            disks: review
-                .choices
+            disks: disks
                 .iter()
                 .map(|choice| DiskRow {
                     label: describe(lang, &choice.disk),
@@ -71,44 +75,86 @@ fn main() {
         let Some(key) = ui.key(Some(REFRESH)) else {
             continue;
         };
-        let last = review.choices.len().saturating_sub(1);
-        match key {
-            KeyCode::Up | KeyCode::Char('k') => {
-                selected = review.choices.get(index.saturating_sub(1)).map(name_of);
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                selected = review.choices.get((index + 1).min(last)).map(name_of);
-            }
-            KeyCode::Char('r' | 'R') => run(&mut ui, "reboot", "live.main.restart_failed.title"),
-            KeyCode::Char('p' | 'P') => {
-                run(&mut ui, "poweroff", "live.main.power_off_failed.title")
-            }
-            KeyCode::Char('l' | 'L') => choose_language(&mut ui),
-            KeyCode::Enter => {
-                if let (Some(image), Some(choice)) = (&image, review.choices.get(index)) {
-                    match choice.problem {
-                        Some(problem) => {
-                            let problem = lang.text(problem.key());
-                            let body = lang.format(
-                                "live.main.unusable.body",
-                                &[("disk", &choice.disk.name), ("problem", &problem)],
-                            );
-                            message(&mut ui, lang.text("live.main.unusable.title"), vec![body])
-                        }
-                        None => install(&mut ui, image, &choice.disk),
+        match (key, disks.get(index), &image) {
+            (KeyCode::Enter, Some(choice), Some(image)) => match choice.problem {
+                Some(problem) => {
+                    let problem = lang.text(problem.key());
+                    let body = lang.format(
+                        "live.main.unusable.body",
+                        &[("disk", &choice.disk.name), ("problem", &problem)],
+                    );
+                    message(&mut ui, lang.text("live.main.unusable.title"), vec![body])
+                }
+                None => install(&mut ui, image, &choice.disk),
+            },
+            (KeyCode::Enter, ..) => act(&mut ui, Action::ALL[index - disks.len()]),
+            _ => match shortcut(key) {
+                Some(action) => act(&mut ui, action),
+                None => {
+                    if let Some(index) = moved(key, index, disks.len() + Action::ALL.len()) {
+                        selected = Some(selection(disks, index));
                     }
                 }
-            }
-            _ => {}
+            },
         }
     }
 }
 
-fn name_of(choice: &safety::Choice) -> String {
-    choice.disk.name.clone()
+/// What the disk list has selected. A disk goes by name, so it stays selected while the list
+/// refreshes.
+enum Selected {
+    Disk(String),
+    Action(Action),
 }
 
-/// Asks for the typed confirmation, then checks the image and writes it to `disk`.
+/// Where `selected` is in the disk list: its disks, then the actions.
+fn position(disks: &[safety::Choice], selected: &Selected) -> Option<usize> {
+    match selected {
+        Selected::Disk(name) => disks.iter().position(|choice| &choice.disk.name == name),
+        Selected::Action(action) => Action::ALL
+            .iter()
+            .position(|other| other == action)
+            .map(|index| disks.len() + index),
+    }
+}
+
+/// What is at `index` in the disk list.
+fn selection(disks: &[safety::Choice], index: usize) -> Selected {
+    match disks.get(index) {
+        Some(choice) => Selected::Disk(choice.disk.name.clone()),
+        None => Selected::Action(Action::ALL[index - disks.len()]),
+    }
+}
+
+/// `index` moved by ↑ or ↓ in a list of `len`, or `None` where `key` moves nothing.
+fn moved(key: KeyCode, index: usize, len: usize) -> Option<usize> {
+    match key {
+        KeyCode::Up | KeyCode::Char('k') => Some(index.saturating_sub(1)),
+        KeyCode::Down | KeyCode::Char('j') => Some((index + 1).min(len - 1)),
+        _ => None,
+    }
+}
+
+/// The action a letter starts directly, for those who know the keys. Each is in the list too:
+/// with the console's US keymap, some keyboards (Turkish F) have the letter elsewhere.
+fn shortcut(key: KeyCode) -> Option<Action> {
+    match key {
+        KeyCode::Char('r' | 'R') => Some(Action::Restart),
+        KeyCode::Char('p' | 'P') => Some(Action::PowerOff),
+        KeyCode::Char('l' | 'L') => Some(Action::ChangeLanguage),
+        _ => None,
+    }
+}
+
+fn act(ui: &mut Ui, action: Action) {
+    match action {
+        Action::Restart => run(ui, "reboot", "live.main.restart_failed.title"),
+        Action::PowerOff => run(ui, "poweroff", "live.main.power_off_failed.title"),
+        Action::ChangeLanguage => choose_language(ui),
+    }
+}
+
+/// Asks for confirmation, then checks the image and writes it to `disk`.
 fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
     if !confirm_erase(ui, image, disk) {
         return;
@@ -234,17 +280,19 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
     }
     drop(target);
 
+    let mut index = 0;
     loop {
         ui.show(&Screen::Done {
             disk: disk.name.clone(),
+            selected: index,
         });
         match ui.key(None) {
-            Some(KeyCode::Char('r' | 'R')) => run(ui, "reboot", "live.main.restart_failed.title"),
-            Some(KeyCode::Char('p' | 'P')) => {
-                run(ui, "poweroff", "live.main.power_off_failed.title")
-            }
-            Some(KeyCode::Char('l' | 'L')) => choose_language(ui),
-            _ => {}
+            Some(KeyCode::Enter) => act(ui, Action::ALL[index]),
+            Some(key) => match shortcut(key) {
+                Some(action) => act(ui, action),
+                None => index = moved(key, index, Action::ALL.len()).unwrap_or(index),
+            },
+            None => {}
         }
     }
 }
@@ -261,44 +309,36 @@ fn choose_language(ui: &mut Ui) {
             selected: languages[index],
         });
         match ui.key(None) {
-            Some(KeyCode::Up | KeyCode::Char('k')) => index = index.saturating_sub(1),
-            Some(KeyCode::Down | KeyCode::Char('j')) => {
-                index = (index + 1).min(languages.len() - 1);
-            }
             Some(KeyCode::Enter) => {
                 ui.language = languages[index];
                 return;
             }
             Some(KeyCode::Esc) => return,
-            _ => {}
+            Some(key) => index = moved(key, index, languages.len()).unwrap_or(index),
+            None => {}
         }
     }
 }
 
-/// Whether `erase` was typed for `disk`. Esc, or Enter on an empty line, goes back.
+/// Whether erasing `disk` was chosen. Going back is selected first, so an Enter out of habit
+/// erases nothing; Esc goes back too.
 fn confirm_erase(ui: &mut Ui, image: &BundledImage, disk: &Disk) -> bool {
-    let mut typed = String::new();
-    let mut mistyped = false;
+    let mut erase = false;
     loop {
         ui.show(&Screen::Confirm {
             disk: describe(ui.language, disk),
             os: image.name(),
-            typed: typed.clone(),
-            mistyped,
+            erase,
         });
         match ui.key(None) {
+            Some(KeyCode::Enter) => return erase,
             Some(KeyCode::Esc) => return false,
-            Some(KeyCode::Enter) if typed.is_empty() => return false,
-            Some(KeyCode::Enter) if typed == "erase" => return true,
-            Some(KeyCode::Enter) => {
-                typed.clear();
-                mistyped = true;
+            Some(key) => {
+                if let Some(index) = moved(key, usize::from(erase), 2) {
+                    erase = index == 1;
+                }
             }
-            Some(KeyCode::Backspace) => {
-                typed.pop();
-            }
-            Some(KeyCode::Char(c)) if typed.len() < 16 => typed.push(c),
-            _ => {}
+            None => {}
         }
     }
 }
