@@ -119,7 +119,7 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
     let title = lang.text("live.main.checking.title");
     let detail = lang.text("live.main.checking.detail");
     let verified = image::verify(image, &mut |read, total| {
-        show_progress(ui, &mut step, &title, &detail, read, total)
+        show_progress(ui, &mut step, &title, || detail.clone(), read, total)
     });
     match verified {
         Ok(true) => {}
@@ -201,12 +201,14 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
         &mut target,
         disk.size_bytes,
         &mut |read, total, written| {
-            let gigabytes = format!("{:.1}", written as f64 / 1e9);
-            let detail = lang.format(
-                "live.main.writing.detail",
-                &[("disk", &disk.name), ("gigabytes", &gigabytes)],
-            );
-            show_progress(ui, &mut step, &title, &detail, read, total)
+            let detail = || {
+                let gigabytes = format!("{:.1}", written as f64 / 1e9);
+                lang.format(
+                    "live.main.writing.detail",
+                    &[("disk", &disk.name), ("gigabytes", &gigabytes)],
+                )
+            };
+            show_progress(ui, &mut step, &title, detail, read, total)
         },
     );
     if let Err(error) = result {
@@ -332,7 +334,14 @@ impl Step {
 }
 
 /// Draws the progress of `step`, only when the whole percentage or the time left changes.
-fn show_progress(ui: &mut Ui, step: &mut Step, title: &str, detail: &str, done: u64, total: u64) {
+fn show_progress(
+    ui: &mut Ui,
+    step: &mut Step,
+    title: &str,
+    detail: impl FnOnce() -> String,
+    done: u64,
+    total: u64,
+) {
     let percent = (done * 100).checked_div(total).unwrap_or(0).min(100);
     let time_left = ui::time_left(step.started.elapsed(), done, total);
     let now = Some((percent, time_left));
@@ -340,7 +349,7 @@ fn show_progress(ui: &mut Ui, step: &mut Step, title: &str, detail: &str, done: 
         step.shown = now;
         ui.show(&Screen::Progress {
             title: title.into(),
-            detail: detail.into(),
+            detail: detail(),
             percent: percent as u16,
             time_left,
         });
