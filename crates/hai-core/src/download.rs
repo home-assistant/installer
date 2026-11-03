@@ -372,15 +372,12 @@ async fn get_stable_version_from_url(url: &str) -> Result<StableVersionInfo> {
         )));
     }
 
-    // A sign-in page or a cut-off answer, unless the body never arrived
-    let version_info: StableVersionInfo = response.json().await.map_err(|error| {
-        Error::ServiceUnavailable(if error.is_timeout() {
-            version_service_unreachable()
-        } else {
-            version_service_invalid()
-        })
-    })?;
-    Ok(version_info)
+    metadata_json(
+        response,
+        version_service_unreachable,
+        version_service_invalid,
+    )
+    .await
 }
 
 fn metadata_request_error(error: reqwest::Error, unreachable: fn() -> crate::Message) -> Error {
@@ -389,6 +386,21 @@ fn metadata_request_error(error: reqwest::Error, unreachable: fn() -> crate::Mes
     } else {
         error.into()
     }
+}
+
+/// A body that arrived but isn't the expected JSON, like a sign-in page, is
+/// the service's answer; one that didn't fully arrive lost the connection.
+/// Read apart, as `Response::json` reports both as decode errors.
+async fn metadata_json<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+    unreachable: fn() -> crate::Message,
+    invalid: fn() -> crate::Message,
+) -> Result<T> {
+    let body = response
+        .bytes()
+        .await
+        .map_err(|_| Error::ServiceUnavailable(unreachable()))?;
+    serde_json::from_slice(&body).map_err(|_| Error::ServiceUnavailable(invalid()))
 }
 
 /// Fetch the stable version info from Home Assistant
@@ -495,13 +507,8 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
         )));
     }
 
-    let release: GitHubRelease = response.json().await.map_err(|error| {
-        Error::ServiceUnavailable(if error.is_timeout() {
-            github_unreachable()
-        } else {
-            github_invalid()
-        })
-    })?;
+    let release: GitHubRelease =
+        metadata_json(response, github_unreachable, github_invalid).await?;
     parse_github_release(release, version)
 }
 
@@ -2057,6 +2064,39 @@ mod tests {
         }
         for check in checks {
             check.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn a_cut_off_metadata_body_blames_the_connection() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for github in [false, true] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let _ = socket.read(&mut [0; 1024]).await;
+                // Fewer bytes than promised, then the connection drops
+                socket
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{")
+                    .await
+                    .unwrap();
+            });
+            let error = if github {
+                fetch_release_from_api(&url, "18.3").await.unwrap_err()
+            } else {
+                get_stable_version_from_url(&url).await.unwrap_err()
+            };
+            server.await.unwrap();
+            let expected = if github {
+                "backend.download.github_unreachable"
+            } else {
+                "backend.download.version_service_unreachable"
+            };
+            assert!(
+                matches!(&error, Error::ServiceUnavailable(message) if message.key == expected),
+                "{error:?}"
+            );
         }
     }
 
