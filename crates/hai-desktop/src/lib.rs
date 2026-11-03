@@ -58,6 +58,8 @@ pub fn run() {
                 live_usb::set_resource_dir(dir);
             }
             clear_cache();
+            // The real app cache folder, which the mock must leave alone
+            #[cfg(not(feature = "mock"))]
             if hai_core::download::remove_legacy_downloads().is_err() {
                 diagnostics::warning("legacy_cache_cleanup_failed");
             }
