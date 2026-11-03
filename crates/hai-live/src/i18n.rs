@@ -64,6 +64,11 @@ impl Language {
         self.text("live.language_name")
     }
 
+    /// `value` with one decimal, the way the language writes it: "1.5" in English, "1,5" in German.
+    pub fn decimal(self, value: f64) -> String {
+        format!("{value:.1}").replace('.', &self.text("live.decimal_separator"))
+    }
+
     /// English, or a regional English.
     pub fn is_english(self) -> bool {
         self.0.tag.split('-').next() == Some("en")
@@ -641,6 +646,16 @@ mod tests {
             german.format("live.ui.done.installed", &[("disk", &"sda")]),
             "Home Assistant OS is on sda."
         );
+    }
+
+    #[test]
+    fn writes_decimals_with_the_language_s_separator() {
+        static GERMAN: Catalog = Catalog {
+            tag: "de",
+            messages: &[("live.decimal_separator", ",")],
+        };
+        assert_eq!(Language(&GERMAN).decimal(1.46), "1,5");
+        assert_eq!(Language::english().decimal(1.46), "1.5");
     }
 
     #[test]

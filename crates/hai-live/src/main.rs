@@ -202,7 +202,7 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
         disk.size_bytes,
         &mut |read, total, written| {
             let detail = || {
-                let gigabytes = format!("{:.1}", written as f64 / 1e9);
+                let gigabytes = lang.decimal(written as f64 / 1e9);
                 lang.format(
                     "live.main.writing.detail",
                     &[("disk", &disk.name), ("gigabytes", &gigabytes)],
@@ -310,11 +310,11 @@ fn describe(lang: Language, disk: &Disk) -> String {
         Model::Unknown => lang.text("live.drives.model.unknown"),
     };
     format!(
-        "{:<8} {:<6} {:<30} {:>8.1} GB",
+        "{:<8} {:<6} {:<30} {:>8} GB",
         disk.name,
         disk.kind.label(),
         model,
-        disk.size_bytes as f64 / 1e9,
+        lang.decimal(disk.size_bytes as f64 / 1e9),
     )
 }
 

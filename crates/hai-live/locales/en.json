@@ -1,5 +1,6 @@
 {
   "live.language_name": "English",
+  "live.decimal_separator": ".",
   "live.drives.hidden.loop_device": "loop device",
   "live.drives.hidden.ram_disk": "RAM disk",
   "live.drives.hidden.optical_drive": "optical drive",

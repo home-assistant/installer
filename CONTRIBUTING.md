@@ -146,6 +146,7 @@ module that names them (`live.ui.*`, `live.drives.*`), so they never collide
 with the frontend's in Lokalise. Messages support `{name}` and ICU plurals.
 Adding a language is adding `<tag>.json` with at least `live.language_name`,
 the language's name in itself, which the stick's language picker (`L`) lists.
+`live.decimal_separator` is what goes before a number's decimals (`,` in German).
 Keys it leaves out or empty show the English, and so does a message that
 fails to format. The stick starts in the app's language when it was prepared,
 or in English where no catalog matches. The word typed to confirm the erase
