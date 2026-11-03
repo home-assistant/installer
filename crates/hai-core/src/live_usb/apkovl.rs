@@ -4,6 +4,7 @@
 use std::io::Write;
 
 use flate2::{write::GzEncoder, Compression};
+use icu_locale_core::LanguageIdentifier;
 use tar::{EntryType, Header};
 
 use crate::error::Result;
@@ -14,8 +15,8 @@ pub const APKOVL_NAME: &str = "hai.apkovl.tar.gz";
 const INITTAB: &str = include_str!("inittab");
 
 /// Returns the apkovl as gzipped tar bytes, with `hai_live` as `/usr/local/bin/hai-live` and
-/// `language` (a BCP 47 tag) as `/etc/hai-live/language`. Without that file `hai-live` starts in
-/// English, so a tag that can't be one is left out.
+/// `language` (a BCP 47 tag, canonicalised) as `/etc/hai-live/language`. Without that file
+/// `hai-live` starts in English, so a tag that can't be one is left out.
 pub fn build(hai_live: &[u8], language: &str) -> Result<Vec<u8>> {
     let mut tar = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
 
@@ -51,7 +52,7 @@ pub fn build(hai_live: &[u8], language: &str) -> Result<Vec<u8>> {
         0o755,
         hai_live,
     )?;
-    if is_plausible_language_tag(language) {
+    if let Ok(language) = LanguageIdentifier::try_from_str(language) {
         append(&mut tar, "etc/hai-live", EntryType::Directory, 0o755, b"")?;
         append(
             &mut tar,
@@ -63,14 +64,6 @@ pub fn build(hai_live: &[u8], language: &str) -> Result<Vec<u8>> {
     }
 
     Ok(tar.into_inner()?.finish()?)
-}
-
-/// Whether `tag` is shaped like a BCP 47 tag; `hai-live` decides which tags it knows.
-fn is_plausible_language_tag(tag: &str) -> bool {
-    (1..=35).contains(&tag.len())
-        && !tag.starts_with('-')
-        && !tag.ends_with('-')
-        && tag.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
 fn append<W: Write>(
@@ -157,7 +150,8 @@ mod tests {
             "../de",
             "de_AT",
             "dé",
-            "a".repeat(36).as_str(),
+            "a-b-c-d",
+            "x1234567890",
         ] {
             let all = entries(&build(b"\x7fELF fake", tag).unwrap());
             assert!(
@@ -166,8 +160,16 @@ mod tests {
                 "{tag:?}"
             );
         }
-        let longest = "a".repeat(35);
-        let all = entries(&build(b"\x7fELF fake", &longest).unwrap());
-        assert!(all.iter().any(|(path, ..)| path == "etc/hai-live/language"));
+        for (tag, written) in [("DE-at", "de-AT\n"), ("sr-latn", "sr-Latn\n")] {
+            let all = entries(&build(b"\x7fELF fake", tag).unwrap());
+            let language = all
+                .iter()
+                .find(|(path, ..)| path == "etc/hai-live/language");
+            assert_eq!(
+                language.map(|(.., data)| data.as_slice()),
+                Some(written.as_bytes()),
+                "{tag:?}"
+            );
+        }
     }
 }

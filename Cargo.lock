@@ -2080,6 +2080,7 @@ dependencies = [
  "gpt",
  "hadris-iso",
  "hex",
+ "icu_locale_core",
  "libc",
  "liblzma",
  "mdns-sd",
