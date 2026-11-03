@@ -106,12 +106,10 @@ for (const filename of fs.readdirSync(path.dirname(catalogPath))) {
       dropped = true;
     }
   }
-  if (dropped) {
-    // An empty catalog would stop the app from trying the next language
-    if (Object.keys(translation).length)
-      fs.writeFileSync(translationPath, JSON.stringify(translation, null, 2));
-    else fs.rmSync(translationPath);
-  }
+  // An empty catalog would stop the app from trying the next language
+  if (prune && !Object.keys(translation).length) fs.rmSync(translationPath);
+  else if (dropped)
+    fs.writeFileSync(translationPath, JSON.stringify(translation, null, 2));
 }
 
 // A key under a file's namespace (views.sbc.success_view.title for

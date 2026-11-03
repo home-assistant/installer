@@ -287,6 +287,7 @@ test("catalog check drops downloaded translations that don't fit", () => {
       JSON.stringify({
         "common.next": "Weiter",
         "common.vm.update_timeout": "Öffne {link}",
+        "common.gone": "Weg",
       })
     );
     // In ICU, the apostrophe quotes the placeholder away
@@ -298,6 +299,9 @@ test("catalog check drops downloaded translations that don't fit", () => {
     // Blank text translates nothing, like a missing key
     const italian = path.join(directory, "it.json");
     fs.writeFileSync(italian, JSON.stringify({ "common.next": " " }));
+    // A language with nothing translated
+    const spanish = path.join(directory, "es.json");
+    fs.writeFileSync(spanish, "{}");
     // The app looks Tagalog up as fil
     const tagalog = path.join(directory, "tl.json");
     fs.writeFileSync(tagalog, JSON.stringify({ "common.next": "Susunod" }));
@@ -315,6 +319,11 @@ test("catalog check drops downloaded translations that don't fit", () => {
     });
     assert(!fs.existsSync(french));
     assert(!fs.existsSync(italian));
+    assert(!fs.existsSync(spanish));
+    assert.match(
+      result.stdout,
+      /::warning::Dropped de\.json: unknown key common\.gone/
+    );
     assert.match(result.stdout, /::warning::Dropped tl\.json/);
     assert(!fs.existsSync(tagalog));
   } finally {

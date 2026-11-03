@@ -587,9 +587,6 @@ jobs:
           # The CLI exits 0 when Lokalise rejects the file
           jq -e '.process.status == "finished"' "$RUNNER_TEMP/upload.json" > /dev/null
 
-      # A run of an older commit can find keys its en.json lacks, so they are
-      # left out here. A language with nothing translated is too: its empty
-      # catalog would stop the app from trying the user's next language.
       # Lokalise writes pt_BR where the app looks for pt-BR. Only an async
       # export works past 10,000 translations.
       - name: Download translations
@@ -606,12 +603,7 @@ jobs:
           shopt -s nullglob
           for file in "$RUNNER_TEMP"/lokalise/*.json; do
             name=$(basename "$file" .json)
-            jq --slurpfile english src/localization/en.json \
-              'with_entries(select(.key | in($english[0]))) | select(length > 0)' \
-              "$file" > "$RUNNER_TEMP/catalog.json"
-            if [[ -s "$RUNNER_TEMP/catalog.json" ]]; then
-              mv "$RUNNER_TEMP/catalog.json" "src/localization/${name//_/-}.json"
-            fi
+            mv "$file" "src/localization/${name//_/-}.json"
           done
 
       - name: Setup Node.js
@@ -623,7 +615,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Drops a message that doesn't fit the English, with a warning on the run
+      # Drops a message that doesn't fit the English, like a key a run of an
+      # older commit finds in Lokalise, with a warning on the run. A language
+      # left with nothing translated goes too: its empty catalog would stop
+      # the app from trying the user's next language.
       - name: Check the translations
         env:
           LOCALIZATION_PRUNE: "1"

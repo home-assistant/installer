@@ -54,12 +54,13 @@ runs, the `translations` job:
    and deletes the keys it no longer has, unless `main` has moved on to a
    newer commit (so re-running an older run can't put back English that
    `main` has changed since);
-2. downloads every verified translation, leaves out keys `en.json` no longer
-   has and languages with nothing translated, and names each catalog after its
+2. downloads every verified translation and names each catalog after its
    language tag (`pt-BR.json` for Lokalise's `pt_BR`);
 3. runs `npm run localization:check` on them, which drops each message whose
-   placeholders don't match the English, or that isn't valid ICU, with a
-   warning on the run, so it shows the English until it's fixed in Lokalise;
+   key `en.json` doesn't have, whose placeholders don't match the English, or
+   that isn't valid ICU, with a warning on the run, so it shows the English
+   until it's fixed in Lokalise, and removes languages with nothing
+   translated;
 4. uploads them as the `translations` artifact, which each build job puts next
    to `en.json` before it builds.
 
