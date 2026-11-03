@@ -34,7 +34,9 @@ pub fn grown_copy(path: &Path, size_bytes: u64) -> Result<PathBuf> {
         .as_nanos();
     let copy = path.with_extension(format!("{nanos:x}.qcow2"));
     std::fs::copy(path, &copy)?;
-    grow(&copy, size_bytes)?;
+    grow(&copy, size_bytes).inspect_err(|_| {
+        let _ = std::fs::remove_file(&copy);
+    })?;
     Ok(copy)
 }
 
@@ -259,6 +261,15 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), before);
         assert_eq!(read_header(&copy).size, 512 * GIB);
         assert_eq!(copy.parent(), path.parent());
+    }
+
+    #[test]
+    fn a_copy_that_cannot_grow_is_removed() {
+        let (dir, path, _) = image_with(b"not a qcow2 image");
+
+        assert!(grown_copy(&path, 512 * GIB).is_err());
+
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[test]

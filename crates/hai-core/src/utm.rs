@@ -597,12 +597,14 @@ mod macos {
                 &cpu_cores,
                 &memory_mb,
             ],
-        )
-        .inspect_err(|error| {
-            if matches!(error, Error::UtmOperationUncertain(_)) {
-                crate::download::keep_for_import(source.clone());
-            }
-        })?;
+        );
+        if let Err(Error::UtmOperationUncertain(_)) = vm_id {
+            crate::download::keep_for_import(source);
+        } else {
+            // UTM copied the drive into its VM, or never took it
+            let _ = std::fs::remove_file(&source);
+        }
+        let vm_id = vm_id?;
 
         finish_vm_creation(config, vm_id, progress_callback, |vm_id| {
             // The VM exists now, so a failed start must not invite a blind retry
