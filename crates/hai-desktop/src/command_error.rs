@@ -14,6 +14,9 @@ pub struct CommandError {
     /// code covers several causes. Never sent to the frontend.
     #[serde(skip)]
     pub diagnostic: &'static str,
+    /// What failed, scrubbed, for the local log. Never sent to the frontend.
+    #[serde(skip)]
+    pub cause: Option<String>,
 }
 
 impl CommandError {
@@ -24,6 +27,7 @@ impl CommandError {
             retryable,
             details: json!({}),
             diagnostic: code,
+            cause: None,
         }
     }
 
@@ -36,6 +40,7 @@ impl CommandError {
             retryable,
             details: json!({ "message_key": message.key, "message_params": message.params_json() }),
             diagnostic: code,
+            cause: None,
         }
     }
 
@@ -71,9 +76,20 @@ impl std::fmt::Display for CommandError {
 
 impl From<Error> for CommandError {
     fn from(error: Error) -> Self {
-        // The log keeps what the frontend only names by its code
-        crate::diagnostics::error(&error);
-        let (code, message, retryable) = match &error {
+        let mut result = Self::public(&error);
+        // The log keeps what the frontend only names by its code; a cancel
+        // is the user's choice, with nothing to explain
+        if !matches!(error, Error::Cancelled) {
+            result.cause = Some(crate::diagnostics::describe(&error));
+        }
+        result
+    }
+}
+
+impl CommandError {
+    /// What the frontend gets for `error`.
+    fn public(error: &Error) -> Self {
+        let (code, message, retryable) = match error {
             // Never serialize URLs, response bodies, or authentication data from remote errors.
             Error::Network(_) => ("network", "Could not connect. Check your internet connection.", true),
             Error::Io(_) => ("io", "Could not read or write a file. Check available storage and access permissions.", false),
@@ -194,6 +210,9 @@ mod tests {
         let serialized = serde_json::to_string(&error).unwrap();
         assert!(!serialized.contains("diagnostic"), "{serialized}");
         assert!(!serialized.contains("private"), "{serialized}");
+        assert!(!serialized.contains("\"cause\""), "{serialized}");
+        // A cancel is the user's choice, not a failure to log
+        assert_eq!(CommandError::from(Error::Cancelled).cause, None);
     }
 
     #[test]

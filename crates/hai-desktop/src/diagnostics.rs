@@ -61,10 +61,10 @@ pub fn warning(code: &'static str) {
     record(log::Level::Warn, format!("warning {code}"));
 }
 
-/// Record what failed, with its causes, as one scrubbed line. A poll can
-/// fail the same way for minutes, so a line still in the tail isn't repeated.
-pub fn error(error: &hai_core::Error) {
-    let line = format!("rust error: {}", describe(error));
+/// Record what failed, as `describe` puts it. A poll can fail the same way
+/// for minutes, so a line still in the tail isn't repeated.
+fn error(cause: &str) {
+    let line = format!("rust error: {cause}");
     let logged = TAIL.lock().is_ok_and(|tail| {
         tail.iter().any(|logged| {
             logged
@@ -83,7 +83,8 @@ const USER_NAMED: [&str; 9] = [
     "node", "storage", "storages", "bridge", "vnet", "volume", "name", "path", "mount",
 ];
 
-fn describe(error: &hai_core::Error) -> String {
+/// `error` with its causes, as one scrubbed line.
+pub fn describe(error: &hai_core::Error) -> String {
     use hai_core::Error::*;
     if let PermissionDenied(message)
     | ProxmoxTwoFactor(message)
@@ -318,6 +319,11 @@ pub fn error_category(error: &str) -> &'static str {
 /// A failure's fixed category for the log, never its message.
 pub trait Categorized {
     fn category(&self) -> &'static str;
+
+    /// What failed, scrubbed, where there is more to it than the category.
+    fn cause(&self) -> Option<&str> {
+        None
+    }
 }
 
 impl Categorized for String {
@@ -330,6 +336,10 @@ impl Categorized for crate::command_error::CommandError {
     // A fixed, credential-free code, finer than the public one where it helps
     fn category(&self) -> &'static str {
         self.diagnostic
+    }
+
+    fn cause(&self) -> Option<&str> {
+        self.cause.as_deref()
     }
 }
 
@@ -369,6 +379,9 @@ impl Operation {
     }
 
     pub fn finish<T, E: Categorized>(&self, result: Result<T, E>) -> Result<T, E> {
+        if let Some(cause) = result.as_ref().err().and_then(Categorized::cause) {
+            error(cause);
+        }
         if let Ok(current) = self.stage.lock() {
             let outcome = result
                 .as_ref()
@@ -765,9 +778,8 @@ mod tests {
     // Other tests clear the shared tail
     #[serial_test::serial]
     fn a_repeated_error_is_logged_once_while_in_the_tail() {
-        let failure = || hai_core::Error::DownloadFailed("HTTP 503 while polling".into());
-        error(&failure());
-        error(&failure());
+        error("Download failed: HTTP 503 while polling");
+        error("Download failed: HTTP 503 while polling");
         let logged = test_log_tail()
             .iter()
             .filter(|line| line.ends_with(" rust error: Download failed: HTTP 503 while polling"))

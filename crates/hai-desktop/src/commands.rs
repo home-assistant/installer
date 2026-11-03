@@ -601,32 +601,26 @@ async fn run_utm_creation<B: UtmBackend>(
             true,
         )
     })?;
-    // Import errors are wrapped below rather than converted, so log them here
     image.begin_utm_import().map_err(|error| {
-        crate::diagnostics::error(&error);
-        CommandError::with_message(
-            "utm",
-            &hai_core::message!(
-                "backend.utm.import_not_prepared",
-                detail = error.to_string(),
-                path = image.path().parent().unwrap().display().to_string(),
-            ),
-            false,
-        )
+        let mut error = CommandError::from(hai_core::Error::Utm(hai_core::message!(
+            "backend.utm.import_not_prepared",
+            detail = error.to_string(),
+            path = image.path().parent().unwrap().display().to_string(),
+        )));
+        // The message asks for a manual cleanup, which a retry doesn't do
+        error.retryable = false;
+        error
     })?;
     // Fully qualified: `create_vm` is defined on both UtmBackend and ProxmoxBackend.
     let result = UtmBackend::create_vm(backend, config, &hai_core::NoOpProgress).await;
-    if let Err(uncertain @ hai_core::Error::UtmOperationUncertain(error)) = &result {
-        crate::diagnostics::error(uncertain);
-        return Err(CommandError::with_message(
-            "utm_operation_uncertain",
-            &hai_core::message!(
+    if let Err(hai_core::Error::UtmOperationUncertain(error)) = &result {
+        return Err(CommandError::from(hai_core::Error::UtmOperationUncertain(
+            hai_core::message!(
                 "backend.utm.import_uncertain",
                 detail = error,
                 path = image.path().parent().unwrap().display().to_string(),
             ),
-            false,
-        ));
+        )));
     }
     // A completed creation or confirmed rejection no longer needs the source.
     if image.finish_utm_import().is_err() {
@@ -2145,8 +2139,6 @@ mod mock_tests {
     }
 
     #[tokio::test]
-    // Other tests clear the shared tail, which would drop the logged reasons
-    #[serial_test::serial]
     async fn utm_source_cleanup_requires_a_confirmed_outcome() {
         for outcome in [
             "success",
@@ -2218,14 +2210,14 @@ mod mock_tests {
                         }
                     );
                     // The log keeps the reason the message wraps
-                    let tail = crate::diagnostics::test_log_tail().join("\n");
+                    let cause = error.cause.as_deref().unwrap();
                     assert!(
-                        tail.contains(if outcome == "timeout" {
-                            " rust error: AppleEvent timed out (-1712)"
+                        cause.contains(if outcome == "timeout" {
+                            "AppleEvent timed out (-1712)"
                         } else {
-                            " rust error: Failed to wait for AppleScript: broken pipe"
+                            "Failed to wait for AppleScript: broken pipe"
                         }),
-                        "{tail}"
+                        "{cause}"
                     );
                 }
                 if outcome == "start-failed" {
@@ -2253,8 +2245,9 @@ mod mock_tests {
                         error.details["message_params"]["path"],
                         path.parent().unwrap().display().to_string()
                     );
-                    let tail = crate::diagnostics::test_log_tail().join("\n");
-                    assert!(tail.contains(" rust error: IO error: "), "{tail}");
+                    let cause = error.cause.as_deref().unwrap();
+                    assert!(cause.contains("IO error: "), "{cause}");
+                    assert!(!error.retryable);
                 }
             }
             // This is the same removal used by the frontend's discard command.
