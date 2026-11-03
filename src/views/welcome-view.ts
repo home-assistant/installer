@@ -22,6 +22,7 @@ import { mdiTranslate } from "../utils/icons.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 import "@home-assistant/webawesome/dist/components/select/select.js";
+import "@home-assistant/webawesome/dist/components/option/option.js";
 import "../components/ha-svg-icon.js";
 import "../components/diagnostics-actions.js";
 
