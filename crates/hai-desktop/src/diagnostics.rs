@@ -61,8 +61,8 @@ pub fn warning(code: &'static str) {
     record(log::Level::Warn, format!("warning {code}"));
 }
 
-/// Record what failed, as `describe` puts it. A poll can fail the same way
-/// for minutes, so a line still in the tail isn't repeated.
+/// Record what failed, as `describe` puts it. Retries can fail the same way
+/// many times, so a line still in the tail isn't repeated.
 fn error(cause: &str) {
     let line = format!("rust error: {cause}");
     let logged = TAIL.lock().is_ok_and(|tail| {
