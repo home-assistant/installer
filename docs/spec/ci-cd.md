@@ -51,8 +51,9 @@ The community translates `src/localization/en.json` in the installer's
 runs, the `translations` job:
 
 1. uploads `en.json`, with its ICU placeholders and plurals kept as written,
-   unless `main` has moved on to a newer commit (so re-running an older run
-   can't put back English that `main` has changed since);
+   and deletes the keys it no longer has, unless `main` has moved on to a
+   newer commit (so re-running an older run can't put back English that
+   `main` has changed since);
 2. downloads every verified translation, leaves out keys `en.json` no longer
    has and languages with nothing translated, and names each catalog after its
    language tag (`pt-BR.json` for Lokalise's `pt_BR`);
