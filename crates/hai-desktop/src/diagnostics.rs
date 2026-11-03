@@ -139,11 +139,10 @@ fn scrub(text: &str) -> String {
     });
     static RULES: LazyLock<Vec<(Regex, &str)>> = LazyLock::new(|| {
         [
-            // User folders, also other users' and drives mounted per user.
-            // Names may have spaces and parentheses, so a folder's name runs to the
-            // next separator. Without one, it takes balanced parentheses, but not
-            // the one closing a path in them.
-            (r#"(?i)([a-z]:[\\/]+users[\\/]+|/home/|/users/|/(?:run/)?media/)(?:[^\\/:"]+([\\/])|(?:\([^\\/:"()]*\)|[^\\/:")])+)"#, "${1}<user>${2}"),
+            // User folders, also other users' and drives mounted per user. A name
+            // may hold spaces and parentheses where the path goes on after it;
+            // otherwise it ends at a space, so the text after it stays.
+            (r#"(?i)([a-z]:[\\/]+users[\\/]+|/home/|/users/|/(?:run/)?media/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|[^\s\\/:"()]+)"#, "${1}<user>${2}"),
             // Stops at a quote or backslash, so the next rule still sees where a quoted value ends
             (r#"(?i)\b(basic|bearer)\s+[^\s"\\]+"#, "${1} <redacted>"),
             (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|\S+)"#, "${1}=<redacted>"),
@@ -701,8 +700,16 @@ mod tests {
                 r#"{"password=<redacted>}"#,
             ),
             (
-                r"(in C:\Users\Jane (Work) Doe\AppData and C:\Users\Jane (Work) Doe)",
+                r"(in C:\Users\Jane (Work) Doe\AppData and C:\Users\Jane)",
                 r"(in C:\Users\<user>\AppData and C:\Users\<user>)",
+            ),
+            (
+                "Cannot open /home/jane (os error 13); copy /home/jane and /tmp/x failed",
+                "Cannot open /home/<user> (os error 13); copy /home/<user> and /tmp/x failed",
+            ),
+            (
+                r"C:\Users\Jane is locked by another process",
+                r"C:\Users\<user> is locked by another process",
             ),
             (
                 r"C:\Users\Jane (Work (Admin)) Doe\AppData and C:\Users\Jane)Doe\AppData",
