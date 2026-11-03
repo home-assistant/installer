@@ -584,7 +584,7 @@
   "utils.installer_error.unsupported_platform": "This installation method is not available on this computer. Choose another installation method.",
   "utils.installer_error.json": "The installer received an unexpected response. Report the problem if it continues.",
   "utils.installer_error.download_failed": "The image could not be downloaded. Check your connection and try again.",
-  "utils.installer_error.extraction_failed": "The downloaded image is damaged and couldn't be unpacked. Try again to download a new copy.",
+  "utils.installer_error.extraction_failed": "The image could not be unpacked on this computer. Check available storage, then try again.",
   "utils.installer_error.verification_failed": "The image could not be verified. Installation stopped to protect your device. See the installation help before continuing.",
   "utils.installer_error.image_too_large": "The image does not fit on this drive. Choose a larger drive.",
   "utils.installer_error.operation_in_progress": "An installation is already in progress. Wait for it to finish before starting another.",
