@@ -543,6 +543,11 @@ jobs:
     # Holds the token, so a changed copy of the workflow on a branch can't
     # read it or write to the project
     environment: release
+    # Runs on main don't share the workflow's group, and the newer of two
+    # quick pushes must upload last
+    concurrency:
+      group: lokalise
+      cancel-in-progress: false
     env:
       LOKALISE: lokalise/lokalise-cli-2:v3.1.7@sha256:bbba240819aa93cf3926f1c1c88411de2c1c2fb92aad3ef45911453a6d1d9972
       LOKALISE_PROJECT_ID: ${{ vars.LOKALISE_PROJECT_ID }}
