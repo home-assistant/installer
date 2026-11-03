@@ -177,7 +177,9 @@ fn scrub(text: &str) -> String {
             // Hosts outside URLs: a share, a certificate's names, or one with a port
             (r#"(^|[\s"'(])\\\\[^\\\s?.][^\\\s"']*"#, r"${1}\\<host>"),
             (r#"(not valid for name |DnsName\()"[^"]*""#, r#"${1}"<host>""#),
-            (r"(?i)\b[a-z][\w-]*(?:\.[\w-]+)*(:\d{1,5})\b", "<host>${1}"),
+            // A host name has a letter, unlike a time, and a port isn't
+            // followed by more of a timestamp
+            (r"(?i)\b(?:[\w-]+\.)*[\w-]*[a-z][\w-]*(?:\.[\w-]+)*(:\d{1,5})(:?(?:[^\w:]|$))", "<host>${1}${2}"),
         ]
         .into_iter()
         .map(|(pattern, replacement)| (Regex::new(pattern).unwrap(), replacement))
@@ -779,8 +781,16 @@ mod tests {
                 r"Cannot open \\<host>\share\haos.img or \\?\Volume{x}\ or \\.\PhysicalDrive1",
             ),
             (
-                "connect to janes-macbook.local:8123 failed at 14:07:29 in std::io",
-                "connect to <host>:8123 failed at 14:07:29 in std::io",
+                "connect to janes-macbook.local:8123: failed at 14:07:29 in std::io",
+                "connect to <host>:8123: failed at 14:07:29 in std::io",
+            ),
+            (
+                "2janesmacbook:8123, 123nas.local:8123 and 123.nas.local:8123 or 10.0.0.2:8123",
+                "<host>:8123, <host>:8123 and <host>:8123 or <ip>:8123",
+            ),
+            (
+                "at 2026-11-03T15:01:02, 12:34:56 and port 8123:",
+                "at 2026-11-03T15:01:02, 12:34:56 and port 8123:",
             ),
             ("first line\nInjected line", "first line Injected line"),
         ] {
