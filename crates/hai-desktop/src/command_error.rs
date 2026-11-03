@@ -56,6 +56,9 @@ impl CommandError {
     /// A read-only query can be repeated after the user restores access or service.
     pub fn from_query(error: Error) -> Self {
         let mut error = Self::from(error);
+        // A query has no operation to log this as it finishes; inside one,
+        // the repeat check keeps it to one line
+        crate::diagnostics::failed(&error);
         error.retryable = !matches!(
             error.code,
             "unsupported_platform"

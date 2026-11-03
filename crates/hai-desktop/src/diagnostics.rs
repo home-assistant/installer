@@ -61,9 +61,12 @@ pub fn warning(code: &'static str) {
     record(log::Level::Warn, format!("warning {code}"));
 }
 
-/// Record what failed, as `describe` puts it. Retries can fail the same way
-/// many times, so a line still in the tail isn't repeated.
-fn error(cause: &str) {
+/// Record why `failure` happened, if it says. A poll can fail the same way
+/// for minutes, so a line still in the tail isn't repeated.
+pub fn failed(failure: &impl Categorized) {
+    let Some(cause) = failure.cause() else {
+        return;
+    };
     let line = format!("rust error: {cause}");
     let logged = TAIL.lock().is_ok_and(|tail| {
         tail.iter().any(|logged| {
@@ -379,8 +382,8 @@ impl Operation {
     }
 
     pub fn finish<T, E: Categorized>(&self, result: Result<T, E>) -> Result<T, E> {
-        if let Some(cause) = result.as_ref().err().and_then(Categorized::cause) {
-            error(cause);
+        if let Err(failure) = &result {
+            failed(failure);
         }
         if let Ok(current) = self.stage.lock() {
             let outcome = result
@@ -774,14 +777,23 @@ mod tests {
     #[test]
     // Other tests clear the shared tail
     #[serial_test::serial]
-    fn a_repeated_error_is_logged_once_while_in_the_tail() {
-        error("Download failed: HTTP 503 while polling");
-        error("Download failed: HTTP 503 while polling");
-        let logged = test_log_tail()
-            .iter()
-            .filter(|line| line.ends_with(" rust error: Download failed: HTTP 503 while polling"))
-            .count();
-        assert_eq!(logged, 1);
+    fn a_failing_query_is_logged_once_while_in_the_tail() {
+        use crate::command_error::CommandError;
+        use hai_core::Error;
+
+        clear_test_log_tail();
+        for _ in 0..2 {
+            CommandError::from_query(Error::DownloadFailed("HTTP 503 while polling".into()));
+        }
+        // A cancel is the user's choice, not a failure to log
+        CommandError::from_query(Error::Cancelled);
+        let tail = test_log_tail().join("\n");
+        assert_eq!(
+            tail.matches("rust error: Download failed: HTTP 503")
+                .count(),
+            1
+        );
+        assert!(!tail.contains("rust error: Operation cancelled"), "{tail}");
     }
 
     #[test]

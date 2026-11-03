@@ -639,7 +639,7 @@ pub fn start_utm_vm(vm_id: String) -> Result<(), CommandError> {
 #[tauri::command(async)]
 pub fn get_utm_vm_status(vm_id: String) -> Result<VmStatusInfo, CommandError> {
     // Fully qualified: `vm_status` is defined on both UtmBackend and ProxmoxBackend.
-    UtmBackend::vm_status(&Backend, &vm_id).map_err(CommandError::from)
+    UtmBackend::vm_status(&Backend, &vm_id).map_err(CommandError::from_query)
 }
 
 // =============================================================================
