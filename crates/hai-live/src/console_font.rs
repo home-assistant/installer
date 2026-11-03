@@ -17,17 +17,14 @@ const PSF2_MAGIC: [u8; 4] = [0x72, 0xb5, 0x4a, 0x86];
 /// `KD_FONT_OP_SET` takes every glyph padded to 32 rows.
 const KERNEL_ROWS: usize = 32;
 
-/// Loads the patched Terminus font on the console behind stdout.
+/// Loads the patched Terminus font on the console behind stdout, and returns whether it did.
 ///
-/// Best effort, and only under the framebuffer console (fbcon): in VGA text mode a 512-glyph
-/// font costs the bright colors. The size follows the font the kernel picked. Any error leaves
-/// the console as it was. Call it before drawing: the console stores glyph numbers, so text
-/// already on screen turns into other glyphs.
-pub fn load() {
-    if fbcon_bound(Path::new(VTCONSOLE)) {
-        // Without it the built-in font still shows English
-        let _ = load_patched();
-    }
+/// Only under the framebuffer console (fbcon): in VGA text mode a 512-glyph font costs the
+/// bright colors. The size follows the font the kernel picked. Any error leaves the console as
+/// it was. Call it before drawing: the console stores glyph numbers, so text already on screen
+/// turns into other glyphs.
+pub fn load() -> bool {
+    fbcon_bound(Path::new(VTCONSOLE)) && load_patched().is_ok()
 }
 
 fn load_patched() -> io::Result<()> {

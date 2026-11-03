@@ -534,13 +534,13 @@ pub struct Ui {
 
 impl Ui {
     /// Takes over the console, to draw in `language`. On the Linux console, it first loads a font
-    /// that can show every language.
-    pub fn start(language: Language) -> io::Result<Self> {
+    /// that can show every language, and draws in English where it can't.
+    pub fn start(mut language: Language) -> io::Result<Self> {
         let linux_console = std::env::var("TERM").is_ok_and(|term| term == "linux");
-        if linux_console {
-            // Before anything is drawn or the size is read: the console keeps glyph numbers, and
-            // a font of another height changes its rows
-            console_font::load();
+        // Before anything is drawn or the size is read: the console keeps glyph numbers, and a
+        // font of another height changes its rows. The built-in font only covers English.
+        if linux_console && !console_font::load() {
+            language = Language::english();
         }
         terminal::enable_raw_mode()?;
         let mut stdout = io::stdout();
