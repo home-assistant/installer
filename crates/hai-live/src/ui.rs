@@ -24,6 +24,9 @@ use crate::safety::{Hidden, Problem};
 /// the console shows bold blue text in its bright blue, entry 12.
 const ACCENT: Color = Color::Blue;
 const MUTED: Color = Color::DarkGray;
+/// Plain text. Not the console's default color: the Linux console draws dark gray as bold black,
+/// and text in the default color drawn after it stays bold.
+const TEXT: Color = Color::Gray;
 /// The bright yellow: plain yellow is brown on the Linux console.
 const WARNING: Color = Color::LightYellow;
 
@@ -212,6 +215,7 @@ pub fn render(frame: &mut Frame, screen: &Screen, lang: Language) {
     });
     frame.render_widget(
         Paragraph::new(lines)
+            .fg(TEXT)
             .wrap(Wrap { trim: false })
             .scroll((scroll, 0)),
         text_area,
