@@ -726,80 +726,40 @@ mod tests {
             Screen::Languages { selected: lang },
         ];
 
-        let writing = lang.format(
-            "live.main.writing.detail",
-            &[("disk", &"nvme0n1"), ("gigabytes", &"100.0")],
-        );
-        let steps = [
-            (
-                "live.main.checking.title",
-                lang.text("live.main.checking.detail"),
-            ),
-            ("live.main.writing.title", writing),
-            (
-                "live.main.finishing.title",
-                lang.text("live.main.finishing.detail"),
-            ),
+        // Every title main shows, as a step and as a message, with all the text of its group
+        // and the longest values main passes in
+        let problem = lang.text("live.safety.problem.too_small");
+        let args: &Args = &[
+            ("disk", &"nvme0n1"),
+            ("problem", &problem),
+            ("error", &error),
+            ("gigabytes", &"100.0"),
         ];
-        let times = [
-            None,
-            Some(TimeLeft::LessThanAMinute),
-            Some(TimeLeft::Minutes(59)),
-            Some(TimeLeft::Minutes(119)),
-        ];
-        for (title, detail) in steps {
+        let keys = || Language::english().messages().iter().map(|&(key, _)| key);
+        let titles = keys().filter(|key| key.starts_with("live.main.") && key.ends_with(".title"));
+        for title in titles {
+            let group = title.trim_end_matches("title");
+            let mut body: Vec<String> = keys()
+                .filter(|key| key.starts_with(group) && *key != title)
+                .map(|key| lang.format(key, args))
+                .collect();
+            let times = [
+                None,
+                Some(TimeLeft::LessThanAMinute),
+                Some(TimeLeft::Minutes(59)),
+                Some(TimeLeft::Minutes(119)),
+            ];
             for time_left in times {
                 screens.push(Screen::Progress {
                     title: lang.text(title),
-                    detail: detail.clone(),
+                    detail: body.join(" "),
                     percent: 100,
                     time_left,
                 });
             }
-        }
-
-        let text = |key| lang.text(key);
-        let problem = text("live.safety.problem.too_small");
-        let unusable: &Args = &[("disk", &"nvme0n1"), ("problem", &problem)];
-        let open_failed: &Args = &[("disk", &"nvme0n1"), ("error", &error)];
-        let messages = [
-            (
-                "live.main.unusable.title",
-                vec![lang.format("live.main.unusable.body", unusable)],
-            ),
-            (
-                "live.main.image_damaged.title",
-                vec![
-                    text("live.main.image_damaged.body"),
-                    text("live.main.image_damaged.hint"),
-                ],
-            ),
-            (
-                "live.main.read_failed.title",
-                vec![error.into(), text("live.main.nothing_written")],
-            ),
-            (
-                "live.main.disk_changed.title",
-                vec![text("live.main.disk_changed.body")],
-            ),
-            (
-                "live.main.open_failed.title",
-                vec![
-                    lang.format("live.main.open_failed.body", open_failed),
-                    text("live.main.nothing_written"),
-                ],
-            ),
-            (
-                "live.main.write_failed.title",
-                vec![error.into(), text("live.main.write_failed.body")],
-            ),
-            ("live.main.finish_failed.title", vec![error.into()]),
-            ("live.main.restart_failed.title", vec![error.into()]),
-            ("live.main.power_off_failed.title", vec![error.into()]),
-        ];
-        for (title, body) in messages {
+            body.extend([error.into(), lang.text("live.main.nothing_written")]);
             screens.push(Screen::Message {
-                title: text(title),
+                title: lang.text(title),
                 body,
             });
         }
