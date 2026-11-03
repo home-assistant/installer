@@ -11,6 +11,10 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const catalogPath =
   process.argv[2] ?? path.join(root, "src/localization/en.json");
 const read = (filename) => JSON.parse(fs.readFileSync(filename, "utf8"));
+// CI sets this for the translations it downloads from Lokalise, so a
+// community string that doesn't fit shows the English instead of blocking
+// every build until someone fixes it there.
+const prune = process.env.LOCALIZATION_PRUNE === "1";
 
 function placeholders(key, message) {
   assert.equal(typeof message, "string", `${key}: messages must be plain text`);
@@ -62,12 +66,20 @@ for (const filename of fs.readdirSync(path.dirname(catalogPath))) {
   } catch {
     // Reported below
   }
+  const translationPath = path.join(path.dirname(catalogPath), filename);
+  if (tag !== language && prune) {
+    // The app would never look it up, like Lokalise's tl for fil
+    console.log(
+      `::warning::Dropped ${filename}: not named after its language tag`
+    );
+    fs.rmSync(translationPath);
+    continue;
+  }
   assert.equal(
     tag,
     language,
     `${filename}: name a catalog after its language tag, like pt-BR.json`
   );
-  const translationPath = path.join(path.dirname(catalogPath), filename);
   const translation = read(translationPath);
   let dropped = false;
   for (const [key, message] of Object.entries(translation)) {
@@ -76,7 +88,7 @@ for (const filename of fs.readdirSync(path.dirname(catalogPath))) {
       // An export can list untranslated keys with empty text. Pruning drops
       // them, so a catalog of nothing else is removed like an empty one.
       if (typeof message === "string" && !message.trim()) {
-        if (process.env.LOCALIZATION_PRUNE === "1") {
+        if (prune) {
           delete translation[key];
           dropped = true;
         }
@@ -88,10 +100,7 @@ for (const filename of fs.readdirSync(path.dirname(catalogPath))) {
         `${filename}: ${key} placeholder mismatch`
       );
     } catch (error) {
-      // CI sets this for the translations it downloads from Lokalise, so a
-      // community string that doesn't fit shows the English instead of
-      // blocking every build until someone fixes it there.
-      if (process.env.LOCALIZATION_PRUNE !== "1") throw error;
+      if (!prune) throw error;
       console.log(`::warning::Dropped ${error.message}`);
       delete translation[key];
       dropped = true;

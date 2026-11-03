@@ -80,8 +80,9 @@ turn it on:
   The other way round, a push in between runs the job without a token and
   skips the builds.
 
-A language whose Lokalise code isn't a language tag once `_` becomes `-`
-fails the check; give it a custom ISO code in Lokalise.
+A language whose Lokalise code isn't its canonical language tag once `_`
+becomes `-`, like `tl` for `fil`, is dropped with a warning; give it a custom
+ISO code in Lokalise.
 
 ---
 

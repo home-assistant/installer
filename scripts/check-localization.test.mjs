@@ -298,6 +298,9 @@ test("catalog check drops downloaded translations that don't fit", () => {
     // Blank text translates nothing, like a missing key
     const italian = path.join(directory, "it.json");
     fs.writeFileSync(italian, JSON.stringify({ "common.next": " " }));
+    // The app looks Tagalog up as fil
+    const tagalog = path.join(directory, "tl.json");
+    fs.writeFileSync(tagalog, JSON.stringify({ "common.next": "Susunod" }));
     const result = spawnSync(process.execPath, [checker, fixture], {
       encoding: "utf8",
       env: { ...process.env, LOCALIZATION_PRUNE: "1" },
@@ -312,6 +315,8 @@ test("catalog check drops downloaded translations that don't fit", () => {
     });
     assert(!fs.existsSync(french));
     assert(!fs.existsSync(italian));
+    assert.match(result.stdout, /::warning::Dropped tl\.json/);
+    assert(!fs.existsSync(tagalog));
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
