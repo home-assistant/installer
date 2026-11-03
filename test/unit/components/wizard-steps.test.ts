@@ -3,10 +3,10 @@ import { render } from "lit";
 import {
   LIVE_USB_STEPS,
   WIZARD_STEPS,
-  nextOnEnter,
   wizardStep,
   type WizardStepView,
 } from "../../../src/components/wizard-steps.js";
+import { nextOnEnter } from "../../../src/components/wizard-next.js";
 import {
   MINIPC_STEPS,
   wizardState,

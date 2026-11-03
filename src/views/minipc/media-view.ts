@@ -8,7 +8,7 @@ import {
 import { MINIPC_STEPS, wizardState } from "../../state/wizard-state.js";
 import { clearDriveSelection } from "../../utils/drive-selection.js";
 import type { HaosConfig } from "../../api/types.js";
-import { goToNextStep } from "../../components/wizard-steps.js";
+import { goToNextStep } from "../../components/wizard-next.js";
 import "../../components/option-card.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 

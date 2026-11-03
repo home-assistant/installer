@@ -16,13 +16,14 @@ import type WaInput from "@home-assistant/webawesome/dist/components/input/input
 import "@home-assistant/webawesome/dist/components/input/input.js";
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 import "@home-assistant/webawesome/dist/components/select/select.js";
+import "@home-assistant/webawesome/dist/components/option/option.js";
 import {
   wizardState,
   type WizardSelections,
   type WizardState,
 } from "../../state/wizard-state.js";
 import { proxmoxCheckVmConfig } from "../../api/commands.js";
-import { nextOnEnter } from "../../components/wizard-steps.js";
+import { nextOnEnter } from "../../components/wizard-next.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/details/details.js";
 import {

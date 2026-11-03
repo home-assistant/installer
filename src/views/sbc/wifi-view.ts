@@ -13,7 +13,7 @@ import "@home-assistant/webawesome/dist/components/switch/switch.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 import { panelStyles } from "../../utils/panel-styles.js";
 import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
-import { nextOnEnter } from "../../components/wizard-steps.js";
+import { nextOnEnter } from "../../components/wizard-next.js";
 
 /** Optional step for boards with built-in Wi-Fi: the network to join. */
 @customElement("wifi-view")
@@ -72,7 +72,7 @@ export class WifiView extends LitElement {
                 label=${localize("views.sbc.wifi_view.network")}
                 autocomplete="off"
                 autocapitalize="off"
-                autocorrect="off"
+                .autocorrect=${false}
                 .spellcheck=${false}
                 .value=${wifi.ssid}
                 @input=${this._onSsidInput}

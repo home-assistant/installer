@@ -22,6 +22,7 @@ import { mdiTranslate } from "../utils/icons.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 import "@home-assistant/webawesome/dist/components/select/select.js";
+import "@home-assistant/webawesome/dist/components/option/option.js";
 import "../components/ha-svg-icon.js";
 import "../components/diagnostics-actions.js";
 
@@ -219,6 +220,8 @@ export class WelcomeView extends LitElement {
     `,
   ];
 
+  // The logo's easter egg is hidden on purpose, so it needs no keyboard way in
+  /* eslint-disable lit-a11y/click-events-have-key-events */
   render() {
     return html`
       ${this._renderLanguages()}
@@ -273,6 +276,7 @@ export class WelcomeView extends LitElement {
       </footer>
     `;
   }
+  /* eslint-enable lit-a11y/click-events-have-key-events */
 
   // Hidden while English is the only language
   private _renderLanguages() {
