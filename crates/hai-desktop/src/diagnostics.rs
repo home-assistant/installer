@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
@@ -95,9 +96,7 @@ fn describe(error: &hai_core::Error) -> String {
     {
         let mut message = message.clone();
         for (name, value) in &mut message.params {
-            if USER_NAMED.contains(name) {
-                *value = "<name>".into();
-            }
+            hide_name(name, value);
         }
         return scrub(&message.to_string());
     }
@@ -112,6 +111,18 @@ fn describe(error: &hai_core::Error) -> String {
         source = cause.source();
     }
     scrub(&text)
+}
+
+/// Replace a user-named parameter with `<name>`, also in a message that is
+/// another one's parameter.
+fn hide_name(name: &str, value: &mut Value) {
+    if USER_NAMED.contains(&name) {
+        *value = "<name>".into();
+    } else if let Some(params) = value.get_mut("params").and_then(Value::as_object_mut) {
+        for (name, value) in params {
+            hide_name(name, value);
+        }
+    }
 }
 
 /// Hosts of the services the installer uses; any other host is the user's.
@@ -798,6 +809,17 @@ mod tests {
             describe(&denied),
             "Your Proxmox user is missing SDN.Use on <name>."
         );
+        let created = hai_core::Error::UtmVmCreated(hai_core::message!(
+            "backend.utm.vm_created_not_started",
+            name = "Jane's VM",
+            detail = hai_core::message!(
+                "backend.utm.import_uncertain",
+                detail = "broken pipe",
+                path = "/tmp/jane-images",
+            ),
+        ));
+        let created = describe(&created);
+        assert!(!created.to_lowercase().contains("jane"), "{created}");
         let unknown = hai_core::Error::PermissionDenied(hai_core::message!(
             "backend.disk.system_disk_unknown",
             mount = "/Volumes/Jane's Backup",
