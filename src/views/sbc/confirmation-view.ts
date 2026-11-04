@@ -21,7 +21,6 @@ import {
   installerName,
   type HaHardwareInstaller,
 } from "../../state/ha-hardware.js";
-import "../../components/inline-notice.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 import { mdiWifi } from "../../utils/icons.js";
 import { renderIcon } from "../../utils/render-icon.js";
@@ -61,10 +60,6 @@ export class ConfirmationView extends LitElement {
       .drive-path {
         font-family: var(--ha-font-family-code);
       }
-
-      inline-notice {
-        margin-top: 1.5rem;
-      }
     `,
   ];
 
@@ -102,8 +97,26 @@ export class ConfirmationView extends LitElement {
 
     return html`
       ${renderStepHeading(
-        localize("common.confirm.ready_to_install"),
-        localize("views.sbc.confirmation_view.subtitle")
+        installer
+          ? localize("common.confirm.ready_to_create")
+          : localize("common.confirm.ready_to_install"),
+        this._wizardState.currentFlow !== "ha-hardware"
+          ? localize("views.sbc.confirmation_view.subtitle")
+          : installer
+            ? installer.board === "green-installer"
+              ? localize(
+                  "views.sbc.confirmation_view.green_installer_subtitle",
+                  {
+                    device: deviceName,
+                  }
+                )
+              : localize(
+                  "views.sbc.confirmation_view.yellow_installer_subtitle",
+                  { device: deviceName }
+                )
+            : localize("views.sbc.confirmation_view.emmc_subtitle", {
+                device: deviceName,
+              })
       )}
 
       <div class="summary-card">
@@ -157,23 +170,6 @@ export class ConfirmationView extends LitElement {
           : renderHaosVersionRow(this._haosVersion.version)}
         ${wifi ? this._renderWifi(wifi.ssid) : nothing}
       </div>
-
-      ${this._wizardState.currentFlow === "ha-hardware"
-        ? this._renderNotice(
-            installer
-              ? localize("views.sbc.confirmation_view.installer_erase_notice", {
-                  device: deviceName,
-                })
-              : localize("views.sbc.confirmation_view.emmc_erase_notice", {
-                  device: deviceName,
-                })
-          )
-        : nothing}
-      ${drivePath && !selections.driveSerial
-        ? this._renderNotice(
-            localize("views.sbc.confirmation_view.no_serial_notice")
-          )
-        : nothing}
     `;
   }
 
@@ -196,14 +192,6 @@ export class ConfirmationView extends LitElement {
         localize("views.sbc.confirmation_view.wifi"),
         network
       )}
-    `;
-  }
-
-  private _renderNotice(message: string) {
-    return html`
-      <inline-notice role="note">
-        <p>${message}</p>
-      </inline-notice>
     `;
   }
 

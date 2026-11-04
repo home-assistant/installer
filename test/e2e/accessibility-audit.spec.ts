@@ -100,7 +100,7 @@ async function catchCloseBlocked(page: Page) {
 }
 
 /** From the drive step to the start of the write, checking each screen. */
-async function startWrite(page: Page) {
+async function startWrite(page: Page, action = "Install") {
   const drives = page.locator("drive-selection-view");
   await expect(drives.locator("drive-card").first()).toBeVisible();
   await expectAccessible(page, drives, "drive selection");
@@ -121,14 +121,17 @@ async function startWrite(page: Page) {
     page.locator("confirmation-view"),
     "confirmation"
   );
-  await next(page, "Install").click();
+  await next(page, action).click();
   await expectAccessible(
     page,
     dialog(page, "confirm-dialog"),
     "erase confirmation"
   );
   await page
-    .getByRole("button", { name: "Erase and install", exact: true })
+    .getByRole("button", {
+      name: `Erase and ${action.toLowerCase()}`,
+      exact: true,
+    })
     .click();
 }
 
@@ -290,7 +293,8 @@ for (const colorScheme of ["light", "dark"] as const) {
       await reinstall
         .getByRole("button", { name: /^(Reinstall|Install)$/ })
         .click();
-      await startWrite(page);
+      // The Green gets an installer, created now and installing later
+      await startWrite(page, "Create");
       await expectAccessible(page, page.locator("progress-view"), "progress");
       await expect(page.locator("ha-hardware-success-view")).toBeVisible({
         timeout: 45000,

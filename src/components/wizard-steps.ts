@@ -3,7 +3,7 @@ import { localize } from "../localization/localize.js";
 import { isValidUtmVmName } from "../state/vm-defaults.js";
 import type { WizardFlow, WizardSelections } from "../state/wizard-state.js";
 import { isValidWifi, selectedWifi } from "../utils/wifi.js";
-import { isYellow } from "../state/ha-hardware.js";
+import { isYellow, writesInstaller } from "../state/ha-hardware.js";
 import type { HaHardwareDeviceSelectionView } from "../views/ha-hardware/device-selection-view.js";
 import type { LiveIsoLocationView } from "../views/live-usb/live-iso-location-view.js";
 import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-view.js";
@@ -102,7 +102,7 @@ export interface WizardStepDefinition {
   /** A later step Next goes to instead of the following one, if any */
   skipTo?(selections: WizardSelections): string | undefined;
   /** What Next says, if not "Next" */
-  nextLabel?(): string;
+  nextLabel?(selections: WizardSelections): string;
   /**
    * Picking an option moves on by itself, so there is no Next. The view
    * sends `wizard-next` once it saved the pick, which leaves the step the
@@ -139,7 +139,10 @@ const wifi: WizardStepDefinition = {
 
 const confirmation: WizardStepDefinition = {
   render: () => html`<confirmation-view></confirmation-view>`,
-  nextLabel: () => localize("common.install"),
+  nextLabel: (selections) =>
+    writesInstaller(selections.deviceConfig?.board)
+      ? localize("common.create")
+      : localize("common.install"),
   erasesDrive: () => true,
 };
 
