@@ -29,6 +29,7 @@ import {
   driveIdentity,
   findDrive,
   getDriveFit,
+  isComputeModuleEmmc,
   isEligibleFlashTarget,
   isSameDrive,
   readDriveSelection,
@@ -368,7 +369,11 @@ export class DriveSelectionView extends LitElement {
   }
 
   private _renderContent() {
-    const config = wizardState.getState().selections.deviceConfig;
+    const { deviceConfig: config, haHardware } =
+      wizardState.getState().selections;
+    // What rpiboot exposes is the drive the user is looking for
+    const isModuleEmmc = (drive: BlockDevice) =>
+      haHardware === "yellow-cm5" && isComputeModuleEmmc(drive);
     // Full-page spinner only on the initial scan (nothing to show yet).
     // A refresh keeps the list, the empty state or the error visible, and
     // shows the loading state on the button that started it, so the button
@@ -452,7 +457,10 @@ export class DriveSelectionView extends LitElement {
           [...this._drives].sort((a, b) => {
             const aTooSmall = !isEligibleFlashTarget(a, config);
             const bTooSmall = !isEligibleFlashTarget(b, config);
-            // Sort selectable drives first, then by size descending
+            // The module's eMMC first, then selectable drives, then by size
+            // descending
+            if (isModuleEmmc(a) !== isModuleEmmc(b))
+              return isModuleEmmc(a) ? -1 : 1;
             if (aTooSmall !== bTooSmall) return aTooSmall ? 1 : -1;
             return b.size - a.size;
           }),
@@ -482,6 +490,11 @@ export class DriveSelectionView extends LitElement {
                 .deviceType=${drive.device_type}
                 .model=${drive.model || ""}
                 .vendor=${drive.vendor || ""}
+                .highlight=${isModuleEmmc(drive)
+                  ? localize(
+                      "views.sbc.drive_selection_view.compute_module_emmc"
+                    )
+                  : ""}
                 .disabled=${disabled}
                 .disabledReason=${reason}
                 .capacityWarning=${fit === "below-recommended"
