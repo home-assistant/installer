@@ -75,10 +75,10 @@ describe("section label styles", () => {
       renderSummaryRow("", "Target drive", "SanDisk Ultra")
     );
     expect(pick(root.querySelector("h3")!, LOOK)).to.deep.equal({
-      fontSize: "12px",
+      fontSize: "13px",
       fontWeight: "500",
       textTransform: "uppercase",
-      letterSpacing: "0.6px",
+      letterSpacing: "0.65px",
       marginTop: "0px",
       marginBottom: "4px",
     });

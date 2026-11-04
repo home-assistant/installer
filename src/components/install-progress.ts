@@ -155,9 +155,9 @@ export class InstallProgress extends LitElement {
       }
 
       .eta {
-        font-size: 0.75rem;
+        font-size: 0.875rem;
         color: var(--ha-secondary-text-color);
-        min-height: 1.125rem;
+        min-height: 1.3125rem;
       }
 
       .bytes-info {
@@ -172,9 +172,9 @@ export class InstallProgress extends LitElement {
       }
 
       .speed {
-        font-size: 0.75rem;
+        font-size: 0.875rem;
         color: var(--ha-secondary-text-color);
-        min-height: 1.125rem;
+        min-height: 1.3125rem;
       }
 
       .error-message {

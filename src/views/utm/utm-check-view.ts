@@ -57,7 +57,7 @@ export class UtmCheckView extends LitElement {
       }
 
       .version-info {
-        font-size: 0.75rem;
+        font-size: 0.875rem;
         color: var(--ha-secondary-text-color);
         margin: 0;
       }

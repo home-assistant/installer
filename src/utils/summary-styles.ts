@@ -56,7 +56,7 @@ export const summaryStyles = css`
   }
 
   .summary-label {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     margin: 0 0 0.25rem 0;
   }
 
