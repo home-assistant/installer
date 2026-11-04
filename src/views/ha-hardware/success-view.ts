@@ -1,9 +1,10 @@
-import { localize } from "../../localization/localize.js";
+import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css, type TemplateResult } from "lit";
 import { customElement } from "lit/decorators.js";
 import type { WizardState } from "../../state/wizard-state.js";
 import { WizardStateController } from "../../state/wizard-state-controller.js";
 import { renderExternalLink } from "../../utils/external-link.js";
+import { BACKUP_GUIDE_URL } from "../../utils/urls.js";
 import {
   GREEN_GUIDE_URL,
   ODROID_GUIDE_URL,
@@ -66,13 +67,8 @@ export class HaHardwareSuccessView extends LitElement {
           : localize("views.ha_hardware.success_view.subtitle")}
         .formatWarning=${true}
         .companion=${false}
-        .steps=${[
-          localize("common.success.step_eject"),
-          ...this._steps(hardware),
-          selectedWifi(this._wizardState.selections)
-            ? localize("common.success.step_next_wifi")
-            : localize("common.success.step_next"),
-        ]}
+        .steps=${this._steps(hardware)}
+        .optionalStep=${writesHaos ? "" : this._backupStep()}
         .footer=${renderExternalLink(
           guide,
           localize("views.ha_hardware.success_view.full_instructions", {
@@ -83,12 +79,27 @@ export class HaHardwareSuccessView extends LitElement {
     `;
   }
 
+  /**
+   * The installer erases the device once it starts from the drive, and until
+   * then Home Assistant still runs to make a backup with.
+   */
+  private _backupStep() {
+    return html`${localizeContent(
+      "views.ha_hardware.success_view.backup_first",
+      {
+        link: renderExternalLink(
+          BACKUP_GUIDE_URL,
+          localize("views.ha_hardware.success_view.backup_guide")
+        ),
+      }
+    )}`;
+  }
+
   private _steps(hardware: HaHardwareId): (string | TemplateResult)[] {
     const wifi = selectedWifi(this._wizardState.selections);
     switch (hardware) {
       case "green":
         return [
-          localize("views.ha_hardware.success_view.green_keep_internet"),
           localize("views.ha_hardware.success_view.green_shut_down"),
           localize("views.ha_hardware.success_view.green_insert_card"),
           localize("views.ha_hardware.success_view.green_power_on"),

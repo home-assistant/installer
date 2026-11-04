@@ -86,7 +86,6 @@ export class LiveUsbSuccessView extends LitElement {
             "views.live_usb.live_usb_success_view.iso_remove_and_restart"
           )
         : localize("views.live_usb.live_usb_success_view.remove_and_restart"),
-      localize("common.success.step_next"),
     ];
 
     return html`
@@ -103,7 +102,6 @@ export class LiveUsbSuccessView extends LitElement {
               ...boot,
             ]
           : [
-              localize("common.success.step_eject"),
               localize(
                 "views.live_usb.live_usb_success_view.plug_in_the_stick"
               ),

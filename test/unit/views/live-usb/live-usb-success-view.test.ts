@@ -88,7 +88,7 @@ describe("live-usb-success-view", () => {
     }
   });
 
-  it("leaves following the computer to the next steps, for a stick and an ISO alike", async () => {
+  it("ends with restarting the computer, for a stick and an ISO alike", async () => {
     for (const media of ["usb", "iso"] as const) {
       wizardState.startFlow("minipc");
       wizardState.setSelection("liveMedia", media);
@@ -103,9 +103,8 @@ describe("live-usb-success-view", () => {
       const steps = [...layout.shadowRoot!.querySelectorAll(".step-text")].map(
         (step) => step.textContent!
       );
-      expect(steps[steps.length - 1]).to.contain(
-        "Once the device is on, select Next"
-      );
+      // Next follows the computer from there, so no step says to select it
+      expect(steps[steps.length - 1]).to.contain("restart");
       wizardState.reset();
     }
   });

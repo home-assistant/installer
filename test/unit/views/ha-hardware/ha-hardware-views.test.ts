@@ -643,11 +643,11 @@ describe("Home Assistant hardware views", () => {
       [
         "green",
         [
-          "needs internet access",
-          "Shut down system",
-          "hold the power button for 6 seconds",
+          "Shut down Home Assistant",
+          "Then disconnect the power cable.",
           "until it clicks",
-          "yellow LED blinks fast",
+          "Connect Ethernet and power, then press the power button.",
+          "downloaded and written",
           "heartbeat pattern",
         ],
         "https://support.nabucasa.com/hc/en-us/articles/25162566451485",
@@ -677,11 +677,7 @@ describe("Home Assistant hardware views", () => {
       ],
       [
         "blue",
-        [
-          "boot mode toggle back to MMC",
-          "put the eMMC module back",
-          "Keep power and Ethernet connected",
-        ],
+        ["boot mode toggle back to MMC", "put the eMMC module back"],
         "https://www.home-assistant.io/installation/odroid/",
       ],
     ] as const) {
@@ -697,8 +693,9 @@ describe("Home Assistant hardware views", () => {
         for (const part of expected) {
           expect(content).to.contain(part);
         }
-        // The steps after this one follow the device
-        expect(content).to.contain("Once the device is on, select Next");
+        // Next follows the device from there, so no step says to select it
+        expect(content).not.to.contain("select Next");
+        expect(content).not.to.contain("eject");
         expect(content).not.to.contain(":8123");
         expect(
           success.shadowRoot!.querySelector<HTMLAnchorElement>(
@@ -713,6 +710,21 @@ describe("Home Assistant hardware views", () => {
         expect(content.includes("Home Assistant OS has been written")).to.equal(
           !installer
         );
+        // An installer erases the device only once it starts from the drive,
+        // so there is still time for a backup, offered as a step 0
+        const first = success.shadowRoot!.querySelector(".step-text")!;
+        expect(
+          success.shadowRoot!.querySelector(".step-item.optional .badge")
+            ?.textContent
+        ).to.equal(installer ? "0" : undefined);
+        expect(
+          first.textContent!.includes("Optional: to keep your data")
+        ).to.equal(installer);
+        if (installer) {
+          expect(first.querySelector("a")!.href).to.equal(
+            "https://www.home-assistant.io/common-tasks/general/#backups"
+          );
+        }
       });
     }
 

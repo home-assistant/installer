@@ -85,7 +85,7 @@ describe("localized view contracts", () => {
         output(element).querySelector("install-success") as unknown as {
           steps: unknown[];
         }
-      ).steps[1];
+      ).steps[0];
     expect(insertStep()).to.equal(
       "Insert the written storage into your device."
     );
