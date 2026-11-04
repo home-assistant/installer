@@ -316,6 +316,11 @@ export class DriveSelectionView extends LitElement {
     return wizardState.getState().currentFlow === "ha-hardware";
   }
 
+  /** Whether a step before this one already showed how to connect the device */
+  private _connectedOnItsOwnStep(): boolean {
+    return wizardState.getState().steps.some(({ id }) => id === "connect");
+  }
+
   /** Making a USB stick to boot the mini PC from, not installing on its drive */
   private _isUsbBoot(): boolean {
     return wizardState.getState().selections.installMethod === "usb-boot";
@@ -329,7 +334,9 @@ export class DriveSelectionView extends LitElement {
       return localize("views.sbc.drive_selection_view.subtitle_nvme");
     }
     if (this._isHaHardwareFlow()) {
-      return localize("views.sbc.drive_selection_view.subtitle_device_storage");
+      return this._connectedOnItsOwnStep()
+        ? localize("views.sbc.drive_selection_view.subtitle_yellow_cm5")
+        : localize("views.sbc.drive_selection_view.subtitle_device_storage");
     }
     return localize("views.sbc.drive_selection_view.subtitle_removable");
   }
@@ -340,7 +347,7 @@ export class DriveSelectionView extends LitElement {
         localize("views.sbc.drive_selection_view.select_your_drive"),
         this._subtitle()
       )}
-      ${this._isHaHardwareFlow()
+      ${this._isHaHardwareFlow() && !this._connectedOnItsOwnStep()
         ? html`<ha-hardware-connect-instructions
             .hardware=${wizardState.getState().selections.haHardware}
           ></ha-hardware-connect-instructions>`

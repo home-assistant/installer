@@ -18,6 +18,7 @@ import "../views/sbc/progress-view.js";
 import "../views/sbc/success-view.js";
 import "../views/ha-hardware/device-selection-view.js";
 import "../views/ha-hardware/module-selection-view.js";
+import "../views/ha-hardware/connect-view.js";
 import "../views/ha-hardware/success-view.js";
 import "../views/minipc/setup-method-view.js";
 import "../views/minipc/architecture-selection-view.js";
@@ -221,6 +222,9 @@ export const WIZARD_STEPS: Record<
       ready: (selections) =>
         isYellow(selections.haHardware) && !!selections.deviceConfig,
       pickToContinue: true,
+    },
+    connect: {
+      render: () => html`<ha-hardware-connect-view></ha-hardware-connect-view>`,
     },
     drive,
     wifi,

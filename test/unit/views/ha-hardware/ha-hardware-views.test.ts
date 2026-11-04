@@ -9,6 +9,7 @@ import {
 import "../../../../src/views/ha-hardware/device-selection-view.js";
 import "../../../../src/views/ha-hardware/module-selection-view.js";
 import "../../../../src/views/ha-hardware/connect-instructions.js";
+import "../../../../src/views/ha-hardware/connect-view.js";
 import "../../../../src/views/ha-hardware/success-view.js";
 import "../../../../src/views/sbc/confirmation-view.js";
 import "../../../../src/views/sbc/drive-selection-view.js";
@@ -543,6 +544,39 @@ describe("Home Assistant hardware views", () => {
     expect(instructions.hardware).to.equal("blue");
     expect(text(el.shadowRoot!)).to.contain(
       "Connect the storage of your device"
+    );
+  });
+
+  // Setting up the CM5 is a step of its own, so the drive step only lists drives
+  it("connects the CM5 on a step before the drive step", async () => {
+    select("yellow-cm5", "Home Assistant Yellow with CM5");
+    const ids = wizardState.getState().steps.map(({ id }) => id);
+    expect(ids.indexOf("connect")).to.equal(ids.indexOf("drive") - 1);
+
+    const connect = await fixture(
+      html`<ha-hardware-connect-view></ha-hardware-connect-view>`
+    );
+    expect(connect.shadowRoot!.querySelector("h2")!.textContent).to.equal(
+      "Connect your Yellow"
+    );
+    const instructions = connect.shadowRoot!.querySelector(
+      "ha-hardware-connect-instructions"
+    )!;
+    expect(instructions.hardware).to.equal("yellow-cm5");
+    expect(instructions.standalone).to.equal(true);
+
+    const drive = await fixture(
+      html`<drive-selection-view></drive-selection-view>`
+    );
+    expect(drive.shadowRoot!.querySelector("ha-hardware-connect-instructions"))
+      .to.not.exist;
+    expect(text(drive.shadowRoot!)).to.contain("often named RPi-MSD");
+  });
+
+  it("other devices get no connect step", async () => {
+    select("blue", "Home Assistant Blue");
+    expect(wizardState.getState().steps.map(({ id }) => id)).not.to.include(
+      "connect"
     );
   });
 

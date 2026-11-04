@@ -211,6 +211,12 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
       () => localize("state.wizard_state.select_module"),
       (selections) => !!selections.yellowModules?.length
     ),
+    // Only for the CM5, which takes setting up before its eMMC shows up
+    localizedStep(
+      "connect",
+      () => localize("state.wizard_state.connect_device"),
+      (selections) => selections.haHardware === "yellow-cm5"
+    ),
     localizedStep("drive", () => localize("state.wizard_state.select_drive")),
     wifiStep,
     localizedStep("confirm", () => localize("common.confirm")),

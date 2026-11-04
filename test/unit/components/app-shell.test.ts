@@ -685,7 +685,8 @@ describe("app-shell", () => {
       card('option-card[value="yellow-cm5"]').click();
       await el.updateComplete;
 
-      expect(wizardState.currentStep!.id).to.equal("drive");
+      // The CM5 takes setting up before its eMMC shows up as a drive
+      expect(wizardState.currentStep!.id).to.equal("connect");
       expect(wizardState.getState().selections.haHardware).to.equal(
         "yellow-cm5"
       );
