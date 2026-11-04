@@ -363,7 +363,7 @@ describe("info-dialog", () => {
 
   it("has correct dialog structure", async () => {
     const el = await fixture<InfoDialog>(html`
-      <info-dialog open></info-dialog>
+      <info-dialog open message="Something happened"></info-dialog>
     `);
 
     expect(el.shadowRoot!.querySelector("wa-dialog")).to.exist;

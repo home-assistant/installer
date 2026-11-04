@@ -1,4 +1,4 @@
-import { localize } from "../../localization/localize.js";
+import { localize, localizeContent } from "../../localization/localize.js";
 import { linkStyles } from "../../utils/link-styles.js";
 import { LitElement, html, css, nothing } from "lit";
 import {
@@ -8,12 +8,16 @@ import {
 import { customElement, state } from "lit/decorators.js";
 import type { HaosConfig } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
-import { HOME_ASSISTANT_HOST } from "../../utils/external-url.js";
+import {
+  HOME_ASSISTANT_HOST,
+  homeAssistantUrl,
+} from "../../utils/external-url.js";
+import { renderExternalLink } from "../../utils/external-link.js";
+import { BACKUP_GUIDE_URL } from "../../utils/urls.js";
 import {
   HA_HARDWARE,
   YELLOW_DEVICE_ID,
   haDeviceName,
-  haHardwareName,
   installerConfig,
   isYellow,
   type HaHardware,
@@ -40,11 +44,16 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     linkStyles,
     deviceGridStyles,
     css`
+      .reinstall-message,
       .reinstall-note {
-        margin: 1rem 0 0 0;
+        margin: 0;
         font-size: 0.9375rem;
         line-height: 1.6;
         color: var(--ha-text-color);
+      }
+
+      .reinstall-note {
+        margin-top: 1rem;
       }
     `,
   ];
@@ -156,6 +165,11 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     // A Yellow kit may come without a compute module, so nothing is on it yet.
     // The others are ready to use, so going back is what most people want.
     const yellow = hardware.deviceId === YELLOW_DEVICE_ID;
+    const host = renderExternalLink(homeAssistantUrl(), HOME_ASSISTANT_HOST);
+    const backup = renderExternalLink(
+      BACKUP_GUIDE_URL,
+      localize("views.ha_hardware.device_selection_view.backup_guide")
+    );
     return html`
       <info-dialog
         ?open=${!!this._confirmReinstall}
@@ -163,18 +177,9 @@ export class HaHardwareDeviceSelectionView extends LitElement {
           ? localize(
               "views.ha_hardware.device_selection_view.yellow_may_be_ready"
             )
-          : localize("views.ha_hardware.device_selection_view.ready_to_use", {
-              device: haHardwareName(hardware.id),
-            })}
-        message=${yellow
-          ? localize(
-              "views.ha_hardware.device_selection_view.yellow_comes_installed",
-              { host: HOME_ASSISTANT_HOST }
-            )
-          : localize(
-              "views.ha_hardware.device_selection_view.comes_installed",
-              { host: HOME_ASSISTANT_HOST }
-            )}
+          : hardware.id === "blue"
+            ? localize("views.ha_hardware.device_selection_view.blue_ready")
+            : localize("views.ha_hardware.device_selection_view.green_ready")}
         primary-label=${yellow
           ? localize("common.install")
           : localize("views.ha_hardware.device_selection_view.reinstall")}
@@ -183,13 +188,45 @@ export class HaHardwareDeviceSelectionView extends LitElement {
         @dialog-primary=${this._onReinstallConfirmed}
         @dialog-secondary=${this._onReinstallDeclined}
       >
-        <p class="reinstall-note">
-          ${yellow
-            ? localize("views.ha_hardware.device_selection_view.yellow_install")
-            : localize(
-                "views.ha_hardware.device_selection_view.only_reinstall"
-              )}
-        </p>
+        ${yellow
+          ? html`
+              <p class="reinstall-message">
+                ${localizeContent(
+                  "views.ha_hardware.device_selection_view.yellow_comes_installed",
+                  { host }
+                )}
+              </p>
+              <p class="reinstall-note">
+                ${localize(
+                  "views.ha_hardware.device_selection_view.yellow_install"
+                )}
+                ${backup}
+              </p>
+            `
+          : html`
+              <p class="reinstall-message">
+                <strong>
+                  ${localize(
+                    "views.ha_hardware.device_selection_view.just_got_it"
+                  )}
+                </strong>
+                ${localizeContent(
+                  "views.ha_hardware.device_selection_view.just_got_it_steps",
+                  { host }
+                )}
+              </p>
+              <p class="reinstall-note">
+                <strong>
+                  ${localize(
+                    "views.ha_hardware.device_selection_view.starting_over"
+                  )}
+                </strong>
+                ${localize(
+                  "views.ha_hardware.device_selection_view.starting_over_steps"
+                )}
+                ${backup}
+              </p>
+            `}
       </info-dialog>
     `;
   }
