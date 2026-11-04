@@ -100,6 +100,30 @@ describe("drive-card", () => {
     expect(el.shadowRoot!.querySelector(".badge")).to.exist;
   });
 
+  for (const state of ["checked", "disabled"] as const) {
+    it(`gives a highlighted card the ${state} border of any other`, async () => {
+      const [plain, highlighted] = await Promise.all([
+        fixture<DriveCard>(html`<drive-card name="Plain"></drive-card>`),
+        fixture<DriveCard>(
+          html`<drive-card name="Highlighted" highlight="Label"></drive-card>`
+        ),
+      ]);
+      const card = (el: DriveCard) =>
+        el.shadowRoot!.querySelector<HTMLElement>(".card")!;
+      const border = (el: DriveCard) =>
+        getComputedStyle(card(el)).borderTopColor;
+      // Read the end state, not a color on its way there
+      for (const el of [plain, highlighted]) card(el).style.transition = "none";
+      expect(border(highlighted)).to.not.equal(border(plain));
+
+      for (const el of [plain, highlighted]) {
+        el[state] = true;
+        await el.updateComplete;
+      }
+      expect(border(highlighted)).to.equal(border(plain));
+    });
+  }
+
   it("reports disabled to assistive technology", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test" disabled></drive-card>

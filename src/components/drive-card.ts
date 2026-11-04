@@ -47,7 +47,8 @@ export class DriveCard extends WaRadio {
         margin-top: 0.375rem;
       }
 
-      .card.highlighted:not(:hover) {
+      /* Only above the plain border, so hover, checked and disabled win */
+      .card:where(.highlighted) {
         border-color: color-mix(
           in srgb,
           var(--ha-primary-color) 45%,
