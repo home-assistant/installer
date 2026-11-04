@@ -12,9 +12,9 @@
 
 use crate::types::{HaosConfig, HaosImage, ImageFormat};
 
-/// Nominal drive capacity an installer needs. The images are at most about 150 MB, so
-/// this only keeps the storage checks meaningful: any card or stick fits, as
-/// does the eMMC of a Yellow CM5. Recommended equals minimum, because the
+/// Nominal drive capacity an installer needs. The images are at most about
+/// 150 MB, so this only keeps the storage checks meaningful: any card or stick
+/// fits, as does the eMMC of a Yellow CM5. Recommended equals minimum, because the
 /// installer never grows into the space.
 const INSTALLER_STORAGE_BYTES: u64 = 1_000_000_000;
 
