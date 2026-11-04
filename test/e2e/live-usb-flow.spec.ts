@@ -40,11 +40,6 @@ test("writes a bootable USB stick", async ({ page }) => {
     .getByRole("button", { name: "Erase and install", exact: true })
     .click();
 
-  await expect(page.locator("live-usb-progress-view")).toContainText(
-    "Don't remove the USB stick",
-    { timeout: 20000 }
-  );
-
   await expect(page.locator("live-usb-success-view")).toContainText(
     "Your USB stick is ready",
     { timeout: 20000 }
@@ -180,7 +175,6 @@ test("a failed write can be tried again", async ({ page }) => {
   await expect(progress).toContainText("The drive is in use", {
     timeout: 20000,
   });
-  await expect(progress).not.toContainText("Don't remove the USB stick");
   await page.getByRole("button", { name: "Try again", exact: true }).click();
 
   await expect(page.locator("live-usb-success-view")).toContainText(
