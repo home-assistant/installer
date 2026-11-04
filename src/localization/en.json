@@ -528,6 +528,7 @@
   "views.sbc.drive_selection_view.subtitle_yellow_cm5": "Select the eMMC of your Yellow. It's often named RPi-MSD.",
   "views.sbc.drive_selection_view.compute_module_emmc": "Compute Module eMMC",
   "views.sbc.drive_selection_view.no_drives_described_above": "Connect the drive as described above and select Refresh.",
+  "views.sbc.drive_selection_view.no_drives_connect_step": "Go back to the Connect step, connect your Yellow as described there and select Refresh.",
   "views.sbc.confirmation_view.drive_size_and_model": "{size} · {model}",
   "views.sbc.confirmation_view.installer": "Installer",
   "views.sbc.confirmation_view.installer_detail": "Reinstalls Home Assistant OS on the device",

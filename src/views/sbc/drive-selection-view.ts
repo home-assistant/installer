@@ -411,11 +411,13 @@ export class DriveSelectionView extends LitElement {
         ? localize("views.sbc.drive_selection_view.no_drives_usb_stick")
         : this._isMiniPCFlow()
           ? localize("views.sbc.drive_selection_view.no_drives_adapter")
-          : this._isHaHardwareFlow()
-            ? localize(
-                "views.sbc.drive_selection_view.no_drives_described_above"
-              )
-            : localize("views.sbc.drive_selection_view.no_drives_removable");
+          : this._connectedOnItsOwnStep()
+            ? localize("views.sbc.drive_selection_view.no_drives_connect_step")
+            : this._isHaHardwareFlow()
+              ? localize(
+                  "views.sbc.drive_selection_view.no_drives_described_above"
+                )
+              : localize("views.sbc.drive_selection_view.no_drives_removable");
 
       return html`
         <div class="empty-state">
