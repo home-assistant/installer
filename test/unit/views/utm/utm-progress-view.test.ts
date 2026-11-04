@@ -691,7 +691,7 @@ describe("utm-progress-view", () => {
   });
 
   // The live region announces only the stage title
-  it("names the wait for an address apart from the wait for Home Assistant", async () => {
+  it("names the wait for an address and for Home Assistant as one step", async () => {
     wizardState.setSelection("vmId", "existing-vm");
     const status = deferred<{ status: string; ip_address: string }>();
     let statusCalls = 0;
@@ -708,11 +708,11 @@ describe("utm-progress-view", () => {
     await el.updateComplete;
     const layout = el.shadowRoot!.querySelector("install-progress")!;
 
-    await waitUntil(() => layout.stage === "waiting");
-    expect(layout.stageTitle).to.equal("Connecting");
-    status.resolve({ status: "started", ip_address: "192.0.2.50" });
     await waitUntil(() => layout.stage === "ready");
-    expect(layout.stageTitle).to.equal("Waiting");
+    expect(layout.stageTitle).to.equal("Starting");
+    status.resolve({ status: "started", ip_address: "192.0.2.50" });
+    await waitUntil(() => layout.address !== null);
+    expect(layout.stageTitle).to.equal("Starting");
     el.remove();
   });
 
