@@ -646,7 +646,7 @@ describe("Home Assistant hardware views", () => {
           "Shut down Home Assistant",
           "Then disconnect the power cable.",
           "until it clicks",
-          "Connect Ethernet and power, then press the power button.",
+          "network with internet access, then connect power and press the power button.",
           "downloaded and written",
           "heartbeat pattern",
         ],

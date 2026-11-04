@@ -546,7 +546,7 @@
   "views.ha_hardware.success_view.full_instructions": "Full instructions for {device}",
   "views.ha_hardware.success_view.green_shut_down": "Shut down Home Assistant: go to Settings > System, open the three dots menu, select Restart, then Shut down system. Then disconnect the power cable.",
   "views.ha_hardware.success_view.green_insert_card": "Insert the microSD card into the Green until it clicks.",
-  "views.ha_hardware.success_view.green_power_on": "Connect Ethernet and power, then press the power button. The yellow LED blinks fast while Home Assistant OS is downloaded and written to the internal storage.",
+  "views.ha_hardware.success_view.green_power_on": "Connect an Ethernet cable to a network with internet access, then connect power and press the power button. The yellow LED blinks fast while Home Assistant OS is downloaded and written to the internal storage.",
   "views.ha_hardware.success_view.green_remove_card": "When the LEDs turn off, remove the microSD card and press the power button. The Green is ready when the yellow LED blinks in a heartbeat pattern.",
   "views.ha_hardware.success_view.yellow_cm4_unplug_usb": "Unplug every USB device from the Yellow.",
   "views.ha_hardware.success_view.yellow_cm4_buttons": "Connect power. Within 3 seconds, press and hold the red and blue buttons for about 10 seconds; the yellow LED should not start blinking. Then remove power. This only works while Home Assistant OS is installed on the Yellow. If it is not, follow the rpiboot instructions in the guide below.",
