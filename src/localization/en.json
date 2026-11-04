@@ -442,6 +442,7 @@
   "views.utm.utm_configure_view.subtitle": "Customize your Home Assistant VM settings",
   "views.utm.utm_configure_view.vm_name_hint": "Shown in UTM's virtual machine list",
   "views.utm.utm_configure_view.vm_name_required": "Enter a name for the virtual machine.",
+  "views.utm.utm_configure_view.vm_name_taken": "UTM already has a virtual machine named {name}. Choose another name.",
   "views.utm.utm_progress_view.vm_already_created": "A virtual machine was already created with earlier settings. Check UTM, then start a new installation.",
   "views.utm.utm_progress_view.installation_changed": "The installation changed while the virtual machine was being created. Check UTM before trying again.",
   "views.utm.utm_progress_view.stopped_nothing_created": "Installation stopped. No virtual machine was created in UTM.",

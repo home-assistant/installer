@@ -578,6 +578,15 @@ pub fn check_utm_automation() -> Result<(), CommandError> {
     UtmBackend::check_automation(&Backend).map_err(CommandError::from_query)
 }
 
+/// Whether UTM already has a VM named `name`, so the configure step can
+/// say so before the download.
+#[tauri::command(async)]
+pub fn utm_vm_name_taken(name: String) -> Result<bool, CommandError> {
+    Backend
+        .vm_name_taken(&name)
+        .map_err(CommandError::from_query)
+}
+
 /// Create a Home Assistant VM in UTM
 #[tauri::command]
 pub async fn create_utm_vm(
@@ -1431,6 +1440,12 @@ mod tests {
 
     #[test]
     #[cfg(feature = "mock")]
+    fn test_utm_vm_name_taken_mock_finds_no_vm() {
+        assert!(!utm_vm_name_taken("Home Assistant".to_string()).unwrap());
+    }
+
+    #[test]
+    #[cfg(feature = "mock")]
     fn test_get_utm_vm_status_mock_returns_running_vm() {
         let result = get_utm_vm_status("test-vm".to_string());
         assert!(result.is_ok());
@@ -2083,6 +2098,10 @@ mod mock_tests {
         }
 
         fn check_automation(&self) -> hai_core::Result<()> {
+            unreachable!()
+        }
+
+        fn vm_name_taken(&self, _: &str) -> hai_core::Result<bool> {
             unreachable!()
         }
 

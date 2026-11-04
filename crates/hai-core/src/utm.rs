@@ -180,13 +180,40 @@ fn check_automation() -> Result<()> {
 /// Sends UTM one harmless Apple Event, which is what makes macOS ask.
 #[cfg(any(target_os = "macos", test))]
 fn automation_allowed(mut run: impl FnMut(&str, &[&str]) -> Result<String>) -> Result<()> {
-    run(AUTOMATION_SCRIPT, &[])
-        .map(drop)
-        .map_err(|error| match error {
-            // Nothing is created, so an unanswered prompt is nothing to keep
-            Error::UtmOperationUncertain(message) => Error::Utm(message),
-            error => error,
-        })
+    run(AUTOMATION_SCRIPT, &[]).map(drop).map_err(query_error)
+}
+
+/// A query creates nothing, so an unanswered one leaves nothing to keep
+#[cfg(any(target_os = "macos", test))]
+fn query_error(error: Error) -> Error {
+    match error {
+        Error::UtmOperationUncertain(message) => Error::Utm(message),
+        error => error,
+    }
+}
+
+/// Whether UTM already has a VM named `name`. UTM refuses to create a second
+/// one, but only once the image is downloaded.
+fn vm_name_taken(name: &str) -> Result<bool> {
+    #[cfg(target_os = "macos")]
+    {
+        name_taken(name, macos::run_applescript)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = name;
+        Err(Error::UnsupportedPlatform(
+            "UTM is only available on macOS".to_string(),
+        ))
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn name_taken(name: &str, mut run: impl FnMut(&str, &[&str]) -> Result<String>) -> Result<bool> {
+    let names = run(NAMES_SCRIPT, &[]).map_err(query_error)?;
+    // Exact, as UTM compares them
+    Ok(names.lines().any(|existing| existing == name))
 }
 
 /// Create a Home Assistant VM using UTM
@@ -269,6 +296,12 @@ fn applescript_error(stderr: &str) -> Error {
 #[cfg(any(target_os = "macos", test))]
 const AUTOMATION_SCRIPT: &str = r#"tell application "UTM"
     count virtual machines
+end tell"#;
+
+#[cfg(any(target_os = "macos", test))]
+const NAMES_SCRIPT: &str = r#"tell application "UTM"
+    set AppleScript's text item delimiters to linefeed
+    return (name of virtual machines) as text
 end tell"#;
 
 #[cfg(any(target_os = "macos", test))]
@@ -623,6 +656,10 @@ impl UtmBackend for Backend {
         create_vm(config, progress_callback).await
     }
 
+    fn vm_name_taken(&self, name: &str) -> Result<bool> {
+        vm_name_taken(name)
+    }
+
     fn start_vm(&self, vm_id: &str) -> Result<()> {
         start_vm(vm_id)
     }
@@ -687,6 +724,24 @@ mod tests {
             unanswered,
             Err(Error::Utm(message)) if message.key == "backend.utm.no_response"
         ));
+    }
+
+    #[test]
+    fn only_an_exact_name_is_taken() {
+        let names = |_: &str, _: &[&str]| Ok("Home Assistant\nHome Assistant 2".to_string());
+        assert!(name_taken("Home Assistant", names).unwrap());
+        assert!(name_taken("Home Assistant 2", names).unwrap());
+        assert!(!name_taken("home assistant", names).unwrap());
+        assert!(!name_taken("Home", names).unwrap());
+        assert!(!name_taken("Home Assistant", |_, _| Ok(String::new())).unwrap());
+
+        let unanswered = name_taken("Home Assistant", |_, _| {
+            Err(Error::UtmOperationUncertain(crate::message!(
+                "backend.utm.no_response",
+                minutes = 5,
+            )))
+        });
+        assert!(matches!(unanswered, Err(Error::Utm(_))));
     }
 
     #[test]

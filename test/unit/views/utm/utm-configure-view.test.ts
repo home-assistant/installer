@@ -205,6 +205,77 @@ describe("utm-configure-view", () => {
     );
   });
 
+  it("refuses at Next a name UTM already has, at the name", async () => {
+    const asked: unknown[] = [];
+    mockTauriIpc((cmd, args) => {
+      if (cmd === "get_system_info") return { cpu_cores: 8, memory_mb: 16384 };
+      if (cmd === "utm_vm_name_taken") {
+        asked.push((args as { name: string }).name);
+        return (args as { name: string }).name === "Home Assistant";
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+    const el = await mount();
+    const name = el.shadowRoot!.querySelector<WaInput>("wa-input")!;
+    const hint = () => el.shadowRoot!.querySelector(".name-hint")!.textContent;
+
+    expect(await el.check()).to.be.false;
+    await name.updateComplete;
+    expect(asked).to.deep.equal(["Home Assistant"]);
+    expect(hint()).to.contain(
+      "UTM already has a virtual machine named Home Assistant."
+    );
+    expect(name.input.getAttribute("aria-invalid")).to.equal("true");
+    // Taken to the field, which says why
+    expect(el.shadowRoot!.activeElement).to.equal(name);
+
+    name.value = "Home Assistant 2";
+    name.dispatchEvent(new Event("input"));
+    await el.updateComplete;
+    expect(hint()).to.contain("Shown in UTM's virtual machine list");
+    expect(await el.check()).to.be.true;
+  });
+
+  it("doesn't refuse the name of the VM this install made", async () => {
+    mockTauriIpc((cmd) => {
+      if (cmd === "get_system_info") return { cpu_cores: 8, memory_mb: 16384 };
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+    const el = await mount();
+
+    wizardState.setSelection("vmId", "made-by-this-install");
+    expect(await el.check()).to.be.true;
+  });
+
+  it("holds Next back with the reason when UTM can't be asked", async () => {
+    let fail = true;
+    mockTauriIpc((cmd) => {
+      if (cmd === "get_system_info") return { cpu_cores: 8, memory_mb: 16384 };
+      if (cmd === "utm_vm_name_taken") {
+        if (!fail) return false;
+        throw {
+          code: "utm",
+          message: "UTM did not answer",
+          retryable: true,
+          details: {},
+        };
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+    const el = await mount();
+
+    expect(await el.check()).to.be.false;
+    await el.updateComplete;
+    expect(
+      el.shadowRoot!.querySelector("inline-notice")?.textContent
+    ).to.contain("UTM did not answer");
+
+    fail = false;
+    expect(await el.check()).to.be.true;
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector("inline-notice")).to.be.null;
+  });
+
   it("restores a cleared name as cleared", async () => {
     wizardState.setSelection("vmName", "");
 

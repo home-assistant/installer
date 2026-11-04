@@ -499,6 +499,10 @@ If UTM is installed:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+Next asks UTM whether it already has a VM of the chosen name. UTM refuses to
+create a second one, but would only say so after the image is downloaded, so
+the name field says it here instead.
+
 ### Step 3: Progress and Complete
 
 Similar to Proxmox flow.

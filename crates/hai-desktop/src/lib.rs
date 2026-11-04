@@ -24,7 +24,7 @@ use commands::{
     list_block_devices, proxmox_certificate_fingerprint, proxmox_check_vm_config, proxmox_connect,
     proxmox_create_vm, proxmox_enable_storage_import, proxmox_get_next_vm_id,
     proxmox_get_vm_status, proxmox_list_bridges, proxmox_list_nodes, proxmox_list_storage,
-    relaunch_as_admin, start_utm_vm, utm_supported,
+    relaunch_as_admin, start_utm_vm, utm_supported, utm_vm_name_taken,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -89,6 +89,7 @@ pub fn run() {
             // UTM commands (hai-core reports UTM as unsupported off macOS)
             check_utm_status,
             check_utm_automation,
+            utm_vm_name_taken,
             utm_supported,
             get_utm_haos_release,
             download_utm_image,

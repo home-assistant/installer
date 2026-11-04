@@ -7,6 +7,7 @@ import { isYellow } from "../state/ha-hardware.js";
 import type { HaHardwareDeviceSelectionView } from "../views/ha-hardware/device-selection-view.js";
 import type { LiveIsoLocationView } from "../views/live-usb/live-iso-location-view.js";
 import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-view.js";
+import type { UtmConfigureView } from "../views/utm/utm-configure-view.js";
 import type { ProxmoxConnectView } from "../views/proxmox/proxmox-connect-view.js";
 import { enabledImportStorageList } from "../views/proxmox/proxmox-success-view.js";
 
@@ -259,6 +260,12 @@ export const WIZARD_STEPS: Record<
       // the view first saves there is none, and the default name applies.
       ready: (selections) =>
         selections.vmName === undefined || isValidUtmVmName(selections.vmName),
+      // UTM refuses a name it has, but only once the image is downloaded
+      beforeNext: {
+        run: (view) => (view as UtmConfigureView).check(),
+        label: () => localize("components.wizard_steps.checking_settings"),
+        until: "selections",
+      },
     },
     confirm: {
       render: () => html`<utm-confirm-view></utm-confirm-view>`,

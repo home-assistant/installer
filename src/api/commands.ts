@@ -341,6 +341,12 @@ export async function checkUtmAutomation(): Promise<void> {
   return invoke<void>("check_utm_automation");
 }
 
+/** Whether UTM already has a virtual machine named `name`. */
+export async function utmVmNameTaken(name: string): Promise<boolean> {
+  if (MOCK_ALLOWED && isBrowserOnly()) return false;
+  return invoke<boolean>("utm_vm_name_taken", { name });
+}
+
 /** Release a temporary image which was not consumed by VM creation. */
 export async function discardUtmImage(imagePath: string): Promise<void> {
   if (MOCK_ALLOWED && isBrowserOnly()) return;
