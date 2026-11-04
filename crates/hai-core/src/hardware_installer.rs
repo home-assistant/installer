@@ -5,14 +5,14 @@
 //! OS to the device's own storage.
 //!
 //! NabuCasa/buildroot-installer has no "latest" release API like the HAOS
-//! version service, so these images are pinned on purpose. GitHub publishes no
-//! digest for these older release assets: the SHA-256 digests below were
-//! computed from the published files. They go through the same download path
-//! as HAOS images, which checks the size and digest before extraction.
+//! version service, so these images are pinned on purpose. The SHA-256 digests
+//! below were computed from the published files. They go through the same
+//! download path as HAOS images, which checks the size and digest before
+//! extraction.
 
 use crate::types::{HaosConfig, HaosImage, ImageFormat};
 
-/// Nominal drive capacity an installer needs. The images are about 70 MB, so
+/// Nominal drive capacity an installer needs. The images are at most about 150 MB, so
 /// this only keeps the storage checks meaningful: any card or stick fits, as
 /// does the eMMC of a Yellow CM5. Recommended equals minimum, because the
 /// installer never grows into the space.
@@ -57,10 +57,10 @@ impl HardwareInstaller {
 pub static INSTALLERS: [HardwareInstaller; 2] = [
     HardwareInstaller {
         board: "green-installer",
-        download_url: "https://github.com/NabuCasa/buildroot-installer/releases/download/green-installer-20240410/green-installer-20240410.img.xz",
-        size: 38_254_492,
-        digest: "sha256:bc2b72b518fab6b7bcbe8d5edcb1e1f55caae281b5c0856da8c939fa211a1422",
-        extracted_size: 76_627_968,
+        download_url: "https://github.com/NabuCasa/buildroot-installer/releases/download/release-20261015/green_installer-20261015.img.xz",
+        size: 64_355_916,
+        digest: "sha256:7e5d85e19f0fa854b865596915217ac427b09b3bbbd3529ef0f5e85ce7b7729b",
+        extracted_size: 143_732_736,
     },
     HardwareInstaller {
         board: "yellow-installer",
@@ -87,9 +87,10 @@ mod tests {
                 .download_url
                 .strip_prefix("https://github.com/NabuCasa/buildroot-installer/releases/download/")
                 .unwrap_or_else(|| panic!("{} is not a release asset", installer.board));
-            let (tag, file) = release.split_once('/').unwrap();
-            assert!(tag.starts_with(installer.board), "{tag}");
-            assert_eq!(file, format!("{tag}.img.xz"));
+            let (_tag, file) = release.split_once('/').unwrap();
+            let model = installer.board.strip_suffix("-installer").unwrap();
+            assert!(file.starts_with(model), "{file}");
+            assert!(file.ends_with(".img.xz"), "{file}");
         }
     }
 
