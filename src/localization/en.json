@@ -526,6 +526,7 @@
   "views.ha_hardware.connect_instructions.blue_ums": "Connect power. In Petitboot, select Exit to shell and run {command}. The eMMC then shows up as a drive.",
   "views.sbc.drive_selection_view.subtitle_device_storage": "Connect the storage of your device to this computer, then select it below",
   "views.sbc.drive_selection_view.subtitle_yellow_cm5": "Select the eMMC of your Yellow. It's often named RPi-MSD.",
+  "views.sbc.drive_selection_view.compute_module_emmc": "Compute Module eMMC",
   "views.sbc.drive_selection_view.no_drives_described_above": "Connect the drive as described above and select Refresh.",
   "views.sbc.confirmation_view.drive_size_and_model": "{size} · {model}",
   "views.sbc.confirmation_view.installer": "Installer",

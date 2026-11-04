@@ -100,6 +100,30 @@ describe("drive-card", () => {
     expect(el.shadowRoot!.querySelector(".badge")).to.exist;
   });
 
+  for (const state of ["checked", "disabled"] as const) {
+    it(`gives a highlighted card the ${state} border of any other`, async () => {
+      const [plain, highlighted] = await Promise.all([
+        fixture<DriveCard>(html`<drive-card name="Plain"></drive-card>`),
+        fixture<DriveCard>(
+          html`<drive-card name="Highlighted" highlight="Label"></drive-card>`
+        ),
+      ]);
+      const card = (el: DriveCard) =>
+        el.shadowRoot!.querySelector<HTMLElement>(".card")!;
+      const border = (el: DriveCard) =>
+        getComputedStyle(card(el)).borderTopColor;
+      // Read the end state, not a color on its way there
+      for (const el of [plain, highlighted]) card(el).style.transition = "none";
+      expect(border(highlighted)).to.not.equal(border(plain));
+
+      for (const el of [plain, highlighted]) {
+        el[state] = true;
+        await el.updateComplete;
+      }
+      expect(border(highlighted)).to.equal(border(plain));
+    });
+  }
+
   it("reports disabled to assistive technology", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test" disabled></drive-card>
@@ -113,6 +137,7 @@ describe("drive-card", () => {
     const el = await fixture<DriveCard>(html`
       <drive-card
         name="Test"
+        highlight="Compute Module eMMC"
         disabled
         disabled-reason="Drive is too small"
       ></drive-card>
@@ -126,6 +151,7 @@ describe("drive-card", () => {
     const el = await fixture<DriveCard>(html`
       <drive-card
         name="Test"
+        highlight="Compute Module eMMC"
         disabled
         disabled-reason="Drive is too small"
       ></drive-card>
@@ -133,7 +159,12 @@ describe("drive-card", () => {
     const opacity = (selector: string) =>
       getComputedStyle(el.shadowRoot!.querySelector(selector)!).opacity;
 
-    for (const selector of [".icon-container", ".name", ".size"]) {
+    for (const selector of [
+      ".icon-container",
+      ".highlight",
+      ".name",
+      ".size",
+    ]) {
       expect(opacity(selector), selector).to.equal("0.5");
     }
     // Opacity on any of these would fade the reason with it
@@ -222,6 +253,27 @@ describe("drive-card", () => {
 
     expect(findByRole(tree, "image")).to.deep.equal([]);
     expect(findByRole(tree, "radio")[0]!.name).to.contain("SanDisk");
+  });
+
+  it("shows a highlight only when given one, and reads it with the drive", async () => {
+    const el = await fixture<DriveCard>(html`
+      <drive-card name="Test" vendor="mmcblk0"></drive-card>
+    `);
+    expect(el.shadowRoot!.querySelector(".highlight")).to.be.null;
+
+    el.highlight = "Compute Module eMMC";
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector(".highlight")!.textContent).to.equal(
+      "Compute Module eMMC"
+    );
+    // The vendor and model stay
+    expect(el.shadowRoot!.querySelector(".details")!.textContent).to.contain(
+      "mmcblk0"
+    );
+    const tree = await fullA11ySnapshot();
+    expect(findByRole(tree, "radio")[0]!.name).to.contain(
+      "Compute Module eMMC"
+    );
   });
 
   it("displays vendor and model in details", async () => {
