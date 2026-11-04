@@ -47,7 +47,7 @@ test("sbc artwork and heading fit at 320px", async ({ page }) => {
     document.body.append(view);
   });
   const mascot = page.locator("casita-mascot");
-  const parts = page.getByRole("button", { name: /^part 1 of 5$/i });
+  const parts = page.getByRole("button", { name: /^step 1 of 5$/i });
   const heading = page.getByRole("heading", {
     name: "Downloading the Home Assistant image",
   });
