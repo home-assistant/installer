@@ -30,6 +30,7 @@ import {
   type WizardState,
 } from "../state/wizard-state.js";
 import { WizardStateController } from "../state/wizard-state-controller.js";
+import { writesInstaller } from "../state/ha-hardware.js";
 import {
   closeApp,
   listBlockDevices,
@@ -174,6 +175,7 @@ export class AppShell extends LitElement {
           selections.driveModel
         )}
         .driveSize=${selections.driveSize}
+        .installer=${writesInstaller(selections.deviceConfig?.board)}
         @dialog-primary=${this._onDialogConfirm}
         @dialog-secondary=${this._onDialogCancel}
       ></confirm-dialog>
@@ -333,7 +335,9 @@ export class AppShell extends LitElement {
     if (wizardState.isLastStep) {
       return localize("components.app_shell.close");
     }
-    return step?.nextLabel?.() ?? localize("common.next");
+    return (
+      step?.nextLabel?.(this._wizardState.selections) ?? localize("common.next")
+    );
   }
 
   private _isReady(step: WizardStepDefinition | undefined): boolean {

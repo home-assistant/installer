@@ -345,7 +345,7 @@ describe("wizard-steps", () => {
       expect(confirm.erasesDrive!({ ...usbBoot, liveMedia: "usb" })).to.be.true;
       expect(confirm.erasesDrive!({ ...usbBoot, liveMedia: "iso" })).to.be
         .false;
-      expect(confirm.nextLabel!()).to.equal("Create");
+      expect(confirm.nextLabel!(usbBoot)).to.equal("Create");
       expect(wizardStep("minipc", "confirm")!.erasesDrive!({})).to.be.true;
     });
 

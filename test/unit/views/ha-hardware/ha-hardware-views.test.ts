@@ -601,12 +601,29 @@ describe("Home Assistant hardware views", () => {
       const content = text(el.shadowRoot!);
       expect(content).to.contain("Green installer, October 15, 2026");
       expect(content).not.to.contain("green-installer");
-      expect(
-        el.shadowRoot!.querySelector("inline-notice")!.textContent
-      ).to.contain(
-        "the installer reinstalls Home Assistant OS and erases all data"
+      expect(el.shadowRoot!.querySelector(".subtitle")!.textContent).to.contain(
+        "creates a microSD card that reinstalls the latest version of Home Assistant on your Home Assistant Green"
       );
       expect(calls).to.equal(0);
+    });
+
+    // The drive gets an installer, which installs once the device starts
+    it("creates the installer rather than installing", async () => {
+      select("green", "Home Assistant Green");
+      mockTauriIpc(() => {
+        throw new Error("must not look up a release");
+      });
+      const el = await fixture(html`<confirmation-view></confirmation-view>`);
+      expect(el.shadowRoot!.querySelector("h2")!.textContent).to.equal(
+        "Ready to create"
+      );
+      const selections = wizardState.getState().selections;
+      expect(
+        wizardStep("ha-hardware", "confirm")!.nextLabel!(selections)
+      ).to.equal("Create");
+      expect(
+        wizardState.getState().steps.find(({ id }) => id === "flash")!.title
+      ).to.equal("Create");
     });
 
     it("shows the Yellow installer for a CM4", async () => {
@@ -627,9 +644,20 @@ describe("Home Assistant hardware views", () => {
       const el = await fixture(html`<confirmation-view></confirmation-view>`);
       await waitUntil(() => text(el.shadowRoot!).includes("Version 18.2"));
       expect(text(el.shadowRoot!)).not.to.contain("installer");
+      expect(el.shadowRoot!.querySelector(".subtitle")!.textContent).to.contain(
+        "This installs the latest version of Home Assistant on your"
+      );
+      // It says what happens; the erase dialog that follows warns about the drive
+      expect(el.shadowRoot!.querySelector(".subtitle a")).to.equal(null);
+      expect(text(el.shadowRoot!)).not.to.contain("lost");
+      expect(el.shadowRoot!.querySelector("h2")!.textContent).to.equal(
+        "Ready to install"
+      );
       expect(
-        el.shadowRoot!.querySelector("inline-notice")!.textContent
-      ).to.contain("Home Assistant included");
+        wizardStep("ha-hardware", "confirm")!.nextLabel!(
+          wizardState.getState().selections
+        )
+      ).to.equal("Install");
     });
 
     it("shows the HAOS release for the Blue", async () => {
@@ -641,17 +669,19 @@ describe("Home Assistant hardware views", () => {
       });
       const el = await fixture(html`<confirmation-view></confirmation-view>`);
       await waitUntil(() => text(el.shadowRoot!).includes("Version 18.2"));
-      expect(
-        el.shadowRoot!.querySelector("inline-notice")!.textContent
-      ).to.contain("Home Assistant included");
+      expect(el.shadowRoot!.querySelector(".subtitle")!.textContent).to.contain(
+        "This installs the latest version of Home Assistant on your"
+      );
     });
 
-    it("keeps the SBC confirmation free of the notice", async () => {
+    it("keeps the SBC confirmation's subtitle", async () => {
       wizardState.startFlow("sbc");
       mockTauriIpc(() => ({ version: "18.2", images: [] }));
       wizardState.setSelection("deviceConfig", MOCK_MANIFEST.devices[0].haos);
       const el = await fixture(html`<confirmation-view></confirmation-view>`);
-      expect(el.shadowRoot!.querySelector("inline-notice")).to.equal(null);
+      expect(el.shadowRoot!.querySelector(".subtitle")!.textContent).to.contain(
+        "Review your selections"
+      );
     });
   });
 
