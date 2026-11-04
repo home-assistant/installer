@@ -212,6 +212,10 @@ fn vm_name_taken(name: &str) -> Result<bool> {
 #[cfg(any(target_os = "macos", test))]
 fn name_taken(name: &str, mut run: impl FnMut(&str, &[&str]) -> Result<String>) -> Result<bool> {
     let names = run(NAMES_SCRIPT, &[]).map_err(query_error)?;
+    let names = names
+        .strip_prefix('[')
+        .and_then(|names| names.strip_suffix(']'))
+        .unwrap_or(&names);
     // Exact, as UTM compares them
     Ok(names.lines().any(|existing| existing == name))
 }
@@ -299,9 +303,11 @@ const AUTOMATION_SCRIPT: &str = r#"tell application "UTM"
 end tell"#;
 
 #[cfg(any(target_os = "macos", test))]
+// Brackets keep the outer spaces of the first and last name through the
+// trim of the script's output
 const NAMES_SCRIPT: &str = r#"tell application "UTM"
     set AppleScript's text item delimiters to linefeed
-    return (name of virtual machines) as text
+    return "[" & ((name of virtual machines) as text) & "]"
 end tell"#;
 
 #[cfg(any(target_os = "macos", test))]
@@ -728,12 +734,12 @@ mod tests {
 
     #[test]
     fn only_an_exact_name_is_taken() {
-        let names = |_: &str, _: &[&str]| Ok("Home Assistant\nHome Assistant 2".to_string());
+        let names = |_: &str, _: &[&str]| Ok("[Home Assistant\nHome Assistant 2]".to_string());
         assert!(name_taken("Home Assistant", names).unwrap());
         assert!(name_taken("Home Assistant 2", names).unwrap());
         assert!(!name_taken("home assistant", names).unwrap());
         assert!(!name_taken("Home", names).unwrap());
-        assert!(!name_taken("Home Assistant", |_, _| Ok(String::new())).unwrap());
+        assert!(!name_taken("Home Assistant", |_, _| Ok("[]".to_string())).unwrap());
 
         let unanswered = name_taken("Home Assistant", |_, _| {
             Err(Error::UtmOperationUncertain(crate::message!(
@@ -848,6 +854,23 @@ mod tests {
             .unwrap(),
             "vm-id"
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn names_keep_their_outer_spaces() {
+        use std::os::unix::process::ExitStatusExt;
+        let names = |_: &str, _: &[&str]| {
+            applescript_output(std::process::Output {
+                status: std::process::ExitStatus::from_raw(0),
+                stdout: b"[ Home Assistant\nOther ]\n".to_vec(),
+                stderr: Vec::new(),
+            })
+        };
+        assert!(name_taken(" Home Assistant", names).unwrap());
+        assert!(name_taken("Other ", names).unwrap());
+        assert!(!name_taken("Home Assistant", names).unwrap());
+        assert!(!name_taken("Other", names).unwrap());
     }
 
     #[test]
