@@ -565,7 +565,7 @@ describe("Home Assistant hardware views", () => {
       });
       const el = await fixture(html`<confirmation-view></confirmation-view>`);
       const content = text(el.shadowRoot!);
-      expect(content).to.contain("Green installer, April 10, 2024");
+      expect(content).to.contain("Green installer, October 15, 2026");
       expect(content).not.to.contain("green-installer");
       expect(
         el.shadowRoot!.querySelector("inline-notice")!.textContent
