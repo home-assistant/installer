@@ -4,7 +4,11 @@
 //! and halfway through a VM install leaves a broken VM. While a job runs, a
 //! close request is held back and the frontend asks the user first. If they
 //! still want out, the frontend calls [`quit_anyway`].
+//!
+//! Installing an update of the installer holds back new jobs instead: on
+//! Windows the installer exits halfway through it.
 
+use crate::command_error::CommandError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{Emitter, Runtime, Window, WindowEvent};
 
@@ -13,6 +17,11 @@ const CLOSE_BLOCKED_EVENT: &str = "close-blocked";
 
 static RUNNING_JOBS: JobCounter = JobCounter::new();
 
+/// The counter's top bit, set while an update installs.
+const UPDATING: usize = 1 << (usize::BITS - 1);
+
+/// The running jobs, and whether an update installs, in one value, so a job
+/// and an update can't both start.
 struct JobCounter(AtomicUsize);
 
 impl JobCounter {
@@ -20,13 +29,26 @@ impl JobCounter {
         Self(AtomicUsize::new(0))
     }
 
-    fn start(&'static self) -> RunningJob {
-        self.0.fetch_add(1, Ordering::AcqRel);
-        RunningJob(self)
+    /// `None` while an update installs.
+    fn start(&'static self) -> Option<RunningJob> {
+        let previous = self.0.fetch_add(1, Ordering::AcqRel);
+        if previous & UPDATING != 0 {
+            self.0.fetch_sub(1, Ordering::AcqRel);
+            return None;
+        }
+        Some(RunningJob(self))
     }
 
     fn any(&self) -> bool {
-        self.0.load(Ordering::Acquire) > 0
+        self.0.load(Ordering::Acquire) & !UPDATING > 0
+    }
+
+    /// `None` while a job runs, or another update installs.
+    fn hold_for_update(&'static self) -> Option<UpdateHold> {
+        self.0
+            .compare_exchange(0, UPDATING, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| UpdateHold(self))
     }
 }
 
@@ -39,9 +61,31 @@ impl Drop for RunningJob {
     }
 }
 
-/// Mark a job as running for as long as the returned guard lives.
-pub(crate) fn running_job() -> RunningJob {
-    RUNNING_JOBS.start()
+/// Holds back new jobs until dropped.
+pub(crate) struct UpdateHold(&'static JobCounter);
+
+impl Drop for UpdateHold {
+    fn drop(&mut self) {
+        self.0 .0.fetch_and(!UPDATING, Ordering::AcqRel);
+    }
+}
+
+/// Mark a job as running for as long as the returned guard lives. Refused
+/// while an update installs.
+pub(crate) fn running_job() -> Result<RunningJob, CommandError> {
+    RUNNING_JOBS.start().ok_or_else(|| {
+        CommandError::new(
+            "installer_updating",
+            "The installer is updating itself. Wait for it to restart, then try again.",
+            true,
+        )
+    })
+}
+
+/// Hold back new jobs while an update installs, for as long as the returned
+/// guard lives. `None` while a job runs.
+pub(crate) fn hold_jobs_for_update() -> Option<UpdateHold> {
+    RUNNING_JOBS.hold_for_update()
 }
 
 /// Whether a job runs, which restarting the app would also cut short.
@@ -168,8 +212,8 @@ mod tests {
         static COUNTER: JobCounter = JobCounter::new();
         assert!(!COUNTER.any());
 
-        let first = COUNTER.start();
-        let second = COUNTER.start();
+        let first = COUNTER.start().unwrap();
+        let second = COUNTER.start().unwrap();
         assert!(COUNTER.any());
 
         drop(first);
@@ -177,6 +221,24 @@ mod tests {
 
         drop(second);
         assert!(!COUNTER.any());
+    }
+
+    #[test]
+    fn an_update_and_a_job_hold_each_other_back() {
+        static COUNTER: JobCounter = JobCounter::new();
+
+        let job = COUNTER.start().unwrap();
+        assert!(COUNTER.hold_for_update().is_none());
+        drop(job);
+
+        let hold = COUNTER.hold_for_update().unwrap();
+        assert!(COUNTER.start().is_none());
+        assert!(COUNTER.hold_for_update().is_none());
+        // Not a job, so closing the window isn't held back
+        assert!(!COUNTER.any());
+        drop(hold);
+
+        assert!(COUNTER.start().is_some());
     }
 
     /// Quit from the menu or the Dock, logging out and shutting down only ask

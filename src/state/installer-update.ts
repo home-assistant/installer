@@ -54,6 +54,15 @@ class InstallerUpdateStore {
     return this._state;
   }
 
+  /**
+   * Installing the update or restarting into it, when no flow may start: on
+   * Windows the app exits as soon as the update's installer takes over.
+   */
+  get applying(): boolean {
+    const { status } = this._state;
+    return status === "installing" || status === "restarting";
+  }
+
   subscribe(listener: Listener): () => void {
     this._listeners.add(listener);
     return () => this._listeners.delete(listener);

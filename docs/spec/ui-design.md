@@ -339,7 +339,7 @@ The Open Home Foundation Toolbox (https://toolbox.openhomefoundation.org/) is ac
 ## Update Banner
 
 When a newer version of the installer is out, the welcome screen shows a
-banner above the logo. It checks once per run of the app, and stays quiet
+banner at the top, above the logo. It checks once per run of the app, and stays quiet
 when the check fails. It only sits on the welcome screen, where no
 installation is running that the restart would cut short.
 
@@ -358,6 +358,9 @@ installation is running that the restart would cut short.
   update downloads (with its percentage), installs (where the system may ask
   for a password) and the app restarts into the new version. Screen readers
   hear each step, not each percent
+- While the update installs and the app restarts, **Let's go** is disabled:
+  on Windows the app exits as the update's installer takes over. While it
+  downloads, the user can still start a flow
 - The app only installs and restarts while the welcome screen shows. If the
   user went on to a flow meanwhile, or the app is still there 10 seconds
   after it should have restarted, the banner says the update is ready and

@@ -212,7 +212,7 @@ pub async fn flash_image(
 ) -> Result<FlashResult, CommandError> {
     state
         .run(attempt, |cancelled| async move {
-            let _running = running_job();
+            let _running = running_job()?;
             let _awake = keep_awake("Writing Home Assistant to a drive").await;
             let callback =
                 TauriProgressCallback::new(&progress_channel, "flash").cancellable(cancelled);
@@ -478,7 +478,7 @@ pub async fn download_utm_image(
     jobs: tauri::State<'_, InstallJobs>,
 ) -> Result<String, CommandError> {
     let job = jobs.begin(attempt);
-    let _running = running_job();
+    let _running = running_job()?;
     let _awake = keep_awake("Downloading Home Assistant").await;
     let callback =
         TauriProgressCallback::new(&progress_channel, "utm_download").cancellable(job.cancelled());
@@ -584,7 +584,7 @@ pub async fn create_utm_vm(
     config: hai_core::UtmVmConfig,
     pending: tauri::State<'_, PendingUtmImages>,
 ) -> Result<String, CommandError> {
-    let _running = running_job();
+    let _running = running_job()?;
     let _awake = keep_awake("Creating the Home Assistant virtual machine").await;
     Operation::new("utm_create").finish(run_utm_creation(&Backend, &config, &pending).await)
 }
@@ -798,7 +798,7 @@ pub async fn proxmox_create_vm(
     jobs: tauri::State<'_, InstallJobs>,
 ) -> Result<ProxmoxVmResult, CommandError> {
     let job = jobs.begin(attempt);
-    let _running = running_job();
+    let _running = running_job()?;
     let _awake = keep_awake("Installing Home Assistant on Proxmox").await;
     let callback = TauriProgressCallback::new(&progress_channel, "proxmox_install")
         .cancellable(job.cancelled());

@@ -327,6 +327,7 @@ pub enum ErrorCategory {
     FolderNameTaken,
     RelaunchCancelled,
     UpdateFailed,
+    InstallerUpdating,
     /// A problem Supervisor reported held up installing Home Assistant: the
     /// frontend's `home_assistant_` codes, one per `HaSetupProblem`.
     HomeAssistantNoInternet,
@@ -623,6 +624,7 @@ mod tests {
             "folder_name_taken",
             "relaunch_cancelled",
             "update_failed",
+            "installer_updating",
         ] {
             let category = serde_json::from_value::<ErrorCategory>(code.into()).unwrap();
             assert!(

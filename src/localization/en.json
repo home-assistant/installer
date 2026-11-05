@@ -617,6 +617,7 @@
   "utils.installer_error.folder_in_cache": "This is the installer's own cache folder, which gets cleared. Choose another folder, such as Downloads.",
   "utils.installer_error.folder_name_taken": "A folder with this name is already there. Choose another file name.",
   "utils.installer_error.relaunch_cancelled": "The installer wasn't restarted as administrator.",
+  "utils.installer_error.installer_updating": "The installer is updating itself. Wait for it to restart, then try again.",
   "utils.installer_error.unexpected": "An unexpected error occurred",
   "utils.installer_error.image_too_large_for_drive": "The image needs {image_size}. This drive holds {drive_size}. Choose a larger drive.",
   "utils.installer_error.image_too_large_with_size": "The image needs {image_size}. Choose a larger drive.",

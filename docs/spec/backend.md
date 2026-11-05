@@ -538,7 +538,7 @@ of the plugin's own permissions:
   this, as it never leads to a prerelease. The updater then reads the newest
   of those releases' `latest.json`, falling back to the next one (three at
   most) when a release has no update for this platform, like one made by
-  hand. Builds that aren't releases report `0.0.0` and never check. The
+  hand, or when its `latest.json` names another version than its tag. Builds that aren't releases report `0.0.0` and never check. The
   answer also says whether the app can replace itself, which it can't on
   macOS from a read-only volume: the mounted DMG, or the translocated copy
   macOS runs a downloaded app from until it is moved.
@@ -550,16 +550,21 @@ of the plugin's own permissions:
 - `restart_after_update` restarts into the installed update.
 
 The last two refuse while a flash or a VM install runs (the close guard's
-job counter), since the restart would cut the installation short. The
-frontend only installs and restarts while the welcome screen shows, so
-leaving it for a flow while the update downloads loses nothing entered
-there; the update then waits until the user is back and restarts.
+job counter), since the restart would cut the installation short. While
+`install_update` runs, the same counter refuses new jobs with
+`installer_updating`: on Windows the app exits partway through it. The
+frontend only installs and restarts while the welcome screen shows, and
+holds back **Let's go** meanwhile, so leaving it for a flow while the update
+downloads loses nothing entered there; the update then waits until the user
+is back and restarts.
 
 Each update is signed with the update key (see
 [CI/CD](ci-cd.md#required-secrets)), whose public key is in
 `tauri.conf.json`. `requireSignedVersion` makes the updater refuse an update
 whose signature names another version than `latest.json`, so a tampered
-manifest can't offer an older release as a newer one.
+manifest can't offer an older release as a newer one. And as `latest.json`
+must name its own release's version, one in a stable release can't hand a
+stable install an alpha.
 
 How each platform installs the update:
 

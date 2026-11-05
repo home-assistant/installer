@@ -10,7 +10,7 @@
 //! Updating takes three steps, so the frontend decides when the app restarts:
 //! `download_update`, `install_update` and `restart_after_update`.
 
-use crate::close_guard::job_running;
+use crate::close_guard::{hold_jobs_for_update, job_running};
 use crate::command_error::CommandError;
 use crate::diagnostics::Operation;
 use semver::Version;
@@ -109,9 +109,12 @@ async fn check(
     let tags = fetch_tags(TAGS_API).await?;
     let mut failed = false;
     for version in update_candidates(current, &tags).iter().take(CANDIDATES) {
-        let Ok(Some(update)) = fetch_update(app, version).await else {
-            failed = true;
-            continue;
+        let update = match fetch_update(app, version).await {
+            Ok(Some(update)) if is_release(&update.version, version) => update,
+            _ => {
+                failed = true;
+                continue;
+            }
         };
         let available = AvailableUpdate {
             version: update.version.clone(),
@@ -145,6 +148,14 @@ async fn fetch_update(
         .build()?
         .check()
         .await
+}
+
+/// Whether a manifest's `version` is that of the release `tag` it came with.
+/// The channel is picked by tag, so a manifest naming another version, such
+/// as an alpha in a stable release, could leave the channel. The update's
+/// signature in turn names the manifest's version (`requireSignedVersion`).
+fn is_release(version: &str, tag: &Version) -> bool {
+    Version::parse(version).is_ok_and(|version| version == *tag)
 }
 
 /// The repository's tags, as GitHub lists them.
@@ -275,15 +286,16 @@ async fn download(
     Ok(())
 }
 
-/// Install the downloaded update. Refused while an installation runs. On
-/// Windows the installer takes over and the app exits; elsewhere the update
-/// starts with `restart_after_update`. Installing again does nothing.
+/// Install the downloaded update. Refused while an installation runs, and no
+/// installation starts until it's done. On Windows the installer takes over
+/// and the app exits; elsewhere the update starts with
+/// `restart_after_update`. Installing again does nothing.
 #[tauri::command]
 pub async fn install_update(pending: State<'_, PendingUpdate>) -> Result<(), CommandError> {
     if pending.installed.load(Ordering::Acquire) {
         return Ok(());
     }
-    refuse_while_installing()?;
+    let _hold = hold_jobs_for_update().ok_or_else(installation_running)?;
     let operation = Operation::new("update_install");
     let result = install(&pending).await;
     operation.finish(result)?;
@@ -313,20 +325,19 @@ pub fn restart_after_update(
     if !pending.installed.load(Ordering::Acquire) {
         return Err(no_update());
     }
-    refuse_while_installing()?;
+    if job_running() {
+        return Err(installation_running());
+    }
     app.request_restart();
     Ok(())
 }
 
-fn refuse_while_installing() -> Result<(), CommandError> {
-    if job_running() {
-        return Err(CommandError::new(
-            "operation_in_progress",
-            "Finish the installation before updating the installer.",
-            true,
-        ));
-    }
-    Ok(())
+fn installation_running() -> CommandError {
+    CommandError::new(
+        "operation_in_progress",
+        "Finish the installation before updating the installer.",
+        true,
+    )
 }
 
 fn no_update() -> CommandError {
@@ -413,6 +424,16 @@ mod tests {
             candidates,
             [Version::new(2026, 12, 0), Version::new(2026, 11, 1)]
         );
+    }
+
+    #[test]
+    fn takes_only_the_manifest_of_the_release_it_came_with() {
+        let tag = Version::parse("2026.11.1").unwrap();
+        assert!(is_release("2026.11.1", &tag));
+        // A stable release's manifest can't hand out a newer alpha
+        assert!(!is_release("2026.12.0-alpha.1", &tag));
+        assert!(!is_release("2026.11.0", &tag));
+        assert!(!is_release("not a version", &tag));
     }
 
     #[cfg(target_os = "macos")]
