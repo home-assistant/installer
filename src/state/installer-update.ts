@@ -153,12 +153,12 @@ class InstallerUpdateStore {
         return;
       }
       await restartAfterUpdate();
-      this._restartRequested = true;
     } catch (error) {
       if (current()) this._fail(update, error);
       return;
     }
     if (!current()) return;
+    this._restartRequested = true;
     this._set({ status: "restarting", update });
     // The app should be gone soon; if it's still here, offer the restart again
     this._restartTimer = window.setTimeout(() => {

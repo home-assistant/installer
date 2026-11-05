@@ -361,7 +361,6 @@ export class WelcomeView extends LitElement {
   }
 
   private _onLetsGo() {
-    if (this._updating) return;
     fireEvent(this, "navigate", { view: "path-selection" });
   }
 

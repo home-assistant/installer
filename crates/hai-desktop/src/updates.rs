@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State, Url};
+use tauri::{AppHandle, Runtime, State, Url};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 /// Every tag, on one page. A release only gets its tag when it's published,
@@ -40,8 +40,24 @@ const CANDIDATES: usize = 3;
 /// The update the last check found, until the app restarts into it.
 #[derive(Default)]
 pub struct PendingUpdate {
+    source: Source,
     update: Mutex<Option<Update>>,
     steps: UpdateSteps,
+}
+
+/// Where the check looks for releases: GitHub, but a test's own server.
+struct Source {
+    tags_api: String,
+    releases: String,
+}
+
+impl Default for Source {
+    fn default() -> Self {
+        Self {
+            tags_api: TAGS_API.to_owned(),
+            releases: RELEASES.to_owned(),
+        }
+    }
 }
 
 impl PendingUpdate {
@@ -157,7 +173,7 @@ pub struct AvailableUpdate {
 }
 
 /// How far downloading the update got.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct UpdateProgress {
     pub downloaded: u64,
     pub total: Option<u64>,
@@ -202,8 +218,8 @@ struct Ref {
 /// Look for a newer release on the channel of the running version, and keep
 /// it for `download_update`. Resolves to `None` when there is none.
 #[tauri::command]
-pub async fn check_for_update(
-    app: AppHandle,
+pub async fn check_for_update<R: Runtime>(
+    app: AppHandle<R>,
     pending: State<'_, PendingUpdate>,
 ) -> Result<Option<AvailableUpdate>, CommandError> {
     let operation = Operation::new("update_check");
@@ -211,10 +227,11 @@ pub async fn check_for_update(
     operation.finish(result)
 }
 
-async fn check(
-    app: &AppHandle,
+async fn check<R: Runtime>(
+    app: &AppHandle<R>,
     pending: &PendingUpdate,
 ) -> Result<Option<AvailableUpdate>, CommandError> {
+    let Source { tags_api, releases } = &pending.source;
     *lock(&pending.update) = None;
     pending.steps.reset();
     let current = &app.package_info().version;
@@ -224,12 +241,12 @@ async fn check(
         return Ok(None);
     }
 
-    let tags = fetch_tags(TAGS_API).await?;
+    let tags = fetch_tags(tags_api).await?;
     let candidates = update_candidates(current, &tags);
     let found = first_update(
         &candidates,
         |update: &Update| &update.version,
-        |tag| async move { fetch_update(app, &tag).await.ok().flatten() },
+        |tag| async move { fetch_update(app, releases, &tag).await.ok().flatten() },
     )
     .await?;
     let Some((tag, update)) = found else {
@@ -237,7 +254,7 @@ async fn check(
     };
     let available = AvailableUpdate {
         version: update.version.clone(),
-        release_url: format!("{RELEASES}/tag/{tag}"),
+        release_url: format!("{releases}/tag/{tag}"),
         installable: installable(),
     };
     *lock(&pending.update) = Some(update);
@@ -272,11 +289,12 @@ where
 }
 
 /// The update `latest.json` of the release `version` describes.
-async fn fetch_update(
-    app: &AppHandle,
+async fn fetch_update<R: Runtime>(
+    app: &AppHandle<R>,
+    releases: &str,
     version: &Version,
 ) -> tauri_plugin_updater::Result<Option<Update>> {
-    let manifest = Url::parse(&format!("{RELEASES}/download/{version}/latest.json"))
+    let manifest = Url::parse(&format!("{releases}/download/{version}/latest.json"))
         .map_err(|error| tauri_plugin_updater::Error::Network(error.to_string()))?;
     app.updater_builder()
         .endpoints(vec![manifest])?
@@ -435,8 +453,8 @@ pub async fn install_update(pending: State<'_, PendingUpdate>) -> Result<(), Com
 /// installation starts after it: nothing in the app calls off an exit, so
 /// the restart goes ahead.
 #[tauri::command]
-pub fn restart_after_update(
-    app: AppHandle,
+pub fn restart_after_update<R: Runtime>(
+    app: AppHandle<R>,
     pending: State<'_, PendingUpdate>,
 ) -> Result<(), CommandError> {
     pending.steps.restart(|| app.request_restart())
@@ -827,6 +845,209 @@ mod tests {
             release.signature("darwin-aarch64-app").unwrap(),
             "signature of Home.Assistant.Installer.app.tar.gz"
         );
+    }
+
+    /// A key pair for these tests only, without a password, and an update it
+    /// signed: `npx tauri signer generate`, then `npx tauri signer sign`.
+    const TEST_PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI1NjExMzg0NjRBNzMyMEUKUldRT01xZGtoQk5odGRRUFdFY0szVk5NRHdqbWV5OFpxU3d5S29ucVVxb2NJZWZldWxkcGk1Vk0K";
+    const TEST_UPDATE: &[u8] = b"the update";
+    const TEST_SIGNATURE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRT01xZGtoQk5odGJkRzZ0MGlCbVcxc1hjbU11QkJycFl0NXJGbXF2K2hUQUxpTFN2QVZXa1NlSUhQeFlLTTl1dDZUcDJoMDQxSm04YU82ZTRIaCtYMWYvVnVuazJXWEFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODk3NDkwCWZpbGU6dXBkYXRlLmJpbgpiNnR3VjNaazJlVHcraVJKTDhzUEJZVHArOUpwZjMvaTBiVC9TSVhLbzF5azlkTWZxUkJsV1MwbVZEWUxPVEI4ZDFyc2JMTUNYT2wzMFNKMFRWWVhEUT09Cg==";
+
+    /// An app at `version`, which looks for updates on `server`.
+    fn app_at(version: &str, server: &str) -> tauri::App<tauri::test::MockRuntime> {
+        use tauri::Manager;
+
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().plugins.0.insert(
+            "updater".into(),
+            serde_json::json!({ "pubkey": TEST_PUBKEY }),
+        );
+        context.package_info_mut().version = Version::parse(version).unwrap();
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .build(context)
+            .unwrap();
+        app.manage(PendingUpdate {
+            source: Source {
+                tags_api: format!("{server}/tags/"),
+                releases: format!("{server}/releases"),
+            },
+            ..PendingUpdate::default()
+        });
+        app
+    }
+
+    /// A release's `latest.json`, for every platform the tests run on.
+    fn manifest(server: &str, version: &str) -> String {
+        let update = serde_json::json!({
+            "signature": TEST_SIGNATURE,
+            "url": format!("{server}/update"),
+        });
+        let platforms: serde_json::Map<_, _> = [
+            "linux-x86_64",
+            "linux-aarch64",
+            "darwin-x86_64",
+            "darwin-aarch64",
+            "windows-x86_64",
+            "windows-aarch64",
+        ]
+        .into_iter()
+        .map(|platform| (platform.to_owned(), update.clone()))
+        .collect();
+        serde_json::json!({ "version": version, "platforms": platforms }).to_string()
+    }
+
+    /// The progress `download_update` reports, as the frontend gets it.
+    fn progress_channel() -> (
+        Channel<UpdateProgress>,
+        std::sync::Arc<Mutex<Vec<UpdateProgress>>>,
+    ) {
+        let reports = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let channel = Channel::new({
+            let reports = std::sync::Arc::clone(&reports);
+            move |body| {
+                lock(&reports).push(body.deserialize::<UpdateProgress>().unwrap());
+                Ok(())
+            }
+        });
+        (channel, reports)
+    }
+
+    /// Serve the tags, and `latest.json` of the releases that have one.
+    async fn serve_releases(server: &mut mockito::ServerGuard, tags: &[&str], manifests: &[&str]) {
+        let refs: Vec<_> = tags
+            .iter()
+            .map(|tag| serde_json::json!({ "ref": format!("refs/tags/{tag}") }))
+            .collect();
+        server
+            .mock("GET", "/tags/")
+            .with_body(serde_json::Value::from(refs).to_string())
+            .create_async()
+            .await;
+        let url = server.url();
+        for version in manifests {
+            server
+                .mock(
+                    "GET",
+                    format!("/releases/download/{version}/latest.json").as_str(),
+                )
+                .with_body(manifest(&url, version))
+                .create_async()
+                .await;
+        }
+    }
+
+    #[tokio::test]
+    async fn finds_downloads_and_verifies_an_update() {
+        use tauri::Manager;
+
+        let mut server = mockito::Server::new_async().await;
+        // The newest release has no latest.json, as if made by hand
+        serve_releases(
+            &mut server,
+            &["2026.12.0", "2026.11.1", "2026.11.0"],
+            &["2026.11.1"],
+        )
+        .await;
+        server
+            .mock("GET", "/update")
+            .with_body(TEST_UPDATE)
+            .create_async()
+            .await;
+        let app = app_at("2026.11.0", &server.url());
+
+        let available = check_for_update(app.handle().clone(), app.state())
+            .await
+            .unwrap();
+        assert_eq!(
+            available,
+            Some(AvailableUpdate {
+                version: "2026.11.1".into(),
+                release_url: format!("{}/releases/tag/2026.11.1", server.url()),
+                installable: true,
+            })
+        );
+
+        let (progress, reports) = progress_channel();
+        download_update(app.state(), progress).await.unwrap();
+        let length = TEST_UPDATE.len() as u64;
+        assert_eq!(
+            lock(&reports).last(),
+            Some(&UpdateProgress {
+                downloaded: length,
+                total: Some(length)
+            })
+        );
+        let pending = app.state::<PendingUpdate>();
+        assert_eq!(lock(&pending.steps.bytes).as_deref(), Some(TEST_UPDATE));
+    }
+
+    #[tokio::test]
+    async fn refuses_an_update_its_signature_doesnt_match() {
+        use tauri::Manager;
+
+        let mut server = mockito::Server::new_async().await;
+        serve_releases(&mut server, &["2026.11.1"], &["2026.11.1"]).await;
+        server
+            .mock("GET", "/update")
+            .with_body("another update")
+            .create_async()
+            .await;
+        let app = app_at("2026.11.0", &server.url());
+        check_for_update(app.handle().clone(), app.state())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let (progress, _) = progress_channel();
+        let error = download_update(app.state(), progress).await.err().unwrap();
+        assert_eq!(error.code, "update_failed");
+        assert_eq!(error.diagnostic, "update_download_failed");
+        assert!(error.retryable);
+        assert!(lock(&app.state::<PendingUpdate>().steps.bytes).is_none());
+    }
+
+    #[tokio::test]
+    async fn a_release_without_any_update_fails_the_check() {
+        let mut server = mockito::Server::new_async().await;
+        serve_releases(&mut server, &["2026.11.1"], &[]).await;
+        let app = app_at("2026.11.0", &server.url());
+
+        let error = check_for_update(app.handle().clone(), tauri::Manager::state(&app))
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.code, "network");
+        assert_eq!(error.diagnostic, "update_check_failed");
+    }
+
+    #[tokio::test]
+    async fn a_build_that_isnt_a_release_never_checks() {
+        let mut server = mockito::Server::new_async().await;
+        let tags = server.mock("GET", "/tags/").expect(0).create_async().await;
+        let app = app_at("0.0.0", &server.url());
+
+        let available = check_for_update(app.handle().clone(), tauri::Manager::state(&app))
+            .await
+            .unwrap();
+        assert_eq!(available, None);
+        tags.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn without_a_found_update_nothing_downloads_installs_or_restarts() {
+        use tauri::Manager;
+
+        let app = app_at("2026.11.0", "http://127.0.0.1:9");
+        let (progress, _) = progress_channel();
+        let error = download_update(app.state(), progress).await.err().unwrap();
+        assert_eq!(error.code, "update_failed");
+        let error = install_update(app.state()).await.err().unwrap();
+        assert_eq!(error.code, "update_failed");
+        let error = restart_after_update(app.handle().clone(), app.state())
+            .err()
+            .unwrap();
+        assert_eq!(error.code, "update_failed");
     }
 
     #[tokio::test]
