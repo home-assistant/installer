@@ -13,6 +13,7 @@
 // `Send` bound the lint warns about therefore cannot bite us.
 #![allow(async_fn_in_trait)]
 
+mod discovery;
 pub mod disk;
 pub mod download;
 pub mod error;
@@ -23,6 +24,9 @@ pub mod keep_awake;
 pub mod manifest;
 pub mod message;
 pub mod types;
+
+#[cfg(feature = "live-usb")]
+pub mod live_usb;
 
 #[cfg(feature = "mock")]
 pub mod mock;
@@ -252,6 +256,10 @@ pub trait HostBackend {
     /// What Supervisor reports while it installs Core at `ip`, or `None`
     /// without a full answer from a landing page there.
     async fn ha_setup_status(&self, ip: &str) -> Option<HaSetupStatus>;
+
+    /// The Home Assistants that announce themselves on the local network,
+    /// as far as they answer within a few seconds.
+    async fn find_home_assistants(&self) -> Result<Vec<HaAnnouncement>>;
 }
 
 /// hai-core's production backend.
@@ -303,25 +311,5 @@ pub struct NoOpProgress;
 impl ProgressCallback for NoOpProgress {
     fn on_progress(&self, _progress: FlashProgress) {
         // Intentionally empty - used when progress is not needed
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_noop_progress_callback() {
-        let callback = NoOpProgress;
-        let progress = FlashProgress {
-            stage: FlashStage::Downloading,
-            progress: 50,
-            bytes_processed: 1000,
-            total_bytes: 2000,
-            message: "Test".to_string(),
-        };
-
-        // Should not panic
-        callback.on_progress(progress);
     }
 }

@@ -20,10 +20,6 @@ target/
 # Tauri generated schemas (for capabilities auto-completion)
 crates/hai-desktop/gen/schemas/
 
-# Mise (local tooling)
-.cargo/
-.rustup/
-
 # Claude Code
 .claude/
 

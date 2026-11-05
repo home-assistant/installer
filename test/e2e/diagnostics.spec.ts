@@ -1,5 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { skipWifiStep } from "./fixtures.js";
+import { type Page } from "@playwright/test";
+import { allowUtmControl, skipWifiStep, test, expect } from "./fixtures.js";
 
 // Browser tests mock native IPC, metadata, clipboard and folder/browser opening.
 // No disk is written and no VM or network connection is created.
@@ -267,7 +267,6 @@ test("flash failure keeps the failed stage in its report", async ({
     .locator('option-card[heading="Raspberry Pi & other boards"]')
     .click();
   await page.locator("device-selection-view device-card").first().click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.locator("drive-selection-view drive-card").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await skipWifiStep(page);
@@ -300,6 +299,7 @@ test("UTM creation failure reports its stage", async ({ page }, testInfo) => {
   await expect(page.locator("utm-check-view")).toContainText(
     "UTM is installed"
   );
+  await allowUtmControl(page);
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.locator("wizard-shell .footer-right wa-button").click();

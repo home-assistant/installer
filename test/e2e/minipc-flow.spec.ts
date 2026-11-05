@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.js";
 
 // Mini PC flow order: method → architecture → drive → confirm → flash → success
 
@@ -11,198 +11,33 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
     await expect(page.locator("path-selection-view")).toBeVisible();
   });
 
-  test("navigates to Mini PC setup method when clicking the option", async ({
-    page,
-  }) => {
-    // Click Mini PC or other computer option
+  test("each media type shows its own steps", async ({ page }) => {
     await page
       .locator('option-card[heading="Mini PC or other computer"]')
       .click();
-
-    // Should now see wizard shell
-    const wizardShell = page.locator("wizard-shell");
-    await expect(wizardShell).toBeVisible();
-
-    // Should see step indicator
-    await expect(wizardShell.locator("step-indicator")).toBeVisible();
-  });
-
-  test("shows setup method view with correct title", async ({ page }) => {
     await page
-      .locator('option-card[heading="Mini PC or other computer"]')
-      .click();
-
-    const setupMethodView = page.locator("minipc-setup-method-view");
-    await expect(setupMethodView).toBeVisible();
-
-    // Use first() to avoid matching the dialog h2
-    const title = setupMethodView.locator("h2").first();
-    await expect(title).toContainText("How will you install?");
-  });
-
-  test("shows subtitle about installation method", async ({ page }) => {
-    await page
-      .locator('option-card[heading="Mini PC or other computer"]')
-      .click();
-
-    const subtitle = page
       .locator("minipc-setup-method-view")
-      .locator(".subtitle");
-    await expect(subtitle).toContainText("install Home Assistant");
-  });
-
-  test("displays connect drive option", async ({ page }) => {
-    await page
-      .locator('option-card[heading="Mini PC or other computer"]')
+      .locator("option-card")
+      .filter({ hasText: "I need to boot from USB" })
       .click();
 
-    const setupView = page.locator("minipc-setup-method-view");
-    const connectDriveOption = setupView
-      .locator("option-card, wa-radio")
-      .filter({ hasText: "I can connect the drive" });
-    await expect(connectDriveOption).toBeVisible();
-    await expect(connectDriveOption).toContainText("SSD");
-    await expect(connectDriveOption).toContainText("NVMe");
-  });
-
-  test("displays USB boot option", async ({ page }) => {
     await page
-      .locator('option-card[heading="Mini PC or other computer"]')
+      .locator("minipc-media-view")
+      .locator("option-card")
+      .filter({ hasText: "ISO file" })
       .click();
+    const steps = page.locator("step-indicator");
+    await expect(steps).toContainText("Save location");
+    await expect(steps).not.toContainText("Select USB stick");
 
-    const setupView = page.locator("minipc-setup-method-view");
-    const usbBootOption = setupView
-      .locator("option-card, wa-radio")
-      .filter({ hasText: "I need to boot from USB" });
-    await expect(usbBootOption).toBeVisible();
-    await expect(usbBootOption).toContainText("bootable USB");
-  });
-
-  test("clicking USB boot shows info dialog", async ({ page }) => {
+    await page.getByRole("button", { name: "Back", exact: false }).click();
     await page
-      .locator('option-card[heading="Mini PC or other computer"]')
+      .locator("minipc-media-view")
+      .locator("option-card")
+      .filter({ hasText: "USB stick" })
       .click();
-
-    const setupView = page.locator("minipc-setup-method-view");
-    const usbBootOption = setupView
-      .locator("option-card, wa-radio")
-      .filter({ hasText: "I need to boot from USB" });
-    await usbBootOption.click();
-
-    // Should show info dialog
-    const infoDialog = page.locator("minipc-setup-method-view info-dialog");
-    await expect(infoDialog).toBeVisible();
-    await expect(infoDialog).toContainText("USB boot installation");
-    await expect(infoDialog).toContainText("not supported");
-  });
-
-  test("USB boot dialog has View Instructions button", async ({ page }) => {
-    await page
-      .locator('option-card[heading="Mini PC or other computer"]')
-      .click();
-
-    const setupView = page.locator("minipc-setup-method-view");
-    const usbBootOption = setupView
-      .locator("option-card, wa-radio")
-      .filter({ hasText: "I need to boot from USB" });
-    await usbBootOption.click();
-
-    const infoDialog = page.locator("minipc-setup-method-view info-dialog");
-    await expect(infoDialog).toBeVisible();
-
-    // Check for primary button (View Instructions)
-    const primaryButton = infoDialog.locator(
-      'wa-button[variant="brand"], button:has-text("View instructions")'
-    );
-    await expect(primaryButton).toBeVisible();
-  });
-
-  test("USB boot dialog can be closed with Go Back", async ({ page }) => {
-    await page
-      .locator('option-card[heading="Mini PC or other computer"]')
-      .click();
-
-    const setupView = page.locator("minipc-setup-method-view");
-    const usbBootOption = setupView
-      .locator("option-card, wa-radio")
-      .filter({ hasText: "I need to boot from USB" });
-    await usbBootOption.click();
-
-    const infoDialog = page.locator("minipc-setup-method-view info-dialog");
-    await expect(infoDialog).toBeVisible();
-
-    // Click secondary button (Go Back). Target by appearance so it doesn't
-    // also match wa-dialog's built-in (neutral, plain) close button.
-    const secondaryButton = infoDialog.locator(
-      'wa-button[appearance="outlined"]'
-    );
-    await secondaryButton.click();
-
-    // Dialog should close, setup method view should still be visible
-    await expect(infoDialog).not.toBeVisible();
-    await expect(setupView).toBeVisible();
-  });
-
-  test("USB boot dialog can be dismissed with Escape", async ({ page }) => {
-    await page
-      .locator('option-card[heading="Mini PC or other computer"]')
-      .click();
-
-    const setupView = page.locator("minipc-setup-method-view");
-    const usbBootOption = setupView
-      .locator("option-card, wa-radio")
-      .filter({ hasText: "I need to boot from USB" });
-    await usbBootOption.click();
-
-    const infoDialog = page.locator("minipc-setup-method-view info-dialog");
-    await expect(infoDialog).toBeVisible();
-
-    // Press Escape — exercises the real wa-dialog dismissal path
-    await page.keyboard.press("Escape");
-
-    // Dialog should close, setup method view should still be visible
-    await expect(infoDialog).not.toBeVisible();
-    await expect(setupView).toBeVisible();
-  });
-
-  test("clicking connect drive navigates to architecture selection", async ({
-    page,
-  }) => {
-    await page
-      .locator('option-card[heading="Mini PC or other computer"]')
-      .click();
-
-    const setupView = page.locator("minipc-setup-method-view");
-    const connectDriveOption = setupView
-      .locator("option-card, wa-radio")
-      .filter({ hasText: "I can connect the drive" });
-    await connectDriveOption.click();
-
-    // Should navigate to architecture selection
-    await expect(
-      page.locator("minipc-architecture-selection-view")
-    ).toBeVisible();
-  });
-
-  test("a double-click on connect drive picks no architecture", async ({
-    page,
-  }) => {
-    await page
-      .locator('option-card[heading="Mini PC or other computer"]')
-      .click();
-    // On the heading: the middle of the card falls between the architectures
-    // that open under it
-    await page
-      .locator('option-card[heading="I can connect the drive"]')
-      .dblclick({ position: { x: 100, y: 40 } });
-
-    const radios = page
-      .locator("minipc-architecture-selection-view")
-      .locator("wa-radio");
-    await expect(radios).toHaveCount(2);
-    for (const radio of await radios.all()) {
-      await expect(radio).toHaveJSProperty("checked", false);
-    }
+    await expect(steps).toContainText("Select USB stick");
+    await expect(steps).not.toContainText("Save location");
   });
 });
 
@@ -218,209 +53,76 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
     const setupView = page.locator("minipc-setup-method-view");
     await expect(setupView).toBeVisible();
     const connectDriveOption = setupView
-      .locator("option-card, wa-radio")
+      .locator("option-card")
       .filter({ hasText: "I can connect the drive" });
     await connectDriveOption.click();
   });
 
-  test("shows architecture selection view with correct title", async ({
+  test("after visiting the USB stick path, the architecture must be picked again", async ({
     page,
   }) => {
-    const archSelectionView = page.locator(
-      "minipc-architecture-selection-view"
-    );
-    await expect(archSelectionView).toBeVisible();
-
-    const title = archSelectionView.locator("h2");
-    await expect(title).toContainText(
-      "Which processor does your mini PC have?"
-    );
-  });
-
-  test("shows where to find the processor", async ({ page }) => {
-    const subtitle = page
-      .locator("minipc-architecture-selection-view")
-      .locator(".subtitle");
-    await expect(subtitle).toContainText("specifications");
-  });
-
-  test("displays x86-64 architecture option", async ({ page }) => {
     const archView = page.locator("minipc-architecture-selection-view");
+    await archView
+      .locator("option-card")
+      .filter({ hasText: "Intel/AMD" })
+      .click();
+    await expect(page.locator("drive-selection-view")).toBeVisible();
+    const back = page.getByRole("button", { name: "Back", exact: false });
+    await back.click();
     await expect(archView).toBeVisible();
+    await back.click();
 
-    const options = archView.locator(".options");
-    await expect(options).toBeVisible();
-
-    const x86Option = options.locator("option-card, wa-radio").filter({
-      hasText: "Intel/AMD",
-    });
-    await expect(x86Option).toBeVisible();
-    await expect(x86Option).toContainText("x86-64");
-  });
-
-  test("displays ARM64 architecture option", async ({ page }) => {
-    const archView = page.locator("minipc-architecture-selection-view");
-    const options = archView.locator(".options");
-    await expect(options).toBeVisible();
-
-    const armOption = options.locator("option-card, wa-radio").filter({
-      hasText: "ARM",
-    });
-    await expect(armOption).toBeVisible();
-    await expect(armOption).toContainText("aarch64");
-  });
-
-  test("x86-64 option shows example devices", async ({ page }) => {
-    const archView = page.locator("minipc-architecture-selection-view");
-    const x86Option = archView.locator("option-card, wa-radio").filter({
-      hasText: "Intel/AMD",
-    });
-    await expect(x86Option).toBeVisible();
-
-    await expect(x86Option.locator(".option-examples")).toContainText(
-      "Intel NUC"
-    );
-    await expect(x86Option.locator(".option-examples")).toContainText(
-      "Beelink"
-    );
-  });
-
-  test("ARM64 option shows example devices", async ({ page }) => {
-    const archView = page.locator("minipc-architecture-selection-view");
-    const armOption = archView.locator("option-card, wa-radio").filter({
-      hasText: "ARM",
-    });
-    await expect(armOption).toBeVisible();
-
-    await expect(armOption.locator(".option-examples")).toContainText(
-      "Ampere-based servers"
-    );
-    await expect(armOption).toContainText("UEFI firmware");
-    await expect(armOption).toContainText(
-      "A Raspberry Pi or ODROID has its own option"
-    );
-    await expect(armOption).not.toContainText("Apple Silicon");
-
-    // The pointer to the VM flow is only for someone sitting at a Mac
-    const onMac = await page.evaluate(() =>
-      /Macintosh|Mac OS X/.test(navigator.userAgent)
-    );
-    if (onMac) {
-      await expect(archView.locator(".mac-note")).toContainText(
-        "Virtual machine"
-      );
-    } else {
-      await expect(archView.locator(".mac-note")).toHaveCount(0);
-    }
-  });
-
-  test("selecting an architecture and clicking Next navigates to drive selection", async ({
-    page,
-  }) => {
-    const archView = page.locator("minipc-architecture-selection-view");
-    const options = archView.locator(".options");
-    await expect(options).toBeVisible();
-
-    // Click x86-64 option to select it
-    const x86Option = options.locator("option-card, wa-radio").filter({
-      hasText: "Intel/AMD",
-    });
-    await x86Option.click();
-
-    // Click Next button to advance to drive selection
-    const nextButton = page
-      .locator("wizard-shell")
-      .locator(".footer-right wa-button");
-    await nextButton.click();
-
-    // Should navigate to drive selection
-    await expect(page.locator("drive-selection-view")).toBeVisible();
-  });
-});
-
-test.describe("Mini PC Flow - Navigation", () => {
-  test("can navigate through Mini PC flow steps up to drive selection", async ({
-    page,
-  }) => {
-    await page.goto("/");
-
-    // Step 1: Welcome
-    await page.getByRole("button", { name: "Let's go" }).click();
-
-    // Step 2: Path selection - Mini PC
+    const setupView = page.locator("minipc-setup-method-view");
+    await setupView
+      .locator("option-card")
+      .filter({ hasText: "I need to boot from USB" })
+      .click();
     await page
-      .locator('option-card[heading="Mini PC or other computer"]')
+      .locator("minipc-media-view")
+      .locator("option-card")
+      .filter({ hasText: "USB stick" })
+      .click();
+    await expect(page.locator("drive-selection-view")).toBeVisible();
+    await back.click();
+    await expect(page.locator("minipc-media-view")).toBeVisible();
+    await back.click();
+
+    await setupView
+      .locator("option-card")
+      .filter({ hasText: "I can connect the drive" })
+      .click();
+    await expect(archView).toBeVisible();
+    const picked = await page.evaluate(async () => {
+      const state = "/src/state/wizard-state.ts";
+      const { wizardState } = (await import(
+        state
+      )) as typeof import("../../src/state/wizard-state.js");
+      return wizardState.getState().selections.device ?? null;
+    });
+    expect(picked).toBeNull();
+  });
+
+  test("offers the same restart as administrator as the USB stick path", async ({
+    page,
+  }) => {
+    // Set before the scan; the step loads it once
+    await page.evaluate(() =>
+      sessionStorage.setItem("hai:mock-failure", "drives-admin")
+    );
+    await page
+      .locator("minipc-architecture-selection-view")
+      .locator("option-card")
+      .filter({ hasText: "Intel/AMD" })
       .click();
 
-    // Step 3: Setup method - Connect drive
-    const setupView = page.locator("minipc-setup-method-view");
-    await expect(setupView).toBeVisible();
-
-    const connectDriveOption = setupView
-      .locator("option-card, wa-radio")
-      .filter({ hasText: "I can connect the drive" });
-    await connectDriveOption.click();
-
-    // Step 4: Architecture selection - x86-64
-    const archView = page.locator("minipc-architecture-selection-view");
-    const options = archView.locator(".options");
-    await expect(options).toBeVisible();
-
-    const x86Option = options.locator("option-card, wa-radio").filter({
-      hasText: "Intel/AMD",
-    });
-    await x86Option.click();
-
-    // Click Next to proceed to drive selection
-    const nextButton = page
-      .locator("wizard-shell")
-      .locator(".footer-right wa-button");
-    await nextButton.click();
-
-    // Step 5: Drive selection
-    const driveSelection = page.locator("drive-selection-view");
-    await expect(driveSelection).toBeVisible();
-
-    // Drive selection view should show title
-    await expect(driveSelection.locator("h2")).toContainText("Select");
-  });
-
-  test("can navigate through Mini PC flow with ARM64 architecture", async ({
-    page,
-  }) => {
-    await page.goto("/");
-
-    // Navigate to path selection
-    await page.getByRole("button", { name: "Let's go" }).click();
-    await page
-      .locator('option-card[heading="Mini PC or other computer"]')
-      .click();
-
-    // Setup method - Connect drive
-    const setupView = page.locator("minipc-setup-method-view");
-    await expect(setupView).toBeVisible();
-    const connectDriveOption = setupView
-      .locator("option-card, wa-radio")
-      .filter({ hasText: "I can connect the drive" });
-    await connectDriveOption.click();
-
-    // Select ARM64 architecture
-    const archView = page.locator("minipc-architecture-selection-view");
-    const options = archView.locator(".options");
-    await expect(options).toBeVisible();
-
-    const armOption = options.locator("option-card, wa-radio").filter({
-      hasText: "ARM",
-    });
-    await armOption.click();
-
-    // Click Next to proceed to drive selection
-    const nextButton = page
-      .locator("wizard-shell")
-      .locator(".footer-right wa-button");
-    await nextButton.click();
-
-    // Should navigate to drive selection
-    await expect(page.locator("drive-selection-view")).toBeVisible();
+    const drives = page.locator("drive-selection-view");
+    await expect(drives).toContainText("needs administrator access");
+    await expect(
+      drives.getByRole("button", { name: "Restart as administrator" })
+    ).toBeVisible();
+    await expect(drives.locator("drive-card")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Next", exact: true })
+    ).toBeDisabled();
   });
 });

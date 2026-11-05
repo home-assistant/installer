@@ -126,18 +126,8 @@ fn verify_device(
     // Evict the pages we just wrote from the cache so the read-back
     // comes from the medium, not RAM
     drop_device_cache(&device);
-
-    // Tag verify-phase failures as VerificationFailed so the caller can
-    // label them "Verification failed" rather than "Write failed".
-    let verified = (|| {
-        device.seek(SeekFrom::Start(0)).map_err(device_io_error)?;
-        verify_write(image, &mut device, total_size, progress_tx)
-    })();
-
-    verified.map_err(|e| match e {
-        Error::VerificationFailed(_) | Error::DriveDisconnected | Error::Cancelled => e,
-        other => Error::VerificationFailed(other.to_string()),
-    })
+    device.seek(SeekFrom::Start(0)).map_err(device_io_error)?;
+    verify_write(image, &mut device, total_size, progress_tx)
 }
 
 fn write_to_device(
@@ -215,9 +205,7 @@ fn verify_write(
             .map_err(device_io_error)?;
 
         if source_buffer[..source_read] != dest_buffer[..source_read] {
-            return Err(Error::VerificationFailed(
-                "Data mismatch during verification".to_string(),
-            ));
+            return Err(Error::DriveVerificationFailed);
         }
 
         bytes_verified += source_read as u64;
@@ -1093,7 +1081,28 @@ mod tests {
 
         let (tx, _rx) = mpsc::channel();
         let result = verify_write(&Image::new(image.path()), &mut dest, 13, &tx);
-        assert!(matches!(result, Err(Error::VerificationFailed(_))));
+        assert!(matches!(result, Err(Error::DriveVerificationFailed)));
+    }
+
+    #[test]
+    fn test_verify_device_blames_this_computer_for_an_unreadable_image() {
+        let dest = tempfile::tempfile().unwrap();
+        let (tx, _rx) = mpsc::channel();
+        let result = verify_device(&Image::new("/nonexistent/image.img"), dest, 13, &tx);
+        assert!(matches!(result, Err(Error::Io(_))), "{result:?}");
+    }
+
+    #[test]
+    fn test_verify_device_blames_the_drive_for_a_failed_read_back() {
+        let image = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(image.path(), b"expected data").unwrap();
+        // Write-only, so reading it back fails like a failing card
+        let dest = tempfile::NamedTempFile::new().unwrap();
+        let dest = File::options().write(true).open(dest.path()).unwrap();
+
+        let (tx, _rx) = mpsc::channel();
+        let result = verify_device(&Image::new(image.path()), dest, 13, &tx);
+        assert!(matches!(result, Err(Error::DriveIo(_))), "{result:?}");
     }
 
     #[test]

@@ -2,10 +2,13 @@ import { html, css, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import WaRadio from "@home-assistant/webawesome/dist/components/radio/radio.js";
 import type { DeviceType } from "../api/types.js";
-import { formatBytes } from "../api/commands.js";
+import { formatBytes } from "../utils/format.js";
 import { localize } from "../localization/localize.js";
 import { renderDriveIcon } from "./drive-icon.js";
+import { driveModelLabel } from "../utils/drive-selection.js";
 import { reducedMotionStyles } from "../utils/view-accessibility.js";
+import { veryNarrowWindow } from "../utils/breakpoints.js";
+import { selectableCardStyles, badgeStyles } from "../utils/card-styles.js";
 
 /**
  * A drive row that behaves as a radio inside a `<wa-radio-group>`.
@@ -23,25 +26,11 @@ import { reducedMotionStyles } from "../utils/view-accessibility.js";
 export class DriveCard extends WaRadio {
   static css = [
     reducedMotionStyles,
+    selectableCardStyles,
+    badgeStyles,
     css`
-      @media (prefers-reduced-motion: reduce) {
-        .card:active {
-          transform: none !important;
-        }
-      }
-      :host {
-        display: block;
-        outline: none;
-        cursor: pointer;
-      }
-
       :host(:state(disabled)) {
         cursor: not-allowed;
-      }
-
-      :host(:focus-visible) .card {
-        outline: var(--wa-focus-ring);
-        outline-offset: var(--wa-focus-ring-offset);
       }
 
       .card {
@@ -50,27 +39,33 @@ export class DriveCard extends WaRadio {
         align-items: center;
         gap: 1rem;
         padding: 1rem 1.25rem;
-        background-color: var(--ha-card-background, #ffffff);
-        border: 2px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-card-border-radius, 12px);
-        transition:
-          border-color 0.2s ease,
-          box-shadow 0.2s ease,
-          transform 0.1s ease;
       }
 
-      .card:hover {
-        border-color: var(--ha-primary-color, #03a9f4);
-        box-shadow: var(--ha-card-hover-shadow);
+      /* The label sits in a gap it cuts in the top border, over the text */
+      .card.highlighted {
+        position: relative;
+        margin-top: 0.375rem;
       }
 
-      .card:active {
-        transform: scale(0.99);
+      /* Only above the plain border, so hover, checked and disabled win */
+      .card:where(.highlighted) {
+        border-color: color-mix(
+          in srgb,
+          var(--ha-primary-color) 45%,
+          transparent
+        );
       }
 
-      :host(:state(checked)) .card {
-        border-color: var(--ha-primary-color, #03a9f4);
-        box-shadow: var(--ha-card-selected-shadow);
+      .highlight {
+        position: absolute;
+        top: calc(-1px - 0.625rem);
+        left: calc(1.25rem + 48px + 1rem - 0.375rem);
+        padding: 0 0.375rem;
+        background-color: var(--ha-card-background);
+        color: var(--ha-primary-color);
+        font-size: 0.75rem;
+        font-weight: 500;
+        line-height: 1.25rem;
       }
 
       /* Fade what marks the drive as unavailable, but not the reason it is:
@@ -79,13 +74,13 @@ export class DriveCard extends WaRadio {
       :host(:state(disabled)) .card {
         border-color: color-mix(
           in srgb,
-          var(--ha-border-color, #e0e0e0) 50%,
+          var(--ha-border-color) 50%,
           transparent
         );
         pointer-events: none;
       }
 
-      :host(:state(disabled)) :is(.icon-container, .name, .size) {
+      :host(:state(disabled)) :is(.icon-container, .highlight, .name, .size) {
         opacity: 0.5;
       }
 
@@ -101,11 +96,11 @@ export class DriveCard extends WaRadio {
       .icon-container svg {
         width: 40px;
         height: 40px;
-        fill: var(--ha-secondary-text-color, #727272);
+        fill: var(--ha-secondary-text-color);
       }
 
       :host(:state(checked)) .icon-container svg {
-        fill: var(--ha-primary-color, #03a9f4);
+        fill: var(--ha-primary-color);
       }
 
       /* A long name wraps, even mid-word, so the whole of it shows; so do
@@ -119,20 +114,20 @@ export class DriveCard extends WaRadio {
       .name {
         font-size: 1rem;
         font-weight: 500;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         margin: 0 0 0.25rem 0;
       }
 
       .details {
         font-size: 0.8125rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         margin: 0;
       }
 
       .path {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-family: var(--ha-font-family-code);
         font-size: 0.8125rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         margin: 0.125rem 0 0 0;
         overflow-wrap: anywhere;
       }
@@ -140,7 +135,7 @@ export class DriveCard extends WaRadio {
       .size {
         font-size: 1rem;
         font-weight: 500;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         flex-shrink: 0;
       }
 
@@ -151,34 +146,10 @@ export class DriveCard extends WaRadio {
         margin: 0;
       }
 
-      .selected-indicator {
-        width: 24px;
-        height: 24px;
-        background-color: var(--ha-primary-fill, #006787);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--wa-color-brand-on-loud, white);
-        font-size: 14px;
-        flex-shrink: 0;
-      }
-
-      /* Forced colors would draw every card with the same border and paint
-       * the check's circle like the card, leaving only a small tick on the
-       * chosen one. A drive that can't be picked takes the system's color
-       * for disabled text, which is meant to be read, instead of fading. */
+      /* In forced colors, a drive that can't be picked takes the system's
+       * color for disabled text, which is meant to be read, instead of
+       * fading */
       @media (forced-colors: active) {
-        :host(:state(checked)) .card {
-          border-color: Highlight;
-        }
-
-        .selected-indicator {
-          forced-color-adjust: none;
-          background-color: Highlight;
-          color: HighlightText;
-        }
-
         :host(:state(disabled)) .card {
           border-color: GrayText;
         }
@@ -196,11 +167,15 @@ export class DriveCard extends WaRadio {
         }
       }
 
-      @media (max-width: 480px) {
+      @media ${veryNarrowWindow} {
         .card {
           grid-template-columns: 32px minmax(0, 1fr) auto 24px;
           gap: 0.75rem;
           padding: 1rem;
+        }
+
+        .highlight {
+          left: calc(1rem + 32px + 0.75rem - 0.375rem);
         }
 
         .icon-container,
@@ -232,6 +207,10 @@ export class DriveCard extends WaRadio {
   @property({ type: String })
   vendor = "";
 
+  /** A short label on the top border that singles this drive out */
+  @property({ type: String })
+  highlight = "";
+
   @property({ type: String, attribute: "disabled-reason" })
   disabledReason = "";
 
@@ -240,8 +219,14 @@ export class DriveCard extends WaRadio {
 
   render() {
     return html`
-      <div class="card">
-        <div class="icon-container">${renderDriveIcon(this.deviceType)}</div>
+      <div class=${this.highlight ? "card highlighted" : "card"}>
+        <!-- A picture of the drive's kind; the details name the drive -->
+        <div class="icon-container" aria-hidden="true">
+          ${renderDriveIcon(this.deviceType)}
+        </div>
+        ${this.highlight
+          ? html`<span class="highlight">${this.highlight}</span>`
+          : nothing}
         <div class="info">
           <p class="name">${this.name}</p>
           <p class="details">
@@ -249,11 +234,13 @@ export class DriveCard extends WaRadio {
               ? this.disabledReason
               : this._getDetails()}
           </p>
-          ${this.value ? html`<p class="path">${this.value}</p>` : nothing}
+          ${this.value
+            ? html`<p class="path"><bdi>${this.value}</bdi></p>`
+            : nothing}
         </div>
         <span class="size">${formatBytes(this.driveSize)}</span>
         ${this.checked
-          ? html`<span class="selected-indicator" aria-hidden="true">✓</span>`
+          ? html`<span class="badge" aria-hidden="true">✓</span>`
           : nothing}
         ${!this.disabled && this.capacityWarning
           ? html`<p class="capacity-warning">${this.capacityWarning}</p>`
@@ -263,19 +250,7 @@ export class DriveCard extends WaRadio {
   }
 
   private _getDetails(): string {
-    const parts: string[] = [];
-    // Models often start with their vendor already ("Samsung EVO Plus")
-    const vendorInModel =
-      this.vendor &&
-      `${this.model.toLowerCase()} `.startsWith(
-        `${this.vendor.toLowerCase()} `
-      );
-    if (this.vendor && !vendorInModel) parts.push(this.vendor);
-    if (this.model) parts.push(this.model);
-    if (parts.length === 0) {
-      parts.push(this._getTypeLabel());
-    }
-    return parts.join(" ");
+    return driveModelLabel(this.vendor, this.model) || this._getTypeLabel();
   }
 
   private _getTypeLabel(): string {

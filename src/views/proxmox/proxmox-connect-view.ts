@@ -1,13 +1,15 @@
 import {
   installerError,
-  renderErrorHelp,
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
+import { dialogStyles } from "../../utils/dialog-styles.js";
 import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { InstallDiagnostics } from "../../utils/diagnostics.js";
+import { LatestRequest } from "../../utils/latest-request.js";
+import { nextOnEnter } from "../../components/wizard-next.js";
 import { customElement, queryAll, state } from "lit/decorators.js";
 import {
   proxmoxCertificateFingerprint,
@@ -21,9 +23,28 @@ import "@home-assistant/webawesome/dist/components/dialog/dialog.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+import { panelStyles } from "../../utils/panel-styles.js";
+import { renderStatusRow, statusRowStyles } from "../../utils/load-state.js";
 
-/** The fields Next checks before connecting */
-type Field = "serverUrl" | "username" | "password";
+/** The fields that say what to fix in them */
+type Field = "serverUrl" | "username" | "password" | "totp";
+
+/** Second-factor errors that a new authenticator code fixes */
+const CODE_ERRORS = new Set([
+  "backend.proxmox.two_factor_code_required",
+  "backend.proxmox.two_factor_code_invalid",
+  "backend.proxmox.two_factor_rejected",
+  "backend.proxmox.two_factor_incomplete",
+]);
+
+/**
+ * The server in what was typed or pasted. The web interface keeps its place
+ * in the fragment (https://pve:8006/#v1:0:=qemu%2F100:4:::::::), which never
+ * reaches the server, so an address copied from it works as it is.
+ */
+function serverAddress(input: string): string {
+  return input.replace(/#.*/s, "").trim().replace(/\/$/, "");
+}
 
 /** A certificate belongs to a server, however its address is spelled. */
 function serverOrigin(url: string): string {
@@ -39,20 +60,18 @@ export class ProxmoxConnectView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
   static styles = [
     stepStyles,
+    statusRowStyles,
     fieldErrorStyles,
     linkStyles,
+    dialogStyles,
     css`
       .connect-card {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-        padding: 1.5rem;
-        background-color: var(--ha-card-background, #ffffff);
-        border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-card-border-radius, 12px);
-        width: 100%;
-        box-sizing: border-box;
-        max-width: 500px;
+        ${panelStyles}
+      }
+
+      /* The address reads left to right in any language, not its label */
+      wa-input[type="url"]::part(input) {
+        direction: ltr;
       }
 
       /* The password has no hint, only room for its error */
@@ -60,9 +79,6 @@ export class ProxmoxConnectView extends LitElement {
         margin-block-start: 0;
       }
 
-      wa-dialog {
-        --width: 34rem;
-      }
       wa-dialog p {
         margin: 0 0 1rem 0;
       }
@@ -70,62 +86,18 @@ export class ProxmoxConnectView extends LitElement {
         overflow-wrap: anywhere;
       }
       .certificate-changed {
-        color: var(--ha-error-color, #b30532);
+        color: var(--ha-error-color);
         font-weight: 500;
       }
       .fingerprint-label {
         font-size: 0.8125rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         margin-bottom: 0.25rem;
       }
       .fingerprint {
-        font-family: monospace;
+        font-family: var(--ha-font-family-code);
         font-size: 0.8125rem;
         line-height: 1.6;
-      }
-
-      .status-row {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 1rem;
-        border-radius: var(--ha-small-border-radius, 8px);
-        background-color: rgba(244, 67, 54, 0.1);
-        border: 1px solid rgba(244, 67, 54, 0.3);
-      }
-
-      .status-icon {
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        background-color: var(--ha-error-fill, #b30532);
-      }
-
-      .status-icon svg {
-        width: 14px;
-        height: 14px;
-        fill: white;
-      }
-
-      .status-text {
-        flex: 1;
-      }
-
-      .status-title {
-        font-size: 0.9375rem;
-        font-weight: 500;
-        color: var(--ha-text-color, #212121);
-        margin: 0;
-      }
-
-      .status-description {
-        font-size: 0.8125rem;
-        color: var(--ha-error-color, #b30532);
-        margin: 0.25rem 0 0 0;
       }
     `,
   ];
@@ -151,7 +123,11 @@ export class ProxmoxConnectView extends LitElement {
   @state()
   private _error: InstallerError | null = null;
 
-  /** What to fix in each field before connecting, until it is edited */
+  /** Proxmox asked this account for an authenticator code */
+  @state()
+  private _codeRequired = false;
+
+  /** What to fix in each field, until it is edited */
   @state()
   private _fieldErrors: Partial<Record<Field, string>> = {};
 
@@ -172,7 +148,7 @@ export class ProxmoxConnectView extends LitElement {
   private _trustedCertificates = new Map<string, string | null>();
 
   private _resolveCertificate?: (confirmed: boolean) => void;
-  private _connectionAttempt = 0;
+  private readonly _attempts = new LatestRequest(this);
 
   connectedCallback() {
     super.connectedCallback();
@@ -211,7 +187,6 @@ export class ProxmoxConnectView extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._connectionAttempt++;
     this._connecting = false;
     this._finishCertificate(false);
   }
@@ -260,9 +235,12 @@ export class ProxmoxConnectView extends LitElement {
     }
 
     if (this._connecting) return false;
-    const url = this._serverUrl.trim().replace(/\/$/, "");
+    const url = serverAddress(this._serverUrl);
+    const serverUrlError = this._serverUrlError(url);
+    // The field shows the address that is connected to and remembered
+    if (!serverUrlError) this._serverUrl = url;
     const fieldErrors = {
-      serverUrl: this._serverUrlError(url),
+      serverUrl: serverUrlError,
       username: this._username
         ? undefined
         : localize("views.proxmox.proxmox_connect_view.enter_the_username"),
@@ -271,28 +249,30 @@ export class ProxmoxConnectView extends LitElement {
         : localize("views.proxmox.proxmox_connect_view.enter_the_password"),
     };
     if (Object.values(fieldErrors).some(Boolean)) {
-      return this._showFieldErrors(fieldErrors);
+      // The code's error stays too: only Proxmox can say it is fixed
+      return this._showFieldErrors({
+        ...fieldErrors,
+        totp: this._fieldErrors.totp,
+      });
     }
 
     this._connecting = true;
     this._error = null;
-    const attempt = ++this._connectionAttempt;
-    const flowGeneration = wizardState.flowGeneration;
-    const isCurrent = () =>
-      this.isConnected &&
-      attempt === this._connectionAttempt &&
-      flowGeneration === wizardState.flowGeneration;
+    // Gone while Proxmox is asked again, so the same error coming back is
+    // read out again
+    this._fieldErrors = {};
+    const attempt = this._attempts.start();
     const diagnostics = new InstallDiagnostics("proxmox");
     diagnostics.advance("connecting");
 
     try {
       const fingerprint = await proxmoxCertificateFingerprint(url);
-      if (!isCurrent()) return false;
+      if (!attempt.current) return false;
       // No fingerprint means the platform trusts the certificate; remembered,
       // so an untrusted one on a retry is a change, not a first visit
       if (fingerprint) {
         const confirmed = await this._confirmCertificate(url, fingerprint);
-        if (!confirmed || !isCurrent()) return false;
+        if (!confirmed || !attempt.current) return false;
       } else {
         this._rememberCertificate(url, null);
       }
@@ -303,7 +283,7 @@ export class ProxmoxConnectView extends LitElement {
         totp: this._totp.trim() || undefined,
         ...(fingerprint ? { certificate_sha256: fingerprint } : {}),
       });
-      if (!isCurrent()) return false;
+      if (!attempt.current) return false;
 
       this._connected = true;
       diagnostics.advance("complete");
@@ -324,16 +304,22 @@ export class ProxmoxConnectView extends LitElement {
       });
       return true;
     } catch (error) {
-      if (!isCurrent()) return false;
+      if (!attempt.current) return false;
       diagnostics.fail(error);
-      this._error = installerError(
-        error,
-        localize("proxmox.connection_failed")
-      );
       wizardState.setSelection("proxmoxConnected", false);
+      const failure = installerError(
+        error,
+        localize("views.proxmox.proxmox_connect_view.failed_to_connect")
+      );
+      // Said on the code's field, like a missing password on its own
+      if (CODE_ERRORS.has(failure.details.message_key as string)) {
+        this._codeRequired = true;
+        return this._showFieldErrors({ totp: failure.message });
+      }
+      this._error = failure;
       return false;
     } finally {
-      if (attempt === this._connectionAttempt) {
+      if (attempt.latest) {
         this._totp = "";
         this._connecting = false;
       }
@@ -351,18 +337,17 @@ export class ProxmoxConnectView extends LitElement {
     try {
       parsed = new URL(url);
     } catch {
-      return localize("proxmox.validation.valid_url");
+      return localize("views.proxmox.proxmox_connect_view.enter_a_valid_url");
     }
     // Must be HTTPS for security
     if (parsed.protocol !== "https:") {
-      return localize("proxmox.validation.https_url");
+      return localize("views.proxmox.proxmox_connect_view.url_must_use_https");
     }
     if (
       parsed.username ||
       parsed.password ||
       parsed.pathname !== "/" ||
-      parsed.search ||
-      parsed.hash
+      parsed.search
     ) {
       return localize("views.proxmox.proxmox_connect_view.url_without_extras");
     }
@@ -403,7 +388,7 @@ export class ProxmoxConnectView extends LitElement {
 
   private _onTotpChange(e: Event) {
     this._totp = (e.target as WaInput).value ?? "";
-    this._resetConnection();
+    this._resetConnection("totp");
   }
 
   private _resetConnection(field?: Field) {
@@ -416,25 +401,12 @@ export class ProxmoxConnectView extends LitElement {
     if (field && this._fieldErrors[field]) {
       this._fieldErrors = { ...this._fieldErrors, [field]: undefined };
     }
-  }
-
-  private _onKeyDown(e: KeyboardEvent) {
-    // wa-input's own buttons (the password toggle) send their keydown through
-    // the host too, and Enter there should reveal the password, not connect.
-    // Enter that confirms an input method composition isn't a submit either.
-    const fromTextField = e.composedPath()[0] instanceof HTMLInputElement;
-
-    if (
-      e.key === "Enter" &&
-      fromTextField &&
-      !e.isComposing &&
-      !this._connecting
-    ) {
-      // Same path as the Next button, so the app shell's connecting guard
-      // applies and a successful login moves on to the next step.
-      this.dispatchEvent(
-        new CustomEvent("wizard-next", { bubbles: true, composed: true })
-      );
+    // Another server or account may not ask for a code
+    if (field === "serverUrl" || field === "username") {
+      this._codeRequired = false;
+      if (this._fieldErrors.totp) {
+        this._fieldErrors = { ...this._fieldErrors, totp: undefined };
+      }
     }
   }
 
@@ -457,12 +429,12 @@ export class ProxmoxConnectView extends LitElement {
           placeholder="https://192.168.1.100:8006"
           autocomplete="url"
           autocapitalize="off"
-          autocorrect="off"
+          .autocorrect=${false}
           .spellcheck=${false}
           required
           .value=${this._serverUrl}
           @input=${this._onServerUrlChange}
-          @keydown=${this._onKeyDown}
+          @keydown=${nextOnEnter}
           ?readonly=${this._connecting}
           ${fieldError(this._fieldErrors.serverUrl)}
         >
@@ -471,7 +443,9 @@ export class ProxmoxConnectView extends LitElement {
             nothing else would read out its new error -->
           <span slot="hint" aria-live="polite"
             >${this._fieldErrors.serverUrl ??
-            localize("proxmox.server_url_hint")}</span
+            localize(
+              "views.proxmox.proxmox_connect_view.server_url_hint"
+            )}</span
           >
         </wa-input>
 
@@ -482,18 +456,18 @@ export class ProxmoxConnectView extends LitElement {
           placeholder="root@pam"
           autocomplete="username"
           autocapitalize="off"
-          autocorrect="off"
+          .autocorrect=${false}
           .spellcheck=${false}
           required
           .value=${this._username}
           @input=${this._onUsernameChange}
-          @keydown=${this._onKeyDown}
+          @keydown=${nextOnEnter}
           ?readonly=${this._connecting}
           ${fieldError(this._fieldErrors.username)}
         >
           <span slot="hint" aria-live="polite"
             >${this._fieldErrors.username ??
-            localize("proxmox.username_hint")}</span
+            localize("views.proxmox.proxmox_connect_view.username_hint")}</span
           >
         </wa-input>
 
@@ -506,7 +480,7 @@ export class ProxmoxConnectView extends LitElement {
           required
           .value=${this._password}
           @input=${this._onPasswordChange}
-          @keydown=${this._onKeyDown}
+          @keydown=${nextOnEnter}
           ?readonly=${this._connecting}
           ${fieldError(this._fieldErrors.password)}
         >
@@ -518,17 +492,27 @@ export class ProxmoxConnectView extends LitElement {
         <wa-input
           type="text"
           input-id="totp"
-          label=${localize(
-            "views.proxmox.proxmox_connect_view.authenticator_app_code_optional"
-          )}
+          label=${this._codeRequired
+            ? localize(
+                "views.proxmox.proxmox_connect_view.authenticator_app_code"
+              )
+            : localize(
+                "views.proxmox.proxmox_connect_view.authenticator_app_code_optional"
+              )}
           autocomplete="one-time-code"
           inputmode="numeric"
-          hint=${localize("views.proxmox.proxmox_connect_view.totp_hint")}
+          ?required=${this._codeRequired}
           .value=${this._totp}
           @input=${this._onTotpChange}
-          @keydown=${this._onKeyDown}
+          @keydown=${nextOnEnter}
           ?readonly=${this._connecting}
-        ></wa-input>
+          ${fieldError(this._fieldErrors.totp)}
+        >
+          <span slot="hint" aria-live="polite"
+            >${this._fieldErrors.totp ??
+            localize("views.proxmox.proxmox_connect_view.totp_hint")}</span
+          >
+        </wa-input>
       </div>
       <wa-dialog
         label=${localize(
@@ -570,7 +554,11 @@ export class ProxmoxConnectView extends LitElement {
           )}
         </div>
         <div class="fingerprint">
-          ${this._renderFingerprint(this._certificate?.fingerprint ?? "")}
+          <bdi
+            >${this._renderFingerprint(
+              this._certificate?.fingerprint ?? ""
+            )}</bdi
+          >
         </div>
         <wa-button
           slot="footer"
@@ -598,26 +586,11 @@ export class ProxmoxConnectView extends LitElement {
   }
 
   private _renderError() {
-    return html`
-      <div class="status-row" role="alert">
-        <div class="status-icon">
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-            />
-          </svg>
-        </div>
-        <div class="status-text">
-          <p class="status-title">
-            ${localize("views.proxmox.proxmox_connect_view.connection_failed")}
-          </p>
-          <p class="status-description" style="overflow-wrap: anywhere;">
-            ${this._error?.message}
-          </p>
-          ${renderErrorHelp()}
-        </div>
-      </div>
-    `;
+    return renderStatusRow(
+      "error",
+      localize("views.proxmox.proxmox_connect_view.connection_failed"),
+      this._error?.message
+    );
   }
 }
 

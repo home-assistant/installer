@@ -4,10 +4,12 @@ import { MOCK_MANIFEST } from "../../../src/api/mock-data.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
 import {
   driveIdentity,
+  driveModelLabel,
   clearDriveSelection,
   findDrive,
   isSameDrive,
   getDriveFit,
+  isComputeModuleEmmc,
   readDriveSelection,
   storeDriveSelection,
 } from "../../../src/utils/drive-selection.js";
@@ -172,4 +174,49 @@ describe("drive-selection", () => {
     expect(readDriveSelection(wizardState.getState().selections)?.serial).to.be
       .undefined;
   });
+});
+
+describe("driveModelLabel", () => {
+  it("names the vendor once, even when the model already starts with it", () => {
+    for (const [vendor, model, label] of [
+      ["SanDisk", "Ultra", "SanDisk Ultra"],
+      ["Samsung", "Samsung EVO Plus", "Samsung EVO Plus"],
+      ["SAMSUNG", "Samsung EVO Plus", "Samsung EVO Plus"],
+      // Only a whole word counts as the vendor
+      ["Sam", "Samsung EVO Plus", "Sam Samsung EVO Plus"],
+      [undefined, "Ultra", "Ultra"],
+      ["SanDisk", undefined, "SanDisk"],
+      [null, null, ""],
+    ] as const) {
+      expect(driveModelLabel(vendor, model), `${vendor} ${model}`).to.equal(
+        label
+      );
+    }
+  });
+});
+
+// Where the gadget's `mmcblk0` lands differs by OS
+describe("isComputeModuleEmmc", () => {
+  for (const drive of [
+    { vendor: "mmcblk0", model: null },
+    { vendor: null, model: " MMCBLK0 " },
+    { vendor: null, model: null, name: "mmcblk0 USB Device" },
+  ]) {
+    it(`recognises ${JSON.stringify(drive)}`, () => {
+      expect(isComputeModuleEmmc(makeDrive(drive))).to.be.true;
+    });
+  }
+
+  for (const drive of [
+    {},
+    { vendor: "nvme0n1", model: null },
+    { vendor: "mmcblk0p1", model: null },
+    { vendor: null, model: null, name: "mmcblk01" },
+    // A built-in SD reader on Linux, named after its kernel device
+    { id: "/dev/mmcblk0", vendor: null, model: null, name: "mmcblk0" },
+  ]) {
+    it(`passes over ${JSON.stringify(drive)}`, () => {
+      expect(isComputeModuleEmmc(makeDrive(drive))).to.be.false;
+    });
+  }
 });

@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import {
+  allowUtmControl,
   approveProxmoxImport,
   test,
   expect,
@@ -42,6 +43,14 @@ for (const scenario of [
       "Proxmox could not complete the request. Check the server, account permissions, and connection.",
     recovery: "cancel",
   },
+  // Before the VM exists, so nothing is left on the server to trip a retry
+  {
+    failure: "proxmox-download",
+    flow: "proxmox",
+    message:
+      "The image could not be downloaded. Check your connection and try again.",
+    recovery: "retry",
+  },
   {
     failure: "utm-create",
     flow: "utm",
@@ -65,7 +74,6 @@ for (const scenario of [
         .locator('option-card[heading="Raspberry Pi & other boards"]')
         .click();
       await page.locator("device-selection-view device-card").first().click();
-      await next(page).click();
       await page.locator("drive-selection-view drive-card").first().click();
       await next(page).click();
       await skipWifiStep(page);
@@ -82,6 +90,8 @@ for (const scenario of [
         await connect.locator("#server-url").fill("https://192.0.2.10:8006");
         await connect.locator("#username").fill("test@pam");
         await connect.locator("#password").fill("test-only");
+      } else {
+        await allowUtmControl(page);
       }
       await expect(next(page)).toHaveJSProperty("disabled", false);
       await next(page).click();
@@ -124,7 +134,7 @@ for (const scenario of [
     });
     if (scenario.recovery === "cancel") {
       await page.locator("wizard-shell .footer-left wa-button").click();
-      await expect(page.locator("welcome-view")).toBeVisible();
+      await expect(page.locator("path-selection-view")).toBeVisible();
       return;
     }
     await next(page).click();
@@ -136,24 +146,35 @@ for (const scenario of [
       await page.locator('confirm-dialog wa-button[variant="danger"]').click();
     }
     await expect(progress.locator(".error-message")).toHaveCount(0);
-    // A running flash offers Cancel only; the VM installs show no buttons,
-    // in a footer that stays in place
+    // A running flash offers Cancel only; the VM installs show no buttons
+    // while the VM is being created, in a footer that stays in place
     if (scenario.flow === "sbc") {
       await expect(next(page)).toHaveCount(0);
       await expect(
         page.locator("wizard-shell .footer-left wa-button")
       ).toHaveText("Cancel");
     } else {
+      const cancel = page.locator("wizard-shell .footer-left wa-button");
+      await expect(cancel).toHaveText("Cancel");
+      await expect(cancel).not.toBeVisible({ timeout: 20000 });
+      // Hidden by the install itself, not by the success step after it
+      await expect(progress).toBeVisible();
       await expect(page.locator("wizard-shell .footer-left")).toBeVisible();
-      await expect(
-        page.locator("wizard-shell .footer-left wa-button")
-      ).not.toBeVisible();
     }
     await expect(page.locator(`${prefix}success-view`)).toBeVisible({
       timeout: 45000,
     });
-    await expect(next(page)).toHaveText("Done");
-    await next(page).click();
-    await expect(page.locator("welcome-view")).toBeVisible();
+    const cancel = page.locator("wizard-shell .footer-left wa-button");
+    if (scenario.flow === "sbc") {
+      // A written drive goes on to starting the device; Cancel still leaves
+      await expect(next(page)).toHaveText("Next");
+      await cancel.click();
+      await expect(page.locator("path-selection-view")).toBeVisible();
+    } else {
+      await expect(next(page)).toHaveText("Close");
+      await expect(cancel).toHaveText("Start over");
+      await cancel.click();
+      await expect(page.locator("welcome-view")).toBeVisible();
+    }
   });
 }

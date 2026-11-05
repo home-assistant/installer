@@ -67,6 +67,42 @@ describe("diagnostics-actions", () => {
     }
   });
 
+  it("keeps its dialog's own text look, whatever text it sits in", async () => {
+    // fixtureSync for the same reason as above
+    const el = fixtureSync<HTMLParagraphElement>(
+      html`<p style="font-size: 13px; text-align: center; color: rgb(1, 2, 3)">
+        <diagnostics-actions></diagnostics-actions>
+      </p>`
+    );
+    const actions = el.querySelector<DiagnosticsActions>(
+      "diagnostics-actions"
+    )!;
+    await actions.updateComplete;
+    const dialog = getComputedStyle(
+      actions.shadowRoot!.querySelector("wa-dialog")!
+    );
+    expect(dialog.textAlign).to.equal("start");
+    expect(dialog.fontSize).to.equal("16px");
+    expect(dialog.color).to.equal("rgb(33, 33, 33)");
+  });
+
+  it("outlines the buttons beside reporting the problem", async () => {
+    const el = await fixture<DiagnosticsActions>(
+      html`<diagnostics-actions></diagnostics-actions>`
+    );
+    const [report, ...others] = el.shadowRoot!.querySelectorAll("wa-button");
+    expect(report.getAttribute("variant")).to.equal("brand");
+    expect(
+      others.map((button) => [
+        button.textContent!.trim(),
+        button.getAttribute("appearance"),
+      ])
+    ).to.deep.equal([
+      ["Copy diagnostics", "outlined"],
+      ["Open logs folder", "outlined"],
+    ]);
+  });
+
   it("keeps logs available and reports failure when diagnostics cannot load", async () => {
     let opened = false;
     mockTauriIpc((cmd) => {

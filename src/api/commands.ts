@@ -1,6 +1,6 @@
-import { formatNumber, localize } from "../localization/localize.js";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { failMockOperation } from "./mock-failures.js";
 import { getPlatform } from "../utils/platform.js";
 import type {
@@ -9,6 +9,7 @@ import type {
   FlashProgress,
   FlashRequest,
   FlashResult,
+  HaAnnouncement,
   HaSetupStatus,
   HaosRelease,
   ProxmoxCredentials,
@@ -56,6 +57,18 @@ export async function onCloseBlocked(
     return () => {};
   }
   return listen("close-blocked", () => onBlocked());
+}
+
+/**
+ * Close the window, which quits the app. While an installation runs, the
+ * backend holds the close back and asks first, as for the window's own
+ * close button.
+ */
+export async function closeApp(): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    return;
+  }
+  return getCurrentWindow().close();
 }
 
 /** Quit the app, even though an installation is still running. */
@@ -159,9 +172,16 @@ import {
  */
 export async function listBlockDevices(): Promise<BlockDevice[]> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
+    failMockOperation("drives");
     return MOCK_BLOCK_DEVICES;
   }
   return invoke<BlockDevice[]>("list_block_devices");
+}
+
+/** Restart as administrator. The app closes if Windows grants it. */
+export async function relaunchAsAdmin(): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) return;
+  await invoke("relaunch_as_admin");
 }
 
 /**
@@ -210,7 +230,9 @@ export async function cancelFlash(attempt: string): Promise<void> {
 }
 
 /**
- * Simulate flash progress for browser-only mode
+ * Simulate flash progress for browser-only mode. No view shows a progress
+ * event's `message`, so the mocks leave it empty instead of making
+ * translators translate it.
  */
 async function simulateFlashProgress(
   onProgress: (progress: FlashProgress) => void,
@@ -221,21 +243,18 @@ async function simulateFlashProgress(
 
   const stages: Array<{
     stage: FlashProgress["stage"];
-    message: string;
     totalBytes: number;
     steps: number;
     delay: number;
   }> = [
     {
       stage: "downloading",
-      message: localize("api.commands.downloading_image"),
       totalBytes: compressedSize,
       steps: 30,
       delay: 150,
     },
     {
       stage: "extracting",
-      message: localize("api.commands.extracting_image"),
       // Measured against the compressed archive, the only size known up front
       totalBytes: compressedSize,
       steps: 10,
@@ -243,21 +262,18 @@ async function simulateFlashProgress(
     },
     {
       stage: "writing",
-      message: localize("api.commands.writing_to_device"),
       totalBytes: extractedSize,
       steps: 35,
       delay: 175,
     },
     {
       stage: "verifying",
-      message: localize("api.commands.verifying_written_data"),
       totalBytes: extractedSize,
       steps: 15,
       delay: 150,
     },
     {
       stage: "finalizing",
-      message: localize("api.commands.finalizing"),
       totalBytes: 0,
       steps: 10,
       delay: 100,
@@ -267,7 +283,7 @@ async function simulateFlashProgress(
   mockFlashAttempt = attempt;
   mockFlashCancelled = false;
 
-  for (const { stage, message, totalBytes, steps, delay } of stages) {
+  for (const { stage, totalBytes, steps, delay } of stages) {
     for (let step = 0; step <= steps; step++) {
       // Shaped like the native rejection
       if (mockFlashCancelled) {
@@ -287,7 +303,7 @@ async function simulateFlashProgress(
         progress: Math.round(stageProgress),
         bytes_processed: Math.round((totalBytes * stageProgress) / 100),
         total_bytes: totalBytes,
-        message,
+        message: "",
       });
 
       if (stage === "writing" && step === 0) failMockOperation("flash");
@@ -301,7 +317,7 @@ async function simulateFlashProgress(
     progress: 100,
     bytes_processed: extractedSize,
     total_bytes: extractedSize,
-    message: localize("common.install.installation_complete"),
+    message: "",
   });
 
   return {
@@ -317,30 +333,6 @@ export async function getManifest(): Promise<DeviceManifest> {
     return MOCK_MANIFEST;
   }
   return invoke<DeviceManifest>("get_manifest");
-}
-
-/**
- * Format bytes using decimal units, matching storage manufacturers.
- */
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0)
-    return localize("common.unknown_size");
-  if (bytes === 0) return localize("api.commands.0_b");
-
-  const k = 1000;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.max(
-    0,
-    Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)))
-  );
-
-  // Do not round a drive just below a capacity threshold up to that threshold.
-  const value = Math.floor((bytes / Math.pow(k, i)) * 10) / 10;
-  // Grouping would turn the oversized "1000 TB" clamp into "1,000 TB".
-  return localize("format.bytes", {
-    amount: formatNumber(value, { useGrouping: false }),
-    unit: sizes[i],
-  });
 }
 
 /**
@@ -381,6 +373,11 @@ export async function getSystemInfo(): Promise<SystemInfo> {
     };
   }
   return invoke<SystemInfo>("get_system_info");
+}
+
+/** The language tag HAI_LANGUAGE sets in place of the OS locale, if any. */
+export async function getLanguageOverride(): Promise<string | null> {
+  return invoke<string | null>("language_override");
 }
 
 // ============================================================================
@@ -490,19 +487,16 @@ async function simulateUtmDownload(
 ): Promise<string> {
   const stages: Array<{
     stage: FlashProgress["stage"];
-    message: string;
     steps: number;
     delay: number;
   }> = [
     {
       stage: "downloading",
-      message: localize("api.commands.downloading_haos_image"),
       steps: 20,
       delay: 100,
     },
     {
       stage: "extracting",
-      message: localize("api.commands.extracting_image"),
       steps: 10,
       delay: 100,
     },
@@ -512,7 +506,7 @@ async function simulateUtmDownload(
   mockVmAttempt = attempt;
   mockVmCancelled = false;
 
-  for (const { stage, message, steps, delay } of stages) {
+  for (const { stage, steps, delay } of stages) {
     for (let step = 0; step <= steps; step++) {
       throwIfMockVmCancelled();
       // Each stage counts from 0 to 100 on its own, like the backend; both
@@ -524,7 +518,7 @@ async function simulateUtmDownload(
         progress: Math.round(stageProgress),
         bytes_processed: Math.round((compressedSize * stageProgress) / 100),
         total_bytes: compressedSize,
-        message,
+        message: "",
       });
 
       await new Promise((resolve) => setTimeout(resolve, delay));
@@ -536,7 +530,7 @@ async function simulateUtmDownload(
     progress: 100,
     bytes_processed: 0,
     total_bytes: 0,
-    message: localize("api.commands.download_complete"),
+    message: "",
   });
 
   return "/tmp/mock-haos.qcow2";
@@ -584,6 +578,10 @@ export async function getUtmVmStatus(vmId: string): Promise<VmStatusInfo> {
   return invoke<VmStatusInfo>("get_utm_vm_status", { vmId });
 }
 
+/** Where the simulated device answers, and how far its download got */
+const MOCK_DEVICE_ADDRESS = "192.168.1.101";
+let mockDeviceDownload = 0;
+
 /**
  * Check if Home Assistant webserver is ready at the given IP address.
  * @param ipAddress The IP address to check
@@ -603,7 +601,8 @@ export async function checkHaReady(ipAddress: string): Promise<boolean> {
  */
 export async function checkHaUpdated(ipAddress: string): Promise<boolean> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
-    return true;
+    // The simulated device is done once its landing page reported it all
+    return ipAddress !== MOCK_DEVICE_ADDRESS || mockDeviceDownload > 100;
   }
   return invoke<boolean>("check_ha_updated", { ipAddress });
 }
@@ -619,9 +618,41 @@ export async function getHaSetupStatus(
   ipAddress: string
 ): Promise<HaSetupStatus | null> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
-    return null;
+    // A VM's Home Assistant is ready at once; the device's downloads first
+    if (ipAddress !== MOCK_DEVICE_ADDRESS) return null;
+    const progress = Math.min(mockDeviceDownload, 100);
+    mockDeviceDownload += 20;
+    return {
+      core_install_progress: progress,
+      supervisor_update_progress: null,
+      problems: [],
+    };
   }
   return invoke<HaSetupStatus | null>("get_ha_setup_status", { ipAddress });
+}
+
+/** Counts the simulated lookups, so each finds a new landing page */
+let mockLookups = 0;
+
+/**
+ * The Home Assistants that announce themselves on the local network, as far
+ * as they answer within a few seconds.
+ */
+export async function findHomeAssistants(): Promise<HaAnnouncement[]> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    // A landing page the last lookup didn't find, as a device that just
+    // started announces. It has yet to download Home Assistant.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    mockDeviceDownload = 0;
+    return [
+      {
+        id: `mock-landing-page-${mockLookups++}`,
+        address: MOCK_DEVICE_ADDRESS,
+        landing_page: true,
+      },
+    ];
+  }
+  return invoke<HaAnnouncement[]>("find_home_assistants");
 }
 
 // ============================================================================
@@ -893,7 +924,6 @@ async function simulateProxmoxInstall(
   // compressed image, the upload the extracted one, VM steps have none
   const stages: Array<{
     stage: FlashProgress["stage"];
-    message: string;
     totalBytes: number;
     steps: number;
     delay: number;
@@ -901,35 +931,30 @@ async function simulateProxmoxInstall(
     {
       stage: "downloading",
       totalBytes: compressedSize,
-      message: localize("api.commands.downloading_haos_image"),
       steps: 40,
       delay: 100,
     },
     {
       stage: "extracting",
       totalBytes: compressedSize,
-      message: localize("api.commands.extracting_image"),
       steps: 10,
       delay: 80,
     },
     {
       stage: "uploading",
       totalBytes: extractedSize,
-      message: localize("api.commands.uploading_to_proxmox"),
       steps: 20,
       delay: 80,
     },
     {
       stage: "creating_vm",
       totalBytes: 0,
-      message: localize("api.commands.creating_virtual_machine"),
       steps: 15,
       delay: 100,
     },
     {
       stage: "starting_vm",
       totalBytes: 0,
-      message: localize("api.commands.starting_home_assistant_os"),
       steps: 10,
       delay: 150,
     },
@@ -938,7 +963,7 @@ async function simulateProxmoxInstall(
   mockVmAttempt = attempt;
   mockVmCancelled = false;
 
-  for (const { stage, message, totalBytes, steps, delay } of stages) {
+  for (const { stage, totalBytes, steps, delay } of stages) {
     for (let step = 0; step <= steps; step++) {
       // Like the native install, a stop counts until the VM is being created
       if (stage !== "starting_vm" && (stage !== "creating_vm" || step === 0)) {
@@ -955,7 +980,7 @@ async function simulateProxmoxInstall(
         ),
         bytes_processed: Math.round((totalBytes * stageProgress) / 100),
         total_bytes: totalBytes,
-        message,
+        message: "",
       });
 
       if (stage === "downloading" && step === steps / 2) {
@@ -975,7 +1000,7 @@ async function simulateProxmoxInstall(
         progress: 100,
         bytes_processed: totalBytes,
         total_bytes: totalBytes,
-        message,
+        message: "",
       });
     }
   }

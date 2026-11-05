@@ -16,8 +16,9 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_SHARE_WRITE, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS,
 };
 use windows_sys::Win32::System::Ioctl::{
-    DISK_EXTENT, FSCTL_DISMOUNT_VOLUME, FSCTL_LOCK_VOLUME, GET_LENGTH_INFORMATION,
-    IOCTL_DISK_GET_LENGTH_INFO, IOCTL_DISK_UPDATE_PROPERTIES, VOLUME_DISK_EXTENTS,
+    DISK_EXTENT, DISK_GEOMETRY, FSCTL_DISMOUNT_VOLUME, FSCTL_LOCK_VOLUME, GET_LENGTH_INFORMATION,
+    IOCTL_DISK_GET_DRIVE_GEOMETRY, IOCTL_DISK_GET_LENGTH_INFO, IOCTL_DISK_UPDATE_PROPERTIES,
+    VOLUME_DISK_EXTENTS,
 };
 use windows_sys::Win32::System::WindowsProgramming::{DRIVE_CDROM, DRIVE_RAMDISK, DRIVE_REMOTE};
 use windows_sys::Win32::System::IO::DeviceIoControl;
@@ -329,6 +330,32 @@ pub(super) fn disk_length(device: &File) -> Result<u64> {
         return Err(invalid_extents().into());
     }
     Ok(length.Length as u64)
+}
+
+/// The drive's logical sector size in bytes.
+pub(super) fn sector_size(device: &File) -> Result<u64> {
+    let mut geometry = DISK_GEOMETRY::default();
+    let mut returned = 0;
+    // SAFETY: geometry is a writable native output struct and device stays live.
+    let ok = unsafe {
+        DeviceIoControl(
+            device.as_raw_handle(),
+            IOCTL_DISK_GET_DRIVE_GEOMETRY,
+            std::ptr::null(),
+            0,
+            (&mut geometry as *mut DISK_GEOMETRY).cast(),
+            size_of::<DISK_GEOMETRY>() as u32,
+            &mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        return Err(device_io_error(io::Error::last_os_error()));
+    }
+    if returned as usize != size_of::<DISK_GEOMETRY>() {
+        return Err(invalid_extents().into());
+    }
+    Ok(u64::from(geometry.BytesPerSector))
 }
 
 pub(super) fn refresh_properties(device: &File) -> Result<()> {

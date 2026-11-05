@@ -64,7 +64,8 @@ describe("proxmox-confirm-view", () => {
     wizardState.startFlow("proxmox");
     const el = await renderConfirm();
     const [server, vm, disk] = rows(el);
-    expect(server).to.contain("Node: pve Storage: local Network bridge:");
+    // Node and storage have none: the install never guesses where the VM goes
+    expect(server).to.contain("Node: Storage: Network bridge:");
     expect(vm).to.contain("home-assistant (ID: 100)");
     expect(vm).to.contain("4 CPU cores, 4 GB RAM");
     expect(disk).to.contain("32 GB");

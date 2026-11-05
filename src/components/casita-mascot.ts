@@ -3,9 +3,6 @@ import { customElement, property } from "lit/decorators.js";
 
 const artwork = {
   happy: "Happy",
-  grinning: "Grinning",
-  loving: "Loving",
-  winking: "Winking",
   loading: "Loading",
   focusing: "Focusing",
   sad: "Sad",

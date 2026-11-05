@@ -8,8 +8,10 @@ mod close_guard;
 mod command_error;
 mod commands;
 mod diagnostics;
+mod elevation;
 mod flash_state;
 mod install_jobs;
+mod live_usb;
 mod updates;
 
 #[cfg(desktop)]
@@ -18,15 +20,17 @@ use tauri::Manager;
 use commands::{
     cancel_flash, cancel_vm_install, check_connection, check_ha_ready, check_ha_updated,
     check_utm_automation, check_utm_status, create_utm_vm, discard_utm_image, download_utm_image,
-    flash_image, get_ha_setup_status, get_haos_release, get_manifest, get_system_info,
-    get_utm_haos_release, get_utm_vm_status, list_block_devices, proxmox_certificate_fingerprint,
-    proxmox_check_vm_config, proxmox_connect, proxmox_create_vm, proxmox_enable_storage_import,
-    proxmox_get_next_vm_id, proxmox_get_vm_status, proxmox_list_bridges, proxmox_list_nodes,
-    proxmox_list_storage, start_utm_vm, utm_supported,
+    find_home_assistants, flash_image, get_ha_setup_status, get_haos_release, get_manifest,
+    get_system_info, get_utm_haos_release, get_utm_vm_status, language_override,
+    list_block_devices, proxmox_certificate_fingerprint, proxmox_check_vm_config, proxmox_connect,
+    proxmox_create_vm, proxmox_enable_storage_import, proxmox_get_next_vm_id,
+    proxmox_get_vm_status, proxmox_list_bridges, proxmox_list_nodes, proxmox_list_storage,
+    relaunch_as_admin, start_utm_vm, utm_supported,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    elevation::wait_for_previous_instance();
     #[cfg(target_os = "linux")]
     ignore_host_gio_modules();
 
@@ -48,29 +52,39 @@ pub fn run() {
         .manage(install_jobs::InstallJobs::default())
         .manage(updates::PendingUpdate::default())
         .plugin(diagnostics::plugin())
-        .setup(|_app| {
+        .setup(|app| {
             diagnostics::init();
             #[cfg(target_os = "macos")]
-            close_guard::guard_app_termination(_app.handle());
+            close_guard::guard_app_termination(app.handle());
+            if let Ok(dir) = app.path().resource_dir() {
+                live_usb::set_resource_dir(dir);
+            }
             if let Ok(cache) = hai_core::ReleaseSource::cache_dir(&backend::Backend) {
                 if hai_core::download::prune_cached_images(&cache).is_err() {
                     diagnostics::warning("cache_prune_failed");
+                }
+                // Left by a session that closed before its stick or ISO was made
+                if hai_core::live_usb::remove_cache(&cache).is_err() {
+                    diagnostics::warning("live_usb_cache_cleanup_failed");
                 }
             }
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(close_guard::on_window_event)
         .invoke_handler(tauri::generate_handler![
             check_connection,
             list_block_devices,
+            relaunch_as_admin,
             flash_image,
             cancel_flash,
             get_manifest,
             get_haos_release,
             get_system_info,
+            language_override,
             close_guard::quit_anyway,
             diagnostics::get_diagnostics,
             diagnostics::log_frontend_event,
@@ -93,6 +107,7 @@ pub fn run() {
             check_ha_ready,
             check_ha_updated,
             get_ha_setup_status,
+            find_home_assistants,
             // Proxmox commands
             proxmox_certificate_fingerprint,
             proxmox_connect,
@@ -103,7 +118,13 @@ pub fn run() {
             proxmox_get_next_vm_id,
             proxmox_get_vm_status,
             proxmox_check_vm_config,
-            proxmox_create_vm
+            proxmox_create_vm,
+            // Live USB commands (bootable stick or ISO for a mini PC)
+            live_usb::live_usb_status,
+            live_usb::create_live_usb,
+            live_usb::save_live_iso,
+            live_usb::check_iso_location,
+            live_usb::reveal_in_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -162,6 +183,8 @@ mod tests {
         ] {
             assert!(dependencies.unwrap().iter().any(|name| name == "udisks2"));
         }
+        // Without its own GStreamer plugins, the AppImage's WebKit aborts on any audio
+        assert!(config.bundle.linux.appimage.bundle_media_framework);
     }
 
     #[test]

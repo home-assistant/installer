@@ -5,7 +5,7 @@ import {
   html,
   waitUntil,
 } from "@open-wc/testing";
-import type WaRadio from "@home-assistant/webawesome/dist/components/radio/radio.js";
+import type { OptionCard } from "../../../../src/components/option-card.js";
 import "../../../../src/views/minipc/architecture-selection-view.js";
 import type { MiniPCArchitectureSelectionView } from "../../../../src/views/minipc/architecture-selection-view.js";
 import { MOCK_MANIFEST } from "../../../../src/api/mock-data.js";
@@ -26,7 +26,7 @@ describe("minipc-architecture-selection-view focus", () => {
     wizardState.reset();
   });
 
-  it("hands lost focus to the choices and does not refocus on ordinary updates", async () => {
+  it("focuses its heading and does not refocus on ordinary updates", async () => {
     const el = await fixture<MiniPCArchitectureSelectionView>(
       html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`
     );
@@ -47,10 +47,11 @@ describe("minipc-architecture-selection-view focus", () => {
     const el = await fixture<MiniPCArchitectureSelectionView>(
       html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`
     );
-    await waitUntil(() => !!el.shadowRoot!.activeElement);
-    // A loading failure focuses its alert, next to the retry control
-    expect(el.shadowRoot!.activeElement!.getAttribute("role")).to.equal(
-      "alert"
+    // A loading failure focuses its message, next to the retry control. The
+    // heading, there while it loads, has the focus until then.
+    await waitUntil(
+      () => el.shadowRoot!.activeElement?.hasAttribute("data-focus-alert"),
+      "the error never got the focus"
     );
   });
 
@@ -70,7 +71,7 @@ describe("minipc-architecture-selection-view focus", () => {
     manifest.resolve(MOCK_MANIFEST);
     await settle();
     await el.updateComplete;
-    expect(el.shadowRoot!.querySelectorAll("wa-radio")).to.have.length(2);
+    expect(el.shadowRoot!.querySelectorAll("option-card")).to.have.length(2);
     expect(document.activeElement).to.equal(button);
   });
 });
@@ -103,24 +104,27 @@ describe("minipc-architecture-selection-view choices", () => {
     return el;
   }
 
-  function radios(el: MiniPCArchitectureSelectionView) {
-    return [...el.shadowRoot!.querySelectorAll<WaRadio>("wa-radio")];
+  function cards(el: MiniPCArchitectureSelectionView) {
+    return [...el.shadowRoot!.querySelectorAll<OptionCard>("option-card")];
   }
 
-  it("offers the x86-64 and ARM64 images as a named radio group", async () => {
+  it("offers the x86-64 and ARM64 images as a named group of buttons", async () => {
     const el = await renderChoices();
-    expect(radios(el).map((radio) => radio.value)).to.deep.equal([
+    expect(cards(el).map((card) => card.value)).to.deep.equal([
       "generic-x86-64",
       "generic-aarch64",
     ]);
-    expect(radios(el)[0].textContent).to.contain("Intel/AMD (x86-64)");
-    expect(radios(el)[1].textContent).to.contain("ARM (aarch64)");
-    await el.shadowRoot!.querySelector("wa-radio-group")!.updateComplete;
+    expect(cards(el).map((card) => card.heading)).to.deep.equal([
+      "Intel/AMD (x86-64)",
+      "ARM (aarch64)",
+    ]);
+    expect(cards(el)[0].textContent).to.contain("Intel NUC");
 
-    const groups = findByRole(await fullA11ySnapshot(), "radiogroup");
+    const groups = findByRole(await fullA11ySnapshot(), "group").filter(
+      (group) => group.name === "Processor"
+    );
     expect(groups).to.have.length(1);
-    expect(groups[0]!.name).to.equal("Processor");
-    expect(findByRole(groups[0]!, "radio")).to.have.length(2);
+    expect(findByRole(groups[0]!, "button")).to.have.length(2);
   });
 
   it("leaves out an architecture the catalog does not list", async () => {
@@ -130,14 +134,14 @@ describe("minipc-architecture-selection-view choices", () => {
         (device) => device.category !== "generic_arm64"
       ),
     }));
-    expect(radios(el).map((radio) => radio.value)).to.deep.equal([
+    expect(cards(el).map((card) => card.value)).to.deep.equal([
       "generic-x86-64",
     ]);
   });
 
   it("stores the chosen architecture for the following steps", async () => {
     const el = await renderChoices();
-    const arm = radios(el).find((radio) => radio.value === "generic-aarch64")!;
+    const arm = cards(el).find((card) => card.value === "generic-aarch64")!;
 
     arm.click();
     await waitUntil(
@@ -151,27 +155,16 @@ describe("minipc-architecture-selection-view choices", () => {
     expect(selections.deviceConfig!.board).to.equal("generic-aarch64");
   });
 
-  it("marks the chosen architecture with a check, not only a color", async () => {
+  it("names each processor, describes it with its examples, and keeps the logos from screen readers", async () => {
     const el = await renderChoices();
-    const checks = () =>
-      radios(el).map((radio) => !!radio.querySelector(".selected-indicator"));
-    expect(checks()).to.deep.equal([false, false]);
+    await Promise.all(cards(el).map((card) => card.updateComplete));
+    const tree = await fullA11ySnapshot();
 
-    radios(el)[1].click();
-    await waitUntil(() => checks()[1], "choice never marked");
-    expect(checks()).to.deep.equal([false, true]);
-    const check = radios(el)[1].querySelector(".selected-indicator")!;
-    expect(check.getAttribute("aria-hidden")).to.equal("true");
-    // The check sits in the radio's corner, out of the centered content
-    const radioBox = radios(el)[1].getBoundingClientRect();
-    const checkBox = check.getBoundingClientRect();
-    expect(checkBox.width).to.be.greaterThan(0);
-    expect(radioBox.right - checkBox.right).to.be.within(8, 10);
-    expect(checkBox.top - radioBox.top).to.be.within(8, 10);
-
-    radios(el)[0].click();
-    await waitUntil(() => checks()[0], "new choice never marked");
-    expect(checks()).to.deep.equal([true, false]);
+    expect(findByRole(tree, "image")).to.deep.equal([]);
+    const [x86] = findByRole(tree, "button");
+    expect(x86!.name).to.equal("Intel/AMD (x86-64)");
+    expect(x86!.description).to.contain("Standard PC architecture");
+    expect(x86!.description).to.contain("Intel NUC");
   });
 
   // Apple silicon Macs also report "Intel Mac OS X"
@@ -205,6 +198,49 @@ describe("minipc-architecture-selection-view choices", () => {
     });
   }
 
+  it("does not ask whether UTM runs on a computer other than a Mac", async () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)",
+      configurable: true,
+    });
+    const commands: string[] = [];
+    wizardState.startFlow("minipc");
+    mockTauriIpc((cmd) => {
+      commands.push(cmd);
+      return MOCK_MANIFEST;
+    });
+    const el = await fixture<MiniPCArchitectureSelectionView>(
+      html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`
+    );
+    await waitUntil(() => cards(el).length === 2, "catalog never loaded");
+    await settle();
+    expect(commands).to.deep.equal(["get_manifest"]);
+  });
+
+  it("offers the architectures without waiting to hear whether the Mac runs UTM", async () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: macUserAgent,
+      configurable: true,
+    });
+    const utm = deferred<boolean>();
+    wizardState.startFlow("minipc");
+    mockTauriIpc((cmd) =>
+      cmd === "utm_supported" ? utm.promise : MOCK_MANIFEST
+    );
+    const el = await fixture<MiniPCArchitectureSelectionView>(
+      html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`
+    );
+    await waitUntil(() => cards(el).length === 2, "catalog waited for UTM");
+    expect(el.shadowRoot!.querySelector(".mac-note") === null).to.be.true;
+
+    utm.resolve(true);
+    await waitUntil(
+      () => el.shadowRoot!.querySelector(".mac-note"),
+      "note never shown"
+    );
+  });
+
   it("loads the architectures again on Try again", async () => {
     let attempts = 0;
     const el = await renderChoices(() =>
@@ -213,16 +249,16 @@ describe("minipc-architecture-selection-view choices", () => {
         : MOCK_MANIFEST
     );
     expect(
-      el.shadowRoot!.querySelector('[role="alert"]')!.textContent
+      el.shadowRoot!.querySelector("[data-focus-alert]")!.textContent
     ).to.contain("Could not connect");
 
     const retry = [...el.shadowRoot!.querySelectorAll("wa-button")].find(
       (button) => button.textContent!.includes("Try again")
     )!;
     retry.click();
-    await waitUntil(() => radios(el).length === 2, "catalog never reloaded");
+    await waitUntil(() => cards(el).length === 2, "catalog never reloaded");
 
     expect(attempts).to.equal(2);
-    expect(el.shadowRoot!.querySelector('[role="alert"]')).to.not.exist;
+    expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.not.exist;
   });
 });

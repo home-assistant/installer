@@ -1,51 +1,35 @@
 import { expect, fixture, html } from "@open-wc/testing";
 import "../../../../src/views/minipc/setup-method-view.js";
 import type { MiniPCSetupMethodView } from "../../../../src/views/minipc/setup-method-view.js";
-import type { InfoDialog } from "../../../../src/components/info-dialog.js";
 import type { OptionCard } from "../../../../src/components/option-card.js";
-import { wizardState } from "../../../../src/state/wizard-state.js";
-import { captureOpenedUrls, restoreTauriIpc, settle } from "../../tauri-ipc.js";
+import {
+  MINIPC_STEPS,
+  wizardState,
+} from "../../../../src/state/wizard-state.js";
 
-async function renderMethod() {
+async function renderMethod({ shell = true } = {}) {
   wizardState.startFlow("minipc");
   const el = await fixture<MiniPCSetupMethodView>(
     html`<minipc-setup-method-view></minipc-setup-method-view>`
   );
+  // Stands in for the app shell, which takes the pick as Next
+  if (shell) el.addEventListener("wizard-next", () => wizardState.nextStep());
   const [connectDrive, usbBoot] =
     el.shadowRoot!.querySelectorAll<OptionCard>("option-card");
-  const dialog = el.shadowRoot!.querySelector<InfoDialog>("info-dialog")!;
-  return { el, connectDrive, usbBoot, dialog };
+  return { el, connectDrive, usbBoot };
 }
 
-/** The dialog's footer button with the given label. */
-function dialogButton(dialog: InfoDialog, label: string) {
-  return [...dialog.shadowRoot!.querySelectorAll("wa-button")].find(
-    (button) => button.textContent!.trim() === label
-  )!;
-}
-
-/**
- * The dialog closes itself on either button; only the view forgetting it was
- * shown lets the next USB boot click show it again.
- */
-async function expectReopens(
-  el: MiniPCSetupMethodView,
-  usbBoot: OptionCard,
-  dialog: InfoDialog
-) {
-  usbBoot.click();
-  await el.updateComplete;
-  expect(dialog.open).to.be.true;
+function stepIds() {
+  return wizardState.getState().steps.map((step) => step.id);
 }
 
 describe("minipc-setup-method-view", () => {
   afterEach(() => {
-    restoreTauriIpc();
     wizardState.reset();
   });
 
   it("offers connecting the drive or booting from USB", async () => {
-    const { el, connectDrive, usbBoot, dialog } = await renderMethod();
+    const { el, connectDrive, usbBoot } = await renderMethod();
     expect(el.shadowRoot!.querySelector("h2")!.textContent).to.contain(
       "How will you install?"
     );
@@ -53,53 +37,71 @@ describe("minipc-setup-method-view", () => {
     expect(connectDrive.description).to.contain("SSD or NVMe");
     expect(usbBoot.heading).to.equal("I need to boot from USB");
     expect(usbBoot.description).to.contain("bootable USB drive");
-    expect(dialog.open).to.be.false;
   });
+
+  for (const [card, method, steps] of [
+    ["connectDrive", "direct", MINIPC_STEPS.direct],
+    ["usbBoot", "usb-boot", MINIPC_STEPS.usb],
+  ] as const) {
+    it(`leaves moving on after ${method} to the app shell, once it is saved`, async () => {
+      const rendered = await renderMethod({ shell: false });
+      const sent: unknown[] = [];
+      rendered.el.addEventListener("wizard-next", (event) =>
+        sent.push({
+          reachesShell: event.bubbles && event.composed,
+          method: wizardState.getState().selections.installMethod,
+        })
+      );
+
+      rendered[card].click();
+
+      expect(sent).to.deep.equal([{ reachesShell: true, method }]);
+      expect(stepIds()).to.deep.equal(steps.map((step) => step.id));
+      expect(wizardState.currentStep!.id).to.equal("method");
+    });
+  }
 
   it("continues to the architecture step when the drive can be connected", async () => {
-    const { connectDrive, dialog } = await renderMethod();
+    const { connectDrive } = await renderMethod();
     connectDrive.click();
     expect(wizardState.currentStep!.id).to.equal("architecture");
-    expect(dialog.open).to.be.false;
+    expect(wizardState.getState().selections.installMethod).to.equal("direct");
   });
 
-  it("explains that USB boot is unsupported and stays on this step", async () => {
-    const { el, usbBoot, dialog } = await renderMethod();
+  it("continues to the media step when booting from USB", async () => {
+    const { usbBoot } = await renderMethod();
     usbBoot.click();
-    await el.updateComplete;
-    expect(dialog.open).to.be.true;
-    expect(dialog.heading).to.equal("USB boot installation");
-    expect(dialog.message).to.contain("not supported by this installer");
-    expect(wizardState.currentStep!.id).to.equal("method");
+    expect(wizardState.currentStep!.id).to.equal("media");
+    expect(stepIds()).to.deep.equal(MINIPC_STEPS.usb.map((step) => step.id));
+    expect(wizardState.getState().selections.installMethod).to.equal(
+      "usb-boot"
+    );
   });
 
-  it("closes the explanation on Go back without leaving the step", async () => {
-    const opened = captureOpenedUrls();
-    const { el, usbBoot, dialog } = await renderMethod();
+  it("restores the direct steps after going back from USB boot", async () => {
+    const { connectDrive, usbBoot } = await renderMethod();
     usbBoot.click();
-    await el.updateComplete;
-    dialogButton(dialog, "Go back").click();
-    await el.updateComplete;
-    await settle();
-    expect(dialog.open).to.be.false;
-    expect(opened).to.deep.equal([]);
-    expect(wizardState.currentStep!.id).to.equal("method");
-    await expectReopens(el, usbBoot, dialog);
+    wizardState.previousStep();
+    connectDrive.click();
+    expect(wizardState.currentStep!.id).to.equal("architecture");
+    expect(stepIds()).to.deep.equal(MINIPC_STEPS.direct.map((step) => step.id));
   });
 
-  it("opens the generic x86-64 guide from the explanation", async () => {
-    const opened = captureOpenedUrls();
-    const { el, usbBoot, dialog } = await renderMethod();
-    usbBoot.click();
-    await el.updateComplete;
-    dialogButton(dialog, "View instructions").click();
-    await el.updateComplete;
-    await settle();
-    expect(dialog.open).to.be.false;
-    expect(opened).to.deep.equal([
-      "https://www.home-assistant.io/installation/generic-x86-64",
-    ]);
-    expect(wizardState.currentStep!.id).to.equal("method");
-    await expectReopens(el, usbBoot, dialog);
+  it("keeps the Wi-Fi step after going back and connecting the drive again", async () => {
+    const { connectDrive } = await renderMethod();
+    connectDrive.click();
+    // The architecture step picked a board with Wi-Fi
+    wizardState.setSelection("device", "generic-x86-64");
+    wizardState.setSelection("deviceConfig", {
+      board: "generic-x86-64",
+      minimum_storage_bytes: 0,
+      recommended_storage_bytes: 0,
+    });
+    expect(stepIds()).to.include("wifi");
+
+    wizardState.previousStep();
+    connectDrive.click();
+    expect(wizardState.currentStep!.id).to.equal("architecture");
+    expect(stepIds()).to.include("wifi");
   });
 });

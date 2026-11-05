@@ -5,9 +5,15 @@ import {
   html,
   waitUntil,
 } from "@open-wc/testing";
+import { emulateMedia } from "@web/test-runner-commands";
 import "../../../src/components/install-success.js";
 import type { InstallSuccess } from "../../../src/components/install-success.js";
-import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
+import {
+  findByRole,
+  fullA11ySnapshot,
+  headingOutline,
+} from "../helpers/a11y.js";
+import { contrast } from "../helpers/contrast.js";
 import { expectThemeLink } from "../helpers/link-style.js";
 
 const USER_AGENTS = {
@@ -28,8 +34,9 @@ function setUserAgent(platform: keyof typeof USER_AGENTS) {
 
 describe("install-success", () => {
   // The stub shadows the prototype getter; deleting it restores the real UA.
-  afterEach(() => {
+  afterEach(async () => {
     delete (window.navigator as { userAgent?: string }).userAgent;
+    await emulateMedia({ colorScheme: "light" });
   });
 
   it("puts Casita beside the next steps under the heading when wide, and above it when narrow", async () => {
@@ -67,6 +74,30 @@ describe("install-success", () => {
     );
   });
 
+  it("keeps Casita above the heading without next steps, however wide", async () => {
+    const container = fixtureSync<HTMLDivElement>(html`
+      <div style="width: 736px">
+        <install-success .subtitle=${"Ready."}
+          ><p slot="action">Open</p></install-success
+        >
+      </div>
+    `);
+    const el = container.querySelector("install-success")!;
+    await el.updateComplete;
+    const bounds = (selector: string) =>
+      el.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+
+    expect(bounds(".mascot-container").bottom).to.be.at.most(bounds("h2").top);
+    expect(bounds(".heading").bottom).to.be.at.most(bounds(".details").top);
+    // One center for Casita, the heading and the companion app
+    const center = (selector: string) => {
+      const { left, right } = bounds(selector);
+      return (left + right) / 2;
+    };
+    expect(center(".mascot-container")).to.be.closeTo(center("h2"), 1);
+    expect(center(".companion-section")).to.be.closeTo(center("h2"), 1);
+  });
+
   it("numbers the next steps in a labelled list", async () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success
@@ -84,7 +115,7 @@ describe("install-success", () => {
     expect(list.getAttribute("aria-label")).to.equal("Next steps");
     const steps = [...list.querySelectorAll("li")];
     expect(
-      steps.map((step) => step.querySelector(".step-number")!.textContent)
+      steps.map((step) => step.querySelector(".badge")!.textContent)
     ).to.deep.equal(["1", "2", "3"]);
     expect(
       steps.map((step) =>
@@ -95,6 +126,22 @@ describe("install-success", () => {
 
     const lists = findByRole(await fullA11ySnapshot(), "list");
     expect(lists.map((node) => node.name)).to.include("Next steps");
+  });
+
+  it("heads the next steps and the companion app under the step's heading", async () => {
+    await fixture<InstallSuccess>(
+      html`<install-success
+        .subtitle=${"Installed on the fixture."}
+        .steps=${["Power it on"]}
+      ></install-success>`
+    );
+
+    // Chrome names the next steps' heading as it shows it, in capitals
+    expect(headingOutline(await fullA11ySnapshot())).to.deep.equal([
+      [2, "You're all set!"],
+      [3, "NEXT STEPS"],
+      [3, "Get the Home Assistant Companion App"],
+    ]);
   });
 
   it("leaves out the notice, footer and tip unless given", async () => {
@@ -139,6 +186,25 @@ describe("install-success", () => {
     });
   }
 
+  it("leaves as much room under the format warning as above it", async () => {
+    setUserAgent("Windows");
+    const el = await fixture<InstallSuccess>(
+      html`<install-success
+        .formatWarning=${true}
+        .steps=${["Only step"]}
+      ></install-success>`
+    );
+    const bounds = (selector: string) =>
+      el.shadowRoot!.querySelector(selector)!.getBoundingClientRect();
+
+    const above =
+      bounds("inline-notice").top - bounds(".next-steps-title").bottom;
+    expect(above).to.be.greaterThan(0);
+    expect(
+      bounds(".steps-list").top - bounds("inline-notice").bottom
+    ).to.be.closeTo(above, 0.5);
+  });
+
   it("underlines links in the steps and footer, not the app buttons", async () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success
@@ -159,7 +225,8 @@ describe("install-success", () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success><p id="extra">Reminder</p></install-success>`
     );
-    const slot = el.shadowRoot!.querySelector("slot")!;
+    const slot =
+      el.shadowRoot!.querySelector<HTMLSlotElement>("slot:not([name])")!;
     expect(slot.assignedElements().map((element) => element.id)).to.deep.equal([
       "extra",
     ]);
@@ -170,6 +237,21 @@ describe("install-success", () => {
     ).to.equal("happy");
   });
 
+  it("puts the step's action under the subtitle", async () => {
+    const el = await fixture<InstallSuccess>(
+      html`<install-success .subtitle=${"Ready"}
+        ><p slot="action" id="open">Open</p></install-success
+      >`
+    );
+    const slot = el.shadowRoot!.querySelector<HTMLSlotElement>(
+      'slot[name="action"]'
+    )!;
+    expect(slot.assignedElements().map((element) => element.id)).to.deep.equal([
+      "open",
+    ]);
+    expect(slot.previousElementSibling!.className).to.equal("subtitle");
+  });
+
   it("links both companion app stores", async () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success></install-success>`
@@ -178,12 +260,58 @@ describe("install-success", () => {
       ...el.shadowRoot!.querySelectorAll<HTMLAnchorElement>(".app-link"),
     ];
     expect(links.map((link) => link.textContent!.trim())).to.deep.equal([
-      "App Store",
-      "Google Play",
+      "App Store Opens in your browser.",
+      "Google Play Opens in your browser.",
     ]);
     for (const link of links) {
       expect(link.target).to.equal("_blank");
       expect(link.rel).to.equal("noopener noreferrer");
     }
   });
+
+  it("draws the step numbers as the badge the drive cards use", async () => {
+    const el = await fixture<InstallSuccess>(
+      html`<install-success .steps=${["Power it on"]}></install-success>`
+    );
+    const badge = getComputedStyle(el.shadowRoot!.querySelector(".badge")!);
+    const probe = document.body.appendChild(document.createElement("span"));
+    probe.style.color = "var(--ha-primary-fill)";
+    const fill = getComputedStyle(probe).color;
+    probe.remove();
+
+    expect(badge.width).to.equal("24px");
+    expect(badge.height).to.equal("24px");
+    expect(badge.backgroundColor).to.equal(fill);
+  });
+
+  for (const colorScheme of ["light", "dark"] as const) {
+    it(`tints the tip with the theme's color, readably, in ${colorScheme} mode`, async () => {
+      await emulateMedia({ colorScheme });
+      const el = await fixture<InstallSuccess>(
+        html`<install-success
+          .tip=${html`<strong>Tip:</strong> You can manage it anytime.`}
+        ></install-success>`
+      );
+      const tip = el.shadowRoot!.querySelector(".tip-section")!;
+      const probe = document.body.appendChild(document.createElement("span"));
+      probe.style.backgroundColor = "var(--wa-color-brand-fill-quiet)";
+      const tint = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const background = getComputedStyle(tip).backgroundColor;
+      const page = getComputedStyle(document.documentElement).backgroundColor;
+
+      // Not the old Home Assistant blue, which the theme left behind
+      expect(background).to.equal(tint);
+      expect(
+        contrast(getComputedStyle(tip).color, background, page)
+      ).to.be.at.least(4.5);
+      expect(
+        contrast(
+          getComputedStyle(tip.querySelector("strong")!).color,
+          background,
+          page
+        )
+      ).to.be.at.least(4.5);
+    });
+  }
 });

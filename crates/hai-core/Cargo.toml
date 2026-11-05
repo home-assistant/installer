@@ -7,9 +7,10 @@ edition.workspace = true
 description = "Core library for Home Assistant Installer"
 
 [features]
-default = ["proxmox", "utm"]
+default = ["proxmox", "utm", "live-usb"]
 proxmox = []
 utm = []
+live-usb = ["dep:fscommon", "dep:flate2", "dep:gpt", "dep:hadris-iso", "dep:tar"]
 mock = []
 
 [dependencies]
@@ -24,12 +25,22 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 rustls = { workspace = true }
 rustls-platform-verifier = { workspace = true }
+sigstore-trust-root = { workspace = true }
+sigstore-types = { workspace = true }
+sigstore-verify = { workspace = true }
 liblzma = { workspace = true }
 directories = { workspace = true }
 fs2 = { workspace = true }
 fatfs = { workspace = true }
 urlencoding = { workspace = true }
 tempfile = { workspace = true }
+
+# Live USB image building
+fscommon = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
+gpt = { workspace = true, optional = true }
+hadris-iso = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
 
 # macOS specific
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -38,6 +49,10 @@ libc = { workspace = true }
 plist = { workspace = true }
 security-framework = { workspace = true }
 rustix = { workspace = true }
+
+# Windows looks Home Assistant up through its own DNS-SD instead
+[target.'cfg(not(windows))'.dependencies]
+mdns-sd = { workspace = true }
 
 # Linux specific
 [target.'cfg(target_os = "linux")'.dependencies]

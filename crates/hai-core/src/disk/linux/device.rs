@@ -33,6 +33,9 @@ pub(super) struct LsblkDevice {
     pub(super) serial: Option<String>,
     #[serde(default)]
     pub(super) hotplug: Option<bool>,
+    /// Logical sector size in bytes
+    #[serde(rename = "log-sec", default)]
+    pub(super) log_sec: Option<u64>,
     // Required in JSON: missing safety information must not mean "safe".
     pub(super) mountpoints: Vec<Option<String>>,
     #[serde(rename = "maj:min")]
@@ -53,7 +56,7 @@ fn read_devices() -> Result<LsblkOutput> {
             "-b",     // Size in bytes
             "--tree", // Include partitions and device-mapper/RAID holders
             "-o",     // Output columns
-            "NAME,SIZE,TYPE,RM,RO,TRAN,MODEL,VENDOR,SERIAL,HOTPLUG,MOUNTPOINTS,MAJ:MIN",
+            "NAME,SIZE,TYPE,RM,RO,TRAN,MODEL,VENDOR,SERIAL,HOTPLUG,LOG-SEC,MOUNTPOINTS,MAJ:MIN",
         ])
         .output()
         .map_err(Error::Io)?;
@@ -268,6 +271,9 @@ fn check_target(lsblk: &LsblkOutput, device_id: &str) -> Result<()> {
     if dev.ro == Some(true) {
         return Err(Error::WriteProtected);
     }
+    if let Some(sector_size) = dev.log_sec {
+        ensure_supported_sector_size(sector_size)?;
+    }
     Ok(())
 }
 
@@ -458,6 +464,23 @@ mod tests {
     }
 
     #[test]
+    fn rejects_drives_without_512_byte_sectors() {
+        let mut tree = disk(partition(serde_json::json!([null])));
+        tree.blockdevices[0].log_sec = Some(512);
+        assert!(check_target(&tree, "/dev/sdb").is_ok());
+
+        tree.blockdevices[0].log_sec = Some(4096);
+        assert!(matches!(
+            check_target(&tree, "/dev/sdb"),
+            Err(Error::UnsupportedSectorSize(4096))
+        ));
+
+        // Older lsblk versions don't report it; the drive isn't refused for that
+        tree.blockdevices[0].log_sec = None;
+        assert!(check_target(&tree, "/dev/sdb").is_ok());
+    }
+
+    #[test]
     fn whole_disk_filesystem_is_checked() {
         let mut tree = disk(partition(serde_json::json!([null])));
         tree.blockdevices[0].children.clear();
@@ -596,24 +619,6 @@ mod tests {
         assert_eq!(dev.serial, None);
     }
 
-    #[test]
-    fn test_determine_device_type_mmcblk_sd_card() {
-        let dev = LsblkDevice {
-            name: "mmcblk0".to_string(),
-            size: Some(32_000_000_000),
-            device_type: Some("disk".to_string()),
-            rm: Some(true),
-            ro: Some(false),
-            tran: None,
-            model: None,
-            vendor: None,
-            hotplug: Some(false),
-            sd_card: true,
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&dev), DeviceType::SdCard);
-    }
-
     fn mmc_disks(types: &[(&str, Option<&str>)]) -> (tempfile::TempDir, Vec<LsblkDevice>) {
         let sys_block = tempfile::tempdir().unwrap();
         let mut devices = Vec::new();
@@ -669,191 +674,26 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_device_type_usb_transport() {
-        let dev = LsblkDevice {
-            name: "sdb".to_string(),
-            size: Some(64_000_000_000),
-            device_type: Some("disk".to_string()),
-            rm: Some(true),
-            ro: Some(false),
-            tran: Some("usb".to_string()),
-            model: Some("USB Drive".to_string()),
-            vendor: Some("Generic".to_string()),
-            hotplug: Some(true),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&dev), DeviceType::UsbDrive);
-    }
-
-    #[test]
-    fn test_determine_device_type_nvme_transport() {
-        let dev = LsblkDevice {
-            name: "nvme0n1".to_string(),
-            size: Some(512_000_000_000),
-            device_type: Some("disk".to_string()),
-            rm: Some(false),
-            ro: Some(false),
-            tran: Some("nvme".to_string()),
-            model: Some("Samsung 970 EVO".to_string()),
-            vendor: Some("Samsung".to_string()),
-            hotplug: Some(false),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&dev), DeviceType::Nvme);
-    }
-
-    #[test]
-    fn test_determine_device_type_sata_with_ssd_in_model() {
-        let dev = LsblkDevice {
-            name: "sda".to_string(),
-            size: Some(256_000_000_000),
-            device_type: Some("disk".to_string()),
-            rm: Some(false),
-            ro: Some(false),
-            tran: Some("sata".to_string()),
-            model: Some("Samsung SSD 860".to_string()),
-            vendor: Some("Samsung".to_string()),
-            hotplug: Some(false),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&dev), DeviceType::Ssd);
-    }
-
-    #[test]
-    fn test_determine_device_type_sata_without_ssd() {
-        let dev = LsblkDevice {
-            name: "sda".to_string(),
-            size: Some(1_000_000_000_000),
-            device_type: Some("disk".to_string()),
-            rm: Some(false),
-            ro: Some(false),
-            tran: Some("sata".to_string()),
-            model: Some("WD Blue".to_string()),
-            vendor: Some("WD".to_string()),
-            hotplug: Some(false),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&dev), DeviceType::Hdd);
-    }
-
-    #[test]
-    fn test_determine_device_type_ata_transport_with_ssd() {
-        let dev = LsblkDevice {
-            name: "sda".to_string(),
-            size: Some(128_000_000_000),
-            device_type: Some("disk".to_string()),
-            rm: Some(false),
-            ro: Some(false),
-            tran: Some("ata".to_string()),
-            model: Some("Crucial SSD".to_string()),
-            vendor: Some("Crucial".to_string()),
-            hotplug: Some(false),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&dev), DeviceType::Ssd);
-    }
-
-    #[test]
-    fn test_determine_device_type_unknown_transport() {
-        let dev = LsblkDevice {
-            name: "sdc".to_string(),
-            size: Some(64_000_000_000),
-            device_type: Some("disk".to_string()),
-            rm: Some(true),
-            ro: Some(false),
-            tran: Some("unknown".to_string()),
-            model: None,
-            vendor: None,
-            hotplug: Some(true),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&dev), DeviceType::Unknown);
-    }
-
-    #[test]
-    fn test_determine_device_type_sd_in_model_name() {
-        let dev = LsblkDevice {
-            name: "sdb".to_string(),
-            size: Some(32_000_000_000),
-            device_type: Some("disk".to_string()),
-            rm: Some(true),
-            ro: Some(false),
-            tran: Some("usb".to_string()),
-            model: Some("SD Card Reader".to_string()),
-            vendor: None,
-            hotplug: Some(true),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&dev), DeviceType::SdCard);
-    }
-
-    #[test]
-    fn test_determine_device_type_portable_ssd_is_not_sd_card() {
-        // "SSD" contains "sd" as a substring; only whole-word "SD" counts.
-        let dev = LsblkDevice {
-            name: "sdb".to_string(),
-            size: Some(500_000_000_000),
-            device_type: Some("disk".to_string()),
-            rm: Some(false),
-            ro: Some(false),
-            tran: Some("usb".to_string()),
-            model: Some("Portable SSD T7".to_string()),
-            vendor: Some("Samsung".to_string()),
-            hotplug: Some(true),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&dev), DeviceType::UsbDrive);
-    }
-
-    #[test]
-    fn test_determine_device_type_microsd_reader_is_sd_card() {
-        let dev = LsblkDevice {
-            name: "sdb".to_string(),
-            size: Some(32_000_000_000),
-            device_type: Some("disk".to_string()),
-            rm: Some(true),
-            ro: Some(false),
-            tran: Some("usb".to_string()),
-            model: Some("microSD".to_string()),
-            vendor: None,
-            hotplug: Some(true),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&dev), DeviceType::SdCard);
-    }
-
-    #[test]
-    fn test_determine_device_type_sd_in_model_with_space() {
-        let dev = LsblkDevice {
-            name: "sdb".to_string(),
-            size: Some(32_000_000_000),
-            device_type: Some("disk".to_string()),
-            rm: Some(true),
-            ro: Some(false),
-            tran: Some("usb".to_string()),
-            model: Some("SD CARD".to_string()),
-            vendor: None,
-            hotplug: Some(true),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&dev), DeviceType::SdCard);
-    }
-
-    #[test]
-    fn test_determine_device_type_no_transport() {
-        let dev = LsblkDevice {
-            name: "sdb".to_string(),
-            size: Some(32_000_000_000),
-            device_type: Some("disk".to_string()),
-            rm: Some(true),
-            ro: Some(false),
-            tran: None,
-            model: None,
-            vendor: None,
-            hotplug: Some(true),
-            ..Default::default()
-        };
-        assert_eq!(determine_device_type(&dev), DeviceType::Unknown);
+    fn determine_device_type_by_model_then_transport() {
+        use DeviceType::{Hdd, Nvme, SdCard, Ssd, Unknown, UsbDrive};
+        for (label, tran, model, expected) in [
+            ("SD reader", Some("usb"), Some("SD Card Reader"), SdCard),
+            ("USB", Some("usb"), Some("USB Drive"), UsbDrive),
+            ("NVMe", Some("nvme"), Some("Samsung 970 EVO"), Nvme),
+            ("SATA SSD", Some("sata"), Some("Samsung SSD 860"), Ssd),
+            ("SATA HDD", Some("sata"), Some("WD Blue"), Hdd),
+            ("ATA SSD", Some("ata"), Some("Crucial SSD"), Ssd),
+            ("other transport", Some("unknown"), None, Unknown),
+            ("no transport", None, None, Unknown),
+        ] {
+            let dev = LsblkDevice {
+                name: "sda".to_string(),
+                tran: tran.map(Into::into),
+                model: model.map(Into::into),
+                ..Default::default()
+            };
+            assert_eq!(determine_device_type(&dev), expected, "{label}");
+        }
     }
 
     #[test]

@@ -58,12 +58,14 @@ jobs:
 
       # npm audit can't skip an advisory, so this reads its report and fails
       # on every advisory that isn't accepted below. Only accept one that has
-      # no fixed release yet, and say why it can't hurt us:
-      # - GHSA-vfj7-8cjw-p6xm: braces, through @web/test-runner, which only
-      #   expands the glob patterns in our own test config.
+      # no fixed release yet, and say here why it can't hurt us. Separate the
+      # IDs with spaces.
+      #
+      # GHSA-gcqx-w48m-w2h4 (deepmerge): only the test runner's dev server
+      # uses it, to merge its defaults with our own test config. No fix coming soon as maintainer declined it
       - name: Audit npm dependencies
         env:
-          ACCEPTED_ADVISORIES: GHSA-vfj7-8cjw-p6xm
+          ACCEPTED_ADVISORIES: "GHSA-gcqx-w48m-w2h4"
         run: |
           npm audit --package-lock-only --json > "$RUNNER_TEMP/audit.json" || true
           jq -nr --arg accepted "$ACCEPTED_ADVISORIES" '
@@ -106,7 +108,7 @@ jobs:
 
       - name: Install cargo-audit
         if: steps.lock.outputs.audit == 'true'
-        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
           tool: cargo-audit@0.22.2
 
@@ -190,7 +192,7 @@ jobs:
           persist-credentials: false
 
       - name: Run zizmor
-        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
+        uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
         with:
           version: latest
 
@@ -219,6 +221,9 @@ jobs:
 
       - name: Run ESLint
         run: npm run lint
+
+      - name: Check Lit templates
+        run: npm run lint:lit
 
       - name: Check localization catalog and placeholders
         run: |
@@ -264,7 +269,7 @@ jobs:
 
       - name: Install cargo-shear
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
           tool: cargo-shear
 
@@ -464,7 +469,7 @@ jobs:
 
       - name: Install cargo-llvm-cov
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
           tool: cargo-llvm-cov
 
@@ -548,6 +553,9 @@ jobs:
       BUNDLE_DIR: target/${{ matrix.target }}/release/bundle
       SIGN_MACOS: ${{ matrix.os == 'macos-latest' && github.event_name != 'pull_request' }}
       SIGN_UPDATES: ${{ github.event_name == 'workflow_dispatch' }}
+      # Bundles hai-live, the program on the live USB stick. Only release
+      # builds use it, so other builds don't need hai-live built first.
+      LIVE_USB_CONFIG: crates/hai-desktop/tauri.live-usb.conf.json
     strategy:
       fail-fast: false
       matrix:
@@ -576,7 +584,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          targets: ${{ matrix.rust-targets }}
+          targets: ${{ matrix.rust-targets }},x86_64-unknown-linux-musl
 
       # Tauri names the bundles and reports the app version after the version
       # in the workspace Cargo.toml, which stays at 0.0.0 on main. A release
@@ -628,7 +636,9 @@ jobs:
           sudo install -d -o _apt /tmp/apt-archives/partial
           echo 'Dir::Cache::Archives "/tmp/apt-archives";' | sudo tee /etc/apt/apt.conf.d/90-ci-archives > /dev/null
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          # The AppImage bundles these GStreamer plugins, so its WebKit can play audio
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio
           sudo apt-get autoclean
           echo "key=$APT_CACHE_KEY$(printf '%s\n' /tmp/apt-archives/*.deb | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
 
@@ -642,12 +652,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The same static Linux program goes into every platform's app. Not
+      # --locked: a release run has just changed the version in Cargo.toml.
+      - name: Build hai-live
+        run: cargo build --release -p hai-live --target x86_64-unknown-linux-musl
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+
       # Compiling and bundling are separate steps so that the Apple credentials
       # below are only ever in the environment of the bundler, never of npm or
       # cargo build scripts.
       - name: Build
         shell: bash
-        run: npm run tauri build -- --target "$BUILD_TARGET" --no-bundle
+        run: npm run tauri build -- --target "$BUILD_TARGET" --config "$LIVE_USB_CONFIG" --no-bundle
 
       - name: Verify universal macOS binary
         if: runner.os == 'macOS'
@@ -691,7 +708,7 @@ jobs:
         if: env.SIGN_MACOS != 'true'
         shell: bash
         run: |
-          args=(--target "$BUILD_TARGET")
+          args=(--target "$BUILD_TARGET" --config "$LIVE_USB_CONFIG")
           if [[ "$SIGN_UPDATES" == true ]]; then
             args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
           fi
@@ -739,7 +756,7 @@ jobs:
       - name: Bundle (signed)
         if: env.SIGN_MACOS == 'true'
         run: |
-          args=(--target "$BUILD_TARGET")
+          args=(--target "$BUILD_TARGET" --config "$LIVE_USB_CONFIG")
           if [[ "$SIGN_UPDATES" == true ]]; then
             args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
           fi

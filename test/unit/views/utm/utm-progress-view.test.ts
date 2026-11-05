@@ -10,6 +10,7 @@ import { wizardState } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/utm/utm-progress-view.js";
 import "../../../../src/views/utm/utm-configure-view.js";
 import type { UtmProgressView } from "../../../../src/views/utm/utm-progress-view.js";
+import { showsError } from "../../helpers/progress-error.js";
 import {
   deferred,
   ipcError,
@@ -126,7 +127,7 @@ describe("utm-progress-view", () => {
     await oneEvent(el, "install-complete");
 
     expect(statusCalls).to.equal(3);
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
   });
 
   it("starts the install when connected", async () => {
@@ -198,7 +199,7 @@ describe("utm-progress-view", () => {
     // A second createUtmVm call would have replaced this with a new id
     expect(selections.vmId).to.equal("existing-vm");
     expect(selections.ipAddress).to.equal("192.168.1.100");
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
   });
 
   it("retains a VM created after detachment and resumes it on reentry", async () => {
@@ -386,7 +387,7 @@ describe("utm-progress-view", () => {
     creation.reject(ipcError("utm", "Import failed", true));
     await error;
     expect(oldError).to.be.false;
-    expect(next.hasError).to.be.true;
+    expect(showsError(next)).to.be.true;
     expect(wizardState.getState().selections.utmCreation).to.be.undefined;
     const complete = oneEvent(next, "install-complete");
     next.retry();
@@ -504,11 +505,11 @@ describe("utm-progress-view", () => {
 
     const next = mount();
     await next.updateComplete;
-    expect(next.hasError).to.be.true;
+    expect(showsError(next)).to.be.true;
     expect(errorText(next)).to.contain("already created with earlier settings");
     next.retry();
     await next.updateComplete;
-    expect(next.hasError).to.be.true;
+    expect(showsError(next)).to.be.true;
     expect(calls).to.deep.equal([
       "download_utm_image",
       "create_utm_vm",
@@ -541,7 +542,7 @@ describe("utm-progress-view", () => {
       finishCreate("old-vm");
       await error;
       await el.updateComplete;
-      expect(el.hasError).to.be.true;
+      expect(showsError(el)).to.be.true;
       expect(errorText(el)).to.contain("Check UTM before trying again");
       expect(wizardState.getState().selections.vmId).to.equal(
         change === "new VM" ? "newer-vm" : undefined
@@ -595,7 +596,7 @@ describe("utm-progress-view", () => {
     await oneEvent(el, "install-error");
     await el.updateComplete;
 
-    expect(el.hasError).to.be.true;
+    expect(showsError(el)).to.be.true;
     expect(
       el
         .shadowRoot!.querySelector("install-progress")!
@@ -651,9 +652,7 @@ describe("utm-progress-view", () => {
     const leavable: boolean[] = [];
     const el = mount();
     el.addEventListener("install-leavable", (event) =>
-      leavable.push(
-        (event as CustomEvent<{ leavable: boolean }>).detail.leavable
-      )
+      leavable.push(event.detail.leavable)
     );
     await waitUntil(() => statusCalls === 1);
     await el.updateComplete;
@@ -692,7 +691,7 @@ describe("utm-progress-view", () => {
   });
 
   // The live region announces only the stage title
-  it("names the wait for an address apart from the wait for Home Assistant", async () => {
+  it("names the wait for an address and for Home Assistant as one step", async () => {
     wizardState.setSelection("vmId", "existing-vm");
     const status = deferred<{ status: string; ip_address: string }>();
     let statusCalls = 0;
@@ -709,11 +708,11 @@ describe("utm-progress-view", () => {
     await el.updateComplete;
     const layout = el.shadowRoot!.querySelector("install-progress")!;
 
-    await waitUntil(() => layout.stage === "waiting");
-    expect(layout.stageTitle).to.equal("Connecting");
-    status.resolve({ status: "started", ip_address: "192.0.2.50" });
     await waitUntil(() => layout.stage === "ready");
-    expect(layout.stageTitle).to.equal("Waiting");
+    expect(layout.stageTitle).to.equal("Starting");
+    status.resolve({ status: "started", ip_address: "192.0.2.50" });
+    await waitUntil(() => layout.address !== null);
+    expect(layout.stageTitle).to.equal("Starting");
     el.remove();
   });
 
@@ -758,7 +757,7 @@ describe("utm-progress-view", () => {
       { timeout: 3000 }
     );
     // A problem alone doesn't end the wait
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
     expect(el.leavable).to.be.true;
     el.remove();
   });
@@ -850,7 +849,9 @@ describe("utm-progress-view", () => {
         el
           .shadowRoot!.querySelector("install-progress")!
           .shadowRoot!.querySelector(".error-message")!.textContent
-      ).to.contain("did not respond at 192.0.2.50 within 5 minutes");
+      ).to.contain(
+        "did not respond at 192.0.2.50 within 5 minutes. The virtual machine was created. Check whether it is running in UTM,"
+      );
 
       Date.now = now;
       ready = true;
@@ -933,7 +934,9 @@ describe("utm-progress-view", () => {
     }
     await el.updateComplete;
     expect(completed).to.be.false;
-    expect(errorText(el)).to.contain("did not report an IPv4 address");
+    expect(errorText(el)).to.contain(
+      "did not report an IPv4 address within 5 minutes. Check that it is running in UTM"
+    );
     expect(wizardState.getState().selections.ipAddress).to.be.undefined;
     expect(calls).to.not.include("check_ha_ready");
     expect(calls).to.not.include("check_ha_updated");
@@ -1094,7 +1097,7 @@ describe("utm-progress-view", () => {
     await oneEvent(el, "install-error");
     await el.updateComplete;
 
-    expect(el.hasError).to.be.true;
+    expect(showsError(el)).to.be.true;
     expect(
       el
         .shadowRoot!.querySelector("install-progress")!
@@ -1193,11 +1196,10 @@ describe("utm-progress-view", () => {
       await settle();
       expect(install.stops).to.deep.equal([install.attempt()]);
       const layout = el.shadowRoot!.querySelector("install-progress")!;
-      expect(layout.stageTitle).to.equal("Stopping");
-      // The thinking cloud adds the ellipsis to the stage title
+      expect(layout.stopping).to.be.true;
       await layout.updateComplete;
       expect(
-        layout.shadowRoot!.querySelector(".cloud-text")!.textContent!.trim()
+        layout.shadowRoot!.querySelector("h2")!.textContent!.trim()
       ).to.equal("Stopping...");
 
       const failed = oneEvent(el, "install-error");

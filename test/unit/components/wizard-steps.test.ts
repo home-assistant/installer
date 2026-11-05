@@ -1,11 +1,14 @@
-import { expect } from "@open-wc/testing";
+import { expect, fixtureSync, html } from "@open-wc/testing";
 import { render } from "lit";
 import {
+  LIVE_USB_STEPS,
   WIZARD_STEPS,
   wizardStep,
   type WizardStepView,
 } from "../../../src/components/wizard-steps.js";
+import { nextOnEnter } from "../../../src/components/wizard-next.js";
 import {
+  MINIPC_STEPS,
   wizardState,
   type WizardFlow,
   type WizardSelections,
@@ -23,9 +26,11 @@ const WIFI_BOARD = {
 /** Every step `flow` can show */
 function stepsOf(flow: WizardFlow): string[] {
   wizardState.startFlow(flow);
-  // The Yellow's compute modules add their step to the hardware flow
+  // The Yellow's compute modules add their step to the hardware flow, and
+  // the CM5 one to connect it
   wizardState.setSelections({
-    yellowModules: [{ id: "yellow-cm4", config: WIFI_BOARD }],
+    yellowModules: [{ id: "yellow-cm5", config: WIFI_BOARD }],
+    haHardware: "yellow-cm5",
     deviceConfig: WIFI_BOARD,
   });
   return wizardState.getState().steps.map(({ id }) => id);
@@ -106,7 +111,11 @@ describe("wizard-steps", () => {
     ).to.be.true;
     expect(pickDevice("minipc", "architecture")).to.deep.equal([false, true]);
     expect(readyWith("vm", "check", {})).to.be.false;
-    expect(readyWith("vm", "check", { utmInstalled: true })).to.be.true;
+    // Found, but the installer may not control it yet
+    expect(readyWith("vm", "check", { utmInstalled: true })).to.be.false;
+    expect(
+      readyWith("vm", "check", { utmInstalled: true, utmControlAllowed: true })
+    ).to.be.true;
     expect(readyWith("vm", "configure", {})).to.be.true;
     expect(readyWith("vm", "configure", { vmName: "My Home" })).to.be.true;
     expect(readyWith("vm", "configure", { vmName: "" })).to.be.false;
@@ -121,12 +130,13 @@ describe("wizard-steps", () => {
       proxmoxImportReady: true,
     };
     expect(readyWith("proxmox", "configure", configured)).to.be.true;
-    expect(
-      readyWith("proxmox", "configure", {
-        ...configured,
-        proxmoxImportReady: false,
-      })
-    ).to.be.false;
+    // Each holds Next on its own: the bridge check finishes after the rest
+    for (const key of Object.keys(configured) as (keyof WizardSelections)[]) {
+      expect(
+        readyWith("proxmox", "configure", { ...configured, [key]: undefined }),
+        key
+      ).to.be.false;
+    }
   });
 
   it("only holds Next for Proxmox and the official hardware", () => {
@@ -153,6 +163,108 @@ describe("wizard-steps", () => {
     }
   });
 
+  // A drive is erased, so picking one still takes Next
+  it("goes on when a card is picked on the steps that choose what to install on, or how", () => {
+    const picked = [
+      ...FLOWS.flatMap((flow) =>
+        Object.entries(WIZARD_STEPS[flow]).map(
+          ([id, step]) => [`${flow}/${id}`, step] as const
+        )
+      ),
+      ...Object.entries(LIVE_USB_STEPS).map(
+        ([id, step]) => [`minipc/usb/${id}`, step] as const
+      ),
+    ].flatMap(([path, step]) => (step.pickToContinue ? [path] : []));
+
+    expect(picked).to.deep.equal([
+      "sbc/device",
+      "ha-hardware/device",
+      "ha-hardware/module",
+      "minipc/method",
+      "minipc/architecture",
+      "minipc/usb/media",
+    ]);
+  });
+
+  // The shell offers Cancel, Try again and Back on these from what the view
+  // reports through the install-* events
+  it("marks the steps whose view runs an install, and only those", () => {
+    for (const [name, steps] of [
+      ...Object.entries(WIZARD_STEPS),
+      ["live-usb", LIVE_USB_STEPS] as const,
+    ]) {
+      for (const [id, step] of Object.entries(steps)) {
+        const container = document.createElement("div");
+        render(step.render(), container);
+        expect(!!step.install, `${name}/${id}`).to.equal(
+          container.firstElementChild!.localName.endsWith("progress-view")
+        );
+      }
+    }
+  });
+
+  it("goes back from a failed install only where a choice can change", () => {
+    for (const flow of ["sbc", "ha-hardware", "minipc"] as const) {
+      const flash = wizardStep(flow, "flash")!.install!;
+      expect(flash.backAfterError, flow).to.be.true;
+      expect(flash.changeChoice?.({})).to.deep.equal({
+        step: "drive",
+        label: "Choose another drive",
+      });
+    }
+    // A VM made by then can't take other settings
+    for (const flow of ["vm", "proxmox"] as const) {
+      const install = wizardStep(flow, "install")!.install!;
+      expect(install.backAfterError, flow).to.be.undefined;
+      expect(install.changeChoice, flow).to.be.undefined;
+    }
+    expect(wizardStep("vm", "install")!.install!.reconnect).to.be.undefined;
+    expect(
+      wizardStep("proxmox", "install")!.install!.reconnect!()
+    ).to.deep.equal({ step: "connection", label: "Reconnect" });
+  });
+
+  // Import that the configure step enabled is cluster-wide and stays on
+  it("says a Proxmox stop leaves the Import it enabled", () => {
+    const session = {
+      server_url: "https://pve:8006",
+      ticket: "test",
+      csrf_token: "test",
+    };
+    const stopMessage = wizardStep("proxmox", "install")!.install!.stopMessage;
+    const enabled: WizardSelections = {
+      proxmoxSession: session,
+      proxmoxImportChanges: [
+        { serverOrigin: "https://pve:8006", storage: "local" },
+        { serverOrigin: "https://pve:8006", storage: "backup" },
+        { serverOrigin: "https://other:8006", storage: "elsewhere" },
+      ],
+    };
+    const message = stopMessage(enabled);
+    expect(message).to.contain(
+      'Import, which this installer enabled on "local" and "backup"'
+    );
+    expect(message).to.contain("turn it off in Proxmox");
+    expect(message).not.to.contain("elsewhere");
+    expect(message).not.to.contain("nothing is left behind");
+
+    // Without a change on this server, nothing is left behind
+    for (const selections of [
+      { proxmoxSession: session },
+      {
+        proxmoxSession: session,
+        proxmoxImportChanges: [
+          { serverOrigin: "https://other:8006", storage: "local" },
+        ],
+      },
+    ]) {
+      expect(stopMessage(selections)).to.contain("nothing is left behind");
+    }
+    expect(
+      wizardStep("vm", "install")!.install!.stopMessage(enabled)
+    ).to.contain("nothing is left behind");
+  });
+
   it("leaves the hardware device step only when the reinstall is confirmed", async () => {
     const run = wizardStep("ha-hardware", "device")!.beforeNext!.run;
     for (const answer of [true, false]) {
@@ -166,5 +278,143 @@ describe("wizard-steps", () => {
       expect(await run(view)).to.equal(answer);
       expect(asked).to.equal(1);
     }
+  });
+
+  describe("booting the mini PC from USB", () => {
+    const usbBoot: WizardSelections = { installMethod: "usb-boot" };
+    const liveStep = (stepId: string, selections: WizardSelections = usbBoot) =>
+      wizardStep("minipc", stepId, selections);
+
+    it("has a view for every step of both media", () => {
+      for (const steps of [MINIPC_STEPS.usb, MINIPC_STEPS.iso]) {
+        for (const { id } of steps) {
+          const step = liveStep(id);
+          expect(step, id).to.exist;
+          const container = document.createElement("div");
+          render(step!.render(), container);
+          expect(container.firstElementChild?.tagName.includes("-"), id).to.be
+            .true;
+        }
+      }
+      expect(Object.keys(LIVE_USB_STEPS)).to.have.members([
+        ...new Set(
+          [...MINIPC_STEPS.usb, ...MINIPC_STEPS.iso]
+            .map(({ id }) => id)
+            .filter((id) => id !== "method")
+        ),
+      ]);
+    });
+
+    it("shows its own views only on the USB path", () => {
+      expect(liveStep("drive")).to.equal(LIVE_USB_STEPS.drive);
+      expect(liveStep("method")).to.equal(WIZARD_STEPS.minipc.method);
+      expect(liveStep("drive", { installMethod: "direct" })).to.equal(
+        WIZARD_STEPS.minipc.drive
+      );
+      expect(wizardStep("minipc", "drive")).to.equal(WIZARD_STEPS.minipc.drive);
+    });
+
+    it("holds Next until the program for the stick is there", () => {
+      const ready = (stepId: string, selections: WizardSelections) =>
+        liveStep(stepId)!.ready!({ ...usbBoot, ...selections });
+      expect(ready("drive", { drive: "/dev/sdb" })).to.be.false;
+      // The stick is still being rescanned, as when coming back from the summary
+      expect(ready("drive", { drive: "/dev/sdb", liveReady: true })).to.be
+        .false;
+      expect(
+        ready("drive", {
+          drive: "/dev/sdb",
+          driveScanReady: true,
+          liveReady: true,
+        })
+      ).to.be.true;
+      const location = {
+        liveReady: true,
+        liveIsoFolder: "/tmp",
+        liveIsoName: "haos.iso",
+      };
+      expect(ready("location", location)).to.be.true;
+      expect(ready("location", { ...location, liveReady: false })).to.be.false;
+      expect(ready("location", { ...location, liveIsoFolder: "  " })).to.be
+        .false;
+      expect(ready("location", { ...location, liveIsoName: "" })).to.be.false;
+    });
+
+    it("asks before erasing the stick, but not before saving an ISO", () => {
+      const confirm = liveStep("confirm")!;
+      expect(confirm.erasesDrive!({ ...usbBoot, liveMedia: "usb" })).to.be.true;
+      expect(confirm.erasesDrive!({ ...usbBoot, liveMedia: "iso" })).to.be
+        .false;
+      expect(confirm.nextLabel!(usbBoot)).to.equal("Create");
+      expect(wizardStep("minipc", "confirm")!.erasesDrive!({})).to.be.true;
+    });
+
+    it("says what stopping leaves, and leads a failure back to the target", () => {
+      const flash = liveStep("flash")!.install!;
+      const iso = { ...usbBoot, liveMedia: "iso" } as const;
+      const usb = { ...usbBoot, liveMedia: "usb" } as const;
+      expect(flash.stopMessage(iso)).to.contain("ISO file won't be saved");
+      expect(flash.stopMessage(usb)).to.contain("drive will not be ready");
+      expect(flash.changeChoice!(iso)).to.deep.equal({
+        step: "location",
+        label: "Choose another location",
+      });
+      expect(flash.changeChoice!(usb).step).to.equal("drive");
+    });
+
+    it("checks the save location before leaving it", async () => {
+      const beforeNext = liveStep("location")!.beforeNext!;
+      expect(beforeNext.until).to.equal("selections");
+      for (const answer of [true, false]) {
+        const view = Object.assign(document.createElement("div"), {
+          check: () => Promise.resolve(answer),
+        }) as unknown as WizardStepView;
+        expect(await beforeNext.run(view)).to.equal(answer);
+      }
+    });
+  });
+
+  describe("nextOnEnter", () => {
+    /**
+     * A field like wa-input, with its own input and button in its shadow
+     * root, inside a step that counts the Next requests reaching it.
+     */
+    function field() {
+      const step = fixtureSync<HTMLElement>(html`<div><div></div></div>`);
+      const host = step.firstElementChild as HTMLElement;
+      host.attachShadow({ mode: "open" }).innerHTML =
+        "<input><button>Show password</button>";
+      const sent = { next: 0, returned: [] as boolean[] };
+      host.addEventListener("keydown", (e) =>
+        sent.returned.push(nextOnEnter(e))
+      );
+      step.addEventListener("wizard-next", () => sent.next++);
+      const [input, button] = host.shadowRoot!.children;
+      return { input, button, sent };
+    }
+
+    const key = (key: string, init: KeyboardEventInit = {}) =>
+      new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        composed: true,
+        ...init,
+      });
+
+    it("asks for Next on Enter in the field's input", () => {
+      const { input, sent } = field();
+      input.dispatchEvent(key("Enter"));
+      expect(sent.next).to.equal(1);
+      expect(sent.returned).to.deep.equal([true]);
+    });
+
+    it("leaves Enter on the field's own buttons, other keys and compositions alone", () => {
+      const { input, button, sent } = field();
+      button.dispatchEvent(key("Enter"));
+      input.dispatchEvent(key("a"));
+      input.dispatchEvent(key("Enter", { isComposing: true }));
+      expect(sent.next).to.equal(0);
+      expect(sent.returned).to.deep.equal([false, false, false]);
+    });
   });
 });

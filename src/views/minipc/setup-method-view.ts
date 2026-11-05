@@ -4,10 +4,13 @@ import {
   ViewAccessibility,
   reducedMotionStyles,
 } from "../../utils/view-accessibility.js";
-import { customElement, state } from "lit/decorators.js";
-import { wizardState } from "../../state/wizard-state.js";
-import { openExternalUrl } from "../../utils/external-url.js";
-import "../../components/info-dialog.js";
+import { customElement } from "lit/decorators.js";
+import {
+  MINIPC_STEPS,
+  minipcDirectSteps,
+  wizardState,
+} from "../../state/wizard-state.js";
+import { goToNextStep } from "../../components/wizard-next.js";
 import "../../components/option-card.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
@@ -23,13 +26,10 @@ export class MiniPCSetupMethodView extends LitElement {
         flex-direction: column;
         gap: 1rem;
         width: 100%;
-        max-width: 500px;
+        max-width: var(--ha-content-width);
       }
     `,
   ];
-
-  @state()
-  private _showUsbDialog = false;
 
   render() {
     return html`
@@ -64,40 +64,19 @@ export class MiniPCSetupMethodView extends LitElement {
           ><span slot="end" aria-hidden="true">→</span></option-card
         >
       </div>
-
-      <info-dialog
-        ?open=${this._showUsbDialog}
-        heading=${localize(
-          "views.minipc.setup_method_view.usb_boot_installation"
-        )}
-        message=${localize(
-          "views.minipc.setup_method_view.boot_from_usb_unsupported"
-        )}
-        primary-label=${localize("common.view_instructions")}
-        secondary-label=${localize("common.go_back")}
-        @dialog-primary=${this._onOpenDocs}
-        @dialog-secondary=${this._onCloseDialog}
-      ></info-dialog>
     `;
   }
 
   private _onConnectDrive() {
-    wizardState.nextStep();
+    wizardState.setSteps(minipcDirectSteps(wizardState.getState().selections));
+    wizardState.setSelection("installMethod", "direct");
+    goToNextStep(this);
   }
 
   private _onUsbBoot() {
-    this._showUsbDialog = true;
-  }
-
-  private _onCloseDialog() {
-    this._showUsbDialog = false;
-  }
-
-  private async _onOpenDocs() {
-    this._showUsbDialog = false;
-    await openExternalUrl(
-      "https://www.home-assistant.io/installation/generic-x86-64"
-    );
+    wizardState.setSteps(MINIPC_STEPS.usb);
+    wizardState.setSelection("installMethod", "usb-boot");
+    goToNextStep(this);
   }
 }
 

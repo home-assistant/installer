@@ -6,7 +6,10 @@ import {
 } from "../../../src/utils/step-styles.js";
 import "../../../src/views/ha-hardware/device-selection-view.js";
 import "../../../src/views/ha-hardware/module-selection-view.js";
+import "../../../src/views/live-usb/live-iso-location-view.js";
+import "../../../src/views/live-usb/live-usb-summary-view.js";
 import "../../../src/views/minipc/architecture-selection-view.js";
+import "../../../src/views/minipc/media-view.js";
 import "../../../src/views/minipc/setup-method-view.js";
 import "../../../src/views/proxmox/proxmox-configure-view.js";
 import "../../../src/views/proxmox/proxmox-confirm-view.js";
@@ -22,7 +25,10 @@ import "../../../src/views/utm/utm-confirm-view.js";
 const STEPS = [
   "ha-hardware-device-selection-view",
   "ha-hardware-module-selection-view",
+  "live-iso-location-view",
+  "live-usb-summary-view",
   "minipc-architecture-selection-view",
+  "minipc-media-view",
   "minipc-setup-method-view",
   "proxmox-configure-view",
   "proxmox-confirm-view",

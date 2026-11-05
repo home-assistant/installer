@@ -1,15 +1,38 @@
 import { localize } from "../localization/localize.js";
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, nothing } from "lit";
 import {
   ViewAccessibility,
   reducedMotionStyles,
 } from "../utils/view-accessibility.js";
 import { logFrontendError } from "../utils/diagnostics.js";
+import { narrowWindow, tooLowForWelcome } from "../utils/breakpoints.js";
 import { customElement, state } from "lit/decorators.js";
-import { openExternalLink } from "../utils/external-url.js";
+import { renderExternalLink } from "../utils/external-link.js";
+import {
+  INSTALLATION_GUIDE_URL,
+  OPEN_HOME_FOUNDATION_URL,
+} from "../utils/urls.js";
+import { fireEvent } from "../utils/fire-event.js";
+import {
+  chooseLanguage,
+  shippedLanguages,
+  shownLanguage,
+} from "../localization/initialize.js";
+import { mdiTranslate } from "../utils/icons.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
+import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
+import "@home-assistant/webawesome/dist/components/select/select.js";
+import "@home-assistant/webawesome/dist/components/option/option.js";
+import "../components/ha-svg-icon.js";
 import "../components/diagnostics-actions.js";
 import "../components/update-banner.js";
+
+// Each language in its own words, like Deutsch, capitalized as in a menu
+function languageName(tag: string): string {
+  const name =
+    new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag;
+  return name.charAt(0).toLocaleUpperCase(tag) + name.slice(1);
+}
 
 @customElement("welcome-view")
 export class WelcomeView extends LitElement {
@@ -23,18 +46,19 @@ export class WelcomeView extends LitElement {
     reducedMotionStyles,
     css`
       /* The content centers in the space above the footer, and the footer
-         sits at the bottom. A window too low for both scrolls, footer last. */
+         sits at the bottom. A window too low for both scrolls, footer last.
+         The footer is the page's own, so it stays out of the main landmark. */
       :host {
         display: flex;
         flex-direction: column;
         align-items: center;
         box-sizing: border-box;
         height: 100%;
-        padding: 2rem var(--ha-page-gutter, 2rem) 1rem;
+        padding: 2rem var(--ha-page-gutter) 1rem;
         text-align: center;
       }
 
-      @media (max-height: 700px) {
+      @media ${tooLowForWelcome} {
         :host {
           min-height: 0;
           overflow-y: auto;
@@ -57,8 +81,37 @@ export class WelcomeView extends LitElement {
         }
       }
 
+      /* At the end of the first line, where a page offers its languages */
+      header {
+        align-self: flex-end;
+      }
+
+      .language {
+        width: 12rem;
+        text-align: start;
+      }
+
+      /* The translate icon and the names say what it is */
+      .language::part(form-control-label) {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
+      main {
+        flex: 1 0 auto;
+        align-self: stretch;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+
       .logo-container {
-        margin: auto 0 2rem;
+        margin: 0 0 2rem;
         font-size: inherit;
         line-height: 1;
       }
@@ -74,29 +127,33 @@ export class WelcomeView extends LitElement {
       }
 
       .intro {
-        max-width: 520px;
-        color: var(--ha-secondary-text-color, #727272);
+        max-width: var(--ha-content-width);
+        color: var(--ha-secondary-text-color);
         line-height: 1.6;
         margin: 0 0 3rem;
+      }
+
+      /* The arrow points the way the page reads */
+      wa-button [slot="end"]:dir(rtl) {
+        transform: scaleX(-1);
       }
 
       /* Report a problem, the foundation logo and Learn more, with the logo
          in the middle however wide the two sides are */
       .welcome-footer {
         align-self: stretch;
-        margin-top: auto;
         padding-top: 2rem;
         display: grid;
         grid-template-columns: 1fr auto 1fr;
         align-items: center;
         gap: 1rem;
         font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
       }
 
       .report {
         justify-self: start;
-        --diagnostics-link-color: var(--ha-secondary-text-color, #727272);
+        --diagnostics-link-color: var(--ha-secondary-text-color);
       }
 
       .learn-more {
@@ -106,7 +163,7 @@ export class WelcomeView extends LitElement {
       }
 
       /* Too narrow for three columns: stack them around the logo */
-      @media (max-width: 600px) {
+      @media ${narrowWindow} {
         .welcome-footer {
           grid-template-columns: auto;
           justify-items: center;
@@ -164,65 +221,91 @@ export class WelcomeView extends LitElement {
     `,
   ];
 
+  // The logo's easter egg is hidden on purpose, so it needs no keyboard way in
+  /* eslint-disable lit-a11y/click-events-have-key-events */
   render() {
     return html`
+      ${this._renderLanguages()}
       <update-banner></update-banner>
+      <main>
+        <h1 class="logo-container" @click=${this._onLogoClick}>
+          <img
+            class="logo logo-light"
+            src="/assets/home-assistant-logo-light.svg"
+            alt=${localize("views.welcome_view.home_assistant")}
+          />
+          <img
+            class="logo logo-dark"
+            src="/assets/home-assistant-logo-dark.svg"
+            alt=${localize("views.welcome_view.home_assistant")}
+          />
+        </h1>
 
-      <h1 class="logo-container" @click=${this._onLogoClick}>
-        <img
-          class="logo logo-light"
-          src="/assets/home-assistant-logo-light.svg"
-          alt=${localize("brand.home_assistant")}
-        />
-        <img
-          class="logo logo-dark"
-          src="/assets/home-assistant-logo-dark.svg"
-          alt=${localize("brand.home_assistant")}
-        />
-      </h1>
+        <p class="intro">${localize("views.welcome_view.subtitle")}</p>
 
-      <p class="intro">${localize("views.welcome_view.subtitle")}</p>
-
-      <wa-button
-        variant="brand"
-        appearance="accent"
-        size="l"
-        @click=${this._onLetsGo}
-      >
-        ${localize("views.welcome_view.let_s_go")} <span slot="end">→</span>
-      </wa-button>
+        <wa-button
+          variant="brand"
+          appearance="accent"
+          size="l"
+          @click=${this._onLetsGo}
+        >
+          ${localize("views.welcome_view.let_s_go")}
+          <span slot="end" aria-hidden="true">→</span>
+        </wa-button>
+      </main>
 
       <footer class="welcome-footer">
         <diagnostics-actions class="report"></diagnostics-actions>
-        <a
-          class="ohf-link"
-          href="https://www.openhomefoundation.org/"
-          target="_blank"
-          rel="noopener noreferrer"
-          @click=${openExternalLink}
-        >
-          <img
-            class="ohf-logo ohf-logo-light"
-            src="/assets/ohf-logo-light.svg"
-            alt=${localize("views.welcome_view.open_home_foundation")}
-          />
-          <img
-            class="ohf-logo ohf-logo-dark"
-            src="/assets/ohf-logo-dark.svg"
-            alt=${localize("views.welcome_view.open_home_foundation")}
-          />
-        </a>
-        <a
-          class="learn-more"
-          href="https://www.home-assistant.io/installation/"
-          target="_blank"
-          rel="noopener noreferrer"
-          @click=${openExternalLink}
-        >
-          ${localize("views.welcome_view.learn_more")}
-        </a>
+        ${renderExternalLink(
+          OPEN_HOME_FOUNDATION_URL,
+          html`<img
+              class="ohf-logo ohf-logo-light"
+              src="/assets/ohf-logo-light.svg"
+              alt=${localize("views.welcome_view.open_home_foundation")}
+            />
+            <img
+              class="ohf-logo ohf-logo-dark"
+              src="/assets/ohf-logo-dark.svg"
+              alt=${localize("views.welcome_view.open_home_foundation")}
+            />`,
+          { className: "ohf-link" }
+        )}
+        ${renderExternalLink(
+          INSTALLATION_GUIDE_URL,
+          localize("views.welcome_view.learn_more"),
+          { className: "learn-more" }
+        )}
       </footer>
     `;
+  }
+  /* eslint-enable lit-a11y/click-events-have-key-events */
+
+  // Hidden while English is the only language
+  private _renderLanguages() {
+    const languages = shippedLanguages();
+    if (languages.length < 2) return nothing;
+    return html`<header>
+      <wa-select
+        class="language"
+        size="s"
+        label=${localize("views.welcome_view.language")}
+        .value=${shownLanguage()}
+        @change=${this._onLanguageChange}
+      >
+        <ha-svg-icon slot="start" .path=${mdiTranslate}></ha-svg-icon>
+        ${languages
+          .map((tag) => ({ tag, name: languageName(tag) }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map(
+            ({ tag, name }) =>
+              html`<wa-option value=${tag} lang=${tag}>${name}</wa-option>`
+          )}
+      </wa-select>
+    </header>`;
+  }
+
+  private _onLanguageChange(event: Event) {
+    void chooseLanguage((event.target as WaSelect).value as string);
   }
 
   private _onLogoClick() {
@@ -238,26 +321,31 @@ export class WelcomeView extends LitElement {
 
     // Play sound after 5 clicks
     if (this._logoClickCount === 5) {
-      this._playEasterEgg();
+      void this._playEasterEgg();
       this._logoClickCount = 0;
     }
   }
 
-  private _playEasterEgg() {
-    const audio = new Audio("/assets/audio/home-assistant.mp3");
-    audio.play().catch((error) => {
+  // WebKitGTK can't play media from tauri:// URLs, so decode it with Web Audio
+  private async _playEasterEgg() {
+    const context = new AudioContext();
+    try {
+      const response = await fetch("/assets/audio/home-assistant.mp3");
+      const source = context.createBufferSource();
+      source.buffer = await context.decodeAudioData(
+        await response.arrayBuffer()
+      );
+      source.connect(context.destination);
+      source.onended = () => void context.close();
+      source.start();
+    } catch (error) {
+      void context.close();
       logFrontendError(error);
-    });
+    }
   }
 
   private _onLetsGo() {
-    this.dispatchEvent(
-      new CustomEvent("navigate", {
-        detail: { view: "path-selection" },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "navigate", { view: "path-selection" });
   }
 
   disconnectedCallback() {

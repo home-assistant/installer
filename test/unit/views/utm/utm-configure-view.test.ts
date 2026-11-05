@@ -18,7 +18,7 @@ import {
   settle,
 } from "../../tauri-ipc.js";
 
-/** The error colour without the app's theme, which the unit tests don't load */
+/** The theme's error colour, in light mode like every unit test */
 const ERROR_COLOR = "rgb(179, 5, 50)";
 
 /** The cores, memory and disk sliders, in the shared resources component */
@@ -128,6 +128,36 @@ describe("utm-configure-view", () => {
 
     const input = el.shadowRoot!.querySelector<WaInput>("wa-input");
     expect(input!.value).to.equal("My Home");
+  });
+
+  it("marks the name required", async () => {
+    const el = await mount();
+    await el.shadowRoot!.querySelector<WaInput>("wa-input")!.updateComplete;
+
+    const name = findByRole(await fullA11ySnapshot(), "textbox").find(
+      (node) => node.name === "Display name"
+    );
+    expect(name?.required).to.be.true;
+  });
+
+  it("hands the sliders the same options while the name is typed", async () => {
+    const el = await mount();
+    const resources = el.shadowRoot!.querySelector("vm-resources")!;
+    const options = () => [
+      resources.coreOptions,
+      resources.memoryOptions,
+      resources.diskOptions,
+    ];
+    const before = options();
+
+    const name = el.shadowRoot!.querySelector<WaInput>("wa-input")!;
+    name.value = "My Home";
+    name.dispatchEvent(new Event("input"));
+    await el.updateComplete;
+
+    expect(wizardState.getState().selections.vmName).to.equal("My Home");
+    // New arrays would render every slider again, on every keystroke
+    expect(options()).to.have.ordered.members(before);
   });
 
   it("keeps the name as typed and asks for one when it is cleared", async () => {
@@ -258,5 +288,32 @@ describe("utm-configure-view", () => {
         .shadowRoot!.querySelector('[role="slider"]')!
         .getAttribute("aria-valuetext")
     ).to.equal("10 cores");
+  });
+
+  it("asks for Next on Enter in the name, not on the sliders", async () => {
+    const el = await mount();
+    let next = 0;
+    el.addEventListener("wizard-next", () => next++);
+    const enter = () =>
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        composed: true,
+      });
+
+    for (const slider of (await resourcesOf(el)).querySelectorAll(
+      "wa-slider"
+    )) {
+      await slider.updateComplete;
+      slider
+        .shadowRoot!.querySelector('[role="slider"]')!
+        .dispatchEvent(enter());
+    }
+    expect(next).to.equal(0);
+
+    el.shadowRoot!.querySelector<WaInput>("wa-input")!.input.dispatchEvent(
+      enter()
+    );
+    expect(next).to.equal(1);
   });
 });

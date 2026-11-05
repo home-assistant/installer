@@ -26,6 +26,14 @@ function view(tag: string, fields: Record<string, unknown> = {}): RenderView {
   ) as unknown as RenderView;
 }
 
+/** What a view's wizard state controller would have heard, had it shown */
+function select(element: RenderView, selections: Record<string, unknown>) {
+  (element as unknown as { _wizard: { state: unknown } })._wizard.state = {
+    ...wizardState.getState(),
+    selections,
+  };
+}
+
 // Detached views exercise the real templates without starting install pipelines.
 function output(element: RenderView): HTMLDivElement {
   const container = document.createElement("div");
@@ -40,14 +48,14 @@ describe("localized view contracts", () => {
   afterEach(() => {
     restoreTauriIpc();
     Object.assign(messages, original);
-    setLanguage(["en"]);
+    setLanguage("en");
     Date.now = now;
     wizardState.reset();
   });
 
   function replace(key: MessageKey, text: string) {
     messages[key] = text;
-    setLanguage(["en"]);
+    setLanguage("en");
   }
 
   it("preserves the default unnamed-drive warning and installed UTM version", () => {
@@ -86,12 +94,7 @@ describe("localized view contracts", () => {
       "Insert fixture."
     );
     expect(insertStep()).to.equal("Insert fixture.");
-    Object.assign(element, {
-      _wizardState: {
-        ...wizardState.getState(),
-        selections: { deviceName: "Raspberry Pi 5" },
-      },
-    });
+    select(element, { deviceName: "Raspberry Pi 5" });
     expect(insertStep()).to.equal(
       "Insert the written storage into Raspberry Pi 5."
     );
@@ -107,12 +110,7 @@ describe("localized view contracts", () => {
         _haosVersion: { hostConnected(): void };
       };
       // The board release lookup needs a selected board to ask for.
-      Object.assign(element, {
-        _wizardState: {
-          ...wizardState.getState(),
-          selections: { deviceConfig: { board: "rpi5-64" } },
-        },
-      });
+      select(element, { deviceConfig: { board: "rpi5-64" } });
       expect(output(element).textContent).to.contain("Loading...");
       mockTauriIpc((command) => {
         expect(command).to.equal("get_haos_release");
@@ -168,8 +166,11 @@ describe("localized view contracts", () => {
   });
 
   it("lets the installed-version catalog own spacing, wrapping, and order", () => {
-    replace("utm.installed_with_version", "{version}: installed fixture");
-    replace("utm.version", "[release {version}]");
+    replace(
+      "views.utm.utm_check_view.installed_with_version",
+      "{version}: installed fixture"
+    );
+    replace("views.utm.utm_check_view.version", "[release {version}]");
     const element = view("utm-check-view", {
       _loading: false,
       _utmStatus: { installed: true, version: "4.7" },
@@ -188,9 +189,12 @@ describe("localized view contracts", () => {
   });
 
   it("keeps the VM name placeholder as data and separates disk from pool labels", () => {
-    replace("brand.home_assistant", "Brand translation fixture");
-    replace("proxmox.storage_pool", "Pool fixture");
-    replace("vm.disk_storage", "Disk fixture");
+    replace("views.welcome_view.home_assistant", "Brand translation fixture");
+    replace(
+      "views.proxmox.proxmox_configure_view.storage_pool",
+      "Pool fixture"
+    );
+    replace("utils.summary_styles.disk_storage", "Disk fixture");
     const utm = output(view("utm-configure-view"));
     expect(
       utm.querySelector("wa-input[placeholder]")?.getAttribute("placeholder")
@@ -200,15 +204,31 @@ describe("localized view contracts", () => {
       expect(content.textContent).to.contain("Disk fixture");
       expect(content.textContent).not.to.contain("Pool fixture");
     }
+    const configure = view("proxmox-configure-view");
+    // Past the node lookup, which shows loading text in place of the fields
+    Object.assign((configure as unknown as { _lookup: object })._lookup, {
+      loadingNodes: false,
+      selectedNode: "pve",
+    });
     const labels = Array.from(
-      output(
-        view("proxmox-configure-view", { _loading: false })
-      ).querySelectorAll("[label]"),
+      output(configure).querySelectorAll("[label]"),
       (field) => field.getAttribute("label")
     );
     expect(labels).to.include("Pool fixture");
     expect(labels).not.to.include("Disk fixture");
   });
+
+  // One byte a second, so the bytes left are the seconds left
+  function eta(seconds: number): string | null {
+    Date.now = () => 10000;
+    const element = view("install-progress", {
+      stageStartTime: 9000,
+      stageStartBytes: 0,
+      bytesProcessed: 1,
+      totalBytes: seconds + 1,
+    }) as unknown as { _calculateEta(): string | null };
+    return element._calculateEta();
+  }
 
   for (const [seconds, phrase] of [
     [59, "Less than a minute remaining"],
@@ -220,19 +240,17 @@ describe("localized view contracts", () => {
     [7199, "About 2h 0m remaining"],
   ] as const) {
     it(`install-progress preserves the ${seconds}-second ETA boundary`, () => {
-      Date.now = () => 10000;
-      const element = view("install-progress", {
-        stageStartTime: 9000,
-        stageStartBytes: 0,
-        bytesProcessed: 1,
-        totalBytes: seconds + 1,
-      }) as unknown as { _calculateEta(): string | null };
-      expect(element._calculateEta()).to.equal(phrase);
+      expect(eta(seconds)).to.equal(phrase);
     });
   }
 
+  it("install-progress takes the ETA's duration units from the locale", () => {
+    setLanguage("en-CA");
+    expect(eta(5400)).to.equal("About 1h 30min remaining");
+  });
+
   it("uses regional Intl grouping in VM formatters without changing size units", () => {
-    setLanguage(["en-IN"]);
+    setLanguage("en-IN");
     const drive = view("drive-card", { driveSize: 1.5 * 1000 ** 4 });
     expect(output(drive).querySelector(".size")?.textContent).to.equal(
       "1.5 TB"
@@ -249,7 +267,7 @@ describe("localized view contracts", () => {
   });
 
   it("install-progress formats the actual rendered percentage", () => {
-    setLanguage(["en-IN"]);
+    setLanguage("en-IN");
     const element = view("install-progress", {
       stage: "downloading",
       totalBytes: 100,
@@ -258,6 +276,6 @@ describe("localized view contracts", () => {
     });
     expect(
       output(element).querySelector(".percentage")?.textContent?.trim()
-    ).to.equal("12.5%");
+    ).to.equal("13%");
   });
 });

@@ -3,6 +3,7 @@ import "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../../src/components/drive-card.js";
 import type { DriveCard } from "../../../src/components/drive-card.js";
 import { findByRole, fullA11ySnapshot } from "../helpers/a11y.js";
+import { expectReadsLeftToRight } from "../helpers/bidi.js";
 
 describe("drive-card", () => {
   it("renders with drive name", async () => {
@@ -77,13 +78,13 @@ describe("drive-card", () => {
     expect(size!.textContent).to.equal("2 TB");
   });
 
-  it("displays 0 B for zero size", async () => {
+  it("displays 0 bytes for zero size", async () => {
     const el = await fixture<DriveCard>(html`
       <drive-card name="Test" drive-size="0"></drive-card>
     `);
 
     const size = el.shadowRoot!.querySelector(".size");
-    expect(size!.textContent).to.equal("0 B");
+    expect(size!.textContent).to.equal("0 bytes");
   });
 
   it("shows the selected indicator when checked", async () => {
@@ -91,13 +92,37 @@ describe("drive-card", () => {
       <drive-card name="Test"></drive-card>
     `);
 
-    expect(el.shadowRoot!.querySelector(".selected-indicator")).to.be.null;
+    expect(el.shadowRoot!.querySelector(".badge")).to.be.null;
 
     el.checked = true;
     await el.updateComplete;
 
-    expect(el.shadowRoot!.querySelector(".selected-indicator")).to.exist;
+    expect(el.shadowRoot!.querySelector(".badge")).to.exist;
   });
+
+  for (const state of ["checked", "disabled"] as const) {
+    it(`gives a highlighted card the ${state} border of any other`, async () => {
+      const [plain, highlighted] = await Promise.all([
+        fixture<DriveCard>(html`<drive-card name="Plain"></drive-card>`),
+        fixture<DriveCard>(
+          html`<drive-card name="Highlighted" highlight="Label"></drive-card>`
+        ),
+      ]);
+      const card = (el: DriveCard) =>
+        el.shadowRoot!.querySelector<HTMLElement>(".card")!;
+      const border = (el: DriveCard) =>
+        getComputedStyle(card(el)).borderTopColor;
+      // Read the end state, not a color on its way there
+      for (const el of [plain, highlighted]) card(el).style.transition = "none";
+      expect(border(highlighted)).to.not.equal(border(plain));
+
+      for (const el of [plain, highlighted]) {
+        el[state] = true;
+        await el.updateComplete;
+      }
+      expect(border(highlighted)).to.equal(border(plain));
+    });
+  }
 
   it("reports disabled to assistive technology", async () => {
     const el = await fixture<DriveCard>(html`
@@ -112,6 +137,7 @@ describe("drive-card", () => {
     const el = await fixture<DriveCard>(html`
       <drive-card
         name="Test"
+        highlight="Compute Module eMMC"
         disabled
         disabled-reason="Drive is too small"
       ></drive-card>
@@ -125,6 +151,7 @@ describe("drive-card", () => {
     const el = await fixture<DriveCard>(html`
       <drive-card
         name="Test"
+        highlight="Compute Module eMMC"
         disabled
         disabled-reason="Drive is too small"
       ></drive-card>
@@ -132,17 +159,31 @@ describe("drive-card", () => {
     const opacity = (selector: string) =>
       getComputedStyle(el.shadowRoot!.querySelector(selector)!).opacity;
 
-    for (const selector of [".icon-container", ".name", ".size"]) {
+    for (const selector of [
+      ".icon-container",
+      ".highlight",
+      ".name",
+      ".size",
+    ]) {
       expect(opacity(selector), selector).to.equal("0.5");
     }
     // Opacity on any of these would fade the reason with it
     for (const selector of [".card", ".info", ".details"]) {
       expect(opacity(selector), selector).to.equal("1");
     }
+    // Web Awesome's radio fades its whole host when disabled
+    expect(getComputedStyle(el).opacity, "host").to.equal("1");
+    const reason = getComputedStyle(
+      el.shadowRoot!.querySelector(".details")!
+    ).color;
 
     el.disabled = false;
     await el.updateComplete;
     expect(opacity(".name")).to.equal("1");
+    // Nor is the reason paler than an available drive's details
+    expect(
+      getComputedStyle(el.shadowRoot!.querySelector(".details")!).color
+    ).to.equal(reason);
   });
 
   it("renders SD card icon for sd_card type", async () => {
@@ -197,6 +238,42 @@ describe("drive-card", () => {
 
     const icon = el.shadowRoot!.querySelector(".icon-container svg");
     expect(icon).to.exist;
+  });
+
+  // The icon only pictures the drive's kind; the card's text names the drive
+  it("keeps its icon from screen readers", async () => {
+    await fixture<DriveCard>(html`
+      <drive-card
+        value="/dev/sda"
+        name="SanDisk"
+        device-type="sd_card"
+      ></drive-card>
+    `);
+    const tree = await fullA11ySnapshot();
+
+    expect(findByRole(tree, "image")).to.deep.equal([]);
+    expect(findByRole(tree, "radio")[0]!.name).to.contain("SanDisk");
+  });
+
+  it("shows a highlight only when given one, and reads it with the drive", async () => {
+    const el = await fixture<DriveCard>(html`
+      <drive-card name="Test" vendor="mmcblk0"></drive-card>
+    `);
+    expect(el.shadowRoot!.querySelector(".highlight")).to.be.null;
+
+    el.highlight = "Compute Module eMMC";
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector(".highlight")!.textContent).to.equal(
+      "Compute Module eMMC"
+    );
+    // The vendor and model stay
+    expect(el.shadowRoot!.querySelector(".details")!.textContent).to.contain(
+      "mmcblk0"
+    );
+    const tree = await fullA11ySnapshot();
+    expect(findByRole(tree, "radio")[0]!.name).to.contain(
+      "Compute Module eMMC"
+    );
   });
 
   it("displays vendor and model in details", async () => {
@@ -262,6 +339,16 @@ describe("drive-card", () => {
     expect(el.shadowRoot!.querySelector(".path")!.textContent).to.equal(
       "/dev/sdb"
     );
+  });
+
+  it("reads the path left to right in a right-to-left language", async () => {
+    for (const path of ["/dev/sdb", "\\\\.\\PhysicalDrive2"]) {
+      const el = await fixture<DriveCard>(html`
+        <drive-card dir="rtl" name="Test" value=${path}></drive-card>
+      `);
+
+      expectReadsLeftToRight(el.shadowRoot!.querySelector(".path")!);
+    }
   });
 
   it("leaves out the path line without a path", async () => {

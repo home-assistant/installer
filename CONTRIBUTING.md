@@ -70,14 +70,20 @@ remain in `src/api/commands.ts`; this does not generate command bindings.
 Frontend-owned copy lives in `src/localization/en.json`, a flat keyed JSON
 catalog with ICU MessageFormat placeholders and plurals. This is compatible
 with Lokalise's JSON/ICU format; no translation service configuration is
-required to develop locally. English is the only shipped language.
+required to develop locally. A translation is another catalog in the same
+folder, named after its language tag (`de.json`, `pt-BR.json`); adding the
+file ships it. Keys it leaves out or empty show the English, and so does a
+message that fails to format. `npm run localization:check` rejects keys that
+`en.json` lacks and placeholders that differ from the English.
 
 Use `localize` for text and attributes, and `localizeContent` for sentences
 containing code-owned Lit placeholders (for example, a link or emphasized
 drive name). Catalog values must never contain HTML. Keep whole sentences
 together and use ICU plurals instead of assembling English suffixes. Keys
 are type-checked; `npm run localization:check` checks every call's placeholder
-names, catalog syntax, and unused entries in CI.
+names, catalog syntax, and unused entries in CI. Call them where the text is
+shown, in `render()` or a function it calls, never while a module loads: that
+text would not follow the language, and the check rejects such a call.
 
 Choose semantic keys for a specific UI meaning, not merely identical English
 wording, and named placeholders such as `version` or `drive`. Storage pools
@@ -94,24 +100,32 @@ A key lives under the namespace of the file that renders it, so
 that path is a translator's main hint where a string appears. A string shared
 by several screens goes under `common.*`, grouped by where it appears, like
 `common.install.*` for the progress of every flow or `common.vm.*` for UTM and
-Proxmox. `npm run localization:check` enforces both the namespace and the
+Proxmox. Only `backend.*` falls outside both, for the messages the Rust code
+sends. `npm run localization:check` enforces both the namespace and the
 placeholder names. No keys have been published to a translation service yet.
 
 Startup reads the OS locale through Tauri's locale-only command permission before
-loading component modules. Browser development uses `navigator.languages`.
-Only English locales are currently supported: regional English tags retain
-their `Intl` number formatting, while unsupported/invalid preferences fall
-back to the next supported preference or `en`. Native lookup failures or a
-one-second timeout also fall back, so locale detection cannot leave an empty
-window. Locale selection happens once at startup, not during a running flow.
+loading component modules. A language tag in `HAI_LANGUAGE` takes its place, so
+`HAI_LANGUAGE=de npm run tauri dev` shows a translation without changing the OS.
+Browser development uses `navigator.languages`.
+The first preference with a catalog wins, matching its exact tag, then its
+script (`zh-TW` loads `zh-Hant.json`), then its base language (`de-AT` loads
+`de.json`); with none, the app uses the bundled `en`. The preferred tag
+itself sets `lang`, `dir` and `Intl` formatting, so `en-IN` gets English text
+with Indian number grouping. Invalid tags are skipped. A native lookup or
+catalog load that fails or takes over a second also falls back, so locale
+detection cannot leave an empty window. Once a translation ships, the welcome
+screen also lists every catalog, each in its own language. A choice there
+shows the running app in that language until it closes; nothing else changes
+the language after startup.
 The OS plugin also injects static platform/version/architecture/family/type,
 executable-extension and line-ending metadata into the first-party webview;
 these fields are not gated by command permissions. Other OS commands,
 including hostname, are not permitted by this capability.
 
-Use `formatNumber` or ICU number placeholders for displayed numbers. Preserve
-the existing unit basis and rounding: byte formatting uses decimal units
-(1000 bytes is 1 KB) with its existing B/KB/MB/GB/TB labels. IDs, version strings,
+Use `formatNumber` or ICU number placeholders for displayed numbers, and
+`Intl` units for sizes and durations, so each language gets its own unit labels. Byte
+formatting uses decimal units (1000 bytes is 1 kB). IDs, version strings,
 URLs, filenames, IPC names, state keys, and device names are data, not messages.
 
 Backend errors carry a fixed `code`, and many also carry a `message_key` from

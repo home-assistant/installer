@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, skipWifiStep, test } from "./fixtures.js";
+import { allowUtmControl, expect, skipWifiStep, test } from "./fixtures.js";
 
 // A dialog leaves the rest of the page inert while it is open, and gives the
 // focus back to what opened it as it closes. When the screen changes under
@@ -16,9 +16,8 @@ async function startFlash(page: Page) {
     .getByRole("button", { name: "Raspberry Pi & other boards" })
     .click();
   await page
-    .getByRole("radio", { name: "Raspberry Pi 5", exact: true })
+    .getByRole("button", { name: "Raspberry Pi 5", exact: true })
     .click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("radio").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await skipWifiStep(page);
@@ -26,6 +25,8 @@ async function startFlash(page: Page) {
   await page
     .getByRole("button", { name: "Erase and install", exact: true })
     .click();
+  // The question animates out first, its own Cancel with it
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(cancel(page)).toBeVisible();
 }
 
@@ -55,7 +56,7 @@ test("a flash that ends while asking to stop continues from the success", async 
   // The flash finishes meanwhile, and Cancel goes with the step
   const heading = page
     .locator("success-view")
-    .getByRole("heading", { name: "You're all set!" });
+    .getByRole("heading", { name: "Almost there!" });
   await expect(heading).toBeFocused({ timeout: 30000 });
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(await focusOnPage(page)).toBe(false);
@@ -73,7 +74,7 @@ test("a flash that fails while asking to stop continues from the error", async (
   await askToStop(page);
 
   // Cancel stays, but the error was never read out
-  const error = page.locator("progress-view").getByRole("alert");
+  const error = page.locator("progress-view [data-focus-alert]");
   await expect(error).toBeFocused({ timeout: 30000 });
   await expect(error).toHaveText(
     "The drive is in use. Close any applications using it, then try again."
@@ -125,7 +126,8 @@ test.describe("on a Mac", () => {
     await page.getByRole("button", { name: "Let's go" }).click();
     await page.getByRole("button", { name: "Virtual machine" }).click();
     const next = page.locator("wizard-shell .footer-right wa-button");
-    // Enabled once the UTM check found UTM installed
+    // Enabled once the UTM check found UTM, and the user let it be controlled
+    await allowUtmControl(page);
     await expect(next).toHaveJSProperty("disabled", false);
     await next.click();
     await expect(page.locator("utm-configure-view")).toBeVisible();

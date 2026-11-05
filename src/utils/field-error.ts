@@ -1,4 +1,4 @@
-import { css, noChange, unsafeCSS } from "lit";
+import { css, noChange } from "lit";
 import {
   Directive,
   PartType,
@@ -7,12 +7,13 @@ import {
   type PartInfo,
 } from "lit/directive.js";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
+import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 
 class FieldErrorDirective extends Directive {
   constructor(partInfo: PartInfo) {
     super(partInfo);
     if (partInfo.type !== PartType.ELEMENT) {
-      throw new Error("fieldError() belongs on a wa-input element");
+      throw new Error("fieldError() belongs on a wa-input or wa-select");
     }
   }
 
@@ -21,12 +22,13 @@ class FieldErrorDirective extends Directive {
   }
 
   update(part: ElementPart, [error]: [string | undefined]) {
-    const field = part.element as WaInput;
+    const field = part.element as WaInput | WaSelect;
     // Set on every render: Web Awesome drops it while the field is disabled
     field.customError = error ?? null;
-    // Web Awesome marks only itself invalid, and screen readers don't see
+    // A wa-input marks only itself invalid, and screen readers don't see
     // that: the textbox they read is the <input> inside it. Until Web Awesome
     // sets aria-invalid there itself, do it once that input has caught up.
+    // A wa-select has no such input: it marks its combobox itself.
     void field.updateComplete.then(() => {
       field.input?.setAttribute("aria-invalid", String(!!field.customError));
     });
@@ -35,29 +37,29 @@ class FieldErrorDirective extends Directive {
 }
 
 /**
- * Give a wa-input an error, or none for undefined. Put the same message in
- * its hint slot, so the field describes itself with it, and include
- * `fieldErrorStyles` so the field looks invalid.
+ * Give a wa-input or wa-select an error, or none for undefined. Put the same
+ * message in its hint slot, so the field describes itself with it, and
+ * include `fieldErrorStyles` so the field looks invalid.
  */
 export const fieldError = directive(FieldErrorDirective);
 
-// mdi:alert-circle
-const errorIcon = unsafeCSS(
-  `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M13,13H11V7H13M13,17H11V15H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z'/%3E%3C/svg%3E")`
-);
+// mdi:alert-circle, from a file: the app's CSP blocks data: images
+const errorIcon = css`url("/assets/icons/alert-circle.svg")`;
 
 /**
- * A wa-input with an error from `fieldError()`: an error-coloured border and
+ * A field with an error from `fieldError()`: an error-coloured border and
  * hint, and an icon, so the error doesn't read as another grey hint even
  * without its colour.
  */
 export const fieldErrorStyles = css`
-  wa-input[custom-error] {
-    --wa-form-control-border-color: var(--ha-error-color, #b30532);
-    --wa-form-control-hint-color: var(--ha-error-color, #b30532);
+  wa-input[custom-error],
+  wa-select[custom-error] {
+    --wa-form-control-border-color: var(--ha-error-color);
+    --wa-form-control-hint-color: var(--ha-error-color);
   }
 
-  wa-input[custom-error] > [slot="hint"]::before {
+  wa-input[custom-error] > [slot="hint"]::before,
+  wa-select[custom-error] > [slot="hint"]::before {
     content: "";
     display: inline-block;
     width: 1.25em;
@@ -71,7 +73,8 @@ export const fieldErrorStyles = css`
 
   /* Forced colors would paint the mask's background like the page */
   @media (forced-colors: active) {
-    wa-input[custom-error] > [slot="hint"]::before {
+    wa-input[custom-error] > [slot="hint"]::before,
+    wa-select[custom-error] > [slot="hint"]::before {
       forced-color-adjust: none;
       background-color: CanvasText;
     }

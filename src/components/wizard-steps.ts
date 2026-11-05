@@ -3,10 +3,43 @@ import { localize } from "../localization/localize.js";
 import { isValidUtmVmName } from "../state/vm-defaults.js";
 import type { WizardFlow, WizardSelections } from "../state/wizard-state.js";
 import { isValidWifi, selectedWifi } from "../utils/wifi.js";
-import { isYellow } from "../views/ha-hardware/hardware.js";
+import { isYellow, writesInstaller } from "../state/ha-hardware.js";
 import type { HaHardwareDeviceSelectionView } from "../views/ha-hardware/device-selection-view.js";
+import type { LiveIsoLocationView } from "../views/live-usb/live-iso-location-view.js";
 import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-view.js";
 import type { ProxmoxConnectView } from "../views/proxmox/proxmox-connect-view.js";
+import { enabledImportStorageList } from "../views/proxmox/proxmox-success-view.js";
+
+import "../views/sbc/device-selection-view.js";
+import "../views/sbc/drive-selection-view.js";
+import "../views/sbc/confirmation-view.js";
+import "../views/sbc/wifi-view.js";
+import "../views/sbc/progress-view.js";
+import "../views/sbc/success-view.js";
+import "../views/ha-hardware/device-selection-view.js";
+import "../views/ha-hardware/module-selection-view.js";
+import "../views/ha-hardware/connect-view.js";
+import "../views/ha-hardware/success-view.js";
+import "../views/minipc/setup-method-view.js";
+import "../views/minipc/architecture-selection-view.js";
+import "../views/minipc/media-view.js";
+import "../views/live-usb/live-usb-gate.js";
+import "../views/live-usb/live-iso-location-view.js";
+import "../views/live-usb/live-usb-summary-view.js";
+import "../views/live-usb/live-usb-progress-view.js";
+import "../views/live-usb/live-usb-success-view.js";
+import "../views/device-setup-view.js";
+import "../views/device-done-view.js";
+import "../views/utm/utm-check-view.js";
+import "../views/utm/utm-configure-view.js";
+import "../views/utm/utm-confirm-view.js";
+import "../views/utm/utm-progress-view.js";
+import "../views/utm/utm-success-view.js";
+import "../views/proxmox/proxmox-connect-view.js";
+import "../views/proxmox/proxmox-configure-view.js";
+import "../views/proxmox/proxmox-confirm-view.js";
+import "../views/proxmox/proxmox-progress-view.js";
+import "../views/proxmox/proxmox-success-view.js";
 
 /** What the shell can ask of the step it shows; a step offers what it has. */
 export interface WizardStepView extends HTMLElement {
@@ -32,6 +65,36 @@ interface BeforeNext {
   until: "flow" | "selections";
 }
 
+/** A step Next leads to from a failed install, instead of trying it again. */
+export interface InstallDetour {
+  step: string;
+  /** What Next says */
+  label: string;
+}
+
+/**
+ * A step whose view runs an install, and what the shell offers around it.
+ * The view tells the shell how the install goes with the `install-*` events.
+ */
+export interface InstallStep {
+  /** What "Stop the installation?" says a stop leaves behind */
+  stopMessage(selections: WizardSelections): string;
+  /**
+   * Once the install failed or was stopped, Back returns to the step
+   * before, to change a choice and install again. Without it, Back stays
+   * hidden.
+   */
+  backAfterError?: boolean;
+  /**
+   * Where Next leads from a failure that the view says choosing differently
+   * fixes, like a drive that is gone. Any other failure that trying again
+   * can't fix hides Next.
+   */
+  changeChoice?(selections: WizardSelections): InstallDetour;
+  /** Where a failure that logging in again fixes leads */
+  reconnect?(): InstallDetour;
+}
+
 export interface WizardStepDefinition {
   render(): TemplateResult;
   /** Whether Next can be pressed yet; always, without it */
@@ -39,6 +102,23 @@ export interface WizardStepDefinition {
   beforeNext?: BeforeNext;
   /** A later step Next goes to instead of the following one, if any */
   skipTo?(selections: WizardSelections): string | undefined;
+  /** What Next says, if not "Next" */
+  nextLabel?(selections: WizardSelections): string;
+  /**
+   * Picking an option moves on by itself, so there is no Next. The view
+   * sends `wizard-next` once it saved the pick, which leaves the step the
+   * way Next does.
+   */
+  pickToContinue?: boolean;
+  /** Whether Next erases the drive, which is checked and asked first */
+  erasesDrive?(selections: WizardSelections): boolean;
+  /**
+   * The step before can't be done again, like writing a drive that is
+   * done, so there is no Back.
+   */
+  noBack?: boolean;
+  /** The step's view runs an install, which the shell can stop and retry */
+  install?: InstallStep;
 }
 
 const deviceChosen = (selections: WizardSelections) =>
@@ -60,10 +140,51 @@ const wifi: WizardStepDefinition = {
 
 const confirmation: WizardStepDefinition = {
   render: () => html`<confirmation-view></confirmation-view>`,
+  nextLabel: (selections) =>
+    writesInstaller(selections.deviceConfig?.board)
+      ? localize("common.create")
+      : localize("common.install"),
+  erasesDrive: () => true,
 };
 
+const chooseAnotherDrive = (): InstallDetour => ({
+  step: "drive",
+  label: localize("components.wizard_steps.choose_another_drive"),
+});
+
+/** Writing the drive, which can go back to change it or the Wi-Fi */
 const flash: WizardStepDefinition = {
   render: () => html`<progress-view></progress-view>`,
+  install: {
+    stopMessage: () =>
+      localize("components.wizard_steps.stop_installation_message"),
+    backAfterError: true,
+    changeChoice: chooseAnotherDrive,
+  },
+};
+
+/**
+ * After the drive is written: starting the device from it, which `success`
+ * says how to do, then waiting for Home Assistant on it, which can be
+ * skipped, and where to find it
+ */
+function deviceSteps(
+  success: () => TemplateResult
+): Record<string, WizardStepDefinition> {
+  return {
+    success: { render: success, noBack: true },
+    setup: {
+      render: () => html`<device-setup-view></device-setup-view>`,
+      nextLabel: () => localize("components.wizard_steps.skip"),
+    },
+    done: { render: () => html`<device-done-view></device-done-view>` },
+  };
+}
+
+/** Making and starting a VM, which can't take other settings once made */
+const vmInstall: InstallStep = {
+  stopMessage: () =>
+    localize("components.wizard_steps.stop_vm_installation_message"),
 };
 
 /** The view of every step of every flow, and what it takes to leave it. */
@@ -75,12 +196,13 @@ export const WIZARD_STEPS: Record<
     device: {
       render: () => html`<device-selection-view></device-selection-view>`,
       ready: deviceChosen,
+      pickToContinue: true,
     },
     drive,
     wifi,
     confirm: confirmation,
     flash,
-    success: { render: () => html`<success-view></success-view>` },
+    ...deviceSteps(() => html`<success-view></success-view>`),
   },
   // The SBC steps, with its own device picker and device-specific next steps
   "ha-hardware": {
@@ -88,6 +210,7 @@ export const WIZARD_STEPS: Record<
       render: () =>
         html`<ha-hardware-device-selection-view></ha-hardware-device-selection-view>`,
       ready: deviceChosen,
+      pickToContinue: true,
       // The hardware ships with Home Assistant, so reinstalling is the exception
       beforeNext: {
         run: (view) =>
@@ -101,34 +224,41 @@ export const WIZARD_STEPS: Record<
         html`<ha-hardware-module-selection-view></ha-hardware-module-selection-view>`,
       ready: (selections) =>
         isYellow(selections.haHardware) && !!selections.deviceConfig,
+      pickToContinue: true,
+    },
+    connect: {
+      render: () => html`<ha-hardware-connect-view></ha-hardware-connect-view>`,
     },
     drive,
     wifi,
     confirm: confirmation,
     flash,
-    success: {
-      render: () => html`<ha-hardware-success-view></ha-hardware-success-view>`,
-    },
+    ...deviceSteps(
+      () => html`<ha-hardware-success-view></ha-hardware-success-view>`
+    ),
   },
   minipc: {
     method: {
       render: () => html`<minipc-setup-method-view></minipc-setup-method-view>`,
+      pickToContinue: true,
     },
     architecture: {
       render: () =>
         html`<minipc-architecture-selection-view></minipc-architecture-selection-view>`,
       ready: deviceChosen,
+      pickToContinue: true,
     },
     drive,
     wifi,
     confirm: confirmation,
     flash,
-    success: { render: () => html`<success-view></success-view>` },
+    ...deviceSteps(() => html`<success-view></success-view>`),
   },
   vm: {
     check: {
       render: () => html`<utm-check-view></utm-check-view>`,
-      ready: (selections) => !!selections.utmInstalled,
+      ready: (selections) =>
+        !!selections.utmInstalled && !!selections.utmControlAllowed,
     },
     configure: {
       render: () => html`<utm-configure-view></utm-configure-view>`,
@@ -137,8 +267,14 @@ export const WIZARD_STEPS: Record<
       ready: (selections) =>
         selections.vmName === undefined || isValidUtmVmName(selections.vmName),
     },
-    confirm: { render: () => html`<utm-confirm-view></utm-confirm-view>` },
-    install: { render: () => html`<utm-progress-view></utm-progress-view>` },
+    confirm: {
+      render: () => html`<utm-confirm-view></utm-confirm-view>`,
+      nextLabel: () => localize("common.install"),
+    },
+    install: {
+      render: () => html`<utm-progress-view></utm-progress-view>`,
+      install: vmInstall,
+    },
     success: { render: () => html`<utm-success-view></utm-success-view>` },
   },
   proxmox: {
@@ -174,9 +310,28 @@ export const WIZARD_STEPS: Record<
     },
     confirm: {
       render: () => html`<proxmox-confirm-view></proxmox-confirm-view>`,
+      nextLabel: () => localize("common.install"),
     },
     install: {
       render: () => html`<proxmox-progress-view></proxmox-progress-view>`,
+      install: {
+        ...vmInstall,
+        // A stop leaves no VM behind, but Import that the configure step
+        // enabled stays on
+        stopMessage: (selections) => {
+          const storages = enabledImportStorageList(selections);
+          return storages
+            ? localize("components.wizard_steps.stop_proxmox_import_message", {
+                storages,
+              })
+            : vmInstall.stopMessage(selections);
+        },
+        // The session expired: log in again, then wait for the VM made by then
+        reconnect: () => ({
+          step: "connection",
+          label: localize("common.proxmox.reconnect"),
+        }),
+      },
     },
     success: {
       render: () => html`<proxmox-success-view></proxmox-success-view>`,
@@ -184,9 +339,73 @@ export const WIZARD_STEPS: Record<
   },
 };
 
+/** Whether the USB path saves an ISO file, rather than writing a stick */
+const isoFile = (selections: WizardSelections) =>
+  selections.liveMedia === "iso";
+
+/** The Mini PC steps after choosing to boot from USB, where they differ. */
+export const LIVE_USB_STEPS: Record<string, WizardStepDefinition> = {
+  media: {
+    render: () => html`<minipc-media-view></minipc-media-view>`,
+    pickToContinue: true,
+  },
+  drive: {
+    render: () =>
+      html`<live-usb-gate
+        ><drive-selection-view></drive-selection-view
+      ></live-usb-gate>`,
+    ready: (selections) => drive.ready!(selections) && !!selections.liveReady,
+  },
+  location: {
+    render: () => html`<live-iso-location-view></live-iso-location-view>`,
+    ready: (selections) =>
+      !!selections.liveReady &&
+      !!selections.liveIsoFolder?.trim() &&
+      !!selections.liveIsoName,
+    // Problems with the folder can still be fixed before the download
+    beforeNext: {
+      run: (view) => (view as LiveIsoLocationView).check(),
+      label: () => localize("components.wizard_steps.checking_location"),
+      until: "selections",
+    },
+  },
+  confirm: {
+    render: () => html`<live-usb-summary-view></live-usb-summary-view>`,
+    nextLabel: () => localize("common.create"),
+    // Saving an ISO erases nothing
+    erasesDrive: (selections) => !isoFile(selections),
+  },
+  flash: {
+    render: () => html`<live-usb-progress-view></live-usb-progress-view>`,
+    install: {
+      stopMessage: (selections) =>
+        isoFile(selections)
+          ? localize("components.wizard_steps.stop_iso_message")
+          : localize("components.wizard_steps.stop_installation_message"),
+      backAfterError: true,
+      // The ISO has a save location where the stick has a drive
+      changeChoice: (selections) =>
+        isoFile(selections)
+          ? {
+              step: "location",
+              label: localize(
+                "components.wizard_steps.choose_another_location"
+              ),
+            }
+          : chooseAnotherDrive(),
+    },
+  },
+  ...deviceSteps(() => html`<live-usb-success-view></live-usb-success-view>`),
+};
+
 export function wizardStep(
   flow: WizardFlow | null,
-  stepId: string | undefined
+  stepId: string | undefined,
+  selections?: WizardSelections
 ): WizardStepDefinition | undefined {
-  return flow && stepId ? WIZARD_STEPS[flow][stepId] : undefined;
+  if (!flow || !stepId) return undefined;
+  if (flow === "minipc" && selections?.installMethod === "usb-boot") {
+    return LIVE_USB_STEPS[stepId] ?? WIZARD_STEPS.minipc[stepId];
+  }
+  return WIZARD_STEPS[flow][stepId];
 }

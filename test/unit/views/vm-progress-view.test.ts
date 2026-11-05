@@ -7,10 +7,9 @@ import {
 } from "@open-wc/testing";
 import type { FlashProgress } from "../../../src/api/types.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
-import {
-  VmProgressView,
-  type VmInstallFailure,
-} from "../../../src/views/vm-progress-view.js";
+import type { InstallFailure } from "../../../src/views/install-progress-view.js";
+import { VmProgressView } from "../../../src/views/vm-progress-view.js";
+import { showsError } from "../helpers/progress-error.js";
 import {
   deferred,
   ipcError,
@@ -23,10 +22,7 @@ import {
 type TestStage = "downloading" | "building";
 
 /** What a test plays as the flow's steps, on the view they report to */
-type Steps = (
-  view: TestProgressView,
-  signal: AbortSignal
-) => Promise<Record<string, unknown>>;
+type Steps = (view: TestProgressView, signal: AbortSignal) => Promise<void>;
 
 /** A made-up flow: a download a stop can end, then one more step */
 class TestProgressView extends VmProgressView<TestStage> {
@@ -35,11 +31,11 @@ class TestProgressView extends VmProgressView<TestStage> {
     "downloading",
     "building",
   ];
-  protected readonly _stoppableStages = ["downloading"];
-  protected readonly _measurableStages = ["downloading"];
+  protected readonly _stoppableStages: readonly TestStage[] = ["downloading"];
+  protected readonly _measurableStages: readonly TestStage[] = ["downloading"];
 
   steps: Steps = () => new Promise(() => {});
-  startFailure?: VmInstallFailure;
+  startFailure?: InstallFailure;
 
   protected _stoppedMessage() {
     return "Stopped. Nothing was built.";
@@ -80,11 +76,11 @@ class TestProgressView extends VmProgressView<TestStage> {
 
   waitForHomeAssistant(
     signal: AbortSignal,
-    vmAddress = async (): Promise<string | null> => "192.0.2.50"
+    address = async (): Promise<string | null> => "192.0.2.50"
   ) {
     return this._waitForHomeAssistant(
       {
-        vmAddress,
+        address,
         stopOn: () => false,
         messages: {
           noAddress: "No address",
@@ -99,10 +95,7 @@ class TestProgressView extends VmProgressView<TestStage> {
 customElements.define("test-vm-progress-view", TestProgressView);
 
 /** Mount the view, which starts the install with `steps` as it connects */
-function mount(
-  steps?: Steps,
-  startFailure?: VmInstallFailure
-): TestProgressView {
+function mount(steps?: Steps, startFailure?: InstallFailure): TestProgressView {
   const el = document.createElement(
     "test-vm-progress-view"
   ) as TestProgressView;
@@ -136,13 +129,23 @@ describe("vm-progress-view", () => {
     restoreTauriIpc();
   });
 
-  it("completes with what the flow's steps resolve to", async () => {
-    const el = mount(async () => ({ ipAddress: "192.0.2.50" }));
+  it("rejects a stage the flow doesn't have at build time", () => {
+    abstract class Misspelled extends VmProgressView<TestStage> {
+      // @ts-expect-error: misspelled stage
+      protected readonly _stoppableStages = ["downloadng"] as const;
+      // @ts-expect-error: misspelled stage
+      protected readonly _measurableStages = ["buildng"] as const;
+    }
+    expect(Misspelled).to.be.a("function");
+  });
+
+  it("completes once the flow's steps are done", async () => {
+    const el = mount(async () => {});
 
     const completed = await oneEvent(el, "install-complete");
     await el.updateComplete;
 
-    expect(completed.detail).to.deep.equal({ ipAddress: "192.0.2.50" });
+    expect(completed.detail).to.equal(null);
     expect(layoutOf(el).stage).to.equal("complete");
     expect(layoutOf(el).progress).to.equal(100);
   });
@@ -156,7 +159,6 @@ describe("vm-progress-view", () => {
       const el = mount(
         async () => {
           ran = true;
-          return {};
         },
         {
           error: ipcError("test_blocked", "Blocked", false),
@@ -164,9 +166,9 @@ describe("vm-progress-view", () => {
         }
       );
 
-      expect(el.hasError).to.be.true;
       expect(errors).to.equal(1);
       await el.updateComplete;
+      expect(showsError(el)).to.be.true;
       expect(layoutOf(el).error).to.equal("Nothing to install with");
 
       el.retry();
@@ -193,13 +195,62 @@ describe("vm-progress-view", () => {
 
     const failedAgain = oneEvent(el, "install-error");
     el.retry();
-    expect(el.hasError).to.be.false;
     expect((await failedAgain).detail.retryable).to.be.false;
 
     el.retry();
     await settle();
     expect(runs).to.equal(2);
     expect(stages).to.deep.equal(["downloading", "downloading"]);
+  });
+
+  it("clears what the failed attempt got through when it is tried again", async () => {
+    let runs = 0;
+    const el = mount(async (view) => {
+      if (++runs > 1) return new Promise(() => {});
+      await view.runBackendStep(() => Promise.resolve());
+      view.showProgress("downloading", progress(30));
+      view.showProgress("building", { ...progress(60), stage: "creating_vm" });
+      throw ipcError("test_failure", "Test failure", true);
+    });
+    await oneEvent(el, "install-error");
+    await el.updateComplete;
+    const layout = layoutOf(el);
+    expect(layout.bytesProcessed).to.equal(600);
+    expect(layout.totalBytes).to.equal(1000);
+    expect(layout.stageStartBytes).to.equal(600);
+
+    // The new attempt has not reported anything yet
+    el.retry();
+    await el.updateComplete;
+    expect(layout.stage).to.equal("downloading");
+    expect(layout.progress).to.equal(0);
+    expect(layout.bytesProcessed).to.equal(0);
+    expect(layout.totalBytes).to.equal(0);
+    expect(layout.stageStartTime).to.be.null;
+    expect(layout.stageStartBytes).to.equal(0);
+    el.remove();
+  });
+
+  it("starts each backend step with no counts from the one before", async () => {
+    const first = deferred<void>();
+    const el = mount(async (view) => {
+      await view.runBackendStep(() => first.promise);
+      await view.runBackendStep(() => new Promise(() => {}));
+    });
+    await el.updateComplete;
+    el.showProgress("downloading", progress(30));
+    await el.updateComplete;
+    const layout = layoutOf(el);
+    expect(layout.bytesProcessed).to.equal(300);
+
+    first.resolve();
+    await settle();
+    await el.updateComplete;
+    expect(layout.stage).to.equal("downloading");
+    expect(layout.progress).to.equal(0);
+    expect(layout.bytesProcessed).to.equal(0);
+    expect(layout.totalBytes).to.equal(0);
+    el.remove();
   });
 
   it("tells the shell when the install can be stopped, and when left", async () => {
@@ -213,15 +264,15 @@ describe("vm-progress-view", () => {
     const el = mount(async (view, signal) => {
       await view.runBackendStep(() => download.promise);
       view.startStage("building");
-      return { ipAddress: await view.waitForHomeAssistant(signal) };
+      await view.waitForHomeAssistant(signal);
     });
     const stoppable: boolean[] = [];
     const leavable: boolean[] = [];
     el.addEventListener("install-stoppable", (event) =>
-      stoppable.push((event as CustomEvent).detail.stoppable)
+      stoppable.push(event.detail.stoppable)
     );
     el.addEventListener("install-leavable", (event) =>
-      leavable.push((event as CustomEvent).detail.leavable)
+      leavable.push(event.detail.leavable)
     );
 
     await el.updateComplete;
@@ -268,7 +319,6 @@ describe("vm-progress-view", () => {
           attempts.push(attempt);
           return step.promise;
         });
-        return {};
       });
       return { el, steps, attempts, stops, stopped };
     }
@@ -281,7 +331,7 @@ describe("vm-progress-view", () => {
       expect(el.stoppable, "a second stop has nothing to add").to.be.false;
       expect(stopped).to.deep.equal([attempts[0]]);
       await el.updateComplete;
-      expect(layoutOf(el).stageTitle).to.equal("Stopping");
+      expect(layoutOf(el).stopping).to.be.true;
 
       const failed = oneEvent(el, "install-error");
       steps[0].reject(
@@ -302,7 +352,7 @@ describe("vm-progress-view", () => {
 
       expect(el.stoppable).to.be.true;
       await el.updateComplete;
-      expect(layoutOf(el).stageTitle).to.equal("Fetching");
+      expect(layoutOf(el).stopping).to.be.false;
     });
 
     it("leaves a retry alone when an earlier stop request fails late", async () => {
@@ -324,14 +374,14 @@ describe("vm-progress-view", () => {
       stops[0].reject(new Error("IPC unavailable"));
       await settle();
       await el.updateComplete;
-      expect(layoutOf(el).stageTitle).to.equal("Stopping");
+      expect(layoutOf(el).stopping).to.be.true;
       expect(el.stoppable).to.be.false;
     });
   });
 
   for (const leave of ["detached", "a new flow started"]) {
     it(`drops the install's result once ${leave}`, async () => {
-      const result = deferred<Record<string, unknown>>();
+      const result = deferred<void>();
       let signal!: AbortSignal;
       const el = mount((_view, attemptSignal) => {
         signal = attemptSignal;
@@ -345,14 +395,14 @@ describe("vm-progress-view", () => {
       else wizardState.startFlow("vm");
       expect(signal.aborted).to.be.true;
 
-      result.resolve({});
+      result.resolve();
       await settle();
       expect(events).to.deep.equal([]);
-      expect(el.hasError).to.be.false;
+      expect(showsError(el)).to.be.false;
     });
   }
 
-  it("names each stage, and each wait on its own", async () => {
+  it("names each stage, and the waits before Home Assistant answers as one", async () => {
     const download = deferred<void>();
     const built = deferred<void>();
     const address = deferred<string>();
@@ -364,12 +414,7 @@ describe("vm-progress-view", () => {
       await view.runBackendStep(() => download.promise);
       view.startStage("building");
       await built.promise;
-      return {
-        ipAddress: await view.waitForHomeAssistant(
-          signal,
-          () => address.promise
-        ),
-      };
+      await view.waitForHomeAssistant(signal, () => address.promise);
     });
     await el.updateComplete;
     const layout = layoutOf(el);
@@ -383,22 +428,21 @@ describe("vm-progress-view", () => {
     expect(layout.stages.map((stage) => stage.label)).to.deep.equal([
       "Fetching the image",
       "Building the VM",
-      "Waiting for network connection",
-      "Waiting for Home Assistant",
-      "Installing latest Home Assistant",
+      "Starting Home Assistant OS",
+      "Installing Home Assistant",
     ]);
 
     download.resolve();
     await waitUntil(() => layout.stage === "building");
     expect(shown()).to.deep.equal(["building", "Building", "Building the VM"]);
 
-    // The live region announces only the title, so it changes with each wait
+    // Waiting for an address and for Home Assistant are one step
     built.resolve();
-    await waitUntil(() => layout.stage === "waiting");
+    await waitUntil(() => layout.stage === "ready");
     expect(shown()).to.deep.equal([
-      "waiting",
-      "Connecting",
-      "Waiting for network connection",
+      "ready",
+      "Starting",
+      "Starting Home Assistant OS",
     ]);
     // An indeterminate wait has no byte counts to keep a row for
     expect(layout.hideEmptyDetails).to.be.true;
@@ -406,11 +450,11 @@ describe("vm-progress-view", () => {
     expect(!!layout.shadowRoot!.querySelector(".progress-details")).to.be.false;
 
     address.resolve("192.0.2.50");
-    await waitUntil(() => layout.stage === "ready");
+    await waitUntil(() => layout.address !== null);
     expect(shown()).to.deep.equal([
       "ready",
-      "Waiting",
-      "Waiting for Home Assistant",
+      "Starting",
+      "Starting Home Assistant OS",
     ]);
     el.remove();
   });
@@ -418,7 +462,6 @@ describe("vm-progress-view", () => {
   it("shows the backend's progress in whole percent", async () => {
     const el = mount(async (view) => {
       await view.runBackendStep(() => new Promise(() => {}));
-      return {};
     });
     await el.updateComplete;
     const layout = layoutOf(el);

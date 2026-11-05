@@ -123,27 +123,18 @@ pub(super) fn transfer(
                 "Verifying written data...",
             ),
         )?;
-        verify_body(source, device, prefix_size as u64, image_size, progress)
-            .map_err(verification_error)?;
+        verify_body(source, device, prefix_size as u64, image_size, progress)?;
     }
 
     device.rewind().map_err(device_io_error)?;
     device.write_all(&prefix).map_err(device_io_error)?;
     device.sync_all().map_err(device_io_error)?;
     if verify {
-        device
-            .rewind()
-            .map_err(device_io_error)
-            .map_err(verification_error)?;
+        device.rewind().map_err(device_io_error)?;
         let mut actual = vec![0; prefix_size];
-        device
-            .read_exact(&mut actual)
-            .map_err(device_io_error)
-            .map_err(verification_error)?;
+        device.read_exact(&mut actual).map_err(device_io_error)?;
         if actual != prefix {
-            return Err(Error::VerificationFailed(
-                "Data mismatch during verification".into(),
-            ));
+            return Err(Error::DriveVerificationFailed);
         }
     }
     let _ = progress.send(FlashProgress::new(
@@ -161,13 +152,6 @@ pub(super) fn transfer(
         },
     ));
     Ok(())
-}
-
-fn verification_error(error: Error) -> Error {
-    match error {
-        Error::VerificationFailed(_) | Error::DriveDisconnected | Error::Cancelled => error,
-        other => Error::VerificationFailed(other.to_string()),
-    }
 }
 
 fn verify_body(
@@ -192,9 +176,7 @@ fn verify_body(
             .read_exact(&mut actual[..count])
             .map_err(device_io_error)?;
         if expected[..count] != actual[..count] {
-            return Err(Error::VerificationFailed(
-                "Data mismatch during verification".into(),
-            ));
+            return Err(Error::DriveVerificationFailed);
         }
         verified += count as u64;
         if verified - last_progress >= PROGRESS_UPDATE_INTERVAL {
@@ -268,7 +250,9 @@ mod tests {
         bytes: Cursor<Vec<u8>>,
         events: Vec<(&'static str, u64)>,
         corrupt_read_at: Option<u64>,
+        fail_read_at: Option<u64>,
         fail_write_at: Option<u64>,
+        write_error: io::ErrorKind,
         fail_sync: Option<usize>,
         syncs: usize,
     }
@@ -279,7 +263,9 @@ mod tests {
                 bytes: Cursor::new(vec![0xaa; 4 * METADATA_SIZE]),
                 events: Vec::new(),
                 corrupt_read_at: None,
+                fail_read_at: None,
                 fail_write_at: None,
+                write_error: io::ErrorKind::ReadOnlyFilesystem,
                 fail_sync: None,
                 syncs: 0,
             }
@@ -289,6 +275,9 @@ mod tests {
     impl Read for Disk {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             let offset = self.bytes.position();
+            if self.fail_read_at == Some(offset) {
+                return Err(io::Error::other("CRC error"));
+            }
             self.events.push(("read", offset));
             let count = self.bytes.read(buf)?;
             if self.corrupt_read_at == Some(offset) && count > 0 {
@@ -302,7 +291,7 @@ mod tests {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             let offset = self.bytes.position();
             if self.fail_write_at == Some(offset) {
-                return Err(io::ErrorKind::ReadOnlyFilesystem.into());
+                return Err(self.write_error.into());
             }
             self.events.push(("write", offset));
             self.bytes.write(buf)
@@ -404,9 +393,63 @@ mod tests {
             match failure {
                 0 => assert!(matches!(error, Error::WriteProtected)),
                 1 => assert!(matches!(error, Error::DriveDisconnected)),
-                _ => assert!(matches!(error, Error::VerificationFailed(_))),
+                _ => assert!(matches!(error, Error::DriveVerificationFailed)),
             }
         }
+    }
+
+    /// An image that can't be read again once the check seeks back into it
+    struct ReadOnce(File, bool);
+
+    impl Read for ReadOnce {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.1 {
+                return Err(io::Error::other("image gone"));
+            }
+            self.0.read(buf)
+        }
+    }
+
+    impl Seek for ReadOnce {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            self.1 = true;
+            self.0.seek(pos)
+        }
+    }
+
+    #[test]
+    fn failures_of_the_drive_are_not_blamed_on_the_image() {
+        const SIZE: usize = 2 * METADATA_SIZE;
+        fn run(image: &mut (impl Read + Seek), disk: &mut Disk) -> Error {
+            let (tx, _rx) = std::sync::mpsc::channel();
+            transfer(
+                image,
+                disk,
+                SIZE as u64,
+                (4 * METADATA_SIZE) as u64,
+                true,
+                &tx,
+            )
+            .unwrap_err()
+        }
+
+        // Reading the body back fails on the drive
+        let mut disk = Disk::new();
+        disk.fail_read_at = Some(METADATA_SIZE as u64);
+        let error = run(source(SIZE).as_file_mut(), &mut disk);
+        assert!(matches!(error, Error::DriveIo(_)), "{error:?}");
+
+        // The drive reports itself full where it is cleared
+        let mut disk = Disk::new();
+        disk.fail_write_at = Some((3 * METADATA_SIZE) as u64);
+        disk.write_error = io::ErrorKind::StorageFull;
+        let error = run(source(SIZE).as_file_mut(), &mut disk);
+        assert!(matches!(error, Error::DriveIo(_)), "{error:?}");
+
+        // This computer can't read the image again for the check
+        let mut image = ReadOnce(source(SIZE).into_file(), false);
+        let error = run(&mut image, &mut Disk::new());
+        assert!(matches!(error, Error::Io(_)), "{error:?}");
     }
 
     #[test]
@@ -454,7 +497,7 @@ mod tests {
             if flush_failure {
                 assert!(matches!(error, Error::DriveDisconnected));
             } else {
-                assert!(matches!(error, Error::VerificationFailed(_)));
+                assert!(matches!(error, Error::DriveVerificationFailed));
             }
         }
     }

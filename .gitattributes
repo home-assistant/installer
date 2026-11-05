@@ -1,0 +1,2 @@
+# Signed test fixtures must keep their exact bytes.
+crates/hai-core/testdata/** -text

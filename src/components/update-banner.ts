@@ -5,7 +5,8 @@ import {
   installerUpdate,
   type InstallerUpdateState,
 } from "../state/installer-update.js";
-import { openExternalLink, openExternalUrl } from "../utils/external-url.js";
+import { openExternalUrl } from "../utils/external-url.js";
+import { renderExternalLink } from "../utils/external-link.js";
 import { linkStyles } from "../utils/link-styles.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 
@@ -36,10 +37,10 @@ export class UpdateBanner extends LitElement {
         justify-content: space-between;
         gap: 0.5rem 1rem;
         padding: 0.75rem 1rem;
-        border: 1px solid var(--ha-border-color, #e0e0e0);
-        border-radius: var(--ha-small-border-radius, 8px);
-        background-color: var(--ha-card-background, #ffffff);
-        color: var(--ha-text-color, #212121);
+        border: 1px solid var(--ha-border-color);
+        border-radius: var(--ha-small-border-radius);
+        background-color: var(--ha-card-background);
+        color: var(--ha-text-color);
         font-size: 0.875rem;
         line-height: 1.5;
         text-align: left;
@@ -111,12 +112,11 @@ export class UpdateBanner extends LitElement {
         <span role="status">${this._message(state)}</span>
         ${this._renderPercent(state)}
         ${status === "available"
-          ? html`<a
-              class="notes"
-              href=${update.release_url}
-              @click=${openExternalLink}
-              >${localize("components.update_banner.whats_new")}</a
-            >`
+          ? renderExternalLink(
+              update.release_url,
+              localize("components.update_banner.whats_new"),
+              { className: "notes" }
+            )
           : nothing}
       </p>
       <div class="actions">

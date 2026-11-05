@@ -68,8 +68,29 @@ describe("page gutter", () => {
     for (const [name, template] of SCREENS.slice(1, 4)) {
       const el = await fixture<HTMLElement>(template);
       const back = el.shadowRoot!.querySelector(".header wa-button");
-      expect(back?.textContent?.trim(), name).to.equal("← Back");
+      expect(back?.textContent?.replace(/\s+/g, " ").trim(), name).to.equal(
+        "← Back"
+      );
       expect(back!.getAttribute("appearance"), name).to.equal("plain");
+    }
+  });
+
+  it("gives the screens before the flow one title and subtitle", async () => {
+    for (const [name, template] of SCREENS.slice(1, 4)) {
+      const el = await fixture<HTMLElement>(template);
+      const title = getComputedStyle(el.shadowRoot!.querySelector("h1")!);
+      expect([title.fontSize, title.fontWeight], name).to.deep.equal([
+        "28px",
+        "400",
+      ]);
+      // The connection check has a status under its title instead
+      const subtitle = el.shadowRoot!.querySelector(".subtitle");
+      if (!subtitle) continue;
+      const style = getComputedStyle(subtitle);
+      expect(
+        [style.marginTop, style.marginBottom, style.maxWidth],
+        name
+      ).to.deep.equal(["8px", "32px", "500px"]);
     }
   });
 });

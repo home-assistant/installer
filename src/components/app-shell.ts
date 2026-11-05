@@ -7,33 +7,15 @@ import "../views/welcome-view.js";
 import "../views/connection-check-view.js";
 import "../views/path-selection-view.js";
 import "../views/other-options-view.js";
-import "../views/sbc/device-selection-view.js";
-import "../views/sbc/drive-selection-view.js";
-import "../views/sbc/confirmation-view.js";
-import "../views/sbc/wifi-view.js";
-import "../views/sbc/progress-view.js";
-import "../views/sbc/success-view.js";
-import "../views/ha-hardware/device-selection-view.js";
-import "../views/ha-hardware/module-selection-view.js";
-import "../views/ha-hardware/success-view.js";
-import "../views/minipc/setup-method-view.js";
-import "../views/minipc/architecture-selection-view.js";
-import "../views/utm/utm-check-view.js";
-import "../views/utm/utm-configure-view.js";
-import "../views/utm/utm-confirm-view.js";
-import "../views/utm/utm-progress-view.js";
-import "../views/utm/utm-success-view.js";
-import "../views/proxmox/proxmox-connect-view.js";
-import "../views/proxmox/proxmox-configure-view.js";
-import "../views/proxmox/proxmox-confirm-view.js";
-import "../views/proxmox/proxmox-progress-view.js";
-import "../views/proxmox/proxmox-success-view.js";
+import { enabledImportStorageList } from "../views/proxmox/proxmox-success-view.js";
 
 // Import components
 import type { WizardShell } from "./wizard-shell.js";
 import "./wizard-shell.js";
 import {
   wizardStep,
+  type InstallDetour,
+  type InstallStep,
   type WizardStepDefinition,
   type WizardStepView,
 } from "./wizard-steps.js";
@@ -47,13 +29,23 @@ import {
   type WizardFlow,
   type WizardState,
 } from "../state/wizard-state.js";
-import { listBlockDevices, onCloseBlocked, quitAnyway } from "../api/index.js";
+import { WizardStateController } from "../state/wizard-state-controller.js";
+import { writesInstaller } from "../state/ha-hardware.js";
+import {
+  closeApp,
+  listBlockDevices,
+  onCloseBlocked,
+  quitAnyway,
+} from "../api/index.js";
 import {
   clearDriveSelection,
+  driveModelLabel,
   findDrive,
   readDriveSelection,
 } from "../utils/drive-selection.js";
 import { logFrontendError } from "../utils/diagnostics.js";
+import type { HAIEvent } from "../utils/fire-event.js";
+import { homeAssistantUrl } from "../utils/external-url.js";
 
 export type ViewName =
   | "welcome"
@@ -70,7 +62,7 @@ export class AppShell extends LitElement {
       flex-direction: column;
       width: 100%;
       height: 100vh;
-      background-color: var(--ha-background-color, #ffffff);
+      background-color: var(--ha-background-color);
       position: relative;
     }
 
@@ -82,17 +74,18 @@ export class AppShell extends LitElement {
   @state()
   private _currentView: ViewName = "welcome";
 
-  @state()
-  private _wizardState: WizardState = wizardState.getState();
+  private readonly _wizard = new WizardStateController(this);
+
+  private get _wizardState(): WizardState {
+    return this._wizard.state;
+  }
 
   @state()
   private _showConfirmDialog = false;
 
+  /** The install of the step on screen failed, or was stopped */
   @state()
-  private _flashError = false;
-
-  @state()
-  private _vmInstallError = false;
+  private _installError = false;
 
   @state()
   private _installRetryable = false;
@@ -100,6 +93,10 @@ export class AppShell extends LitElement {
   /** The failed install needs a new Proxmox login before it can go on */
   @state()
   private _installReconnect = false;
+
+  /** Choosing differently, like another drive, can fix the failed install */
+  @state()
+  private _installChangeChoice = false;
 
   // What the running `beforeNext` of a step started from: the flow, or the
   // selections. Leaving the flow (or changing a choice) replaces it, so a run
@@ -113,20 +110,21 @@ export class AppShell extends LitElement {
   @state()
   private _showStopDialog = false;
 
-  /** Asks before leaving a VM install that can no longer stop */
+  /** What the open "Stop the installation?" says a stop leaves behind */
+  @state()
+  private _stopMessage = "";
+
+  /** Asks before leaving an install that can no longer stop */
   @state()
   private _showLeaveDialog = false;
 
+  /** Whether the running install can still stop; until it says, it can */
   @state()
-  private _stoppingFlash = false;
+  private _installStoppable = true;
 
-  /** Whether the running VM install can still stop without leaving anything */
+  /** Whether the running install can be left to finish on its own */
   @state()
-  private _vmStoppable = false;
-
-  /** Whether the VM runs and only Home Assistant is awaited */
-  @state()
-  private _vmLeavable = false;
+  private _installLeavable = false;
 
   @state()
   private _showQuitDialog = false;
@@ -137,20 +135,11 @@ export class AppShell extends LitElement {
   @query("confirm-dialog")
   private _confirmDialog?: ConfirmDialog;
 
-  private _unsubscribe?: () => void;
   private _stopCloseListener?: Promise<() => void>;
   private _pendingFlow?: WizardFlow;
 
-  /** The screen the latest single click landed on. */
-  private _clickedScreen?: string;
-
   connectedCallback() {
     super.connectedCallback();
-    // Capturing, so it runs before the controls on the screen
-    this.addEventListener("click", this._onClick, true);
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-    });
     // The backend holds back closing the app while an installation runs
     this._stopCloseListener = onCloseBlocked(() => {
       // One question at a time: quitting is the bigger one
@@ -165,13 +154,15 @@ export class AppShell extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this.removeEventListener("click", this._onClick, true);
-    this._unsubscribe?.();
     void this._stopCloseListener?.then((stop) => stop());
   }
 
   render() {
     const selections = this._wizardState.selections;
+    const address = homeAssistantUrl(selections.ipAddress);
+    // Leaving skips the success view, which reminds of the Import this flow
+    // enabled
+    const importStorages = enabledImportStorageList(selections);
 
     return html`
       ${this._renderView()}
@@ -179,20 +170,20 @@ export class AppShell extends LitElement {
         ?open=${this._showConfirmDialog}
         .driveName=${selections.driveName || ""}
         .drivePath=${selections.drive || ""}
-        .driveModel=${[selections.driveVendor, selections.driveModel]
-          .filter(Boolean)
-          .join(" ")}
+        .driveModel=${driveModelLabel(
+          selections.driveVendor,
+          selections.driveModel
+        )}
         .driveSize=${selections.driveSize}
-        @dialog-cancel=${this._onDialogCancel}
-        @dialog-confirm=${this._onDialogConfirm}
+        .installer=${writesInstaller(selections.deviceConfig?.board)}
+        @dialog-primary=${this._onDialogConfirm}
+        @dialog-secondary=${this._onDialogCancel}
       ></confirm-dialog>
       <info-dialog
         class="stop-dialog"
         ?open=${this._showStopDialog}
         .heading=${localize("components.app_shell.stop_installation_title")}
-        .message=${wizardState.currentStep?.id === "flash"
-          ? localize("components.app_shell.stop_installation_message")
-          : localize("components.app_shell.stop_vm_installation_message")}
+        .message=${this._stopMessage}
         .primaryLabel=${localize("components.app_shell.stop_installation")}
         .secondaryLabel=${localize("components.app_shell.keep_installing")}
         primary-variant="danger"
@@ -203,11 +194,14 @@ export class AppShell extends LitElement {
         class="leave-dialog"
         ?open=${this._showLeaveDialog}
         .heading=${localize("components.app_shell.leave_installation_title")}
-        .message=${localize("components.app_shell.leave_installation_message", {
-          address: this._wizardState.selections.ipAddress
-            ? `http://${this._wizardState.selections.ipAddress}`
-            : "http://homeassistant.local",
-        })}
+        .message=${importStorages
+          ? localize("components.app_shell.leave_installation_import_message", {
+              address,
+              storages: importStorages,
+            })
+          : localize("components.app_shell.leave_installation_message", {
+              address,
+            })}
         .primaryLabel=${localize("components.app_shell.leave_installation")}
         .secondaryLabel=${localize("components.app_shell.keep_waiting")}
         @dialog-primary=${this._onLeaveInstallation}
@@ -233,6 +227,7 @@ export class AppShell extends LitElement {
     switch (this._currentView) {
       case "connection-check":
         return html`<connection-check-view
+          role="main"
           @connection-ready=${this._onConnectionReady}
           @connection-back=${this._onConnectionBack}
         ></connection-check-view>`;
@@ -242,11 +237,13 @@ export class AppShell extends LitElement {
         ></welcome-view>`;
       case "path-selection":
         return html`<path-selection-view
+          role="main"
           @navigate=${this._onNavigate}
           @select-path=${this._onSelectPath}
         ></path-selection-view>`;
       case "other-options":
         return html`<other-options-view
+          role="main"
           @navigate=${this._onNavigate}
         ></other-options-view>`;
       case "wizard":
@@ -259,11 +256,10 @@ export class AppShell extends LitElement {
   }
 
   private _renderWizard() {
-    const currentStep = wizardState.currentStep;
-    const flow = this._wizardState.currentFlow;
-    const step = wizardStep(flow, currentStep?.id);
+    const step = this._step;
+    const install = step?.install;
     const nextDisabled = !this._isReady(step);
-    const nextLabel = this._getNextLabel(currentStep?.id);
+    const nextLabel = this._getNextLabel(step);
     // What Next waits for. It says so and keeps the focus: disabled, it
     // would drop the focus to the page
     const busy = this._isBusy(step)
@@ -272,81 +268,76 @@ export class AppShell extends LitElement {
         ? localize("components.app_shell.checking_drive")
         : undefined;
 
-    // A running flash keeps only Cancel, until it is stopping
-    const flashRunning = currentStep?.id === "flash" && !this._flashError;
-
-    // A running VM install keeps only Cancel, while it can still stop
-    const vmRunning = this._isVmInstallRunning();
-
-    // Determine when to hide the footer's buttons (during active processes)
-    // Once the VM runs, waiting for Home Assistant can take an hour, and
-    // leaving no longer leaves anything half done
+    // A running install keeps only Cancel, while it can stop or be left.
+    // Once a VM runs, waiting for Home Assistant can take an hour, and
+    // leaving no longer leaves anything half done.
+    const running = this._installRunning;
     const hideFooter =
-      (flashRunning && this._stoppingFlash) ||
-      (vmRunning && !this._vmStoppable && !this._vmLeavable);
+      running && !this._installStoppable && !this._installLeavable;
 
-    // Determine when to hide back button. A flash that failed or was stopped
-    // goes back to the confirmation, to change the drive or the Wi-Fi first
+    // Back from an install only once it failed or was stopped, where a choice
+    // can still change. The flow ends on its last step.
+    const last = wizardState.isLastStep;
     const hideBack =
-      flashRunning ||
-      currentStep?.id === "success" ||
-      (flow === "vm" && currentStep?.id === "install") ||
-      (flow === "proxmox" && currentStep?.id === "install");
+      last ||
+      !!step?.noBack ||
+      (!!install && (running || !install.backAfterError));
 
-    // Done already returns to the start, so Cancel would only repeat it
-    const hideCancel = currentStep?.id === "success";
-
-    // Determine when to hide next button
     const hideNext =
-      flashRunning ||
-      vmRunning ||
-      currentStep?.id === "method" ||
-      (currentStep?.id === "install" && this._installStuck());
+      running ||
+      !!step?.pickToContinue ||
+      (!!install && this._installError && this._installStuck(install));
 
     return html`
       <wizard-shell
+        .flowTitle=${this._flowTitle(this._wizardState.currentFlow)}
         .nextDisabled=${nextDisabled}
         .nextBusy=${!!busy}
         .nextLabel=${busy ?? nextLabel}
         .hideFooter=${hideFooter}
         .hideBack=${hideBack}
         .hideNext=${hideNext}
-        .hideCancel=${hideCancel}
+        .cancelLabel=${last
+          ? localize("components.app_shell.start_over")
+          : localize("common.cancel")}
         @wizard-cancel=${this._onWizardCancel}
         @wizard-back=${this._onWizardBack}
-        @wizard-exit=${this._onWizardExit}
+        @wizard-exit=${this._exitFlow}
         @wizard-next=${this._onWizardNext}
-        @flash-complete=${this._onFlashComplete}
-        @flash-error=${this._onFlashError}
-        @flash-stop-failed=${this._onFlashStopFailed}
         @install-stoppable=${this._onInstallStoppable}
         @install-leavable=${this._onInstallLeavable}
-        @install-complete=${this._onVmInstallComplete}
-        @install-error=${this._onVmInstallError}
+        @install-complete=${this._onInstallComplete}
+        @install-error=${this._onInstallError}
       >
         ${step?.render() ?? nothing}
       </wizard-shell>
     `;
   }
 
-  private _getNextLabel(stepId: string | undefined): string {
-    if (stepId === "flash" && this._flashError) {
-      return this._installRetryable
-        ? localize("common.try_again")
-        : localize("components.app_shell.choose_another_drive");
+  private _flowTitle(flow: WizardFlow | null): string {
+    if (!flow) return "";
+    const titles: Record<WizardFlow, string> = {
+      sbc: localize("common.raspberry_pi_other_boards"),
+      minipc: localize("common.generic_mini_pc"),
+      "ha-hardware": localize("common.home_assistant_hardware"),
+      proxmox: localize("common.proxmox_server"),
+      vm: localize("common.virtual_machine"),
+    };
+    return titles[flow];
+  }
+
+  private _getNextLabel(step: WizardStepDefinition | undefined): string {
+    if (step?.install && this._installError) {
+      return (
+        this._installDetour(step.install)?.label ?? localize("common.try_again")
+      );
     }
-    if (stepId === "install" && this._vmInstallError) {
-      return this._installReconnect
-        ? localize("proxmox.reconnect")
-        : localize("common.try_again");
+    if (wizardState.isLastStep) {
+      return localize("components.app_shell.close");
     }
-    if (stepId === "confirm") {
-      return localize("common.install");
-    }
-    if (stepId === "success") {
-      return localize("common.done");
-    }
-    return localize("common.next");
+    return (
+      step?.nextLabel?.(this._wizardState.selections) ?? localize("common.next")
+    );
   }
 
   private _isReady(step: WizardStepDefinition | undefined): boolean {
@@ -368,39 +359,26 @@ export class AppShell extends LitElement {
     );
   }
 
+  /** The definition of the step on screen. */
+  private get _step(): WizardStepDefinition | undefined {
+    return wizardStep(
+      this._wizardState.currentFlow,
+      wizardState.currentStep?.id,
+      this._wizardState.selections
+    );
+  }
+
   /** The view of the current step, the wizard shell's only child. */
   private get _stepView(): WizardStepView | null {
     return (this._wizardShell?.firstElementChild ??
       null) as WizardStepView | null;
   }
 
-  /** What is on screen: the view, and in the wizard, its step. */
-  private get _screen(): string {
-    return this._currentView === "wizard"
-      ? `wizard/${wizardState.currentStep?.id}`
-      : this._currentView;
-  }
-
-  // A click that changes the screen does so before the second click of a
-  // double-click arrives, so that one would act on whatever the next screen
-  // has in the same spot: Back on the first step and then Back on the path
-  // selection went all the way to the welcome screen, and Next on a
-  // configured VM went past its confirmation into the install. `detail`
-  // counts the clicks; keyboard activation reports 0.
-  private _onClick = (event: MouseEvent) => {
-    if (event.detail < 2) {
-      this._clickedScreen = this._screen;
-    } else if (this._screen !== this._clickedScreen) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-  };
-
-  private _onNavigate(e: CustomEvent<{ view: ViewName }>) {
+  private _onNavigate(e: HAIEvent<"navigate">) {
     this._currentView = e.detail.view;
   }
 
-  private _onSelectPath(e: CustomEvent<{ path: WizardFlow }>) {
+  private _onSelectPath(e: HAIEvent<"select-path">) {
     this._resetErrorState();
     this._pendingFlow = e.detail.path;
     this._currentView = "connection-check";
@@ -419,95 +397,113 @@ export class AppShell extends LitElement {
   }
 
   private _onWizardCancel() {
-    // A running flash is stopped first, never just left behind
-    if (wizardState.currentStep?.id === "flash" && !this._flashError) {
-      this._showStopDialog = true;
-      return;
-    }
-    if (this._isVmInstallRunning()) {
-      if (this._vmStoppable) this._showStopDialog = true;
-      else if (this._vmLeavable) this._showLeaveDialog = true;
-      // Otherwise Cancel showed, but the install moved on to creating the VM
+    // Once the flow is done, the same button starts over
+    if (wizardState.isLastStep) {
+      this._startOver();
       return;
     }
 
-    this._resetErrorState();
-    wizardState.reset();
-    this._currentView = "welcome";
+    // A running install is stopped or left first, never just dropped
+    if (this._installRunning) {
+      if (this._installStoppable) {
+        this._stopMessage =
+          this._step?.install?.stopMessage(this._wizardState.selections) ?? "";
+        this._showStopDialog = true;
+      } else if (this._installLeavable) {
+        this._showLeaveDialog = true;
+      }
+      // Otherwise Cancel showed, but the install moved on past where it can
+      // stop, like to creating the VM
+      return;
+    }
+
+    this._exitFlow();
   }
 
   /**
-   * Back from a failed or stopped flash leaves its error behind. Install on
-   * the confirmation then checks the drive and asks before erasing it again.
+   * Back from a failed or stopped install leaves its error behind. Install
+   * on the confirmation then checks the drive and asks before erasing it
+   * again.
    */
   private _onWizardBack() {
     this._resetErrorState();
   }
 
-  /** Back on the first step returns to where the flow was picked. */
-  private _onWizardExit() {
+  /**
+   * Back on the first step, Cancel and leaving a running VM return to where
+   * the flow was picked. The welcome screen has nothing new by then.
+   */
+  private _exitFlow() {
     this._resetErrorState();
     wizardState.reset();
     this._currentView = "path-selection";
   }
 
-  /** A stale error flag would show Cancel/"Try again" over the next live write. */
+  private _startOver() {
+    this._resetErrorState();
+    wizardState.reset();
+    this._currentView = "welcome";
+  }
+
+  private _close() {
+    closeApp().catch(logFrontendError);
+  }
+
+  /** Stale flags would show "Try again", or no Cancel, over the next install. */
   private _resetErrorState() {
-    this._stoppingFlash = false;
-    this._vmStoppable = false;
-    this._vmLeavable = false;
-    this._flashError = false;
-    this._vmInstallError = false;
+    this._installStoppable = true;
+    this._installLeavable = false;
+    this._installError = false;
     this._installRetryable = false;
     this._installReconnect = false;
+    this._installChangeChoice = false;
+  }
+
+  /** Whether the step on screen runs an install that has not failed. */
+  private get _installRunning(): boolean {
+    return !!this._step?.install && !this._installError;
+  }
+
+  /**
+   * Where Next leads from the failed `install` instead of trying it again:
+   * to log in again, or to the choice that failed it, like the drive. A
+   * failure no choice fixes, like an unexpected response, leads nowhere.
+   */
+  private _installDetour(install: InstallStep): InstallDetour | undefined {
+    if (this._installReconnect) return install.reconnect?.();
+    if (this._installRetryable || !this._installChangeChoice) return undefined;
+    return install.changeChoice?.(this._wizardState.selections);
   }
 
   /** Whether the failed install can neither be tried again nor resumed. */
-  private _installStuck(): boolean {
-    return (
-      (this._flashError || this._vmInstallError) &&
-      !this._installRetryable &&
-      !this._installReconnect
-    );
+  private _installStuck(install: InstallStep): boolean {
+    return !this._installRetryable && !this._installDetour(install);
   }
 
   private async _onWizardNext() {
-    const currentStep = wizardState.currentStep;
-    const flow = this._wizardState.currentFlow;
+    const step = this._step;
 
-    if (currentStep?.id === "install" && this._installStuck()) return;
-
-    // Handle retry on flash error
-    if (currentStep?.id === "flash" && this._flashError) {
-      this._flashError = false;
-      if (!this._installRetryable) {
-        this._goToStep("drive");
-        return;
+    if (step?.install && this._installError) {
+      const detour = this._installDetour(step.install);
+      if (detour) {
+        // Log in again and carry on, or change the choice that failed
+        this._resetErrorState();
+        this._goToStep(detour.step);
+      } else if (this._installRetryable) {
+        this._installError = false;
+        this._stepView?.retry?.();
       }
-      this._stepView?.retry?.();
+      // Otherwise Next is hidden: there is nothing to try again
       return;
     }
 
-    // A Proxmox session that stopped working: log in again, then carry on
-    if (currentStep?.id === "install" && this._installReconnect) {
-      this._resetErrorState();
-      this._goToStep("connection");
-      return;
-    }
-
-    // Handle retry on a UTM or Proxmox install error
-    if (currentStep?.id === "install" && this._vmInstallError) {
-      this._vmInstallError = false;
-      this._stepView?.retry?.();
-      return;
-    }
-
-    const step = wizardStep(flow, currentStep?.id);
+    // Next takes no clicks while it isn't ready, and a step that goes on when
+    // a card is picked has none, but the step must never proceed meanwhile
+    if (!this._isReady(step)) return;
     if (step?.beforeNext) {
-      // Next takes no clicks while it isn't ready or is busy, but the step
-      // must never proceed meanwhile, whatever triggered the event
+      // The same goes for while Next is busy, whatever triggered the event
       const view = this._stepView;
-      if (!view || this._isBusy(step) || !this._isReady(step)) return;
+      if (!view || this._isBusy(step)) return;
       const token = this._pendingToken(step);
       this._pendingNext = token;
       try {
@@ -520,12 +516,8 @@ export class AppShell extends LitElement {
       }
     }
 
-    // Show confirmation dialog before proceeding from confirm step (only for
-    // the flows that write a drive)
-    if (
-      currentStep?.id === "confirm" &&
-      (flow === "sbc" || flow === "minipc" || flow === "ha-hardware")
-    ) {
+    // Check the drive is still there, then ask before erasing it
+    if (step?.erasesDrive?.(this._wizardState.selections)) {
       // Next is busy with this already, whatever else sent the event
       if (this._verifyingDrive) return;
       if (!(await this._verifySelectedDrive())) {
@@ -541,10 +533,7 @@ export class AppShell extends LitElement {
       : -1;
 
     if (wizardState.isLastStep) {
-      // Flow complete - go back to welcome
-      this._resetErrorState();
-      wizardState.reset();
-      this._currentView = "welcome";
+      this._close();
     } else if (skipIndex >= 0) {
       wizardState.goToStep(skipIndex);
     } else {
@@ -655,31 +644,6 @@ export class AppShell extends LitElement {
     wizardState.nextStep();
   }
 
-  private _onFlashComplete() {
-    this._showStopDialog = false;
-    this._showQuitDialog = false;
-    this._stoppingFlash = false;
-    // The password is on the drive now; the success step needs only the name
-    const wifi = this._wizardState.selections.wifi;
-    if (wifi)
-      wizardState.setSelection("wifi", { ssid: wifi.ssid, password: "" });
-    // Advance to success/done step after flash completes
-    wizardState.nextStep();
-  }
-
-  private _onFlashError(event: CustomEvent<{ retryable?: boolean }>) {
-    this._showStopDialog = false;
-    this._showQuitDialog = false;
-    this._stoppingFlash = false;
-    this._installRetryable = event.detail?.retryable === true;
-    this._flashError = true;
-  }
-
-  /** The stop request never reached the backend: the flash keeps going. */
-  private _onFlashStopFailed() {
-    this._stoppingFlash = false;
-  }
-
   private _onKeepInstalling() {
     this._showStopDialog = false;
   }
@@ -688,9 +652,7 @@ export class AppShell extends LitElement {
     // Leaving detaches the progress view, which stops its waiting; the VM
     // and Home Assistant carry on
     this._showLeaveDialog = false;
-    this._resetErrorState();
-    wizardState.reset();
-    this._currentView = "welcome";
+    this._exitFlow();
   }
 
   private _onKeepWaiting() {
@@ -699,60 +661,38 @@ export class AppShell extends LitElement {
 
   private _onStopInstallation() {
     this._showStopDialog = false;
-    if (this._isVmInstallRunning()) {
-      this._stopVmInstall();
-      return;
-    }
-
-    // The flash may have ended while the dialog was open
-    if (wizardState.currentStep?.id !== "flash" || this._flashError) return;
-
-    const progressView = this._stepView;
-    if (!progressView?.stop) return;
-
-    this._stoppingFlash = true;
-    progressView.stop();
+    // The install may have ended while the dialog was open. It does nothing
+    // once it moved past where it can stop.
+    if (this._installRunning) this._stepView?.stop?.();
   }
 
-  /** Whether a UTM or Proxmox install runs, and has not failed. */
-  private _isVmInstallRunning(): boolean {
-    if (wizardState.currentStep?.id !== "install") return false;
-
-    const flow = this._wizardState.currentFlow;
-    return (flow === "vm" || flow === "proxmox") && !this._vmInstallError;
-  }
-
-  private _stopVmInstall() {
-    // Does nothing once the install moved past where it can stop
-    this._stepView?.stop?.();
-  }
-
-  private _onInstallStoppable(event: CustomEvent<{ stoppable: boolean }>) {
-    this._vmStoppable = event.detail.stoppable;
+  private _onInstallStoppable(event: HAIEvent<"install-stoppable">) {
+    this._installStoppable = event.detail.stoppable;
     // The install moved past where it can stop: there is nothing to ask
-    if (!this._vmStoppable && this._isVmInstallRunning()) {
+    if (!this._installStoppable && this._installRunning) {
       this._showStopDialog = false;
     }
   }
 
-  private _onInstallLeavable(event: CustomEvent<{ leavable: boolean }>) {
-    this._vmLeavable = event.detail.leavable;
-    if (!this._vmLeavable) this._showLeaveDialog = false;
+  private _onInstallLeavable(event: HAIEvent<"install-leavable">) {
+    this._installLeavable = event.detail.leavable;
+    if (!this._installLeavable) this._showLeaveDialog = false;
   }
 
-  private _onVmInstallComplete() {
+  private _onInstallComplete() {
     // The install ended, so there is nothing left to stop, leave or quit,
     // whether or not the view said so first
     this._showStopDialog = false;
     this._showLeaveDialog = false;
     this._showQuitDialog = false;
-    // Advance to success step after the UTM or Proxmox install completes
+    // The password is on the drive now; the success step needs only the name
+    const wifi = this._wizardState.selections.wifi;
+    if (wifi)
+      wizardState.setSelection("wifi", { ssid: wifi.ssid, password: "" });
     wizardState.nextStep();
   }
 
-  private _onVmInstallError(
-    event: CustomEvent<{ retryable?: boolean; reconnect?: boolean }>
-  ) {
+  private _onInstallError(event: HAIEvent<"install-error">) {
     // The install ended, so there is nothing left to stop, leave or quit,
     // whether or not the view said so first
     this._showStopDialog = false;
@@ -760,12 +700,17 @@ export class AppShell extends LitElement {
     this._showQuitDialog = false;
     this._installRetryable = event.detail?.retryable === true;
     this._installReconnect = event.detail?.reconnect === true;
-    this._vmInstallError = true;
+    this._installChangeChoice = event.detail?.changeChoice === true;
+    this._installError = true;
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
     "app-shell": AppShell;
+  }
+
+  interface HAIEvents {
+    navigate: { view: ViewName };
   }
 }

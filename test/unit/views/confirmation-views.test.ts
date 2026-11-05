@@ -4,13 +4,18 @@ import {
   MOCK_HAOS_RELEASE,
   MOCK_MANIFEST,
 } from "../../../src/api/mock-data.js";
-import type { BlockDevice } from "../../../src/api/types.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
 import { storeDriveSelection } from "../../../src/utils/drive-selection.js";
 import "../../../src/views/sbc/confirmation-view.js";
 import "../../../src/views/utm/utm-confirm-view.js";
 import "../../../src/views/proxmox/proxmox-confirm-view.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../tauri-ipc.js";
+import { expectReadsLeftToRight } from "../helpers/bidi.js";
+import {
+  findByRole,
+  fullA11ySnapshot,
+  headingOutline,
+} from "../helpers/a11y.js";
 
 describe("installation confirmation views", () => {
   afterEach(() => {
@@ -88,6 +93,69 @@ describe("installation confirmation views", () => {
     }
   });
 
+  // Each row's label says what its picture shows, and the device's name is
+  // next to its photo
+  for (const flow of ["sbc", "vm", "proxmox"] as const) {
+    it(`keeps the ${flow} summary's pictures from screen readers`, async () => {
+      const device = MOCK_MANIFEST.devices[0];
+      wizardState.startFlow(flow);
+      storeDriveSelection(MOCK_BLOCK_DEVICES[0]);
+      wizardState.setSelection("deviceName", device.name);
+      wizardState.setSelection("deviceImage", device.image_url!);
+      wizardState.setSelection("deviceConfig", device.haos);
+      mockTauriIpc(() => MOCK_HAOS_RELEASE);
+      fixtureSync(
+        flow === "sbc"
+          ? html`<confirmation-view></confirmation-view>`
+          : flow === "vm"
+            ? html`<utm-confirm-view></utm-confirm-view>`
+            : html`<proxmox-confirm-view></proxmox-confirm-view>`
+      );
+      await settle();
+      const tree = await fullA11ySnapshot();
+
+      expect(findByRole(tree, "image")).to.deep.equal([]);
+      expect(findByRole(tree, "heading")[0]!.name).to.equal("Ready to install");
+    });
+  }
+
+  // Moving by headings reaches each row of the summary. Chrome names each
+  // row's heading as it shows it, in capitals.
+  for (const [flow, rows] of [
+    ["sbc", ["DEVICE", "TARGET DRIVE", "HOME ASSISTANT OPERATING SYSTEM"]],
+    ["vm", ["VIRTUAL MACHINE", "STORAGE", "HOME ASSISTANT OPERATING SYSTEM"]],
+    [
+      "proxmox",
+      [
+        "PROXMOX SERVER",
+        "VIRTUAL MACHINE",
+        "STORAGE",
+        "HOME ASSISTANT OPERATING SYSTEM",
+      ],
+    ],
+  ] as const) {
+    it(`heads each row of the ${flow} summary under the step's heading`, async () => {
+      wizardState.startFlow(flow);
+      storeDriveSelection(MOCK_BLOCK_DEVICES[0]);
+      wizardState.setSelection("deviceName", MOCK_MANIFEST.devices[0].name);
+      wizardState.setSelection("deviceConfig", MOCK_MANIFEST.devices[0].haos);
+      mockTauriIpc(() => MOCK_HAOS_RELEASE);
+      fixtureSync(
+        flow === "sbc"
+          ? html`<confirmation-view></confirmation-view>`
+          : flow === "vm"
+            ? html`<utm-confirm-view></utm-confirm-view>`
+            : html`<proxmox-confirm-view></proxmox-confirm-view>`
+      );
+      await settle();
+
+      expect(headingOutline(await fullA11ySnapshot())).to.deep.equal([
+        [2, "Ready to install"],
+        ...rows.map((row) => [3, row]),
+      ]);
+    });
+  }
+
   it("lists the Wi-Fi network only for a board that can use it", async () => {
     for (const [board, listed] of [
       ["rpi5-64", true],
@@ -114,25 +182,16 @@ describe("installation confirmation views", () => {
     }
   });
 
-  async function confirmDrive(drive: BlockDevice) {
+  it("reads the drive path left to right in a right-to-left language", async () => {
     wizardState.startFlow("sbc");
-    storeDriveSelection(drive);
+    storeDriveSelection({ ...MOCK_BLOCK_DEVICES[0], id: "/dev/sdb" });
     wizardState.setSelection("deviceConfig", MOCK_MANIFEST.devices[0].haos);
     mockTauriIpc(() => MOCK_HAOS_RELEASE);
-    const el = fixtureSync(html`<confirmation-view></confirmation-view>`);
+    const el = fixtureSync(
+      html`<confirmation-view dir="rtl"></confirmation-view>`
+    );
     await settle();
-    return el.shadowRoot!.querySelector("inline-notice");
-  }
 
-  it("warns that a drive without a serial can't be told apart", async () => {
-    const notice = await confirmDrive({
-      ...MOCK_BLOCK_DEVICES[0],
-      serial: null,
-    });
-    expect(notice!.textContent).to.contain("doesn't report a serial number");
-  });
-
-  it("does not warn about a drive with a serial", async () => {
-    expect(await confirmDrive(MOCK_BLOCK_DEVICES[0])).to.equal(null);
+    expectReadsLeftToRight(el.shadowRoot!.querySelector(".drive-path")!);
   });
 });

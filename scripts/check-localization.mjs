@@ -7,14 +7,12 @@ import ts from "typescript";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 // Tests pass a temporary catalog so negative checks never modify source files.
-const catalog = JSON.parse(
-  fs.readFileSync(
-    process.argv[2] ?? path.join(root, "src/localization/en.json"),
-    "utf8"
-  )
-);
-const parameters = new Map();
-for (const [key, message] of Object.entries(catalog)) {
+// Its translations are the other JSON files in the same folder.
+const catalogPath =
+  process.argv[2] ?? path.join(root, "src/localization/en.json");
+const read = (filename) => JSON.parse(fs.readFileSync(filename, "utf8"));
+
+function placeholders(key, message) {
   assert.equal(typeof message, "string", `${key}: messages must be plain text`);
   assert(
     !/<\/?[a-z][^>]*>/i.test(message),
@@ -28,25 +26,74 @@ for (const [key, message] of Object.entries(catalog)) {
         Object.values(element.options).forEach((option) => visit(option.value));
     }
   }
-  visit(
-    new IntlMessageFormat(message, "en", undefined, {
+  let ast;
+  try {
+    ast = new IntlMessageFormat(message, "en", undefined, {
       ignoreTag: true,
-    }).getAst()
-  );
+    }).getAst();
+  } catch (error) {
+    assert.fail(`${key}: ${error.message}`);
+  }
+  visit(ast);
+  return [...names].sort();
+}
+
+const parameters = new Map();
+for (const [key, message] of Object.entries(read(catalogPath))) {
+  const names = placeholders(key, message);
   for (const name of names) {
     assert(
       !/^value\d+$/.test(name),
       `${key}: name the {${name}} placeholder after what it holds`
     );
   }
-  parameters.set(key, [...names].sort());
+  parameters.set(key, names);
+}
+
+// A translation may lack keys, but every message it has must fit the English
+for (const filename of fs.readdirSync(path.dirname(catalogPath))) {
+  if (!filename.endsWith(".json") || filename === path.basename(catalogPath))
+    continue;
+  // The app looks a catalog up by its canonical tag, like pt-BR
+  const language = path.basename(filename, ".json");
+  let tag;
+  try {
+    tag = new Intl.Locale(language).baseName;
+  } catch {
+    // Reported below
+  }
+  assert.equal(
+    tag,
+    language,
+    `${filename}: name a catalog after its language tag, like pt-BR.json`
+  );
+  const translation = read(path.join(path.dirname(catalogPath), filename));
+  for (const [key, message] of Object.entries(translation)) {
+    assert(parameters.has(key), `${filename}: unknown key ${key}`);
+    // An export can list untranslated keys with empty text
+    if (typeof message === "string" && !message.trim()) continue;
+    assert.deepEqual(
+      placeholders(`${filename}: ${key}`, message),
+      parameters.get(key),
+      `${filename}: ${key} placeholder mismatch`
+    );
+  }
 }
 
 // A key under a file's namespace (views.sbc.success_view.title for
 // src/views/sbc/success-view.ts) belongs to that file. In Lokalise the key is
 // a translator's main hint where a string appears; one shared by several
-// screens goes under common.* instead.
-const FILE_NAMESPACES = ["views.", "components.", "utils.", "api."];
+// screens goes under common.* instead, and the Rust code names backend.*.
+// Every key starts with one of these, so none escapes the rule.
+const FILE_NAMESPACES = ["views.", "components.", "utils.", "api.", "state."];
+for (const key of parameters.keys()) {
+  assert(
+    ["common.", "backend.", ...FILE_NAMESPACES].some((prefix) =>
+      key.startsWith(prefix)
+    ),
+    `${key}: unknown namespace. Use the namespace of the file that uses it, or common.* when several screens share it`
+  );
+}
 // Tests pass a temporary source folder to check a misplaced key.
 const sourceRoot = process.argv[3] ?? path.join(root, "src");
 function fileNamespace(filename) {
@@ -56,6 +103,17 @@ function fileNamespace(filename) {
     .split(path.sep)
     .map((part) => part.replaceAll("-", "_"))
     .join(".");
+}
+
+// Code that runs when the module loads cannot localize: the text would be
+// fixed before the language is known and never follow a change of it.
+// Functions and instance fields run later, once the app is up.
+function runsLater(node) {
+  return (
+    ts.isFunctionLike(node) ||
+    (ts.isPropertyDeclaration(node) &&
+      !(ts.getCombinedModifierFlags(node) & ts.ModifierFlags.Static))
+  );
 }
 
 const used = new Set();
@@ -73,7 +131,7 @@ function walk(directory) {
       ts.ScriptTarget.Latest,
       true
     );
-    function visit(node) {
+    function visit(node, deferred = false) {
       if (
         ts.isCallExpression(node) &&
         ts.isIdentifier(node.expression) &&
@@ -83,6 +141,10 @@ function walk(directory) {
         assert(
           key && ts.isStringLiteral(key),
           `${filename}: localization keys must be static`
+        );
+        assert(
+          deferred,
+          `${filename}: ${key.text} is localized when the module loads. Localize when the text is shown, in render() or in a function it calls`
         );
         assert(
           parameters.has(key.text),
@@ -123,7 +185,9 @@ function walk(directory) {
         );
         used.add(key.text);
       }
-      ts.forEachChild(node, visit);
+      ts.forEachChild(node, (child) => {
+        visit(child, deferred || runsLater(node));
+      });
     }
     visit(source);
   }

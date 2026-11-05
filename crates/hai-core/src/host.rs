@@ -1,10 +1,10 @@
 //! Host system queries and Home Assistant reachability checks.
 //!
-//! Used by the VM flows to size a new VM and to poll a freshly started
-//! Home Assistant instance, and Supervisor's progress installing it.
+//! Used by the VM flows to size a new VM, and by every flow to poll a freshly
+//! started Home Assistant instance, and Supervisor's progress installing it.
 
 use crate::error::Result;
-use crate::types::{HaSetupProblem, HaSetupStatus, SystemInfo};
+use crate::types::{HaAnnouncement, HaSetupProblem, HaSetupStatus, SystemInfo};
 use crate::{Backend, HostBackend};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -12,12 +12,14 @@ use std::net::Ipv4Addr;
 use std::sync::LazyLock;
 use std::time::Duration;
 
-/// Whether a VM's guest reported `ip` for a network the host can reach.
+/// Whether a VM's guest reported `ip` for a network the host can reach, or a
+/// device announced it for one.
 ///
 /// Home Assistant OS also gives its own Docker networks an address: the
 /// Supervisor's `hassio` bridge (172.30.32.0/23) and `docker0`
 /// (172.30.232.0/23). Only the VM itself can reach them, and the guest lists
-/// them while its LAN interface is still waiting for a DHCP lease.
+/// them while its LAN interface is still waiting for a DHCP lease. Older
+/// landing pages announce them too.
 pub(crate) fn is_reachable_vm_address(ip: Ipv4Addr) -> bool {
     let [a, b, c, _] = ip.octets();
     let haos_internal = a == 172 && b == 30 && matches!(c, 32 | 33 | 232 | 233);
@@ -272,6 +274,10 @@ impl HostBackend for Backend {
     async fn ha_setup_status(&self, ip: &str) -> Option<HaSetupStatus> {
         ha_setup_status(ip).await
     }
+
+    async fn find_home_assistants(&self) -> Result<Vec<HaAnnouncement>> {
+        crate::discovery::find_home_assistants().await
+    }
 }
 
 #[cfg(test)]
@@ -301,69 +307,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_check_ha_ready_success() {
-        let mut server = Server::new_async().await;
-        let mock = server
-            .mock("GET", "/")
-            .with_status(200)
-            .create_async()
-            .await;
+    async fn test_check_ha_ready_and_updated() {
+        // "/" is the ready check, "/manifest.json" the updated one
+        for (path, status, expected) in [
+            ("/", 200, true),
+            ("/", 404, true),
+            ("/", 502, false),
+            ("/manifest.json", 200, true),
+            ("/manifest.json", 404, false),
+        ] {
+            let mut server = Server::new_async().await;
+            let mock = server
+                .mock("GET", path)
+                .with_status(status)
+                .create_async()
+                .await;
 
-        assert!(check_ha_ready(&server.host_with_port()).await);
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_check_ha_ready_404_is_ready() {
-        let mut server = Server::new_async().await;
-        let mock = server
-            .mock("GET", "/")
-            .with_status(404)
-            .create_async()
-            .await;
-
-        assert!(check_ha_ready(&server.host_with_port()).await);
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_check_ha_ready_5xx_is_not_ready() {
-        let mut server = Server::new_async().await;
-        let mock = server
-            .mock("GET", "/")
-            .with_status(502)
-            .create_async()
-            .await;
-
-        assert!(!check_ha_ready(&server.host_with_port()).await);
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_check_ha_updated_success() {
-        let mut server = Server::new_async().await;
-        let mock = server
-            .mock("GET", "/manifest.json")
-            .with_status(200)
-            .with_body(r#"{"version": "2023.12.0"}"#)
-            .create_async()
-            .await;
-
-        assert!(check_ha_updated(&server.host_with_port()).await);
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_check_ha_updated_404_is_not_updated() {
-        let mut server = Server::new_async().await;
-        let mock = server
-            .mock("GET", "/manifest.json")
-            .with_status(404)
-            .create_async()
-            .await;
-
-        assert!(!check_ha_updated(&server.host_with_port()).await);
-        mock.assert_async().await;
+            let host = server.host_with_port();
+            let answer = match path {
+                "/" => check_ha_ready(&host).await,
+                _ => check_ha_updated(&host).await,
+            };
+            assert_eq!(answer, expected, "{path} {status}");
+            mock.assert_async().await;
+        }
     }
 
     /// Answer a landing page path with a Supervisor reply holding `data`.

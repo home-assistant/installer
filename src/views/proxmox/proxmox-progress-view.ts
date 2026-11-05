@@ -34,6 +34,14 @@ function isBackendStage(stage: FlashStage): stage is BackendStage {
   return (BACKEND_STAGES as readonly FlashStage[]).includes(stage);
 }
 
+/** A missing session, answered like an expired one: by logging in again */
+const NO_SESSION = {
+  code: SESSION_EXPIRED,
+  message: "",
+  retryable: false,
+  details: {},
+};
+
 /**
  * Whether a failed VM status request cannot succeed by asking again.
  *
@@ -54,13 +62,13 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
   protected readonly _stages = BACKEND_STAGES;
 
   /** Past these, the VM exists, and the install runs to the end */
-  protected readonly _stoppableStages = [
+  protected readonly _stoppableStages: readonly BackendStage[] = [
     "downloading",
     "extracting",
     "uploading",
   ];
 
-  protected readonly _measurableStages = [
+  protected readonly _measurableStages: readonly BackendStage[] = [
     "downloading",
     "extracting",
     "uploading",
@@ -75,14 +83,8 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
   protected _startFailure() {
     if (this._wizardState.selections.proxmoxSession) return undefined;
 
-    // Answered like an expired one: by logging in again
     return {
-      error: {
-        code: SESSION_EXPIRED,
-        message: "",
-        retryable: false,
-        details: {},
-      },
+      error: NO_SESSION,
       message: localize(
         "views.proxmox.proxmox_progress_view.no_proxmox_session_available"
       ),
@@ -91,8 +93,10 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
 
   protected async _install(signal: AbortSignal) {
     const selections = this._wizardState.selections;
-    // `_startFailure` holds back an install without one
-    const session = selections.proxmoxSession!;
+    const session = selections.proxmoxSession;
+    // `_startFailure` holds back an install without one; one that goes
+    // missing anyway is answered the same way, by logging in again
+    if (!session) throw NO_SESSION;
     const config = proxmoxVmConfig(selections);
 
     // Skipped when an earlier attempt already created the VM: running it
@@ -106,28 +110,25 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
     }
 
     const { node, vm_id } = result;
+    const app = "Proxmox";
     await this._waitForHomeAssistant(
       {
-        vmAddress: async () =>
+        address: async () =>
           (await proxmoxGetVmStatus(session, node, vm_id)).ip_address,
         stopOn: needsUserAction,
         messages: {
-          noAddress: localize(
-            "views.proxmox.proxmox_progress_view.no_ip_address"
-          ),
+          noAddress: localize("common.vm.no_ip_address", { app }),
           notResponding: (ipAddress) =>
-            localize("views.proxmox.proxmox_progress_view.not_responding", {
+            localize("common.vm.not_responding", {
               address: ipAddress,
+              app,
             }),
           notUpdated: (address) =>
-            localize("views.proxmox.proxmox_progress_view.update_timeout", {
-              address,
-            }),
+            localize("common.vm.update_timeout", { address }),
         },
       },
       signal
     );
-    return { result };
   }
 
   /** Create and start the VM, reporting the backend's progress */
@@ -173,7 +174,7 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
     // installer: a new install would find its VM ID taken, or leave it
     // behind under another one.
     const halfMade =
-      !this._stoppableStages.includes(this._stage) &&
+      !this._atStoppableStage &&
       !wizardState.getState().selections.proxmoxVmResult;
     const reconnect = needsReconnect(error) && !halfMade;
     if (needsReconnect(error) && halfMade) {
@@ -186,35 +187,17 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
   }
 
   protected _stageTitle(stage: BackendStage): string {
-    switch (stage) {
-      case "downloading":
-        return localize("common.install.downloading");
-      case "extracting":
-        return localize("common.install.extracting");
-      case "uploading":
-        return localize("views.proxmox.proxmox_progress_view.uploading");
-      case "creating_vm":
-        return localize("common.vm.creating");
-      case "starting_vm":
-        return localize("common.vm.starting");
-    }
+    return stage === "uploading"
+      ? localize("views.proxmox.proxmox_progress_view.uploading")
+      : super._stageTitle(stage);
   }
 
   protected _stageDescription(stage: BackendStage): string {
-    switch (stage) {
-      case "downloading":
-        return localize("common.vm.downloading_home_assistant_os");
-      case "extracting":
-        return localize("common.install.extracting_the_image");
-      case "uploading":
-        return localize(
+    return stage === "uploading"
+      ? localize(
           "views.proxmox.proxmox_progress_view.uploading_image_to_proxmox"
-        );
-      case "creating_vm":
-        return localize("common.vm.creating_virtual_machine");
-      case "starting_vm":
-        return localize("common.vm.starting_home_assistant_os");
-    }
+        )
+      : super._stageDescription(stage);
   }
 }
 

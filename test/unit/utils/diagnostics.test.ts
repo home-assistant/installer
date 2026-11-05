@@ -5,8 +5,8 @@ import {
   diagnosticText,
   getDiagnostics,
   InstallDiagnostics,
+  recordFailure,
   reportUrl,
-  REPORT_URL_LIMIT,
   type Diagnostics,
 } from "../../../src/utils/diagnostics.js";
 import { mockTauriIpc, restoreTauriIpc } from "../tauri-ipc.js";
@@ -80,12 +80,43 @@ describe("diagnostics privacy", () => {
     expect(diagnosticFields(await getDiagnostics()).error).to.equal("none");
   });
 
+  it("records a failed load as one failure, without starting an install", async () => {
+    const calls: unknown[] = [];
+    mockTauriIpc(
+      (cmd, args) => {
+        if (cmd === "log_frontend_event") {
+          calls.push(args);
+          return;
+        }
+        if (cmd === "get_diagnostics") return data;
+        throw new Error(cmd);
+      },
+      { includeLogs: true }
+    );
+    recordFailure("utm", new Error("Timed out reading /Users/private-user"));
+    const diagnostics = await getDiagnostics();
+    expect(calls).to.deep.equal([
+      {
+        flow: "utm",
+        stage: "preparing",
+        outcome: "failed",
+        error: "timeout",
+        elapsedMs: 0,
+      },
+    ]);
+    expect(diagnostics.context).to.deep.equal({
+      flow: "utm",
+      stage: "preparing",
+      error: "timeout",
+    });
+  });
+
   it("bounds encoded report URLs and preserves metadata while shortening logs", () => {
     const large = { ...data, log_tail: "😀%&?=".repeat(10000) };
     const report = reportUrl(large);
     const url = new URL(report.url);
     expect(report.shortened).to.be.true;
-    expect(report.url.length).to.be.at.most(REPORT_URL_LIMIT);
+    expect(report.url.length).to.be.at.most(7500);
     expect(url.searchParams.get("version")).to.equal(data.version);
     expect(url.searchParams.get("template")).to.equal("bug_report.yml");
     expect(diagnosticText(large)).to.contain(diagnosticFields(large).logs);

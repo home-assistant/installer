@@ -5,6 +5,7 @@ import { findByRole, fullA11ySnapshot } from "../../helpers/a11y.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import type { ProxmoxConfigureView } from "../../../../src/views/proxmox/proxmox-configure-view.js";
 import "../../../../src/views/proxmox/proxmox-configure-view.js";
+import type { ProxmoxTargetLookup } from "../../../../src/views/proxmox/proxmox-target-lookup.js";
 import {
   deferred,
   mockTauriIpc,
@@ -261,7 +262,9 @@ describe("Proxmox bridge selection", () => {
         throw new Error(`Unexpected command: ${cmd}`);
       });
       const el = await mount();
-      await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
+      await waitUntil(
+        () => !!el.shadowRoot!.querySelector("[data-focus-alert]")
+      );
       await settle();
       expect(wizardState.getState().selections.proxmoxVlanTag).to.equal(42);
       expect(wizardState.getState().selections.proxmoxConfigureReady).to.be
@@ -325,7 +328,7 @@ describe("Proxmox bridge selection", () => {
     let bridges: ProxmoxBridge[] = [];
     mockNetworks(() => bridges);
     const el = await mount();
-    await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
+    await waitUntil(() => !!el.shadowRoot!.querySelector(".error-text"));
     expect(wizardState.getState().selections.proxmoxBridge).to.equal("");
     expect(wizardState.getState().selections.proxmoxBridgeReady).to.be.false;
     expect(
@@ -349,7 +352,7 @@ describe("Proxmox bridge selection", () => {
     ) as HTMLElement & {
       loading: boolean;
     };
-    const alert = el.shadowRoot!.querySelector("[role=alert]")!;
+    const message = el.shadowRoot!.querySelector(".error-text")!;
 
     lookup = deferred<ProxmoxBridge[]>();
     retry.focus();
@@ -359,7 +362,7 @@ describe("Proxmox bridge selection", () => {
     expect(retry.loading).to.be.true;
     expect(el.shadowRoot!.activeElement).to.equal(retry);
     // Empty meanwhile, so the same result is read out again
-    expect(alert.textContent!.trim()).to.equal("");
+    expect(message.textContent!.trim()).to.equal("");
 
     lookup.resolve([bridge("vmbr0")]);
     await ready();
@@ -370,7 +373,7 @@ describe("Proxmox bridge selection", () => {
     );
   });
 
-  it("keeps Try again in place through node discovery and the bridges after it", async () => {
+  it("keeps the node row's Try again in place through node discovery and the bridges after it", async () => {
     let nodes = deferred<unknown>();
     nodes.resolve([]);
     const bridges = deferred<ProxmoxBridge[]>();
@@ -389,12 +392,18 @@ describe("Proxmox bridge selection", () => {
       throw new Error(`Unexpected command: ${cmd}`);
     });
     const el = await mount();
-    await waitUntil(() => !!el.shadowRoot!.querySelector(".bridge-retry"));
-    const retry = el.shadowRoot!.querySelector(
-      ".bridge-retry"
-    ) as HTMLElement & {
+    await waitUntil(() => !!el.shadowRoot!.querySelector(".node-retry"));
+    const retry = el.shadowRoot!.querySelector(".node-retry") as HTMLElement & {
       loading: boolean;
     };
+    // Every render until the lookup is done, even those between its parts
+    const lookup = (el as unknown as { _lookup: ProxmoxTargetLookup })._lookup;
+    let goneWhileLooking = false;
+    el.addController({
+      hostUpdated: () => {
+        if (!retry.isConnected && lookup.loadingNodes) goneWhileLooking = true;
+      },
+    });
 
     nodes = deferred<unknown>();
     retry.focus();
@@ -416,9 +425,10 @@ describe("Proxmox bridge selection", () => {
     await ready();
     await settle();
     await el.updateComplete;
+    expect(goneWhileLooking).to.be.false;
+    // Try again went with the message: the focus goes on to the node found
     expect(
-      el.shadowRoot!.activeElement ===
-        el.shadowRoot!.querySelector("#network-bridge")
+      el.shadowRoot!.activeElement === el.shadowRoot!.querySelector("#node")
     ).to.be.true;
   });
 
@@ -463,14 +473,26 @@ describe("Proxmox bridge selection", () => {
         throw new Error(`Unexpected command: ${cmd}`);
       });
       const el = await mount();
-      await waitUntil(() => !!el.shadowRoot!.querySelector("[role=alert]"));
-      expect(
-        el.shadowRoot!.querySelector("[role=alert]")!.textContent
-      ).to.contain("No online Proxmox nodes found.");
+      await waitUntil(() => !!el.shadowRoot!.querySelector(".error-text"));
+      // Said at the node, the one thing missing, and only there
+      const messages = el.shadowRoot!.querySelectorAll(".error-text");
+      expect(messages).to.have.length(1);
+      expect(messages[0].textContent).to.contain(
+        "No online Proxmox nodes found."
+      );
+      expect(messages[0].closest(".setting-row")!.querySelector("#node")).to
+        .exist;
+      // Nothing to choose from, and no storage or bridge without a node
+      for (const id of ["node", "storage", "network-bridge"]) {
+        expect(
+          el.shadowRoot!.querySelector<HTMLSelectElement>(`#${id}`)!.disabled,
+          id
+        ).to.be.true;
+      }
       expect(wizardState.getState().selections.proxmoxBridgeReady).to.be.false;
       expect(networkRequests).to.equal(0);
       online = true;
-      el.shadowRoot!.querySelector<HTMLElement>("wa-button")!.click();
+      el.shadowRoot!.querySelector<HTMLElement>(".node-retry")!.click();
       await ready();
       expect(nodeRequests).to.equal(2);
       expect(networkRequests).to.equal(1);
@@ -483,7 +505,7 @@ describe("Proxmox bridge selection", () => {
     wizardState.setSelection("proxmoxBridge", "vmbr1");
     mockNetworks(() => Promise.reject("Network lookup failed"));
     const el = await mount();
-    await waitUntil(() => !!el.shadowRoot!.querySelector(".error-text"));
+    await waitUntil(() => !!el.shadowRoot!.querySelector(".error-message"));
     expect(el.shadowRoot!.textContent).to.contain("Network lookup failed");
     expect(wizardState.getState().selections.proxmoxBridge).to.equal("");
     expect(wizardState.getState().selections.proxmoxBridgeReady).to.be.false;
@@ -575,7 +597,9 @@ describe("Proxmox bridge selection", () => {
       () => !!el.shadowRoot!.textContent?.includes("Network lookup failed")
     );
     failBridge = false;
-    await (el as unknown as { _loadStorage(): Promise<void> })._loadStorage();
+    await (
+      el as unknown as { _lookup: { loadStorage(): Promise<void> } }
+    )._lookup.loadStorage();
     await ready();
     await el.updateComplete;
     expect(el.shadowRoot!.textContent).not.to.contain("Network lookup failed");

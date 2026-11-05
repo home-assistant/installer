@@ -94,6 +94,18 @@ describe("vm-resources", () => {
     expect(await descriptions(10)).to.contain("Maximum performance");
   });
 
+  it("keeps the setting icons from screen readers", async () => {
+    await render();
+    const tree = await fullA11ySnapshot();
+
+    expect(findByRole(tree, "image")).to.deep.equal([]);
+    expect(findByRole(tree, "slider").map((node) => node.name)).to.deep.equal([
+      "CPU cores",
+      "Memory",
+      "Disk size",
+    ]);
+  });
+
   it("reads the advice out with each slider, as it changes", async () => {
     const el = await render();
     const descriptions = async () =>

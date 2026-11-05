@@ -1,4 +1,4 @@
-import { expect, fixture, html } from "@open-wc/testing";
+import { expect, fixture, html, waitUntil } from "@open-wc/testing";
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import type { WizardFlow } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/sbc/success-view.js";
@@ -42,8 +42,9 @@ describe("success-view next steps", () => {
     expect(text(el)).to.contain("Ethernet cable to the same network");
     expect(text(el)).to.contain("with internet access");
     expect(text(el)).to.contain("Then connect power");
-    expect(text(el)).to.contain("Preparing Home Assistant page downloads");
-    expect(text(el)).to.contain("Allow about 20 minutes");
+    expect(text(el)).to.contain("Once the device is on, select Next");
+    expect(text(el)).to.contain("installs Home Assistant");
+    expect(text(el)).to.contain("about 20 minutes");
     expect(text(el)).to.contain("Keep power and Ethernet connected");
     expect(text(el)).not.to.contain("Wait a few minutes");
   });
@@ -58,18 +59,24 @@ describe("success-view next steps", () => {
     expect(text(el)).not.to.contain("Keep power and Ethernet connected");
   });
 
-  it("offers hostname and IP access without requiring discovery", async () => {
+  it("says how to start the device, and leaves the rest to the next steps", async () => {
+    const lookups: string[] = [];
+    mockTauriIpc((cmd) => {
+      lookups.push(cmd);
+      return [];
+    });
     const el = await renderSuccess();
-    const link = content(el).querySelector<HTMLAnchorElement>(".step-text a")!;
-    expect(link.href).to.equal("http://homeassistant.local/");
-    expect(text(el)).to.contain(
-      "IP address in your router or on an attached display"
-    );
-    expect(text(el)).to.contain("http://<IP address>");
-    expect(text(el)).not.to.contain(":8123");
-    expect(text(el)).to.contain(
-      "If it still does not open after a few minutes"
-    );
+    // Home Assistant isn't there yet: the steps after this one find it
+    expect(text(el)).to.contain("Almost there!");
+    expect(text(el)).not.to.contain("You're all set!");
+    expect(content(el).querySelector(".step-text a")).to.be.null;
+    expect(text(el)).not.to.contain("Companion App");
+    // Meanwhile, it notes what is on the network before the device starts
+    await waitUntil(() => lookups.length === 2);
+    expect(lookups).to.deep.equal([
+      "find_home_assistants",
+      "find_home_assistants",
+    ]);
   });
 
   it("asks for manual ejection without claiming native ejection succeeded", async () => {

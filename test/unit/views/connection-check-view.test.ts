@@ -9,9 +9,9 @@ import {
   settle,
 } from "../tauri-ipc.js";
 
-/** The alert stays in the DOM, so a failure shows up as its text */
+/** The error stays in the DOM, so a failure shows up as its text */
 const alertText = (el: ConnectionCheckView) =>
-  el.shadowRoot!.querySelector('[role="alert"]')!.textContent!.trim();
+  el.shadowRoot!.querySelector("[data-focus-alert]")!.textContent!.trim();
 
 describe("connection-check-view", () => {
   afterEach(restoreTauriIpc);
@@ -69,7 +69,7 @@ describe("connection-check-view", () => {
     );
     await waitUntil(() => !!alertText(el));
     const status = el.shadowRoot!.querySelector('[role="status"]')!;
-    const alert = el.shadowRoot!.querySelector('[role="alert"]')!;
+    const alert = el.shadowRoot!.querySelector("[data-focus-alert]")!;
     // The failure takes focus, so it is read out
     expect(el.shadowRoot!.activeElement).to.equal(alert);
 
@@ -91,8 +91,43 @@ describe("connection-check-view", () => {
 
     retry.reject(ipcError("network", "Still offline", true));
     await waitUntil(() => !!alertText(el));
-    expect(el.shadowRoot!.querySelector('[role="alert"]')).to.equal(alert);
+    expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.equal(alert);
     expect(status.textContent!.trim()).to.equal("");
+  });
+
+  it("offers installation help and a report once a check has failed", async () => {
+    const retry = deferred<void>();
+    let calls = 0;
+    mockTauriIpc(() =>
+      ++calls === 1
+        ? Promise.reject(ipcError("network", "Offline", true))
+        : retry.promise
+    );
+    const el = await fixture<ConnectionCheckView>(
+      html`<connection-check-view></connection-check-view>`
+    );
+    const help = () => el.shadowRoot!.querySelector(".error-help");
+    // Nothing has failed yet, so there is nothing to get help with
+    expect(help()).to.equal(null);
+
+    await waitUntil(() => !!alertText(el));
+    expect(help()!.querySelector("a")!.getAttribute("href")).to.equal(
+      "https://www.home-assistant.io/installation/"
+    );
+    expect(help()!.textContent).to.contain("Installation help");
+    expect(help()!.querySelector("diagnostics-actions")).to.exist;
+    // Outside the alert, so the focus reads out the failure alone
+    expect(el.shadowRoot!.querySelector("[data-focus-alert] a")).to.equal(null);
+
+    // The help stays while it checks again, as Try again does
+    (
+      el.shadowRoot!.querySelector('wa-button[variant="brand"]') as HTMLElement
+    ).click();
+    await el.updateComplete;
+    expect(alertText(el)).to.equal("");
+    expect(help()).to.exist;
+
+    retry.resolve();
   });
 
   it("does not describe a service failure as offline", async () => {
@@ -137,6 +172,25 @@ describe("connection-check-view", () => {
       expect(ready).to.equal(false);
     });
   }
+
+  it("sends ready and Back up through the page, as the other screens do", async () => {
+    mockTauriIpc(() => Promise.resolve());
+    const heard: string[] = [];
+    const record = (event: Event) => heard.push(event.type);
+    document.addEventListener("connection-ready", record);
+    document.addEventListener("connection-back", record);
+    try {
+      const el = await fixture<ConnectionCheckView>(
+        html`<connection-check-view></connection-check-view>`
+      );
+      await waitUntil(() => heard.length === 1);
+      (el.shadowRoot!.querySelector("wa-button") as HTMLElement).click();
+      expect(heard).to.deep.equal(["connection-ready", "connection-back"]);
+    } finally {
+      document.removeEventListener("connection-ready", record);
+      document.removeEventListener("connection-back", record);
+    }
+  });
 
   it("checks again if a pending element is reconnected", async () => {
     const first = deferred<void>();

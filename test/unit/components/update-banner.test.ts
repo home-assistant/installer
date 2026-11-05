@@ -93,7 +93,7 @@ describe("update-banner", () => {
     expect(el.hidden).to.be.false;
     expect(message(el)).to.contain("2026.12.0");
     const notes = el.shadowRoot!.querySelector<HTMLAnchorElement>("a.notes")!;
-    expect(notes.textContent).to.equal("What's new");
+    expect(notes.textContent).to.equal("What's new Opens in your browser.");
     expect(notes.getAttribute("href")).to.equal(UPDATE.release_url);
     const install = button(el, "install")!;
     expect(install.textContent).to.contain("Update and restart");

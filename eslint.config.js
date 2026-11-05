@@ -2,6 +2,8 @@ import eslint from "@eslint/js";
 import tseslint from "@typescript-eslint/eslint-plugin";
 import tsparser from "@typescript-eslint/parser";
 import litPlugin, { configs as litConfigs } from "eslint-plugin-lit";
+import { configs as wcConfigs } from "eslint-plugin-wc";
+import { configs as litA11yConfigs } from "eslint-plugin-lit-a11y";
 import prettierConfig from "eslint-config-prettier";
 import globals from "globals";
 import chaiFriendly from "eslint-plugin-chai-friendly";
@@ -9,6 +11,8 @@ import chaiFriendly from "eslint-plugin-chai-friendly";
 export default [
   eslint.configs.recommended,
   prettierConfig,
+  wcConfigs["flat/recommended"],
+  litA11yConfigs.recommended,
   {
     files: ["src/**/*.ts", "test/**/*.ts"],
     languageOptions: {
@@ -29,6 +33,9 @@ export default [
     },
     rules: {
       ...tseslint.configs.recommended.rules,
+      // tsc checks names already, and also sees the types a `declare global`
+      // adds, which ESLint takes for undefined
+      "no-undef": "off",
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_" },
@@ -41,6 +48,68 @@ export default [
       ...litConfigs["flat/all"].rules,
       "lit/attribute-value-entities": "off",
       "lit/no-template-map": "off",
+      // WebKit drops a list's semantics once it has list-style: none, so the
+      // styled lists say role="list" on purpose
+      "lit-a11y/no-redundant-role": "off",
+    },
+  },
+  {
+    // styles.css sets every --ha-* theme token, and every page loads it, unit
+    // tests included. A fallback would never show, so nothing would notice it
+    // going stale, as the old HA blue had. --ha-icon-display is no theme
+    // token but ha-svg-icon's own hook, which nothing sets by default.
+    //
+    // The old Home Assistant blue, #03a9f4, is no theme color any more, but
+    // the success screen's tip box kept drawing it as a raw rgba(), which the
+    // fallback rule can't see. It is rejected however it is written.
+    files: ["src/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "TemplateElement[value.raw=/var\\(\\s*--ha-(?!icon-display\\s*,)[\\w-]+\\s*,/]",
+          message:
+            "Use var(--ha-…) without a fallback: src/styles.css sets every theme token.",
+        },
+        {
+          selector:
+            "Literal[value=/var\\(\\s*--ha-(?!icon-display\\s*,)[\\w-]+\\s*,/]",
+          message:
+            "Use var(--ha-…) without a fallback: src/styles.css sets every theme token.",
+        },
+        {
+          selector:
+            "TemplateElement[value.raw=/#03a9f4|rgba?\\(\\s*3[\\s,]+169[\\s,]+244\\b/i]",
+          message:
+            "#03a9f4 is the old Home Assistant blue: take the theme's color from src/styles.css, such as color-mix() on var(--ha-primary-color).",
+        },
+        {
+          selector:
+            "Literal[value=/#03a9f4|rgba?\\(\\s*3[\\s,]+169[\\s,]+244\\b/i]",
+          message:
+            "#03a9f4 is the old Home Assistant blue: take the theme's color from src/styles.css, such as color-mix() on var(--ha-primary-color).",
+        },
+      ],
+    },
+  },
+  {
+    // State is what views read and write, so it can't depend on them, not even
+    // for a type: the dependency would run both ways.
+    files: ["src/state/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/views/**", "**/components/**"],
+              message:
+                "src/state must not import views or components; move what it needs into src/state.",
+            },
+          ],
+        },
+      ],
     },
   },
   {

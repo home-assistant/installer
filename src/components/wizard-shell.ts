@@ -1,14 +1,17 @@
 import { localize } from "../localization/localize.js";
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { customElement, property, query, state } from "lit/decorators.js";
 import {
   wizardState,
   type WizardState,
   type WizardStep,
 } from "../state/wizard-state.js";
+import { WizardStateController } from "../state/wizard-state-controller.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "./step-indicator.js";
 import { pageHeaderStyles } from "../utils/page-header.js";
+import { lowWindow, narrowWindow } from "../utils/breakpoints.js";
+import { fireEvent } from "../utils/fire-event.js";
 import {
   dialogHasFocus,
   focusHeading,
@@ -39,7 +42,7 @@ export class WizardShell extends LitElement {
 
       .header {
         justify-content: space-between;
-        border-bottom: 1px solid var(--ha-border-color, #e0e0e0);
+        border-bottom: 1px solid var(--ha-border-color);
       }
 
       .header-center {
@@ -60,7 +63,7 @@ export class WizardShell extends LitElement {
         min-width: 80px;
       }
 
-      @media (max-width: 600px) {
+      @media ${narrowWindow} {
         .header-right {
           min-width: 0;
         }
@@ -69,15 +72,15 @@ export class WizardShell extends LitElement {
       .content {
         flex: 1;
         overflow-y: auto;
-        padding: 2rem var(--ha-page-gutter, 2rem);
+        padding: 2rem var(--ha-page-gutter);
       }
 
       .footer {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 1rem var(--ha-page-gutter, 2rem);
-        border-top: 1px solid var(--ha-border-color, #e0e0e0);
+        padding: 1rem var(--ha-page-gutter);
+        border-top: 1px solid var(--ha-border-color);
       }
 
       .footer-left {
@@ -88,6 +91,19 @@ export class WizardShell extends LitElement {
       .footer-right {
         display: flex;
         gap: 1rem;
+      }
+
+      /* Thinner on a low window, like the header. Cancel and Next have no
+         step name beside them, so unlike Back they get lower too; their text
+         keeps its size. */
+      @media ${lowWindow} {
+        .footer {
+          padding-block: 0.5rem;
+        }
+
+        .footer wa-button {
+          --wa-form-control-height: 2.25em;
+        }
       }
 
       /* Out of use, the buttons keep their place, so the step doesn't move */
@@ -108,8 +124,27 @@ export class WizardShell extends LitElement {
     `,
   ];
 
+  private readonly _wizard = new WizardStateController(this);
+
+  private get _wizardState(): WizardState {
+    return this._wizard.state;
+  }
+
+  /** Whether the step is larger than the window, so it can be scrolled */
   @state()
-  private _wizardState: WizardState = wizardState.getState();
+  private _scrolls = false;
+
+  private _resizeObserver = new ResizeObserver(() => this._checkScrolling());
+
+  @query(".content")
+  private _content?: HTMLElement;
+
+  @query("slot")
+  private _slot?: HTMLSlotElement;
+
+  /** What is being installed, as the page's main heading */
+  @property({ type: String, attribute: "flow-title" })
+  flowTitle = "";
 
   @property({ type: String, attribute: "next-label" })
   nextLabel = localize("common.next");
@@ -127,25 +162,45 @@ export class WizardShell extends LitElement {
   @property({ type: Boolean, attribute: "hide-next" })
   hideNext = false;
 
-  @property({ type: Boolean, attribute: "hide-cancel" })
-  hideCancel = false;
+  @property({ type: String, attribute: "cancel-label" })
+  cancelLabel = localize("common.cancel");
 
   /** Hides the footer's buttons; the footer itself stays */
   @property({ type: Boolean, attribute: "hide-footer" })
   hideFooter = false;
 
-  private _unsubscribe?: () => void;
-
   connectedCallback() {
     super.connectedCallback();
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-    });
+    // Put back in the page with the same step, the slot doesn't change
+    if (this.hasUpdated) this._observeContent();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._unsubscribe?.();
+    this._resizeObserver.disconnect();
+  }
+
+  // A keyboard can only scroll what it can focus, and some steps have
+  // nothing focusable in them. Only when they overflow, so it isn't an
+  // extra tab stop on every step. A step is at least as tall as the content
+  // area and grows with what it shows, so its size and the area's say when.
+  private _observeContent() {
+    if (!this._content || !this._slot) return;
+    this._resizeObserver.disconnect();
+    this._resizeObserver.observe(this._content);
+    for (const element of this._slot.assignedElements()) {
+      this._resizeObserver.observe(element);
+    }
+  }
+
+  private _checkScrolling() {
+    const content = this._content;
+    // Both are rounded, so at a fractional size the content can measure a
+    // pixel more than its box without scrolling
+    this._scrolls =
+      !!content &&
+      (content.scrollHeight - content.clientHeight > 1 ||
+        content.scrollWidth - content.clientWidth > 1);
   }
 
   protected willUpdate(changed: PropertyValues<this>) {
@@ -177,20 +232,17 @@ export class WizardShell extends LitElement {
     return wizardState.isFirstStep;
   }
 
-  get isLastStep(): boolean {
-    return wizardState.isLastStep;
-  }
-
   render() {
     return html`
-      <div class="header">
+      <header class="header">
         <wa-button
           appearance="plain"
           @click=${this._onBack}
           ?disabled=${this.hideBack}
           style=${this.hideBack ? "visibility: hidden" : ""}
         >
-          <span slot="start">←</span> ${localize("common.back")}
+          <span slot="start" aria-hidden="true">←</span>
+          ${localize("common.back")}
         </wa-button>
 
         <div class="header-center">
@@ -201,19 +253,20 @@ export class WizardShell extends LitElement {
         </div>
 
         <div class="header-right"></div>
-      </div>
+      </header>
 
-      <div class="content">
-        <slot></slot>
-      </div>
+      <main class="content" tabindex=${this._scrolls ? "0" : nothing}>
+        ${this.flowTitle
+          ? html`<h1 class="sr-only">${this.flowTitle}</h1>`
+          : nothing}
+        <slot @slotchange=${this._observeContent}></slot>
+      </main>
 
-      <div class="footer ${this.hideFooter ? "idle" : ""}">
+      <footer class="footer ${this.hideFooter ? "idle" : ""}">
         <div class="footer-left">
-          ${this.hideCancel
-            ? nothing
-            : html`<wa-button appearance="plain" @click=${this._onCancel}>
-                ${localize("common.cancel")}
-              </wa-button>`}
+          <wa-button appearance="plain" @click=${this._onCancel}>
+            ${this.cancelLabel}
+          </wa-button>
         </div>
         <div class="footer-right">
           <!-- A new label on the focused button isn't always read out -->
@@ -234,51 +287,40 @@ export class WizardShell extends LitElement {
               `
             : ""}
         </div>
-      </div>
+      </footer>
     `;
   }
 
   private _onBack() {
     // On the first step, Back leaves the flow for the screen it was picked on
     if (this.isFirstStep) {
-      this.dispatchEvent(
-        new CustomEvent("wizard-exit", {
-          bubbles: true,
-          composed: true,
-        })
-      );
+      fireEvent(this, "wizard-exit");
       return;
     }
     wizardState.previousStep();
-    this.dispatchEvent(
-      new CustomEvent("wizard-back", {
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "wizard-back");
   }
 
   private _onNext() {
-    this.dispatchEvent(
-      new CustomEvent("wizard-next", {
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "wizard-next");
   }
 
   private _onCancel() {
-    this.dispatchEvent(
-      new CustomEvent("wizard-cancel", {
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "wizard-cancel");
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
     "wizard-shell": WizardShell;
+  }
+
+  interface HAIEvents {
+    /** Back on the first step, which leaves the flow */
+    "wizard-exit": undefined;
+    "wizard-back": undefined;
+    /** Next, or a step's view moving on the way Next does */
+    "wizard-next": undefined;
+    "wizard-cancel": undefined;
   }
 }

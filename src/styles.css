@@ -16,7 +16,7 @@
   --ha-background-color: #ffffff;
   --ha-card-background: #ffffff;
   --ha-text-color: #212121;
-  /* Borders, dividers and empty tracks; components used to fall back to these */
+  /* Borders, dividers and empty tracks */
   --ha-border-color: #e0e0e0;
   /* Steps and stages not reached yet. Their rings need 3:1 to the page. */
   --ha-inactive-color: #8c8c8c;
@@ -40,11 +40,25 @@
   --ha-warning-heading-color: var(--ha-text-color);
   --ha-error-background: rgba(219, 68, 55, 0.1);
   --ha-error-border: rgba(219, 68, 55, 0.3);
+  /* A check that passed or needs the user, like UTM found or missing. Like
+   * the error color, 4.5:1 on the page and the cards in either theme. */
+  --ha-success-color: #00883c;
+  --ha-warning-color: #b45f04;
   /* Behind a plain or outlined button that is hovered or pressed */
   --ha-hover-fill: rgba(0, 0, 0, 0.06);
   /* Between the window's edges and the header, content and footer of every
    * screen, so Back, Cancel, Next and the content line up */
   --ha-page-gutter: 2rem;
+  /* The most a screen's content spreads out: the column of cards, panels,
+   * notices and text most screens show; the narrower one of the install
+   * progress; and the wider one of tiles and choices set side by side */
+  --ha-content-width: 500px;
+  --ha-content-narrow-width: 400px;
+  --ha-content-wide-width: 700px;
+  /* Device paths, fingerprints and other text to read character by
+   * character */
+  --ha-font-family-code:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Map Web Awesome color tokens onto our theme colors. wa-button reads these
    * through its variant -> generic token chain (e.g. variant="brand" resolves
@@ -132,7 +146,9 @@ body {
 }
 
 /* A narrow window leaves more of its width to the content. Zooming in narrows
- * it too: the smallest window, 800px wide, is 400px at 200%. */
+ * it too: the smallest window, 800px wide, is 400px at 200%. The components
+ * take this width from narrowWindow in src/utils/breakpoints.ts; a custom
+ * property can't be used here. */
 @media (max-width: 600px) {
   :root {
     --ha-page-gutter: 1rem;
@@ -159,6 +175,8 @@ body {
     --ha-warning-heading-color: #ffb74d;
     --ha-error-background: rgba(219, 68, 55, 0.15);
     --ha-error-border: rgba(219, 68, 55, 0.4);
+    --ha-success-color: #5dc36f;
+    --ha-warning-color: #ef9d00;
     --ha-hover-fill: rgba(255, 255, 255, 0.1);
   }
 }

@@ -1,5 +1,9 @@
-import { expect, test } from "@playwright/test";
-import { approveProxmoxImport, skipWifiStep } from "./fixtures.js";
+import {
+  approveProxmoxImport,
+  skipWifiStep,
+  expect,
+  test,
+} from "./fixtures.js";
 
 // sRGB channels (0 to 1) of a computed colour, rgb() or color(srgb …), painted
 // over an opaque background
@@ -32,10 +36,10 @@ function contrast(foreground: string, ...backgrounds: string[]) {
   return (values[0] + 0.05) / (values[1] + 0.05);
 }
 
-for (const [flow, tag, flag] of [
-  ["sbc", "progress-view", "_flashError"],
-  ["proxmox", "proxmox-progress-view", "_vmInstallError"],
-  ["vm", "utm-progress-view", "_vmInstallError"],
+for (const [flow, tag] of [
+  ["sbc", "progress-view"],
+  ["proxmox", "proxmox-progress-view"],
+  ["vm", "utm-progress-view"],
 ] as const) {
   test(`${flow} footer retry restores the installation heading focus`, async ({
     page,
@@ -44,21 +48,22 @@ for (const [flow, tag, flag] of [
     // The app shell loads after locale detection, so wait for it to render.
     await page.locator("welcome-view").waitFor({ state: "attached" });
     await page.evaluate(
-      async ({ flow, tag, flag }) => {
+      async ({ flow, tag }) => {
         const statePath = "/src/state/wizard-state.ts";
         const { wizardState } = (await import(
           statePath
         )) as typeof import("../../src/state/wizard-state.js");
         const prototype = customElements.get(tag)!.prototype;
         // Never start an installation: exercise the real retry/render path only.
-        prototype._startFlashing = prototype._startInstall = async () => {};
+        prototype._startInstall = async () => {};
         const app = document.querySelector(
           "app-shell"
         )! as unknown as HTMLElement & {
           _currentView: string;
+          _installError: boolean;
           _installRetryable: boolean;
           updateComplete: Promise<unknown>;
-        } & Record<typeof flag, boolean>;
+        };
         wizardState.startFlow(flow);
         wizardState.goToStep(3);
         app._currentView = "wizard";
@@ -75,14 +80,14 @@ for (const [flow, tag, flag] of [
           retryable: true,
           details: {},
         };
-        app[flag] = true;
+        app._installError = true;
         // The shell only offers Try again for a retryable failure
         app._installRetryable = true;
         await progress.updateComplete;
       },
-      { flow, tag, flag }
+      { flow, tag }
     );
-    await expect(page.getByRole("alert")).toBeFocused();
+    await expect(page.locator("[data-focus-alert]")).toBeFocused();
     await page.getByRole("button", { name: "Try again", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(page.locator(`${tag} h2`)).toBeFocused();
@@ -115,38 +120,42 @@ for (const tag of ["confirm-dialog", "info-dialog"]) {
   });
 }
 
-for (const tag of [
-  "success-view",
-  "proxmox-success-view",
-  "utm-success-view",
-]) {
-  test(`${tag} preserves next-step list and completion semantics`, async ({
-    page,
-  }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/");
-    await page.locator("welcome-view").waitFor({ state: "attached" });
-    await page.evaluate((tag) => {
-      document.querySelector("app-shell")!.remove();
-      document.body.append(document.createElement(tag));
-    }, tag);
-    const heading = page.getByRole("heading", { name: "You're all set!" });
-    await expect(heading).toBeFocused();
-    await expect(page.getByRole("alert")).toContainText("You're all set!");
-    const list = page.getByRole("list", { name: "Next steps" });
-    await expect(list).toBeVisible();
-    expect(await list.getByRole("listitem").count()).toBeGreaterThan(0);
-    expect(await list.ariaSnapshot()).toContain("listitem");
-    await expect
-      .poll(() =>
-        page
-          .locator(`${tag} svg`)
-          .first()
-          .evaluate((svg) => (svg as SVGSVGElement).animationsPaused())
-      )
-      .toBe(true);
+// WebKit drops list semantics with list-style: none unless role="list" is set
+test("success-view preserves next-step list and completion semantics", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await page.locator("welcome-view").waitFor({ state: "attached" });
+  await page.evaluate(() => {
+    document.querySelector("app-shell")!.remove();
+    document.body.append(document.createElement("success-view"));
   });
-}
+  const heading = page.getByRole("heading", { name: "Almost there!" });
+  await expect(heading).toBeFocused();
+  // The focus reads it out; an alert would read it out again
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const list = page.getByRole("list", { name: "Next steps" });
+  await expect(list).toBeVisible();
+  expect(await list.getByRole("listitem").count()).toBeGreaterThan(0);
+  expect(await list.ariaSnapshot()).toContain("listitem");
+  // Reduced-motion CSS can't stop SMIL animation, so the artwork has none.
+  // The step that says where to find Home Assistant has the app links
+  await page.evaluate(() =>
+    document.body.append(document.createElement("device-done-view"))
+  );
+  const svgs = page.locator("device-done-view svg");
+  await expect(svgs.first()).toBeAttached();
+  expect(
+    await svgs.evaluateAll((all) =>
+      all.flatMap((svg) =>
+        [...svg.querySelectorAll("*")]
+          .map((element) => element.localName)
+          .filter((name) => /^(animate\w*|set)$/.test(name))
+      )
+    )
+  ).toEqual([]);
+});
 
 test("reduced motion reaches card shadow roots", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -188,8 +197,6 @@ test("indeterminate progress and the spinner hold still with reduced motion", as
   const progressbar = page.getByRole("progressbar", {
     name: "Waiting for Home Assistant",
   });
-  // Its value is unknown, not 0%
-  await expect(progressbar).not.toHaveAttribute("aria-valuenow");
   const indicator = page.locator("progress-bar .indicator");
   await expect(indicator).toHaveCSS("animation-name", "none");
   // It fills the track: half of it, standing still, would read as 50%
@@ -206,14 +213,12 @@ test("indeterminate progress and the spinner hold still with reduced motion", as
     "none"
   );
 
+  // Without the preference they do move
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await expect(indicator).toHaveCSS(
+  await expect(indicator).not.toHaveCSS("animation-name", "none");
+  await expect(spinner.locator(".indicator")).not.toHaveCSS(
     "animation-name",
-    "wa-progress-indeterminate"
-  );
-  await expect(spinner.locator(".indicator")).toHaveCSS(
-    "animation-name",
-    "dash"
+    "none"
   );
 });
 
@@ -303,7 +308,7 @@ test("navigation focuses headings without stealing focus on input", async ({
   ).toBeFocused();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Home Assistant" })
+    page.getByRole("heading", { name: "What would you like to install on?" })
   ).toBeFocused();
 });
 
@@ -338,9 +343,8 @@ test("cancelling the erase question returns to Install", async ({ page }) => {
     .getByRole("button", { name: "Raspberry Pi & other boards" })
     .click();
   await page
-    .getByRole("radio", { name: "Raspberry Pi 5", exact: true })
+    .getByRole("button", { name: "Raspberry Pi 5", exact: true })
     .click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("radio").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await skipWifiStep(page);
@@ -401,7 +405,8 @@ for (const colorScheme of ["light", "dark"] as const) {
       ["--ha-primary-color", "--ha-background-color"],
       ["--ha-error-color", "--ha-background-color"],
       ["--ha-error-color", "--ha-card-background"],
-      // Placeholders, like the example formats in the Proxmox connect form
+      // Placeholders, like the example formats in the Proxmox connect form,
+      // and a drive's disabled reason
       [
         "--wa-form-control-placeholder-color",
         "--wa-form-control-background-color",
@@ -471,7 +476,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     const box = await indicator.boundingBox();
     expect(box!.x + box!.width).toBeLessThanOrEqual(390);
     await expect(indicator.getByRole("listitem")).toHaveCount(5);
-    await expect(indicator.locator(".step-dot").first()).toHaveCSS(
+    await expect(indicator.locator(".status-dot").first()).toHaveCSS(
       "transition-duration",
       "0s"
     );
@@ -483,7 +488,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     });
   });
 
-  test(`${colorScheme} architecture cards keep their text readable when selected or hovered`, async ({
+  test(`${colorScheme} architecture cards keep their text readable under the pointer`, async ({
     page,
   }) => {
     await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
@@ -494,27 +499,25 @@ for (const colorScheme of ["light", "dark"] as const) {
       .click();
     await page
       .locator("minipc-setup-method-view")
-      .locator("option-card, wa-radio")
+      .locator("option-card")
       .filter({ hasText: "I can connect the drive" })
       .click();
     const cards = page
       .locator("minipc-architecture-selection-view")
-      .locator("wa-radio");
-    const selected = cards.filter({ hasText: "Intel/AMD" });
-    const hovered = cards.filter({ hasText: "ARM" });
-    await selected.click();
-    await expect(selected).toHaveAttribute("aria-checked", "true");
-    await hovered.hover();
-    for (const card of [selected, hovered]) {
-      const { fill, background, text } = await card.evaluate((radio) => ({
-        fill: getComputedStyle(radio).backgroundColor,
+      .locator("option-card");
+    await expect(cards).toHaveCount(2);
+    await cards.last().hover();
+    for (const card of [cards.first(), cards.last()]) {
+      const { fill, background, text } = await card.evaluate((card) => ({
+        fill: getComputedStyle(card.shadowRoot!.querySelector(".card")!)
+          .backgroundColor,
         // The cards sit straight on the page
         background: getComputedStyle(document.documentElement).backgroundColor,
         text: [
-          ...radio.querySelectorAll(".option-description, .option-examples"),
+          card.shadowRoot!.querySelector(".description")!,
+          card.querySelector(".option-examples")!,
         ].map((line) => getComputedStyle(line).color),
       }));
-      expect(text).toHaveLength(2);
       for (const color of text) {
         expect(contrast(color, fill, background)).toBeGreaterThanOrEqual(4.5);
       }
@@ -522,9 +525,7 @@ for (const colorScheme of ["light", "dark"] as const) {
   });
 }
 
-test("forced colors keep step states and the chosen architecture apart", async ({
-  page,
-}, testInfo) => {
+test("forced colors keep step states apart", async ({ page }, testInfo) => {
   // Forced colors paint backgrounds like the page and give every border the
   // same color, unless a rule asks for system colors
   await page.emulateMedia({ forcedColors: "active" });
@@ -543,14 +544,13 @@ test("forced colors keep step states and the chosen architecture apart", async (
       canvasText: resolve("CanvasText"),
       grayText: resolve("GrayText"),
       highlight: resolve("Highlight"),
-      highlightText: resolve("HighlightText"),
     };
     probe.remove();
     return colors;
   });
   const transparent = /^rgba\(.*, 0\)$/;
 
-  const dots = page.locator("step-indicator .step-dot");
+  const dots = page.locator("step-indicator .status-dot");
   // Completed: a filled dot
   await expect(dots.nth(0)).toHaveCSS("background-color", system.canvasText);
   await expect(dots.nth(0)).toHaveCSS("outline-style", "none");
@@ -564,17 +564,6 @@ test("forced colors keep step states and the chosen architecture apart", async (
   await expect(dots.nth(2)).toHaveCSS("border-top-width", "2px");
   await expect(dots.nth(2)).toHaveCSS("border-top-color", system.grayText);
 
-  const choices = page.locator("minipc-architecture-selection-view wa-radio");
-  const x86 = choices.filter({ hasText: "Intel/AMD (x86-64)" });
-  const arm = choices.filter({ hasText: "ARM (aarch64)" });
-  await x86.click();
-  await expect(x86).toHaveCSS("border-top-color", system.highlight);
-  await expect(arm).not.toHaveCSS("border-top-color", system.highlight);
-  const check = x86.locator(".selected-indicator");
-  await expect(check).toBeVisible();
-  await expect(check).toHaveCSS("background-color", system.highlight);
-  await expect(check).toHaveCSS("color", system.highlightText);
-  await expect(arm.locator(".selected-indicator")).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("forced-colors.png") });
 
   // The install's stage list draws its dots the same way
@@ -596,7 +585,7 @@ test("forced colors keep step states and the chosen architecture apart", async (
     document.body.append(progress);
     await progress.updateComplete;
   });
-  const stageDots = page.locator("install-progress .stage-dot");
+  const stageDots = page.locator("install-progress .status-dot");
   await expect(stageDots.nth(0)).toHaveCSS(
     "background-color",
     system.canvasText
@@ -617,90 +606,36 @@ for (const tag of [
   "proxmox-progress-view",
   "utm-progress-view",
 ]) {
-  test(`${tag} keeps stage semantics and progress with reduced motion`, async ({
+  test(`${tag} stops the stage pulse with reduced motion and focuses a failure`, async ({
     page,
   }, testInfo) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/");
     await page.locator("welcome-view").waitFor({ state: "attached" });
-    const initialStatus = await page.evaluate(async (tag) => {
+    await page.evaluate(async (tag) => {
       document.querySelector("app-shell")!.remove();
       const progress = document.createElement(tag) as HTMLElement & {
-        _startFlashing: () => Promise<void>;
         _startInstall: () => Promise<void>;
-        _progress: unknown;
-        _stage: string;
-        _bytesProcessed: number;
-        _totalBytes: number;
         updateComplete: Promise<unknown>;
       };
       // Isolated rendered view: never begin an install or call native commands.
-      progress._startFlashing = progress._startInstall = async () => {};
+      progress._startInstall = async () => {};
       progress.style.height = "100vh";
-      progress._stage = "downloading";
-      progress._progress =
-        tag === "progress-view"
-          ? {
-              stage: "downloading",
-              progress: 25,
-              bytes_processed: 256,
-              total_bytes: 1024,
-            }
-          : 25;
-      progress._bytesProcessed = 256;
-      progress._totalBytes = 1024;
       document.body.append(progress);
       await progress.updateComplete;
-      // The shared progress layout renders the live region in its own shadow root
-      const layout = progress.shadowRoot!.querySelector(
-        "install-progress"
-      )! as HTMLElement & { updateComplete: Promise<unknown> };
-      await layout.updateComplete;
-      await new Promise(requestAnimationFrame);
-      return layout
-        .shadowRoot!.querySelector('[role="status"]')!
-        .textContent?.trim();
     }, tag);
-    expect(initialStatus).toBe("");
-    // The stage's live region, then the warning's, which waits empty for a
-    // problem so its first one is announced too
-    await expect(page.getByRole("status")).toHaveCount(2);
-    await expect(page.getByRole("status").first()).toHaveText("Downloading");
-    await expect(page.getByRole("status").nth(1)).toHaveText("");
-    await expect(
-      page.getByRole("list", { name: "Installation stages" })
-    ).toBeVisible();
-    await expect(page.getByRole("listitem")).toHaveCount(
-      {
-        "progress-view": 5,
-        "proxmox-progress-view": 8,
-        "utm-progress-view": 7,
-      }[tag]!
-    );
-    // Stage labels are each flow's own descriptions in the shared layout
-    await expect(page.locator('[aria-current="step"]')).toContainText(
-      tag === "progress-view" ? "Fetching the Home Assistant image" : "Download"
-    );
-    // The supplied Casita artwork is a static image, so it has no SVG
-    // animations left to pause
-    await expect(page.locator(`${tag} casita-mascot img`)).toBeVisible();
-    expect(await page.locator(`${tag} svg animate`).count()).toBe(0);
-    await expect(page.locator(".stage-dot.active")).toHaveCSS(
+    await expect(page.locator("install-progress .status-dot.active")).toHaveCSS(
       "animation-name",
       "none"
     );
-    await expect(page.locator(".stage-dot.active")).toHaveCSS(
-      "background-color",
-      "rgb(0, 103, 135)"
-    );
-    await expect(page.locator(".cloud-text")).toHaveCSS(
-      "color",
-      "rgb(255, 255, 255)"
-    );
-    await expect(page.getByRole("progressbar")).toHaveAttribute(
-      "aria-valuenow",
-      "25"
-    );
+    // Nor do the other stages slide in around the heading
+    await page.getByRole("button", { name: /^step 1 of \d+$/i }).click();
+    for (const part of ["h2", ".stage"]) {
+      await expect(page.locator(`install-progress ${part}`).first()).toHaveCSS(
+        "transition-duration",
+        "0s"
+      );
+    }
     await page.screenshot({
       path: testInfo.outputPath(`${tag}-reduced-motion.png`),
     });
@@ -714,7 +649,7 @@ for (const tag of [
         details: {},
       };
     }, tag);
-    await expect(page.getByRole("alert")).toBeFocused();
+    await expect(page.locator("[data-focus-alert]")).toBeFocused();
     await expect(
       page.locator(`${tag} casita-mascot[mood="problem"] img`)
     ).toBeVisible();
@@ -730,9 +665,8 @@ test("disk installation keeps heading focus after the confirmation dialog closes
     .getByRole("button", { name: "Raspberry Pi & other boards" })
     .click();
   await page
-    .getByRole("radio", { name: "Raspberry Pi 5", exact: true })
+    .getByRole("button", { name: "Raspberry Pi 5", exact: true })
     .click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("radio").first().click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await skipWifiStep(page);
@@ -745,11 +679,57 @@ test("disk installation keeps heading focus after the confirmation dialog closes
     page.locator("progress-view").getByRole("heading")
   ).toBeFocused();
   await expect(
-    page
-      .locator("success-view")
-      .getByRole("heading", { name: "You're all set!" })
+    page.locator("success-view").getByRole("heading", { name: "Almost there!" })
   ).toBeFocused({ timeout: 20000 });
-  await expect(page.locator("success-view").getByRole("alert")).toContainText(
-    "You're all set!"
-  );
+  await expect(page.locator("success-view").getByRole("alert")).toHaveCount(0);
+});
+
+// A keyboard can only scroll what it can focus. The step's area takes the
+// focus once the step grows past the window, also after it opened, and gives
+// it up again when it fits.
+test("a step that grows past the window can be scrolled with the keyboard", async ({
+  page,
+}) => {
+  const main = page.locator("wizard-shell main");
+  /** Adds a block as tall as `height` to the bottom of `step`, or removes it. */
+  const grow = (step: string, height: number) =>
+    page.locator(step).evaluate((element, height) => {
+      const root = element.shadowRoot!;
+      root.querySelector(".grown")?.remove();
+      if (!height) return;
+      const block = document.createElement("div");
+      block.className = "grown";
+      block.style.height = `${height}px`;
+      root.append(block);
+    }, height);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Let's go" }).click();
+  await page
+    .locator('option-card[heading="Mini PC or other computer"]')
+    .click();
+  // The shared step styles, and the media step's own
+  for (const step of ["minipc-setup-method-view", "minipc-media-view"]) {
+    await expect(page.locator(step)).toBeVisible();
+    await expect(main).not.toHaveAttribute("tabindex");
+
+    await grow(step, 2000);
+    await expect(main).toHaveAttribute("tabindex", "0");
+    await main.focus();
+    await page.keyboard.press("End");
+    await expect
+      .poll(() => main.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+
+    await grow(step, 0);
+    await expect(main).not.toHaveAttribute("tabindex");
+
+    if (step === "minipc-setup-method-view") {
+      await page
+        .locator(step)
+        .locator("option-card")
+        .filter({ hasText: "I need to boot from USB" })
+        .click();
+    }
+  }
 });

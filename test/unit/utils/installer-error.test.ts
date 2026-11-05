@@ -1,6 +1,7 @@
 import { expect, fixtureSync, html } from "@open-wc/testing";
 import {
   installerError,
+  isDriveFailure,
   renderErrorHelp,
 } from "../../../src/utils/installer-error.js";
 import { ipcError } from "../tauri-ipc.js";
@@ -75,7 +76,7 @@ describe("installer errors", () => {
     );
   });
 
-  it("shows permission, two-factor, rate-limit and drive-size errors from the catalog", () => {
+  it("shows permission, two-factor, rate-limit and size errors from the catalog", () => {
     for (const [code, key, params, expected] of [
       [
         "permission_denied",
@@ -96,10 +97,22 @@ describe("installer errors", () => {
         "Wait at least 3 minutes, then try again.",
       ],
       [
+        "rate_limited",
+        "backend.download.github_rate_limited",
+        { minutes: 1 },
+        "Wait at least 1 minute, then try again.",
+      ],
+      [
         "drive_too_small",
         "backend.disk.drive_too_small",
-        { size: "32" },
+        { size: 32 },
         "At least a 32 GB drive is required.",
+      ],
+      [
+        "proxmox_action_required",
+        "backend.proxmox.import_storage_too_small",
+        { size_mb: 1536, storages: "local" },
+        "Not enough free space for the 1,536 MB image on import storage: local.",
       ],
     ] as const) {
       const result = installerError(
@@ -207,10 +220,50 @@ describe("installer errors", () => {
     const el = fixtureSync(html`<div>${renderErrorHelp()}</div>`);
     const links = [...el.querySelectorAll("a")];
     expect(links.map((link) => link.textContent)).to.deep.equal([
-      "Installation help",
+      "Installation help Opens in your browser.",
     ]);
     // Reporting goes through the diagnostics dialog instead of a bare link
     expect(el.querySelector("diagnostics-actions")).to.exist;
-    for (const link of links) expect(new URL(link.href).search).to.equal("");
+    for (const link of links) {
+      expect(new URL(link.href).search).to.equal("");
+      expect(link.target).to.equal("_blank");
+      expect(link.rel).to.equal("noopener noreferrer");
+    }
+  });
+
+  describe("isDriveFailure", () => {
+    for (const code of [
+      "device_not_found",
+      "drive_disconnected",
+      "drive_in_system_use",
+      "drive_io",
+      "drive_too_small",
+      "drive_verification_failed",
+      "image_too_large",
+      "write_protected",
+    ]) {
+      it(`blames the drive for ${code}`, () => {
+        expect(isDriveFailure(code)).to.be.true;
+      });
+    }
+
+    for (const code of [
+      // This computer's storage, or the image's checksums
+      "io",
+      "verification_failed",
+      // Other drives on this computer, or what holds this one
+      "drive_check_failed",
+      "device_busy",
+      "json",
+      "invalid_config",
+      "internal",
+      "operation_in_progress",
+      "unsupported_platform",
+      "unknown",
+    ]) {
+      it(`never blames the drive for ${code}`, () => {
+        expect(isDriveFailure(code)).to.be.false;
+      });
+    }
   });
 });

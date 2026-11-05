@@ -59,7 +59,7 @@ describe("VM writing progress", () => {
           `${progress}%`
         );
         expect(root.querySelector(".bytes-info")!.textContent).to.contain(
-          " / 100 KB"
+          " / 100 kB"
         );
       }
 

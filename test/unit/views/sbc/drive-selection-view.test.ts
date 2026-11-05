@@ -13,6 +13,7 @@ import {
 } from "../../../../src/utils/drive-selection.js";
 import type { BlockDevice } from "../../../../src/api/index.js";
 import { flush, holdDeviceScan } from "../../helpers/hold-device-scan.js";
+import { fullA11ySnapshot, headingOutline } from "../../helpers/a11y.js";
 import { ipcError, mockTauriIpc, restoreTauriIpc } from "../../tauri-ipc.js";
 import {
   diagnosticText,
@@ -72,6 +73,36 @@ describe("drive-selection-view", () => {
     }
   });
 
+  for (const [flow, installMethod, hint, haHardware] of [
+    ["sbc", undefined, "Insert an SD card or USB drive"],
+    ["minipc", undefined, "Connect your drive using a USB adapter"],
+    // Making a stick to boot the mini PC from: a stick is what's missing
+    ["minipc", "usb-boot", "Insert a USB stick"],
+    ["ha-hardware", undefined, "as described above", "green"],
+    // The CM5's instructions are on the step before, not on this page
+    ["ha-hardware", undefined, "Go back to the Connect step", "yellow-cm5"],
+  ] as const) {
+    it(`says what to connect when no drive is found (${haHardware ?? flow} ${installMethod ?? "drive"})`, async () => {
+      wizardState.startFlow(flow);
+      if (installMethod)
+        wizardState.setSelection("installMethod", installMethod);
+      if (haHardware) wizardState.setSelection("haHardware", haHardware);
+      const scan = holdDeviceScan();
+      try {
+        const el = await fixture<DriveSelectionView>(
+          html`<drive-selection-view></drive-selection-view>`
+        );
+        scan.resolve([]);
+        await flush();
+        expect(
+          el.shadowRoot!.querySelector(".empty-text")!.textContent
+        ).to.contain(hint);
+      } finally {
+        scan.restore();
+      }
+    });
+  }
+
   it("keeps focus on Refresh while it scans, and announces what it found", async () => {
     let scan = holdDeviceScan();
     try {
@@ -117,7 +148,7 @@ describe("drive-selection-view", () => {
     const failure = ipcError("io", "The drive scan failed.", true);
     const root = (el: DriveSelectionView) => el.shadowRoot!;
     const alertText = (el: DriveSelectionView) =>
-      root(el).querySelector("[role=alert]")?.textContent?.trim() ?? "";
+      root(el).querySelector("[data-focus-alert]")?.textContent?.trim() ?? "";
     let scan = holdDeviceScan();
     const rescan = async (el: DriveSelectionView, selector: string) => {
       const button = root(el).querySelector(selector) as HTMLElement;
@@ -141,8 +172,9 @@ describe("drive-selection-view", () => {
       expect(alertText(el)).to.equal("");
       scan.reject(failure as unknown as Error);
       await waitUntil(() => !!alertText(el));
-      expect(root(el).activeElement === root(el).querySelector("[role=alert]"))
-        .to.be.true;
+      expect(
+        root(el).activeElement === root(el).querySelector("[data-focus-alert]")
+      ).to.be.true;
 
       // Then nothing found: the empty state's Refresh takes over
       await rescan(el, ".error wa-button");
@@ -166,6 +198,96 @@ describe("drive-selection-view", () => {
     } finally {
       scan.restore();
     }
+  });
+
+  describe("without administrator rights", () => {
+    const notElevated = ipcError(
+      "permission_denied",
+      "Administrator access is required to write a drive.",
+      false,
+      { message_key: "backend.disk.run_as_administrator", message_params: {} }
+    );
+
+    afterEach(() => restoreTauriIpc());
+
+    async function mountRefused(relaunch: () => unknown) {
+      const calls: string[] = [];
+      mockTauriIpc((cmd) => {
+        calls.push(cmd);
+        if (cmd === "list_block_devices") return Promise.reject(notElevated);
+        if (cmd === "relaunch_as_admin") return relaunch();
+        throw new Error(`unexpected command ${cmd}`);
+      });
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      await waitUntil(
+        () => el.shadowRoot!.querySelector(".admin-needed"),
+        "the scan was never refused"
+      );
+      await el.updateComplete;
+      return { el, calls };
+    }
+
+    for (const flow of ["sbc", "minipc"] as const) {
+      it(`offers to restart as administrator (${flow})`, async () => {
+        wizardState.startFlow(flow);
+        const { el, calls } = await mountRefused(() => undefined);
+        const root = el.shadowRoot!;
+        const notice = root.querySelector(".admin-needed")!;
+        expect(notice.textContent).to.contain("needs administrator access");
+        expect(notice.textContent).to.contain(
+          "starts again from the beginning"
+        );
+        // Read out when it appears, like any failed scan
+        expect(root.activeElement === notice).to.be.true;
+        // Scanning again can't help: the rights last until a restart
+        expect(root.querySelector(".error") === null).to.be.true;
+        const buttons = [...root.querySelectorAll("wa-button")];
+        expect(
+          buttons.map((button) => button.textContent!.trim())
+        ).to.deep.equal(["Restart as administrator"]);
+
+        (buttons[0] as HTMLElement).click();
+        await waitUntil(() => calls.includes("relaunch_as_admin"));
+      });
+    }
+
+    it("says so when the restart is declined", async () => {
+      const declined = "The installer wasn't restarted as administrator.";
+      const { el } = await mountRefused(() =>
+        Promise.reject(ipcError("relaunch_cancelled", declined, true))
+      );
+      const root = el.shadowRoot!;
+      (root.querySelector(".admin-needed wa-button") as HTMLElement).click();
+      await waitUntil(() => root.querySelector(".relaunch-error"));
+      await el.updateComplete;
+
+      const error = root.querySelector(".relaunch-error")!;
+      expect(error.textContent!.trim()).to.equal(declined);
+      // Read out on its own, not the notice again
+      expect(root.activeElement === error).to.be.true;
+    });
+
+    it("leaves other permission errors to the failed scan", async () => {
+      mockTauriIpc((cmd) => {
+        if (cmd === "list_block_devices") {
+          return Promise.reject(
+            ipcError("permission_denied", "Not authorized", false, {
+              message_key: "backend.disk.not_authorized",
+              message_params: {},
+            })
+          );
+        }
+        throw new Error(`unexpected command ${cmd}`);
+      });
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      await waitUntil(() => el.shadowRoot!.querySelector(".error-message"));
+
+      expect(el.shadowRoot!.querySelector(".admin-needed") === null).to.be.true;
+    });
   });
 
   it("keeps a selection whose drive is still connected", async () => {
@@ -378,6 +500,76 @@ describe("drive-selection-view", () => {
     }
   });
 
+  // Moving by headings reaches the list, at the level of the instructions
+  // a Home Assistant device shows above it. Chrome names the list's heading
+  // as it shows it, in capitals.
+  for (const [flow, outline] of [
+    ["sbc", [[3, "AVAILABLE DRIVES"]]],
+    [
+      "ha-hardware",
+      [
+        [3, "Connect a microSD card"],
+        [3, "AVAILABLE DRIVES"],
+      ],
+    ],
+  ] as const) {
+    it(`heads the ${flow} drive list under the step's heading`, async () => {
+      wizardState.startFlow(flow);
+      wizardState.setSelection("deviceConfig", config);
+      if (flow === "ha-hardware")
+        wizardState.setSelection("haHardware", "green");
+      await mountLoaded();
+
+      expect(headingOutline(await fullA11ySnapshot())).to.deep.equal([
+        [2, "Select your drive"],
+        ...outline,
+      ]);
+    });
+  }
+
+  // rpiboot shows the eMMC as a small drive among bigger ones
+  for (const [flow, haHardware, highlighted] of [
+    ["ha-hardware", "yellow-cm5", true],
+    ["ha-hardware", "yellow-cm4", false],
+    ["sbc", undefined, false],
+  ] as const) {
+    it(`${highlighted ? "lists the Compute Module's eMMC first, highlighted" : "sorts an eMMC drive by size"} (${haHardware ?? flow})`, async () => {
+      wizardState.startFlow(flow);
+      wizardState.setSelection("deviceConfig", config);
+      if (haHardware) wizardState.setSelection("haHardware", haHardware);
+      const scan = holdDeviceScan();
+      try {
+        const el = await fixture<DriveSelectionView>(
+          html`<drive-selection-view></drive-selection-view>`
+        );
+        scan.resolve([
+          drive({ id: "/dev/sdb", size: 128_000_000_000 }),
+          drive({ id: "/dev/sdc", size: 32_000_000_000, vendor: "mmcblk0" }),
+        ]);
+        await waitUntil(
+          () => el.shadowRoot!.querySelectorAll("drive-card").length === 2
+        );
+        const cards = [...el.shadowRoot!.querySelectorAll("drive-card")];
+
+        expect(cards.map((card) => [card.value, card.highlight])).to.deep.equal(
+          highlighted
+            ? [
+                ["/dev/sdc", "Compute Module eMMC"],
+                ["/dev/sdb", ""],
+              ]
+            : [
+                ["/dev/sdb", ""],
+                ["/dev/sdc", ""],
+              ]
+        );
+        // Highlighted, not picked
+        expect(selectedIds(el)).to.deep.equal([]);
+      } finally {
+        scan.restore();
+      }
+    });
+  }
+
   it("keeps undersized drives visible and disables them with the board minimum", async () => {
     const scan = holdDeviceScan();
     try {
@@ -437,6 +629,201 @@ describe("drive-selection-view", () => {
     const el = await mountLoaded();
     expect(wizardState.getState().selections.drive).to.be.undefined;
     expect(selectedIds(el)).to.be.empty;
+    // Still there, so not "no longer available": its card says why instead
+    expect(el.shadowRoot!.querySelector('inline-notice[variant="error"]')).to
+      .not.exist;
+  });
+
+  it("counts the drives that can be used apart from those found", async () => {
+    const scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve([
+        drive({ id: "big" }),
+        drive({ id: "small", size: 8_000_000_000 }),
+        drive({ id: "tiny", size: 500_000_000 }),
+      ]);
+      await waitUntil(() => el.shadowRoot!.querySelector("drive-card"));
+      expect(
+        el.shadowRoot!.querySelector(".sr-only[role=status]")!.textContent
+      ).to.equal("3 drives found, 1 can be used");
+      expect(el.shadowRoot!.querySelector(".no-usable-drive")).to.not.exist;
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("says why no drive can be used, and continues from there", async () => {
+    const root = (el: DriveSelectionView) => el.shadowRoot!;
+    const status = (el: DriveSelectionView) =>
+      root(el).querySelector(".sr-only[role=status]")!.textContent;
+    const small = [
+      drive({ id: "small", size: 8_000_000_000 }),
+      drive({ id: "tiny", size: 500_000_000 }),
+    ];
+    let scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve(small);
+      await waitUntil(() => root(el).querySelector(".no-usable-drive"));
+      await el.updateComplete;
+      const why = root(el).querySelector(".no-usable-drive")!;
+      expect(why.textContent!.trim()).to.equal(
+        "None of these drives can be used. You need a drive of at least 16 GB. Connect one and select Refresh."
+      );
+      expect(status(el)).to.equal("2 drives found, but none can be used");
+      // Every card is disabled, so the group has no tab stop of its own
+      expect(root(el).activeElement).to.equal(why);
+
+      // The same again: Refresh keeps the focus, and the count is read out
+      const refresh = root(el).querySelector(
+        ".drives-header wa-button"
+      ) as HTMLElement;
+      refresh.focus();
+      scan.restore();
+      scan = holdDeviceScan();
+      refresh.click();
+      await el.updateComplete;
+      expect(status(el)).to.contain("Scanning for drives");
+      scan.resolve(small);
+      await waitUntil(() => !status(el)!.includes("Scanning"));
+      await el.updateComplete;
+      expect(root(el).activeElement).to.equal(refresh);
+
+      // A drive big enough: nothing left to explain
+      scan.restore();
+      scan = holdDeviceScan();
+      refresh.click();
+      scan.resolve([...small, drive({ id: "big" })]);
+      await waitUntil(() => !root(el).querySelector(".no-usable-drive"));
+      expect(status(el)).to.equal("3 drives found, 1 can be used");
+      expect(root(el).activeElement).to.equal(refresh);
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("says so of a single drive that can't be used", async () => {
+    const scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve([drive({ size: 8_000_000_000 })]);
+      await waitUntil(() => el.shadowRoot!.querySelector(".no-usable-drive"));
+      expect(
+        el.shadowRoot!.querySelector(".no-usable-drive")!.textContent
+      ).to.contain("This drive can't be used. You need a drive of at least");
+      expect(
+        el.shadowRoot!.querySelector(".sr-only[role=status]")!.textContent
+      ).to.equal("1 drive found, but it can't be used");
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("says when the board's requirements are unknown", async () => {
+    wizardState.setSelection("deviceConfig", undefined);
+    const scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve([drive({ id: "a" }), drive({ id: "b" })]);
+      await waitUntil(() => el.shadowRoot!.querySelector(".no-usable-drive"));
+      expect(
+        el.shadowRoot!.querySelector(".no-usable-drive")!.textContent!.trim()
+      ).to.equal(
+        "None of these drives can be used, because their capacity or the board's requirements are unavailable."
+      );
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("names both reasons when one drive is too small and another's capacity is unknown", async () => {
+    const scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.resolve([
+        drive({ id: "small", size: 8_000_000_000 }),
+        drive({ id: "unknown", size: 0 }),
+      ]);
+      await waitUntil(() => el.shadowRoot!.querySelector(".no-usable-drive"));
+      expect(
+        el.shadowRoot!.querySelector(".no-usable-drive")!.textContent!.trim()
+      ).to.equal(
+        "None of these drives can be used. You need a drive of at least 16 GB whose capacity can be read. Connect one and select Refresh."
+      );
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("keeps the selection through a failed scan, and holds Next until one confirms it", async () => {
+    storeDriveSelection(CONNECTED);
+    const root = (el: DriveSelectionView) => el.shadowRoot!;
+    let scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.reject(
+        ipcError("io", "The drive scan failed.", true) as unknown as Error
+      );
+      await waitUntil(() => root(el).querySelector(".error-message"));
+      await el.updateComplete;
+      // Nothing says the drive is gone: the scan only couldn't tell
+      expect(root(el).querySelector("inline-notice")).to.not.exist;
+      expect(wizardState.getState().selections.drive).to.equal(CONNECTED.id);
+      expect(wizardState.getState().selections.driveScanReady).to.not.be.true;
+
+      scan.restore();
+      scan = holdDeviceScan();
+      (root(el).querySelector(".error wa-button") as HTMLElement).click();
+      scan.resolve([CONNECTED]);
+      await waitUntil(
+        () => wizardState.getState().selections.driveScanReady === true
+      );
+      await waitUntil(() => selectedIds(el).length > 0);
+      expect(selectedIds(el)).to.deep.equal([CONNECTED.id]);
+      expect(root(el).querySelector("inline-notice")).to.not.exist;
+    } finally {
+      scan.restore();
+    }
+  });
+
+  it("says a selection was cleared once a scan after a failure finds it gone", async () => {
+    storeDriveSelection(CONNECTED);
+    const root = (el: DriveSelectionView) => el.shadowRoot!;
+    let scan = holdDeviceScan();
+    try {
+      const el = await fixture<DriveSelectionView>(
+        html`<drive-selection-view></drive-selection-view>`
+      );
+      scan.reject(
+        ipcError("io", "The drive scan failed.", true) as unknown as Error
+      );
+      await waitUntil(() => root(el).querySelector(".error-message"));
+
+      scan.restore();
+      scan = holdDeviceScan();
+      (root(el).querySelector(".error wa-button") as HTMLElement).click();
+      scan.resolve([drive({ id: "other" })]);
+      await waitUntil(() =>
+        root(el).querySelector('inline-notice[variant="error"]')
+      );
+      expect(wizardState.getState().selections.drive).to.be.undefined;
+      expect(wizardState.getState().selections.driveScanReady).to.be.true;
+    } finally {
+      scan.restore();
+    }
   });
 });
 
@@ -491,8 +878,9 @@ describe("drive-selection diagnostics", () => {
         stage: "preparing",
         error: category,
       });
-      expect(calls).to.have.length(2);
-      expect(calls[1]).to.include({
+      // A failed scan starts no install, so nothing logs a start
+      expect(calls).to.have.length(1);
+      expect(calls[0]).to.include({
         flow: "flash",
         stage: "preparing",
         outcome: "failed",

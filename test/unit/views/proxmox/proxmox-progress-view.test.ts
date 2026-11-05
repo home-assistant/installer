@@ -12,6 +12,7 @@ import type {
 import { wizardState } from "../../../../src/state/wizard-state.js";
 import "../../../../src/views/proxmox/proxmox-progress-view.js";
 import type { ProxmoxProgressView } from "../../../../src/views/proxmox/proxmox-progress-view.js";
+import { showsError } from "../../helpers/progress-error.js";
 import {
   deferred,
   ipcError,
@@ -224,7 +225,7 @@ describe("proxmox-progress-view", () => {
     el.retry();
     await settle();
     expect(attempts).to.equal(1);
-    expect(el.hasError).to.be.true;
+    expect(showsError(el)).to.be.true;
   });
 
   // Before the VM is being created, the backend keeps the retry: nothing is
@@ -313,7 +314,7 @@ describe("proxmox-progress-view", () => {
     expect(wizardState.getState().selections.proxmoxVmResult).to.exist;
     await el.updateComplete;
     expect(progressOf(el).querySelector("h2")!.textContent).to.equal(
-      "Waiting for Home Assistant"
+      "Starting Home Assistant OS"
     );
 
     haReady.resolve(true);
@@ -339,7 +340,7 @@ describe("proxmox-progress-view", () => {
     const el = mount();
     await oneEvent(el, "install-complete");
 
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
     expect(wizardState.getState().selections.ipAddress).to.equal(
       "192.168.1.50"
     );
@@ -407,7 +408,9 @@ describe("proxmox-progress-view", () => {
       await el.updateComplete;
 
       expect(failed.detail.retryable).to.be.true;
-      expect(errorText(el)).to.contain("did not report an IPv4 address");
+      expect(errorText(el)).to.contain(
+        "did not report an IPv4 address within 5 minutes. Check that it is running in Proxmox"
+      );
       // Not reported as installed, and nothing to check Home Assistant on
       expect(calls).to.not.include("check_ha_ready");
       // The VM is kept, so a retry does not create a second one
@@ -515,7 +518,7 @@ describe("proxmox-progress-view", () => {
       "never showed the problem",
       { timeout: 3000 }
     );
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
     el.remove();
   });
 
@@ -595,7 +598,7 @@ describe("proxmox-progress-view", () => {
     await oneEvent(el, "install-complete");
 
     expect(statusCalls).to.equal(2);
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
   });
 
   // Before the VM is created, logging in again can start over safely. Once
@@ -723,7 +726,7 @@ describe("proxmox-progress-view", () => {
     const el = mount();
     await el.updateComplete;
     const layout = el.shadowRoot!.querySelector("install-progress")!;
-    await waitUntil(() => layout.stage === "waiting");
+    await waitUntil(() => layout.stage === "ready");
     await layout.updateComplete;
 
     expect(layout.indeterminate).to.be.true;
@@ -790,8 +793,8 @@ describe("proxmox-progress-view", () => {
       };
     }
 
-    function stageTitle(el: ProxmoxProgressView): string {
-      return el.shadowRoot!.querySelector("install-progress")!.stageTitle;
+    function stopping(el: ProxmoxProgressView): boolean {
+      return el.shadowRoot!.querySelector("install-progress")!.stopping;
     }
 
     it("stops an install before the VM exists, and says nothing was created", async () => {
@@ -799,7 +802,7 @@ describe("proxmox-progress-view", () => {
       const el = mount();
       const reported: boolean[] = [];
       el.addEventListener("install-stoppable", (event) => {
-        reported.push((event as CustomEvent).detail.stoppable);
+        reported.push(event.detail.stoppable);
       });
       await install.created;
       install.report("uploading");
@@ -811,12 +814,11 @@ describe("proxmox-progress-view", () => {
 
       expect(install.stops).to.deep.equal([install.attempt()]);
       expect(el.stoppable, "a second stop has nothing to add").to.be.false;
-      expect(stageTitle(el)).to.equal("Stopping");
-      // The thinking cloud adds the ellipsis to the stage title
+      expect(stopping(el)).to.be.true;
       await el.shadowRoot!.querySelector("install-progress")!.updateComplete;
-      expect(
-        progressOf(el).querySelector(".cloud-text")!.textContent!.trim()
-      ).to.equal("Stopping...");
+      expect(progressOf(el).querySelector("h2")!.textContent!.trim()).to.equal(
+        "Stopping..."
+      );
 
       const failed = oneEvent(el, "install-error");
       install.createVm.reject(CANCELLED);
@@ -851,8 +853,8 @@ describe("proxmox-progress-view", () => {
       install.createVm.resolve({ vm_id: 100, node: "pve" });
       await completed;
 
-      expect(el.hasError).to.be.false;
-      expect(stageTitle(el)).to.not.equal("Stopping");
+      expect(showsError(el)).to.be.false;
+      expect(stopping(el)).to.be.false;
     });
 
     it("offers the stop again when the request fails", async () => {
@@ -865,7 +867,7 @@ describe("proxmox-progress-view", () => {
 
       expect(install.stops).to.have.length(1);
       expect(el.stoppable).to.be.true;
-      expect(stageTitle(el)).to.not.equal("Stopping");
+      expect(stopping(el)).to.be.false;
     });
   });
 
@@ -882,7 +884,7 @@ describe("proxmox-progress-view", () => {
       await el.updateComplete;
 
       expect(abortSignalOf(el), "install should not have started").to.not.exist;
-      expect(el.hasError).to.be.true;
+      expect(showsError(el)).to.be.true;
       expect(progressOf(el).textContent).to.contain("No Proxmox session");
       expect(errorEvents).to.equal(1);
     } finally {

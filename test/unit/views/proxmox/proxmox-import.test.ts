@@ -10,6 +10,7 @@ import "../../../../src/views/proxmox/proxmox-configure-view.js";
 import "../../../../src/views/proxmox/proxmox-success-view.js";
 import type { ProxmoxConfigureView } from "../../../../src/views/proxmox/proxmox-configure-view.js";
 import type { InfoDialog } from "../../../../src/components/info-dialog.js";
+import { fireEvent } from "../../../../src/utils/fire-event.js";
 import {
   deferred,
   ipcError,
@@ -118,9 +119,7 @@ describe("Proxmox import consent", () => {
 
   async function approve(el: ProxmoxConfigureView) {
     await click(el, "Enable Import...");
-    el.shadowRoot!.querySelector("info-dialog")!.dispatchEvent(
-      new CustomEvent("dialog-primary")
-    );
+    fireEvent(el.shadowRoot!.querySelector("info-dialog")!, "dialog-primary");
     await settle();
     await el.updateComplete;
   }
@@ -138,16 +137,20 @@ describe("Proxmox import consent", () => {
     expect(dialog.message).to.contain('"other"');
     expect(dialog.message).to.contain("cluster-wide");
     expect(dialog.message).to.contain("not automatically restore");
-    dialog.dispatchEvent(new CustomEvent("dialog-secondary"));
+    fireEvent(dialog, "dialog-secondary");
     await el.updateComplete;
     expect(writes).to.deep.equal([]);
     expect(wizardState.getState().selections.proxmoxImportChanges).to.be
       .undefined;
     expect(el.shadowRoot!.textContent).to.contain("Installation is paused");
-    expect(
-      el.shadowRoot!.querySelector<HTMLAnchorElement>(".import-setting a")!.href
-    ).to.contain("pve.proxmox.com");
-    expectThemeLink(el.shadowRoot!.querySelector(".import-setting a")!);
+    const docs =
+      el.shadowRoot!.querySelector<HTMLAnchorElement>(".import-setting a")!;
+    expect(docs.href).to.equal(
+      "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory"
+    );
+    expect(docs.target).to.equal("_blank");
+    expect(docs.rel).to.equal("noopener noreferrer");
+    expectThemeLink(docs);
     expect(wizardState.getState().selections.proxmoxImportReady).to.be.false;
   });
 
@@ -239,6 +242,43 @@ describe("Proxmox import consent", () => {
     expect(writes).to.deep.equal([]);
   });
 
+  async function refreshStorage(el: ProxmoxConfigureView) {
+    const before = reads;
+    (el.shadowRoot!.querySelector(".refresh-storage") as HTMLElement).click();
+    await waitUntil(() => reads > before);
+    await settle();
+    await el.updateComplete;
+  }
+
+  it("keeps the chosen Import storage across Refresh storage while it is still a candidate", async () => {
+    storages.push({ ...directory, name: "other" });
+    const el = await mount();
+    const select = importSelect(el)!;
+    select.value = "other";
+    select.dispatchEvent(new Event("change"));
+    await el.updateComplete;
+
+    await refreshStorage(el);
+    expect(importSelect(el)!.value).to.equal("other");
+    await click(el, "Enable Import...");
+    const dialog = el.shadowRoot!.querySelector("info-dialog") as InfoDialog;
+    expect(dialog.message).to.contain('"other"');
+
+    // Once it is no longer a candidate, the first one is offered instead
+    fireEvent(dialog, "dialog-secondary");
+    storages = [
+      directory,
+      disk,
+      { ...directory, name: "other", active: false },
+      { ...directory, name: "spare" },
+    ];
+    await refreshStorage(el);
+    expect(importSelect(el)!.value).to.equal("local");
+    await click(el, "Enable Import...");
+    expect(dialog.message).to.contain('"local"');
+    expect(writes).to.deep.equal([]);
+  });
+
   it("hands focus back to Enable Import once its dialog closes", async () => {
     const el = await mount();
     // Without opening it for real: a test page in the background never
@@ -306,7 +346,7 @@ describe("Proxmox import consent", () => {
       const el = await mount();
       await approve(el);
       expect(
-        el.shadowRoot!.querySelector("[role=alert]")!.textContent
+        el.shadowRoot!.querySelector("[data-focus-alert]")!.textContent
       ).to.contain(shown);
       expect(el.shadowRoot!.textContent).not.to.contain("raw server response");
       expect(el.shadowRoot!.querySelectorAll("wa-select").length).to.equal(3);
@@ -341,7 +381,7 @@ describe("Proxmox import consent", () => {
       throw ipcError("proxmox_api", "storage refresh denied", true);
     };
     await approve(el);
-    expect(el.shadowRoot!.querySelector("[role=alert]")).to.exist;
+    expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.exist;
     expect(wizardState.getState().selections.proxmoxImportReady).to.be.false;
     // A failed read after the write does not forget the accepted change
     expect(
@@ -399,8 +439,9 @@ describe("Proxmox import consent", () => {
           expect(wizardState.getState()).to.equal(before);
         }
         expect(reads).to.equal(beforeReads);
-        expect(el.shadowRoot!.querySelector(".import-setting [role=alert]")).to
-          .be.null;
+        expect(
+          el.shadowRoot!.querySelector(".import-setting [data-focus-alert]")
+        ).to.be.null;
       });
     }
   }
@@ -568,7 +609,9 @@ describe("Proxmox import consent", () => {
     expect(reminder.textContent).to.contain("cluster-wide");
     expect(reminder.textContent).to.contain("no other");
     expect(reminder.textContent).to.contain("content types unchanged");
-    expect(reminder.querySelector("a")!.href).to.contain("#storage_directory");
+    expect(reminder.querySelector("a")!.href).to.equal(
+      "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory"
+    );
     expectThemeLink(reminder.querySelector("a")!);
     wizardState.setSelection("proxmoxSession", {
       ...session,

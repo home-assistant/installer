@@ -1,7 +1,8 @@
 import { html } from "lit";
 import { localize, localizeBackend } from "../localization/localize.js";
-import { formatBytes } from "../api/commands.js";
-import { openExternalLink } from "./external-url.js";
+import { formatBytes } from "./format.js";
+import { renderExternalLink } from "./external-link.js";
+import { INSTALLATION_GUIDE_URL } from "./urls.js";
 import "../components/diagnostics-actions.js";
 
 export interface InstallerError {
@@ -24,12 +25,14 @@ const messages: Record<string, () => string> = {
   proxmox_api: () => localize("utils.installer_error.proxmox_api"),
   proxmox_certificate_changed: () =>
     localize("utils.installer_error.proxmox_certificate_changed"),
-  proxmox_session_expired: () => localize("proxmox.session_expired"),
+  proxmox_session_expired: () => localize("common.proxmox.session_expired"),
   // The backend's text names internals such as file names or parse errors
   invalid_config: () => localize("utils.installer_error.invalid_config"),
   drive_disconnected: () =>
     localize("utils.installer_error.drive_disconnected"),
   write_protected: () => localize("utils.installer_error.write_protected"),
+  unsupported_sector_size: () =>
+    localize("utils.installer_error.unsupported_sector_size"),
   unsupported_platform: () =>
     localize("utils.installer_error.unsupported_platform"),
   json: () => localize("utils.installer_error.json"),
@@ -41,6 +44,21 @@ const messages: Record<string, () => string> = {
   operation_in_progress: () =>
     localize("utils.installer_error.operation_in_progress"),
   internal: () => localize("utils.installer_error.internal"),
+  hai_live_missing: () => localize("utils.installer_error.hai_live_missing"),
+  hai_live_invalid: () => localize("utils.installer_error.hai_live_invalid"),
+  release_unavailable: () =>
+    localize("utils.installer_error.release_unavailable"),
+  image_build_failed: () =>
+    localize("utils.installer_error.image_build_failed"),
+  file_exists: () => localize("utils.installer_error.file_exists"),
+  invalid_file_name: () => localize("utils.installer_error.invalid_file_name"),
+  file_name_not_portable: () =>
+    localize("utils.installer_error.file_name_not_portable"),
+  folder_not_found: () => localize("utils.installer_error.folder_not_found"),
+  folder_in_cache: () => localize("utils.installer_error.folder_in_cache"),
+  folder_name_taken: () => localize("utils.installer_error.folder_name_taken"),
+  relaunch_cancelled: () =>
+    localize("utils.installer_error.relaunch_cancelled"),
 };
 
 /** Tauri rejects with JSON values, not JavaScript Error instances. */
@@ -108,15 +126,53 @@ export function installerError(
   };
 }
 
+/** Failures of the drive itself, whatever stage they come from */
+const DRIVE_FAILURES = [
+  "device_not_found",
+  "drive_disconnected",
+  "drive_in_system_use",
+  "drive_io",
+  "drive_too_small",
+  "drive_verification_failed",
+  "image_too_large",
+  "unsupported_sector_size",
+  "write_protected",
+];
+
+/** Whether the failure with `code` is the drive's, so another drive can fix it */
+export function isDriveFailure(code: string): boolean {
+  return DRIVE_FAILURES.includes(code);
+}
+
+/**
+ * Failures the user fixes on this computer: a declined password prompt or
+ * blocked access, or a stopped disk service. Nothing was written, and the
+ * same drive can be tried again once fixed, as the message says. The
+ * backend marks them not retryable because trying again right away fails
+ * the same way.
+ */
+const FIXED_ON_THIS_COMPUTER = [
+  "permission_denied",
+  "disk_service_unavailable",
+];
+
+/** `error`, which a drive write can also try again once fixed on this computer */
+export function retryableOnceFixed(error: InstallerError): InstallerError {
+  return {
+    ...error,
+    retryable: error.retryable || FIXED_ON_THIS_COMPUTER.includes(error.code),
+  };
+}
+
 /** Fixed destinations only: error text, paths, and credentials never enter URLs. */
 export function renderErrorHelp() {
-  const help = "https://www.home-assistant.io/installation/";
   // Reporting goes through the diagnostics dialog, which shows exactly what
   // a public issue would contain before anything leaves the installer
   return html`<p class="error-help">
-    <a href=${help} @click=${openExternalLink}
-      >${localize("common.installation_help")}</a
-    >
+    ${renderExternalLink(
+      INSTALLATION_GUIDE_URL,
+      localize("common.installation_help")
+    )}
     <span aria-hidden="true"> · </span>
     <diagnostics-actions></diagnostics-actions>
   </p>`;

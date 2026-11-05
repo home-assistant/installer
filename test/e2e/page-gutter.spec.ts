@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 // The smallest window, 800 by 750, zoomed to 200% is 400 by 375. There, as on
 // a regular window, Back, the content and Cancel and Next keep one distance
@@ -42,12 +42,17 @@ for (const [width, height, gutter] of [
       .getByRole("button", { name: "Cancel", exact: true })
       .boundingBox();
     expect(cancel!.x).toBeCloseTo(gutter, 0);
+    // Picking a board goes on; the drive step has Next
+    await page.locator("device-card").first().click();
+    await expect(page.locator("drive-selection-view")).toBeVisible();
     const next = await page
       .getByRole("button", { name: "Next", exact: true })
       .boundingBox();
     expect(width - next!.x - next!.width).toBeCloseTo(gutter, 0);
 
     // The connection check before a flow, held on a failure
+    await back.click();
+    await expect(page.locator("device-selection-view")).toBeVisible();
     await back.click();
     await page.evaluate(() => {
       const bridge = window as unknown as Record<string, unknown>;

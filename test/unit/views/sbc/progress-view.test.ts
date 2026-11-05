@@ -4,6 +4,7 @@ import type {
   FlashProgress,
   FlashRequest,
   FlashResult,
+  FlashStage,
 } from "../../../../src/api/types.js";
 import {
   MOCK_BLOCK_DEVICES,
@@ -13,6 +14,7 @@ import { wizardState } from "../../../../src/state/wizard-state.js";
 import { storeDriveSelection } from "../../../../src/utils/drive-selection.js";
 import "../../../../src/views/sbc/progress-view.js";
 import type { ProgressView } from "../../../../src/views/sbc/progress-view.js";
+import { showsError } from "../../helpers/progress-error.js";
 import {
   deferred,
   mockTauriIpc,
@@ -60,6 +62,15 @@ function mockFlash(haos = MOCK_MANIFEST.devices[0].haos) {
       holdCancel = true;
     },
   };
+}
+
+/** What `el` tells the shell about whether it can still be stopped */
+function reportsOf(el: ProgressView): boolean[] {
+  const reports: boolean[] = [];
+  el.addEventListener("install-stoppable", (event) =>
+    reports.push(event.detail.stoppable)
+  );
+  return reports;
 }
 
 function errorMessage(el: ProgressView) {
@@ -110,8 +121,8 @@ describe("progress-view", () => {
     const { el, attempts } = mockFlash();
     let completed = 0;
     let errors = 0;
-    el.addEventListener("flash-complete", () => completed++);
-    el.addEventListener("flash-error", () => errors++);
+    el.addEventListener("install-complete", () => completed++);
+    el.addEventListener("install-error", () => errors++);
     expect(attempts[0].request).to.deep.equal({
       device_id: MOCK_BLOCK_DEVICES[0].id,
       board: "rpi5-64",
@@ -149,7 +160,7 @@ describe("progress-view", () => {
     await settle();
     expect(completed).to.equal(1);
     expect(errors).to.equal(0);
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
   });
 
   // Commands reject with structured errors; only retryable ones may retry here
@@ -157,8 +168,8 @@ describe("progress-view", () => {
     const { el, attempts } = mockFlash();
     let completed = 0;
     let errors = 0;
-    el.addEventListener("flash-complete", () => completed++);
-    el.addEventListener("flash-error", () => errors++);
+    el.addEventListener("install-complete", () => completed++);
+    el.addEventListener("install-error", () => errors++);
     attempts[0].result.reject({
       code: "device_busy",
       message: "Write failed: I/O error",
@@ -166,7 +177,7 @@ describe("progress-view", () => {
       details: {},
     });
     await settle();
-    expect(el.hasError).to.be.true;
+    expect(showsError(el)).to.be.true;
     expect(
       el
         .shadowRoot!.querySelector("install-progress")!
@@ -178,7 +189,7 @@ describe("progress-view", () => {
     await settle();
     expect(attempts).to.have.length(2);
     expect(attempts[1].request).to.deep.equal(attempts[0].request);
-    expect(el.hasError).to.be.false;
+    expect(showsError(el)).to.be.false;
     expect(
       el
         .shadowRoot!.querySelector("install-progress")!
@@ -195,6 +206,35 @@ describe("progress-view", () => {
     await settle();
     expect(completed).to.equal(1);
     expect(errors).to.equal(1);
+  });
+
+  it("starts a retry from zero, not from where the failed attempt got", async () => {
+    const { el, attempts } = mockFlash();
+    attempts[0].progressChannel.onmessage({
+      stage: "writing",
+      progress: 30,
+      bytes_processed: 300,
+      total_bytes: 1000,
+      message: "",
+    });
+    attempts[0].result.reject({
+      code: "device_busy",
+      message: "Write failed: I/O error",
+      retryable: true,
+      details: {},
+    });
+    await settle();
+    const layout = el.shadowRoot!.querySelector("install-progress")!;
+    expect(layout.bytesProcessed).to.equal(300);
+
+    el.retry();
+    await settle();
+    expect(layout.stage).to.equal("downloading");
+    expect(layout.progress).to.equal(0);
+    expect(layout.bytesProcessed).to.equal(0);
+    expect(layout.totalBytes).to.equal(0);
+    expect(layout.stageStartTime).to.be.null;
+    expect(layout.stageStartBytes).to.equal(0);
   });
 
   describe("stopping", () => {
@@ -220,16 +260,15 @@ describe("progress-view", () => {
           attempts[0].attempt,
         ]);
         const layout = el.shadowRoot!.querySelector("install-progress")!;
-        expect(layout.stageTitle).to.equal("Stopping");
-        // The thinking cloud adds the ellipsis to the stage title
+        expect(layout.stopping).to.be.true;
         await layout.updateComplete;
         expect(
-          layout.shadowRoot!.querySelector(".cloud-text")!.textContent!.trim()
+          layout.shadowRoot!.querySelector("h2")!.textContent!.trim()
         ).to.equal("Stopping...");
 
         attempts[0].result.reject(cancelled);
         await settle();
-        expect(el.hasError).to.be.true;
+        expect(showsError(el)).to.be.true;
         expect(errorMessage(el)).to.contain(message);
 
         // Stopped is not broken: the same install can start again, as a
@@ -253,24 +292,25 @@ describe("progress-view", () => {
 
     it("keeps flashing and says so when the stop request fails", async () => {
       const { el, attempts, failCancel } = mockFlash();
-      let stopFailures = 0;
-      el.addEventListener("flash-stop-failed", () => stopFailures++);
+      const stoppable = reportsOf(el);
+      await settle();
+      expect(stoppable).to.deep.equal([true]);
       failCancel();
 
       el.stop();
+      // The shell hides Cancel right away
+      expect(stoppable).to.deep.equal([true, false]);
       await settle();
-      expect(stopFailures).to.equal(1);
-      expect(
-        el.shadowRoot!.querySelector("install-progress")!.stageTitle
-      ).to.not.equal("Stopping");
-      expect(el.hasError).to.be.false;
+      expect(stoppable).to.deep.equal([true, false, true]);
+      expect(el.shadowRoot!.querySelector("install-progress")!.stopping).to.be
+        .false;
+      expect(showsError(el)).to.be.false;
       expect(attempts).to.have.length(1);
     });
 
     it("ignores a late stop failure from an earlier attempt", async () => {
       const { el, attempts, cancels, holdCancel } = mockFlash();
-      let stopFailures = 0;
-      el.addEventListener("flash-stop-failed", () => stopFailures++);
+      const stoppable = reportsOf(el);
       holdCancel();
       const writing: FlashProgress = {
         stage: "writing",
@@ -291,12 +331,13 @@ describe("progress-view", () => {
       el.stop();
       await settle();
 
+      stoppable.length = 0;
       cancels[0].result.reject(new Error("IPC unavailable"));
       await settle();
-      expect(stopFailures).to.equal(0);
-      expect(
-        el.shadowRoot!.querySelector("install-progress")!.stageTitle
-      ).to.equal("Stopping");
+      // Still stopping: Cancel stays hidden
+      expect(stoppable).to.deep.equal([]);
+      expect(el.shadowRoot!.querySelector("install-progress")!.stopping).to.be
+        .true;
 
       cancels[1].result.resolve();
       attempts[1].result.reject(cancelled);
@@ -332,7 +373,7 @@ describe("progress-view", () => {
     el.retry();
     await settle();
     expect(attempts).to.have.length(1);
-    expect(el.hasError).to.be.true;
+    expect(showsError(el)).to.be.true;
   });
 
   // The drive is fine: offer to write it again, not to pick another one
@@ -340,9 +381,8 @@ describe("progress-view", () => {
     it(`retries the same drive once ${code} is fixed`, async () => {
       const { el, attempts } = mockFlash();
       let retryable: boolean | undefined;
-      el.addEventListener("flash-error", (event) => {
-        retryable = (event as CustomEvent<{ retryable: boolean }>).detail
-          .retryable;
+      el.addEventListener("install-error", (event) => {
+        retryable = event.detail.retryable;
       });
       attempts[0].result.reject({
         code,
@@ -360,10 +400,71 @@ describe("progress-view", () => {
     });
   }
 
+  // The shell offers another drive only for what is wrong with the drive
+  describe("whether another drive can fix it", () => {
+    /** What the flash tells the shell when it fails with `code` at `stage` */
+    async function changeChoiceAfter(code: string, stage?: FlashStage) {
+      const { el, attempts } = mockFlash();
+      let changeChoice: boolean | undefined;
+      el.addEventListener("install-error", (event) => {
+        changeChoice = event.detail.changeChoice;
+      });
+      if (stage) {
+        attempts[0].progressChannel.onmessage({
+          stage,
+          progress: 50,
+          bytes_processed: 1024,
+          total_bytes: 2048,
+          message: "Busy",
+        });
+      }
+      attempts[0].result.reject({
+        code,
+        message: "Failed",
+        retryable: false,
+        details: {},
+      });
+      await settle();
+      return changeChoice;
+    }
+
+    for (const code of [
+      "device_not_found",
+      "drive_disconnected",
+      "drive_too_small",
+      "image_too_large",
+      "write_protected",
+    ]) {
+      it(`says so for ${code}`, async () => {
+        expect(await changeChoiceAfter(code)).to.be.true;
+      });
+    }
+
+    for (const [code, stage, drive] of [
+      // Reading back or writing the drive itself
+      ["drive_verification_failed", "verifying", true],
+      ["drive_io", "writing", true],
+      // The release's checksums
+      ["verification_failed", "downloading", false],
+      // This computer's storage, even once the write reached the drive
+      ["io", "writing", false],
+    ] as const) {
+      it(`says ${drive ? "so" : "not"} for ${code} while ${stage}`, async () => {
+        expect(await changeChoiceAfter(code, stage)).to.equal(drive);
+      });
+    }
+
+    for (const code of ["json", "invalid_config", "internal"]) {
+      it(`says not for ${code}, even while writing`, async () => {
+        expect(await changeChoiceAfter(code, "writing")).to.be.false;
+      });
+    }
+  });
+
   it("reports a failed verification without advancing", async () => {
     const { el, attempts } = mockFlash();
     let completed = false;
-    el.addEventListener("flash-complete", () => {
+    el.addEventListener("install-complete", () => {
       completed = true;
     });
     // Failures reject with a structured error; there is no unsuccessful result
@@ -411,7 +512,7 @@ describe("progress-view", () => {
     await layout.updateComplete;
     expect(
       layout.shadowRoot!.querySelector(".bytes-info")!.textContent
-    ).to.equal("25 KB / 100 KB compressed");
+    ).to.equal("25 kB / 100 kB compressed");
     const bar = layout.shadowRoot!.querySelector("progress-bar")!;
     await bar.updateComplete;
     expect(bar.indeterminate).to.be.false;
@@ -419,10 +520,10 @@ describe("progress-view", () => {
   });
 
   it("reports a missing drive or device config to the app shell", async () => {
-    // The app shell only shows Cancel and Try again after flash-error
+    // The app shell only shows Cancel and Try again after install-error
     let errorEvents = 0;
     const onError = () => errorEvents++;
-    document.addEventListener("flash-error", onError);
+    document.addEventListener("install-error", onError);
 
     try {
       const el = fixtureSync<ProgressView>(
@@ -430,14 +531,14 @@ describe("progress-view", () => {
       );
       await el.updateComplete;
 
-      expect(el.hasError).to.be.true;
+      expect(showsError(el)).to.be.true;
       expect(
         el.shadowRoot!.querySelector("install-progress")!.shadowRoot!
           .textContent
       ).to.contain("Missing drive or device configuration");
       expect(errorEvents).to.equal(1);
     } finally {
-      document.removeEventListener("flash-error", onError);
+      document.removeEventListener("install-error", onError);
     }
   });
 
@@ -456,7 +557,7 @@ describe("progress-view", () => {
         html`<progress-view></progress-view>`
       );
       await settle();
-      expect(el.hasError).to.be.true;
+      expect(showsError(el)).to.be.true;
       expect(
         el
           .shadowRoot!.querySelector("install-progress")!

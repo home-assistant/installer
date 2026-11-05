@@ -24,8 +24,10 @@
 | Portainer | Container-based, not HAOS |
 
 Back always goes one screen back: on a flow's first step it returns to the
-path selection, the same as Back on any other screen. Cancel leaves the flow
-for the welcome screen.
+path selection, the same as Back on any other screen. Cancel and leaving a
+running VM install also return to the path selection. A flow's last step
+offers Start over, which returns to the welcome screen, and Close, which
+closes the installer.
 
 ---
 
@@ -130,25 +132,67 @@ for the welcome screen.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Step 5: Complete
+### Step 5: Start device
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │
-│   ✓  Installation complete                                  │
+│   Almost there!                                             │
+│   Home Assistant OS has been written to your storage device │
 │                                                             │
-│   Your SD card is ready. Next steps:                        │
+│   1. Eject the drive                                        │
+│   2. Insert it into your Raspberry Pi 5                     │
+│   3. Connect Ethernet and power                             │
+│   4. Once the device is on, select Next                     │
 │                                                             │
-│   1. Insert the SD card into your Raspberry Pi 5            │
-│   2. Connect ethernet (recommended) or prepare WiFi         │
-│   3. Power on the device                                    │
-│   4. Wait ~20 minutes for first boot                        │
-│   5. Visit http://homeassistant.local                       │
-│                                                             │
-│                              [ Flash Another ] [ Done ]     │
+│   [ Cancel ]                                     [ Next ]   │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+No Back: the drive is written. This step already notes which Home
+Assistants announce themselves on the network, before the device can start.
+
+### Step 6: Set up
+
+The waits of a VM install, for the device: looking for it on the network
+(a landing page that wasn't there before), waiting for Home Assistant to
+answer, then the Core download its landing page reports, with the time it
+has left at the pace it goes. Skip goes on without it; while it looks, it
+says how to find the device without it.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│   Installing Home Assistant                                 │
+│   ✓ Looking for your device on the network                  │
+│   ✓ Waiting for Home Assistant                              │
+│   ◉ Installing Home Assistant            ████████░░░  42%   │
+│   Checking Home Assistant at http://192.168.1.50            │
+│                                                             │
+│   [ Back ] [ Cancel ]                            [ Skip ]   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Step 7: Done
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│   ✓  You're all set!                                        │
+│   Home Assistant is ready on your device                    │
+│                                                             │
+│   1. Open http://192.168.1.50 in your browser               │
+│   2. Create your user account and start automating!         │
+│                                                             │
+│   [ Start over ]                                [ Close ]   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+After Skip, it adds how long to wait, and names homeassistant.local and the
+router when the device wasn't found.
 
 ---
 
@@ -247,7 +291,8 @@ Then continues to drive selection (same as SBC flow).
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Next first opens a dialog saying the device is ready to use: the Green and Blue,
+Picking a device goes on, as it does on the other device and architecture steps,
+but first opens a dialog saying the device is ready to use: the Green and Blue,
 and a Yellow bought with its compute module, come with Home Assistant installed
 and only need power and Ethernet. A second paragraph says that reinstalling, to
 reset or recover it, erases everything on it. Reinstall (Install for a Yellow,
@@ -404,7 +449,7 @@ failure does not erase knowledge of an already successful change.
 │   2. Visit http://homeassistant.local                       │
 │      (or check the VM console for the IP address)           │
 │                                                             │
-│                              [ Create Another ] [ Done ]    │
+│   [ Start over ]                                [ Close ]   │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```

@@ -4,7 +4,10 @@ import { live } from "lit/directives/live.js";
 import type WaSlider from "@home-assistant/webawesome/dist/components/slider/slider.js";
 import "@home-assistant/webawesome/dist/components/slider/slider.js";
 import { localize } from "../localization/localize.js";
+import { fireEvent } from "../utils/fire-event.js";
 import { formatDiskSize, formatMemory } from "../utils/format.js";
+import { mdiChip, mdiDatabase, mdiMemory } from "../utils/icons.js";
+import { renderIcon } from "../utils/render-icon.js";
 import { settingStyles } from "../utils/setting-styles.js";
 
 /** What a VM gets, as `resources-change` reports it */
@@ -14,7 +17,7 @@ export interface VmResourceValues {
   diskSizeGb: number;
 }
 
-export function formatCores(cores: number): string {
+function formatCores(cores: number): string {
   return localize("components.vm_resources.cores", {
     count: cores,
   });
@@ -66,25 +69,6 @@ function indexOf(options: number[], value: number): number {
   return Math.max(below - 1, 0);
 }
 
-// MDI icons (https://materialdesignicons.com/)
-const cpuIcon = html`<svg viewBox="0 0 24 24">
-  <path
-    d="M6,4H18V5H21V7H18V9H21V11H18V13H21V15H18V17H21V19H18V20H6V19H3V17H6V15H3V13H6V11H3V9H6V7H3V5H6V4M11,15V18H12V15H11M13,15V18H14V15H13M15,15V18H16V15H15Z"
-  />
-</svg>`;
-
-const memoryIcon = html`<svg viewBox="0 0 24 24">
-  <path
-    d="M17,17H7V7H17M21,11V9H19V7C19,5.89 18.1,5 17,5H15V3H13V5H11V3H9V5H7C5.89,5 5,5.89 5,7V9H3V11H5V13H3V15H5V17A2,2 0 0,0 7,19H9V21H11V19H13V21H15V19H17A2,2 0 0,0 19,17V15H21V13H19V11M13,13H11V11H13M15,9H9V15H15V9Z"
-  />
-</svg>`;
-
-const diskIcon = html`<svg viewBox="0 0 24 24">
-  <path
-    d="M12,3C7.58,3 4,4.79 4,7C4,9.21 7.58,11 12,11C16.42,11 20,9.21 20,7C20,4.79 16.42,3 12,3M4,9V12C4,14.21 7.58,16 12,16C16.42,16 20,14.21 20,12V9C20,11.21 16.42,13 12,13C7.58,13 4,11.21 4,9M4,14V17C4,19.21 7.58,21 12,21C16.42,21 20,19.21 20,17V14C20,16.21 16.42,18 12,18C7.58,18 4,16.21 4,14Z"
-  />
-</svg>`;
-
 /**
  * The cores, memory and disk sliders of a VM, shared by the UTM and Proxmox
  * settings. Each slider steps through its options. The view owns the values
@@ -112,18 +96,12 @@ export class VmResources extends LitElement {
   @property({ attribute: false }) diskSizeGb = 0;
 
   private _change(change: Partial<VmResourceValues>) {
-    this.dispatchEvent(
-      new CustomEvent<VmResourceValues>("resources-change", {
-        detail: {
-          cpuCores: this.cpuCores,
-          memoryMb: this.memoryMb,
-          diskSizeGb: this.diskSizeGb,
-          ...change,
-        },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    fireEvent(this, "resources-change", {
+      cpuCores: this.cpuCores,
+      memoryMb: this.memoryMb,
+      diskSizeGb: this.diskSizeGb,
+      ...change,
+    });
   }
 
   private _onCoresInput(e: Event) {
@@ -161,8 +139,9 @@ export class VmResources extends LitElement {
     onInput: (e: Event) => void,
     formatter: (index: number) => string
   ) {
+    // The slider's label says what the icon shows
     return html`<div class="setting-row">
-      <div class="setting-icon">${icon}</div>
+      <div class="setting-icon" aria-hidden="true">${icon}</div>
       <div class="setting-content">
         <wa-slider
           with-markers
@@ -194,7 +173,7 @@ export class VmResources extends LitElement {
   render() {
     return html`
       ${this._renderSlider(
-        cpuIcon,
+        renderIcon(mdiChip),
         localize("components.vm_resources.cpu_cores"),
         this.coreOptions,
         this.cpuCores,
@@ -204,7 +183,7 @@ export class VmResources extends LitElement {
         this._formatCoresAt
       )}
       ${this._renderSlider(
-        memoryIcon,
+        renderIcon(mdiMemory),
         localize("components.vm_resources.memory"),
         this.memoryOptions,
         this.memoryMb,
@@ -214,7 +193,7 @@ export class VmResources extends LitElement {
         this._formatMemoryAt
       )}
       ${this._renderSlider(
-        diskIcon,
+        renderIcon(mdiDatabase),
         localize("components.vm_resources.disk_size"),
         this.diskOptions,
         this.diskSizeGb,
@@ -230,5 +209,9 @@ export class VmResources extends LitElement {
 declare global {
   interface HTMLElementTagNameMap {
     "vm-resources": VmResources;
+  }
+
+  interface HAIEvents {
+    "resources-change": VmResourceValues;
   }
 }

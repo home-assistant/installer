@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "../../target/x86_64-unknown-linux-musl/release/hai-live": "hai-live"
+    }
+  }
+}

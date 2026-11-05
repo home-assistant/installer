@@ -1,5 +1,5 @@
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
-import { customElement, property, queryAll } from "lit/decorators.js";
+import { customElement, property, query, queryAll } from "lit/decorators.js";
 import type { WizardStep } from "../state/wizard-state.js";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { localize } from "../localization/localize.js";
@@ -7,12 +7,15 @@ import {
   reducedMotionStyles,
   srOnlyStyles,
 } from "../utils/view-accessibility.js";
+import { statusDotStyles } from "../utils/status-dot-styles.js";
+import { narrowWindow } from "../utils/breakpoints.js";
 
 @customElement("step-indicator")
 export class StepIndicator extends LitElement {
   static styles = [
     srOnlyStyles,
     reducedMotionStyles,
+    statusDotStyles,
     css`
       :host {
         display: block;
@@ -32,68 +35,36 @@ export class StepIndicator extends LitElement {
         gap: 0.5rem;
       }
 
-      /* Each state has its own shape, not only its own color: upcoming is an
-         empty ring, completed a filled dot, current a filled dot in a ring */
-      .step-dot {
-        box-sizing: border-box;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        border: 2px solid var(--ha-inactive-color, #8c8c8c);
+      .status-dot {
+        flex-shrink: 0;
         transition: all 0.2s ease;
-      }
-
-      .step-dot.active,
-      .step-dot.completed {
-        border-color: var(--ha-primary-color, #03a9f4);
-        background-color: var(--ha-primary-color, #03a9f4);
-      }
-
-      .step-dot.active {
-        outline: 2px solid var(--ha-primary-color, #03a9f4);
-        outline-offset: 2px;
       }
 
       .step-label {
         font-size: 0.875rem;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
         transition: color 0.2s ease;
       }
 
       .step-label.active {
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         font-weight: 500;
       }
 
       .step-connector {
+        flex-shrink: 0;
         width: 24px;
         height: 2px;
-        background-color: var(--ha-inactive-color, #8c8c8c);
+        background-color: var(--ha-inactive-color);
         transition: background-color 0.2s ease;
       }
 
       .step-connector.completed {
-        background-color: var(--ha-primary-color, #03a9f4);
+        background-color: var(--ha-primary-color);
       }
 
-      /* Forced colors would paint the fills like the page, leaving the
-         completed dots as empty as the upcoming ones */
+      /* Forced colors would paint the lines like the page, out of sight */
       @media (forced-colors: active) {
-        .step-dot {
-          border-color: GrayText;
-        }
-
-        .step-dot.completed {
-          border-color: CanvasText;
-          background-color: CanvasText;
-        }
-
-        .step-dot.active {
-          border-color: Highlight;
-          background-color: Highlight;
-          outline-color: Highlight;
-        }
-
         .step-connector {
           background-color: GrayText;
         }
@@ -103,30 +74,39 @@ export class StepIndicator extends LitElement {
         }
       }
 
-      /* Keep the other names in the accessibility tree when only the current
-       one fits. */
-      :host([compact]) .step-label:not(.active) {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
+      /* The current name takes the room the dots leave, and wraps there
+         rather than pushing steps onto a line of their own */
+      :host([compact]) .steps {
+        flex-wrap: nowrap;
+      }
+
+      :host([compact]) .step-label.active {
+        overflow-wrap: anywhere;
       }
 
       :host([compact]) .step-connector {
         width: 16px;
       }
 
-      @media (max-width: 600px) {
-        .step-label {
-          position: absolute;
-          width: 1px;
-          height: 1px;
-          overflow: hidden;
-          clip-path: inset(50%);
+      @media ${narrowWindow} {
+        .steps {
+          gap: 0.25rem;
         }
+
+        /* Its ring reaches as far as the gap, and would touch the lines */
+        .status-dot.active {
+          margin-inline: 2px;
+        }
+
         .step-connector {
           width: 8px;
+        }
+
+        /* With only the current name shown, the dots alone say how far the
+           steps are, and the lines between them would leave the name too
+           little room */
+        :host([compact]) .step-connector {
+          display: none;
         }
       }
     `,
@@ -140,6 +120,12 @@ export class StepIndicator extends LitElement {
 
   @queryAll(".step")
   private _steps!: NodeListOf<HTMLElement>;
+
+  @queryAll(".step-label")
+  private _labels!: NodeListOf<HTMLElement>;
+
+  @query(".step-label.active")
+  private _currentLabel!: HTMLElement | null;
 
   private _fitFrame?: number;
 
@@ -177,9 +163,37 @@ export class StepIndicator extends LitElement {
     const first = steps[0];
     const last = steps[steps.length - 1];
     if (!first || !last || first === last) return;
-    this.removeAttribute("compact");
+    this._setCompact(false);
     const wraps = last.offsetTop >= first.offsetTop + first.offsetHeight;
-    this.toggleAttribute("compact", wraps);
+    this._setCompact(wraps);
+    if (wraps && this._currentLabel) this._hug(this._currentLabel);
+  }
+
+  // Hidden, the other names stay in the accessibility tree. Rendering a
+  // label's class anew drops `sr-only`, and `updated` fits the steps again.
+  private _setCompact(compact: boolean) {
+    this.toggleAttribute("compact", compact);
+    for (const label of this._labels) {
+      label.classList.toggle(
+        "sr-only",
+        compact && !label.classList.contains("active")
+      );
+      label.style.width = "";
+    }
+  }
+
+  /**
+   * A name that wraps keeps all the room it was given, beside its shorter
+   * lines too. Narrow it to its longest line, so the next dot follows it.
+   */
+  private _hug(label: HTMLElement) {
+    const range = document.createRange();
+    range.selectNodeContents(label);
+    const lines = [...range.getClientRects()];
+    if (lines.length < 2) return;
+    const start = Math.min(...lines.map((line) => line.left));
+    const end = Math.max(...lines.map((line) => line.right));
+    label.style.width = `${Math.ceil(end - start)}px`;
   }
 
   render() {
@@ -211,7 +225,7 @@ export class StepIndicator extends LitElement {
         aria-current=${ifDefined(isActive ? "step" : undefined)}
       >
         <span
-          class="step-dot ${isActive ? "active" : ""} ${isCompleted
+          class="status-dot ${isActive ? "active" : ""} ${isCompleted
             ? "completed"
             : ""}"
           aria-hidden="true"

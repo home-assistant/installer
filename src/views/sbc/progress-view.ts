@@ -1,153 +1,77 @@
 import { localize } from "../../localization/localize.js";
 import {
   installerError,
+  isDriveFailure,
+  retryableOnceFixed,
   type InstallerError,
 } from "../../utils/installer-error.js";
-import { LitElement, html, css } from "lit";
+import { html } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { wizardState, type WizardState } from "../../state/wizard-state.js";
 import {
   cancelFlash,
   flashImage,
   type FlashProgress,
+  type FlashStage,
 } from "../../api/index.js";
 import { readDriveSelection } from "../../utils/drive-selection.js";
 import { selectedWifi } from "../../utils/wifi.js";
-import { findInstaller } from "../ha-hardware/hardware.js";
+import { findInstaller } from "../../state/ha-hardware.js";
 import "../../components/install-progress.js";
-import "../../components/progress-bar.js";
-import {
-  InstallDiagnostics,
-  logFrontendError,
-} from "../../utils/diagnostics.js";
+import { InstallProgressView } from "../install-progress-view.js";
 
-/**
- * Failures the user fixes on this computer: a cancelled password prompt or
- * blocked access, or a stopped disk service. Nothing was written, and the
- * same drive can be tried again once fixed, as the message says. The
- * backend marks them not retryable because trying again right away fails
- * the same way.
- */
-const FIXED_ON_THIS_COMPUTER = [
-  "permission_denied",
-  "disk_service_unavailable",
+/** The stages a flash goes through, in order */
+const STAGES: readonly FlashStage[] = [
+  "downloading",
+  "extracting",
+  "writing",
+  "verifying",
+  "finalizing",
 ];
 
-@customElement("progress-view")
-export class ProgressView extends LitElement {
-  static styles = css`
-    :host {
-      display: flex;
-      flex-direction: column;
-      min-height: 100%;
-    }
-    install-progress {
-      width: 100%;
-      flex: 1;
-    }
-  `;
+/** Why a flash cannot start: an earlier step left no drive or board */
+function missingTarget(): Error {
+  return new Error(
+    localize("views.sbc.progress_view.missing_drive_or_device_configuration")
+  );
+}
 
-  @state()
-  private _wizardState: WizardState = wizardState.getState();
+@customElement("progress-view")
+export class ProgressView extends InstallProgressView {
+  protected readonly _flow = "flash";
 
   @state()
   private _progress: FlashProgress | null = null;
 
-  @state()
-  private _error: InstallerError | null = null;
-
-  @state()
-  private _isFlashing = false;
-
-  @state()
-  private _stopping = false;
-
   /** Whether this attempt got as far as the drive. */
   private _reachedDrive = false;
 
-  /** Names the running attempt, so a late stop can never hit a retry. */
-  private _attempt = "";
-
-  private _stageStartTime: number | null = null;
-  private _diagnostics?: InstallDiagnostics;
-  private _stageStartBytes: number = 0;
-
-  /** Whether the flash operation has failed */
-  get hasError(): boolean {
-    return this._error !== null;
+  protected _cancel(attempt: string): Promise<void> {
+    return cancelFlash(attempt);
   }
 
-  /** Retry the flash operation */
-  retry(): void {
-    if (!this._error?.retryable) return;
-    this._error = null;
+  protected _resetProgress() {
     this._progress = null;
-    this._stageStartTime = null;
-    this._stageStartBytes = 0;
-    void this._startFlashing();
   }
 
-  /** Stop the running flash. It ends as a retryable `cancelled` error. */
-  stop(): void {
-    if (!this._isFlashing || this._stopping) return;
-
-    this._stopping = true;
-    const attempt = this._attempt;
-    cancelFlash(attempt).catch((error: unknown) => {
-      logFrontendError(error);
-      // A late failure must not touch a retry that is stopping by now
-      if (attempt !== this._attempt || !this._isFlashing) return;
-
-      // The flash keeps going; show it as such again
-      this._stopping = false;
-      this.dispatchEvent(
-        new CustomEvent("flash-stop-failed", { bubbles: true, composed: true })
-      );
-    });
+  protected _startFailure() {
+    const selections = this._wizardState.selections;
+    if (readDriveSelection(selections) && selections.deviceConfig) {
+      return undefined;
+    }
+    return { error: missingTarget() };
   }
 
-  private _unsubscribe?: () => void;
-
-  connectedCallback() {
-    super.connectedCallback();
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-    });
-
-    // Start flashing when view is connected
-    void this._startFlashing();
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this._unsubscribe?.();
-  }
-
-  private async _startFlashing() {
-    if (this._isFlashing) return;
-
-    this._isFlashing = true;
+  protected async _install() {
     this._reachedDrive = false;
-    this._attempt = crypto.randomUUID();
-    this._diagnostics = new InstallDiagnostics("flash");
-    this._error = null;
-
     const selections = this._wizardState.selections;
     const drive = readDriveSelection(selections);
     const deviceConfig = selections.deviceConfig;
+    // `_startFailure` holds back a flash without them; should one go missing
+    // anyway, it fails the same way
+    if (!drive || !deviceConfig) throw missingTarget();
 
-    if (!drive || !deviceConfig) {
-      this._isFlashing = false;
-      this._setError(
-        localize(
-          "views.sbc.progress_view.missing_drive_or_device_configuration"
-        )
-      );
-      return;
-    }
-
-    try {
-      await flashImage(
+    await this._runStoppable((attempt) =>
+      flashImage(
         {
           device_id: drive.id,
           board: deviceConfig.board,
@@ -175,78 +99,40 @@ export class ProgressView extends LitElement {
           if (["writing", "verifying", "finalizing"].includes(progress.stage)) {
             this._reachedDrive = true;
           }
-
-          // If we've completed, advance to next step
-          if (progress.stage === "complete") {
-            this._onComplete();
-          }
         },
-        this._attempt
-      );
-    } catch (err) {
-      this._setError(err, this._stoppedMessage(err));
-    } finally {
-      this._isFlashing = false;
-      this._stopping = false;
-    }
+        attempt
+      )
+    );
   }
 
-  /** Say what a stop left behind, rather than a generic "cancelled". */
-  private _stoppedMessage(error: unknown): string | undefined {
-    if (!this._stopping || installerError(error).code !== "cancelled") {
-      return undefined;
-    }
+  protected _installerError(error: unknown): InstallerError {
+    return retryableOnceFixed(installerError(error));
+  }
 
+  // Only what is wrong with the drive leads back to the drive step. Space on
+  // this computer or an unexpected response can't be fixed there.
+  protected _choiceCanFix(error: InstallerError): boolean {
+    return isDriveFailure(error.code);
+  }
+
+  protected _stoppedMessage(): string {
     if (this._reachedDrive) {
       return localize("views.sbc.progress_view.stopped_drive_not_ready");
     }
     return localize("views.sbc.progress_view.stopped_nothing_written");
   }
 
-  private _setError(error: unknown, message?: string) {
-    this._diagnostics?.fail(error);
-    const installer = installerError(error);
-    const retryable =
-      installer.retryable || FIXED_ON_THIS_COMPUTER.includes(installer.code);
-    this._error = {
-      ...installer,
-      retryable,
-      message: message ?? installer.message,
-    };
-    this.dispatchEvent(
-      new CustomEvent("flash-error", {
-        detail: { retryable: this._error.retryable },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
-  private _onComplete() {
-    // Dispatch event to notify parent
-    this.dispatchEvent(
-      new CustomEvent("flash-complete", {
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
   render() {
     const stage = this._progress?.stage || "downloading";
     return html`
       <install-progress
-        .stages=${[
-          "downloading",
-          "extracting",
-          "writing",
-          "verifying",
-          "finalizing",
-        ].map((id) => ({ id, label: this._getStageDescription(id) }))}
+        .stages=${STAGES.map((id) => ({
+          id,
+          label: this._getStageDescription(id),
+        }))}
         .stage=${stage}
-        .stageTitle=${this._stopping
-          ? localize("common.install.stopping")
-          : this._getStageTitle(stage)}
+        .stageTitle=${this._getStageTitle(stage)}
+        .stopping=${this._stopping}
         .description=${this._getStageDescription(stage)}
         .progress=${this._progress?.progress || 0}
         .bytesProcessed=${this._progress?.bytes_processed || 0}
@@ -261,7 +147,7 @@ export class ProgressView extends LitElement {
     `;
   }
 
-  private _getStageTitle(stage: string): string {
+  private _getStageTitle(stage: FlashStage): string {
     switch (stage) {
       case "downloading":
         return localize("common.install.downloading");
@@ -282,16 +168,16 @@ export class ProgressView extends LitElement {
     }
   }
 
-  private _getStageDescription(stage: string): string {
+  private _getStageDescription(stage: FlashStage): string {
     const installer = !!findInstaller(
       this._wizardState.selections.deviceConfig?.board
     );
     switch (stage) {
       case "downloading":
         return installer
-          ? localize("views.sbc.progress_view.fetching_the_installer_image")
+          ? localize("views.sbc.progress_view.downloading_the_installer_image")
           : localize(
-              "views.sbc.progress_view.fetching_the_home_assistant_image"
+              "views.sbc.progress_view.downloading_the_home_assistant_image"
             );
       case "extracting":
         return localize("common.install.extracting_the_image");

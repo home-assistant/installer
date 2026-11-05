@@ -75,13 +75,8 @@ pub fn setup_status(status: &hai_core::HaSetupStatus) {
         quarter(status.core_install_progress),
         status.problems
     );
-    if let Ok(mut last) = LAST_SETUP_STATUS.lock() {
-        if last.as_ref() == Some(&line) {
-            return;
-        }
-        *last = Some(line.clone());
-    }
-    record(
+    record_change(
+        &LAST_SETUP_STATUS,
         if status.problems.is_empty() {
             log::Level::Info
         } else {
@@ -89,6 +84,41 @@ pub fn setup_status(status: &hai_core::HaSetupStatus) {
         },
         line,
     );
+}
+
+/// The lookup outcome last recorded, as the success step looks every few seconds.
+static LAST_LOOKUP: Mutex<Option<String>> = Mutex::new(None);
+
+/// Record how a lookup of Home Assistant on the network went, when that
+/// changes. Only how many answered reaches the log, never who or where.
+pub fn lookup<E: Categorized>(result: &Result<Vec<hai_core::HaAnnouncement>, E>) {
+    match result {
+        Ok(found) => record_change(
+            &LAST_LOOKUP,
+            log::Level::Info,
+            format!(
+                "home_assistant_lookup found={} landing_pages={}",
+                found.len(),
+                found.iter().filter(|found| found.landing_page).count()
+            ),
+        ),
+        Err(error) => record_change(
+            &LAST_LOOKUP,
+            log::Level::Warn,
+            format!("home_assistant_lookup failed {}", error.category()),
+        ),
+    }
+}
+
+/// Record `line`, unless it is the one `last` holds from the time before.
+fn record_change(last: &Mutex<Option<String>>, level: log::Level, line: String) {
+    if let Ok(mut last) = last.lock() {
+        if last.as_ref() == Some(&line) {
+            return;
+        }
+        *last = Some(line.clone());
+    }
+    record(level, line);
 }
 
 /// Preserve a useful failure category without persisting arbitrary error text.
@@ -244,6 +274,7 @@ pub enum ErrorCategory {
     ChecksumMismatch,
     VerificationFailed,
     WriteProtected,
+    UnsupportedSectorSize,
     DriveDisconnected,
     PermissionDenied,
     DiskServiceUnavailable,
@@ -252,6 +283,7 @@ pub enum ErrorCategory {
     #[serde(alias = "network")]
     NetworkError,
     DownloadFailed,
+    NotEnoughSpace,
     ExtractionFailed,
     ProxmoxError,
     #[serde(alias = "utm")]
@@ -275,9 +307,25 @@ pub enum ErrorCategory {
     InvalidConfig,
     RateLimited,
     DriveTooSmall,
+    DriveIo,
+    DriveVerificationFailed,
+    DriveCheckFailed,
+    DriveInSystemUse,
     TemporaryImageUnavailable,
     OperationInProgress,
     Internal,
+    // The live USB stick and ISO, and restarting as administrator for them
+    HaiLiveMissing,
+    HaiLiveInvalid,
+    ReleaseUnavailable,
+    ImageBuildFailed,
+    FileExists,
+    InvalidFileName,
+    FileNameNotPortable,
+    FolderNotFound,
+    FolderInCache,
+    FolderNameTaken,
+    RelaunchCancelled,
     UpdateFailed,
     /// A problem Supervisor reported held up installing Home Assistant: the
     /// frontend's `home_assistant_` codes, one per `HaSetupProblem`.
@@ -453,6 +501,50 @@ mod tests {
     }
 
     #[test]
+    // Other tests clear the shared tail
+    #[serial_test::serial]
+    fn lookup_records_its_changes_but_never_who_answered() {
+        use hai_core::HaAnnouncement;
+
+        clear_test_log_tail();
+        let core = HaAnnouncement {
+            id: "private-core-uuid".into(),
+            address: "192.168.1.20:8123".into(),
+            landing_page: false,
+        };
+        let landing_page = HaAnnouncement {
+            id: "private-landing-page-uuid".into(),
+            address: "192.168.1.50".into(),
+            landing_page: true,
+        };
+
+        lookup::<String>(&Ok(vec![core.clone()]));
+        // The same again adds nothing
+        lookup::<String>(&Ok(vec![core.clone()]));
+        lookup::<String>(&Ok(vec![core, landing_page]));
+        lookup::<String>(&Err("Network error: 192.168.1.9 unreachable".into()));
+
+        let tail = test_log_tail();
+        let lines: Vec<_> = tail
+            .iter()
+            .filter(|line| line.contains(" home_assistant_lookup "))
+            .map(|line| line.split_once(' ').unwrap().1)
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "home_assistant_lookup found=1 landing_pages=0",
+                "home_assistant_lookup found=2 landing_pages=1",
+                "home_assistant_lookup failed network_error",
+            ]
+        );
+        let tail = tail.join("\n");
+        for private in ["private", "192.168"] {
+            assert!(!tail.contains(private), "{tail}");
+        }
+    }
+
+    #[test]
     fn every_setup_problem_has_a_failure_category() {
         use hai_core::HaSetupProblem::*;
 
@@ -501,18 +593,35 @@ mod tests {
             "utm_vm_created",
             "drive_disconnected",
             "write_protected",
+            "unsupported_sector_size",
             "unsupported_platform",
             "json",
             "invalid_config",
             "rate_limited",
             "download_failed",
+            "not_enough_space",
             "extraction_failed",
             "verification_failed",
             "image_too_large",
             "drive_too_small",
+            "drive_io",
+            "drive_verification_failed",
+            "drive_check_failed",
+            "drive_in_system_use",
             "temporary_image_unavailable",
             "operation_in_progress",
             "internal",
+            "hai_live_missing",
+            "hai_live_invalid",
+            "release_unavailable",
+            "image_build_failed",
+            "file_exists",
+            "invalid_file_name",
+            "file_name_not_portable",
+            "folder_not_found",
+            "folder_in_cache",
+            "folder_name_taken",
+            "relaunch_cancelled",
             "update_failed",
         ] {
             let category = serde_json::from_value::<ErrorCategory>(code.into()).unwrap();

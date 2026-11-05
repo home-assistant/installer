@@ -1,0 +1,19 @@
+[package]
+name = "hai-live"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+description = "Install program on the live USB stick: writes Home Assistant OS to the internal drive"
+
+[dependencies]
+lzma-rs = { workspace = true }
+ratatui = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

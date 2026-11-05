@@ -1,5 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { skipWifiStep } from "./fixtures.js";
+import { type Page } from "@playwright/test";
+import { skipWifiStep, test, expect } from "./fixtures.js";
 
 const nextButton = (page: Page) =>
   page.locator("wizard-shell .footer-right wa-button");
@@ -50,7 +50,6 @@ for (const width of [1100, 390]) {
       .locator('option-card[heading="Raspberry Pi & other boards"]')
       .click();
     await page.locator("device-selection-view device-card").first().click();
-    await nextButton(page).click();
 
     const cards = page.locator("drive-selection-view drive-card");
     const small = cards.filter({ hasText: "Small drive" });

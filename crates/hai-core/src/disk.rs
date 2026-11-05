@@ -171,15 +171,38 @@ pub(super) fn normalize_serial(serial: Option<&str>) -> Option<String> {
 }
 
 fn check_identity(devices: &[BlockDevice], id: &str, expected: &ExpectedDevice) -> Result<()> {
-    if devices
+    let Some(device) = devices
         .iter()
-        .any(|device| device.id == id && expected.matches(device))
-    {
+        .find(|device| device.id == id && expected.matches(device))
+    else {
+        return Err(Error::DeviceNotFound(
+            "The selected drive changed or was disconnected. Select it again.".into(),
+        ));
+    };
+
+    // The app only offers removable drives. Refuse anything else here too, so
+    // a new caller or a regression in the app can never reach an internal disk.
+    if !device.removable {
+        return Err(Error::InvalidConfig(format!(
+            "{id} is not a removable drive and cannot be overwritten"
+        )));
+    }
+    Ok(())
+}
+
+/// The sector size every image is laid out for. The partition tables in the
+/// images count in 512-byte sectors, so on a drive with larger sectors the
+/// firmware looks for them in the wrong place.
+const SUPPORTED_SECTOR_SIZE: u64 = 512;
+
+/// Refuse a drive whose logical sectors aren't 512 bytes, before anything on
+/// it is touched.
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows", test))]
+fn ensure_supported_sector_size(sector_size: u64) -> Result<()> {
+    if sector_size == SUPPORTED_SECTOR_SIZE {
         Ok(())
     } else {
-        Err(Error::DeviceNotFound(
-            "The selected drive changed or was disconnected. Select it again.".into(),
-        ))
+        Err(Error::UnsupportedSectorSize(sector_size))
     }
 }
 
@@ -230,16 +253,6 @@ const DISCONNECTED_OS_ERRORS: &[i32] = &[
     1167, // ERROR_DEVICE_NOT_CONNECTED
 ];
 
-/// Raw OS error codes that mean the drive refuses writes.
-#[cfg(unix)]
-const WRITE_PROTECTED_OS_ERRORS: &[i32] = &[
-    30, // EROFS: read-only file system
-];
-#[cfg(windows)]
-const WRITE_PROTECTED_OS_ERRORS: &[i32] = &[
-    19, // ERROR_WRITE_PROTECT
-];
-
 /// Check if an I/O error indicates the drive was disconnected
 fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
     matches!(
@@ -255,23 +268,23 @@ fn is_drive_disconnected(io_err: &std::io::Error) -> bool {
 /// Check if an I/O error means the drive is write-protected, like an SD card
 /// with its lock switch on.
 fn is_write_protected(io_err: &std::io::Error) -> bool {
+    // std gives EROFS and ERROR_WRITE_PROTECT this kind
     io_err.kind() == std::io::ErrorKind::ReadOnlyFilesystem
-        || io_err
-            .raw_os_error()
-            .is_some_and(|code| WRITE_PROTECTED_OS_ERRORS.contains(&code))
 }
 
 /// Map an I/O error from reading or writing the device onto an [`Error`]:
 /// a disconnect and write protection get their own errors, so the user is
 /// told what to do about them.
-#[cfg(any(target_os = "linux", target_os = "windows", test))]
 fn device_io_error(io_err: std::io::Error) -> Error {
     if is_drive_disconnected(&io_err) {
         Error::DriveDisconnected
     } else if is_write_protected(&io_err) {
         Error::WriteProtected
-    } else {
+    } else if io_err.kind() == std::io::ErrorKind::PermissionDenied {
+        // Something on this computer, like security software, refused access
         Error::Io(io_err)
+    } else {
+        Error::DriveIo(io_err)
     }
 }
 
@@ -407,6 +420,66 @@ impl DeviceBackend for Backend {
 mod tests {
     use super::*;
 
+    fn usb_stick(removable: bool) -> BlockDevice {
+        BlockDevice {
+            id: "/dev/sdb".into(),
+            name: "SanDisk Ultra".into(),
+            size: 32_000_000_000,
+            device_type: crate::types::DeviceType::UsbDrive,
+            removable,
+            model: Some("Ultra".into()),
+            vendor: Some("SanDisk".into()),
+            serial: None,
+        }
+    }
+
+    fn expected(device: &BlockDevice) -> ExpectedDevice {
+        ExpectedDevice {
+            size: Some(device.size),
+            model: device.model.clone(),
+            vendor: device.vendor.clone(),
+            serial: device.serial.clone(),
+        }
+    }
+
+    #[test]
+    fn identity_check_accepts_the_selected_removable_drive() {
+        let stick = usb_stick(true);
+        assert!(
+            check_identity(std::slice::from_ref(&stick), "/dev/sdb", &expected(&stick)).is_ok()
+        );
+    }
+
+    #[test]
+    fn identity_check_refuses_a_drive_that_is_not_removable() {
+        let disk = usb_stick(false);
+        let error =
+            check_identity(std::slice::from_ref(&disk), "/dev/sdb", &expected(&disk)).unwrap_err();
+        assert!(matches!(error, Error::InvalidConfig(_)), "{error:?}");
+    }
+
+    #[test]
+    fn identity_check_refuses_a_different_or_missing_drive() {
+        let stick = usb_stick(true);
+        let mut other = stick.clone();
+        other.size += 1;
+        for devices in [vec![other], vec![]] {
+            let error = check_identity(&devices, "/dev/sdb", &expected(&stick)).unwrap_err();
+            assert!(matches!(error, Error::DeviceNotFound(_)), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn only_512_byte_sectors_are_supported() {
+        assert!(ensure_supported_sector_size(512).is_ok());
+        for size in [0, 4096, 1024, 2048] {
+            assert!(matches!(
+                ensure_supported_sector_size(size),
+                Err(Error::UnsupportedSectorSize(reported)) if reported == size
+            ));
+        }
+    }
+
     struct CancelledProgress;
 
     impl ProgressCallback for CancelledProgress {
@@ -491,35 +564,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
-    fn full_disk_write_retains_progress_and_size() {
-        #[cfg(target_os = "linux")]
-        let codes = [28, 28]; // ENOSPC
-        #[cfg(target_os = "windows")]
-        let codes = [39, 112]; // ERROR_HANDLE_DISK_FULL, ERROR_DISK_FULL
-        for code in codes {
-            assert!(matches!(
-                device_write_error(std::io::Error::from_raw_os_error(code), 10, 20),
-                Error::ImageTooLarge {
-                    written: 10,
-                    image_size: 20,
-                    drive_size: None
-                }
-            ));
-        }
-        assert!(matches!(
-            device_write_error(std::io::Error::other("unknown"), 10, 20),
-            Error::Io(_)
-        ));
-    }
-
-    #[test]
-    #[cfg(not(target_os = "windows"))]
-    fn write_privileges_are_authorized_later_off_windows() {
-        Backend.check_write_privileges().unwrap();
-    }
-
-    #[test]
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn test_mentions_sd_card_whole_word_variants() {
         for s in [
@@ -576,138 +620,63 @@ mod tests {
     }
 
     #[test]
-    fn test_is_drive_disconnected_all_matching_kinds() {
-        use std::io::ErrorKind;
-
-        for kind in [
-            ErrorKind::NotFound,
-            ErrorKind::BrokenPipe,
-            ErrorKind::UnexpectedEof,
-        ] {
-            assert!(
-                is_drive_disconnected(&std::io::Error::new(kind, "test")),
-                "{kind:?} should be detected as disconnected"
-            );
-        }
-
-        for &code in DISCONNECTED_OS_ERRORS {
-            assert!(
-                is_drive_disconnected(&std::io::Error::from_raw_os_error(code)),
-                "os error {code} should be detected as disconnected"
-            );
-        }
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn test_unix_disconnect_codes() {
-        // ENXIO and ENODEV
-        for code in [6, 19] {
-            assert!(is_drive_disconnected(&std::io::Error::from_raw_os_error(
-                code
-            )));
-        }
-    }
-
-    /// The Unix numbers mean something else on Windows: 6 is
-    /// ERROR_INVALID_HANDLE and 19 ERROR_WRITE_PROTECT, a locked SD card.
-    #[test]
-    #[cfg(windows)]
-    fn test_windows_disconnect_codes() {
-        for code in [21, 433, 1167] {
-            assert!(
-                is_drive_disconnected(&std::io::Error::from_raw_os_error(code)),
-                "os error {code} should be detected as disconnected"
-            );
-        }
-        for code in [6, 19] {
-            assert!(
-                !is_drive_disconnected(&std::io::Error::from_raw_os_error(code)),
-                "os error {code} should NOT be detected as disconnected"
-            );
-        }
-    }
-
-    #[test]
-    fn test_is_write_protected() {
-        assert!(is_write_protected(&std::io::Error::new(
-            std::io::ErrorKind::ReadOnlyFilesystem,
-            "test"
-        )));
-
-        #[cfg(unix)]
-        let locked = 30; // EROFS
-        #[cfg(windows)]
-        let locked = 19; // ERROR_WRITE_PROTECT
-        assert!(is_write_protected(&std::io::Error::from_raw_os_error(
-            locked
-        )));
-        assert!(!is_drive_disconnected(&std::io::Error::from_raw_os_error(
-            locked
-        )));
-
-        assert!(!is_write_protected(&std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            "test"
-        )));
-    }
-
-    #[test]
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
-    fn test_device_io_error_maps_disconnect_and_write_protection() {
+    fn device_io_errors_are_classified() {
         use std::io::{Error as IoError, ErrorKind};
 
-        assert!(matches!(
-            device_io_error(IoError::new(ErrorKind::BrokenPipe, "gone")),
-            Error::DriveDisconnected
-        ));
-        assert!(matches!(
-            device_io_error(IoError::new(ErrorKind::ReadOnlyFilesystem, "locked")),
-            Error::WriteProtected
-        ));
-        assert!(matches!(
-            device_io_error(IoError::other("something else")),
-            Error::Io(_)
-        ));
-    }
+        let kind = IoError::from;
+        let os = IoError::from_raw_os_error;
+        let mut cases = vec![
+            (kind(ErrorKind::NotFound), "disconnected"),
+            (kind(ErrorKind::BrokenPipe), "disconnected"),
+            (kind(ErrorKind::UnexpectedEof), "disconnected"),
+            (kind(ErrorKind::ReadOnlyFilesystem), "write-protected"),
+            (kind(ErrorKind::StorageFull), "full"),
+            (kind(ErrorKind::PermissionDenied), "io"),
+            (IoError::other("unknown"), "drive"),
+        ];
+        #[cfg(unix)]
+        cases.extend([
+            (os(6), "disconnected"),     // ENXIO
+            (os(19), "disconnected"),    // ENODEV
+            (os(30), "write-protected"), // EROFS
+            (os(28), "full"),            // ENOSPC
+            (os(5), "drive"),            // EIO
+            (os(1), "io"),               // EPERM
+        ]);
+        // The Unix numbers mean something else on Windows: 6 is
+        // ERROR_INVALID_HANDLE and 19 ERROR_WRITE_PROTECT, a locked SD card.
+        #[cfg(windows)]
+        cases.extend([
+            (os(21), "disconnected"),   // ERROR_NOT_READY
+            (os(433), "disconnected"),  // ERROR_NO_SUCH_DEVICE
+            (os(1167), "disconnected"), // ERROR_DEVICE_NOT_CONNECTED
+            (os(1), "drive"),           // ERROR_INVALID_FUNCTION
+            (os(6), "drive"),
+            (os(19), "write-protected"),
+            (os(39), "full"),    // ERROR_HANDLE_DISK_FULL
+            (os(112), "full"),   // ERROR_DISK_FULL
+            (os(23), "drive"),   // ERROR_CRC
+            (os(31), "drive"),   // ERROR_GEN_FAILURE
+            (os(121), "drive"),  // ERROR_SEM_TIMEOUT
+            (os(1117), "drive"), // ERROR_IO_DEVICE
+        ]);
 
-    #[test]
-    fn test_is_drive_disconnected_non_matching_kinds() {
-        use std::io::ErrorKind;
-
-        for kind in [
-            ErrorKind::PermissionDenied,
-            ErrorKind::ConnectionRefused,
-            ErrorKind::ConnectionReset,
-            ErrorKind::ConnectionAborted,
-            ErrorKind::AddrInUse,
-            ErrorKind::AddrNotAvailable,
-            ErrorKind::InvalidInput,
-            ErrorKind::InvalidData,
-            ErrorKind::TimedOut,
-            ErrorKind::WriteZero,
-            ErrorKind::Interrupted,
-            ErrorKind::Other,
-            ErrorKind::WouldBlock,
-        ] {
-            assert!(
-                !is_drive_disconnected(&std::io::Error::new(kind, "test")),
-                "{kind:?} should NOT be detected as disconnected"
-            );
+        for (error, expected) in cases {
+            let case = format!("{error:?}");
+            let classified = match device_write_error(error, 10, 20) {
+                Error::DriveDisconnected => "disconnected",
+                Error::WriteProtected => "write-protected",
+                Error::ImageTooLarge {
+                    written: 10,
+                    image_size: 20,
+                    drive_size: None,
+                } => "full",
+                Error::DriveIo(_) => "drive",
+                Error::Io(_) => "io",
+                other => panic!("{case}: {other:?}"),
+            };
+            assert_eq!(classified, expected, "{case}");
         }
-
-        // Non-matching raw OS error codes: EPERM / ERROR_INVALID_FUNCTION (1)
-        // and EACCES / ERROR_INVALID_DATA (13)
-        for code in [1, 13] {
-            assert!(
-                !is_drive_disconnected(&std::io::Error::from_raw_os_error(code)),
-                "os error {code} should NOT be detected as disconnected"
-            );
-        }
-
-        // Error without a raw OS error code
-        let err = std::io::Error::other("generic error");
-        assert!(!is_drive_disconnected(&err));
     }
 
     #[tokio::test]

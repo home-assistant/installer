@@ -4,26 +4,34 @@ import {
   type InstallerError,
 } from "../../utils/installer-error.js";
 import { linkStyles } from "../../utils/link-styles.js";
+import { sectionLabelStyles } from "../../utils/section-label-styles.js";
 import { LitElement, html, css } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import {
   ViewAccessibility,
+  activeElement,
+  focusHeading,
   reducedMotionStyles,
   srOnlyStyles,
 } from "../../utils/view-accessibility.js";
-import { InstallDiagnostics } from "../../utils/diagnostics.js";
+import { recordFailure } from "../../utils/diagnostics.js";
 import { customElement, query, state } from "lit/decorators.js";
 import {
-  formatBytes,
   listBlockDevices,
+  relaunchAsAdmin,
   type BlockDevice,
+  type HaosConfig,
 } from "../../api/index.js";
+import { formatBytes } from "../../utils/format.js";
 import { wizardState } from "../../state/wizard-state.js";
 import {
   clearDriveSelection,
+  driveIdentity,
   findDrive,
   getDriveFit,
+  isComputeModuleEmmc,
   isEligibleFlashTarget,
+  isSameDrive,
   readDriveSelection,
   storeDriveSelection,
 } from "../../utils/drive-selection.js";
@@ -49,9 +57,22 @@ export class DriveSelectionView extends LitElement {
     srOnlyStyles,
     reducedMotionStyles,
     linkStyles,
+    sectionLabelStyles,
     css`
       inline-notice {
         margin-bottom: 1.5rem;
+      }
+
+      .admin-needed wa-button {
+        align-self: flex-start;
+      }
+
+      .relaunch-error {
+        width: 100%;
+        max-width: var(--ha-content-width);
+        margin: 0;
+        color: var(--ha-error-color);
+        overflow-wrap: anywhere;
       }
 
       .drives-header {
@@ -59,22 +80,18 @@ export class DriveSelectionView extends LitElement {
         align-items: center;
         justify-content: space-between;
         width: 100%;
-        max-width: 500px;
+        max-width: var(--ha-content-width);
         margin-bottom: 1rem;
-      }
-
-      .drives-title {
-        font-size: 0.875rem;
-        font-weight: 500;
-        color: var(--ha-secondary-text-color, #727272);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin: 0;
       }
 
       .drives-list {
         width: 100%;
-        max-width: 500px;
+        max-width: var(--ha-content-width);
+      }
+
+      /* Named by its label, which the heading above already shows. */
+      .drives-list::part(form-control-label) {
+        display: none;
       }
 
       .drives-list::part(form-control-input) {
@@ -87,7 +104,7 @@ export class DriveSelectionView extends LitElement {
         align-items: center;
         padding: 2rem;
         text-align: center;
-        color: var(--ha-secondary-text-color, #727272);
+        color: var(--ha-secondary-text-color);
       }
 
       casita-mascot {
@@ -97,7 +114,7 @@ export class DriveSelectionView extends LitElement {
       .empty-title {
         font-size: 1.125rem;
         font-weight: 500;
-        color: var(--ha-text-color, #212121);
+        color: var(--ha-text-color);
         margin: 0 0 0.5rem 0;
       }
 
@@ -122,6 +139,10 @@ export class DriveSelectionView extends LitElement {
   @query(".drives-header wa-button, .empty-state wa-button, .error wa-button")
   private _refreshButton?: HTMLElement;
 
+  /** Why no drive can be picked, while none can */
+  @query(".no-usable-drive")
+  private _noUsableDriveReason?: HTMLElement;
+
   @state()
   private _error: InstallerError | null = null;
 
@@ -131,6 +152,10 @@ export class DriveSelectionView extends LitElement {
   /** Set when a previously selected drive was dropped by a re-scan. */
   @state()
   private _selectionLost = false;
+
+  /** Why restarting as administrator didn't happen, such as a declined prompt */
+  @state()
+  private _relaunchError = "";
 
   connectedCallback() {
     super.connectedCallback();
@@ -161,8 +186,6 @@ export class DriveSelectionView extends LitElement {
         err,
         localize("views.sbc.drive_selection_view.failed_to_load_drives")
       );
-      // The scan failed, so the selection cannot be confirmed. Drop it rather
-      // than let a stale path through to the write.
       drives = [];
     }
 
@@ -172,17 +195,42 @@ export class DriveSelectionView extends LitElement {
       return;
     }
 
+    const explained = this._noUsableDrive();
     this._drives = drives;
     this._error = error;
-    if (error) new InstallDiagnostics("flash").fail(scanError);
+    if (error) recordFailure("flash", scanError);
     this._loading = false;
     this._scanned = true;
     this._reconcileSelection();
-    wizardState.setSelection("driveScanReady", true);
+    // A failed scan confirmed nothing, so Next keeps waiting for one that does
+    if (!error) wizardState.setSelection("driveScanReady", true);
 
-    // Refresh can give way to the list it found, or the other way around
     await this.updateComplete;
+    // Not one card can be picked, so the group takes no focus and Tab skips
+    // every drive. Continue from why instead, when that is new.
+    const why = this._noUsableDriveReason;
+    const active = activeElement();
+    if (
+      why &&
+      !explained &&
+      (!active || active === document.body || this.matches(":focus-within"))
+    ) {
+      focusHeading(why);
+      return;
+    }
+    // Refresh can give way to the list it found, or the other way around
     this._accessibility.restoreFocus(this._refreshButton);
+  }
+
+  /** Whether the list is up, but every drive on it is disabled. */
+  private _noUsableDrive(): boolean {
+    const config = wizardState.getState().selections.deviceConfig;
+    return (
+      this._scanned &&
+      !this._error &&
+      this._drives.length > 0 &&
+      !this._drives.some((drive) => isEligibleFlashTarget(drive, config))
+    );
   }
 
   /** What the last scan found, once there is a list to refresh. */
@@ -192,11 +240,27 @@ export class DriveSelectionView extends LitElement {
       return localize("views.sbc.drive_selection_view.scanning_for_drives");
     }
     if (this._error) return "";
-    return this._drives.length
-      ? localize("views.sbc.drive_selection_view.drives_found", {
-          count: this._drives.length,
+    const count = this._drives.length;
+    if (!count) {
+      return localize("views.sbc.drive_selection_view.no_drives_found");
+    }
+    const config = wizardState.getState().selections.deviceConfig;
+    const usable = this._drives.filter((drive) =>
+      isEligibleFlashTarget(drive, config)
+    ).length;
+    if (usable === count) {
+      return localize("views.sbc.drive_selection_view.drives_found", {
+        count,
+      });
+    }
+    return usable
+      ? localize("views.sbc.drive_selection_view.drives_found_usable", {
+          count,
+          usable,
         })
-      : localize("views.sbc.drive_selection_view.no_drives_found");
+      : localize("views.sbc.drive_selection_view.drives_found_none_usable", {
+          count,
+        });
   }
 
   /**
@@ -212,6 +276,11 @@ export class DriveSelectionView extends LitElement {
       wizardState.setSelection("driveSelectionLost", undefined);
       this._selectionLost = true;
     }
+
+    // A failed scan can't tell whether the drive is still there. Its
+    // selection stays, and only a scan that no longer finds the drive clears
+    // it, and says so.
+    if (this._error) return;
 
     const selection = readDriveSelection(wizardState.getState().selections);
     if (!selection) {
@@ -233,7 +302,11 @@ export class DriveSelectionView extends LitElement {
 
     clearDriveSelection();
     this._selectedDriveId = null;
-    this._selectionLost = true;
+    // A drive still listed only falls short of this board, which its card says
+    const listed = this._drives.some((drive) =>
+      isSameDrive(selection, driveIdentity(drive))
+    );
+    if (!listed) this._selectionLost = true;
   }
 
   private _isMiniPCFlow(): boolean {
@@ -244,12 +317,27 @@ export class DriveSelectionView extends LitElement {
     return wizardState.getState().currentFlow === "ha-hardware";
   }
 
+  /** Whether a step before this one already showed how to connect the device */
+  private _connectedOnItsOwnStep(): boolean {
+    return wizardState.getState().steps.some(({ id }) => id === "connect");
+  }
+
+  /** Making a USB stick to boot the mini PC from, not installing on its drive */
+  private _isUsbBoot(): boolean {
+    return wizardState.getState().selections.installMethod === "usb-boot";
+  }
+
   private _subtitle(): string {
+    if (this._isUsbBoot()) {
+      return localize("views.sbc.drive_selection_view.choose_the_usb_stick");
+    }
     if (this._isMiniPCFlow()) {
       return localize("views.sbc.drive_selection_view.subtitle_nvme");
     }
     if (this._isHaHardwareFlow()) {
-      return localize("views.sbc.drive_selection_view.subtitle_device_storage");
+      return this._connectedOnItsOwnStep()
+        ? localize("views.sbc.drive_selection_view.subtitle_yellow_cm5")
+        : localize("views.sbc.drive_selection_view.subtitle_device_storage");
     }
     return localize("views.sbc.drive_selection_view.subtitle_removable");
   }
@@ -260,7 +348,7 @@ export class DriveSelectionView extends LitElement {
         localize("views.sbc.drive_selection_view.select_your_drive"),
         this._subtitle()
       )}
-      ${this._isHaHardwareFlow()
+      ${this._isHaHardwareFlow() && !this._connectedOnItsOwnStep()
         ? html`<ha-hardware-connect-instructions
             .hardware=${wizardState.getState().selections.haHardware}
           ></ha-hardware-connect-instructions>`
@@ -288,7 +376,11 @@ export class DriveSelectionView extends LitElement {
   }
 
   private _renderContent() {
-    const config = wizardState.getState().selections.deviceConfig;
+    const { deviceConfig: config, haHardware } =
+      wizardState.getState().selections;
+    // What rpiboot exposes is the drive the user is looking for
+    const isModuleEmmc = (drive: BlockDevice) =>
+      haHardware === "yellow-cm5" && isComputeModuleEmmc(drive);
     // Full-page spinner only on the initial scan (nothing to show yet).
     // A refresh keeps the list, the empty state or the error visible, and
     // shows the loading state on the button that started it, so the button
@@ -300,6 +392,12 @@ export class DriveSelectionView extends LitElement {
     }
 
     if (this._error) {
+      // Only Windows refuses this way, and only a restart changes it
+      if (
+        this._error.details.message_key === "backend.disk.run_as_administrator"
+      ) {
+        return this._renderAdminNeeded();
+      }
       return renderLoadError(this._error, this._loading, () =>
         this._loadDrives()
       );
@@ -309,11 +407,17 @@ export class DriveSelectionView extends LitElement {
       const emptyTitle = localize(
         "views.sbc.drive_selection_view.no_drives_found"
       );
-      const emptyText = this._isMiniPCFlow()
-        ? localize("views.sbc.drive_selection_view.no_drives_adapter")
-        : this._isHaHardwareFlow()
-          ? localize("views.sbc.drive_selection_view.no_drives_described_above")
-          : localize("views.sbc.drive_selection_view.no_drives_removable");
+      const emptyText = this._isUsbBoot()
+        ? localize("views.sbc.drive_selection_view.no_drives_usb_stick")
+        : this._isMiniPCFlow()
+          ? localize("views.sbc.drive_selection_view.no_drives_adapter")
+          : this._connectedOnItsOwnStep()
+            ? localize("views.sbc.drive_selection_view.no_drives_connect_step")
+            : this._isHaHardwareFlow()
+              ? localize(
+                  "views.sbc.drive_selection_view.no_drives_described_above"
+                )
+              : localize("views.sbc.drive_selection_view.no_drives_removable");
 
       return html`
         <div class="empty-state">
@@ -327,31 +431,34 @@ export class DriveSelectionView extends LitElement {
             @click=${this._loadDrives}
             style="margin-top: 1rem;"
           >
-            <span slot="start">↻</span> ${localize("common.refresh")}
+            <span slot="start" aria-hidden="true">↻</span>
+            ${localize("common.refresh")}
           </wa-button>
         </div>
       `;
     }
 
     return html`
+      ${this._noUsableDrive() ? this._renderNoUsableDrive(config) : ""}
       <div class="drives-header">
-        <p class="drives-title">
+        <h3 class="section-label">
           ${localize("views.sbc.drive_selection_view.available_drives")}
-        </p>
+        </h3>
         <wa-button
           variant="brand"
           appearance="outlined"
           @click=${this._loadDrives}
           ?loading=${this._loading}
         >
-          <span slot="start">↻</span> ${localize("common.refresh")}
+          <span slot="start" aria-hidden="true">↻</span>
+          ${localize("common.refresh")}
         </wa-button>
       </div>
 
       <wa-radio-group
         class="drives-list"
         radio-tag="drive-card"
-        aria-label=${localize("common.target_drive")}
+        label=${localize("common.target_drive")}
         .value=${this._selectedDriveId ?? ""}
         @change=${this._onDriveChange}
       >
@@ -359,7 +466,10 @@ export class DriveSelectionView extends LitElement {
           [...this._drives].sort((a, b) => {
             const aTooSmall = !isEligibleFlashTarget(a, config);
             const bTooSmall = !isEligibleFlashTarget(b, config);
-            // Sort selectable drives first, then by size descending
+            // The module's eMMC first, then selectable drives, then by size
+            // descending
+            if (isModuleEmmc(a) !== isModuleEmmc(b))
+              return isModuleEmmc(a) ? -1 : 1;
             if (aTooSmall !== bTooSmall) return aTooSmall ? 1 : -1;
             return b.size - a.size;
           }),
@@ -389,6 +499,11 @@ export class DriveSelectionView extends LitElement {
                 .deviceType=${drive.device_type}
                 .model=${drive.model || ""}
                 .vendor=${drive.vendor || ""}
+                .highlight=${isModuleEmmc(drive)
+                  ? localize(
+                      "views.sbc.drive_selection_view.compute_module_emmc"
+                    )
+                  : ""}
                 .disabled=${disabled}
                 .disabledReason=${reason}
                 .capacityWarning=${fit === "below-recommended"
@@ -402,6 +517,69 @@ export class DriveSelectionView extends LitElement {
           }
         )}
       </wa-radio-group>
+    `;
+  }
+
+  private _renderAdminNeeded() {
+    // The notice itself takes the focus: what it slots in isn't shown, so
+    // can't be focused, until it has rendered. The declined restart is read
+    // out on its own, so it stays outside.
+    return html`
+      <inline-notice class="admin-needed" data-focus-alert>
+        <p>${localize("views.sbc.drive_selection_view.admin_needed")}</p>
+        <p>${localize("views.sbc.drive_selection_view.admin_restart_note")}</p>
+        <wa-button variant="brand" @click=${this._relaunch}>
+          ${localize("views.sbc.drive_selection_view.restart_as_administrator")}
+        </wa-button>
+      </inline-notice>
+      ${this._relaunchError
+        ? html`<p class="relaunch-error" data-focus-alert>
+            ${this._relaunchError}
+          </p>`
+        : ""}
+    `;
+  }
+
+  private async _relaunch() {
+    this._relaunchError = "";
+    try {
+      await relaunchAsAdmin();
+    } catch (error) {
+      this._relaunchError = installerError(error).message;
+    }
+  }
+
+  /**
+   * Why none of the drives can be picked. Each disabled card says why it
+   * can't, but nothing would say that none can.
+   */
+  private _renderNoUsableDrive(config?: HaosConfig) {
+    const count = this._drives.length;
+    // Any other drive has a capacity, or a board minimum, that is unknown.
+    // One drive too small is enough to know the minimum.
+    const tooSmall = this._drives.filter(
+      (drive) => getDriveFit(drive.size, config) === "too-small"
+    ).length;
+    const size = tooSmall ? formatBytes(config!.minimum_storage_bytes) : "";
+    return html`
+      <inline-notice>
+        <p class="no-usable-drive">
+          ${tooSmall === count
+            ? localize(
+                "views.sbc.drive_selection_view.no_usable_drive_minimum",
+                { count, size }
+              )
+            : tooSmall
+              ? localize(
+                  "views.sbc.drive_selection_view.no_usable_drive_minimum_or_unknown",
+                  { size }
+                )
+              : localize(
+                  "views.sbc.drive_selection_view.no_usable_drive_unavailable",
+                  { count }
+                )}
+        </p>
+      </inline-notice>
     `;
   }
 

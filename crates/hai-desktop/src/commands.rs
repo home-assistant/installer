@@ -14,7 +14,7 @@ use hai_core::download::TemporaryImage;
 use hai_core::keep_awake::KeepAwake;
 use hai_core::{
     BlockDevice, DeviceBackend, DeviceManifest, ExpectedDevice, FlashProgress, FlashRequest,
-    FlashResult, FlashStage, HaSetupStatus, HaosRelease, HostBackend, ImageFormat,
+    FlashResult, FlashStage, HaAnnouncement, HaSetupStatus, HaosRelease, HostBackend, ImageFormat,
     ProgressCallback, ProxmoxBackend, ProxmoxBridge, ProxmoxCredentials, ProxmoxNode,
     ProxmoxSession, ProxmoxStorage, ProxmoxVmConfig, ProxmoxVmResult, ReleaseSource, SystemInfo,
     UtmBackend, VmStatusInfo,
@@ -46,14 +46,14 @@ impl PendingUtmImages {
 // =============================================================================
 
 /// Adapter that bridges Tauri's Channel with hai-core's ProgressCallback trait
-struct TauriProgressCallback<'a> {
+pub(crate) struct TauriProgressCallback<'a> {
     channel: &'a Channel<FlashProgress>,
-    operation: Operation,
+    pub(crate) operation: Operation,
     cancelled: Option<Arc<AtomicBool>>,
 }
 
 impl<'a> TauriProgressCallback<'a> {
-    fn new(channel: &'a Channel<FlashProgress>, name: &'static str) -> Self {
+    pub(crate) fn new(channel: &'a Channel<FlashProgress>, name: &'static str) -> Self {
         Self {
             channel,
             operation: Operation::new(name),
@@ -62,7 +62,7 @@ impl<'a> TauriProgressCallback<'a> {
     }
 
     /// Let the operation stop once `cancelled` is set.
-    fn cancellable(mut self, cancelled: Arc<AtomicBool>) -> Self {
+    pub(crate) fn cancellable(mut self, cancelled: Arc<AtomicBool>) -> Self {
         self.cancelled = Some(cancelled);
         self
     }
@@ -99,7 +99,7 @@ impl<'a> ProgressCallback for TauriProgressCallback<'a> {
 
 /// Keep the computer awake while a long job runs. Not getting that is only
 /// logged: the job itself works fine as long as the computer stays awake.
-async fn keep_awake(reason: &str) -> Option<KeepAwake> {
+pub(crate) async fn keep_awake(reason: &str) -> Option<KeepAwake> {
     KeepAwake::acquire(reason)
         .await
         .inspect_err(|_| crate::diagnostics::warning("keep_awake_unavailable"))
@@ -135,6 +135,15 @@ async fn list_drives(backend: &impl DeviceBackend) -> Result<Vec<BlockDevice>, C
         .map_err(CommandError::from_query)
 }
 
+/// Restarts the app as administrator, which the drive step offers when
+/// listing refused. The flow starts again in the new window.
+#[tauri::command]
+pub fn relaunch_as_admin(app: tauri::AppHandle) -> Result<(), CommandError> {
+    crate::elevation::relaunch_as_admin()?;
+    app.exit(0);
+    Ok(())
+}
+
 // =============================================================================
 // Flash Commands
 // =============================================================================
@@ -156,17 +165,6 @@ fn find_flash_target<'a>(
         .find(|d| d.id == device_id)
         .ok_or_else(|| CommandError::from(hai_core::Error::DeviceNotFound(device_id.into())))?;
 
-    if !device.removable {
-        return Err(CommandError::new(
-            "invalid_config",
-            format!(
-                "{} is not a removable drive and cannot be overwritten",
-                device_id
-            ),
-            false,
-        ));
-    }
-
     if !expected.matches(device) {
         return Err(CommandError::new(
             "device_not_found",
@@ -177,6 +175,10 @@ fn find_flash_target<'a>(
             ),
             false,
         ));
+    }
+
+    if !device.removable {
+        return Err(CommandError::drive_in_system_use());
     }
 
     let config = hai_core::manifest::storage_requirements(board).ok_or_else(|| {
@@ -191,10 +193,7 @@ fn find_flash_target<'a>(
             "drive_too_small",
             &hai_core::message!(
                 "backend.disk.drive_too_small",
-                size = format!(
-                    "{:.0}",
-                    config.minimum_storage_bytes as f64 / 1_000_000_000.0
-                ),
+                size = config.minimum_storage_bytes.div_ceil(1_000_000_000),
             ),
             false,
         ));
@@ -232,7 +231,7 @@ pub fn cancel_flash(attempt: String, state: tauri::State<'_, FlashState>) {
 }
 
 /// Stop between steps when the user cancelled.
-fn check_cancelled<P: ProgressCallback>(callback: &P) -> Result<(), CommandError> {
+pub(crate) fn check_cancelled<P: ProgressCallback>(callback: &P) -> Result<(), CommandError> {
     if callback.is_cancelled() {
         return Err(hai_core::Error::Cancelled.into());
     }
@@ -427,6 +426,14 @@ pub async fn get_manifest() -> Result<DeviceManifest, CommandError> {
 #[tauri::command]
 pub fn get_system_info() -> Result<SystemInfo, CommandError> {
     Backend.system_info().map_err(CommandError::from)
+}
+
+/// The language HAI_LANGUAGE asks for, like `de` or `pt-BR`, in place of the OS's
+#[tauri::command]
+pub fn language_override() -> Option<String> {
+    std::env::var("HAI_LANGUAGE")
+        .ok()
+        .filter(|tag| !tag.is_empty())
 }
 
 // =============================================================================
@@ -663,6 +670,17 @@ pub async fn get_ha_setup_status(ip_address: String) -> Option<HaSetupStatus> {
         crate::diagnostics::setup_status(status);
     }
     status
+}
+
+/// The Home Assistants that announce themselves on the local network
+#[tauri::command]
+pub async fn find_home_assistants() -> Result<Vec<HaAnnouncement>, CommandError> {
+    let found = Backend
+        .find_home_assistants()
+        .await
+        .map_err(CommandError::from_query);
+    crate::diagnostics::lookup(&found);
+    found
 }
 
 // =============================================================================
@@ -1513,6 +1531,30 @@ mod tests {
 
     #[cfg(feature = "mock")]
     #[tokio::test]
+    // Isolated from other tests that clear the tail or record lookups
+    #[serial_test::serial]
+    async fn find_home_assistants_forwards_a_lookup_and_records_only_its_counts() {
+        crate::diagnostics::clear_test_log_tail();
+
+        // The mock finds a landing page each lookup didn't before
+        let found = find_home_assistants().await.unwrap();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].landing_page);
+        assert_eq!(found[0].address, "192.168.1.101");
+
+        let tail = crate::diagnostics::test_log_tail().join("\n");
+        assert!(
+            tail.contains(" home_assistant_lookup found=1 landing_pages=1"),
+            "{tail}"
+        );
+        // Never which one, or where
+        for private in [found[0].id.as_str(), found[0].address.as_str()] {
+            assert!(!tail.contains(private), "{tail}");
+        }
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
     async fn ha_setup_status_mock_has_no_landing_page() {
         // The mock's Home Assistant is ready at once, so its landing page is gone
         assert_eq!(get_ha_setup_status("192.168.1.100".into()).await, None);
@@ -1605,7 +1647,7 @@ mod tests {
         let devices = [flash_target("\\\\.\\PhysicalDrive1", false)];
         let err = find_flash_target(&devices, "\\\\.\\PhysicalDrive1", &expected(), "rpi5-64")
             .unwrap_err();
-        assert!(err.message.contains("not a removable drive"), "{err}");
+        assert_eq!(err.code, "drive_in_system_use");
     }
 
     #[test]
@@ -2685,7 +2727,7 @@ mod mock_tests {
         )
         .await
         .unwrap_err();
-        assert!(err.message.contains("not a removable drive"));
+        assert_eq!(err.code, "drive_in_system_use");
     }
 
     #[tokio::test]

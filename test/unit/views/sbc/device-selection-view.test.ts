@@ -69,14 +69,16 @@ describe("device-selection-view", () => {
     expect(cards(el)[0].image).to.equal("/assets/devices/raspberry_pi_5.png");
   });
 
-  it("exposes the boards as a named radio group", async () => {
-    const el = await renderCatalog();
-    await el.shadowRoot!.querySelector("wa-radio-group")!.updateComplete;
+  it("offers the boards as a named group of buttons", async () => {
+    await renderCatalog();
 
-    const groups = findByRole(await fullA11ySnapshot(), "radiogroup");
+    const groups = findByRole(await fullA11ySnapshot(), "group").filter(
+      (group) => group.name === "Single board computer"
+    );
     expect(groups).to.have.length(1);
-    expect(groups[0]!.name).to.equal("Single board computer");
-    expect(findByRole(groups[0]!, "radio")).to.have.length(10);
+    const buttons = findByRole(groups[0]!, "button");
+    expect(buttons).to.have.length(10);
+    expect(buttons[0]!.name).to.equal("Raspberry Pi 5");
   });
 
   it("stores the chosen board for the following steps", async () => {
@@ -98,21 +100,6 @@ describe("device-selection-view", () => {
     expect(selections.deviceCatalogReady).to.equal(true);
   });
 
-  it("shows a board chosen earlier as selected", async () => {
-    wizardState.startFlow("sbc");
-    wizardState.setSelection("device", "rpi4");
-    mockTauriIpc(() => MOCK_MANIFEST);
-    const el = await fixture<DeviceSelectionView>(html`
-      <device-selection-view></device-selection-view>
-    `);
-    await waitUntil(() => cards(el).length > 0);
-    const group = el.shadowRoot!.querySelector("wa-radio-group")!;
-    await group.updateComplete;
-    expect(group.value).to.equal("rpi4");
-    expect(cards(el).filter((card) => card.checked)).to.have.length(1);
-    expect(cards(el).find((card) => card.checked)!.value).to.equal("rpi4");
-  });
-
   it("loads the catalog again on Try again", async () => {
     let attempts = 0;
     const reload = deferred<typeof MOCK_MANIFEST>();
@@ -121,7 +108,7 @@ describe("device-selection-view", () => {
         ? Promise.reject(ipcError("network", "offline", true))
         : reload.promise
     );
-    const alert = el.shadowRoot!.querySelector('[role="alert"]')!;
+    const alert = el.shadowRoot!.querySelector("[data-focus-alert]")!;
     expect(alert.textContent).to.contain("Could not connect");
     expect(cards(el)).to.have.length(0);
 
@@ -142,7 +129,7 @@ describe("device-selection-view", () => {
     reload.resolve(MOCK_MANIFEST);
     await waitUntil(() => cards(el).length > 0, "catalog never reloaded");
     expect(attempts).to.equal(2);
-    expect(el.shadowRoot!.querySelector('[role="alert"]')).to.not.exist;
+    expect(el.shadowRoot!.querySelector("[data-focus-alert]")).to.not.exist;
     expect(wizardState.getState().selections.deviceCatalogReady).to.equal(true);
     // The list took its place, so the focus goes on from its heading
     await waitUntil(

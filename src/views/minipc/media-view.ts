@@ -1,0 +1,98 @@
+import { localize } from "../../localization/localize.js";
+import { LitElement, html, css } from "lit";
+import { customElement } from "lit/decorators.js";
+import {
+  ViewAccessibility,
+  reducedMotionStyles,
+} from "../../utils/view-accessibility.js";
+import { MINIPC_STEPS, wizardState } from "../../state/wizard-state.js";
+import { clearDriveSelection } from "../../utils/drive-selection.js";
+import type { HaosConfig } from "../../api/types.js";
+import { goToNextStep } from "../../components/wizard-next.js";
+import "../../components/option-card.js";
+import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
+
+/** Drive rules for the stick: removable and 2 GB or more (the drive list allows 5% less). */
+const LIVE_USB_STICK: HaosConfig = {
+  board: "generic-x86-64",
+  minimum_storage_bytes: 2_000_000_000,
+  recommended_storage_bytes: 2_000_000_000,
+};
+
+@customElement("minipc-media-view")
+export class MiniPCMediaView extends LitElement {
+  protected readonly _accessibility = new ViewAccessibility(this);
+  static styles = [
+    stepStyles,
+    reducedMotionStyles,
+    css`
+      .options {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        width: 100%;
+        max-width: var(--ha-content-width);
+      }
+    `,
+  ];
+
+  render() {
+    return html`
+      ${renderStepHeading(
+        localize("views.minipc.media_view.create_bootable_media"),
+        localize("views.minipc.media_view.subtitle")
+      )}
+
+      <div class="options">
+        <option-card
+          horizontal
+          heading=${localize("views.minipc.media_view.write_to_a_usb_stick")}
+          description=${localize(
+            "views.minipc.media_view.write_to_a_usb_stick_description"
+          )}
+          icon="usb-boot"
+          @click=${this._chooseUsb}
+          ><span slot="end" aria-hidden="true">→</span></option-card
+        >
+        <option-card
+          horizontal
+          heading=${localize("views.minipc.media_view.save_an_iso_file")}
+          description=${localize(
+            "views.minipc.media_view.save_an_iso_file_description"
+          )}
+          icon="disc"
+          @click=${this._chooseIso}
+          ><span slot="end" aria-hidden="true">→</span></option-card
+        >
+      </div>
+    `;
+  }
+
+  private _chooseUsb() {
+    this._choose("usb");
+  }
+
+  private _chooseIso() {
+    this._choose("iso");
+  }
+
+  private _choose(media: "usb" | "iso") {
+    // A drive picked earlier (perhaps an SSD on the other path) must be picked again.
+    clearDriveSelection();
+    // The stick replaces the board's drive rules, so the direct path must pick its board again.
+    wizardState.setSelection("device", undefined);
+    wizardState.setSelection(
+      "deviceConfig",
+      media === "usb" ? LIVE_USB_STICK : undefined
+    );
+    wizardState.setSteps(MINIPC_STEPS[media]);
+    wizardState.setSelection("liveMedia", media);
+    goToNextStep(this);
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    "minipc-media-view": MiniPCMediaView;
+  }
+}

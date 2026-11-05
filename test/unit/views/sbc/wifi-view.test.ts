@@ -6,7 +6,7 @@ import type { WifiView } from "../../../../src/views/sbc/wifi-view.js";
 import { findByRole, fullA11ySnapshot } from "../../helpers/a11y.js";
 import { settle } from "../../tauri-ipc.js";
 
-/** The error colour without the app's theme, which the unit tests don't load */
+/** The theme's error colour, in light mode like every unit test */
 const ERROR_COLOR = "rgb(179, 5, 50)";
 
 /** The view with the switch turned on, and its two fields. */
@@ -38,6 +38,16 @@ const hintOf = (input: WaInput) =>
 
 const invalid = (input: WaInput) => input.validity.customError;
 
+const enter = () =>
+  new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true });
+
+/** Count the Next requests the view sends to the wizard. */
+function countNext(el: WifiView) {
+  const counter = { next: 0 };
+  el.addEventListener("wizard-next", () => counter.next++);
+  return counter;
+}
+
 describe("wifi-view", () => {
   afterEach(() => wizardState.reset());
 
@@ -47,11 +57,13 @@ describe("wifi-view", () => {
     const root = el.shadowRoot!;
     const toggle = root.querySelector<HTMLInputElement>("wa-switch")!;
     expect(root.querySelector("wa-input")).to.not.exist;
-    expect(root.textContent).to.contain("hidden networks aren't supported");
+    // Which networks work only matters once Wi-Fi is wanted
+    expect(root.textContent).not.to.contain("hidden networks aren't supported");
 
     toggle.checked = true;
     toggle.dispatchEvent(new Event("change"));
     await settle();
+    expect(root.textContent).to.contain("hidden networks aren't supported");
     const [ssid, password] = root.querySelectorAll<WaInput>("wa-input");
     await type(ssid, "Home");
     await type(password, "12345678");
@@ -69,11 +81,9 @@ describe("wifi-view", () => {
     expect(root.querySelector("wa-input")).to.not.exist;
   });
 
-  it("says which characters a password can have before any are typed", async () => {
+  it("says nothing about a password before any is typed", async () => {
     const { ssid, password } = await mountOn();
-    expect(hintOf(password)).to.equal(
-      "8 to 63 characters: letters A to Z without accents, numbers, spaces and symbols such as ! or #"
-    );
+    expect(hintOf(password)).to.equal("");
     // Untouched fields aren't wrong yet, though Next is off
     expect(hintOf(ssid)).to.equal("");
     expect(invalid(ssid)).to.be.false;
@@ -125,7 +135,7 @@ describe("wifi-view", () => {
   it("says a password is too short once it's left, not while typing", async () => {
     const { password } = await mountOn();
     await type(password, "1234567");
-    expect(hintOf(password)).to.contain("8 to 63 characters");
+    expect(hintOf(password)).to.equal("");
     expect(invalid(password)).to.be.false;
 
     await leave(password);
@@ -133,7 +143,7 @@ describe("wifi-view", () => {
     expect(invalid(password)).to.be.true;
 
     await type(password, "12345678");
-    expect(hintOf(password)).to.contain("8 to 63 characters");
+    expect(hintOf(password)).to.equal("");
     expect(invalid(password)).to.be.false;
   });
 
@@ -144,7 +154,7 @@ describe("wifi-view", () => {
     expect(invalid(password)).to.be.true;
 
     await type(password, "0123456789abcdef".repeat(4));
-    expect(hintOf(password)).to.contain("8 to 63 characters");
+    expect(hintOf(password)).to.equal("");
     expect(invalid(password)).to.be.false;
   });
 
@@ -175,7 +185,7 @@ describe("wifi-view", () => {
     await settle();
     const fresh = el.shadowRoot!.querySelectorAll<WaInput>("wa-input");
     expect(hintOf(fresh[0])).to.equal("");
-    expect(hintOf(fresh[1])).to.contain("8 to 63 characters");
+    expect(hintOf(fresh[1])).to.equal("");
     expect(invalid(fresh[0])).to.be.false;
     expect(invalid(fresh[1])).to.be.false;
   });
@@ -230,5 +240,34 @@ describe("wifi-view", () => {
     expect(password.input.getAttribute("aria-invalid")).to.equal("false");
     expect(getComputedStyle(hint).color).not.to.equal(ERROR_COLOR);
     expect(icon().content).to.equal("none");
+  });
+
+  it("asks for Next on Enter in a field, not on the switch or the password toggle", async () => {
+    const { el, toggle, ssid, password } = await mountOn();
+    const counter = countNext(el);
+
+    toggle.shadowRoot!.querySelector("input")!.dispatchEvent(enter());
+    password
+      .shadowRoot!.querySelector(".password-toggle")!
+      .dispatchEvent(enter());
+    expect(counter.next).to.equal(0);
+
+    ssid.input.dispatchEvent(enter());
+    password.input.dispatchEvent(enter());
+    expect(counter.next).to.equal(2);
+  });
+
+  it("says what holds Next back once Enter is pressed", async () => {
+    const { ssid, password } = await mountOn();
+    // Neither field was left, so nothing is wrong yet
+    await type(password, "1234567");
+    expect(hintOf(ssid)).to.equal("");
+    expect(invalid(password)).to.be.false;
+
+    password.input.dispatchEvent(enter());
+    await settle();
+    expect(hintOf(ssid)).to.equal("Enter the network name.");
+    expect(hintOf(password)).to.equal("Use at least 8 characters.");
+    expect(invalid(password)).to.be.true;
   });
 });

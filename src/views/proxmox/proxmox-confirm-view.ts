@@ -1,19 +1,19 @@
 import { localize, localizeContent } from "../../localization/localize.js";
 import { LitElement, html, css } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
-import { customElement, state } from "lit/decorators.js";
-import { wizardState, type WizardState } from "../../state/wizard-state.js";
+import { customElement } from "lit/decorators.js";
+import type { WizardState } from "../../state/wizard-state.js";
+import { WizardStateController } from "../../state/wizard-state-controller.js";
 import { proxmoxVmConfig } from "../../state/vm-defaults.js";
 import { getHaosRelease } from "../../api/commands.js";
 import {
   HaosVersion,
-  renderHaosVersionRow,
-  renderSummaryIcon,
   renderSummaryRow,
+  renderVmSummaryRows,
   summaryStyles,
-} from "../../components/summary-card.js";
-import { formatDiskSize, formatRam } from "../../utils/format.js";
-import { mdiHarddisk, mdiMonitor, mdiServer } from "../../utils/icons.js";
+} from "../../utils/summary-styles.js";
+import { mdiServer } from "../../utils/icons.js";
+import { renderIcon } from "../../utils/render-icon.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
 @customElement("proxmox-confirm-view")
@@ -24,31 +24,20 @@ export class ProxmoxConfirmView extends LitElement {
     summaryStyles,
     css`
       .icon-container .proxmox-icon {
-        fill: var(--ha-primary-color, #03a9f4);
+        fill: var(--ha-primary-color);
       }
     `,
   ];
 
-  @state()
-  private _wizardState: WizardState = wizardState.getState();
+  private readonly _wizard = new WizardStateController(this);
+
+  private get _wizardState(): WizardState {
+    return this._wizard.state;
+  }
 
   private readonly _haosVersion = new HaosVersion(this, () =>
     getHaosRelease(undefined, "ova")
   );
-
-  private _unsubscribe?: () => void;
-
-  connectedCallback() {
-    super.connectedCallback();
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-    });
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this._unsubscribe?.();
-  }
 
   render() {
     // What the install creates, not the raw selections
@@ -89,55 +78,22 @@ export class ProxmoxConfirmView extends LitElement {
 
         <div class="divider"></div>
 
-        <!-- VM Configuration -->
-        ${renderSummaryRow(
-          renderSummaryIcon(mdiMonitor),
-          localize("common.virtual_machine"),
+        ${renderVmSummaryRows(
+          config,
+          this._haosVersion.version,
           localizeContent("views.proxmox.proxmox_confirm_view.name_and_id", {
             name: config.name,
             id: config.vm_id,
-          }),
-          html`<p class="summary-detail">
-            ${localizeContent("common.vm.cores_and_memory", {
-              cores: config.cpu_cores,
-              memory: formatRam(config.memory_mb),
-            })}
-          </p>`
+          })
         )}
-
-        <div class="divider"></div>
-
-        <!-- Disk Size -->
-        ${renderSummaryRow(
-          renderSummaryIcon(mdiHarddisk),
-          localize("vm.disk_storage"),
-          formatDiskSize(config.disk_size_gb),
-          html`<p class="summary-detail">
-            ${localize("common.vm.virtual_disk_description")}
-          </p>`
-        )}
-
-        <div class="divider"></div>
-
-        <!-- HAOS Version -->
-        ${renderHaosVersionRow(this._haosVersion.version)}
       </div>
     `;
   }
 
   private _renderProxmoxIcon() {
-    // The icon the Proxmox option has on the path selection
-    return html`
-      <svg
-        class="proxmox-icon"
-        viewBox="0 0 24 24"
-        role="img"
-        aria-label=${localize("views.proxmox.proxmox_confirm_view.proxmox")}
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path d=${mdiServer} />
-      </svg>
-    `;
+    // The icon the Proxmox option has on the path selection. The row's label
+    // says Proxmox server, so it needs no name of its own.
+    return renderIcon(mdiServer, "proxmox-icon");
   }
 }
 

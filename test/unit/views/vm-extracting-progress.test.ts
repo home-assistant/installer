@@ -62,7 +62,7 @@ describe("VM extracting progress", () => {
           `${progress}%`
         );
         expect(root.querySelector(".bytes-info")!.textContent).to.contain(
-          " / 100 KB compressed"
+          " / 100 kB compressed"
         );
       }
 

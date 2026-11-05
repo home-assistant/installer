@@ -1,23 +1,32 @@
 import { localize } from "../../localization/localize.js";
 import { LitElement, html, css, type TemplateResult } from "lit";
-import { customElement, state } from "lit/decorators.js";
-import { wizardState, type WizardState } from "../../state/wizard-state.js";
-import { openExternalLink } from "../../utils/external-url.js";
+import { customElement } from "lit/decorators.js";
+import type { WizardState } from "../../state/wizard-state.js";
+import { WizardStateController } from "../../state/wizard-state-controller.js";
+import { renderExternalLink } from "../../utils/external-link.js";
+import {
+  GREEN_GUIDE_URL,
+  ODROID_GUIDE_URL,
+  YELLOW_CM4_GUIDE_URL,
+  YELLOW_CM5_GUIDE_URL,
+} from "../../utils/urls.js";
+import { DeviceSurvey } from "../../utils/device-discovery.js";
 import { selectedWifi } from "../../utils/wifi.js";
-import { renderOpenHomeAssistantStep } from "../sbc/success-view.js";
 import {
   findHaHardware,
   haHardwareName,
   type HaHardwareId,
-} from "./hardware.js";
+} from "../../state/ha-hardware.js";
 
 import "../../components/install-success.js";
+// The steps that fit any device, without one picked
+import "../sbc/success-view.js";
 
 const GUIDES: Record<HaHardwareId, string> = {
-  green: "https://support.nabucasa.com/hc/en-us/articles/25162566451485",
-  "yellow-cm4": "https://support.nabucasa.com/hc/en-us/articles/25484982657309",
-  "yellow-cm5": "https://support.nabucasa.com/hc/en-us/articles/25485061432093",
-  blue: "https://www.home-assistant.io/installation/odroid",
+  green: GREEN_GUIDE_URL,
+  "yellow-cm4": YELLOW_CM4_GUIDE_URL,
+  "yellow-cm5": YELLOW_CM5_GUIDE_URL,
+  blue: ODROID_GUIDE_URL,
 };
 
 @customElement("ha-hardware-success-view")
@@ -29,25 +38,21 @@ export class HaHardwareSuccessView extends LitElement {
     }
   `;
 
-  @state()
-  private _wizardState: WizardState = wizardState.getState();
+  private readonly _wizard = new WizardStateController(this);
 
-  private _unsubscribe?: () => void;
+  // Notes what is on the network before the device starts
+  protected readonly _survey = new DeviceSurvey(this);
 
-  connectedCallback() {
-    super.connectedCallback();
-    this._unsubscribe = wizardState.subscribe((state) => {
-      this._wizardState = state;
-    });
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this._unsubscribe?.();
+  private get _wizardState(): WizardState {
+    return this._wizard.state;
   }
 
   render() {
-    const hardware = this._wizardState.selections.haHardware ?? "green";
+    const hardware = this._wizardState.selections.haHardware;
+    // The device and module steps always pick one before the flow gets here.
+    // Without it, no device's steps apply, so show the ones that fit any board
+    // instead of guessing one, even if the name or board of one was left behind.
+    if (!hardware) return html`<success-view generic></success-view>`;
     const guide = GUIDES[hardware];
     // Without an installer, Home Assistant OS itself is on the drive and
     // starts its first setup when the device boots from it
@@ -55,31 +60,25 @@ export class HaHardwareSuccessView extends LitElement {
 
     return html`
       <install-success
+        .heading=${localize("common.success.almost_there")}
         .subtitle=${writesHaos
           ? localize("common.success.subtitle")
           : localize("views.ha_hardware.success_view.subtitle")}
         .formatWarning=${true}
+        .companion=${false}
         .steps=${[
           localize("common.success.step_eject"),
           ...this._steps(hardware),
-          renderOpenHomeAssistantStep(),
-          ...(writesHaos
-            ? [
-                selectedWifi(this._wizardState.selections)
-                  ? localize("common.success.step_preparing_page_wifi")
-                  : localize("common.success.step_preparing_page"),
-              ]
-            : []),
+          selectedWifi(this._wizardState.selections)
+            ? localize("common.success.step_next_wifi")
+            : localize("common.success.step_next"),
         ]}
-        .footer=${html`<a
-          href=${guide}
-          target="_blank"
-          rel="noopener noreferrer"
-          @click=${openExternalLink}
-          >${localize("views.ha_hardware.success_view.full_instructions", {
+        .footer=${renderExternalLink(
+          guide,
+          localize("views.ha_hardware.success_view.full_instructions", {
             device: haHardwareName(hardware),
-          })}</a
-        >`}
+          })
+        )}
       ></install-success>
     `;
   }

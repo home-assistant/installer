@@ -30,15 +30,16 @@ describe("vm-wait", () => {
     wizardState.reset();
   });
 
-  // The progress's live region announces only the title
-  it("names each wait differently", () => {
-    const titles = WAIT_STAGES.map(waitStageTitle);
-    expect(new Set(titles).size).to.equal(WAIT_STAGES.length);
-    expect(titles).to.deep.equal(["Connecting", "Waiting", "Updating"]);
+  it("names the waits before Home Assistant answers as one", () => {
+    expect(WAIT_STAGES.map(waitStageTitle)).to.deep.equal([
+      "Starting",
+      "Starting",
+      "Updating",
+    ]);
     expect(WAIT_STAGES.map(waitStageDescription)).to.deep.equal([
-      "Waiting for network connection",
-      "Waiting for Home Assistant",
-      "Installing latest Home Assistant (this can take up to 20 minutes)",
+      "Starting Home Assistant OS",
+      "Starting Home Assistant OS",
+      "Installing Home Assistant (this can take up to 20 minutes)",
     ]);
   });
 
@@ -54,7 +55,7 @@ describe("vm-wait", () => {
     const addresses: (string | undefined)[] = [];
 
     const ipAddress = await waitForHomeAssistant({
-      vmAddress: async () => {
+      address: async () => {
         addresses.push(wizardState.getState().selections.ipAddress);
         return "192.0.2.50";
       },
@@ -96,7 +97,7 @@ describe("vm-wait", () => {
     const reported: HaSetupProgress[] = [];
 
     await waitForHomeAssistant({
-      vmAddress: async () => "192.0.2.50",
+      address: async () => "192.0.2.50",
       stopOn: () => false,
       onStage: () => {},
       onSetup: (setup) => reported.push(setup),
@@ -113,7 +114,7 @@ describe("vm-wait", () => {
     const expired = ipcError("proxmox_session_expired", "Session expired");
     let asked = 0;
     const wait = waitForHomeAssistant({
-      vmAddress: async () => {
+      address: async () => {
         asked++;
         throw expired;
       },
@@ -128,6 +129,36 @@ describe("vm-wait", () => {
     await wait.catch((error) => (caught = error));
     expect(caught).to.equal(expired);
     expect(asked).to.equal(1);
+  });
+
+  it("waits for the address as long as it is told, and can stop asking", async () => {
+    mockTauriIpc(() => true);
+    const realNow = Date.now;
+    let clockOffset = 0;
+    Date.now = () => realNow.call(Date) + clockOffset;
+    const controller = new AbortController();
+    let asked: AbortSignal | undefined;
+    try {
+      const ipAddress = await waitForHomeAssistant({
+        address: async (signal) => {
+          asked = signal;
+          // Past a VM's five minutes
+          clockOffset += 6 * 60 * 1000;
+          return "192.0.2.50";
+        },
+        addressTimeout: 30 * 60 * 1000,
+        stopOn: () => false,
+        onStage: () => {},
+        onSetup: () => {},
+        messages,
+        signal: controller.signal,
+      });
+      expect(ipAddress).to.equal("192.0.2.50");
+      // So a lookup in steps can stop between them
+      expect(asked).to.equal(controller.signal);
+    } finally {
+      Date.now = realNow;
+    }
   });
 
   it("shows the checked address only while Home Assistant is checked", () => {

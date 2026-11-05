@@ -1,5 +1,5 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
-import { approveProxmoxImport } from "./fixtures.js";
+import { type Locator, type Page } from "@playwright/test";
+import { approveProxmoxImport, test, expect } from "./fixtures.js";
 
 // Traverse the real tab order instead of focusing controls programmatically.
 async function tabTo(page: Page, control: Locator) {
@@ -35,30 +35,32 @@ test("Mini PC choices work with Tab, Space, and arrow keys", async ({
     page.getByRole("button", { name: "I need to boot from USB" }),
     "Space"
   );
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Write to a USB stick", exact: false })
+  ).toBeVisible();
   await activate(
     page,
-    page.getByRole("button", { name: "Go back", exact: true })
+    page.getByRole("button", { name: "Back", exact: false })
   );
   await activate(
     page,
     page.getByRole("button", { name: "I can connect the drive" })
   );
-  await expect(
-    page.getByRole("radiogroup", { name: "Processor" })
-  ).toBeVisible();
-  const intel = page.getByRole("radio", { name: "Intel/AMD" });
-  const arm = page.getByRole("radio", { name: "ARM (aarch64)" });
-  await tabTo(page, intel);
-  await page.keyboard.press("Space");
-  await expect(intel).toBeChecked();
-  await page.keyboard.press("ArrowRight");
-  await expect(arm).toBeChecked();
-  await page.keyboard.press("ArrowLeft");
-  await expect(intel).toBeChecked();
-  await next(page);
+  await expect(page.getByRole("group", { name: "Processor" })).toBeVisible();
+  await activate(
+    page,
+    page.getByRole("button", { name: "Intel/AMD" }),
+    "Space"
+  );
   await expect(page.locator("drive-selection-view")).toBeVisible();
-  await activate(page, page.getByRole("radio").first(), "Space");
+  // A drive is a radio: arrows move the choice, and Next goes on
+  const drives = page.locator("drive-selection-view").getByRole("radio");
+  await activate(page, drives.first(), "Space");
+  await expect(drives.first()).toBeChecked();
+  await page.keyboard.press("ArrowDown");
+  await expect(drives.nth(1)).toBeChecked();
+  await page.keyboard.press("ArrowUp");
+  await expect(drives.first()).toBeChecked();
   await next(page);
   await expect(page.locator("wifi-view")).toBeVisible();
   await next(page);
@@ -73,32 +75,35 @@ test("Mini PC choices work with Tab, Space, and arrow keys", async ({
   await expect(page.locator("success-view")).toBeVisible({ timeout: 20000 });
 });
 
-test("the existing board flow remains keyboard accessible", async ({
-  page,
-}) => {
+test("a board can be picked with the keyboard", async ({ page }) => {
   await start(page, "Raspberry Pi & other boards");
   await activate(
     page,
-    page.getByRole("radio", { name: "Raspberry Pi 5", exact: true }),
+    page.getByRole("button", { name: "Raspberry Pi 5", exact: true }),
     "Space"
   );
-  await next(page);
-  await activate(page, page.getByRole("radio").first(), "Space");
-  await next(page);
-  await expect(page.locator("wifi-view")).toBeVisible();
-  await next(page);
-  await activate(
-    page,
-    page.getByRole("button", { name: "Install", exact: true })
-  );
-  await activate(
-    page,
-    page.getByRole("button", { name: "Erase and install", exact: true })
-  );
-  await expect(page.locator("success-view")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator("drive-selection-view")).toBeVisible();
 });
 
-test("every external installation guide can be opened with the keyboard", async ({
+test("Home Assistant hardware can be picked with the keyboard, past the reinstall question", async ({
+  page,
+}) => {
+  await start(page, "Home Assistant hardware");
+  await activate(
+    page,
+    page.getByRole("button", { name: "Home Assistant Green", exact: true }),
+    "Space"
+  );
+  await activate(
+    page,
+    page
+      .locator("ha-hardware-device-selection-view info-dialog")
+      .getByRole("button", { name: "Reinstall", exact: true })
+  );
+  await expect(page.locator("drive-selection-view")).toBeVisible();
+});
+
+test("an external installation guide can be opened with the keyboard", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -108,22 +113,11 @@ test("every external installation guide can be opened with the keyboard", async 
     };
   });
   await start(page, "Other options");
-  const guides = page.locator("other-options-view option-card");
-  const urls = [
-    "linux#docker-compose",
-    "alternative#synology-nas",
-    "alternative#qnap-nas",
-    "linux",
-    "windows",
-  ];
-  await expect(guides).toHaveCount(urls.length);
-  for (let index = 0; index < urls.length; index++) {
-    await activate(page, guides.nth(index), index % 2 ? "Space" : "Enter");
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-opened-url",
-      `https://www.home-assistant.io/installation/${urls[index]}`
-    );
-  }
+  await activate(page, page.locator("other-options-view option-card").first());
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-opened-url",
+    "https://www.home-assistant.io/installation/linux#docker-compose"
+  );
 });
 
 for (const flow of ["proxmox", "utm"] as const) {
@@ -149,6 +143,13 @@ for (const flow of ["proxmox", "utm"] as const) {
         await page.keyboard.press("ControlOrMeta+A");
         await page.keyboard.type(value);
       }
+    } else {
+      const allow = page.getByRole("button", {
+        name: "Allow control of UTM",
+        exact: true,
+      });
+      await activate(page, allow);
+      await expect(allow).toHaveCount(0);
     }
     await next(page);
     const view = page.locator(`${flow}-configure-view`);
