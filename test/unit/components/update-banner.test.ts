@@ -204,11 +204,27 @@ describe("update-banner", () => {
     ]);
   });
 
+  it("leaves the restart for later when the banner went away during the install", async () => {
+    let finishInstall!: () => void;
+    const calls = mockUpdate({
+      install_update: () =>
+        new Promise<void>((resolve) => (finishInstall = resolve)),
+    });
+    const el = await banner();
+
+    button(el, "install")!.click();
+    await waitUntil(() => finishInstall);
+    el.remove();
+    finishInstall();
+    await waitUntil(() => installerUpdate.state.status === "ready");
+    expect(calls).not.to.include("restart_after_update");
+  });
+
   it("waits for an installation that runs, until the user is back", async () => {
     let installing = true;
     mockUpdate({
       restart_after_update: () => {
-        // It started while the install waited for a password
+        // One started between the install and the restart
         if (installing)
           throw ipcError("operation_in_progress", "Finish it first", true);
       },

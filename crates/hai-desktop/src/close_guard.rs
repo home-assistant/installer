@@ -5,8 +5,8 @@
 //! close request is held back and the frontend asks the user first. If they
 //! still want out, the frontend calls [`quit_anyway`].
 //!
-//! Installing an update of the installer holds back new jobs instead: on
-//! Windows the installer exits halfway through it.
+//! Installing an update of the installer, and restarting into it, hold back
+//! new jobs instead: on Windows the installer exits halfway through it.
 
 use crate::command_error::CommandError;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,34 +17,41 @@ const CLOSE_BLOCKED_EVENT: &str = "close-blocked";
 
 static RUNNING_JOBS: JobCounter = JobCounter::new();
 
-/// The counter's top bit, set while an update installs.
+/// The counter's top bit, set while an update installs or the app restarts
+/// into one.
 const UPDATING: usize = 1 << (usize::BITS - 1);
 
-/// The running jobs, and whether an update installs, in one value, so a job
-/// and an update can't both start.
-struct JobCounter(AtomicUsize);
+/// The running jobs, and whether an update holds them back, in one value, so
+/// a job and an update can't both start.
+pub(crate) struct JobCounter(AtomicUsize);
 
 impl JobCounter {
-    const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self(AtomicUsize::new(0))
     }
 
-    /// `None` while an update installs.
-    fn start(&'static self) -> Option<RunningJob> {
+    /// Mark a job as running for as long as the returned guard lives.
+    /// Refused while an update holds jobs back.
+    pub(crate) fn start(&'static self) -> Result<RunningJob, CommandError> {
         let previous = self.0.fetch_add(1, Ordering::AcqRel);
         if previous & UPDATING != 0 {
             self.0.fetch_sub(1, Ordering::AcqRel);
-            return None;
+            return Err(CommandError::new(
+                "installer_updating",
+                "The installer is updating itself. Wait for it to restart, then try again.",
+                true,
+            ));
         }
-        Some(RunningJob(self))
+        Ok(RunningJob(self))
     }
 
     fn any(&self) -> bool {
         self.0.load(Ordering::Acquire) & !UPDATING > 0
     }
 
-    /// `None` while a job runs, or another update installs.
-    fn hold_for_update(&'static self) -> Option<UpdateHold> {
+    /// Hold back new jobs for as long as the returned guard lives. `None`
+    /// while a job runs, or something else holds them back.
+    pub(crate) fn hold_for_update(&'static self) -> Option<UpdateHold> {
         self.0
             .compare_exchange(0, UPDATING, Ordering::AcqRel, Ordering::Acquire)
             .ok()
@@ -70,27 +77,15 @@ impl Drop for UpdateHold {
     }
 }
 
+/// The app's jobs: flashes, VM installs and live USB sticks.
+pub(crate) fn jobs() -> &'static JobCounter {
+    &RUNNING_JOBS
+}
+
 /// Mark a job as running for as long as the returned guard lives. Refused
-/// while an update installs.
+/// while an update holds jobs back.
 pub(crate) fn running_job() -> Result<RunningJob, CommandError> {
-    RUNNING_JOBS.start().ok_or_else(|| {
-        CommandError::new(
-            "installer_updating",
-            "The installer is updating itself. Wait for it to restart, then try again.",
-            true,
-        )
-    })
-}
-
-/// Hold back new jobs while an update installs, for as long as the returned
-/// guard lives. `None` while a job runs.
-pub(crate) fn hold_jobs_for_update() -> Option<UpdateHold> {
-    RUNNING_JOBS.hold_for_update()
-}
-
-/// Whether a job runs, which restarting the app would also cut short.
-pub(crate) fn job_running() -> bool {
-    RUNNING_JOBS.any()
+    RUNNING_JOBS.start()
 }
 
 /// Window event handler: hold back a close request while a job runs.
@@ -232,13 +227,15 @@ mod tests {
         drop(job);
 
         let hold = COUNTER.hold_for_update().unwrap();
-        assert!(COUNTER.start().is_none());
+        let refused = COUNTER.start().err().unwrap();
+        assert_eq!(refused.code, "installer_updating");
+        assert!(refused.retryable);
         assert!(COUNTER.hold_for_update().is_none());
         // Not a job, so closing the window isn't held back
         assert!(!COUNTER.any());
         drop(hold);
 
-        assert!(COUNTER.start().is_some());
+        assert!(COUNTER.start().is_ok());
     }
 
     /// Quit from the menu or the Dock, logging out and shutting down only ask

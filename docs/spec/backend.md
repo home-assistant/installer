@@ -552,7 +552,10 @@ of the plugin's own permissions:
 The last two refuse while a flash or a VM install runs (the close guard's
 job counter), since the restart would cut the installation short. While
 `install_update` runs, the same counter refuses new jobs with
-`installer_updating`: on Windows the app exits partway through it. The
+`installer_updating`, as on Windows the app exits partway through it; and
+from `restart_after_update` on until the app exits, as nothing in the app
+calls off the restart. A failed install keeps the downloaded update for
+another try, and installing again after one worked does nothing. The
 frontend only installs and restarts while the welcome screen shows, and
 holds back **Let's go** meanwhile, so leaving it for a flow while the update
 downloads loses nothing entered there; the update then waits until the user

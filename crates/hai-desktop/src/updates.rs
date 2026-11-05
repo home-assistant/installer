@@ -10,12 +10,13 @@
 //! Updating takes three steps, so the frontend decides when the app restarts:
 //! `download_update`, `install_update` and `restart_after_update`.
 
-use crate::close_guard::{hold_jobs_for_update, job_running};
+use crate::close_guard::{jobs, JobCounter, UpdateHold};
 use crate::command_error::CommandError;
 use crate::diagnostics::Operation;
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -40,14 +41,102 @@ const CANDIDATES: usize = 3;
 #[derive(Default)]
 pub struct PendingUpdate {
     update: Mutex<Option<Update>>,
-    /// Downloaded and verified, until it is installed
-    bytes: Mutex<Option<Vec<u8>>>,
-    installed: AtomicBool,
+    steps: UpdateSteps,
 }
 
 impl PendingUpdate {
     fn update(&self) -> Option<Update> {
         lock(&self.update).clone()
+    }
+}
+
+/// How far updating got, apart from the updater, which installs and
+/// restarts through the functions it's given.
+struct UpdateSteps {
+    jobs: &'static JobCounter,
+    /// Downloaded and verified, until it is installed
+    bytes: Mutex<Option<Vec<u8>>>,
+    installed: AtomicBool,
+    /// Taken by the restart and kept until the app exits, so no job starts
+    /// that the restart would cut short
+    restart_hold: Mutex<Option<UpdateHold>>,
+}
+
+impl Default for UpdateSteps {
+    fn default() -> Self {
+        Self::new(jobs())
+    }
+}
+
+impl UpdateSteps {
+    fn new(jobs: &'static JobCounter) -> Self {
+        Self {
+            jobs,
+            bytes: Mutex::default(),
+            installed: AtomicBool::new(false),
+            restart_hold: Mutex::default(),
+        }
+    }
+
+    /// Forget the last update, for another check.
+    fn reset(&self) {
+        *lock(&self.bytes) = None;
+        self.installed.store(false, Ordering::Release);
+    }
+
+    fn downloaded(&self, bytes: Vec<u8>) {
+        *lock(&self.bytes) = Some(bytes);
+    }
+
+    /// Install the downloaded update with `run`, which says whether that
+    /// worked. Refused while a job runs, and no job starts until it's done.
+    /// A failed install keeps the update for another try, and once one
+    /// worked, installing again does nothing.
+    async fn install(
+        &self,
+        run: impl FnOnce(&[u8]) -> bool + Send + 'static,
+    ) -> Result<(), CommandError> {
+        if self.installed.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let _hold = self
+            .jobs
+            .hold_for_update()
+            .ok_or_else(installation_running)?;
+        let bytes = lock(&self.bytes).take().ok_or_else(no_update)?;
+        // Blocks, on Linux and macOS until the user answers a password prompt
+        let (bytes, installed) = tauri::async_runtime::spawn_blocking(move || {
+            let installed = run(&bytes);
+            (bytes, installed)
+        })
+        .await
+        .map_err(|_| install_failed())?;
+        if !installed {
+            *lock(&self.bytes) = Some(bytes);
+            return Err(install_failed());
+        }
+        self.installed.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    /// Start the installed update with `request`. Refused while a job runs,
+    /// which the restart would cut short: one may have started while the
+    /// install waited for a password. From then on no job starts, even if
+    /// the restart is asked for again.
+    fn restart(&self, request: impl FnOnce()) -> Result<(), CommandError> {
+        if !self.installed.load(Ordering::Acquire) {
+            return Err(no_update());
+        }
+        let mut hold = lock(&self.restart_hold);
+        if hold.is_none() {
+            *hold = Some(
+                self.jobs
+                    .hold_for_update()
+                    .ok_or_else(installation_running)?,
+            );
+        }
+        request();
+        Ok(())
     }
 }
 
@@ -68,10 +157,40 @@ pub struct AvailableUpdate {
 }
 
 /// How far downloading the update got.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct UpdateProgress {
     pub downloaded: u64,
     pub total: Option<u64>,
+}
+
+/// Which of a download's chunks to report: every chunk would flood the
+/// channel, so one for each percent, or each MiB while the size is unknown.
+#[derive(Default)]
+struct ProgressReports {
+    downloaded: u64,
+    next: u64,
+}
+
+impl ProgressReports {
+    fn chunk(&mut self, length: usize, total: Option<u64>) -> Option<UpdateProgress> {
+        self.downloaded += length as u64;
+        if self.downloaded < self.next {
+            return None;
+        }
+        self.next = self.downloaded + total.map_or(1 << 20, |total| total / 100);
+        Some(UpdateProgress {
+            downloaded: self.downloaded,
+            total,
+        })
+    }
+
+    /// All of it, which the last report may not have covered.
+    fn finished(&self) -> UpdateProgress {
+        UpdateProgress {
+            downloaded: self.downloaded,
+            total: Some(self.downloaded),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -97,8 +216,7 @@ async fn check(
     pending: &PendingUpdate,
 ) -> Result<Option<AvailableUpdate>, CommandError> {
     *lock(&pending.update) = None;
-    *lock(&pending.bytes) = None;
-    pending.installed.store(false, Ordering::Release);
+    pending.steps.reset();
     let current = &app.package_info().version;
     // Only release runs set the version; any other build has nothing to
     // update to and must not replace itself with a release
@@ -107,22 +225,45 @@ async fn check(
     }
 
     let tags = fetch_tags(TAGS_API).await?;
+    let candidates = update_candidates(current, &tags);
+    let found = first_update(
+        &candidates,
+        |update: &Update| &update.version,
+        |tag| async move { fetch_update(app, &tag).await.ok().flatten() },
+    )
+    .await?;
+    let Some((tag, update)) = found else {
+        return Ok(None);
+    };
+    let available = AvailableUpdate {
+        version: update.version.clone(),
+        release_url: format!("{RELEASES}/tag/{tag}"),
+        installable: installable(),
+    };
+    *lock(&pending.update) = Some(update);
+    Ok(Some(available))
+}
+
+/// The update of the newest of the `candidates` that has one for this
+/// platform, as `fetch` reads it from the release's `latest.json`, with that
+/// release's version. Tries [`CANDIDATES`] releases at most, and fails when
+/// none had an update but one was tried.
+async fn first_update<T, Fut>(
+    candidates: &[Version],
+    version_of: impl Fn(&T) -> &str,
+    mut fetch: impl FnMut(Version) -> Fut,
+) -> Result<Option<(Version, T)>, CommandError>
+where
+    Fut: Future<Output = Option<T>>,
+{
     let mut failed = false;
-    for version in update_candidates(current, &tags).iter().take(CANDIDATES) {
-        let update = match fetch_update(app, version).await {
-            Ok(Some(update)) if is_release(&update.version, version) => update,
-            _ => {
-                failed = true;
-                continue;
+    for tag in candidates.iter().take(CANDIDATES) {
+        match fetch(tag.clone()).await {
+            Some(update) if is_release(version_of(&update), tag) => {
+                return Ok(Some((tag.clone(), update)))
             }
-        };
-        let available = AvailableUpdate {
-            version: update.version.clone(),
-            release_url: format!("{RELEASES}/tag/{version}"),
-            installable: installable(),
-        };
-        *lock(&pending.update) = Some(update);
-        return Ok(Some(available));
+            _ => failed = true,
+        }
     }
     if failed {
         return Err(check_failed());
@@ -257,32 +398,21 @@ async fn download(
     progress: &Channel<UpdateProgress>,
 ) -> Result<(), CommandError> {
     let update = pending.update().ok_or_else(no_update)?;
-    let downloaded = AtomicU64::new(0);
-    let mut next_report = 0;
+    let reports = Mutex::new(ProgressReports::default());
     let bytes = update
         .download(
             |chunk, total| {
-                let downloaded =
-                    downloaded.fetch_add(chunk as u64, Ordering::Relaxed) + chunk as u64;
-                // Every chunk would flood the channel: report each percent,
-                // or each MiB while the size is unknown
-                if downloaded >= next_report {
-                    next_report = downloaded + total.map_or(1 << 20, |total| total / 100);
-                    let _ = progress.send(UpdateProgress { downloaded, total });
+                if let Some(report) = lock(&reports).chunk(chunk, total) {
+                    let _ = progress.send(report);
                 }
             },
             || {
-                // All of it, which the last percent may not have reported
-                let downloaded = downloaded.load(Ordering::Relaxed);
-                let _ = progress.send(UpdateProgress {
-                    downloaded,
-                    total: Some(downloaded),
-                });
+                let _ = progress.send(lock(&reports).finished());
             },
         )
         .await
         .map_err(|_| update_failed().with_diagnostic("update_download_failed"))?;
-    *lock(&pending.bytes) = Some(bytes);
+    pending.steps.downloaded(bytes);
     Ok(())
 }
 
@@ -292,44 +422,24 @@ async fn download(
 /// `restart_after_update`. Installing again does nothing.
 #[tauri::command]
 pub async fn install_update(pending: State<'_, PendingUpdate>) -> Result<(), CommandError> {
-    if pending.installed.load(Ordering::Acquire) {
-        return Ok(());
-    }
-    let _hold = hold_jobs_for_update().ok_or_else(installation_running)?;
-    let operation = Operation::new("update_install");
-    let result = install(&pending).await;
-    operation.finish(result)?;
-    pending.installed.store(true, Ordering::Release);
-    Ok(())
-}
-
-async fn install(pending: &PendingUpdate) -> Result<(), CommandError> {
     let update = pending.update().ok_or_else(no_update)?;
-    let bytes = lock(&pending.bytes).take().ok_or_else(no_update)?;
-    // Blocks, on Linux and macOS until the user answers a password prompt
-    tauri::async_runtime::spawn_blocking(move || update.install(bytes))
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .ok_or_else(|| update_failed().with_diagnostic("update_install_failed"))
+    let operation = Operation::new("update_install");
+    let result = pending
+        .steps
+        .install(move |bytes| update.install(bytes).is_ok())
+        .await;
+    operation.finish(result)
 }
 
-/// Start the installed update. Refused while an installation runs, which the
-/// restart would cut short: one may have started while the install waited
-/// for a password.
+/// Start the installed update. Refused while an installation runs, and no
+/// installation starts after it: nothing in the app calls off an exit, so
+/// the restart goes ahead.
 #[tauri::command]
 pub fn restart_after_update(
     app: AppHandle,
     pending: State<'_, PendingUpdate>,
 ) -> Result<(), CommandError> {
-    if !pending.installed.load(Ordering::Acquire) {
-        return Err(no_update());
-    }
-    if job_running() {
-        return Err(installation_running());
-    }
-    app.request_restart();
-    Ok(())
+    pending.steps.restart(|| app.request_restart())
 }
 
 fn installation_running() -> CommandError {
@@ -346,6 +456,10 @@ fn no_update() -> CommandError {
 
 fn update_failed() -> CommandError {
     CommandError::new("update_failed", "The update could not be installed.", true)
+}
+
+fn install_failed() -> CommandError {
+    update_failed().with_diagnostic("update_install_failed")
 }
 
 #[cfg(test)]
@@ -434,6 +548,242 @@ mod tests {
         assert!(!is_release("2026.12.0-alpha.1", &tag));
         assert!(!is_release("2026.11.0", &tag));
         assert!(!is_release("not a version", &tag));
+    }
+
+    /// The releases `first_update` tried, and what it found.
+    async fn first(
+        candidates: &[&str],
+        manifests: &[(&str, Option<&str>)],
+    ) -> (Vec<String>, Result<Option<String>, CommandError>) {
+        let candidates: Vec<_> = candidates
+            .iter()
+            .map(|tag| Version::parse(tag).unwrap())
+            .collect();
+        let mut tried = Vec::new();
+        let found = first_update(
+            &candidates,
+            |version: &String| version,
+            |tag| {
+                tried.push(tag.to_string());
+                // A release's manifest names this version, or there is none
+                let version = manifests
+                    .iter()
+                    .find(|(release, _)| *release == tag.to_string())
+                    .and_then(|(_, version)| version.map(str::to_owned));
+                async move { version }
+            },
+        )
+        .await
+        .map(|found| found.map(|(tag, version)| format!("{tag} {version}")));
+        (tried, found)
+    }
+
+    #[tokio::test]
+    async fn takes_the_newest_release_with_an_update() {
+        let (tried, found) = first(
+            &["2026.12.0", "2026.11.1"],
+            &[("2026.12.0", Some("2026.12.0"))],
+        )
+        .await;
+        assert_eq!(tried, ["2026.12.0"]);
+        assert_eq!(found.unwrap().as_deref(), Some("2026.12.0 2026.12.0"));
+    }
+
+    #[tokio::test]
+    async fn falls_back_past_releases_without_an_update_of_their_own() {
+        // No manifest for this platform, then one naming another version
+        let (tried, found) = first(
+            &["2026.12.1", "2026.12.0", "2026.11.1"],
+            &[
+                ("2026.12.0", Some("2026.13.0-alpha.1")),
+                ("2026.11.1", Some("2026.11.1")),
+            ],
+        )
+        .await;
+        assert_eq!(tried, ["2026.12.1", "2026.12.0", "2026.11.1"]);
+        assert_eq!(found.unwrap().as_deref(), Some("2026.11.1 2026.11.1"));
+    }
+
+    #[tokio::test]
+    async fn tries_three_releases_at_most() {
+        let (tried, found) = first(
+            &["2026.12.3", "2026.12.2", "2026.12.1", "2026.12.0"],
+            &[("2026.12.0", Some("2026.12.0"))],
+        )
+        .await;
+        assert_eq!(tried, ["2026.12.3", "2026.12.2", "2026.12.1"]);
+        let error = found.err().unwrap();
+        assert_eq!(error.code, "network");
+        assert_eq!(error.diagnostic, "update_check_failed");
+    }
+
+    #[tokio::test]
+    async fn no_newer_release_is_no_update() {
+        let (tried, found) = first(&[], &[]).await;
+        assert!(tried.is_empty());
+        assert_eq!(found.unwrap(), None);
+    }
+
+    #[test]
+    fn reports_each_percent_of_a_download() {
+        let mut reports = ProgressReports::default();
+        let total = Some(1000);
+        let progress = |downloaded| UpdateProgress { downloaded, total };
+        assert_eq!(reports.chunk(5, total), Some(progress(5)));
+        // Less than a percent more
+        assert_eq!(reports.chunk(9, total), None);
+        assert_eq!(reports.chunk(1, total), Some(progress(15)));
+        assert_eq!(reports.chunk(10, total), Some(progress(25)));
+        assert_eq!(reports.chunk(3, total), None);
+        assert_eq!(
+            reports.finished(),
+            UpdateProgress {
+                downloaded: 28,
+                total: Some(28)
+            }
+        );
+    }
+
+    #[test]
+    fn reports_each_mib_of_a_download_of_unknown_size() {
+        let mut reports = ProgressReports::default();
+        assert!(reports.chunk(10, None).is_some());
+        assert_eq!(reports.chunk((1 << 20) - 1, None), None);
+        assert!(reports.chunk(1, None).is_some());
+    }
+
+    /// Update steps with jobs of their own, and the update downloaded.
+    fn downloaded(jobs: &'static JobCounter) -> UpdateSteps {
+        let steps = UpdateSteps::new(jobs);
+        steps.downloaded(b"update".to_vec());
+        steps
+    }
+
+    #[tokio::test]
+    async fn installing_waits_for_a_running_job_and_keeps_the_update() {
+        static JOBS: JobCounter = JobCounter::new();
+        let steps = downloaded(&JOBS);
+
+        let job = JOBS.start().unwrap();
+        let error = steps
+            .install(|_| unreachable!("installed during a job"))
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.code, "operation_in_progress");
+        assert!(error.retryable);
+        drop(job);
+
+        steps.install(|bytes| bytes == b"update").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn no_job_starts_while_the_update_installs() {
+        static JOBS: JobCounter = JobCounter::new();
+        let steps = downloaded(&JOBS);
+
+        steps.install(|_| JOBS.start().is_err()).await.unwrap();
+        // Until the restart, it may
+        assert!(JOBS.start().is_ok());
+    }
+
+    #[tokio::test]
+    async fn installing_needs_a_downloaded_update() {
+        static JOBS: JobCounter = JobCounter::new();
+        let steps = UpdateSteps::new(&JOBS);
+
+        let error = steps
+            .install(|_| unreachable!("nothing to install"))
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.code, "update_failed");
+        assert!(!error.retryable);
+        assert!(JOBS.start().is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_failed_install_can_be_tried_again() {
+        static JOBS: JobCounter = JobCounter::new();
+        let steps = downloaded(&JOBS);
+
+        let error = steps.install(|_| false).await.err().unwrap();
+        assert_eq!(error.code, "update_failed");
+        assert_eq!(error.diagnostic, "update_install_failed");
+        assert!(error.retryable);
+        assert!(JOBS.start().is_ok());
+
+        steps.install(|bytes| bytes == b"update").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn installing_again_does_nothing() {
+        static JOBS: JobCounter = JobCounter::new();
+        let steps = downloaded(&JOBS);
+
+        steps.install(|_| true).await.unwrap();
+        steps
+            .install(|_| unreachable!("installed twice"))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_new_check_forgets_the_last_update() {
+        static JOBS: JobCounter = JobCounter::new();
+        let steps = downloaded(&JOBS);
+        steps.install(|_| true).await.unwrap();
+
+        steps.reset();
+        assert_eq!(steps.restart(|| {}).err().unwrap().code, "update_failed");
+        let error = steps
+            .install(|_| unreachable!("nothing to install"))
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.code, "update_failed");
+    }
+
+    #[tokio::test]
+    async fn restarts_only_into_an_installed_update() {
+        static JOBS: JobCounter = JobCounter::new();
+        let steps = downloaded(&JOBS);
+
+        let error = steps
+            .restart(|| unreachable!("restarted before installing"))
+            .err()
+            .unwrap();
+        assert_eq!(error.code, "update_failed");
+        assert!(JOBS.start().is_ok());
+
+        steps.install(|_| false).await.err().unwrap();
+        steps
+            .restart(|| unreachable!("restarted after a failed install"))
+            .err()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_restart_waits_for_a_running_job_then_holds_jobs_back() {
+        static JOBS: JobCounter = JobCounter::new();
+        let steps = downloaded(&JOBS);
+        steps.install(|_| true).await.unwrap();
+
+        let job = JOBS.start().unwrap();
+        let error = steps
+            .restart(|| unreachable!("restarted during a job"))
+            .err()
+            .unwrap();
+        assert_eq!(error.code, "operation_in_progress");
+        drop(job);
+
+        let mut restarts = 0;
+        steps.restart(|| restarts += 1).unwrap();
+        assert_eq!(JOBS.start().err().unwrap().code, "installer_updating");
+        // Asked again, as the app was still there, it restarts again
+        steps.restart(|| restarts += 1).unwrap();
+        assert_eq!(restarts, 2);
+        assert!(JOBS.start().is_err());
     }
 
     #[cfg(target_os = "macos")]
