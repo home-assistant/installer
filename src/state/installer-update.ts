@@ -48,6 +48,7 @@ class InstallerUpdateStore {
   private _generation = 0;
   private _visible = false;
   private _restartTimer?: number;
+  private _restartRequested = false;
   private _listeners = new Set<Listener>();
 
   get state(): InstallerUpdateState {
@@ -55,12 +56,26 @@ class InstallerUpdateStore {
   }
 
   /**
+   * Whether the app was asked to restart into the update. From then on the
+   * backend starts no installation until the app exits, and the update
+   * can't be put off anymore, only restarted into again.
+   */
+  get restartRequested(): boolean {
+    return this._restartRequested;
+  }
+
+  /**
    * Installing the update or restarting into it, when no flow may start: on
-   * Windows the app exits as soon as the update's installer takes over.
+   * Windows the app exits as soon as the update's installer takes over, and
+   * after the restart was asked for, the backend refuses installations.
    */
   get applying(): boolean {
     const { status } = this._state;
-    return status === "installing" || status === "restarting";
+    return (
+      status === "installing" ||
+      status === "restarting" ||
+      this._restartRequested
+    );
   }
 
   subscribe(listener: Listener): () => void {
@@ -138,6 +153,7 @@ class InstallerUpdateStore {
         return;
       }
       await restartAfterUpdate();
+      this._restartRequested = true;
     } catch (error) {
       if (current()) this._fail(update, error);
       return;
@@ -162,6 +178,7 @@ class InstallerUpdateStore {
 
   /** Not now: the update isn't offered again in this run. */
   dismiss(): void {
+    if (this._restartRequested) return;
     const { status } = this._state;
     if (status === "available" || status === "failed" || status === "ready")
       this._set({ status: "none" });
@@ -171,6 +188,7 @@ class InstallerUpdateStore {
   reset(): void {
     this._generation++;
     this._check = undefined;
+    this._restartRequested = false;
     this._set({ status: "none" });
   }
 

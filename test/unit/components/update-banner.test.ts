@@ -24,10 +24,18 @@ async function banner(): Promise<UpdateBanner> {
   return el;
 }
 
+/** What the banner shows; screen readers get it from the live region. */
 function message(el: UpdateBanner): string {
-  return (
-    el.shadowRoot!.querySelector("[role=status]")?.textContent?.trim() ?? ""
-  );
+  return el.shadowRoot!.querySelector(".text")?.textContent?.trim() ?? "";
+}
+
+function liveRegion(el: UpdateBanner): HTMLElement {
+  return el.shadowRoot!.querySelector<HTMLElement>("[role=status]")!;
+}
+
+/** Whether the banner shows, rather than only its empty live region. */
+function shown(el: UpdateBanner): boolean {
+  return el.shadowRoot!.querySelector(".banner") !== null;
 }
 
 function button(el: UpdateBanner, name: string): HTMLElement | null {
@@ -64,8 +72,65 @@ describe("update-banner", () => {
     mockUpdate({ check_for_update: () => null });
     const el = await banner();
 
-    expect(el.hidden).to.be.true;
-    expect(el.shadowRoot!.querySelector(".banner")).to.equal(null);
+    expect(shown(el)).to.be.false;
+    // Already there, so screen readers announce an update that comes later
+    expect(liveRegion(el).textContent!.trim()).to.equal("");
+  });
+
+  it("announces the update in a live region that was there before it", async () => {
+    let answer!: (update: typeof UPDATE) => void;
+    mockUpdate({
+      check_for_update: () =>
+        new Promise<typeof UPDATE>((resolve) => (answer = resolve)),
+    });
+    const el = await fixture<UpdateBanner>(
+      html`<update-banner></update-banner>`
+    );
+    const region = liveRegion(el);
+    expect(region.getAttribute("aria-atomic")).to.equal("true");
+    // Takes no room, but isn't hidden from screen readers either
+    expect(getComputedStyle(el).display).not.to.equal("none");
+    expect(el.getBoundingClientRect().height).to.equal(0);
+
+    answer(UPDATE);
+    await waitUntil(
+      () => region.textContent!.includes("2026.12.0"),
+      "the update was never announced",
+      { timeout: 3000 }
+    );
+    // The same region, so its change is announced
+    expect(liveRegion(el)).to.equal(region);
+    expect(region.textContent!.trim()).to.equal(
+      "A new version of the installer is available: 2026.12.0"
+    );
+    // Read once: the visible text is left to the live region
+    expect(
+      el.shadowRoot!.querySelector(".text")!.getAttribute("aria-hidden")
+    ).to.equal("true");
+  });
+
+  it("announces the ready update when the user is back, after mounting empty", async () => {
+    let finishDownload!: () => void;
+    mockUpdate({
+      download_update: () =>
+        new Promise<void>((resolve) => (finishDownload = resolve)),
+    });
+    const el = await banner();
+    button(el, "install")!.click();
+    await waitUntil(() => finishDownload);
+    el.remove();
+    finishDownload();
+    await waitUntil(() => installerUpdate.state.status === "ready");
+
+    const back = await fixture<UpdateBanner>(
+      html`<update-banner></update-banner>`
+    );
+    expect(liveRegion(back).textContent!.trim()).to.equal("");
+    await waitUntil(
+      () => liveRegion(back).textContent!.includes("The update is ready"),
+      "the ready update was never announced",
+      { timeout: 3000 }
+    );
   });
 
   it("stays hidden when the check fails", async () => {
@@ -76,7 +141,7 @@ describe("update-banner", () => {
     });
     const el = await banner();
 
-    expect(el.hidden).to.be.true;
+    expect(shown(el)).to.be.false;
   });
 
   it("downloads, installs and restarts, on the same busy button", async () => {
@@ -90,7 +155,7 @@ describe("update-banner", () => {
     });
     const el = await banner();
 
-    expect(el.hidden).to.be.false;
+    expect(shown(el)).to.be.true;
     expect(message(el)).to.contain("2026.12.0");
     const notes = el.shadowRoot!.querySelector<HTMLAnchorElement>("a.notes")!;
     expect(notes.textContent).to.equal("What's new Opens in your browser.");
@@ -172,7 +237,12 @@ describe("update-banner", () => {
       "The update is ready. Restart the installer to start using it."
     );
     expect(button(el, "install")!.textContent).to.contain("Restart now");
-    expect(button(el, "dismiss")).to.exist;
+    // The backend holds back installations until the app exits, so the
+    // update can't be put off anymore
+    expect(button(el, "dismiss")).to.equal(null);
+    installerUpdate.dismiss();
+    expect(installerUpdate.state.status).to.equal("ready");
+    expect(installerUpdate.applying).to.be.true;
   });
 
   it("restarts only once the user is back on the welcome screen", async () => {
@@ -297,12 +367,12 @@ describe("update-banner", () => {
 
     button(el, "dismiss")!.click();
     await el.updateComplete;
-    expect(el.hidden).to.be.true;
+    expect(shown(el)).to.be.false;
 
     // The welcome screen, and so the banner, comes back after every flow
     el.remove();
     const again = await banner();
-    expect(again.hidden).to.be.true;
+    expect(shown(again)).to.be.false;
     expect(calls.filter((cmd) => cmd === "check_for_update")).to.have.length(1);
   });
 });

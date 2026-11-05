@@ -6,7 +6,10 @@ import {
   getLanguage,
   setLanguage,
 } from "../../../src/localization/localize.js";
-import { installerUpdate } from "../../../src/state/installer-update.js";
+import {
+  installerUpdate,
+  RESTART_TIMEOUT_MS,
+} from "../../../src/state/installer-update.js";
 import { mockTauriIpc, restoreTauriIpc } from "../tauri-ipc.js";
 
 describe("welcome-view", () => {
@@ -150,7 +153,10 @@ describe("welcome-view", () => {
     // Earlier tests checked for an update through the browser mock
     beforeEach(() => installerUpdate.reset());
 
+    const setTimeout = window.setTimeout;
+
     afterEach(() => {
+      window.setTimeout = setTimeout;
       installerUpdate.reset();
       restoreTauriIpc();
     });
@@ -183,6 +189,18 @@ describe("welcome-view", () => {
         el.shadowRoot!.querySelector<HTMLElement & { disabled: boolean }>(
           "main wa-button"
         )!;
+      // Holds back only the restart's timeout; waitUntil needs the others
+      let finishRestartTimeout!: () => void;
+      window.setTimeout = ((
+        handler: () => void,
+        timeout?: number,
+        ...args: unknown[]
+      ) => {
+        if (timeout !== RESTART_TIMEOUT_MS)
+          return setTimeout(handler, timeout, ...args);
+        finishRestartTimeout = handler;
+        return 0;
+      }) as typeof window.setTimeout;
 
       const updating = installerUpdate.update();
       await waitUntil(() => installerUpdate.state.status === "installing");
@@ -197,6 +215,13 @@ describe("welcome-view", () => {
       expect(letsGo().disabled).to.be.true;
       letsGo().click();
       expect(navigations).to.deep.equal([]);
+
+      // Still there after a while: the backend starts no installation until
+      // the app exits, so neither does Let's go
+      finishRestartTimeout();
+      expect(installerUpdate.state.status).to.equal("ready");
+      await el.updateComplete;
+      expect(letsGo().disabled).to.be.true;
     });
 
     it("still starts a flow while the update downloads", async () => {

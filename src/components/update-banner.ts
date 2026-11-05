@@ -8,6 +8,7 @@ import {
 import { openExternalUrl } from "../utils/external-url.js";
 import { renderExternalLink } from "../utils/external-link.js";
 import { linkStyles } from "../utils/link-styles.js";
+import { LiveStatus, srOnlyStyles } from "../utils/view-accessibility.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 
 /**
@@ -19,15 +20,14 @@ import "@home-assistant/webawesome/dist/components/button/button.js";
 export class UpdateBanner extends LitElement {
   static styles = [
     linkStyles,
+    srOnlyStyles,
     css`
+      /* With nothing to offer, only the empty live region, which takes no
+         room: hidden, it wouldn't announce the offer once it comes */
       :host {
         display: block;
         width: 100%;
         max-width: 640px;
-      }
-
-      :host([hidden]) {
-        display: none;
       }
 
       .banner {
@@ -74,6 +74,8 @@ export class UpdateBanner extends LitElement {
   @state()
   private _state: InstallerUpdateState = installerUpdate.state;
 
+  private readonly _status = new LiveStatus(this);
+
   private _unsubscribe?: () => void;
 
   connectedCallback() {
@@ -92,13 +94,22 @@ export class UpdateBanner extends LitElement {
     installerUpdate.setVisible(false);
   }
 
-  protected willUpdate() {
-    this.hidden = this._state.status === "none";
-  }
-
   render() {
     const state = this._state;
-    if (state.status === "none") return nothing;
+    const message = state.status === "none" ? "" : this._message(state);
+    // Mounted empty first, even with nothing to offer, and kept as the same
+    // element, so screen readers announce the offer, and the ready update
+    // when the user is back
+    return html`<p class="sr-only" role="status" aria-atomic="true">
+        ${this._status.ready ? message : ""}
+      </p>
+      ${state.status === "none" ? nothing : this._renderBanner(state, message)}`;
+  }
+
+  private _renderBanner(
+    state: Exclude<InstallerUpdateState, { status: "none" }>,
+    message: string
+  ) {
     const { status, update } = state;
     const busy =
       status === "downloading" ||
@@ -109,7 +120,7 @@ export class UpdateBanner extends LitElement {
     // One install button throughout, so it keeps the focus while it's busy
     return html`<div class="banner">
       <p class="message">
-        <span role="status">${this._message(state)}</span>
+        <span class="text" aria-hidden="true">${message}</span>
         ${this._renderPercent(state)}
         ${status === "available"
           ? renderExternalLink(
@@ -146,7 +157,7 @@ export class UpdateBanner extends LitElement {
               ${localize("components.update_banner.download")}
             </wa-button>`
           : nothing}
-        ${busy
+        ${busy || installerUpdate.restartRequested
           ? nothing
           : html`<wa-button
               class="dismiss"

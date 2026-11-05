@@ -359,8 +359,14 @@ installation is running that the restart would cut short.
   for a password) and the app restarts into the new version. Screen readers
   hear each step, not each percent
 - While the update installs and the app restarts, **Let's go** is disabled:
-  on Windows the app exits as the update's installer takes over. While it
-  downloads, the user can still start a flow
+  on Windows the app exits as the update's installer takes over. It stays
+  disabled once the restart was asked for, even if the app is still there,
+  as the backend then starts no installation until the app exits; **Not
+  now** isn't offered anymore either. While the update downloads, the user
+  can still start a flow
+- Screen readers hear the banner's message from a live region that is there,
+  empty, before the offer comes, and again when the user comes back to a
+  ready update
 - The app only installs and restarts while the welcome screen shows. If the
   user went on to a flow meanwhile, or the app is still there 10 seconds
   after it should have restarted, the banner says the update is ready and
