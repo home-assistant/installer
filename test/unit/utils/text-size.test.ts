@@ -10,13 +10,19 @@ import { mockTauriIpc, restoreTauriIpc, settle } from "../tauri-ipc.js";
 
 const KEY = "hai:text-size";
 
-function press(key: string, modifier = true, code = ""): KeyboardEvent {
+function press(
+  key: string,
+  modifier = true,
+  code = "",
+  altKey = false
+): KeyboardEvent {
   const macos = getPlatform() === "macos";
   const event = new KeyboardEvent("keydown", {
     key,
     code,
     ctrlKey: modifier && !macos,
     metaKey: modifier && macos,
+    altKey,
     cancelable: true,
   });
   window.dispatchEvent(event);
@@ -80,6 +86,12 @@ describe("text size", () => {
     setTextSize(1.5);
     expect(press("à", true, "Digit0").defaultPrevented).to.be.true;
     expect(textSize()).to.equal(1);
+  });
+
+  it('lets AltGr type "@" on a French AZERTY layout', () => {
+    setTextSize(1.5);
+    expect(press("@", true, "Digit0", true).defaultPrevented).to.be.false;
+    expect(textSize()).to.equal(1.5);
   });
 
   it("leaves the keys alone without Ctrl or Cmd", () => {

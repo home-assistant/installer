@@ -37,6 +37,8 @@ export function setTextSize(size: number): void {
 // a browser's zoom
 function onKeyDown(event: KeyboardEvent): void {
   if (!(getPlatform() === "macos" ? event.metaKey : event.ctrlKey)) return;
+  // AltGr reports Ctrl and Alt on Windows, and types characters such as "@"
+  if (event.altKey) return;
   let index = TEXT_SIZES.indexOf(current);
   // The top-row 0 key types "à" on AZERTY, so match it by position too
   switch (event.code === "Digit0" ? "0" : event.key) {
