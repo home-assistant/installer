@@ -354,7 +354,7 @@ where
     check_cancelled(callback)?;
 
     // Write to device
-    backend
+    let ejected = backend
         .write_image(
             &image,
             &request.device_id,
@@ -379,6 +379,7 @@ where
 
     Ok(FlashResult {
         duration_secs: duration.as_secs(),
+        ejected,
     })
 }
 
@@ -1223,10 +1224,13 @@ mod tests {
     #[test]
     fn flash_command_result_keeps_its_wire_shape() {
         // Failures reject the command with a CommandError instead
-        let result = FlashResult { duration_secs: 42 };
+        let result = FlashResult {
+            duration_secs: 42,
+            ejected: true,
+        };
         assert_eq!(
             serde_json::to_value(result).unwrap(),
-            serde_json::json!({"duration_secs": 42})
+            serde_json::json!({"duration_secs": 42, "ejected": true})
         );
     }
 
@@ -1757,7 +1761,7 @@ mod tests {
             _: &hai_core::ExpectedDevice,
             _: bool,
             _: &P,
-        ) -> hai_core::Result<()> {
+        ) -> hai_core::Result<bool> {
             panic!("must not write a drive");
         }
     }
@@ -1934,7 +1938,7 @@ mod mock_tests {
             _: &hai_core::ExpectedDevice,
             _: bool,
             _: &P,
-        ) -> hai_core::Result<()> {
+        ) -> hai_core::Result<bool> {
             assert_ne!(
                 self.outcome, "oversized",
                 "oversized image reached disk writer"
@@ -1949,7 +1953,7 @@ mod mock_tests {
                     self.write_started.notify_one();
                     std::future::pending().await
                 }
-                _ => Ok(()),
+                _ => Ok(true),
             }
         }
     }
@@ -2485,7 +2489,7 @@ mod mock_tests {
             _: &hai_core::ExpectedDevice,
             _: bool,
             _: &P,
-        ) -> hai_core::Result<()> {
+        ) -> hai_core::Result<bool> {
             panic!("unverified image reached the writer")
         }
     }
@@ -2636,7 +2640,7 @@ mod mock_tests {
             expected: &hai_core::ExpectedDevice,
             verify: bool,
             callback: &P,
-        ) -> hai_core::Result<()> {
+        ) -> hai_core::Result<bool> {
             BackendMock
                 .write_image(image, device_id, expected, verify, callback)
                 .await

@@ -5,8 +5,13 @@ import "../../../../src/views/sbc/success-view.js";
 import type { SuccessView } from "../../../../src/views/sbc/success-view.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../../tauri-ipc.js";
 
-async function renderSuccess(board = "rpi5-64", flow: WizardFlow = "sbc") {
+async function renderSuccess(
+  board = "rpi5-64",
+  flow: WizardFlow = "sbc",
+  ejected = true
+) {
   wizardState.startFlow(flow);
+  wizardState.setSelection("driveEjected", ejected);
   wizardState.setSelection("deviceName", "Selected device");
   wizardState.setSelection("deviceConfig", {
     board,
@@ -76,12 +81,21 @@ describe("success-view next steps", () => {
     ]);
   });
 
-  // Writing ejects the drive, so ejecting is no step of the user's
-  it("leaves ejecting out without claiming it succeeded", async () => {
+  it("leaves ejecting out once writing ejected the drive", async () => {
     const el = await renderSuccess();
     expect(text(el)).not.to.contain("eject");
     const success = el.shadowRoot!.querySelector("install-success")!;
     expect(success.formatWarning).to.equal(true);
+  });
+
+  it("asks to eject the drive first when writing couldn't", async () => {
+    const el = await renderSuccess("rpi5-64", "sbc", false);
+    const steps = [...content(el).querySelectorAll(".step-text")].map(
+      (step) => step.textContent!
+    );
+    expect(steps[0]).to.equal(
+      "Your computer couldn't eject the drive. Eject it before you disconnect it."
+    );
   });
 
   for (const board of ["odroid-n2", "odroid-m1s"]) {

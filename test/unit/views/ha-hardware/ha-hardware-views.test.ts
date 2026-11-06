@@ -683,6 +683,7 @@ describe("Home Assistant hardware views", () => {
     ] as const) {
       it(`gives the ${id} its own next steps`, async () => {
         select(id, "Unused");
+        wizardState.setSelection("driveEjected", true);
         const el = await fixture(
           html`<ha-hardware-success-view></ha-hardware-success-view>`
         );

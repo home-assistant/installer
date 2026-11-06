@@ -57,6 +57,8 @@ export interface WizardSelections {
    * drive step explains why.
    */
   driveSelectionLost?: boolean;
+  /** Writing ejected the drive; if not, the success screen says to. */
+  driveEjected?: boolean;
   /** Network to add to the drive. Its password is cleared once written. */
   wifi?: WifiConfig;
 

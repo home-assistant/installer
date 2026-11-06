@@ -123,7 +123,8 @@ pub trait DeviceBackend {
     /// List block devices, subject to platform-specific filtering.
     async fn list_devices(&self) -> Result<Vec<BlockDevice>>;
 
-    /// Write an image to the device with this id, reporting progress.
+    /// Write an image to the device with this id, reporting progress, and
+    /// eject it. Whether it was ejected; if not, the user has to.
     ///
     /// Re-checks the expected identity. Platform safety checks do not replace
     /// caller validation of removability.
@@ -134,7 +135,7 @@ pub trait DeviceBackend {
         expected: &ExpectedDevice,
         verify: bool,
         progress_callback: &P,
-    ) -> Result<()>;
+    ) -> Result<bool>;
 }
 
 /// Proxmox VE provisioning.

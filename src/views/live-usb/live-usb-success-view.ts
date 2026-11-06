@@ -8,6 +8,7 @@ import { renderExternalLink } from "../../utils/external-link.js";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { DeviceSurvey } from "../../utils/device-discovery.js";
 import { GENERIC_X86_GUIDE_URL } from "../../utils/urls.js";
+import { ejectStep } from "../../utils/drive-selection.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import "../../components/install-success.js";
 
@@ -102,6 +103,7 @@ export class LiveUsbSuccessView extends LitElement {
               ...boot,
             ]
           : [
+              ...ejectStep(selections),
               localize(
                 "views.live_usb.live_usb_success_view.plug_in_the_stick"
               ),

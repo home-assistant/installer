@@ -402,6 +402,7 @@
   "common.success.almost_there": "Almost there!",
   "common.success.do_not_format.macos": "macOS may say it can't read this disk, because it doesn't know the Home Assistant partitions. Choose Eject, not Initialize.",
   "common.success.do_not_format.windows": "Windows may offer to format this drive, because it doesn't know the Home Assistant partitions. Choose Cancel.",
+  "common.success.step_eject": "Your computer couldn't eject the drive. Eject it before you disconnect it.",
   "views.sbc.success_view.step_minipc_install_drive": "Install or reconnect the written drive in your mini PC. Select that drive in the firmware boot order, with UEFI boot enabled and Secure Boot disabled.",
   "views.sbc.success_view.step_insert_or_disconnect": "If you used a storage adapter, insert the written media into {device}. If you flashed the board directly over USB, disconnect the USB and power cables.",
   "views.sbc.success_view.step_insert_or_disconnect_generic": "If you used a storage adapter, insert the written media into your device. If you flashed the board directly over USB, disconnect the USB and power cables.",

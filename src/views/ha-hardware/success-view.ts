@@ -13,6 +13,7 @@ import {
 } from "../../utils/urls.js";
 import { DeviceSurvey } from "../../utils/device-discovery.js";
 import { selectedWifi } from "../../utils/wifi.js";
+import { ejectStep } from "../../utils/drive-selection.js";
 import {
   findHaHardware,
   haHardwareName,
@@ -67,7 +68,10 @@ export class HaHardwareSuccessView extends LitElement {
           : localize("views.ha_hardware.success_view.subtitle")}
         .formatWarning=${true}
         .companion=${false}
-        .steps=${this._steps(hardware)}
+        .steps=${[
+          ...ejectStep(this._wizardState.selections),
+          ...this._steps(hardware),
+        ]}
         .optionalStep=${writesHaos ? "" : this._backupStep()}
         .footer=${renderExternalLink(
           guide,
