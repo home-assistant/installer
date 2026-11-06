@@ -14,6 +14,16 @@ describe("installer errors", () => {
     expect(result.retryable).to.be.false;
   });
 
+  it("asks to wait for the restart when a job is refused during an update", () => {
+    const result = installerError(
+      ipcError("installer_updating", "English from Rust", true)
+    );
+    expect(result.message).to.equal(
+      "The installer is updating itself. Wait for it to restart, then try again."
+    );
+    expect(result.retryable).to.be.true;
+  });
+
   it("keeps internals of a configuration error out of the message", () => {
     const result = installerError(
       ipcError("invalid_config", "Cannot parse board from: haos_x.img.xz")
