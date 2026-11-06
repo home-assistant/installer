@@ -377,6 +377,10 @@ installation is running that the restart would cut short.
 - On macOS, an installer run from the DMG, or not yet moved out of the
   download folder, can't replace itself: the banner asks to move it to the
   Applications folder first and offers **Download**
+- Closing the app while the update installs is held back: a dialog says the
+  installer is updating itself and restarts by itself in a moment, with only
+  **Keep updating**, as closing halfway through could leave it unable to
+  start. It goes away by itself if the install fails
 - **Not now** hides the banner until the next start
 
 ---

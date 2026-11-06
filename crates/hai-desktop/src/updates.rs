@@ -105,7 +105,8 @@ impl UpdateSteps {
     }
 
     /// Install the downloaded update with `run`, which says whether that
-    /// worked. Refused while a job runs, and no job starts until it's done.
+    /// worked. Refused while a job runs, and no job starts, nor does the app
+    /// close, until it's done.
     /// A failed install keeps the update for another try, and once one
     /// worked, installing again does nothing.
     async fn install(
@@ -117,7 +118,7 @@ impl UpdateSteps {
         }
         let _hold = self
             .jobs
-            .hold_for_update()
+            .hold_for_install()
             .ok_or_else(installation_running)?;
         let bytes = lock(&self.bytes).take().ok_or_else(no_update)?;
         // Blocks, on Linux and macOS until the user answers a password prompt
@@ -700,7 +701,13 @@ mod tests {
         static JOBS: JobCounter = JobCounter::new();
         let steps = downloaded(&JOBS);
 
-        steps.install(|_| JOBS.start().is_err()).await.unwrap();
+        steps
+            .install(|_| {
+                JOBS.start().is_err()
+                    && JOBS.close_blocked() == Some(crate::close_guard::CloseBlocked::Update)
+            })
+            .await
+            .unwrap();
         // Until the restart, it may
         assert!(JOBS.start().is_ok());
     }
@@ -1019,6 +1026,24 @@ mod tests {
             .unwrap();
         assert_eq!(error.code, "network");
         assert_eq!(error.diagnostic, "update_check_failed");
+    }
+
+    #[tokio::test]
+    async fn only_older_releases_are_no_update() {
+        let mut server = mockito::Server::new_async().await;
+        serve_releases(&mut server, &["2026.11.0", "2026.10.0"], &[]).await;
+        let manifests = server
+            .mock("GET", mockito::Matcher::Regex("latest.json".into()))
+            .expect(0)
+            .create_async()
+            .await;
+        let app = app_at("2026.11.0", &server.url());
+
+        let available = check_for_update(app.handle().clone(), tauri::Manager::state(&app))
+            .await
+            .unwrap();
+        assert_eq!(available, None);
+        manifests.assert_async().await;
     }
 
     #[tokio::test]

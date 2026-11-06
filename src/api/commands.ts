@@ -47,16 +47,25 @@ export async function checkConnection(): Promise<void> {
 }
 
 /**
- * Call `onBlocked` whenever the backend held back closing the app because an
- * installation is still running. Resolves to a function that stops listening.
+ * Why the backend held back closing the app: an installation still runs,
+ * which the user may stop anyway, or the installer is updating itself,
+ * which closing would break.
+ */
+export type CloseBlockedReason = "job" | "update";
+
+/**
+ * Call `onBlocked` whenever the backend held back closing the app, with why.
+ * Resolves to a function that stops listening.
  */
 export async function onCloseBlocked(
-  onBlocked: () => void
+  onBlocked: (reason: CloseBlockedReason) => void
 ): Promise<() => void> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     return () => {};
   }
-  return listen("close-blocked", () => onBlocked());
+  return listen<CloseBlockedReason>("close-blocked", (event) =>
+    onBlocked(event.payload)
+  );
 }
 
 /**

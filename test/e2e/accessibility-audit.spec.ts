@@ -95,7 +95,9 @@ async function catchCloseBlocked(page: Page) {
   });
   return () =>
     page.evaluate(() =>
-      (window as unknown as { closeBlocked: () => void }).closeBlocked()
+      (
+        window as unknown as { closeBlocked: (event: unknown) => void }
+      ).closeBlocked({ event: "close-blocked", id: 1, payload: "job" })
     );
 }
 

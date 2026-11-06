@@ -554,7 +554,11 @@ job counter), since the restart would cut the installation short. While
 `install_update` runs, the same counter refuses new jobs with
 `installer_updating`, as on Windows the app exits partway through it; and
 from `restart_after_update` on until the app exits, as nothing in the app
-calls off the restart. A failed install keeps the downloaded update for
+calls off the restart. While `install_update` runs, closing the app is held
+back too, and `close-blocked` says `update` instead of `job`: the frontend
+offers no way to quit anyway, and `quit_anyway` refuses, as on Linux the
+updater rewrites the AppImage in place and quitting halfway through leaves
+one that doesn't start. A failed install keeps the downloaded update for
 another try, and installing again after one worked does nothing. The
 frontend only installs and restarts while the welcome screen shows, and
 holds back **Let's go** meanwhile, so leaving it for a flow while the update

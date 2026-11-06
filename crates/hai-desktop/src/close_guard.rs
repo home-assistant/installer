@@ -7,12 +7,16 @@
 //!
 //! Installing an update of the installer, and restarting into it, hold back
 //! new jobs instead: on Windows the installer exits halfway through it.
+//! Installing it also holds back closing the app, without the choice to quit
+//! anyway: on Linux the AppImage is rewritten in place, and quitting halfway
+//! through leaves one that doesn't start.
 
 use crate::command_error::CommandError;
+use serde::Serialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{Emitter, Runtime, Window, WindowEvent};
 
-/// Sent to the frontend when a close request was held back.
+/// Sent to the frontend when a close request was held back, with why.
 const CLOSE_BLOCKED_EVENT: &str = "close-blocked";
 
 static RUNNING_JOBS: JobCounter = JobCounter::new();
@@ -20,6 +24,19 @@ static RUNNING_JOBS: JobCounter = JobCounter::new();
 /// The counter's top bit, set while an update installs or the app restarts
 /// into one.
 const UPDATING: usize = 1 << (usize::BITS - 1);
+/// The next bit, set while an update installs.
+const INSTALLING: usize = 1 << (usize::BITS - 2);
+const FLAGS: usize = UPDATING | INSTALLING;
+
+/// Why closing the app is held back.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CloseBlocked {
+    /// A job runs; the user may still quit
+    Job,
+    /// An update installs; quitting would break the app
+    Update,
+}
 
 /// The running jobs, and whether an update holds them back, in one value, so
 /// a job and an update can't both start.
@@ -45,15 +62,33 @@ impl JobCounter {
         Ok(RunningJob(self))
     }
 
-    fn any(&self) -> bool {
-        self.0.load(Ordering::Acquire) & !UPDATING > 0
+    /// Why closing the app is held back now, if it is.
+    pub(crate) fn close_blocked(&self) -> Option<CloseBlocked> {
+        let value = self.0.load(Ordering::Acquire);
+        if value & INSTALLING != 0 {
+            Some(CloseBlocked::Update)
+        } else if value & !FLAGS > 0 {
+            Some(CloseBlocked::Job)
+        } else {
+            None
+        }
     }
 
     /// Hold back new jobs for as long as the returned guard lives. `None`
     /// while a job runs, or something else holds them back.
     pub(crate) fn hold_for_update(&'static self) -> Option<UpdateHold> {
+        self.hold(UPDATING)
+    }
+
+    /// Hold back new jobs, and closing the app, for as long as the returned
+    /// guard lives. `None` while a job runs, or something else holds them back.
+    pub(crate) fn hold_for_install(&'static self) -> Option<UpdateHold> {
+        self.hold(UPDATING | INSTALLING)
+    }
+
+    fn hold(&'static self, flags: usize) -> Option<UpdateHold> {
         self.0
-            .compare_exchange(0, UPDATING, Ordering::AcqRel, Ordering::Acquire)
+            .compare_exchange(0, flags, Ordering::AcqRel, Ordering::Acquire)
             .ok()
             .map(|_| UpdateHold(self))
     }
@@ -73,7 +108,7 @@ pub(crate) struct UpdateHold(&'static JobCounter);
 
 impl Drop for UpdateHold {
     fn drop(&mut self) {
-        self.0 .0.fetch_and(!UPDATING, Ordering::AcqRel);
+        self.0 .0.fetch_and(!FLAGS, Ordering::AcqRel);
     }
 }
 
@@ -88,35 +123,42 @@ pub(crate) fn running_job() -> Result<RunningJob, CommandError> {
     RUNNING_JOBS.start()
 }
 
-/// Window event handler: hold back a close request while a job runs.
+/// Window event handler: hold back a close request while a job runs or an
+/// update installs.
 pub(crate) fn on_window_event(window: &Window, event: &WindowEvent) {
     let WindowEvent::CloseRequested { api, .. } = event else {
         return;
     };
-    if !RUNNING_JOBS.any() {
+    let Some(blocked) = RUNNING_JOBS.close_blocked() else {
         return;
-    }
+    };
 
     api.prevent_close();
-    ask_before_closing(window);
+    ask_before_closing(window, blocked);
 }
 
-/// Bring the window forward and have the frontend ask whether to quit.
-fn ask_before_closing<R: Runtime>(window: &Window<R>) {
+/// Bring the window forward and have the frontend say why it stays open, and
+/// for a job ask whether to quit anyway.
+fn ask_before_closing<R: Runtime>(window: &Window<R>, blocked: CloseBlocked) {
     // Quit from the menu, the taskbar or the Dock also works on a minimized or
     // hidden window; bring it back, or the question goes unseen.
     let _ = window.show();
     let _ = window.unminimize();
     let _ = window.set_focus();
 
-    if window.emit(CLOSE_BLOCKED_EVENT, ()).is_err() {
+    if window.emit(CLOSE_BLOCKED_EVENT, blocked).is_err() {
         crate::diagnostics::warning("close_blocked_event_failed");
     }
 }
 
-/// Quit even though a job is still running. The user chose this.
+/// Quit even though a job is still running. The user chose this. Not while
+/// an update installs, which the frontend never offers it for.
 #[tauri::command]
 pub fn quit_anyway(app: tauri::AppHandle) {
+    if RUNNING_JOBS.close_blocked() == Some(CloseBlocked::Update) {
+        crate::diagnostics::warning("quit_during_update_refused");
+        return;
+    }
     crate::diagnostics::warning("quit_during_job");
     // Ends the event loop without `terminate:`, so it isn't asked again
     app.exit(0);
@@ -148,16 +190,16 @@ mod termination {
         _: Sel,
         _: *mut AnyObject,
     ) -> NSApplicationTerminateReply {
-        if !RUNNING_JOBS.any() {
+        let Some(blocked) = RUNNING_JOBS.close_blocked() else {
             return NSApplicationTerminateReply::TerminateNow;
-        }
+        };
         let Some(window) = APP.get().and_then(|app| app.get_webview_window("main")) else {
             // Nowhere to ask, so don't quit halfway through a job
             crate::diagnostics::warning("termination_blocked_without_window");
             return NSApplicationTerminateReply::TerminateCancel;
         };
         // Quit anyway exits by itself; a logout or shutdown has to be started again
-        ask_before_closing(&window.as_ref().window());
+        ask_before_closing(&window.as_ref().window(), blocked);
         NSApplicationTerminateReply::TerminateCancel
     }
 
@@ -205,17 +247,17 @@ mod tests {
     #[test]
     fn counts_running_jobs_until_they_are_dropped() {
         static COUNTER: JobCounter = JobCounter::new();
-        assert!(!COUNTER.any());
+        assert_eq!(COUNTER.close_blocked(), None);
 
         let first = COUNTER.start().unwrap();
         let second = COUNTER.start().unwrap();
-        assert!(COUNTER.any());
+        assert_eq!(COUNTER.close_blocked(), Some(CloseBlocked::Job));
 
         drop(first);
-        assert!(COUNTER.any());
+        assert_eq!(COUNTER.close_blocked(), Some(CloseBlocked::Job));
 
         drop(second);
-        assert!(!COUNTER.any());
+        assert_eq!(COUNTER.close_blocked(), None);
     }
 
     #[test]
@@ -232,10 +274,34 @@ mod tests {
         assert!(refused.retryable);
         assert!(COUNTER.hold_for_update().is_none());
         // Not a job, so closing the window isn't held back
-        assert!(!COUNTER.any());
+        assert_eq!(COUNTER.close_blocked(), None);
         drop(hold);
 
         assert!(COUNTER.start().is_ok());
+    }
+
+    #[test]
+    fn an_installing_update_holds_back_closing_too() {
+        static COUNTER: JobCounter = JobCounter::new();
+
+        let job = COUNTER.start().unwrap();
+        assert!(COUNTER.hold_for_install().is_none());
+        drop(job);
+
+        let hold = COUNTER.hold_for_install().unwrap();
+        assert_eq!(COUNTER.close_blocked(), Some(CloseBlocked::Update));
+        assert_eq!(COUNTER.start().err().unwrap().code, "installer_updating");
+        assert!(COUNTER.hold_for_update().is_none());
+        drop(hold);
+
+        assert_eq!(COUNTER.close_blocked(), None);
+        assert!(COUNTER.start().is_ok());
+    }
+
+    #[test]
+    fn tells_the_frontend_why_closing_waits() {
+        assert_eq!(serde_json::json!(CloseBlocked::Job), "job");
+        assert_eq!(serde_json::json!(CloseBlocked::Update), "update");
     }
 
     /// Quit from the menu or the Dock, logging out and shutting down only ask

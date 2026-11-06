@@ -12,6 +12,7 @@ import {
   MOCK_MANIFEST,
 } from "../../../src/api/mock-data.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
+import { installerUpdate } from "../../../src/state/installer-update.js";
 import { storeDriveSelection } from "../../../src/utils/drive-selection.js";
 import { fireEvent } from "../../../src/utils/fire-event.js";
 import { flush, holdDeviceScan } from "../helpers/hold-device-scan.js";
@@ -1515,10 +1516,43 @@ describe("app-shell", () => {
     });
 
     async function blockClose() {
-      await emit("close-blocked");
+      await emit("close-blocked", "job");
       await el.updateComplete;
       await quitDialogOf(el).updateComplete;
     }
+
+    it("only says why while the installer updates itself", async () => {
+      const updateDialogOf = () =>
+        el.shadowRoot!.querySelector(
+          "info-dialog.update-quit-dialog"
+        ) as InfoDialog;
+
+      await emit("close-blocked", "update");
+      await el.updateComplete;
+      const dialog = updateDialogOf();
+      await dialog.updateComplete;
+
+      expect(dialog.open).to.be.true;
+      expect(quitDialogOf(el).open).to.be.false;
+      expect(dialog.heading).to.equal("The installer is updating itself");
+      // Closing now would break it, so there is no way to quit anyway
+      const buttons = [...dialog.shadowRoot!.querySelectorAll("wa-button")];
+      expect(buttons.map((button) => button.textContent!.trim())).to.deep.equal(
+        ["Keep updating"]
+      );
+      buttons[0].click();
+      await el.updateComplete;
+      expect(dialog.open).to.be.false;
+      expect(calls).not.to.include("quit_anyway");
+
+      // Once the update no longer installs, what it said is over
+      await emit("close-blocked", "update");
+      await el.updateComplete;
+      expect(dialog.open).to.be.true;
+      installerUpdate.reset();
+      await el.updateComplete;
+      expect(dialog.open).to.be.false;
+    });
 
     it("asks before quitting", async () => {
       expect(quitDialogOf(el).open).to.be.false;
