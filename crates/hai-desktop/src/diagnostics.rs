@@ -116,10 +116,12 @@ pub fn describe(error: &hai_core::Error) -> String {
     }
     let mut line = scrub_line(&text);
     // Proxmox quotes the names in its replies, like `storage 'x' does not exist`.
-    // After the other rules, whose matches a placeholder could cut short.
+    // After the other rules, whose matches a placeholder could cut short. A
+    // name may hold an apostrophe, so only one before a non-word character
+    // closes it.
     if let ProxmoxApi(_) = error {
-        static QUOTED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(^|\W)'[^']*'").unwrap());
-        line = QUOTED.replace_all(&line, "${1}'<name>'").into_owned();
+        static QUOTED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\B'.*?'\B").unwrap());
+        line = QUOTED.replace_all(&line, "'<name>'").into_owned();
     }
     shorten(line)
 }
@@ -924,6 +926,13 @@ mod tests {
         assert_eq!(
             describe(&login),
             "Proxmox API error: login (401): https://<host>"
+        );
+        let missing = hai_core::Error::ProxmoxApi(
+            "backup (500): directory '/mnt/Jane's Backup' does not exist".into(),
+        );
+        assert_eq!(
+            describe(&missing),
+            "Proxmox API error: backup (500): directory '<name>' does not exist"
         );
         let unknown = hai_core::Error::PermissionDenied(hai_core::message!(
             "backend.disk.system_disk_unknown",
