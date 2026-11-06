@@ -38,7 +38,8 @@ export function setTextSize(size: number): void {
 function onKeyDown(event: KeyboardEvent): void {
   if (!(getPlatform() === "macos" ? event.metaKey : event.ctrlKey)) return;
   let index = TEXT_SIZES.indexOf(current);
-  switch (event.key) {
+  // The top-row 0 key types "à" on AZERTY, so match it by position too
+  switch (event.code === "Digit0" ? "0" : event.key) {
     case "-":
       index--;
       break;
