@@ -180,7 +180,5 @@ export function clearDriveSelection() {
 
 /** The success step to eject the written drive, when writing didn't. */
 export function ejectStep(selections: WizardSelections): string[] {
-  return selections.driveEjected
-    ? []
-    : [localize("common.success.step_eject")];
+  return selections.driveEjected ? [] : [localize("common.success.step_eject")];
 }
