@@ -114,12 +114,14 @@ pub fn describe(error: &hai_core::Error) -> String {
         }
         source = cause.source();
     }
-    // Proxmox quotes the names in its replies, like `storage 'x' does not exist`
+    let mut line = scrub_line(&text);
+    // Proxmox quotes the names in its replies, like `storage 'x' does not exist`.
+    // After the other rules, whose matches a placeholder could cut short.
     if let ProxmoxApi(_) = error {
         static QUOTED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(^|\W)'[^']*'").unwrap());
-        text = QUOTED.replace_all(&text, "${1}'<name>'").into_owned();
+        line = QUOTED.replace_all(&line, "${1}'<name>'").into_owned();
     }
-    scrub(&text)
+    shorten(line)
 }
 
 /// Replace a user-named parameter with `<name>`, also in a message that is
@@ -148,6 +150,10 @@ const MAX_ERROR_CHARS: usize = 300;
 /// addresses or volume IDs. Best effort, as people review an issue before
 /// posting it.
 fn scrub(text: &str) -> String {
+    shorten(scrub_line(text))
+}
+
+fn scrub_line(text: &str) -> String {
     // Takes balanced parentheses, but not the one closing a URL in them, and
     // stops at a backslash, which may escape a quote in a credential's value.
     // Past the path, closing parentheses end it only before a space or the
@@ -224,7 +230,11 @@ fn scrub(text: &str) -> String {
     for (rule, replacement) in RULES.iter() {
         line = rule.replace_all(&line, *replacement).into_owned();
     }
-    // The root cause comes last, so a long line loses its middle
+    line
+}
+
+// The root cause comes last, so a long line loses its middle
+fn shorten(line: String) -> String {
     let chars: Vec<char> = line.chars().collect();
     if chars.len() <= MAX_ERROR_CHARS {
         return line;
@@ -907,6 +917,13 @@ mod tests {
         assert_eq!(
             describe(&reply),
             "Proxmox API error: VM creation (500): unable to create VM 100 - volume '<name>' already exists; storage '<name>' doesn't exist"
+        );
+        let login = hai_core::Error::ProxmoxApi(
+            "login (401): https://admin:'pw'@janes-private.lan/api".into(),
+        );
+        assert_eq!(
+            describe(&login),
+            "Proxmox API error: login (401): https://<host>"
         );
         let unknown = hai_core::Error::PermissionDenied(hai_core::message!(
             "backend.disk.system_disk_unknown",
