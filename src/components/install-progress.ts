@@ -5,13 +5,14 @@ import {
   localize,
   localizeContent,
 } from "../localization/localize.js";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import { formatBytes } from "../utils/format.js";
+import { mdiChevronRight } from "../utils/icons.js";
+import { renderIcon } from "../utils/render-icon.js";
 import {
-  renderCasitaThinking,
+  renderCasitaFocusing,
   renderCasitaHappy,
   renderCasitaSad,
-  thinkingCloudStyles,
 } from "./install-mascot.js";
 import "./progress-bar.js";
 import "./inline-notice.js";
@@ -19,10 +20,7 @@ import { renderErrorHelp } from "../utils/installer-error.js";
 import { renderExternalLink } from "../utils/external-link.js";
 import { linkStyles } from "../utils/link-styles.js";
 import { statusDotStyles } from "../utils/status-dot-styles.js";
-import {
-  noRoomForCloudBeside,
-  roomForMascotBeside,
-} from "../utils/breakpoints.js";
+import { roomForMascotBeside } from "../utils/breakpoints.js";
 import {
   LiveStatus,
   ViewAccessibility,
@@ -45,7 +43,6 @@ export class InstallProgress extends LitElement {
     reducedMotionStyles,
     linkStyles,
     statusDotStyles,
-    thinkingCloudStyles,
     css`
       /* Its own width, not the window's, decides between the layouts */
       :host {
@@ -56,20 +53,19 @@ export class InstallProgress extends LitElement {
         container-type: inline-size;
       }
 
-      /* Narrow, Casita stands above the details, with room for the cloud and
-         the 5px its top bump rises above it */
+      /* Narrow, Casita stands above the details */
       .layout {
         display: flex;
         flex-direction: column;
         align-items: center;
-        padding-top: 115px;
       }
 
+      /* The heading included, so all text starts on one edge */
       .details {
         display: flex;
         flex-direction: column;
-        align-items: center;
         width: 100%;
+        max-width: var(--ha-content-narrow-width);
       }
 
       .mascot-container {
@@ -79,12 +75,6 @@ export class InstallProgress extends LitElement {
         display: flex;
         align-items: center;
         justify-content: center;
-        position: relative;
-        overflow: visible;
-      }
-
-      .mascot-container.with-bubble {
-        margin-left: 40px;
       }
 
       .casita-mascot {
@@ -93,11 +83,48 @@ export class InstallProgress extends LitElement {
       }
 
       h2 {
-        font-size: 1.25rem;
+        font-size: 1.375rem;
         font-weight: 500;
+        line-height: 1.3;
         color: var(--ha-text-color);
-        margin: 0 0 0.25rem 0;
-        text-align: center;
+        margin: 0;
+        overflow-wrap: anywhere;
+        transition: font-size 0.3s ease;
+      }
+
+      /* Quieter than the heading below it, which it opens the stages around */
+      .parts {
+        display: flex;
+        align-items: center;
+        align-self: flex-start;
+        gap: 0.25rem;
+        margin: 0 0 0.375rem;
+        padding: 0.125rem 0;
+        border: 0;
+        background: none;
+        font: inherit;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--ha-secondary-text-color);
+        cursor: pointer;
+      }
+
+      .parts:focus-visible {
+        outline: var(--wa-focus-ring);
+        outline-offset: var(--wa-focus-ring-offset);
+      }
+
+      .chevron {
+        width: 14px;
+        height: 14px;
+        fill: currentColor;
+        transition: transform 0.3s ease;
+      }
+
+      [aria-expanded="true"] .chevron {
+        transform: rotate(90deg);
       }
 
       .progress-section {
@@ -158,36 +185,88 @@ export class InstallProgress extends LitElement {
         overflow-wrap: anywhere;
       }
 
-      .stages-indicator {
-        display: grid;
-        gap: 0.5rem;
-        width: 100%;
-        max-width: var(--ha-content-narrow-width);
-        margin: 1rem 0 1.5rem;
+      .stages {
+        margin: 0 0 1.25rem;
         padding: 0;
         list-style: none;
+        transition: margin-bottom 0.3s ease;
       }
 
+      .stages.open {
+        margin-bottom: 0.75rem;
+      }
+
+      /* Open, the done stages grow in above the heading and the upcoming ones
+         below it. Hidden, they are gone for assistive technology too. */
       .stage {
         display: grid;
-        grid-template-columns: 8px minmax(0, 1fr);
-        align-items: baseline;
-        gap: 0.75rem;
+        grid-template-rows: 0fr;
+        opacity: 0;
+        visibility: hidden;
+        transition:
+          grid-template-rows 0.3s ease,
+          opacity 0.3s ease,
+          visibility 0s 0.3s;
+      }
+
+      .open .stage {
+        grid-template-rows: 1fr;
+        opacity: 1;
+        visibility: visible;
+        transition-delay: 0s;
+      }
+
+      /* Clips what doesn't fit yet while it grows */
+      .row {
+        display: flex;
+        align-items: center;
+        overflow: hidden;
         font-size: 0.875rem;
         line-height: 1.4;
         color: var(--ha-secondary-text-color);
         overflow-wrap: anywhere;
       }
 
-      .stage[aria-current="step"] {
-        color: var(--ha-text-color);
-        font-weight: 600;
+      .stage-label {
+        min-width: 0;
+        padding: 0.25rem 0;
       }
 
-      /* Smaller than the step indicator's, and as wide as their column */
+      /* As tall as a stage's row once it shrinks to one */
+      .current {
+        display: flex;
+        align-items: center;
+        min-height: 1.75rem;
+      }
+
+      .open h2 {
+        font-size: 0.9375rem;
+      }
+
+      /* The current stage's ring, which the heading takes as a row */
+      .marker {
+        display: flex;
+        flex: none;
+        width: 0;
+        overflow: hidden;
+        opacity: 0;
+        transition:
+          width 0.3s ease,
+          opacity 0.3s ease;
+      }
+
+      .open .marker {
+        width: 28px;
+        opacity: 1;
+      }
+
+      /* Smaller than the step indicator's. Each takes the 28px before its
+         text, with room for the current one's ring. */
       .status-dot {
+        flex: none;
         width: 8px;
         height: 8px;
+        margin: 4px 15px 4px 5px;
         transition: background-color 0.3s ease;
       }
 
@@ -210,24 +289,6 @@ export class InstallProgress extends LitElement {
         }
       }
 
-      /* Too narrow for the cloud beside Casita, which takes 510px: stack it
-         above instead, clear of the roof */
-      @container ${noRoomForCloudBeside} {
-        .layout {
-          padding-top: 5px;
-        }
-
-        .mascot-container.with-bubble {
-          margin-left: 0;
-          margin-top: 130px;
-        }
-
-        .thinking-cloud {
-          top: -130px;
-          right: -40px;
-        }
-      }
-
       /* Always there, as a live region, but takes no room while empty */
       .warning {
         width: 100%;
@@ -242,7 +303,6 @@ export class InstallProgress extends LitElement {
         font-size: 0.9375rem;
         color: var(--ha-secondary-text-color);
         margin: 0 0 1rem 0;
-        text-align: center;
         overflow-wrap: anywhere;
       }
 
@@ -251,33 +311,21 @@ export class InstallProgress extends LitElement {
         font-weight: 400;
         color: var(--ha-secondary-text-color);
         margin: 0 0 1.5rem 0;
-        text-align: center;
       }
 
-      /* Wide enough, Casita and the cloud stand beside the details, under the
-         heading, so the artwork doesn't push the progress down and out of
-         view */
+      /* Wide enough, Casita stands beside the details, so the artwork
+         doesn't push the progress down and out of view */
       @container ${roomForMascotBeside} {
         .layout {
-          flex-flow: row wrap;
+          flex-direction: row;
           justify-content: center;
-          gap: 1rem 3rem;
-          padding-top: 0;
-        }
-
-        /* Casita is hidden from assistive technology, so moving the heading
-           above it leaves the reading order as it was */
-        h2 {
-          order: -1;
-          flex-basis: 100%;
+          gap: 3rem;
         }
 
         /* No basis, so the details share Casita's line even where they have
            to narrow to fit */
         .details {
-          align-items: stretch;
           flex: 1 1 0;
-          max-width: var(--ha-content-narrow-width);
           min-width: 0;
         }
 
@@ -285,23 +333,13 @@ export class InstallProgress extends LitElement {
           flex-shrink: 0;
           margin-bottom: 0;
         }
-
-        /* The margins make the room the cloud takes above and beside Casita */
-        .mascot-container.with-bubble {
-          margin: 110px 175px 0 0;
-        }
-
-        .address,
-        .stage-description {
-          text-align: start;
-        }
       }
     `,
   ];
 
   @property({ attribute: false }) stages: InstallStage[] = [];
   @property() stage = "downloading";
-  /** A bare stage name, as the thinking cloud adds its own ellipsis */
+  /** The stage's short name, for the live region and the progress bar */
   @property({ attribute: "stage-title" }) stageTitle = localize(
     "common.install.downloading"
   );
@@ -332,15 +370,27 @@ export class InstallProgress extends LitElement {
   @property({ type: Boolean }) leavable = false;
   /** What the error's heading says, if the install did not simply fail */
   @property({ attribute: false }) errorHeading: string | null = null;
+  /** A stop was asked for, which the heading says instead of the stage */
+  @property({ type: Boolean }) stopping = false;
+
+  /** Whether the stage list is open, which outlasts stage changes */
+  @state() private _partsOpen = false;
 
   render() {
     // The live region stays mounted through errors so a retry is announced
     return html`
       <p class="sr-only" role="status" aria-atomic="true">
-        ${this._status.ready && !this.error ? this.stageTitle : ""}
+        ${this._status.ready && !this.error ? this._title() : ""}
       </p>
       ${this._renderContent()}
     `;
+  }
+
+  /** The stage's short name, or that the install stops */
+  private _title(): string {
+    return this.stopping
+      ? localize("components.install_progress.stopping")
+      : this.stageTitle;
   }
 
   private _renderContent() {
@@ -350,11 +400,11 @@ export class InstallProgress extends LitElement {
           <div class="mascot-container" aria-hidden="true">
             ${renderCasitaSad()}
           </div>
-          <h2>
-            ${this.errorHeading ??
-            localize("components.install_progress.installation_failed")}
-          </h2>
           <div class="details">
+            <h2>
+              ${this.errorHeading ??
+              localize("components.install_progress.installation_failed")}
+            </h2>
             <p class="error-message" data-focus-alert>${this.error}</p>
             ${renderErrorHelp()}
             <slot name="help"></slot>
@@ -362,67 +412,63 @@ export class InstallProgress extends LitElement {
         </div>
       `;
     }
-    const hasBubble = this.stage !== "complete" && this.stage !== "error";
     // Its live region is mounted empty first, so the first warning is announced
     const warning = this._status.ready ? this.warning : null;
-    const currentIndex = this.stages.findIndex(
-      (stage) => stage.id === this.stage
-    );
+    const current = this.stages.findIndex((stage) => stage.id === this.stage);
+    const done = current < 0 ? [] : this.stages.slice(0, current);
+    const upcoming = current < 0 ? [] : this.stages.slice(current + 1);
+    // Stopping, the heading no longer names a stage to list it with
+    const parts = done.length + upcoming.length > 0 && !this.stopping;
+    const open = parts && this._partsOpen;
     return html`
       <div class="layout">
-        <div
-          class="mascot-container ${hasBubble ? "with-bubble" : ""}"
-          aria-hidden="true"
-        >
+        <div class="mascot-container" aria-hidden="true">
           ${this.stage === "complete"
             ? renderCasitaHappy()
             : this.stage === "error"
               ? renderCasitaSad()
-              : renderCasitaThinking(this.stageTitle)}
+              : renderCasitaFocusing()}
         </div>
-        <h2>${this.description}</h2>
         <div class="details">
-          <slot></slot>
-          <!-- WebKit drops list semantics with list-style: none -->
+          ${parts
+            ? html`<button
+                class="parts"
+                type="button"
+                aria-expanded=${open ? "true" : "false"}
+                aria-controls="stages"
+                @click=${this._toggleParts}
+              >
+                ${localize("components.install_progress.part_of", {
+                  current: current + 1,
+                  total: this.stages.length,
+                })}${renderIcon(mdiChevronRight, "chevron")}
+              </button>`
+            : nothing}
+          <!-- WebKit drops list semantics with list-style: none. Closed, it
+               is only the heading. -->
           <ol
-            class="stages-indicator"
-            role="list"
-            aria-label=${localize(
-              "components.install_progress.installation_stages"
-            )}
+            id="stages"
+            class="stages ${open ? "open" : ""}"
+            role=${open ? "list" : "none"}
+            aria-label=${open
+              ? localize("components.install_progress.installation_stages")
+              : nothing}
           >
-            ${this.stages.map(
-              (stage, index) => html`
-                <li
-                  class="stage"
-                  aria-current=${index === currentIndex ? "step" : nothing}
-                >
-                  <span
-                    class="status-dot ${this.stage === "complete" ||
-                    index < currentIndex
-                      ? "completed"
-                      : index === currentIndex
-                        ? "active"
-                        : ""}"
-                    aria-hidden="true"
-                  ></span>
-                  <span class="stage-label"
-                    >${stage.label}${this.stage === "complete" ||
-                    index < currentIndex
-                      ? html`<span class="sr-only"
-                          >${` ${localize("components.install_progress.completed")}`}</span
-                        >`
-                      : nothing}</span
-                  >
-                </li>
-              `
-            )}
+            ${done.map((stage) => this._renderStage(stage, true))}
+            <li class="current" aria-current=${open ? "step" : nothing}>
+              <span class="marker" aria-hidden="true">
+                <span class="status-dot active"></span>
+              </span>
+              <h2>${this.stopping ? this._title() : this.description}</h2>
+            </li>
+            ${upcoming.map((stage) => this._renderStage(stage, false))}
           </ol>
+          <slot></slot>
           <div class="progress-section">
             <progress-bar
               .progress=${this.progress}
               ?indeterminate=${this.indeterminate}
-              .label=${this.stageTitle}
+              .label=${this._title()}
             ></progress-bar>
             ${this.measurable || !this.hideEmptyDetails
               ? html`
@@ -491,15 +537,32 @@ export class InstallProgress extends LitElement {
                 )}
               </p>`
             : nothing}
-          ${this.leavable
-            ? nothing
-            : html`<p class="stage-description">
-                ${localize("components.install_progress.keep_window_open")}
-              </p>`}
           <slot name="help"></slot>
         </div>
       </div>
     `;
+  }
+
+  private _toggleParts() {
+    this._partsOpen = !this._partsOpen;
+  }
+
+  private _renderStage(stage: InstallStage, done: boolean) {
+    return html`<li class="stage">
+      <div class="row">
+        <span
+          class="status-dot ${done ? "completed" : ""}"
+          aria-hidden="true"
+        ></span>
+        <span class="stage-label"
+          >${stage.label}${done
+            ? html`<span class="sr-only"
+                >${` ${localize("components.install_progress.completed")}`}</span
+              >`
+            : nothing}</span
+        >
+      </div>
+    </li>`;
   }
 
   /** A whole percent on the bar's track, whatever a view passes */

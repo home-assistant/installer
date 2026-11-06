@@ -80,17 +80,16 @@ describe("wizard-shell", () => {
     expect(wizardState.getState().currentFlow).to.equal("sbc");
   });
 
-  it("leaves out Cancel when asked, keeping Next", async () => {
+  it("names Cancel as asked", async () => {
     const el = await fixture<WizardShell>(
-      html`<wizard-shell hide-cancel next-label="Done"></wizard-shell>`
+      html`<wizard-shell cancel-label="Start over"></wizard-shell>`
     );
 
-    expect(el.shadowRoot!.querySelector(".footer-left wa-button")).to.be.null;
     expect(
       el
-        .shadowRoot!.querySelector(".footer-right wa-button")!
+        .shadowRoot!.querySelector(".footer-left wa-button")!
         .textContent!.trim()
-    ).to.equal("Done");
+    ).to.equal("Start over");
   });
 
   it("keeps Back disabled while hidden", async () => {

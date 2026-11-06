@@ -30,14 +30,15 @@ describe("vm-wait", () => {
     wizardState.reset();
   });
 
-  // The progress's live region announces only the title
-  it("names each wait differently", () => {
-    const titles = WAIT_STAGES.map(waitStageTitle);
-    expect(new Set(titles).size).to.equal(WAIT_STAGES.length);
-    expect(titles).to.deep.equal(["Connecting", "Waiting", "Updating"]);
+  it("names the waits before Home Assistant answers as one", () => {
+    expect(WAIT_STAGES.map(waitStageTitle)).to.deep.equal([
+      "Starting",
+      "Starting",
+      "Updating",
+    ]);
     expect(WAIT_STAGES.map(waitStageDescription)).to.deep.equal([
-      "Waiting for network connection",
-      "Waiting for Home Assistant",
+      "Starting Home Assistant OS",
+      "Starting Home Assistant OS",
       "Installing Home Assistant (this can take up to 20 minutes)",
     ]);
   });

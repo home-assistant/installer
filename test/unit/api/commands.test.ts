@@ -1,8 +1,13 @@
 import { expect } from "@open-wc/testing";
 import {
+  checkForUpdate,
+  downloadUpdate,
   downloadUtmImage,
   flashImage,
+  installUpdate,
   proxmoxCreateVm,
+  restartAfterUpdate,
+  type UpdateProgress,
 } from "../../../src/api/commands.js";
 import type { FlashProgress } from "../../../src/api/types.js";
 
@@ -178,6 +183,61 @@ describe("api/commands", () => {
         .map((step) => (step as { wait: number }).wait);
       expect(Math.max(...processing)).to.be.greaterThan(stepWait);
       expectNoMessages(progressOf(steps));
+    });
+  });
+
+  describe("browser mock updates", () => {
+    afterEach(() => {
+      sessionStorage.removeItem("hai:mock-update");
+      sessionStorage.removeItem("hai:mock-failure");
+    });
+
+    /** Download with the waits skipped, returning what it reported. */
+    async function download(): Promise<UpdateProgress[]> {
+      const reports: UpdateProgress[] = [];
+      await recordMockProgress(() =>
+        downloadUpdate((progress) => reports.push(progress))
+      );
+      return reports;
+    }
+
+    it("offers no update unless a test names one", async () => {
+      expect(await checkForUpdate()).to.equal(null);
+
+      sessionStorage.setItem("hai:mock-update", "2026.12.0");
+      expect(await checkForUpdate()).to.deep.equal({
+        version: "2026.12.0",
+        release_url:
+          "https://github.com/home-assistant/installer/releases/tag/2026.12.0",
+        installable: true,
+      });
+    });
+
+    it("downloads in steps, then installs and restarts", async () => {
+      const reports = await download();
+      const total = 8 * 1024 * 1024;
+      expect(reports.map((report) => report.downloaded)).to.deep.equal([
+        0,
+        total / 4,
+        total / 2,
+        (total * 3) / 4,
+        total,
+      ]);
+      for (const report of reports) expect(report.total).to.equal(total);
+      await installUpdate();
+      await restartAfterUpdate();
+    });
+
+    it("fails the update once when a test asks it to", async () => {
+      sessionStorage.setItem("hai:mock-failure", "update-install");
+      let rejection: unknown;
+      try {
+        await download();
+      } catch (error) {
+        rejection = error;
+      }
+      expect(rejection).to.include({ code: "update_failed", retryable: true });
+      expect(await download()).to.have.length(5);
     });
   });
 });

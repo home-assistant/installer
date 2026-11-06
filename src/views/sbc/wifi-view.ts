@@ -13,7 +13,7 @@ import "@home-assistant/webawesome/dist/components/switch/switch.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 import { panelStyles } from "../../utils/panel-styles.js";
 import { fieldError, fieldErrorStyles } from "../../utils/field-error.js";
-import { nextOnEnter } from "../../components/wizard-steps.js";
+import { nextOnEnter } from "../../components/wizard-next.js";
 
 /** Optional step for boards with built-in Wi-Fi: the network to join. */
 @customElement("wifi-view")
@@ -72,7 +72,7 @@ export class WifiView extends LitElement {
                 label=${localize("views.sbc.wifi_view.network")}
                 autocomplete="off"
                 autocapitalize="off"
-                autocorrect="off"
+                .autocorrect=${false}
                 .spellcheck=${false}
                 .value=${wifi.ssid}
                 @input=${this._onSsidInput}
@@ -102,14 +102,17 @@ export class WifiView extends LitElement {
                 <!-- In the hint slot and not role="alert", like the network
                   name's -->
                 <span slot="hint" class="password-hint" aria-live="polite"
-                  >${passwordError ??
-                  localize("views.sbc.wifi_view.password_hint")}</span
+                  >${passwordError ?? ""}</span
                 >
               </wa-input>
             `
           : nothing}
       </div>
-      <p class="note">${localize("views.sbc.wifi_view.supported_networks")}</p>
+      ${wifi
+        ? html`<p class="note">
+            ${localize("views.sbc.wifi_view.supported_networks")}
+          </p>`
+        : nothing}
     `;
   }
 
