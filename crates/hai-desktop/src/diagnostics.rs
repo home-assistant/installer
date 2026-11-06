@@ -180,7 +180,7 @@ fn scrub_line(text: &str) -> String {
             (r#"(?i)(/home/|/users/|/(?:run/)?media/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|[^\s\\/:"',;()]+)"#, "${1}<user>${2}"),
             // Stops at a quote or backslash, so the next rule still sees where a quoted value ends
             (r#"(?i)\b(basic|bearer)\s+[^\s"\\]+"#, "${1} <redacted>"),
-            (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|\S+)"#, "${1}=<redacted>"),
+            (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)"#, "${1}=<redacted>"),
             (r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<id>"),
             (r"[\w.+-]+@[\w.-]+", "<user>"),
             (r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "<ip>"),
@@ -766,6 +766,10 @@ mod tests {
             (
                 r#"{"password":"correct horse Bearer staple"}"#,
                 r#"{"password=<redacted>}"#,
+            ),
+            (
+                "Proxmox: password='correct horse battery staple' rejected",
+                "Proxmox: password=<redacted> rejected",
             ),
             (
                 r#"{"password":"https://private.example/path\"visible-fragment"}"#,
