@@ -50,15 +50,6 @@ export class LiveUsbProgressView extends InstallProgressView {
       width: 100%;
       flex: 1;
     }
-    .keep-plugged-in {
-      margin: 0 0 1rem;
-      padding: 0.75rem 1rem;
-      border-radius: var(--ha-small-border-radius);
-      font-weight: 500;
-      color: var(--ha-error-color);
-      background-color: var(--ha-error-background);
-      border: 1px solid var(--ha-error-border);
-    }
   `;
 
   protected readonly _flow = "flash";
@@ -186,13 +177,7 @@ export class LiveUsbProgressView extends InstallProgressView {
         .measurable=${!!this._progress?.total_bytes || stage === "complete"}
         .showUnknownBytes=${true}
         .error=${this._error?.message ?? null}
-      >
-        ${this._usb && !this._error
-          ? html`<p class="keep-plugged-in">
-              ${localize("views.live_usb.live_usb_progress_view.do_not_remove")}
-            </p>`
-          : ""}
-      </install-progress>
+      ></install-progress>
     `;
   }
 

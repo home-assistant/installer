@@ -52,7 +52,7 @@ pub async fn create_live_usb(
 ) -> Result<(), CommandError> {
     state
         .run(attempt, |cancelled| async move {
-            let _running = running_job();
+            let _running = running_job()?;
             let _awake = keep_awake("Creating a Home Assistant USB stick").await;
             let callback =
                 TauriProgressCallback::new(&progress_channel, "live_usb").cancellable(cancelled);
@@ -75,7 +75,7 @@ pub async fn save_live_iso(
 ) -> Result<String, CommandError> {
     state
         .run(attempt, |cancelled| async move {
-            let _running = running_job();
+            let _running = running_job()?;
             let _awake = keep_awake("Creating a Home Assistant ISO file").await;
             let callback =
                 TauriProgressCallback::new(&progress_channel, "live_iso").cancellable(cancelled);

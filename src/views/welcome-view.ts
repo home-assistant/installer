@@ -32,6 +32,8 @@ import "@home-assistant/webawesome/dist/components/select/select.js";
 import "@home-assistant/webawesome/dist/components/option/option.js";
 import "../components/ha-svg-icon.js";
 import "../components/diagnostics-actions.js";
+import "../components/update-banner.js";
+import { installerUpdate } from "../state/installer-update.js";
 
 // Each language in its own words, like Deutsch, capitalized as in a menu
 function languageName(tag: string): string {
@@ -47,6 +49,24 @@ export class WelcomeView extends LitElement {
   private _logoClickCount = 0;
 
   private _clickResetTimer?: number;
+
+  /** No flow starts while the update installs, which may exit the app */
+  @state()
+  private _updating = installerUpdate.applying;
+
+  private _unsubscribeUpdate?: () => void;
+
+  // Ctrl or Cmd with + and − change the size too
+  private readonly _onTextSizeChanged = () => this.requestUpdate();
+
+  connectedCallback() {
+    super.connectedCallback();
+    this._updating = installerUpdate.applying;
+    this._unsubscribeUpdate = installerUpdate.subscribe(() => {
+      this._updating = installerUpdate.applying;
+    });
+    window.addEventListener(TEXT_SIZE_CHANGE, this._onTextSizeChanged);
+  }
 
   static styles = [
     reducedMotionStyles,
@@ -243,6 +263,7 @@ export class WelcomeView extends LitElement {
   render() {
     return html`
       <header>${this._renderTextSize()} ${this._renderLanguages()}</header>
+      <update-banner></update-banner>
       <main>
         <h1 class="logo-container" @click=${this._onLogoClick}>
           <img
@@ -263,6 +284,7 @@ export class WelcomeView extends LitElement {
           variant="brand"
           appearance="accent"
           size="l"
+          ?disabled=${this._updating}
           @click=${this._onLetsGo}
         >
           ${localize("views.welcome_view.let_s_go")}
@@ -385,17 +407,10 @@ export class WelcomeView extends LitElement {
     fireEvent(this, "navigate", { view: "path-selection" });
   }
 
-  // Ctrl or Cmd with + and − change the size too
-  private readonly _onTextSizeChanged = () => this.requestUpdate();
-
-  connectedCallback() {
-    super.connectedCallback();
-    window.addEventListener(TEXT_SIZE_CHANGE, this._onTextSizeChanged);
-  }
-
   disconnectedCallback() {
     super.disconnectedCallback();
     window.removeEventListener(TEXT_SIZE_CHANGE, this._onTextSizeChanged);
+    this._unsubscribeUpdate?.();
     if (this._clickResetTimer) {
       clearTimeout(this._clickResetTimer);
     }

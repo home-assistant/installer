@@ -402,7 +402,7 @@ describe("vm-progress-view", () => {
     });
   }
 
-  it("names each stage, and each wait on its own", async () => {
+  it("names each stage, and the waits before Home Assistant answers as one", async () => {
     const download = deferred<void>();
     const built = deferred<void>();
     const address = deferred<string>();
@@ -428,8 +428,7 @@ describe("vm-progress-view", () => {
     expect(layout.stages.map((stage) => stage.label)).to.deep.equal([
       "Fetching the image",
       "Building the VM",
-      "Waiting for network connection",
-      "Waiting for Home Assistant",
+      "Starting Home Assistant OS",
       "Installing Home Assistant",
     ]);
 
@@ -437,13 +436,13 @@ describe("vm-progress-view", () => {
     await waitUntil(() => layout.stage === "building");
     expect(shown()).to.deep.equal(["building", "Building", "Building the VM"]);
 
-    // The live region announces only the title, so it changes with each wait
+    // Waiting for an address and for Home Assistant are one step
     built.resolve();
-    await waitUntil(() => layout.stage === "waiting");
+    await waitUntil(() => layout.stage === "ready");
     expect(shown()).to.deep.equal([
-      "waiting",
-      "Connecting",
-      "Waiting for network connection",
+      "ready",
+      "Starting",
+      "Starting Home Assistant OS",
     ]);
     // An indeterminate wait has no byte counts to keep a row for
     expect(layout.hideEmptyDetails).to.be.true;
@@ -451,11 +450,11 @@ describe("vm-progress-view", () => {
     expect(!!layout.shadowRoot!.querySelector(".progress-details")).to.be.false;
 
     address.resolve("192.0.2.50");
-    await waitUntil(() => layout.stage === "ready");
+    await waitUntil(() => layout.address !== null);
     expect(shown()).to.deep.equal([
       "ready",
-      "Waiting",
-      "Waiting for Home Assistant",
+      "Starting",
+      "Starting Home Assistant OS",
     ]);
     el.remove();
   });

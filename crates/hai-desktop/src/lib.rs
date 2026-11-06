@@ -12,6 +12,7 @@ mod elevation;
 mod flash_state;
 mod install_jobs;
 mod live_usb;
+mod updates;
 
 #[cfg(desktop)]
 use tauri::Manager;
@@ -49,6 +50,7 @@ pub fn run() {
         .manage(flash_state::FlashState::default())
         .manage(commands::PendingUtmImages::default())
         .manage(install_jobs::InstallJobs::default())
+        .manage(updates::PendingUpdate::default())
         .plugin(diagnostics::plugin())
         .setup(|app| {
             diagnostics::init();
@@ -71,6 +73,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(close_guard::on_window_event)
         .invoke_handler(tauri::generate_handler![
             check_connection,
@@ -86,6 +89,10 @@ pub fn run() {
             diagnostics::get_diagnostics,
             diagnostics::log_frontend_event,
             diagnostics::open_logs_folder,
+            updates::check_for_update,
+            updates::download_update,
+            updates::install_update,
+            updates::restart_after_update,
             // UTM commands (hai-core reports UTM as unsupported off macOS)
             check_utm_status,
             check_utm_automation,
@@ -137,7 +144,9 @@ fn ignore_host_gio_modules() {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-    use tauri::utils::config::{parse::parse_json, BundleTarget, BundleType, WebviewInstallMode};
+    use tauri::utils::config::{
+        parse::parse_json, BundleTarget, BundleType, Updater, WebviewInstallMode,
+    };
 
     #[test]
     fn beta_packaging_has_explicit_formats_and_runtime_requirements() {
@@ -151,6 +160,8 @@ mod tests {
         assert_eq!(
             config.bundle.targets,
             BundleTarget::List(vec![
+                // The updater installs the .app itself, packed next to the DMG
+                BundleType::App,
                 BundleType::Dmg,
                 BundleType::Nsis,
                 BundleType::Deb,
@@ -174,5 +185,25 @@ mod tests {
         }
         // Without its own GStreamer plugins, the AppImage's WebKit aborts on any audio
         assert!(config.bundle.linux.appimage.bundle_media_framework);
+    }
+
+    #[test]
+    fn updates_are_signed_and_only_release_runs_sign_them() {
+        let config = parse_json(
+            include_str!("../tauri.conf.json"),
+            Path::new("tauri.conf.json"),
+        )
+        .unwrap();
+        // Release runs turn this on, as only they have the signing key
+        assert_eq!(config.bundle.create_updater_artifacts, Updater::Bool(false));
+
+        let updater: tauri_plugin_updater::Config =
+            serde_json::from_value(config.plugins.0["updater"].clone()).unwrap();
+        assert!(!updater.pubkey.is_empty());
+        // A manifest can't pair a new version with an older signed release
+        assert!(updater.require_signed_version);
+        assert!(!updater.allow_downgrades);
+        // The update check picks the release, and so the endpoint, itself
+        assert!(updater.endpoints.is_empty());
     }
 }

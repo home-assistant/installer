@@ -208,19 +208,6 @@ describe("install-progress", () => {
     expect(el.shadowRoot!.querySelector(".warning")).to.be.null;
   });
 
-  it("asks to keep the window open only while leaving would stop something", async () => {
-    const el = await fixture<InstallProgress>(
-      html`<install-progress stage="creating_vm"></install-progress>`
-    );
-    const keepOpen = () =>
-      el.shadowRoot!.querySelector(".stage-description")?.textContent ?? "";
-    expect(keepOpen()).to.contain("keep this window open");
-
-    el.leavable = true;
-    await el.updateComplete;
-    expect(keepOpen()).to.equal("");
-  });
-
   it("names the part, and keeps the other stages hidden until asked", async () => {
     const el = await fixture<InstallProgress>(
       html`<install-progress
@@ -236,7 +223,7 @@ describe("install-progress", () => {
     const root = el.shadowRoot!;
     const toggle = root.querySelector<HTMLButtonElement>("button.parts")!;
     const list = root.querySelector("ol")!;
-    expect(toggle.textContent!.trim()).to.equal("Part 2 of 3");
+    expect(toggle.textContent!.trim()).to.equal("Step 2 of 3");
     expect(toggle.getAttribute("aria-expanded")).to.equal("false");
     expect(root.getElementById(toggle.getAttribute("aria-controls")!)).to.equal(
       list
@@ -311,7 +298,7 @@ describe("install-progress", () => {
       "Write image (completed)",
       "Verifying the image",
     ]);
-    expect(toggle.textContent!.trim()).to.equal("Part 3 of 3");
+    expect(toggle.textContent!.trim()).to.equal("Step 3 of 3");
 
     toggle.click();
     await el.updateComplete;
@@ -534,16 +521,5 @@ describe("install-progress", () => {
     expect((await progressbar()).getAttribute("aria-label")).to.equal(
       "Stopping..."
     );
-  });
-
-  it("places the keep-window-open notice after the progress bar", async () => {
-    const el = await fixture<InstallProgress>(
-      html`<install-progress></install-progress>`
-    );
-    const bar = el.shadowRoot!.querySelector("progress-bar")!;
-    const notice = el.shadowRoot!.querySelector(".stage-description")!;
-    expect(
-      bar.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).to.not.equal(0);
   });
 });

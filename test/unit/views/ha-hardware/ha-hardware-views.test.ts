@@ -9,6 +9,7 @@ import {
 import "../../../../src/views/ha-hardware/device-selection-view.js";
 import "../../../../src/views/ha-hardware/module-selection-view.js";
 import "../../../../src/views/ha-hardware/connect-instructions.js";
+import "../../../../src/views/ha-hardware/connect-view.js";
 import "../../../../src/views/ha-hardware/success-view.js";
 import "../../../../src/views/sbc/confirmation-view.js";
 import "../../../../src/views/sbc/drive-selection-view.js";
@@ -546,6 +547,39 @@ describe("Home Assistant hardware views", () => {
     );
   });
 
+  // Setting up the CM5 is a step of its own, so the drive step only lists drives
+  it("connects the CM5 on a step before the drive step", async () => {
+    select("yellow-cm5", "Home Assistant Yellow with CM5");
+    const ids = wizardState.getState().steps.map(({ id }) => id);
+    expect(ids.indexOf("connect")).to.equal(ids.indexOf("drive") - 1);
+
+    const connect = await fixture(
+      html`<ha-hardware-connect-view></ha-hardware-connect-view>`
+    );
+    expect(connect.shadowRoot!.querySelector("h2")!.textContent).to.equal(
+      "Connect your Yellow"
+    );
+    const instructions = connect.shadowRoot!.querySelector(
+      "ha-hardware-connect-instructions"
+    )!;
+    expect(instructions.hardware).to.equal("yellow-cm5");
+    expect(instructions.standalone).to.equal(true);
+
+    const drive = await fixture(
+      html`<drive-selection-view></drive-selection-view>`
+    );
+    expect(drive.shadowRoot!.querySelector("ha-hardware-connect-instructions"))
+      .to.not.exist;
+    expect(text(drive.shadowRoot!)).to.contain("often named RPi-MSD");
+  });
+
+  it("other devices get no connect step", async () => {
+    select("blue", "Home Assistant Blue");
+    expect(wizardState.getState().steps.map(({ id }) => id)).not.to.include(
+      "connect"
+    );
+  });
+
   it("other flows do not get the instructions", async () => {
     wizardState.startFlow("sbc");
     const el = await fixture(
@@ -567,12 +601,29 @@ describe("Home Assistant hardware views", () => {
       const content = text(el.shadowRoot!);
       expect(content).to.contain("Green installer, October 15, 2026");
       expect(content).not.to.contain("green-installer");
-      expect(
-        el.shadowRoot!.querySelector("inline-notice")!.textContent
-      ).to.contain(
-        "the installer reinstalls Home Assistant OS and erases all data"
+      expect(el.shadowRoot!.querySelector(".subtitle")!.textContent).to.contain(
+        "creates a microSD card that reinstalls the latest version of Home Assistant on your Home Assistant Green"
       );
       expect(calls).to.equal(0);
+    });
+
+    // The drive gets an installer, which installs once the device starts
+    it("creates the installer rather than installing", async () => {
+      select("green", "Home Assistant Green");
+      mockTauriIpc(() => {
+        throw new Error("must not look up a release");
+      });
+      const el = await fixture(html`<confirmation-view></confirmation-view>`);
+      expect(el.shadowRoot!.querySelector("h2")!.textContent).to.equal(
+        "Ready to create"
+      );
+      const selections = wizardState.getState().selections;
+      expect(
+        wizardStep("ha-hardware", "confirm")!.nextLabel!(selections)
+      ).to.equal("Create");
+      expect(
+        wizardState.getState().steps.find(({ id }) => id === "flash")!.title
+      ).to.equal("Create");
     });
 
     it("shows the Yellow installer for a CM4", async () => {
@@ -593,9 +644,20 @@ describe("Home Assistant hardware views", () => {
       const el = await fixture(html`<confirmation-view></confirmation-view>`);
       await waitUntil(() => text(el.shadowRoot!).includes("Version 18.2"));
       expect(text(el.shadowRoot!)).not.to.contain("installer");
+      expect(el.shadowRoot!.querySelector(".subtitle")!.textContent).to.contain(
+        "This installs the latest version of Home Assistant on your"
+      );
+      // It says what happens; the erase dialog that follows warns about the drive
+      expect(el.shadowRoot!.querySelector(".subtitle a")).to.equal(null);
+      expect(text(el.shadowRoot!)).not.to.contain("lost");
+      expect(el.shadowRoot!.querySelector("h2")!.textContent).to.equal(
+        "Ready to install"
+      );
       expect(
-        el.shadowRoot!.querySelector("inline-notice")!.textContent
-      ).to.contain("Home Assistant included");
+        wizardStep("ha-hardware", "confirm")!.nextLabel!(
+          wizardState.getState().selections
+        )
+      ).to.equal("Install");
     });
 
     it("shows the HAOS release for the Blue", async () => {
@@ -607,17 +669,19 @@ describe("Home Assistant hardware views", () => {
       });
       const el = await fixture(html`<confirmation-view></confirmation-view>`);
       await waitUntil(() => text(el.shadowRoot!).includes("Version 18.2"));
-      expect(
-        el.shadowRoot!.querySelector("inline-notice")!.textContent
-      ).to.contain("Home Assistant included");
+      expect(el.shadowRoot!.querySelector(".subtitle")!.textContent).to.contain(
+        "This installs the latest version of Home Assistant on your"
+      );
     });
 
-    it("keeps the SBC confirmation free of the notice", async () => {
+    it("keeps the SBC confirmation's subtitle", async () => {
       wizardState.startFlow("sbc");
       mockTauriIpc(() => ({ version: "18.2", images: [] }));
       wizardState.setSelection("deviceConfig", MOCK_MANIFEST.devices[0].haos);
       const el = await fixture(html`<confirmation-view></confirmation-view>`);
-      expect(el.shadowRoot!.querySelector("inline-notice")).to.equal(null);
+      expect(el.shadowRoot!.querySelector(".subtitle")!.textContent).to.contain(
+        "Review your selections"
+      );
     });
   });
 

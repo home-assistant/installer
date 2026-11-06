@@ -314,7 +314,7 @@ describe("proxmox-progress-view", () => {
     expect(wizardState.getState().selections.proxmoxVmResult).to.exist;
     await el.updateComplete;
     expect(progressOf(el).querySelector("h2")!.textContent).to.equal(
-      "Waiting for Home Assistant"
+      "Starting Home Assistant OS"
     );
 
     haReady.resolve(true);
@@ -726,7 +726,7 @@ describe("proxmox-progress-view", () => {
     const el = mount();
     await el.updateComplete;
     const layout = el.shadowRoot!.querySelector("install-progress")!;
-    await waitUntil(() => layout.stage === "waiting");
+    await waitUntil(() => layout.stage === "ready");
     await layout.updateComplete;
 
     expect(layout.indeterminate).to.be.true;
