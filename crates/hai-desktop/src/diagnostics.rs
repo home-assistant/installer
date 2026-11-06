@@ -149,9 +149,11 @@ const MAX_ERROR_CHARS: usize = 300;
 /// posting it.
 fn scrub(text: &str) -> String {
     // Takes balanced parentheses, but not the one closing a URL in them, and
-    // stops at a backslash, which may escape a quote in a credential's value
+    // stops at a backslash, which may escape a quote in a credential's value.
+    // Past the path, closing parentheses end it only before a space or the
+    // end, so a query with nested ones goes as a whole.
     static URL: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*)://(?:[^\s/@<>"]*@)?(\[[^\]]*\]|[^\s/:?#()<>"'\\]+)(?::\d+)?((?:\([^\s?#()<>"\\]*\)|[^\s?#)<>"\\])*)(?:\([^\s()<>"\\]*\)|[^\s)<>"\\])*"#).unwrap()
+        Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*)://(?:[^\s/@<>"]*@)?(\[[^\]]*\]|[^\s/:?#()<>"'\\]+)(?::\d+)?((?:\([^\s?#()<>"\\]*\)|[^\s?#)<>"\\])*)(?:\([^\s()<>"\\]*\)|[^\s)<>"\\]|\)+[^\s)<>"\\])*"#).unwrap()
     });
     static IPV6: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?i)(^|[^\w:.])([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,8}(?:\.\d{1,3}){0,3})")
@@ -720,6 +722,14 @@ mod tests {
             (
                 "(url https://pve.lan/a?token=before(visible-secret)after)",
                 "(url https://<host>)",
+            ),
+            (
+                "(url https://pve.lan/a?token=before(one(two))VISIBLE_SECRET)",
+                "(url https://<host>)",
+            ),
+            (
+                "(url https://github.com/a?token=before(one(two))VISIBLE_SECRET)",
+                "(url https://github.com/a)",
             ),
             (
                 "(url https://github.com/a'1?token=before'visible-fragment)",
