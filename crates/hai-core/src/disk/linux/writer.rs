@@ -356,8 +356,12 @@ fn has_siblings(objects: &ManagedObjects, drive: &OwnedObjectPath) -> bool {
 /// the flashed drive is gone, or another drive took its place. Whether the
 /// drive is gone afterwards.
 async fn eject_drive(conn: &Connection, flashed: &FlashedDrive) -> Result<bool> {
-    let Some(cleanup) = cleanup_for(&managed_objects(conn).await?, flashed) else {
+    let objects = managed_objects(conn).await?;
+    if !objects.contains_key(&flashed.path) {
         return Ok(true);
+    }
+    let Some(cleanup) = cleanup_for(&objects, flashed) else {
+        return Ok(false);
     };
 
     // Never raise a second password prompt for cleanup the user didn't ask for

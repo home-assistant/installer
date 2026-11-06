@@ -89,7 +89,7 @@ pub async fn write_image<P: ProgressCallback>(
     let ejected = match flashed {
         Some(flashed) => matches!(
             tokio::task::spawn_blocking(move || super::eject::eject_disk(&flashed)).await,
-            Ok(Ok(()))
+            Ok(Ok(true))
         ),
         None => false,
     };
