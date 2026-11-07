@@ -102,14 +102,17 @@ export class WifiView extends LitElement {
                 <!-- In the hint slot and not role="alert", like the network
                   name's -->
                 <span slot="hint" class="password-hint" aria-live="polite"
-                  >${passwordError ??
-                  localize("views.sbc.wifi_view.password_hint")}</span
+                  >${passwordError ?? ""}</span
                 >
               </wa-input>
             `
           : nothing}
       </div>
-      <p class="note">${localize("views.sbc.wifi_view.supported_networks")}</p>
+      ${wifi
+        ? html`<p class="note">
+            ${localize("views.sbc.wifi_view.supported_networks")}
+          </p>`
+        : nothing}
     `;
   }
 

@@ -1,4 +1,4 @@
-import { expect, fixture, html, oneEvent } from "@open-wc/testing";
+import { expect, fixture, html, oneEvent, waitUntil } from "@open-wc/testing";
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 import "../../../src/views/welcome-view.js";
 import type { WelcomeView } from "../../../src/views/welcome-view.js";
@@ -6,6 +6,11 @@ import {
   getLanguage,
   setLanguage,
 } from "../../../src/localization/localize.js";
+import {
+  installerUpdate,
+  RESTART_TIMEOUT_MS,
+} from "../../../src/state/installer-update.js";
+import { mockTauriIpc, restoreTauriIpc } from "../tauri-ipc.js";
 
 describe("welcome-view", () => {
   afterEach(() => {
@@ -142,5 +147,111 @@ describe("welcome-view", () => {
     expect(el.shadowRoot!.querySelector(".learn-more")!.textContent).to.include(
       "Learn more"
     );
+  });
+
+  describe("while the installer updates itself", () => {
+    // Earlier tests checked for an update through the browser mock
+    beforeEach(() => installerUpdate.reset());
+
+    const setTimeout = window.setTimeout;
+
+    afterEach(() => {
+      window.setTimeout = setTimeout;
+      installerUpdate.reset();
+      restoreTauriIpc();
+    });
+
+    it("starts no flow once the update installs, as Windows exits during it", async () => {
+      let finishInstall!: () => void;
+      const navigations: string[] = [];
+      mockTauriIpc((cmd) => {
+        if (cmd === "check_for_update")
+          return {
+            version: "2026.12.0",
+            release_url:
+              "https://github.com/home-assistant/installer/releases/tag/2026.12.0",
+            installable: true,
+          };
+        if (cmd === "install_update")
+          return new Promise<void>((resolve) => (finishInstall = resolve));
+        if (cmd === "download_update" || cmd === "restart_after_update")
+          return undefined;
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+      const el = await fixture<WelcomeView>(
+        html`<welcome-view></welcome-view>`
+      );
+      el.addEventListener("navigate", (event) =>
+        navigations.push((event as CustomEvent).detail.view)
+      );
+      await installerUpdate.check();
+      const letsGo = () =>
+        el.shadowRoot!.querySelector<HTMLElement & { disabled: boolean }>(
+          "main wa-button"
+        )!;
+      // Holds back only the restart's timeout; waitUntil needs the others
+      let finishRestartTimeout!: () => void;
+      window.setTimeout = ((
+        handler: () => void,
+        timeout?: number,
+        ...args: unknown[]
+      ) => {
+        if (timeout !== RESTART_TIMEOUT_MS)
+          return setTimeout(handler, timeout, ...args);
+        finishRestartTimeout = handler;
+        return 0;
+      }) as typeof window.setTimeout;
+
+      const updating = installerUpdate.update();
+      await waitUntil(() => installerUpdate.state.status === "installing");
+      await el.updateComplete;
+      expect(letsGo().disabled).to.be.true;
+      letsGo().click();
+
+      finishInstall();
+      await updating;
+      expect(installerUpdate.state.status).to.equal("restarting");
+      await el.updateComplete;
+      expect(letsGo().disabled).to.be.true;
+      letsGo().click();
+      expect(navigations).to.deep.equal([]);
+
+      // Still there after a while: the backend starts no installation until
+      // the app exits, so neither does Let's go
+      finishRestartTimeout();
+      expect(installerUpdate.state.status).to.equal("ready");
+      await el.updateComplete;
+      expect(letsGo().disabled).to.be.true;
+    });
+
+    it("still starts a flow while the update downloads", async () => {
+      let finishDownload!: () => void;
+      mockTauriIpc((cmd) => {
+        if (cmd === "check_for_update")
+          return {
+            version: "2026.12.0",
+            release_url:
+              "https://github.com/home-assistant/installer/releases/tag/2026.12.0",
+            installable: true,
+          };
+        if (cmd === "download_update")
+          return new Promise<void>((resolve) => (finishDownload = resolve));
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+      const el = await fixture<WelcomeView>(
+        html`<welcome-view></welcome-view>`
+      );
+      await installerUpdate.check();
+
+      void installerUpdate.update();
+      await waitUntil(() => installerUpdate.state.status === "downloading");
+      await el.updateComplete;
+      const button =
+        el.shadowRoot!.querySelector<HTMLElement>("main wa-button")!;
+      setTimeout(() => button.click());
+      const event = await oneEvent(el, "navigate");
+      expect((event as CustomEvent).detail.view).to.equal("path-selection");
+      finishDownload();
+    });
   });
 });

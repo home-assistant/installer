@@ -537,11 +537,6 @@ export class InstallProgress extends LitElement {
                 )}
               </p>`
             : nothing}
-          ${this.leavable
-            ? nothing
-            : html`<p class="stage-description">
-                ${localize("components.install_progress.keep_window_open")}
-              </p>`}
           <slot name="help"></slot>
         </div>
       </div>

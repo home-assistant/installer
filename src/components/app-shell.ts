@@ -30,6 +30,8 @@ import {
   type WizardState,
 } from "../state/wizard-state.js";
 import { WizardStateController } from "../state/wizard-state-controller.js";
+import { writesInstaller } from "../state/ha-hardware.js";
+import { installerUpdate } from "../state/installer-update.js";
 import {
   closeApp,
   listBlockDevices,
@@ -128,6 +130,12 @@ export class AppShell extends LitElement {
   @state()
   private _showQuitDialog = false;
 
+  /** Closing was held back while the installer updates itself */
+  @state()
+  private _showUpdateQuitDialog = false;
+
+  private _stopUpdateListener?: () => void;
+
   @query("wizard-shell")
   private _wizardShell?: WizardShell;
 
@@ -139,8 +147,18 @@ export class AppShell extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    // The backend holds back closing the app while an installation runs
-    this._stopCloseListener = onCloseBlocked(() => {
+    // A failed install ends the wait the update dialog tells about
+    this._stopUpdateListener = installerUpdate.subscribe(() => {
+      if (!installerUpdate.applying) this._showUpdateQuitDialog = false;
+    });
+    // The backend holds back closing the app while an installation runs, or
+    // while the installer updates itself
+    this._stopCloseListener = onCloseBlocked((reason) => {
+      // Closing now would break the installer, so it only says why it stays
+      if (reason === "update") {
+        this._showUpdateQuitDialog = true;
+        return;
+      }
       // One question at a time: quitting is the bigger one
       this._showStopDialog = false;
       this._showLeaveDialog = false;
@@ -154,6 +172,7 @@ export class AppShell extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     void this._stopCloseListener?.then((stop) => stop());
+    this._stopUpdateListener?.();
   }
 
   render() {
@@ -174,6 +193,7 @@ export class AppShell extends LitElement {
           selections.driveModel
         )}
         .driveSize=${selections.driveSize}
+        .installer=${writesInstaller(selections.deviceConfig?.board)}
         @dialog-primary=${this._onDialogConfirm}
         @dialog-secondary=${this._onDialogCancel}
       ></confirm-dialog>
@@ -217,6 +237,15 @@ export class AppShell extends LitElement {
         primary-variant="danger"
         @dialog-primary=${this._onQuitAnyway}
         @dialog-secondary=${this._onKeepInstallingOnQuit}
+      ></info-dialog>
+      <info-dialog
+        class="update-quit-dialog"
+        ?open=${this._showUpdateQuitDialog}
+        .heading=${localize("components.app_shell.quit_while_updating_title")}
+        .message=${localize("components.app_shell.quit_while_updating_message")}
+        .primaryLabel=${localize("components.app_shell.keep_updating")}
+        @dialog-primary=${this._onKeepUpdating}
+        @dialog-secondary=${this._onKeepUpdating}
       ></info-dialog>
     `;
   }
@@ -333,7 +362,9 @@ export class AppShell extends LitElement {
     if (wizardState.isLastStep) {
       return localize("components.app_shell.close");
     }
-    return step?.nextLabel?.() ?? localize("common.next");
+    return (
+      step?.nextLabel?.(this._wizardState.selections) ?? localize("common.next")
+    );
   }
 
   private _isReady(step: WizardStepDefinition | undefined): boolean {
@@ -593,6 +624,10 @@ export class AppShell extends LitElement {
 
   private _onKeepInstallingOnQuit() {
     this._showQuitDialog = false;
+  }
+
+  private _onKeepUpdating() {
+    this._showUpdateQuitDialog = false;
   }
 
   private _onQuitAnyway() {

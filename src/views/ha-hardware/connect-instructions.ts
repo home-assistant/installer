@@ -58,6 +58,20 @@ export class HaHardwareConnectInstructions extends LitElement {
         margin-top: 0.25rem;
       }
 
+      :host([standalone]) .instructions {
+        font-size: 1rem;
+        line-height: 1.6;
+        padding: 1.25rem 1.5rem;
+      }
+
+      :host([standalone]) li + li {
+        margin-top: 0.75rem;
+      }
+
+      :host([standalone]) h3 {
+        display: none;
+      }
+
       code {
         font-family: var(--ha-font-family-code);
         font-size: 0.8125rem;
@@ -68,6 +82,10 @@ export class HaHardwareConnectInstructions extends LitElement {
 
   @property({ attribute: false })
   hardware?: HaHardwareId;
+
+  /** On a step of its own, under the step's heading: larger, without a title */
+  @property({ type: Boolean, reflect: true })
+  standalone = false;
 
   render(): TemplateResult | typeof nothing {
     switch (this.hardware) {

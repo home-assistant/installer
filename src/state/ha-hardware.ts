@@ -123,6 +123,14 @@ export function findInstaller(
   );
 }
 
+/**
+ * Whether the drive gets an installer rather than Home Assistant OS: it is
+ * created here, and installs once the device starts from it.
+ */
+export function writesInstaller(board: string | undefined): boolean {
+  return !!findInstaller(board);
+}
+
 /** Installer name with its release date, standing in for a HAOS version. */
 export function installerName(installer: HaHardwareInstaller): string {
   return installer.board === "green-installer"

@@ -134,7 +134,7 @@ test("waits for the device the drive starts until Home Assistant is ready", asyn
   await expect(setup).toBeVisible();
   await expect(next(page)).toHaveText("Skip");
   // The last part, whose heading is the current row of the list it opens
-  const parts = setup.getByRole("button", { name: /^part 2 of 2$/i });
+  const parts = setup.getByRole("button", { name: /^step 2 of 2$/i });
   await parts.click({ timeout: 20000 });
   await expect(
     setup

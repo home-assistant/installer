@@ -73,16 +73,20 @@ describe("drive-selection-view", () => {
     }
   });
 
-  for (const [flow, installMethod, hint] of [
+  for (const [flow, installMethod, hint, haHardware] of [
     ["sbc", undefined, "Insert an SD card or USB drive"],
     ["minipc", undefined, "Connect your drive using a USB adapter"],
     // Making a stick to boot the mini PC from: a stick is what's missing
     ["minipc", "usb-boot", "Insert a USB stick"],
+    ["ha-hardware", undefined, "as described above", "green"],
+    // The CM5's instructions are on the step before, not on this page
+    ["ha-hardware", undefined, "Go back to the Connect step", "yellow-cm5"],
   ] as const) {
-    it(`says what to connect when no drive is found (${flow} ${installMethod ?? "drive"})`, async () => {
+    it(`says what to connect when no drive is found (${haHardware ?? flow} ${installMethod ?? "drive"})`, async () => {
       wizardState.startFlow(flow);
       if (installMethod)
         wizardState.setSelection("installMethod", installMethod);
+      if (haHardware) wizardState.setSelection("haHardware", haHardware);
       const scan = holdDeviceScan();
       try {
         const el = await fixture<DriveSelectionView>(

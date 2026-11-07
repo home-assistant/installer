@@ -127,10 +127,8 @@ drive writing, or VM import. There is no fallback to an XZ checksum or a guessed
 download URL. Older releases without a GitHub digest cannot be installed.
 
 The same policy applies to raw images and UTM/Proxmox qcow2 images, selected from
-the version for their board in `stable.json`. Each installation downloads a fresh
-image into its private temporary directory; archives are not retained for reuse.
-Startup cleanup removes recognized legacy stable archives and abandoned owned
-temporary directories. GitHub metadata obtained over HTTPS is the trust source;
+the version for their board in `stable.json`. Images are kept for the session
+only; see below. GitHub metadata obtained over HTTPS is the trust source;
 this does not verify a publisher
 signature or protect against compromised GitHub release metadata.
 
@@ -168,12 +166,19 @@ the installer does not synthesize asset metadata or skip verification to guess a
 direct download URL. An alternative trusted metadata/digest source for that case
 remains deferred under #170; the required digest verification is already enforced.
 
-Normal errors and cancellation remove the unverified temporary file. Installation
-downloads stage that file inside an owned `TemporaryImage` directory. After a quit
-or crash, startup `prune_cached_images` removes abandoned, unlocked owned
-directories, including these nested files; live owners and uncertain UTM imports
-remain protected. Direct library callers remain responsible for their destination
-directory's lifecycle.
+Everything is downloaded into `downloads/` in the app's cache folder, which
+`clear_cache` removes at startup and on exit, so nothing outlives a session. The
+download and the extraction write to `<name>.part` and rename it once complete, so
+a file under its final name (`haos_rpi5-64-17.0.img.xz`, `haos_rpi5-64-17.0.img`)
+is always complete. Only one writer works on a file at a time, and a failed or
+cancelled attempt removes its `.part`. The archive is removed once extracted. A retry uses the image or the archive an earlier attempt left,
+and with little free space the other files in the folder are removed before a
+download or an extraction, except files being written, a copy UTM may still be
+importing and, for a live USB download, `live-usb/`. The live USB files in
+`downloads/live-usb/` go once the stick or ISO is made. Nothing else is removed
+while the installer runs. UTM imports a copy of the image grown to the chosen
+disk size (an APFS clone), removed once UTM has answered, and Proxmox receives it
+under a unique name.
 
 ```rust
 // crates/hai-core/src/download.rs
@@ -524,62 +529,66 @@ On launch:
 
 ## App Updates
 
-Installer updates are manual: download and install a newer release for your platform from the [Releases](https://github.com/home-assistant/installer/releases) page. The app does not check for updates or display an update prompt.
+The installer updates itself with the Tauri updater
+(`tauri-plugin-updater`), driven from Rust in
+`crates/hai-desktop/src/updates.rs`. The page gets four commands and none
+of the plugin's own permissions:
 
-### Deferred Version Check Proposal
+- `check_for_update` lists the repository's tags through the GitHub API
+  (`git/matching-refs/tags/`: every tag, names only, on one page; a release
+  only gets its tag when it's published, so drafts are left out). It takes
+  the versions newer than the running one, on its channel or a more stable
+  one: an alpha takes any channel, a beta betas and stable releases, a stable
+  release only stable releases. GitHub's "latest release" link can't do
+  this, as it never leads to a prerelease. The updater then reads the newest
+  of those releases' `latest.json`, falling back to the next one (three at
+  most) when a release has no update for this platform, like one made by
+  hand, or when its `latest.json` names another version than its tag. Builds that aren't releases report `0.0.0` and never check. The
+  answer also says whether the app can replace itself, which it can't on
+  macOS from a read-only volume: the mounted DMG, or the translocated copy
+  macOS runs a downloaded app from until it is moved.
+- `download_update` downloads the update and checks its signature,
+  reporting its progress over a channel. A stalled download fails after 30
+  seconds without data, however long the whole download takes.
+- `install_update` installs it, which on Linux and macOS can wait for a
+  password prompt. On Windows the installer takes over and the app exits.
+- `restart_after_update` restarts into the installed update.
 
-The following proposal is not implemented. There is no registered `check_for_updates` command or `UpdateInfo` type.
+The last two refuse while a flash or a VM install runs (the close guard's
+job counter), since the restart would cut the installation short. While
+`install_update` runs, the same counter refuses new jobs with
+`installer_updating`, as on Windows the app exits partway through it; and
+from `restart_after_update` on until the app exits, as nothing in the app
+calls off the restart. While `install_update` runs, closing the app is held
+back too, and `close-blocked` says `update` instead of `job`: the frontend
+offers no way to quit anyway, and `quit_anyway` refuses, as on Linux the
+updater rewrites the AppImage in place and quitting halfway through leaves
+one that doesn't start. A failed install keeps the downloaded update for
+another try, and installing again after one worked does nothing. The
+frontend only installs and restarts while the welcome screen shows, and
+holds back **Let's go** meanwhile, so leaving it for a flow while the update
+downloads loses nothing entered there; the update then waits until the user
+is back and restarts.
 
-```rust
-#[derive(Deserialize)]
-struct InstallerVersions {
-    stable: VersionInfo,
-    beta: Option<VersionInfo>,
-}
+Each update is signed with the update key (see
+[CI/CD](ci-cd.md#required-secrets)), whose public key is in
+`tauri.conf.json`. `requireSignedVersion` makes the updater refuse an update
+whose signature names another version than `latest.json`, so a tampered
+manifest can't offer an older release as a newer one. And as `latest.json`
+must name its own release's version, one in a stable release can't hand a
+stable install an alpha.
 
-#[derive(Deserialize)]
-struct VersionInfo {
-    version: String,
-    download_url: String,
-}
+How each platform installs the update:
 
-#[tauri::command]
-async fn check_for_updates(include_beta: bool) -> Result<Option<UpdateInfo>, String> {
-    let current = env!("CARGO_PKG_VERSION");
-    let versions = fetch_installer_versions().await?;
-    
-    // Check beta first if opted in
-    if include_beta {
-        if let Some(beta) = versions.beta {
-            if is_newer(&beta.version, current) {
-                return Ok(Some(UpdateInfo {
-                    version: beta.version,
-                    download_url: beta.download_url,
-                    is_beta: true,
-                }));
-            }
-        }
-    }
-    
-    // Check stable
-    if is_newer(&versions.stable.version, current) {
-        return Ok(Some(UpdateInfo {
-            version: versions.stable.version,
-            download_url: versions.stable.download_url,
-            is_beta: false,
-        }));
-    }
-    
-    Ok(None)
-}
+| Install | Update | How |
+|---------|--------|-----|
+| macOS app (from the DMG) | `.app.tar.gz` | Swaps the app in place; asks for an administrator password when the app's folder isn't writable |
+| Windows (NSIS) | `-setup.exe` | Runs the installer in passive mode, which restarts the app |
+| `.deb` / `.rpm` | the package | Installs it with `pkexec`, which asks for the password |
+| AppImage | the AppImage | Replaces the file |
 
-fn is_newer(available: &str, current: &str) -> bool {
-    semver::Version::parse(available).ok()
-        .zip(semver::Version::parse(current).ok())
-        .map(|(a, c)| a > c)
-        .unwrap_or(false)
-}
-```
+The bundler writes the kind of bundle into the binary, so each install finds
+its own update in `latest.json` (`linux-x86_64-deb` and so on).
 
 ---
 

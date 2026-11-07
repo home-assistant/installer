@@ -146,6 +146,8 @@ test.describe("Home Assistant hardware flow", () => {
     });
     await pickDevice(page, "ha-yellow");
     await pickModule(page, "yellow-cm5");
+    await expect(page.locator("ha-hardware-connect-view")).toBeVisible();
+    await next(page).click();
 
     const drives = page.locator("drive-selection-view").getByRole("radio");
     await expect(drives.first()).toContainText("Compute Module eMMC");
