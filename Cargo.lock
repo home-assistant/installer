@@ -2111,6 +2111,7 @@ dependencies = [
  "objc2-app-kit",
  "os_info",
  "plist",
+ "regex",
  "reqwest",
  "semver",
  "serde",

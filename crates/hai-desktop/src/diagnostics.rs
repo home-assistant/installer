@@ -1,10 +1,14 @@
-//! Local diagnostics deliberately exclude free-form errors, paths and network data.
+//! Local diagnostics: fixed categories, and error text without what
+//! identifies the user or their network. The tail goes into public issues.
 
 use std::collections::VecDeque;
-use std::sync::{Mutex, OnceLock};
+use std::net::Ipv6Addr;
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::Instant;
 
+use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
@@ -30,7 +34,8 @@ fn log_builder() -> tauri_plugin_log::Builder {
         )])
 }
 
-// Only callers with compile-time strings or deserialized enums can record data.
+// Only callers with compile-time strings, deserialized enums or scrubbed
+// error text can record data.
 fn record(level: log::Level, message: String) {
     let elapsed = START.get_or_init(Instant::now).elapsed().as_millis();
     let line = format!("{elapsed}ms {message}");
@@ -54,6 +59,201 @@ pub fn init() {
 
 pub fn warning(code: &'static str) {
     record(log::Level::Warn, format!("warning {code}"));
+}
+
+/// Record why `failure` happened, if it says. A poll can fail the same way
+/// for minutes, so a line still in the tail isn't repeated.
+pub fn failed(failure: &impl Categorized) {
+    let Some(cause) = failure.cause() else {
+        return;
+    };
+    let line = format!("rust error: {cause}");
+    let logged = TAIL.lock().is_ok_and(|tail| {
+        tail.iter().any(|logged| {
+            logged
+                .split_once(' ')
+                .is_some_and(|(_, logged)| logged == line)
+        })
+    });
+    if !logged {
+        record(log::Level::Error, line);
+    }
+}
+
+/// Catalog parameters that hold names the user chose, like a Proxmox node's,
+/// or a path through them, like `/storage/<storage>`.
+const USER_NAMED: [&str; 9] = [
+    "node", "storage", "storages", "bridge", "vnet", "volume", "name", "path", "mount",
+];
+
+/// `error` with its causes, as one scrubbed line.
+pub fn describe(error: &hai_core::Error) -> String {
+    use hai_core::Error::*;
+    if let PermissionDenied(message)
+    | ProxmoxTwoFactor(message)
+    | ProxmoxActionRequired(message)
+    | RateLimited(message)
+    | ServiceUnavailable(message)
+    | Utm(message)
+    | UtmOperationUncertain(message)
+    | UtmVmCreated(message) = error
+    {
+        let mut message = message.clone();
+        for (name, value) in &mut message.params {
+            hide_name(name, value);
+        }
+        return scrub(&message.to_string());
+    }
+    let mut text = error.to_string();
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        let cause_text = cause.to_string();
+        // Wrappers often repeat their cause's text already
+        if !text.contains(&cause_text) {
+            text = format!("{text}: {cause_text}");
+        }
+        source = cause.source();
+    }
+    let mut line = scrub_line(&text);
+    // Proxmox quotes the names in its replies, like `storage 'x' does not exist`.
+    // After the other rules, whose matches a placeholder could cut short. A
+    // name may hold an apostrophe, so only one before a non-word character
+    // closes it.
+    if let ProxmoxApi(_) = error {
+        static QUOTED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\B'.*?'\B").unwrap());
+        line = QUOTED.replace_all(&line, "'<name>'").into_owned();
+    }
+    shorten(line)
+}
+
+/// Replace a user-named parameter with `<name>`, also in a message that is
+/// another one's parameter.
+fn hide_name(name: &str, value: &mut Value) {
+    if USER_NAMED.contains(&name) {
+        *value = "<name>".into();
+    } else if let Some(params) = value.get_mut("params").and_then(Value::as_object_mut) {
+        for (name, value) in params {
+            hide_name(name, value);
+        }
+    }
+}
+
+/// Hosts of the services the installer uses; any other host is the user's.
+const PUBLIC_HOSTS: [&str; 5] = [
+    "github.com",
+    "githubusercontent.com",
+    "home-assistant.io",
+    "alpinelinux.org",
+    "sigstore.dev",
+];
+const MAX_ERROR_CHARS: usize = 300;
+
+/// `text` on one line, without user names, credentials, private hosts,
+/// addresses or volume IDs. Best effort, as people review an issue before
+/// posting it.
+fn scrub(text: &str) -> String {
+    shorten(scrub_line(text))
+}
+
+fn scrub_line(text: &str) -> String {
+    // Takes balanced parentheses, but not the one closing a URL in them, and
+    // stops at a backslash, which may escape a quote in a credential's value.
+    // Past the path, closing parentheses end it only before a space or the
+    // end, so a query with nested ones goes as a whole.
+    static URL: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*)://(?:[^\s/@<>"]*@)?(\[[^\]]*\]|[^\s/:?#()<>"'\\]+)(?::\d+)?((?:\([^\s?#()<>"\\]*\)|[^\s?#)<>"\\])*)(?:\([^\s()<>"\\]*\)|[^\s)<>"\\]|\)+[^\s)<>"\\])*"#).unwrap()
+    });
+    static IPV6: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)(^|[^\w:.])([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,8}(?:\.\d{1,3}){0,3})")
+            .unwrap()
+    });
+    // Before the URL and Basic/Bearer passes, which could take a quoted value's
+    // closing quote. The quotes stay, so the credential rule still sees where
+    // the value ends, and the placeholder holds nothing that ends a URL.
+    static QUOTED_CREDENTIAL: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*"?\s*[=:]\s*)(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')"#).unwrap()
+    });
+    static RULES: LazyLock<Vec<(Regex, &str)>> = LazyLock::new(|| {
+        [
+            // Windows user folders and macOS volume labels. A name may hold spaces
+            // and parentheses, so it runs to the next separator, or else to a
+            // quote, comma, colon or `(os error N)`: more text rather than part
+            // of a name.
+            (r#"(?i)([a-z]:[\\/]+users[\\/]+|/volumes/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|(?:\((?:[^o\\/:"()]|o[^s\\/:"()])[^\\/:"()]*\)|[^\s\\/:",;()])+(?:\s+(?:\((?:[^o\\/:"()]|o[^s\\/:"()])[^\\/:"()]*\)|[^\s\\/:",;()])+)*)"#, "${1}<user>${2}"),
+            // Unix user folders, also other users' and drives mounted per user.
+            // A name runs to the next separator, or else to a space, as only a
+            // separator says it holds one.
+            (r#"(?i)(/home/|/users/|/(?:run/)?media/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|[^\s\\/:"',;()]+)"#, "${1}<user>${2}"),
+            // Stops at a quote or backslash, so the next rule still sees where a quoted value ends
+            (r#"(?i)\b(basic|bearer)\s+[^\s"\\]+"#, "${1} <redacted>"),
+            (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)"#, "${1}=<redacted>"),
+            (r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<id>"),
+            (r"[\w.+-]+@[\w.-]+", "<user>"),
+            (r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "<ip>"),
+            // Hosts outside URLs: a share, a certificate's names, or one with a port
+            (r#"(^|[\s"'(])\\\\[^\\\s?.][^\\\s"']*"#, r"${1}\\<host>"),
+            (r#"(not valid for name |DnsName\()"[^"]*""#, r#"${1}"<host>""#),
+            // A host name has a letter, unlike a time, and a port isn't
+            // followed by more of a timestamp
+            (r"(?i)\b(?:[\w-]+\.)*[\w-]*[a-z][\w-]*(?:\.[\w-]+)*(:\d{1,5})(:?(?:[^\w:]|$))", "<host>${1}${2}"),
+        ]
+        .into_iter()
+        .map(|(pattern, replacement)| (Regex::new(pattern).unwrap(), replacement))
+        .collect()
+    });
+
+    let line: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    let line = QUOTED_CREDENTIAL.replace_all(&line, |caps: &Captures| {
+        let quote = &caps[0][caps[0].len() - 1..];
+        format!("{}{quote}redacted{quote}", &caps[1])
+    });
+    let mut line = URL
+        .replace_all(&line, |caps: &Captures| {
+            let host = caps[2].to_ascii_lowercase();
+            let public = PUBLIC_HOSTS
+                .iter()
+                .any(|public| host == *public || host.ends_with(&format!(".{public}")));
+            // The paths of the user's own server name its nodes and users
+            if public {
+                format!("{}://{}{}", &caps[1], &caps[2], &caps[3])
+            } else {
+                format!("{}://<host>", &caps[1])
+            }
+        })
+        .into_owned();
+    // Only what parses as an IPv6 address, not times or Rust paths. Before
+    // IPv4, which would otherwise take the tail of `::ffff:192.0.2.1`.
+    line = IPV6
+        .replace_all(&line, |caps: &Captures| {
+            let (address, colon) = match caps[2].strip_suffix(':') {
+                Some(address) if address.parse::<Ipv6Addr>().is_ok() => (address, ":"),
+                _ => (&caps[2], ""),
+            };
+            match address.parse::<Ipv6Addr>() {
+                Ok(_) => format!("{}<ip>{colon}", &caps[1]),
+                Err(_) => caps[0].to_owned(),
+            }
+        })
+        .into_owned();
+    for (rule, replacement) in RULES.iter() {
+        line = rule.replace_all(&line, *replacement).into_owned();
+    }
+    line
+}
+
+// The root cause comes last, so a long line loses its middle
+fn shorten(line: String) -> String {
+    let chars: Vec<char> = line.chars().collect();
+    if chars.len() <= MAX_ERROR_CHARS {
+        return line;
+    }
+    let half = MAX_ERROR_CHARS / 2;
+    let (head, tail) = (&chars[..half], &chars[chars.len() - half..]);
+    format!("{}…{}", String::from_iter(head), String::from_iter(tail))
 }
 
 /// The setup status last recorded, as the install polls it every few seconds.
@@ -152,6 +352,11 @@ pub fn error_category(error: &str) -> &'static str {
 /// A failure's fixed category for the log, never its message.
 pub trait Categorized {
     fn category(&self) -> &'static str;
+
+    /// What failed, scrubbed, where there is more to it than the category.
+    fn cause(&self) -> Option<&str> {
+        None
+    }
 }
 
 impl Categorized for String {
@@ -164,6 +369,10 @@ impl Categorized for crate::command_error::CommandError {
     // A fixed, credential-free code, finer than the public one where it helps
     fn category(&self) -> &'static str {
         self.diagnostic
+    }
+
+    fn cause(&self) -> Option<&str> {
+        self.cause.as_deref()
     }
 }
 
@@ -203,6 +412,9 @@ impl Operation {
     }
 
     pub fn finish<T, E: Categorized>(&self, result: Result<T, E>) -> Result<T, E> {
+        if let Err(failure) = &result {
+            failed(failure);
+        }
         if let Ok(current) = self.stage.lock() {
             let outcome = result
                 .as_ref()
@@ -427,7 +639,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn raw_error_details_never_enter_diagnostics() {
+    // The whole tail is checked, so not while other tests log their errors
+    #[serial_test::serial]
+    fn text_errors_enter_diagnostics_only_as_a_category() {
         for message in [
             "Proxmox API error: https://admin:password@private.example ticket=secret",
             "IO error: /home/private-user/private-file",
@@ -450,11 +664,11 @@ mod tests {
     #[test]
     // A UTM command test clears the shared tail, which would drop this line
     #[serial_test::serial]
-    fn busy_failures_log_their_reason_without_the_message() {
+    fn busy_failures_log_their_reason_and_scrubbed_message() {
         let operation = Operation::new("busy-test");
         let error = crate::command_error::CommandError::from(hai_core::Error::DeviceBusy(
             hai_core::BusyReason::VolumeUnreadable,
-            "Cannot inspect volume private-volume".into(),
+            r"Cannot inspect volume \\?\Volume{2a9c1f0e-1d3b-4c5e-9f00-123456789abc}\: Access is denied".into(),
         ));
         let _ = operation.finish::<(), _>(Err(error));
 
@@ -463,7 +677,300 @@ mod tests {
             tail.contains("rust busy-test preparing device_busy_volume_unreadable"),
             "{tail}"
         );
-        assert!(!tail.contains("private-volume"), "{tail}");
+        assert!(
+            tail.contains(
+                "rust error: Device is busy: Cannot inspect volume \\\\?\\Volume{<id>}\\"
+            ),
+            "{tail}"
+        );
+        assert!(!tail.contains("2a9c1f0e"), "{tail}");
+    }
+
+    #[test]
+    fn scrubbed_error_text_keeps_what_failed_but_not_who_or_where() {
+        for (text, scrubbed) in [
+            (
+                r"Not enough free space in C:\Users\Jane Doe\AppData\Local\io.home-assistant.installer",
+                r"Not enough free space in C:\Users\<user>\AppData\Local\io.home-assistant.installer",
+            ),
+            (
+                "Permission denied: /home/jane/.cache and /run/media/jane/STICK",
+                "Permission denied: /home/<user>/.cache and /run/media/<user>/STICK",
+            ),
+            (
+                "Saved to /Users/Jane Doe/Downloads/haos.iso and /home/Sean O'Brien/x",
+                "Saved to /Users/<user>/Downloads/haos.iso and /home/<user>/x",
+            ),
+            (
+                "Cannot write /Volumes/STICK/haos.img",
+                "Cannot write /Volumes/<user>/haos.img",
+            ),
+            (
+                "error sending request for url (https://github.com/home-assistant/operating-system/releases/download/16.3/haos.img.xz?token=x)",
+                "error sending request for url (https://github.com/home-assistant/operating-system/releases/download/16.3/haos.img.xz)",
+            ),
+            (
+                "POST https://admin:pw@pve.lan:8006/api2/json/nodes?x=1 failed",
+                "POST https://<host> failed",
+            ),
+            (
+                "ticket=PVE:root@pam:ABC CSRFPreventionToken: s3cret Authorization: Bearer abc",
+                "ticket=<redacted> CSRFPreventionToken=<redacted> Authorization=<redacted> <redacted>",
+            ),
+            (
+                "Authorization: Basic dXNlcjpwYXNz",
+                "Authorization=<redacted> <redacted>",
+            ),
+            (
+                "from 192.168.1.20 and fe80::1ff:fe23:4567:890a as root@pam",
+                "from <ip> and <ip> as <user>",
+            ),
+            (
+                "fd12:3456:: and ::dead:beef at 14:07:29 in std::io",
+                "<ip> and <ip> at 14:07:29 in std::io",
+            ),
+            (
+                "to 2001:db8:0:1:2:3:192.168.1.20 and ::ffff:192.168.1.20",
+                "to <ip> and <ip>",
+            ),
+            (
+                "GET https://admin:before(visible-secret)after@pve.lan/path",
+                "GET https://<host>",
+            ),
+            (
+                "(url https://github.com/a(1)?token=before(visible-secret)after)",
+                "(url https://github.com/a(1))",
+            ),
+            (
+                "(url https://pve.lan/a?token=before(visible-secret)after)",
+                "(url https://<host>)",
+            ),
+            (
+                "(url https://pve.lan/a?token=before(one(two))VISIBLE_SECRET)",
+                "(url https://<host>)",
+            ),
+            (
+                "(url https://github.com/a?token=before(one(two))VISIBLE_SECRET)",
+                "(url https://github.com/a)",
+            ),
+            (
+                "(url https://github.com/a'1?token=before'visible-fragment)",
+                "(url https://github.com/a'1)",
+            ),
+            (
+                "(url https://pve.lan/a?token=before'visible-fragment)",
+                "(url https://<host>)",
+            ),
+            (
+                r"at path C:\Users\Sean O'Brien\AppData",
+                r"at path C:\Users\<user>\AppData",
+            ),
+            (
+                r#"body {"password":"hunter2","ticket":"PVE:x"} password: "hunter 2""#,
+                r#"body {"password=<redacted>,"ticket=<redacted>} password=<redacted>"#,
+            ),
+            (
+                r#"{"password":"prefix\"visible-secret"}"#,
+                r#"{"password=<redacted>}"#,
+            ),
+            (
+                r#"{"password":"correct horse Bearer staple"}"#,
+                r#"{"password=<redacted>}"#,
+            ),
+            (
+                "Proxmox: password='correct horse battery staple' rejected",
+                "Proxmox: password=<redacted> rejected",
+            ),
+            (
+                r#"{"password":"https://private.example/path\"visible-fragment"}"#,
+                r#"{"password=<redacted>}"#,
+            ),
+            (
+                "(url https://pve.lan/a?token='first'VISIBLE_SECRET)",
+                "(url https://<host>)",
+            ),
+            (
+                "(url https://github.com/a?token='first'VISIBLE_SECRET)",
+                "(url https://github.com/a)",
+            ),
+            (
+                "login https://admin:password='pw'@janes-private.lan/api failed",
+                "login https://<host> failed",
+            ),
+            (
+                r"(in C:\Users\Jane (Work) Doe\AppData and C:\Users\Jane (Work) Doe)",
+                r"(in C:\Users\<user>\AppData and C:\Users\<user>)",
+            ),
+            (
+                "Cannot open /home/jane (os error 13); copy /home/jane and /tmp/x failed",
+                "Cannot open /home/<user> (os error 13); copy /home/<user> and /tmp/x failed",
+            ),
+            (
+                r#"C:\Users\Jane Doe (os error 5); "C:\Users\Jane Doe", C:\Users\Jane Doe: denied"#,
+                r#"C:\Users\<user> (os error 5); "C:\Users\<user>", C:\Users\<user>: denied"#,
+            ),
+            (
+                r"/Volumes/Jane's Backup; C:\Users\Jane Doe",
+                r"/Volumes/<user>; C:\Users\<user>",
+            ),
+            // Can't tell where the name ends, so it all goes
+            (
+                r"C:\Users\Jane is locked by another process",
+                r"C:\Users\<user>",
+            ),
+            (
+                r"C:\Users\Jane (Work (Admin)) Doe\AppData and C:\Users\Jane)Doe\AppData",
+                r"C:\Users\<user>\AppData and C:\Users\<user>\AppData",
+            ),
+            (
+                r#"certificate not valid for name "pve.jane-home.lan"; certificate is only valid for DnsName("pve") or IpAddress(192.168.1.5)"#,
+                r#"certificate not valid for name "<host>"; certificate is only valid for DnsName("<host>") or IpAddress(<ip>)"#,
+            ),
+            (
+                r"Cannot open \\JANES-NAS\share\haos.img or \\?\Volume{x}\ or \\.\PhysicalDrive1",
+                r"Cannot open \\<host>\share\haos.img or \\?\Volume{x}\ or \\.\PhysicalDrive1",
+            ),
+            (
+                "connect to janes-macbook.local:8123: failed at 14:07:29 in std::io",
+                "connect to <host>:8123: failed at 14:07:29 in std::io",
+            ),
+            (
+                "2janesmacbook:8123, 123nas.local:8123 and 123.nas.local:8123 or 10.0.0.2:8123",
+                "<host>:8123, <host>:8123 and <host>:8123 or <ip>:8123",
+            ),
+            (
+                "at 2026-11-03T15:01:02, 12:34:56 and port 8123:",
+                "at 2026-11-03T15:01:02, 12:34:56 and port 8123:",
+            ),
+            ("first line\nInjected line", "first line Injected line"),
+        ] {
+            assert_eq!(scrub(text), scrubbed);
+        }
+        let long = scrub(&format!("{} (os error 10060)", "x".repeat(1000)));
+        assert_eq!(long.chars().count(), MAX_ERROR_CHARS + 1);
+        assert!(long.ends_with("(os error 10060)"), "{long}");
+    }
+
+    #[test]
+    // Other tests clear the shared tail
+    #[serial_test::serial]
+    fn a_failing_query_is_logged_once_while_in_the_tail() {
+        use crate::command_error::CommandError;
+        use hai_core::Error;
+
+        clear_test_log_tail();
+        for _ in 0..2 {
+            CommandError::from_query(Error::DownloadFailed("HTTP 503 while polling".into()));
+        }
+        // A cancel is the user's choice, not a failure to log
+        CommandError::from_query(Error::Cancelled);
+        let tail = test_log_tail().join("\n");
+        assert_eq!(
+            tail.matches("rust error: Download failed: HTTP 503")
+                .count(),
+            1
+        );
+        assert!(!tail.contains("rust error: Operation cancelled"), "{tail}");
+    }
+
+    #[test]
+    fn errors_are_described_with_their_causes() {
+        #[derive(Debug)]
+        struct Cause;
+        impl std::fmt::Display for Cause {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("dns error: No such host is known. (os error 11001)")
+            }
+        }
+        impl std::error::Error for Cause {}
+
+        #[derive(Debug)]
+        struct Connect;
+        impl std::fmt::Display for Connect {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("client error (Connect)")
+            }
+        }
+        impl std::error::Error for Connect {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&Cause)
+            }
+        }
+
+        // The io::Error repeats its wrapper's text, so it is left out
+        assert_eq!(
+            describe(&hai_core::Error::Io(std::io::Error::other(Connect))),
+            "IO error: client error (Connect): dns error: No such host is known. (os error 11001)"
+        );
+    }
+
+    #[test]
+    fn catalog_messages_leave_out_the_names_the_user_chose() {
+        let offline = hai_core::Error::ProxmoxActionRequired(hai_core::message!(
+            "backend.proxmox.node_offline",
+            node = "family-server",
+        ));
+        assert_eq!(
+            describe(&offline),
+            "Node \"<name>\" is offline. Choose an online node or start it in Proxmox."
+        );
+        let limited = hai_core::Error::RateLimited(hai_core::message!(
+            "backend.download.github_rate_limited",
+            minutes = 5,
+        ));
+        assert!(describe(&limited).contains("5 minutes"));
+        let denied = hai_core::Error::ProxmoxActionRequired(hai_core::message!(
+            "backend.proxmox.missing_privileges",
+            privileges = "SDN.Use",
+            path = "/sdn/zones/family-zone/private-bridge",
+        ));
+        assert_eq!(
+            describe(&denied),
+            "Your Proxmox user is missing SDN.Use on <name>."
+        );
+        let created = hai_core::Error::UtmVmCreated(hai_core::message!(
+            "backend.utm.vm_created_not_started",
+            name = "Jane's VM",
+            detail = hai_core::message!("backend.utm.import_uncertain", detail = "broken pipe",),
+        ));
+        let created = describe(&created);
+        assert!(!created.to_lowercase().contains("jane"), "{created}");
+        let reply = hai_core::Error::ProxmoxApi(
+            "VM creation (500): unable to create VM 100 - volume 'family-nas:vm-100-disk-0' already exists; storage 'jane backup' doesn't exist".into(),
+        );
+        assert_eq!(
+            describe(&reply),
+            "Proxmox API error: VM creation (500): unable to create VM 100 - volume '<name>' already exists; storage '<name>' doesn't exist"
+        );
+        let login = hai_core::Error::ProxmoxApi(
+            "login (401): https://admin:'pw'@janes-private.lan/api".into(),
+        );
+        assert_eq!(
+            describe(&login),
+            "Proxmox API error: login (401): https://<host>"
+        );
+        let missing = hai_core::Error::ProxmoxApi(
+            "backup (500): directory '/mnt/Jane's Backup' does not exist".into(),
+        );
+        assert_eq!(
+            describe(&missing),
+            "Proxmox API error: backup (500): directory '<name>' does not exist"
+        );
+        for password in [
+            "correct horse https://pve.lan/path",
+            "correct horse Bearer staple",
+        ] {
+            let rejected = hai_core::Error::ProxmoxApi(format!("password='{password}' rejected"));
+            assert_eq!(
+                describe(&rejected),
+                "Proxmox API error: password=<redacted> rejected"
+            );
+        }
+        let unknown = hai_core::Error::PermissionDenied(hai_core::message!(
+            "backend.disk.system_disk_unknown",
+            mount = "/Volumes/Jane's Backup",
+        ));
+        assert!(describe(&unknown).contains("containing <name>;"));
     }
 
     #[test]
@@ -842,14 +1349,20 @@ mod tests {
     #[serial_test::serial]
     fn report_has_no_user_data() {
         let app = tauri::test::mock_app();
-        let _ = Operation::new("report-privacy-test")
-            .finish::<(), String>(Err("IO error: /home/private-user/private-file".into()));
+        let error = crate::command_error::CommandError::from(hai_core::Error::Io(
+            std::io::Error::other("cannot open /home/private-user/haos.img"),
+        ));
+        let _ = Operation::new("report-privacy-test").finish::<(), _>(Err(error));
 
         let report = serde_json::to_value(get_diagnostics(app.handle().clone())).unwrap();
         let report = report.as_object().unwrap();
         let tail = report["log_tail"].as_str().unwrap();
         assert!(
-            tail.contains("rust report-privacy-test preparing operation_failed duration_ms="),
+            tail.contains("rust error: IO error: cannot open /home/<user>/haos.img"),
+            "{tail}"
+        );
+        assert!(
+            tail.contains("rust report-privacy-test preparing io duration_ms="),
             "{tail}"
         );
         // Users paste the report into public issues
