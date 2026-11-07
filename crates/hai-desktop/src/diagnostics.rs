@@ -169,7 +169,7 @@ fn scrub_line(text: &str) -> String {
     });
     // Before the URL and Basic/Bearer passes, which could take a quoted value's
     // closing quote. The quotes stay, so the credential rule still sees where
-    // the value ends.
+    // the value ends, and the placeholder holds nothing that ends a URL.
     static QUOTED_CREDENTIAL: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*"?\s*[=:]\s*)(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')"#).unwrap()
     });
@@ -209,7 +209,7 @@ fn scrub_line(text: &str) -> String {
     let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
     let line = QUOTED_CREDENTIAL.replace_all(&line, |caps: &Captures| {
         let quote = &caps[0][caps[0].len() - 1..];
-        format!("{}{quote}<redacted>{quote}", &caps[1])
+        format!("{}{quote}redacted{quote}", &caps[1])
     });
     let mut line = URL
         .replace_all(&line, |caps: &Captures| {
@@ -784,6 +784,18 @@ mod tests {
             (
                 r#"{"password":"https://private.example/path\"visible-fragment"}"#,
                 r#"{"password=<redacted>}"#,
+            ),
+            (
+                "(url https://pve.lan/a?token='first'VISIBLE_SECRET)",
+                "(url https://<host>)",
+            ),
+            (
+                "(url https://github.com/a?token='first'VISIBLE_SECRET)",
+                "(url https://github.com/a)",
+            ),
+            (
+                "login https://admin:password='pw'@janes-private.lan/api failed",
+                "login https://<host> failed",
             ),
             (
                 r"(in C:\Users\Jane (Work) Doe\AppData and C:\Users\Jane (Work) Doe)",
