@@ -1,4 +1,4 @@
-import { localize } from "../localization/localize.js";
+import { getLanguage, localize } from "../localization/localize.js";
 import { LitElement, html, css, nothing } from "lit";
 import {
   ViewAccessibility,
@@ -7,6 +7,7 @@ import {
 import { logFrontendError } from "../utils/diagnostics.js";
 import { narrowWindow, tooLowForWelcome } from "../utils/breakpoints.js";
 import { customElement, state } from "lit/decorators.js";
+import { live } from "lit/directives/live.js";
 import { renderExternalLink } from "../utils/external-link.js";
 import {
   INSTALLATION_GUIDE_URL,
@@ -18,7 +19,13 @@ import {
   shippedLanguages,
   shownLanguage,
 } from "../localization/initialize.js";
-import { mdiTranslate } from "../utils/icons.js";
+import { mdiFormatSize, mdiTranslate } from "../utils/icons.js";
+import {
+  TEXT_SIZES,
+  TEXT_SIZE_CHANGE,
+  setTextSize,
+  textSize,
+} from "../utils/text-size.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 import "@home-assistant/webawesome/dist/components/select/select.js";
@@ -49,12 +56,16 @@ export class WelcomeView extends LitElement {
 
   private _unsubscribeUpdate?: () => void;
 
+  // Ctrl or Cmd with + and − change the size too
+  private readonly _onTextSizeChanged = () => this.requestUpdate();
+
   connectedCallback() {
     super.connectedCallback();
     this._updating = installerUpdate.applying;
     this._unsubscribeUpdate = installerUpdate.subscribe(() => {
       this._updating = installerUpdate.applying;
     });
+    window.addEventListener(TEXT_SIZE_CHANGE, this._onTextSizeChanged);
   }
 
   static styles = [
@@ -99,15 +110,26 @@ export class WelcomeView extends LitElement {
       /* At the end of the first line, where a page offers its languages */
       header {
         align-self: flex-end;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.5rem;
+      }
+
+      header wa-select {
+        text-align: start;
+      }
+
+      .text-size {
+        width: 9rem;
       }
 
       .language {
         width: 12rem;
-        text-align: start;
       }
 
-      /* The translate icon and the names say what it is */
-      .language::part(form-control-label) {
+      /* The icons and the values say what each one is */
+      header wa-select::part(form-control-label) {
         position: absolute;
         width: 1px;
         height: 1px;
@@ -240,7 +262,7 @@ export class WelcomeView extends LitElement {
   /* eslint-disable lit-a11y/click-events-have-key-events */
   render() {
     return html`
-      ${this._renderLanguages()}
+      <header>${this._renderTextSize()} ${this._renderLanguages()}</header>
       <update-banner></update-banner>
       <main>
         <h1 class="logo-container" @click=${this._onLogoClick}>
@@ -296,28 +318,49 @@ export class WelcomeView extends LitElement {
   }
   /* eslint-enable lit-a11y/click-events-have-key-events */
 
+  private _renderTextSize() {
+    const percent = new Intl.NumberFormat(getLanguage(), { style: "percent" });
+    return html`<wa-select
+      class="text-size"
+      size="s"
+      label=${localize("views.welcome_view.text_size")}
+      .value=${live(String(textSize()))}
+      @change=${this._onTextSizeChange}
+    >
+      <ha-svg-icon slot="start" .path=${mdiFormatSize}></ha-svg-icon>
+      ${TEXT_SIZES.map(
+        (size) =>
+          html`<wa-option value=${String(size)}
+            >${percent.format(size)}</wa-option
+          >`
+      )}
+    </wa-select>`;
+  }
+
+  private _onTextSizeChange(event: Event) {
+    setTextSize(Number((event.target as WaSelect).value));
+  }
+
   // Hidden while English is the only language
   private _renderLanguages() {
     const languages = shippedLanguages();
     if (languages.length < 2) return nothing;
-    return html`<header>
-      <wa-select
-        class="language"
-        size="s"
-        label=${localize("views.welcome_view.language")}
-        .value=${shownLanguage()}
-        @change=${this._onLanguageChange}
-      >
-        <ha-svg-icon slot="start" .path=${mdiTranslate}></ha-svg-icon>
-        ${languages
-          .map((tag) => ({ tag, name: languageName(tag) }))
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map(
-            ({ tag, name }) =>
-              html`<wa-option value=${tag} lang=${tag}>${name}</wa-option>`
-          )}
-      </wa-select>
-    </header>`;
+    return html`<wa-select
+      class="language"
+      size="s"
+      label=${localize("views.welcome_view.language")}
+      .value=${shownLanguage()}
+      @change=${this._onLanguageChange}
+    >
+      <ha-svg-icon slot="start" .path=${mdiTranslate}></ha-svg-icon>
+      ${languages
+        .map((tag) => ({ tag, name: languageName(tag) }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(
+          ({ tag, name }) =>
+            html`<wa-option value=${tag} lang=${tag}>${name}</wa-option>`
+        )}
+    </wa-select>`;
   }
 
   private _onLanguageChange(event: Event) {
@@ -366,6 +409,7 @@ export class WelcomeView extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    window.removeEventListener(TEXT_SIZE_CHANGE, this._onTextSizeChanged);
     this._unsubscribeUpdate?.();
     if (this._clickResetTimer) {
       clearTimeout(this._clickResetTimer);

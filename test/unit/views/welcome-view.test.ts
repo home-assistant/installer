@@ -6,6 +6,7 @@ import {
   getLanguage,
   setLanguage,
 } from "../../../src/localization/localize.js";
+import { setTextSize, textSize } from "../../../src/utils/text-size.js";
 import {
   installerUpdate,
   RESTART_TIMEOUT_MS,
@@ -16,6 +17,8 @@ describe("welcome-view", () => {
   afterEach(() => {
     setLanguage("en");
     document.documentElement.lang = "";
+    setTextSize(1);
+    localStorage.removeItem("hai:text-size");
   });
   it("renders the Home Assistant logo", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
@@ -105,10 +108,40 @@ describe("welcome-view", () => {
     );
   });
 
+  it("offers the text sizes, at the current one", async () => {
+    setTextSize(1.25);
+    const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
+
+    const select = el.shadowRoot!.querySelector<WaSelect>(".text-size")!;
+    expect(select.label).to.equal("Text size");
+    expect(select.value).to.equal("1.25");
+    const options = Array.from(select.querySelectorAll("wa-option"));
+    expect(options.map((option) => option.textContent)).to.deep.equal([
+      "100%",
+      "125%",
+      "150%",
+      "175%",
+      "200%",
+    ]);
+  });
+
+  it("changes the text size when one is chosen", async () => {
+    const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
+    const select = el.shadowRoot!.querySelector<WaSelect>(".text-size")!;
+
+    select.value = "1.5";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(textSize()).to.equal(1.5);
+
+    setTextSize(1);
+    await el.updateComplete;
+    expect(select.value).to.equal("1");
+  });
+
   it("offers each shipped language by its own name", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
-    const select = el.shadowRoot!.querySelector<WaSelect>("wa-select")!;
+    const select = el.shadowRoot!.querySelector<WaSelect>(".language")!;
     expect(select.label).to.equal("Language");
     expect(select.value).to.equal("en");
     const options = Array.from(select.querySelectorAll("wa-option"));
@@ -123,14 +156,14 @@ describe("welcome-view", () => {
     setLanguage("de-AT");
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
-    expect(el.shadowRoot!.querySelector<WaSelect>("wa-select")!.value).to.equal(
+    expect(el.shadowRoot!.querySelector<WaSelect>(".language")!.value).to.equal(
       "de"
     );
   });
 
   it("shows the page in the chosen language", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
-    const select = el.shadowRoot!.querySelector<WaSelect>("wa-select")!;
+    const select = el.shadowRoot!.querySelector<WaSelect>(".language")!;
 
     select.value = "de";
     select.dispatchEvent(new Event("change", { bubbles: true }));

@@ -465,6 +465,7 @@
   "views.welcome_view.learn_more": "Learn more",
   "views.welcome_view.let_s_go": "Let's go",
   "views.welcome_view.open_home_foundation": "Open Home Foundation",
+  "views.welcome_view.text_size": "Text size",
   "views.welcome_view.subtitle": "This installer sets up Home Assistant on your hardware, step by step",
   "views.connection_check_view.checking_connection": "Checking connection",
   "views.connection_check_view.unable_to_connect": "Unable to connect",
