@@ -10,7 +10,7 @@ description = "Core library for Home Assistant Installer"
 default = ["proxmox", "utm", "live-usb"]
 proxmox = []
 utm = []
-live-usb = ["dep:fscommon", "dep:flate2", "dep:gpt", "dep:hadris-iso", "dep:tar"]
+live-usb = ["dep:fscommon", "dep:flate2", "dep:gpt", "dep:hadris-iso", "dep:tar", "dep:icu_locale_core"]
 mock = []
 
 [dependencies]
@@ -41,6 +41,7 @@ flate2 = { workspace = true, optional = true }
 gpt = { workspace = true, optional = true }
 hadris-iso = { workspace = true, optional = true }
 tar = { workspace = true, optional = true }
+icu_locale_core = { workspace = true, optional = true }
 
 # macOS specific
 [target.'cfg(target_os = "macos")'.dependencies]

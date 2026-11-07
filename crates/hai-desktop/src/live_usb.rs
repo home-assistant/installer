@@ -40,12 +40,13 @@ pub async fn live_usb_status() -> LiveUsbStatus {
 }
 
 /// Downloads Alpine and HAOS (or reuses the cache), builds the stick image and writes it to
-/// the removable drive `device_id` with read-back verification. `cancel_flash(attempt)`
-/// stops it.
+/// the removable drive `device_id` with read-back verification. The stick starts in
+/// `language`, the app's BCP 47 tag. `cancel_flash(attempt)` stops it.
 #[tauri::command]
 pub async fn create_live_usb(
     device_id: String,
     expected_device: ExpectedDevice,
+    language: String,
     attempt: String,
     progress_channel: Channel<FlashProgress>,
     state: tauri::State<'_, FlashState>,
@@ -56,19 +57,22 @@ pub async fn create_live_usb(
             let _awake = keep_awake("Creating a Home Assistant USB stick").await;
             let callback =
                 TauriProgressCallback::new(&progress_channel, "live_usb").cancellable(cancelled);
-            let result = run_create_live_usb(&device_id, &expected_device, &callback).await;
+            let result =
+                run_create_live_usb(&device_id, &expected_device, &language, &callback).await;
             callback.operation.finish(result)
         })
         .await
 }
 
 /// Builds the ISO and saves it as `folder/file_name`, replacing an existing file only
-/// with `overwrite`. Returns the saved path. `cancel_flash(attempt)` stops it.
+/// with `overwrite`. It starts in `language`, the app's BCP 47 tag. Returns the saved path.
+/// `cancel_flash(attempt)` stops it.
 #[tauri::command]
 pub async fn save_live_iso(
     folder: String,
     file_name: String,
     overwrite: bool,
+    language: String,
     attempt: String,
     progress_channel: Channel<FlashProgress>,
     state: tauri::State<'_, FlashState>,
@@ -79,8 +83,14 @@ pub async fn save_live_iso(
             let _awake = keep_awake("Creating a Home Assistant ISO file").await;
             let callback =
                 TauriProgressCallback::new(&progress_channel, "live_iso").cancellable(cancelled);
-            let result =
-                run_save_live_iso(Path::new(&folder), &file_name, overwrite, &callback).await;
+            let result = run_save_live_iso(
+                Path::new(&folder),
+                &file_name,
+                overwrite,
+                &language,
+                &callback,
+            )
+            .await;
             callback
                 .operation
                 .finish(result)
@@ -137,6 +147,7 @@ pub fn reveal_in_folder(app: tauri::AppHandle, path: String) -> Result<(), Comma
 async fn run_create_live_usb<P: ProgressCallback>(
     device_id: &str,
     expected: &ExpectedDevice,
+    language: &str,
     callback: &P,
 ) -> Result<(), CommandError> {
     // Same order as the regular flash: no download when the write can't happen anyway.
@@ -144,7 +155,7 @@ async fn run_create_live_usb<P: ProgressCallback>(
         .check_write_privileges()
         .map_err(CommandError::from)?;
     let hai_live = find_hai_live().ok_or_else(hai_live_missing)?;
-    let contents = hai_core::live_usb::prepare(&Backend, &hai_live, callback).await?;
+    let contents = hai_core::live_usb::prepare(&Backend, &hai_live, language, callback).await?;
     check_cancelled(callback)?;
 
     report(
@@ -238,6 +249,7 @@ fn find_live_usb_target<'a>(
 async fn run_create_live_usb<P: ProgressCallback>(
     _device_id: &str,
     _expected: &ExpectedDevice,
+    _language: &str,
     callback: &P,
 ) -> Result<(), CommandError> {
     for stage in [
@@ -256,11 +268,13 @@ async fn run_save_live_iso<P: ProgressCallback>(
     folder: &Path,
     file_name: &str,
     overwrite: bool,
+    language: &str,
     callback: &P,
 ) -> Result<PathBuf, CommandError> {
     let target = iso_target(folder, file_name, overwrite)?;
     #[cfg(feature = "mock")]
     {
+        let _ = language;
         for stage in [FlashStage::Downloading, FlashStage::Extracting] {
             mock::simulate(callback, stage).await?;
         }
@@ -274,7 +288,7 @@ async fn run_save_live_iso<P: ProgressCallback>(
         let temp = tempfile::Builder::new()
             .prefix(".hai-live-")
             .tempdir_in(folder)?;
-        let contents = hai_core::live_usb::prepare(&Backend, &hai_live, callback).await?;
+        let contents = hai_core::live_usb::prepare(&Backend, &hai_live, language, callback).await?;
         check_cancelled(callback)?;
 
         report(callback, FlashStage::Extracting, "Building the ISO...");
