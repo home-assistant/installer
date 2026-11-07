@@ -139,13 +139,15 @@ describe("wizard-steps", () => {
     }
   });
 
-  it("only holds Next for Proxmox and the official hardware", () => {
+  it("only holds Next for the VM settings and the official hardware", () => {
     expect(wizardStep("proxmox", "connection")?.beforeNext?.until).to.equal(
       "flow"
     );
-    expect(wizardStep("proxmox", "configure")?.beforeNext?.until).to.equal(
-      "selections"
-    );
+    for (const flow of ["proxmox", "vm"] as const) {
+      expect(wizardStep(flow, "configure")?.beforeNext?.until).to.equal(
+        "selections"
+      );
+    }
     // Asks whether the hardware, which ships ready to use, should be reinstalled
     expect(wizardStep("ha-hardware", "device")?.beforeNext?.until).to.equal(
       "flow"
@@ -153,6 +155,7 @@ describe("wizard-steps", () => {
     const held = new Set([
       "proxmox/connection",
       "proxmox/configure",
+      "vm/configure",
       "ha-hardware/device",
     ]);
     for (const flow of FLOWS) {

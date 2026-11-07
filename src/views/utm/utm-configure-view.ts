@@ -2,15 +2,19 @@ import { localize } from "../../localization/localize.js";
 import { LitElement, html } from "lit";
 import { ViewAccessibility } from "../../utils/view-accessibility.js";
 import { logFrontendError } from "../../utils/diagnostics.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
+import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import { wizardState } from "../../state/wizard-state.js";
-import { getSystemInfo } from "../../api/commands.js";
+import { getSystemInfo, utmVmNameTaken } from "../../api/commands.js";
 import type { SystemInfo } from "../../api/types.js";
 import {
   DEFAULT_UTM_VM_NAME,
   isValidUtmVmName,
   memoryOptionsUpTo,
+  utmVmConfig,
 } from "../../state/vm-defaults.js";
+import { installerError } from "../../utils/installer-error.js";
+import "../../components/inline-notice.js";
 import { settingStyles } from "../../utils/setting-styles.js";
 import { fieldErrorStyles } from "../../utils/field-error.js";
 import { VmSettings, configCardStyles } from "../../utils/vm-settings.js";
@@ -47,10 +51,14 @@ export class UtmConfigureView extends LitElement {
 
   private readonly _vm = new VmSettings(this, {
     defaultName: DEFAULT_UTM_VM_NAME,
-    nameError: (name) =>
-      isValidUtmVmName(name)
-        ? undefined
-        : localize("views.utm.utm_configure_view.vm_name_required"),
+    nameError: (name) => {
+      if (!isValidUtmVmName(name)) {
+        return localize("views.utm.utm_configure_view.vm_name_required");
+      }
+      return name === this._takenName
+        ? localize("views.utm.utm_configure_view.vm_name_taken", { name })
+        : undefined;
+    },
     nameHint: () => localize("views.utm.utm_configure_view.vm_name_hint"),
     save: () => this._saveSelections(),
   });
@@ -58,6 +66,14 @@ export class UtmConfigureView extends LitElement {
   /** What the sliders offer, kept until the system lookup changes it */
   @state()
   private _options = resourceOptions(null);
+
+  /** A name UTM already has, as the check at Next found */
+  @state() private _takenName?: string;
+  /** Why the check at Next could not ask UTM */
+  @state() private _checkProblem = "";
+
+  /** In the name's field, which the shared VM settings render */
+  @query(".name-hint") private _nameHint?: HTMLElement;
 
   connectedCallback() {
     super.connectedCallback();
@@ -99,6 +115,36 @@ export class UtmConfigureView extends LitElement {
     wizardState.setSelections(this._vm.selections);
   }
 
+  /**
+   * Ask UTM whether it has a VM of this name already. Resolves false if it
+   * has, if UTM can't say, or if the settings changed or the step was left
+   * while UTM answered.
+   */
+  async check(): Promise<boolean> {
+    const selections = wizardState.getState().selections;
+    // The install goes on with the VM it made or is making, under this name
+    if (selections.vmId || selections.utmCreation) return true;
+    const { name } = utmVmConfig(selections);
+    const isCurrent = () =>
+      this.isConnected && wizardState.getState().selections === selections;
+    try {
+      const taken = await utmVmNameTaken(name);
+      if (!isCurrent()) return false;
+      this._checkProblem = "";
+      if (!taken) return true;
+      this._takenName = name;
+      await this.updateComplete;
+      // Once the field has its error, so it is read out with it
+      const field = this._nameHint?.closest<WaInput>("wa-input");
+      await field?.updateComplete;
+      field?.focus();
+      return false;
+    } catch (error) {
+      if (isCurrent()) this._checkProblem = installerError(error).message;
+      return false;
+    }
+  }
+
   render() {
     return html`
       ${renderStepHeading(
@@ -110,6 +156,12 @@ export class UtmConfigureView extends LitElement {
         ${this._vm.renderName()}
         ${this._vm.renderResources(this._options.cores, this._options.memory)}
       </div>
+
+      ${this._checkProblem
+        ? html`<inline-notice variant="error" data-focus-alert>
+            <p>${this._checkProblem}</p>
+          </inline-notice>`
+        : ""}
     `;
   }
 }

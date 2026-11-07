@@ -180,13 +180,38 @@ fn check_automation() -> Result<()> {
 /// Sends UTM one harmless Apple Event, which is what makes macOS ask.
 #[cfg(any(target_os = "macos", test))]
 fn automation_allowed(mut run: impl FnMut(&str, &[&str]) -> Result<String>) -> Result<()> {
-    run(AUTOMATION_SCRIPT, &[])
-        .map(drop)
-        .map_err(|error| match error {
-            // Nothing is created, so an unanswered prompt is nothing to keep
-            Error::UtmOperationUncertain(message) => Error::Utm(message),
-            error => error,
-        })
+    run(AUTOMATION_SCRIPT, &[]).map(drop).map_err(query_error)
+}
+
+/// A query creates nothing, so an unanswered one leaves nothing to keep
+#[cfg(any(target_os = "macos", test))]
+fn query_error(error: Error) -> Error {
+    match error {
+        Error::UtmOperationUncertain(message) => Error::Utm(message),
+        error => error,
+    }
+}
+
+/// Whether UTM already has a VM named `name`. UTM refuses to create a second
+/// one, but only once the image is downloaded.
+fn vm_name_taken(name: &str) -> Result<bool> {
+    #[cfg(target_os = "macos")]
+    {
+        name_taken(name, macos::run_applescript)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = name;
+        Err(Error::UnsupportedPlatform(
+            "UTM is only available on macOS".to_string(),
+        ))
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn name_taken(name: &str, mut run: impl FnMut(&str, &[&str]) -> Result<String>) -> Result<bool> {
+    Ok(run(NAME_TAKEN_SCRIPT, &[name]).map_err(query_error)? == "true")
 }
 
 /// Create a Home Assistant VM using UTM
@@ -270,6 +295,19 @@ fn applescript_error(stderr: &str) -> Error {
 const AUTOMATION_SCRIPT: &str = r#"tell application "UTM"
     count virtual machines
 end tell"#;
+
+#[cfg(any(target_os = "macos", test))]
+// Compared in AppleScript, since a VM name can hold any character, line
+// breaks included. Exact, as UTM compares them.
+const NAME_TAKEN_SCRIPT: &str = r#"on run {wanted}
+    tell application "UTM" to set existing to name of virtual machines
+    considering case
+        repeat with existingName in existing
+            if contents of existingName is wanted then return true
+        end repeat
+    end considering
+    return false
+end run"#;
 
 #[cfg(any(target_os = "macos", test))]
 const STATUS_SCRIPT: &str = r#"on run {vmId}
@@ -630,6 +668,10 @@ impl UtmBackend for Backend {
         create_vm(config, progress_callback).await
     }
 
+    fn vm_name_taken(&self, name: &str) -> Result<bool> {
+        vm_name_taken(name)
+    }
+
     fn start_vm(&self, vm_id: &str) -> Result<()> {
         start_vm(vm_id)
     }
@@ -694,6 +736,32 @@ mod tests {
             unanswered,
             Err(Error::Utm(message)) if message.key == "backend.utm.no_response"
         ));
+    }
+
+    #[test]
+    fn the_name_is_compared_by_the_script() {
+        let mut asked = Vec::new();
+        let mut answer = |script: &str, args: &[&str]| {
+            asked.push((script.to_string(), args.join("|")));
+            Ok("true".to_string())
+        };
+        assert!(name_taken("Home Assistant\nArchive", &mut answer).unwrap());
+        assert_eq!(
+            asked,
+            [(
+                NAME_TAKEN_SCRIPT.to_string(),
+                "Home Assistant\nArchive".to_string()
+            )]
+        );
+        assert!(!name_taken("Home Assistant", |_, _| Ok("false".to_string())).unwrap());
+
+        let unanswered = name_taken("Home Assistant", |_, _| {
+            Err(Error::UtmOperationUncertain(crate::message!(
+                "backend.utm.no_response",
+                minutes = 5,
+            )))
+        });
+        assert!(matches!(unanswered, Err(Error::Utm(_))));
     }
 
     #[test]
@@ -1106,6 +1174,7 @@ mod tests {
             check_utm_status, get_primary_network_interface, get_utm_version, run_applescript,
             start_vm,
         };
+        use super::NAME_TAKEN_SCRIPT;
         use crate::error::Error;
         use crate::types::UtmVmConfig;
 
@@ -1244,6 +1313,23 @@ end run"#;
             let output = run_applescript(script, &hostile).unwrap();
 
             assert_eq!(output, hostile.join("|"));
+        }
+
+        #[test]
+        fn only_an_exact_name_is_taken() {
+            let script = NAME_TAKEN_SCRIPT.replace(
+                r#"tell application "UTM" to set existing to name of virtual machines"#,
+                r#"set existing to {"Home Assistant" & linefeed & "Archive", " Other "}"#,
+            );
+            assert_ne!(script, NAME_TAKEN_SCRIPT);
+            let taken = |name: &str| run_applescript(&script, &[name]).unwrap() == "true";
+
+            assert!(taken("Home Assistant\nArchive"));
+            assert!(taken(" Other "));
+            assert!(!taken("Home Assistant"));
+            assert!(!taken("Archive"));
+            assert!(!taken("home assistant\narchive"));
+            assert!(!taken("Other"));
         }
 
         #[test]
