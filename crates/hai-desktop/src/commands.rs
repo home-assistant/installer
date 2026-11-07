@@ -289,13 +289,8 @@ where
             // ship a qcow2 under the same board name, which must never be
             // written to a drive.
             release
-                .image_for(&request.board, ImageFormat::Raw)
-                .cloned()
-                .ok_or_else(|| {
-                    hai_core::Error::InvalidConfig(
-                        "No compatible image was found for this device.".into(),
-                    )
-                })?
+                .require_image(&request.board, ImageFormat::Raw)?
+                .clone()
         }
     };
 
@@ -508,9 +503,7 @@ where
         .await
         .map_err(CommandError::from)?;
 
-    let image = release.image_for(arch, ImageFormat::Qcow2).ok_or_else(|| {
-        hai_core::Error::InvalidConfig("No compatible virtual-machine image was found.".into())
-    })?;
+    let image = release.require_image(arch, ImageFormat::Qcow2)?;
 
     let path = hai_core::download::fetch_image(backend, image, callback)
         .await
@@ -1226,7 +1219,7 @@ mod tests {
                 "odroid-n2" => "18.2",
                 "ova" => "18.1",
                 "generic-aarch64" | "generic-x86-64" => "18.0",
-                _ => return Err(hai_core::Error::DownloadFailed("Board unavailable".into())),
+                _ => return Err(hai_core::Error::ReleaseUnusable("Board unavailable".into())),
             };
             Ok(HaosRelease {
                 version: version.into(),
@@ -1276,7 +1269,8 @@ mod tests {
             .await
             .unwrap_err();
         // Remote details stay out of the error; the code says what happened
-        assert_eq!(error.code, "download_failed");
+        assert_eq!(error.code, "release_unavailable");
+        assert!(!error.retryable);
     }
 
     #[tokio::test]
@@ -2639,7 +2633,7 @@ mod mock_tests {
 
     #[tokio::test]
     #[serial] // all share the mock cache directory
-    async fn run_flash_rejects_unknown_board() {
+    async fn flash_and_utm_blame_a_release_without_the_boards_image() {
         let err = run_flash(
             &BackendMock,
             &request("mock-sd-card-32gb", "no-such-board").await,
@@ -2647,7 +2641,11 @@ mod mock_tests {
         )
         .await
         .unwrap_err();
-        assert_eq!(err.code, "invalid_config");
+        assert_eq!(err.code, "release_unavailable");
+        let err = run_utm_download(&BackendMock, "no-such-board", &NoOpProgress)
+            .await
+            .unwrap_err();
+        assert_eq!(err.code, "release_unavailable");
     }
 
     #[tokio::test]
@@ -2682,7 +2680,7 @@ mod mock_tests {
             .get_latest_haos_release_for_board(board)
             .await
             .unwrap();
-        let image = release.image_for(board, ImageFormat::Qcow2).unwrap();
+        let image = release.require_image(board, ImageFormat::Qcow2).unwrap();
         assert!(image
             .download_url
             .ends_with(&format!("haos_{board}-16.3.qcow2.xz")));
@@ -2734,10 +2732,10 @@ mod mock_tests {
     async fn mock_release_preserves_raw_intel_image_without_inventing_qcow2() {
         let release = BackendMock.get_haos_release("latest").await.unwrap();
         assert!(release
-            .image_for("generic-x86-64", ImageFormat::Raw)
-            .is_some());
+            .require_image("generic-x86-64", ImageFormat::Raw)
+            .is_ok());
         assert!(release
-            .image_for("generic-x86-64", ImageFormat::Qcow2)
-            .is_none());
+            .require_image("generic-x86-64", ImageFormat::Qcow2)
+            .is_err());
     }
 }
