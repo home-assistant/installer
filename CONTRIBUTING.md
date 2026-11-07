@@ -145,12 +145,12 @@ follow the frontend's conventions above, with keys under `live.` and the
 module that names them (`live.ui.*`, `live.drives.*`), so they never collide
 with the frontend's in Lokalise. Messages support `{name}` and ICU plurals.
 Adding a language is adding `<tag>.json` with at least `live.language_name`,
-the language's name in itself, which the stick's language picker (`L`) lists.
+the language's name in itself, which the stick's language picker lists.
 `live.decimal_separator` is what goes before a number's decimals (`,` in German).
 Keys it leaves out or empty show the English, and so does a message that
 fails to format. The stick starts in the app's language when it was prepared,
-or in English where no catalog matches. The word typed to confirm the erase
-stays `erase` in every language, because the console keeps the US keymap.
+or in English where no catalog matches. The console keeps the US keymap, so
+the stick asks for arrows and Enter only, never typed text.
 
 `cargo test -p hai-live` checks that the code and `en.json` name the same
 keys, that every translation's placeholders match the English, that its

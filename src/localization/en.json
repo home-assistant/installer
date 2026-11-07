@@ -185,7 +185,7 @@
   "views.live_usb.live_usb_success_view.iso_bios_settings": "Use UEFI boot with Secure Boot off. On a computer, also set SATA mode to AHCI (not RAID or RST) in the BIOS/UEFI settings.",
   "views.live_usb.live_usb_success_view.boot_from_usb": "Start the computer and choose the USB stick from the boot menu.",
   "views.live_usb.live_usb_success_view.boot_from_media": "Start the virtual machine or computer from the ISO, USB stick or disc.",
-  "views.live_usb.live_usb_success_view.pick_drive_and_erase": "Pick the drive to install on and type erase to confirm. This erases everything on that drive.",
+  "views.live_usb.live_usb_success_view.pick_drive_and_erase": "Pick the drive to install on, then choose Erase and install. This erases everything on that drive.",
   "views.live_usb.live_usb_success_view.remove_and_restart": "When it says it's finished, remove the USB stick and restart.",
   "views.live_usb.live_usb_success_view.iso_remove_and_restart": "When it says it's finished, detach the ISO or remove the stick or disc, and restart.",
   "views.live_usb.live_usb_success_view.show_in_folder": "Show in folder",
