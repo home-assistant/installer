@@ -912,7 +912,6 @@ mod tests {
             detail = hai_core::message!(
                 "backend.utm.import_uncertain",
                 detail = "broken pipe",
-                path = "/tmp/jane-images",
             ),
         ));
         let created = describe(&created);
