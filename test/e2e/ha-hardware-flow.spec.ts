@@ -77,7 +77,7 @@ test.describe("Home Assistant hardware flow", () => {
     await expect(page.locator('device-card[value="ha-green"]')).toBeFocused();
   });
 
-  test("the Green installs through to the success screen, and Done returns to the start", async ({
+  test("the Green installs through to the success screen, and Start over returns to the start", async ({
     page,
   }) => {
     test.setTimeout(60000);
@@ -102,8 +102,9 @@ test.describe("Home Assistant hardware flow", () => {
     await expect(page.locator("device-setup-view")).toBeVisible();
     await next(page).click();
     await expect(page.locator("device-done-view")).toBeVisible();
-    await next(page).click();
-    await expect(page.locator("path-selection-view")).toBeVisible();
+    await expect(next(page)).toHaveText("Close");
+    await cancel(page).click();
+    await expect(page.locator("welcome-view")).toBeVisible();
   });
 
   test("the Yellow asks for its compute module after the dialog", async ({
@@ -122,6 +123,36 @@ test.describe("Home Assistant hardware flow", () => {
     await expect(next(page)).toHaveCount(0);
     await pickModule(page, "yellow-cm4");
     await expect(page.locator("drive-selection-view")).toBeVisible();
+  });
+
+  test("the Yellow with a CM5 lists the module's eMMC first, without picking it", async ({
+    page,
+  }) => {
+    await openHaHardware(page);
+    // What rpiboot's mass storage gadget shows on Linux
+    await page.evaluate(async () => {
+      const path = "/src/api/mock-data.ts";
+      const { MOCK_BLOCK_DEVICES } = (await import(
+        path
+      )) as typeof import("../../src/api/mock-data.js");
+      MOCK_BLOCK_DEVICES.push({
+        ...MOCK_BLOCK_DEVICES[0],
+        id: "/dev/sdx",
+        name: "mmcblk0",
+        vendor: "mmcblk0",
+        model: null,
+        serial: null,
+      });
+    });
+    await pickDevice(page, "ha-yellow");
+    await pickModule(page, "yellow-cm5");
+    await expect(page.locator("ha-hardware-connect-view")).toBeVisible();
+    await next(page).click();
+
+    const drives = page.locator("drive-selection-view").getByRole("radio");
+    await expect(drives.first()).toContainText("Compute Module eMMC");
+    await expect(drives.first()).toContainText("/dev/sdx");
+    await expect(drives.first()).not.toBeChecked();
   });
 
   test("Back keeps the device and Cancel leaves the flow", async ({ page }) => {

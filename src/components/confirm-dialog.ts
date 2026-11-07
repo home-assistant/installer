@@ -82,10 +82,16 @@ export class ConfirmDialog extends DialogBase {
   @property({ type: Number, attribute: "drive-size" })
   driveSize?: number;
 
+  /** Whether the drive gets an installer, created now and installing later */
+  @property({ type: Boolean })
+  installer = false;
+
   protected renderContent() {
     return html`
       ${this.renderTitle(
-        localize("components.confirm_dialog.erase_drive_and_install"),
+        this.installer
+          ? localize("components.confirm_dialog.erase_drive_and_create")
+          : localize("components.confirm_dialog.erase_drive_and_install"),
         "warning"
       )}
 
@@ -113,7 +119,9 @@ export class ConfirmDialog extends DialogBase {
         appearance="accent"
         @click=${this._onConfirm}
       >
-        ${localize("components.confirm_dialog.erase_and_install")}
+        ${this.installer
+          ? localize("components.confirm_dialog.erase_and_create")
+          : localize("components.confirm_dialog.erase_and_install")}
       </wa-button>
     `;
   }

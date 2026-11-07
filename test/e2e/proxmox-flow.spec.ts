@@ -85,12 +85,15 @@ test.describe("Proxmox Installation Flow", () => {
       timeout: 30000,
     });
 
-    // Done returns to the path selection
+    // Start over returns to the welcome screen
+    await expect(
+      page.locator("wizard-shell").locator(".footer-right wa-button")
+    ).toHaveText("Close");
     await page
       .locator("wizard-shell")
-      .locator(".footer-right wa-button")
+      .locator(".footer-left wa-button")
       .click();
-    await expect(page.locator("path-selection-view")).toBeVisible();
+    await expect(page.locator("welcome-view")).toBeVisible();
   });
 });
 

@@ -12,7 +12,7 @@ import {
   haHardwareName,
   type YellowModuleId,
 } from "../../state/ha-hardware.js";
-import { goToNextStep } from "../../components/wizard-steps.js";
+import { goToNextStep } from "../../components/wizard-next.js";
 import "../../components/option-card.js";
 import type { OptionCard } from "../../components/option-card.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";

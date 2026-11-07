@@ -2,6 +2,8 @@ import eslint from "@eslint/js";
 import tseslint from "@typescript-eslint/eslint-plugin";
 import tsparser from "@typescript-eslint/parser";
 import litPlugin, { configs as litConfigs } from "eslint-plugin-lit";
+import { configs as wcConfigs } from "eslint-plugin-wc";
+import { configs as litA11yConfigs } from "eslint-plugin-lit-a11y";
 import prettierConfig from "eslint-config-prettier";
 import globals from "globals";
 import chaiFriendly from "eslint-plugin-chai-friendly";
@@ -9,6 +11,8 @@ import chaiFriendly from "eslint-plugin-chai-friendly";
 export default [
   eslint.configs.recommended,
   prettierConfig,
+  wcConfigs["flat/recommended"],
+  litA11yConfigs.recommended,
   {
     files: ["src/**/*.ts", "test/**/*.ts"],
     languageOptions: {
@@ -44,6 +48,9 @@ export default [
       ...litConfigs["flat/all"].rules,
       "lit/attribute-value-entities": "off",
       "lit/no-template-map": "off",
+      // WebKit drops a list's semantics once it has list-style: none, so the
+      // styled lists say role="list" on purpose
+      "lit-a11y/no-redundant-role": "off",
     },
   },
   {

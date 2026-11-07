@@ -271,11 +271,7 @@ mod tests {
     #[test]
     fn messages_nest_as_key_and_params() {
         let inner = crate::message!("backend.utm.applescript_lost", detail = "broken pipe");
-        let message = crate::message!(
-            "backend.utm.import_uncertain",
-            detail = inner,
-            path = "/tmp/image",
-        );
+        let message = crate::message!("backend.utm.import_uncertain", detail = inner);
 
         assert_eq!(
             message.params_json()["detail"],
@@ -286,7 +282,7 @@ mod tests {
         );
         assert!(message
             .to_string()
-            .starts_with("UTM may still be importing the image: Failed to wait for AppleScript: broken pipe. Source retained at /tmp/image."));
+            .starts_with("UTM may still be importing the image: Failed to wait for AppleScript: broken pipe. Check UTM before retrying"));
     }
 
     #[test]

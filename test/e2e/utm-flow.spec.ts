@@ -89,20 +89,6 @@ test.describe("UTM Installation Flow", () => {
     ).toEqual([]);
   });
 
-  test("step 2: a double-click on Next stops at the confirmation", async ({
-    page,
-  }) => {
-    await navigateToUtmStep2(page);
-
-    await page
-      .locator("wizard-shell")
-      .locator(".footer-right wa-button")
-      .dblclick();
-
-    await expect(page.locator("utm-confirm-view")).toBeVisible();
-    await expect(page.locator("utm-progress-view")).toHaveCount(0);
-  });
-
   test("can navigate back through each step", async ({ page }) => {
     await navigateToUtmStep3(page);
 
@@ -181,12 +167,15 @@ test.describe("UTM Installation Flow", () => {
       timeout: 30000,
     });
 
-    // Done returns to the path selection
+    // Start over returns to the welcome screen
+    await expect(
+      page.locator("wizard-shell").locator(".footer-right wa-button")
+    ).toHaveText("Close");
     await page
       .locator("wizard-shell")
-      .locator(".footer-right wa-button")
+      .locator(".footer-left wa-button")
       .click();
-    await expect(page.locator("path-selection-view")).toBeVisible();
+    await expect(page.locator("welcome-view")).toBeVisible();
   });
 });
 

@@ -39,6 +39,12 @@ impl CommandError {
         }
     }
 
+    /// Log the error under `diagnostic`, a finer code than the public one.
+    pub fn with_diagnostic(mut self, diagnostic: &'static str) -> Self {
+        self.diagnostic = diagnostic;
+        self
+    }
+
     /// A drive that is part of this computer's storage: only another drive helps.
     pub fn drive_in_system_use() -> Self {
         Self::with_message(
