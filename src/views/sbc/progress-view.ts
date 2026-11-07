@@ -13,6 +13,8 @@ import {
   type FlashProgress,
   type FlashStage,
 } from "../../api/index.js";
+import { wizardState } from "../../state/wizard-state.js";
+import { throwIfCancelled } from "../../utils/polling.js";
 import { readDriveSelection } from "../../utils/drive-selection.js";
 import { selectedWifi } from "../../utils/wifi.js";
 import { findInstaller } from "../../state/ha-hardware.js";
@@ -61,7 +63,7 @@ export class ProgressView extends InstallProgressView {
     return { error: missingTarget() };
   }
 
-  protected async _install() {
+  protected async _install(signal: AbortSignal) {
     this._reachedDrive = false;
     const selections = this._wizardState.selections;
     const drive = readDriveSelection(selections);
@@ -70,7 +72,7 @@ export class ProgressView extends InstallProgressView {
     // anyway, it fails the same way
     if (!drive || !deviceConfig) throw missingTarget();
 
-    await this._runStoppable((attempt) =>
+    const { ejected } = await this._runStoppable((attempt) =>
       flashImage(
         {
           device_id: drive.id,
@@ -103,6 +105,10 @@ export class ProgressView extends InstallProgressView {
         attempt
       )
     );
+    // A run left behind (the view detached, or a new flow started) must
+    // not write into the wizard state
+    throwIfCancelled(signal);
+    wizardState.setSelection("driveEjected", ejected);
   }
 
   protected _installerError(error: unknown): InstallerError {

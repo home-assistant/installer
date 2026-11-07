@@ -385,7 +385,7 @@ async fn write_image<P: ProgressCallback>(
     expected: &ExpectedDevice,
     verify: bool,
     progress_callback: &P,
-) -> Result<()> {
+) -> Result<bool> {
     image.size()?;
 
     imp::write_image(image, device_id, expected, verify, progress_callback).await
@@ -411,7 +411,7 @@ impl DeviceBackend for Backend {
         expected: &ExpectedDevice,
         verify: bool,
         progress_callback: &P,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         write_image(image, device_id, expected, verify, progress_callback).await
     }
 }
