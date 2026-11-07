@@ -536,11 +536,132 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+  # The community translates en.json in Lokalise. Runs on main upload it and
+  # hand the build jobs every translation that fits it, so translators only
+  # see reviewed copy and pull request builds are English only. Off until the
+  # LOKALISE_PROJECT_ID variable is set. See docs/spec/ci-cd.md.
+  translations:
+    name: Sync translations
+    if: vars.LOKALISE_PROJECT_ID && github.ref == 'refs/heads/main' && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Holds the token, so a changed copy of the workflow on a branch can't
+    # read it or write to the project
+    environment: release
+    # Runs on main don't share the workflow's group, and the newer of two
+    # quick pushes must upload last. Waiting runs queue up instead of
+    # replacing each other, which would skip a release's builds.
+    concurrency:
+      group: lokalise
+      cancel-in-progress: false
+      queue: max
+    env:
+      LOKALISE: lokalise/lokalise-cli-2:v3.1.7@sha256:bbba240819aa93cf3926f1c1c88411de2c1c2fb92aad3ef45911453a6d1d9972
+      LOKALISE_PROJECT_ID: ${{ vars.LOKALISE_PROJECT_ID }}
+    # Only the two Lokalise steps get the token, and they run before npm
+    # installs anything, like the Apple credentials in the build job.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Placeholders and plurals stay ICU as written. A changed English
+      # message makes its translations unverified (the project's Auto-toggle
+      # Unverified automation), and the download leaves those out until a
+      # translator updates them. Keys en.json dropped are deleted. A run of an
+      # older commit, like a re-run once main has moved on, would put back
+      # English that main has changed since, and delete keys it has added.
+      # The image is pulled first, so the upload follows that check at once.
+      - name: Upload the English catalog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LOKALISE_TOKEN: ${{ secrets.LOKALISE_TOKEN }}
+        run: |
+          docker pull -q "$LOKALISE"
+          # Assigned on its own line so a failed lookup fails the step
+          main=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [[ $main != "$GITHUB_SHA" ]]; then
+            echo "::notice::Not uploading en.json: main has moved on to a newer one"
+            exit 0
+          fi
+          docker run --rm -v "$PWD/src/localization:/catalogs:ro" "$LOKALISE" lokalise2 \
+            --token "$LOKALISE_TOKEN" --project-id "$LOKALISE_PROJECT_ID" \
+            file upload --file /catalogs/en.json --lang-iso en \
+            --convert-placeholders=false --replace-modified --cleanup-mode \
+            --poll --poll-timeout 5m \
+            > "$RUNNER_TEMP/upload.json"
+          cat "$RUNNER_TEMP/upload.json"
+          # The CLI exits 0 when Lokalise rejects the file
+          jq -e '.process.status == "finished"' "$RUNNER_TEMP/upload.json" > /dev/null
+
+      # Each catalog is named after a tag the app looks up (initialize.ts):
+      # zh_CN and zh_TW after their script, a language's only regional
+      # variant, like pt_BR, after the language so every region finds it, and
+      # the rest with - for _. Only an async export works past 10,000
+      # translations.
+      - name: Download translations
+        env:
+          LOKALISE_TOKEN: ${{ secrets.LOKALISE_TOKEN }}
+        run: |
+          mkdir "$RUNNER_TEMP/lokalise"
+          docker run --rm -v "$RUNNER_TEMP/lokalise:/out" "$LOKALISE" lokalise2 \
+            --token "$LOKALISE_TOKEN" --project-id "$LOKALISE_PROJECT_ID" \
+            file download --async --format json --original-filenames=false \
+            --bundle-structure "%LANG_ISO%.json" --filter-data nonfuzzy \
+            --export-empty-as skip --replace-breaks=false --unzip-to /out
+          shopt -s nullglob
+          for file in "$RUNNER_TEMP"/lokalise/*.json; do
+            code=$(basename "$file" .json)
+            language=${code%%_*}
+            variants=("$RUNNER_TEMP/lokalise/$language"_*.json)
+            if [[ $code == en ]]; then
+              continue
+            elif [[ $code == zh_CN ]]; then
+              name=zh-Hans
+            elif [[ $code == zh_TW ]]; then
+              name=zh-Hant
+            elif [[ $code =~ ^[a-z]+_([A-Z]{2}|[0-9]{3})$ && $language != zh &&
+              ${#variants[@]} -eq 1 && ! -e $RUNNER_TEMP/lokalise/$language.json ]]; then
+              name=$language
+            else
+              name=${code//_/-}
+            fi
+            cp "$file" "src/localization/$name.json"
+          done
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Drops a message that doesn't fit the English, like a key a run of an
+      # older commit finds in Lokalise, with a warning on the run. A language
+      # left with nothing translated goes too: its empty catalog would stop
+      # the app from trying the user's next language.
+      - name: Check the translations
+        env:
+          LOCALIZATION_PRUNE: "1"
+        run: npm run localization:check
+
+      # en.json comes along, so the artifact exists before anything is translated
+      - name: Upload translations
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: translations
+          path: src/localization/*.json
+          if-no-files-found: error
+
   build:
     name: Build (${{ matrix.target }})
-    # Only release runs have a version job; elsewhere it's skipped.
-    needs: version
-    if: ${{ !cancelled() && github.event_name != 'schedule' && (needs.version.result == 'success' || needs.version.result == 'skipped') }}
+    # Only release runs have a version job, and only main syncs translations;
+    # elsewhere they're skipped.
+    needs: [version, translations]
+    if: ${{ !cancelled() && github.event_name != 'schedule' && (needs.version.result == 'success' || needs.version.result == 'skipped') && (needs.translations.result == 'success' || needs.translations.result == 'skipped') }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -654,6 +775,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Download translations
+        if: needs.translations.result == 'success'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: translations
+          path: src/localization
 
       # The same static Linux program goes into every platform's app. Not
       # --locked: a release run has just changed the version in Cargo.toml.
