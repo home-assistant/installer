@@ -909,10 +909,7 @@ mod tests {
         let created = hai_core::Error::UtmVmCreated(hai_core::message!(
             "backend.utm.vm_created_not_started",
             name = "Jane's VM",
-            detail = hai_core::message!(
-                "backend.utm.import_uncertain",
-                detail = "broken pipe",
-            ),
+            detail = hai_core::message!("backend.utm.import_uncertain", detail = "broken pipe",),
         ));
         let created = describe(&created);
         assert!(!created.to_lowercase().contains("jane"), "{created}");
