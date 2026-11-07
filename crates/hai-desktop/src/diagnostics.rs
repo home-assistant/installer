@@ -167,6 +167,12 @@ fn scrub_line(text: &str) -> String {
         Regex::new(r"(?i)(^|[^\w:.])([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,8}(?:\.\d{1,3}){0,3})")
             .unwrap()
     });
+    // Before the URL and Basic/Bearer passes, which could take a quoted value's
+    // closing quote. The quotes stay, so the credential rule still sees where
+    // the value ends.
+    static QUOTED_CREDENTIAL: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*"?\s*[=:]\s*)(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')"#).unwrap()
+    });
     static RULES: LazyLock<Vec<(Regex, &str)>> = LazyLock::new(|| {
         [
             // Windows user folders and macOS volume labels. A name may hold spaces
@@ -201,6 +207,10 @@ fn scrub_line(text: &str) -> String {
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect();
     let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    let line = QUOTED_CREDENTIAL.replace_all(&line, |caps: &Captures| {
+        let quote = &caps[0][caps[0].len() - 1..];
+        format!("{}{quote}<redacted>{quote}", &caps[1])
+    });
     let mut line = URL
         .replace_all(&line, |caps: &Captures| {
             let host = caps[2].to_ascii_lowercase();
@@ -934,6 +944,16 @@ mod tests {
             describe(&missing),
             "Proxmox API error: backup (500): directory '<name>' does not exist"
         );
+        for password in [
+            "correct horse https://pve.lan/path",
+            "correct horse Bearer staple",
+        ] {
+            let rejected = hai_core::Error::ProxmoxApi(format!("password='{password}' rejected"));
+            assert_eq!(
+                describe(&rejected),
+                "Proxmox API error: password=<redacted> rejected"
+            );
+        }
         let unknown = hai_core::Error::PermissionDenied(hai_core::message!(
             "backend.disk.system_disk_unknown",
             mount = "/Volumes/Jane's Backup",
