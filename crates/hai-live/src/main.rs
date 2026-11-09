@@ -284,6 +284,8 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
     }
     drop(target);
 
+    // An Enter pressed during the install would otherwise restart before the stick is out
+    ui.discard_keys();
     let mut index = 0;
     loop {
         ui.show(&Screen::Done {

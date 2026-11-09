@@ -624,6 +624,13 @@ impl Ui {
             }
         }
     }
+
+    /// Drops the keys pressed while nothing was reading them.
+    pub fn discard_keys(&mut self) {
+        while let Ok(true) = event::poll(Duration::ZERO) {
+            let _ = event::read();
+        }
+    }
 }
 
 impl Drop for Ui {
