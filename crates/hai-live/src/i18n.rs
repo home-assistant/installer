@@ -9,6 +9,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 
+use icu_decimal::input::Decimal;
+use icu_decimal::DecimalFormatter;
 use icu_locale_core::LanguageIdentifier;
 use icu_plurals::{PluralCategory, PluralRules};
 
@@ -66,7 +68,11 @@ impl Language {
 
     /// `value` with one decimal, the way the language writes it: "1.5" in English, "1,5" in German.
     pub fn decimal(self, value: f64) -> String {
-        format!("{value:.1}").replace('.', &self.text("live.decimal_separator"))
+        let rounded = format!("{value:.1}");
+        match (decimal_formatter(self.0.tag), rounded.parse::<Decimal>()) {
+            (Some(formatter), Ok(decimal)) => formatter.format(&decimal).to_string(),
+            _ => rounded,
+        }
     }
 
     /// English, or a regional English.
@@ -282,6 +288,23 @@ fn plural_rules(tag: &'static str) -> Option<&'static PluralRules> {
             language.script = None;
             let rules = PluralRules::try_new_cardinal((&language).into()).ok()?;
             Some(&*Box::leak(Box::new(rules)))
+        })
+    })
+}
+
+/// The number format of the language `tag` from CLDR, built once per language like
+/// [`plural_rules`].
+fn decimal_formatter(tag: &'static str) -> Option<&'static DecimalFormatter> {
+    thread_local! {
+        static BUILT: RefCell<HashMap<&'static str, Option<&'static DecimalFormatter>>> =
+            RefCell::default();
+    }
+    BUILT.with_borrow_mut(|built| {
+        *built.entry(tag).or_insert_with(|| {
+            let language = LanguageIdentifier::try_from_str(tag).ok()?;
+            let formatter =
+                DecimalFormatter::try_new((&language).into(), Default::default()).ok()?;
+            Some(&*Box::leak(Box::new(formatter)))
         })
     })
 }
@@ -649,12 +672,9 @@ mod tests {
     }
 
     #[test]
-    fn writes_decimals_with_the_language_s_separator() {
-        static GERMAN: Catalog = Catalog {
-            tag: "de",
-            messages: &[("live.decimal_separator", ",")],
-        };
-        assert_eq!(Language(&GERMAN).decimal(1.46), "1,5");
+    fn writes_decimals_the_way_the_language_does() {
+        assert_eq!(Language::untranslated("de").decimal(1.46), "1,5");
+        assert_eq!(Language::untranslated("de").decimal(2000.0), "2.000,0");
         assert_eq!(Language::english().decimal(1.46), "1.5");
     }
 

@@ -13,6 +13,7 @@ ratatui = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 icu_plurals = { workspace = true }
+icu_decimal = { workspace = true }
 icu_locale_core = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
