@@ -1,5 +1,6 @@
 // Copies the catalogs of a Lokalise export next to en.json, each named after
-// a tag the app looks up (src/localization/initialize.ts). CI runs
+// a tag the app looks up (src/localization/initialize.ts), without the
+// translations of English other than en.json's. CI runs
 // check-localization.mjs on them afterwards.
 //
 // Usage: node scripts/import-translations.mjs <export folder> [catalog folder]
@@ -29,20 +30,50 @@ export function catalogName(code, codes) {
 }
 
 export function importTranslations(exportFolder, catalogFolder) {
-  const catalogs = new Map();
-  for (const filename of fs.readdirSync(exportFolder)) {
-    if (!filename.endsWith(".json")) continue;
-    const exportPath = path.join(exportFolder, filename);
-    const catalog = JSON.parse(fs.readFileSync(exportPath, "utf8"));
-    // An empty pt_PT mustn't take pt from pt_BR
-    if (Object.keys(catalog).length)
-      catalogs.set(path.basename(filename, ".json"), exportPath);
+  const read = (filename) => JSON.parse(fs.readFileSync(filename, "utf8"));
+  const catalogs = new Map(
+    fs
+      .readdirSync(exportFolder)
+      .filter((filename) => filename.endsWith(".json"))
+      .map((filename) => [
+        path.basename(filename, ".json"),
+        read(path.join(exportFolder, filename)),
+      ])
+  );
+  // Once main has moved on, like for a re-run of an older run, Lokalise has
+  // newer English than this commit, and its translations mustn't ship next
+  // to the old English. A key only one of them has is left to the checker.
+  const english = read(path.join(catalogFolder, "en.json"));
+  const lokalise = catalogs.get("en") ?? {};
+  let stale = 0;
+  for (const [code, catalog] of catalogs) {
+    if (code === "en") continue;
+    for (const key of Object.keys(catalog)) {
+      if (
+        Object.hasOwn(english, key) &&
+        Object.hasOwn(lokalise, key) &&
+        lokalise[key] !== english[key]
+      ) {
+        delete catalog[key];
+        stale++;
+      }
+    }
   }
-  const codes = [...catalogs.keys()];
-  for (const [code, exportPath] of catalogs) {
+  if (stale)
+    console.log(
+      `::notice::Left out ${stale} translations whose English in Lokalise differs from this commit's`
+    );
+  // An empty pt_PT mustn't take pt from pt_BR
+  const codes = [...catalogs.keys()].filter(
+    (code) => Object.keys(catalogs.get(code)).length
+  );
+  for (const code of codes) {
     const name = catalogName(code, codes);
     if (name)
-      fs.copyFileSync(exportPath, path.join(catalogFolder, `${name}.json`));
+      fs.writeFileSync(
+        path.join(catalogFolder, `${name}.json`),
+        JSON.stringify(catalogs.get(code), null, 2)
+      );
   }
 }
 

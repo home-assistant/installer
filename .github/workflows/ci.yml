@@ -610,7 +610,7 @@ jobs:
           node-version: "24"
           cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
 
-      - name: Name the catalogs
+      - name: Import the catalogs
         run: node scripts/import-translations.mjs "$RUNNER_TEMP/lokalise"
 
       - name: Install dependencies

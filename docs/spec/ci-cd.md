@@ -54,11 +54,12 @@ runs, the `translations` job:
    and deletes the keys it no longer has, unless `main` has moved on to a
    newer commit (so re-running an older run can't put back English that
    `main` has changed since);
-2. downloads every verified translation and names each catalog after a tag
-   the app looks up: `zh-Hans` and `zh-Hant` for Lokalise's `zh_CN` and
-   `zh_TW`, `pt` for `pt_BR` while it's the only Portuguese, so every
-   Portuguese locale finds it, and `pt-BR` once `pt_PT` has translations
-   too;
+2. downloads every verified translation, leaves out those whose English in
+   Lokalise isn't this commit's (once `main` has changed it, as for a re-run
+   of an older run), and names each catalog after a tag the app looks up:
+   `zh-Hans` and `zh-Hant` for Lokalise's `zh_CN` and `zh_TW`, `pt` for
+   `pt_BR` while it's the only Portuguese, so every Portuguese locale finds
+   it, and `pt-BR` once `pt_PT` has translations too;
 3. runs `npm run localization:check` on them, which drops each message whose
    key `en.json` doesn't have, whose placeholders don't match the English, or
    that isn't valid ICU, with a warning on the run, so it shows the English
