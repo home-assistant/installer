@@ -550,6 +550,9 @@ jobs:
       group: lokalise
       cancel-in-progress: false
       queue: max
+    # Every queued run waits on this one, so a stalled Lokalise call mustn't
+    # hold them for the default six hours
+    timeout-minutes: 15
     env:
       LOKALISE: lokalise/lokalise-cli-2:v3.1.7@sha256:bbba240819aa93cf3926f1c1c88411de2c1c2fb92aad3ef45911453a6d1d9972
       LOKALISE_PROJECT_ID: ${{ vars.LOKALISE_PROJECT_ID }}
