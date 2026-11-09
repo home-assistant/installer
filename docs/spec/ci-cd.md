@@ -57,16 +57,17 @@ runs, the `translations` job:
    `main` has changed since);
 2. downloads every verified translation, leaves out those whose English in
    Lokalise isn't this commit's (once `main` has changed it, as for a re-run
-   of an older run), and names each catalog after a tag the app looks up:
-   `zh-Hans` and `zh-Hant` for Lokalise's `zh_CN` and `zh_TW`, `pt` for
-   `pt_BR` while it's the only Portuguese, so every Portuguese locale finds
-   it, and `pt-BR` once `pt_PT` has translations too;
+   of an older run), and names each catalog after its language tag, with
+   `zh-Hans` and `zh-Hant` for Lokalise's `zh_CN` and `zh_TW`;
 3. runs `npm run localization:check` on them, which drops each message whose
    key `en.json` doesn't have, whose placeholders don't match the English, or
    that isn't valid ICU, with a warning on the run, so it shows the English
    until it's fixed in Lokalise, and removes languages with nothing
    translated;
-4. uploads them as the `translations` artifact, which each build job puts next
+4. names a language's only regional catalog left after the language: `pt` for
+   `pt-BR` while it's the only Portuguese, so every Portuguese locale finds
+   it, and `pt-BR` once `pt_PT` has usable translations too;
+5. uploads them as the `translations` artifact, which each build job puts next
    to `en.json` before it builds.
 
 Pull requests don't run the job, so translators only see reviewed copy, and

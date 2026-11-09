@@ -1,32 +1,38 @@
-// Copies the catalogs of a Lokalise export next to en.json, each named after
-// a tag the app looks up (src/localization/initialize.ts), without the
-// translations of English other than en.json's. CI runs
-// check-localization.mjs on them afterwards.
+// Copies the catalogs of a Lokalise export next to en.json, without the
+// translations of English other than en.json's. CI then runs
+// check-localization.mjs on them, and --regions names what it leaves after a
+// tag the app looks up (src/localization/initialize.ts).
 //
 // Usage: node scripts/import-translations.mjs <export folder> [catalog folder]
+//        node scripts/import-translations.mjs --regions [catalog folder]
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// zh_CN and zh_TW after their script, a language's only regional variant,
-// like pt_BR or es_419, after the language so every region finds it, and the
-// rest with - for _. Other Chinese regions keep theirs, so Simplified and
-// Traditional don't mix. `codes` are the exported languages with anything
-// translated. English is null: the repository has its own.
-export function catalogName(code, codes) {
+// zh_CN and zh_TW after their script, the rest with - for _. English is
+// null: the repository has its own.
+export function catalogTag(code) {
   if (code === "en") return null;
   if (code === "zh_CN") return "zh-Hans";
   if (code === "zh_TW") return "zh-Hant";
-  const language = /^([a-z]+)_(?:[A-Z]{2}|\d{3})$/.exec(code)?.[1];
+  return code.replaceAll("_", "-");
+}
+
+// A language's only regional catalog, like pt-BR or es-419, after the
+// language so every region finds it. Other Chinese regions keep theirs, so
+// Simplified and Traditional don't mix. `tags` are the catalogs the check
+// left, so a region it emptied doesn't keep another from its language.
+export function catalogName(tag, tags) {
+  const language = /^([a-z]+)-(?:[A-Z]{2}|\d{3})$/.exec(tag)?.[1];
   if (
     language &&
     language !== "zh" &&
-    !codes.includes(language) &&
-    codes.filter((other) => other.startsWith(`${language}_`)).length === 1
+    !tags.includes(language) &&
+    tags.filter((other) => other.startsWith(`${language}-`)).length === 1
   )
     return language;
-  return code.replaceAll("_", "-");
+  return tag;
 }
 
 export function importTranslations(exportFolder, catalogFolder) {
@@ -63,24 +69,35 @@ export function importTranslations(exportFolder, catalogFolder) {
     console.log(
       `::notice::Left out ${stale} translations whose English in Lokalise differs from this commit's`
     );
-  // An empty pt_PT mustn't take pt from pt_BR
-  const codes = [...catalogs.keys()].filter(
-    (code) => Object.keys(catalogs.get(code)).length
-  );
-  for (const code of codes) {
-    const name = catalogName(code, codes);
-    if (name)
+  for (const [code, catalog] of catalogs) {
+    const tag = catalogTag(code);
+    if (tag)
       fs.writeFileSync(
-        path.join(catalogFolder, `${name}.json`),
-        JSON.stringify(catalogs.get(code), null, 2)
+        path.join(catalogFolder, `${tag}.json`),
+        JSON.stringify(catalog, null, 2)
+      );
+  }
+}
+
+export function nameRegions(catalogFolder) {
+  const tags = fs
+    .readdirSync(catalogFolder)
+    .filter((filename) => filename.endsWith(".json") && filename !== "en.json")
+    .map((filename) => path.basename(filename, ".json"));
+  for (const tag of tags) {
+    const name = catalogName(tag, tags);
+    if (name !== tag)
+      fs.renameSync(
+        path.join(catalogFolder, `${tag}.json`),
+        path.join(catalogFolder, `${name}.json`)
       );
   }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = fileURLToPath(new URL("../", import.meta.url));
-  importTranslations(
-    process.argv[2],
-    process.argv[3] ?? path.join(root, "src/localization")
-  );
+  const [first, folder = path.join(root, "src/localization")] =
+    process.argv.slice(2);
+  if (first === "--regions") nameRegions(folder);
+  else importTranslations(first, folder);
 }

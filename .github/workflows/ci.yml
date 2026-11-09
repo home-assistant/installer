@@ -631,6 +631,9 @@ jobs:
           LOCALIZATION_PRUNE: "1"
         run: npm run localization:check
 
+      - name: Name the catalogs left after the check
+        run: node scripts/import-translations.mjs --regions
+
       # en.json comes along, so the artifact exists before anything is translated
       - name: Upload translations
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

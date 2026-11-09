@@ -6,33 +6,43 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { catalogName } from "./import-translations.mjs";
+import { catalogName, catalogTag } from "./import-translations.mjs";
 
 test("catalogs are named after a tag the app looks up", () => {
-  for (const [code, codes, name] of [
-    ["en", ["en", "de"], null],
-    ["de", ["en", "de"], "de"],
-    ["zh_CN", ["zh_CN", "zh_TW"], "zh-Hans"],
-    ["zh_TW", ["zh_TW"], "zh-Hant"],
-    // Traditional Chinese for Hong Kong mustn't serve zh-Hans
-    ["zh_HK", ["zh_HK"], "zh-HK"],
-    // A language's only regional variant serves every region
-    ["pt_BR", ["en", "pt_BR"], "pt"],
-    ["es_419", ["en", "es_419"], "es"],
-    ["pt_BR", ["pt_BR", "pt_PT"], "pt-BR"],
-    ["de_AT", ["de", "de_AT"], "de-AT"],
-    ["sr_Latn", ["sr_Latn"], "sr-Latn"],
+  for (const [code, tag] of [
+    ["en", null],
+    ["de", "de"],
+    ["zh_CN", "zh-Hans"],
+    ["zh_TW", "zh-Hant"],
+    ["pt_BR", "pt-BR"],
+    ["es_419", "es-419"],
   ]) {
-    assert.equal(catalogName(code, codes), name, `${code} among ${codes}`);
+    assert.equal(catalogTag(code), tag, code);
+  }
+  for (const [tag, tags, name] of [
+    ["de", ["de"], "de"],
+    ["zh-Hans", ["zh-Hans", "zh-Hant"], "zh-Hans"],
+    // Traditional Chinese for Hong Kong mustn't serve zh-Hans
+    ["zh-HK", ["zh-HK"], "zh-HK"],
+    // A language's only regional variant serves every region
+    ["pt-BR", ["pt-BR"], "pt"],
+    ["es-419", ["es-419"], "es"],
+    ["pt-BR", ["pt-BR", "pt-PT"], "pt-BR"],
+    ["de-AT", ["de", "de-AT"], "de-AT"],
+    ["sr-Latn", ["sr-Latn"], "sr-Latn"],
+  ]) {
+    assert.equal(catalogName(tag, tags), name, `${tag} among ${tags}`);
   }
 });
 
-// Runs the script on an export and returns the catalogs it leaves next to
-// `english`, by filename
-function importExport(exported, english) {
-  const script = fileURLToPath(
-    new URL("./import-translations.mjs", import.meta.url)
-  );
+const script = fileURLToPath(
+  new URL("./import-translations.mjs", import.meta.url)
+);
+
+// Runs CI's steps on an export and returns the catalogs they leave next to
+// `english` (the repository's by default), by filename. `check` also runs the
+// pruning check between the import and the naming.
+function importExport(exported, english, { check = false } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "hai-lokalise-"));
   try {
     const exportFolder = path.join(directory, "export");
@@ -45,16 +55,31 @@ function importExport(exported, english) {
         JSON.stringify(catalog)
       );
     }
-    fs.writeFileSync(
-      path.join(catalogFolder, "en.json"),
-      JSON.stringify(english)
-    );
-    const result = spawnSync(
-      process.execPath,
-      [script, exportFolder, catalogFolder],
-      { encoding: "utf8" }
-    );
-    assert.equal(result.status, 0, result.stderr);
+    const catalog = path.join(catalogFolder, "en.json");
+    if (english) fs.writeFileSync(catalog, JSON.stringify(english));
+    else
+      fs.copyFileSync(
+        fileURLToPath(new URL("../src/localization/en.json", import.meta.url)),
+        catalog
+      );
+    const run = (args, env) => {
+      const result = spawnSync(process.execPath, args, {
+        encoding: "utf8",
+        env: { ...process.env, ...env },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout;
+    };
+    const stdout = run([script, exportFolder, catalogFolder]);
+    if (check)
+      run(
+        [
+          fileURLToPath(new URL("./check-localization.mjs", import.meta.url)),
+          catalog,
+        ],
+        { LOCALIZATION_PRUNE: "1" }
+      );
+    run([script, "--regions", catalogFolder]);
     const catalogs = Object.fromEntries(
       fs
         .readdirSync(catalogFolder)
@@ -66,24 +91,24 @@ function importExport(exported, english) {
           ),
         ])
     );
-    return { stdout: result.stdout, catalogs };
+    return { stdout, catalogs };
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
 }
 
-test("a language with nothing translated doesn't count", () => {
-  const english = { "common.next": "Next" };
+test("a language the check leaves nothing of doesn't count", () => {
   const { stdout, catalogs } = importExport(
     {
-      en: english,
       pt_BR: { "common.next": "Próximo" },
-      pt_PT: {},
+      // Only a key en.json doesn't have
+      pt_PT: { "common.gone": "Desaparecido" },
       de: {},
       de_AT: { "common.next": "Weiter" },
       zh_CN: { "common.next": "下一步" },
     },
-    english
+    undefined,
+    { check: true }
   );
   assert.deepEqual(catalogs, {
     "de.json": { "common.next": "Weiter" },
@@ -121,7 +146,8 @@ test("translations of other English are left out", () => {
       "common.new": "Neu",
       "common.gone": "Weg",
     },
-    "pt.json": { "common.back": "Voltar" },
+    "pt-BR.json": { "common.back": "Voltar" },
+    "pt-PT.json": {},
   });
   assert.match(stdout, /::notice::Left out 2 translations/);
 });
