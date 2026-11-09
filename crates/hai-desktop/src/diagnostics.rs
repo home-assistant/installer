@@ -37,15 +37,25 @@ fn log_builder() -> tauri_plugin_log::Builder {
 // Only callers with compile-time strings, deserialized enums or scrubbed
 // error text can record data.
 fn record(level: log::Level, message: String) {
+    add(level, message, false);
+}
+
+/// With `unless_last`, a message the same as the line logged last is left out.
+/// The check holds the lock that adds the line, so two threads can't both add it.
+fn add(level: log::Level, message: String, unless_last: bool) {
     let elapsed = START.get_or_init(Instant::now).elapsed().as_millis();
     let line = format!("{elapsed}ms {message}");
-    log::log!(target: TARGET, level, "{line}");
     if let Ok(mut tail) = TAIL.lock() {
-        tail.push_back(line);
+        let last = tail.back().and_then(|last| last.split_once(' '));
+        if unless_last && last.is_some_and(|(_, last)| last == message) {
+            return;
+        }
+        tail.push_back(line.clone());
         while tail.len() > TAIL_LINES {
             tail.pop_front();
         }
     }
+    log::log!(target: TARGET, level, "{line}");
 }
 
 pub fn init() {
@@ -64,19 +74,8 @@ pub fn warning(code: &'static str) {
 /// Record why `failure` happened, if it says. A poll can fail the same way
 /// for minutes, so the line logged last isn't repeated.
 pub fn failed(failure: &impl Categorized) {
-    let Some(cause) = failure.cause() else {
-        return;
-    };
-    let line = format!("rust error: {cause}");
-    let logged = TAIL.lock().is_ok_and(|tail| {
-        tail.back().is_some_and(|logged| {
-            logged
-                .split_once(' ')
-                .is_some_and(|(_, logged)| logged == line)
-        })
-    });
-    if !logged {
-        record(log::Level::Error, line);
+    if let Some(cause) = failure.cause() {
+        add(log::Level::Error, format!("rust error: {cause}"), true);
     }
 }
 
