@@ -186,7 +186,7 @@ fn scrub_line(text: &str) -> String {
             (r"[\w.+-]+@[\w.-]+", "<user>"),
             (r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "<ip>"),
             // Hosts outside URLs: a share, a certificate's names, or one with a port
-            (r#"(^|[\s"'(])\\\\[^\\\s?.][^\\\s"']*"#, r"${1}\\<host>"),
+            (r#"(^|[\s"'(])(\\\\(?:\?\\UNC\\)?)[^\\\s?.][^\\\s"']*"#, "${1}${2}<host>"),
             (r#"(not valid for name |DnsName\()"[^"]*""#, r#"${1}"<host>""#),
             // A host name has a dot, unlike a time or `VM:100`, and a port
             // isn't followed by more of a timestamp
@@ -836,8 +836,8 @@ mod tests {
                 r#"certificate not valid for name "<host>"; certificate is only valid for DnsName("<host>") or IpAddress(<ip>)"#,
             ),
             (
-                r"Cannot open \\JANES-NAS\share\haos.img or \\?\Volume{x}\ or \\.\PhysicalDrive1",
-                r"Cannot open \\<host>\share\haos.img or \\?\Volume{x}\ or \\.\PhysicalDrive1",
+                r"Cannot open \\JANES-NAS\share\haos.img or \\?\UNC\JANES-NAS\share\haos.img or \\?\Volume{x}\ or \\.\PhysicalDrive1",
+                r"Cannot open \\<host>\share\haos.img or \\?\UNC\<host>\share\haos.img or \\?\Volume{x}\ or \\.\PhysicalDrive1",
             ),
             (
                 "connect to janes-macbook.local:8123: failed at 14:07:29 in std::io",
