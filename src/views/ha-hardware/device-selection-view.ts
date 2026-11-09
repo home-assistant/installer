@@ -8,10 +8,7 @@ import {
 import { customElement, state } from "lit/decorators.js";
 import type { HaosConfig } from "../../api/index.js";
 import { wizardState } from "../../state/wizard-state.js";
-import {
-  HOME_ASSISTANT_HOST,
-  homeAssistantUrl,
-} from "../../utils/external-url.js";
+import { renderAnnouncedName } from "../../utils/device-access.js";
 import { renderExternalLink } from "../../utils/external-link.js";
 import { BACKUP_GUIDE_URL } from "../../utils/urls.js";
 import {
@@ -165,7 +162,7 @@ export class HaHardwareDeviceSelectionView extends LitElement {
     // A Yellow kit may come without a compute module, so nothing is on it yet.
     // The others are ready to use, so going back is what most people want.
     const yellow = hardware.deviceId === YELLOW_DEVICE_ID;
-    const host = renderExternalLink(homeAssistantUrl(), HOME_ASSISTANT_HOST);
+    const host = renderAnnouncedName();
     const backup = renderExternalLink(
       BACKUP_GUIDE_URL,
       localize("views.ha_hardware.device_selection_view.backup_guide")
