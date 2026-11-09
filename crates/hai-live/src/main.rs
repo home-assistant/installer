@@ -251,13 +251,14 @@ fn install(ui: &mut Ui, image: &BundledImage, disk: &Disk) {
 
 /// Lets the user switch every screen to another language. Esc keeps the current one.
 fn choose_language(ui: &mut Ui) {
-    let languages = Language::all();
+    let languages = ui.languages();
     let mut index = languages
         .iter()
         .position(|language| *language == ui.language)
         .unwrap_or(0);
     loop {
         ui.show(&Screen::Languages {
+            languages: languages.clone(),
             selected: languages[index],
         });
         match ui.key(None) {

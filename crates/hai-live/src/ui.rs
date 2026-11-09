@@ -122,7 +122,10 @@ pub enum Screen {
     /// Home Assistant OS is on the disk.
     Done { disk: String },
     /// The languages to switch to.
-    Languages { selected: Language },
+    Languages {
+        languages: Vec<Language>,
+        selected: Language,
+    },
 }
 
 /// Draws `screen` in `lang`: a centered card with the keys to press under it, and the Home
@@ -392,8 +395,10 @@ fn content(screen: &Screen, lang: Language) -> Card {
             keys: key_bar(lang, &[RESTART, POWER_OFF, LANGUAGE]),
             focus: None,
         },
-        Screen::Languages { selected } => {
-            let languages = Language::all();
+        Screen::Languages {
+            languages,
+            selected,
+        } => {
             let index = languages.iter().position(|language| language == selected);
             Card {
                 title: and_language(lang, lang.text("live.ui.languages.title")),
@@ -528,6 +533,8 @@ fn hidden_summary(lang: Language, hidden: &[(String, Hidden)]) -> Vec<String> {
 pub struct Ui {
     terminal: Terminal<CrosstermBackend<Stdout>>,
     linux_console: bool,
+    /// The console font didn't load, and the built-in one only covers English.
+    only_english: bool,
     /// What every screen is drawn in.
     pub language: Language,
 }
@@ -538,8 +545,9 @@ impl Ui {
     pub fn start(mut language: Language) -> io::Result<Self> {
         let linux_console = std::env::var("TERM").is_ok_and(|term| term == "linux");
         // Before anything is drawn or the size is read: the console keeps glyph numbers, and a
-        // font of another height changes its rows. The built-in font only covers English.
-        if linux_console && !console_font::load() {
+        // font of another height changes its rows.
+        let only_english = linux_console && !console_font::load();
+        if only_english {
             language = Language::english();
         }
         terminal::enable_raw_mode()?;
@@ -556,8 +564,18 @@ impl Ui {
         Ok(Self {
             terminal: Terminal::new(CrosstermBackend::new(stdout))?,
             linux_console,
+            only_english,
             language,
         })
+    }
+
+    /// The languages the console can show.
+    pub fn languages(&self) -> Vec<Language> {
+        if self.only_english {
+            vec![Language::english()]
+        } else {
+            Language::all()
+        }
     }
 
     /// Draws `screen`.
@@ -723,7 +741,10 @@ mod tests {
             Screen::Done {
                 disk: "nvme0n1".into(),
             },
-            Screen::Languages { selected: lang },
+            Screen::Languages {
+                languages: Language::all(),
+                selected: lang,
+            },
         ];
 
         // Every title main shows, as a step and as a message, with all the text of its group
@@ -991,7 +1012,11 @@ mod tests {
     #[test]
     fn the_language_picker_marks_the_active_language() {
         let english = Language::english();
-        let rows = draw(&Screen::Languages { selected: english }, 80, 25);
+        let screen = Screen::Languages {
+            languages: Language::all(),
+            selected: english,
+        };
+        let rows = draw(&screen, 80, 25);
         assert!(shows(&rows, " Language "), "{}", rows.join("\n"));
         assert!(shows(&rows, "\u{25ba} English"));
         assert!(shows(&rows, "Enter apply"));
@@ -1002,7 +1027,11 @@ mod tests {
         let german = Language::untranslated("de");
         let rows = draw_in(german, &disks(), 80, 25);
         assert!(shows(&rows, "/Language"), "{}", rows.join("\n"));
-        let rows = draw_in(german, &Screen::Languages { selected: german }, 80, 25);
+        let screen = Screen::Languages {
+            languages: Language::all(),
+            selected: german,
+        };
+        let rows = draw_in(german, &screen, 80, 25);
         assert!(shows(&rows, "/Language "), "{}", rows.join("\n"));
     }
 }
