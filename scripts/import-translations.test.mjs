@@ -29,6 +29,7 @@ test("catalogs are named after a tag the app looks up", () => {
     ["es-419", ["es-419"], "es"],
     ["pt-BR", ["pt-BR", "pt-PT"], "pt-BR"],
     ["de-AT", ["de", "de-AT"], "de-AT"],
+    ["en-GB", ["en", "en-GB"], "en-GB"],
     ["sr-Latn", ["sr-Latn"], "sr-Latn"],
   ]) {
     assert.equal(catalogName(tag, tags), name, `${tag} among ${tags}`);
@@ -106,12 +107,15 @@ test("a language the check leaves nothing of doesn't count", () => {
       de: {},
       de_AT: { "common.next": "Weiter" },
       zh_CN: { "common.next": "下一步" },
+      // The repository's en.json keeps its name
+      en_GB: { "common.next": "Next" },
     },
     undefined,
     { check: true }
   );
   assert.deepEqual(catalogs, {
     "de.json": { "common.next": "Weiter" },
+    "en-GB.json": { "common.next": "Next" },
     "pt.json": { "common.next": "Próximo" },
     "zh-Hans.json": { "common.next": "下一步" },
   });

@@ -80,9 +80,10 @@ export function importTranslations(exportFolder, catalogFolder) {
 }
 
 export function nameRegions(catalogFolder) {
+  // en stays among them, so a lone en-GB can't take en.json's name
   const tags = fs
     .readdirSync(catalogFolder)
-    .filter((filename) => filename.endsWith(".json") && filename !== "en.json")
+    .filter((filename) => filename.endsWith(".json"))
     .map((filename) => path.basename(filename, ".json"));
   for (const tag of tags) {
     const name = catalogName(tag, tags);
