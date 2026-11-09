@@ -199,7 +199,15 @@ mod tests {
         );
         assert!(keyfile.contains("\npsk=a\\sb\\\\c\\s\n"), "{keyfile}");
         assert!(keyfile.contains("\nkey-mgmt=wpa-psk\n"));
-        assert!(keyfile.ends_with("\n[user]\nio.home-assistant.import=supervisor\n"));
+    }
+
+    #[test]
+    fn keyfile_marks_the_profile_for_the_supervisor() {
+        let keyfile = keyfile(&wifi("Home", "12345678"));
+        assert!(
+            keyfile.ends_with("\n[user]\nio.home-assistant.import=supervisor\n"),
+            "{keyfile}"
+        );
     }
 
     #[test]
