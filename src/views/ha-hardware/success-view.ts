@@ -4,8 +4,8 @@ import { customElement } from "lit/decorators.js";
 import type { WizardState } from "../../state/wizard-state.js";
 import { WizardStateController } from "../../state/wizard-state-controller.js";
 import { renderExternalLink } from "../../utils/external-link.js";
-import { BACKUP_GUIDE_URL } from "../../utils/urls.js";
 import {
+  BACKUP_GUIDE_URL,
   GREEN_GUIDE_URL,
   ODROID_GUIDE_URL,
   YELLOW_CM4_GUIDE_URL,
