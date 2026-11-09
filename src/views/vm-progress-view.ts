@@ -25,6 +25,13 @@ import {
 import "../components/install-progress.js";
 import { InstallProgressView } from "./install-progress-view.js";
 
+/** Steps shown as part of another, to keep the list short */
+const SHOWN_AS: Record<string, string> = {
+  starting: "ready",
+  starting_vm: "ready",
+  waiting: "ready",
+};
+
 /** A flow's own stages from the download on, then the waits, then the end */
 export type VmInstallStage<Stage extends string> =
   | "downloading"
@@ -191,17 +198,18 @@ export abstract class VmProgressView<
     const stage = this._stage;
     return html`
       <install-progress
-        .stages=${[...this._stages, ...WAIT_STAGES].map((id) => ({
-          id,
-          label:
-            id === "updating"
-              ? localize("common.install.installing_home_assistant")
-              : this._getStageDescription(id),
-        }))}
-        .stage=${stage}
-        .stageTitle=${this._stopping
-          ? localize("common.install.stopping")
-          : this._getStageTitle(stage)}
+        .stages=${[...this._stages, ...WAIT_STAGES]
+          .filter((id) => !(id in SHOWN_AS))
+          .map((id) => ({
+            id,
+            label:
+              id === "updating"
+                ? localize("common.install.installing_home_assistant")
+                : this._getStageDescription(id),
+          }))}
+        .stage=${SHOWN_AS[stage] ?? stage}
+        .stageTitle=${this._getStageTitle(stage)}
+        .stopping=${this._stopping}
         .description=${this._getStageDescription(stage)}
         .progress=${this._progress}
         .bytesProcessed=${this._bytesProcessed}

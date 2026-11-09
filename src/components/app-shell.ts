@@ -7,35 +7,6 @@ import "../views/welcome-view.js";
 import "../views/connection-check-view.js";
 import "../views/path-selection-view.js";
 import "../views/other-options-view.js";
-import "../views/sbc/device-selection-view.js";
-import "../views/sbc/drive-selection-view.js";
-import "../views/sbc/confirmation-view.js";
-import "../views/sbc/wifi-view.js";
-import "../views/sbc/progress-view.js";
-import "../views/sbc/success-view.js";
-import "../views/ha-hardware/device-selection-view.js";
-import "../views/ha-hardware/module-selection-view.js";
-import "../views/ha-hardware/success-view.js";
-import "../views/minipc/setup-method-view.js";
-import "../views/minipc/architecture-selection-view.js";
-import "../views/minipc/media-view.js";
-import "../views/live-usb/live-usb-gate.js";
-import "../views/live-usb/live-iso-location-view.js";
-import "../views/live-usb/live-usb-summary-view.js";
-import "../views/live-usb/live-usb-progress-view.js";
-import "../views/live-usb/live-usb-success-view.js";
-import "../views/device-setup-view.js";
-import "../views/device-done-view.js";
-import "../views/utm/utm-check-view.js";
-import "../views/utm/utm-configure-view.js";
-import "../views/utm/utm-confirm-view.js";
-import "../views/utm/utm-progress-view.js";
-import "../views/utm/utm-success-view.js";
-import "../views/proxmox/proxmox-connect-view.js";
-import "../views/proxmox/proxmox-configure-view.js";
-import "../views/proxmox/proxmox-confirm-view.js";
-import "../views/proxmox/proxmox-progress-view.js";
-import "../views/proxmox/proxmox-success-view.js";
 import { enabledImportStorageList } from "../views/proxmox/proxmox-success-view.js";
 
 // Import components
@@ -59,7 +30,14 @@ import {
   type WizardState,
 } from "../state/wizard-state.js";
 import { WizardStateController } from "../state/wizard-state-controller.js";
-import { listBlockDevices, onCloseBlocked, quitAnyway } from "../api/index.js";
+import { writesInstaller } from "../state/ha-hardware.js";
+import { installerUpdate } from "../state/installer-update.js";
+import {
+  closeApp,
+  listBlockDevices,
+  onCloseBlocked,
+  quitAnyway,
+} from "../api/index.js";
 import {
   clearDriveSelection,
   driveModelLabel,
@@ -152,6 +130,12 @@ export class AppShell extends LitElement {
   @state()
   private _showQuitDialog = false;
 
+  /** Closing was held back while the installer updates itself */
+  @state()
+  private _showUpdateQuitDialog = false;
+
+  private _stopUpdateListener?: () => void;
+
   @query("wizard-shell")
   private _wizardShell?: WizardShell;
 
@@ -161,15 +145,20 @@ export class AppShell extends LitElement {
   private _stopCloseListener?: Promise<() => void>;
   private _pendingFlow?: WizardFlow;
 
-  /** The screen the latest single click landed on. */
-  private _clickedScreen?: string;
-
   connectedCallback() {
     super.connectedCallback();
-    // Capturing, so it runs before the controls on the screen
-    this.addEventListener("click", this._onClick, true);
-    // The backend holds back closing the app while an installation runs
-    this._stopCloseListener = onCloseBlocked(() => {
+    // A failed install ends the wait the update dialog tells about
+    this._stopUpdateListener = installerUpdate.subscribe(() => {
+      if (!installerUpdate.applying) this._showUpdateQuitDialog = false;
+    });
+    // The backend holds back closing the app while an installation runs, or
+    // while the installer updates itself
+    this._stopCloseListener = onCloseBlocked((reason) => {
+      // Closing now would break the installer, so it only says why it stays
+      if (reason === "update") {
+        this._showUpdateQuitDialog = true;
+        return;
+      }
       // One question at a time: quitting is the bigger one
       this._showStopDialog = false;
       this._showLeaveDialog = false;
@@ -182,8 +171,8 @@ export class AppShell extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this.removeEventListener("click", this._onClick, true);
     void this._stopCloseListener?.then((stop) => stop());
+    this._stopUpdateListener?.();
   }
 
   render() {
@@ -204,6 +193,7 @@ export class AppShell extends LitElement {
           selections.driveModel
         )}
         .driveSize=${selections.driveSize}
+        .installer=${writesInstaller(selections.deviceConfig?.board)}
         @dialog-primary=${this._onDialogConfirm}
         @dialog-secondary=${this._onDialogCancel}
       ></confirm-dialog>
@@ -247,6 +237,15 @@ export class AppShell extends LitElement {
         primary-variant="danger"
         @dialog-primary=${this._onQuitAnyway}
         @dialog-secondary=${this._onKeepInstallingOnQuit}
+      ></info-dialog>
+      <info-dialog
+        class="update-quit-dialog"
+        ?open=${this._showUpdateQuitDialog}
+        .heading=${localize("components.app_shell.quit_while_updating_title")}
+        .message=${localize("components.app_shell.quit_while_updating_message")}
+        .primaryLabel=${localize("components.app_shell.keep_updating")}
+        @dialog-primary=${this._onKeepUpdating}
+        @dialog-secondary=${this._onKeepUpdating}
       ></info-dialog>
     `;
   }
@@ -311,9 +310,6 @@ export class AppShell extends LitElement {
       !!step?.noBack ||
       (!!install && (running || !install.backAfterError));
 
-    // Done already leaves the flow, so Cancel would only repeat it
-    const hideCancel = last;
-
     const hideNext =
       running ||
       !!step?.pickToContinue ||
@@ -328,7 +324,9 @@ export class AppShell extends LitElement {
         .hideFooter=${hideFooter}
         .hideBack=${hideBack}
         .hideNext=${hideNext}
-        .hideCancel=${hideCancel}
+        .cancelLabel=${last
+          ? localize("components.app_shell.start_over")
+          : localize("common.cancel")}
         @wizard-cancel=${this._onWizardCancel}
         @wizard-back=${this._onWizardBack}
         @wizard-exit=${this._exitFlow}
@@ -362,9 +360,11 @@ export class AppShell extends LitElement {
       );
     }
     if (wizardState.isLastStep) {
-      return localize("common.done");
+      return localize("components.app_shell.close");
     }
-    return step?.nextLabel?.() ?? localize("common.next");
+    return (
+      step?.nextLabel?.(this._wizardState.selections) ?? localize("common.next")
+    );
   }
 
   private _isReady(step: WizardStepDefinition | undefined): boolean {
@@ -401,28 +401,6 @@ export class AppShell extends LitElement {
       null) as WizardStepView | null;
   }
 
-  /** What is on screen: the view, and in the wizard, its step. */
-  private get _screen(): string {
-    return this._currentView === "wizard"
-      ? `wizard/${wizardState.currentStep?.id}`
-      : this._currentView;
-  }
-
-  // A click that changes the screen does so before the second click of a
-  // double-click arrives, so that one would act on whatever the next screen
-  // has in the same spot: Back on the first step and then Back on the path
-  // selection went all the way to the welcome screen, and Next on a
-  // configured VM went past its confirmation into the install. `detail`
-  // counts the clicks; keyboard activation reports 0.
-  private _onClick = (event: MouseEvent) => {
-    if (event.detail < 2) {
-      this._clickedScreen = this._screen;
-    } else if (this._screen !== this._clickedScreen) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-  };
-
   private _onNavigate(e: HAIEvent<"navigate">) {
     this._currentView = e.detail.view;
   }
@@ -446,6 +424,12 @@ export class AppShell extends LitElement {
   }
 
   private _onWizardCancel() {
+    // Once the flow is done, the same button starts over
+    if (wizardState.isLastStep) {
+      this._startOver();
+      return;
+    }
+
     // A running install is stopped or left first, never just dropped
     if (this._installRunning) {
       if (this._installStoppable) {
@@ -473,13 +457,23 @@ export class AppShell extends LitElement {
   }
 
   /**
-   * Back on the first step, Cancel, Done and leaving a running VM return to
-   * where the flow was picked. The welcome screen has nothing new by then.
+   * Back on the first step, Cancel and leaving a running VM return to where
+   * the flow was picked. The welcome screen has nothing new by then.
    */
   private _exitFlow() {
     this._resetErrorState();
     wizardState.reset();
     this._currentView = "path-selection";
+  }
+
+  private _startOver() {
+    this._resetErrorState();
+    wizardState.reset();
+    this._currentView = "welcome";
+  }
+
+  private _close() {
+    closeApp().catch(logFrontendError);
   }
 
   /** Stale flags would show "Try again", or no Cancel, over the next install. */
@@ -566,7 +560,7 @@ export class AppShell extends LitElement {
       : -1;
 
     if (wizardState.isLastStep) {
-      this._exitFlow();
+      this._close();
     } else if (skipIndex >= 0) {
       wizardState.goToStep(skipIndex);
     } else {
@@ -630,6 +624,10 @@ export class AppShell extends LitElement {
 
   private _onKeepInstallingOnQuit() {
     this._showQuitDialog = false;
+  }
+
+  private _onKeepUpdating() {
+    this._showUpdateQuitDialog = false;
   }
 
   private _onQuitAnyway() {

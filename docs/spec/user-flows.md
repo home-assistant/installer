@@ -24,8 +24,10 @@
 | Portainer | Container-based, not HAOS |
 
 Back always goes one screen back: on a flow's first step it returns to the
-path selection, the same as Back on any other screen. Cancel, Done and
-leaving a running VM install also return to the path selection.
+path selection, the same as Back on any other screen. Cancel and leaving a
+running VM install also return to the path selection. A flow's last step
+offers Start over, which returns to the welcome screen, and Close, which
+closes the installer.
 
 ---
 
@@ -184,7 +186,7 @@ says how to find the device without it.
 │   1. Open http://192.168.1.50 in your browser               │
 │   2. Create your user account and start automating!         │
 │                                                             │
-│                                                  [ Done ]   │
+│   [ Start over ]                                [ Close ]   │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -447,7 +449,7 @@ failure does not erase knowledge of an already successful change.
 │   2. Visit http://homeassistant.local                       │
 │      (or check the VM console for the IP address)           │
 │                                                             │
-│                              [ Create Another ] [ Done ]    │
+│   [ Start over ]                                [ Close ]   │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```

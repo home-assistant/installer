@@ -25,15 +25,14 @@ export function isWaitStage(stage: string): stage is WaitStage {
 }
 
 /**
- * A wait's name in the thinking cloud. The progress's live region announces
- * only this, so each wait needs its own.
+ * A wait's short name. Waiting for an address and for Home Assistant to
+ * answer are one step to the user: Home Assistant OS starting.
  */
 export function waitStageTitle(stage: WaitStage): string {
   switch (stage) {
     case "waiting":
-      return localize("common.vm.connecting");
     case "ready":
-      return localize("common.vm.waiting");
+      return localize("common.vm.starting");
     case "updating":
       return localize("common.vm.updating");
   }
@@ -43,9 +42,8 @@ export function waitStageTitle(stage: WaitStage): string {
 export function waitStageDescription(stage: WaitStage): string {
   switch (stage) {
     case "waiting":
-      return localize("common.vm.waiting_for_network_connection");
     case "ready":
-      return localize("common.vm.waiting_for_home_assistant");
+      return localize("common.vm.starting_home_assistant_os");
     case "updating":
       return localize("common.vm.updating_description");
   }

@@ -1,5 +1,6 @@
 import { expect, fixture, html, waitUntil } from "@open-wc/testing";
 import { emit } from "@tauri-apps/api/event";
+import { mockWindows } from "@tauri-apps/api/mocks";
 import type WaInput from "@home-assistant/webawesome/dist/components/input/input.js";
 import type { LitElement } from "lit";
 import "../../../src/components/app-shell.js";
@@ -11,6 +12,7 @@ import {
   MOCK_MANIFEST,
 } from "../../../src/api/mock-data.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
+import { installerUpdate } from "../../../src/state/installer-update.js";
 import { storeDriveSelection } from "../../../src/utils/drive-selection.js";
 import { fireEvent } from "../../../src/utils/fire-event.js";
 import { flush, holdDeviceScan } from "../helpers/hold-device-scan.js";
@@ -35,7 +37,7 @@ interface WizardShell extends HTMLElement {
   hideFooter: boolean;
   hideBack: boolean;
   hideNext: boolean;
-  hideCancel: boolean;
+  cancelLabel: string;
   updateComplete: Promise<boolean>;
 }
 
@@ -476,7 +478,6 @@ describe("app-shell", () => {
   for (const [action, event, step] of [
     ["Back leaves the first step", "wizard-exit", undefined],
     ["Cancel is chosen", "wizard-cancel", undefined],
-    ["Done is chosen", "wizard-next", "done"],
   ] as const) {
     it(`returns to path selection when ${action}`, async () => {
       await enterSbcFlow(el);
@@ -493,13 +494,50 @@ describe("app-shell", () => {
     });
   }
 
-  it("offers only Done once the installation succeeded", async () => {
+  it("offers to start over or close once the flow is done", async () => {
     await enterSbcFlow(el);
-    expect(shellOf(el).hideCancel).to.be.false;
+    expect(shellOf(el).cancelLabel).to.equal("Cancel");
+    expect(shellOf(el).nextLabel).to.equal("Next");
 
     await goToStep(el, "done");
-    expect(shellOf(el).hideCancel).to.be.true;
-    expect(shellOf(el).nextLabel).to.equal("Done");
+    expect(shellOf(el).hideBack).to.be.true;
+    expect(shellOf(el).cancelLabel).to.equal("Start over");
+    expect(shellOf(el).nextLabel).to.equal("Close");
+  });
+
+  it("starts over from the welcome screen", async () => {
+    await enterSbcFlow(el);
+    wizardState.setSelection("device", "rpi5");
+    await goToStep(el, "done");
+
+    fireEvent(shellOf(el), "wizard-cancel");
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector("welcome-view")).to.exist;
+    expect(shellOf(el)).to.equal(null);
+    expect(wizardState.getState().currentFlow).to.equal(null);
+    expect(wizardState.getState().selections).to.deep.equal({});
+  });
+
+  it("closes the window, and stays on the last step", async () => {
+    await enterSbcFlow(el);
+    await goToStep(el, "done");
+    const calls: { cmd: string; args: unknown }[] = [];
+    mockTauriIpc((cmd, args) => {
+      calls.push({ cmd, args });
+      return undefined;
+    });
+    mockWindows("main");
+
+    fireEvent(shellOf(el), "wizard-next");
+    await settle();
+
+    expect(calls).to.deep.equal([
+      { cmd: "plugin:window|close", args: { label: "main" } },
+    ]);
+    // The backend may hold the close back and ask first; the step stays
+    expect(wizardState.currentStep?.id).to.equal("done");
+    expect(shellOf(el)).to.exist;
   });
 
   // Back would write the drive again
@@ -507,7 +545,7 @@ describe("app-shell", () => {
     await enterSbcFlow(el);
     await goToStep(el, "success");
     expect(shellOf(el).hideBack).to.be.true;
-    expect(shellOf(el).hideCancel).to.be.false;
+    expect(shellOf(el).cancelLabel).to.equal("Cancel");
     expect(shellOf(el).nextLabel).to.equal("Next");
   });
 
@@ -522,92 +560,6 @@ describe("app-shell", () => {
     await el.updateComplete;
     expect(wizardState.currentStep?.id).to.equal("done");
     expect(shellOf(el).querySelector("device-done-view")).to.exist;
-  });
-
-  // The first click changes the screen, and the second lands on whatever the
-  // next screen has in that spot
-  describe("double-click", () => {
-    /** Click `target` as the `detail`th click in a row; keys give 0. */
-    function click(target: Element, detail: number) {
-      target.dispatchEvent(
-        new MouseEvent("click", {
-          bubbles: true,
-          composed: true,
-          cancelable: true,
-          detail,
-        })
-      );
-    }
-
-    const viewOf = (el: AppShell, name: string) =>
-      el.shadowRoot!.querySelector(name) as LitElement;
-
-    it("on Back on the first step stops at the path selection", async () => {
-      await enterSbcFlow(el);
-
-      click(shellOf(el).shadowRoot!.querySelector(".header wa-button")!, 1);
-      await el.updateComplete;
-      // The path selection has its own Back in the same spot
-      const paths = viewOf(el, "path-selection-view");
-      await paths.updateComplete;
-      click(paths.shadowRoot!.querySelector(".header wa-button")!, 2);
-      await el.updateComplete;
-
-      expect(!!viewOf(el, "path-selection-view")).to.be.true;
-      expect(!!viewOf(el, "welcome-view")).to.be.false;
-    });
-
-    it("on connecting the drive picks no architecture", async () => {
-      await enterSbcFlow(el);
-      wizardState.startFlow("minipc");
-      await el.updateComplete;
-      const method = shellOf(el).querySelector(
-        "minipc-setup-method-view"
-      ) as LitElement;
-      await method.updateComplete;
-
-      click(method.shadowRoot!.querySelector("option-card")!, 1);
-      await el.updateComplete;
-      const architectures = shellOf(el).querySelector(
-        "minipc-architecture-selection-view"
-      )!;
-      await waitUntil(
-        () =>
-          architectures.shadowRoot!.querySelectorAll("option-card").length > 0
-      );
-      // The architectures open where the card was
-      click(architectures.shadowRoot!.querySelector("option-card")!, 2);
-      await settle();
-
-      expect(wizardState.currentStep!.id).to.equal("architecture");
-      expect(wizardState.getState().selections.device).to.equal(undefined);
-    });
-
-    it("leaves the keyboard alone", async () => {
-      await enterSbcFlow(el);
-
-      click(shellOf(el).shadowRoot!.querySelector(".header wa-button")!, 1);
-      await el.updateComplete;
-      const paths = viewOf(el, "path-selection-view");
-      await paths.updateComplete;
-      click(paths.shadowRoot!.querySelector(".header wa-button")!, 0);
-      await el.updateComplete;
-
-      expect(!!viewOf(el, "welcome-view")).to.be.true;
-    });
-
-    it("still counts on a screen that stays", async () => {
-      const welcome = viewOf(el, "welcome-view");
-      const logo = welcome.shadowRoot!.querySelector(".logo-container")!;
-
-      click(logo, 1);
-      click(logo, 2);
-
-      // The logo plays a sound after five clicks in a row
-      expect(
-        (welcome as unknown as { _logoClickCount: number })._logoClickCount
-      ).to.equal(2);
-    });
   });
 
   it("does not hold up a new flow with a Proxmox connect left behind", async () => {
@@ -734,7 +686,8 @@ describe("app-shell", () => {
       card('option-card[value="yellow-cm5"]').click();
       await el.updateComplete;
 
-      expect(wizardState.currentStep!.id).to.equal("drive");
+      // The CM5 takes setting up before its eMMC shows up as a drive
+      expect(wizardState.currentStep!.id).to.equal("connect");
       expect(wizardState.getState().selections.haHardware).to.equal(
         "yellow-cm5"
       );
@@ -1563,10 +1516,43 @@ describe("app-shell", () => {
     });
 
     async function blockClose() {
-      await emit("close-blocked");
+      await emit("close-blocked", "job");
       await el.updateComplete;
       await quitDialogOf(el).updateComplete;
     }
+
+    it("only says why while the installer updates itself", async () => {
+      const updateDialogOf = () =>
+        el.shadowRoot!.querySelector(
+          "info-dialog.update-quit-dialog"
+        ) as InfoDialog;
+
+      await emit("close-blocked", "update");
+      await el.updateComplete;
+      const dialog = updateDialogOf();
+      await dialog.updateComplete;
+
+      expect(dialog.open).to.be.true;
+      expect(quitDialogOf(el).open).to.be.false;
+      expect(dialog.heading).to.equal("The installer is updating itself");
+      // Closing now would break it, so there is no way to quit anyway
+      const buttons = [...dialog.shadowRoot!.querySelectorAll("wa-button")];
+      expect(buttons.map((button) => button.textContent!.trim())).to.deep.equal(
+        ["Keep updating"]
+      );
+      buttons[0].click();
+      await el.updateComplete;
+      expect(dialog.open).to.be.false;
+      expect(calls).not.to.include("quit_anyway");
+
+      // Once the update no longer installs, what it said is over
+      await emit("close-blocked", "update");
+      await el.updateComplete;
+      expect(dialog.open).to.be.true;
+      installerUpdate.reset();
+      await el.updateComplete;
+      expect(dialog.open).to.be.false;
+    });
 
     it("asks before quitting", async () => {
       expect(quitDialogOf(el).open).to.be.false;

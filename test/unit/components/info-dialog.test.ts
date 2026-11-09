@@ -363,13 +363,21 @@ describe("info-dialog", () => {
 
   it("has correct dialog structure", async () => {
     const el = await fixture<InfoDialog>(html`
-      <info-dialog open></info-dialog>
+      <info-dialog open message="Something happened"></info-dialog>
     `);
 
     expect(el.shadowRoot!.querySelector("wa-dialog")).to.exist;
     expect(el.shadowRoot!.querySelector(".dialog-title")).to.exist;
     expect(el.shadowRoot!.querySelector(".dialog-message")).to.exist;
     expect(el.shadowRoot!.querySelector("wa-button[variant='brand']")).to.exist;
+  });
+
+  it("renders no message paragraph without a message", async () => {
+    const el = await fixture<InfoDialog>(html`
+      <info-dialog open></info-dialog>
+    `);
+
+    expect(el.shadowRoot!.querySelector(".dialog-message")).to.not.exist;
   });
 
   it("stores heading property", async () => {

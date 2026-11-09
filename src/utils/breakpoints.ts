@@ -30,9 +30,3 @@ export const tooLowForWelcome = unsafeCSS("(max-height: 700px)");
  * enough for Casita beside the details, instead of above them
  */
 export const roomForMascotBeside = unsafeCSS("(min-width: 640px)");
-
-/**
- * For `@container`, on the install progress: too narrow for the thinking
- * cloud beside Casita
- */
-export const noRoomForCloudBeside = unsafeCSS("(max-width: 520px)");

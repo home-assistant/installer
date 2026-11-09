@@ -3,13 +3,43 @@ import { localize } from "../localization/localize.js";
 import { isValidUtmVmName } from "../state/vm-defaults.js";
 import type { WizardFlow, WizardSelections } from "../state/wizard-state.js";
 import { isValidWifi, selectedWifi } from "../utils/wifi.js";
-import { fireEvent } from "../utils/fire-event.js";
-import { isYellow } from "../state/ha-hardware.js";
+import { isYellow, writesInstaller } from "../state/ha-hardware.js";
 import type { HaHardwareDeviceSelectionView } from "../views/ha-hardware/device-selection-view.js";
 import type { LiveIsoLocationView } from "../views/live-usb/live-iso-location-view.js";
 import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-view.js";
 import type { ProxmoxConnectView } from "../views/proxmox/proxmox-connect-view.js";
 import { enabledImportStorageList } from "../views/proxmox/proxmox-success-view.js";
+
+import "../views/sbc/device-selection-view.js";
+import "../views/sbc/drive-selection-view.js";
+import "../views/sbc/confirmation-view.js";
+import "../views/sbc/wifi-view.js";
+import "../views/sbc/progress-view.js";
+import "../views/sbc/success-view.js";
+import "../views/ha-hardware/device-selection-view.js";
+import "../views/ha-hardware/module-selection-view.js";
+import "../views/ha-hardware/connect-view.js";
+import "../views/ha-hardware/success-view.js";
+import "../views/minipc/setup-method-view.js";
+import "../views/minipc/architecture-selection-view.js";
+import "../views/minipc/media-view.js";
+import "../views/live-usb/live-usb-gate.js";
+import "../views/live-usb/live-iso-location-view.js";
+import "../views/live-usb/live-usb-summary-view.js";
+import "../views/live-usb/live-usb-progress-view.js";
+import "../views/live-usb/live-usb-success-view.js";
+import "../views/device-setup-view.js";
+import "../views/device-done-view.js";
+import "../views/utm/utm-check-view.js";
+import "../views/utm/utm-configure-view.js";
+import "../views/utm/utm-confirm-view.js";
+import "../views/utm/utm-progress-view.js";
+import "../views/utm/utm-success-view.js";
+import "../views/proxmox/proxmox-connect-view.js";
+import "../views/proxmox/proxmox-configure-view.js";
+import "../views/proxmox/proxmox-confirm-view.js";
+import "../views/proxmox/proxmox-progress-view.js";
+import "../views/proxmox/proxmox-success-view.js";
 
 /** What the shell can ask of the step it shows; a step offers what it has. */
 export interface WizardStepView extends HTMLElement {
@@ -73,7 +103,7 @@ export interface WizardStepDefinition {
   /** A later step Next goes to instead of the following one, if any */
   skipTo?(selections: WizardSelections): string | undefined;
   /** What Next says, if not "Next" */
-  nextLabel?(): string;
+  nextLabel?(selections: WizardSelections): string;
   /**
    * Picking an option moves on by itself, so there is no Next. The view
    * sends `wizard-next` once it saved the pick, which leaves the step the
@@ -89,36 +119,6 @@ export interface WizardStepDefinition {
   noBack?: boolean;
   /** The step's view runs an install, which the shell can stop and retry */
   install?: InstallStep;
-}
-
-/**
- * Go on from the step `view` shows, as Next does, once a card is picked.
- * Whatever Next waits for or asks first still applies.
- */
-export function goToNextStep(view: HTMLElement) {
-  fireEvent(view, "wizard-next");
-}
-
-/**
- * Enter in a step's text field goes on as Next does, as it would submit a
- * form. Like Next, it does nothing while Next can't be pressed, and waits
- * for whatever Next waits for. Listen on the `wa-input`s only: selects,
- * sliders and switches have their own use for Enter. Returns whether Enter
- * asked to go on.
- */
-export function nextOnEnter(e: KeyboardEvent): boolean {
-  // wa-input's own buttons (the password toggle) send their keydown through
-  // the host too, and Enter there should reveal the password, not go on.
-  // Enter that confirms an input method composition isn't a submit either.
-  if (
-    e.key !== "Enter" ||
-    !(e.composedPath()[0] instanceof HTMLInputElement) ||
-    e.isComposing
-  ) {
-    return false;
-  }
-  goToNextStep(e.currentTarget as HTMLElement);
-  return true;
 }
 
 const deviceChosen = (selections: WizardSelections) =>
@@ -140,7 +140,10 @@ const wifi: WizardStepDefinition = {
 
 const confirmation: WizardStepDefinition = {
   render: () => html`<confirmation-view></confirmation-view>`,
-  nextLabel: () => localize("common.install"),
+  nextLabel: (selections) =>
+    writesInstaller(selections.deviceConfig?.board)
+      ? localize("common.create")
+      : localize("common.install"),
   erasesDrive: () => true,
 };
 
@@ -222,6 +225,9 @@ export const WIZARD_STEPS: Record<
       ready: (selections) =>
         isYellow(selections.haHardware) && !!selections.deviceConfig,
       pickToContinue: true,
+    },
+    connect: {
+      render: () => html`<ha-hardware-connect-view></ha-hardware-connect-view>`,
     },
     drive,
     wifi,

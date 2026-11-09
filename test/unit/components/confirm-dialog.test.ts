@@ -108,6 +108,18 @@ describe("confirm-dialog", () => {
     expect(confirmButton!.textContent!.trim()).to.equal("Erase and install");
   });
 
+  it("creates rather than installs when the drive gets an installer", async () => {
+    const el = await fixture<ConfirmDialog>(html`
+      <confirm-dialog open .installer=${true}></confirm-dialog>
+    `);
+
+    const confirmButton = el.shadowRoot!.querySelector(
+      "wa-button[variant='danger']"
+    );
+    expect(confirmButton!.textContent!.trim()).to.equal("Erase and create");
+    expect(el.shadowRoot!.textContent).to.contain("Erase drive and create?");
+  });
+
   it("dispatches dialog-secondary event when cancel button is clicked", async () => {
     const el = await fixture<ConfirmDialog>(html`
       <confirm-dialog open></confirm-dialog>
