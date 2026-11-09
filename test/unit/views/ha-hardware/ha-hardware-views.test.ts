@@ -142,7 +142,7 @@ describe("Home Assistant hardware views", () => {
         // Before anything is decided, so a backup can still be made
         expect(backup.textContent).to.contain("How to back up your data");
         expect(backup.href).to.equal(
-          "https://www.home-assistant.io/common-tasks/general/#backups"
+          "https://www.home-assistant.io/common-tasks/general/backups/"
         );
         expect(dialog.primaryLabel).to.equal(action);
         expect(dialog.emphasis).to.equal(emphasis);
