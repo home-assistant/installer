@@ -487,7 +487,7 @@
   "views.ha_hardware.device_selection_view.green_ready": "Your Green is ready to use",
   "views.ha_hardware.device_selection_view.blue_ready": "Your Blue is ready to use",
   "views.ha_hardware.device_selection_view.just_got_it": "Just got it?",
-  "views.ha_hardware.device_selection_view.just_got_it_steps": "Plug in power and Ethernet, then go to {host}.",
+  "views.ha_hardware.device_selection_view.just_got_it_steps": "Connect power and Ethernet, then open {host} in your browser.",
   "views.ha_hardware.device_selection_view.starting_over": "Starting over?",
   "views.ha_hardware.device_selection_view.starting_over_steps": "Reinstall to reset or recover it. This erases all its data.",
   "views.ha_hardware.device_selection_view.backup_guide": "How to back up your data",
