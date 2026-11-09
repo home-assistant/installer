@@ -51,9 +51,9 @@ pub enum Error {
     #[error("{0}")]
     RateLimited(crate::Message),
 
-    /// The version service or GitHub's release information couldn't be
-    /// reached or didn't answer usefully. Installer-authored guidance that
-    /// names the service, without request URLs or response bodies.
+    /// A service the installer needs, like the version service or GitHub,
+    /// couldn't be reached or didn't answer usefully. Installer-authored
+    /// guidance that names it, without request URLs or response bodies.
     #[error("{0}")]
     ServiceUnavailable(crate::Message),
 
@@ -99,6 +99,16 @@ pub enum Error {
     #[error("Download failed: {0}")]
     DownloadFailed(String),
 
+    /// GitHub described another release than the one asked for. Names the
+    /// tag or asset for the log; the user sees generic text.
+    #[error("GitHub returned unexpected release information: {0}")]
+    UnexpectedRelease(String),
+
+    /// The image server answered the download with this HTTP status. The URL
+    /// names the version, board and file for the log; the user sees the status.
+    #[error("The image server answered HTTP {status} for {url}")]
+    ImageUnavailable { status: u16, url: String },
+
     /// This computer has no room for an image it downloads or unpacks.
     #[error("Not enough free space: {needed} bytes needed, {free} bytes free")]
     NotEnoughSpace { needed: u64, free: u64 },
@@ -122,10 +132,10 @@ pub enum Error {
     #[error("hai-live must be the Linux build (x86_64-unknown-linux-musl), not a Windows or macOS program")]
     LiveUsbInvalidHaiLive,
 
-    /// The latest HAOS release can't go on a live USB stick: no generic x86-64 image,
-    /// no usable checksum, or an unexpected version.
-    #[error("Home Assistant OS release can't be used for the live USB stick: {0}")]
-    LiveUsbReleaseUnusable(String),
+    /// The latest HAOS release can't be installed: no release or image for the
+    /// board, no usable checksum, or an unexpected version.
+    #[error("Home Assistant OS release can't be used: {0}")]
+    ReleaseUnusable(String),
 
     /// Building the live USB disk image or ISO failed. May name local paths.
     #[error("Building the live USB media failed: {0}")]
