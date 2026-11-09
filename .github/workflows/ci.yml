@@ -592,11 +592,7 @@ jobs:
           # The CLI exits 0 when Lokalise rejects the file
           jq -e '.process.status == "finished"' "$RUNNER_TEMP/upload.json" > /dev/null
 
-      # Each catalog is named after a tag the app looks up (initialize.ts):
-      # zh_CN and zh_TW after their script, a language's only regional
-      # variant, like pt_BR, after the language so every region finds it, and
-      # the rest with - for _. Only an async export works past 10,000
-      # translations.
+      # Only an async export works past 10,000 translations
       - name: Download translations
         env:
           LOKALISE_TOKEN: ${{ secrets.LOKALISE_TOKEN }}
@@ -607,31 +603,15 @@ jobs:
             file download --async --format json --original-filenames=false \
             --bundle-structure "%LANG_ISO%.json" --filter-data nonfuzzy \
             --export-empty-as skip --replace-breaks=false --unzip-to /out
-          shopt -s nullglob
-          for file in "$RUNNER_TEMP"/lokalise/*.json; do
-            code=$(basename "$file" .json)
-            language=${code%%_*}
-            variants=("$RUNNER_TEMP/lokalise/$language"_*.json)
-            if [[ $code == en ]]; then
-              continue
-            elif [[ $code == zh_CN ]]; then
-              name=zh-Hans
-            elif [[ $code == zh_TW ]]; then
-              name=zh-Hant
-            elif [[ $code =~ ^[a-z]+_([A-Z]{2}|[0-9]{3})$ && $language != zh &&
-              ${#variants[@]} -eq 1 && ! -e $RUNNER_TEMP/lokalise/$language.json ]]; then
-              name=$language
-            else
-              name=${code//_/-}
-            fi
-            cp "$file" "src/localization/$name.json"
-          done
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
           cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
+
+      - name: Name the catalogs
+        run: node scripts/import-translations.mjs "$RUNNER_TEMP/lokalise"
 
       - name: Install dependencies
         run: npm ci
