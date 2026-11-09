@@ -117,10 +117,11 @@ fn add_network(partition: &mut [u8], keyfile: &[u8]) -> std::io::Result<()> {
 }
 
 /// A NetworkManager keyfile that joins `wifi` with DHCP and IPv6 autoconfiguration.
+/// The `[user]` section marks the profile for the Supervisor to take over;
+/// NetworkManager ignores it.
 fn keyfile(wifi: &WifiConfig) -> String {
     // NetworkManager reads a list of byte values as the raw SSID, whatever
-    // the characters in it. It ignores the user data, which marks the
-    // profile as meant for the Supervisor to take over.
+    // the characters in it
     let ssid: String = wifi.ssid.bytes().map(|byte| format!("{byte};")).collect();
     format!(
         "[connection]\nid={id}\ntype=wifi\n\n\
