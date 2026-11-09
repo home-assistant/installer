@@ -92,7 +92,7 @@
   "components.diagnostics_actions.could_not_copy_diagnostics": "Could not copy diagnostics. Select and copy the text below.",
   "components.diagnostics_actions.logs_folder_opened": "Logs folder opened",
   "components.diagnostics_actions.could_not_open_the_logs_folder": "Could not open the logs folder.",
-  "components.diagnostics_actions.github_issues_are_public": "GitHub issues are public. Diagnostics omit server addresses, usernames, credentials, paths, and raw error details. Review any files or screenshots before attaching them.",
+  "components.diagnostics_actions.github_issues_are_public": "GitHub issues are public. Diagnostics include error details, with user names, hosts, addresses and credentials removed where recognized. Review the diagnostics, files and screenshots before posting.",
   "components.diagnostics_actions.diagnostics": "Diagnostics",
   "components.diagnostics_actions.the_report_contains_a_shortened_log": "The report contains a shortened log. Copy diagnostics for the full tail.",
   "components.diagnostics_actions.copy_diagnostics": "Copy diagnostics",
