@@ -102,17 +102,17 @@ describe("Home Assistant hardware views", () => {
       [
         "green",
         "Home Assistant Green",
-        "Your Home Assistant Green is ready to use",
+        "Your Green is ready to use",
         "Reinstall",
-        "Only reinstall to reset or recover it",
+        "Reinstall to reset or recover it",
         "secondary",
       ],
       [
         "blue",
         "Home Assistant Blue",
-        "Your Home Assistant Blue is ready to use",
+        "Your Blue is ready to use",
         "Reinstall",
-        "Only reinstall to reset or recover it",
+        "Reinstall to reset or recover it",
         "secondary",
       ],
       [
@@ -137,8 +137,13 @@ describe("Home Assistant hardware views", () => {
         await el.updateComplete;
         expect(dialog.open).to.equal(true);
         expect(dialog.heading).to.equal(heading);
-        expect(dialog.message).to.contain(
-          "then open homeassistant.local in a browser."
+        const [host, backup] = dialog.querySelectorAll("a");
+        expect(host.textContent).to.contain("homeassistant.local");
+        expect(host.href).to.equal("http://homeassistant.local/");
+        // Before anything is decided, so a backup can still be made
+        expect(backup.textContent).to.contain("How to back up your data");
+        expect(backup.href).to.equal(
+          "https://www.home-assistant.io/common-tasks/general/backups/"
         );
         expect(dialog.primaryLabel).to.equal(action);
         expect(dialog.emphasis).to.equal(emphasis);
