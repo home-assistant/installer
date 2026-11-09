@@ -315,7 +315,10 @@ where
     if let Some(wifi) = request.wifi.clone() {
         image = tokio::task::spawn_blocking(move || hai_core::haos_config::with_wifi(image, &wifi))
             .await
-            .map_err(|e| hai_core::Error::Io(std::io::Error::other(e)))??;
+            // A panic's message may hold the Wi-Fi password, and the log keeps causes
+            .map_err(|_| {
+                hai_core::Error::Io(std::io::Error::other("Wi-Fi setup stopped unexpectedly"))
+            })??;
     }
 
     // Check image size vs device size
