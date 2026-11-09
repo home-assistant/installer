@@ -162,9 +162,9 @@ fn scrub_line(text: &str) -> String {
         Regex::new(r"(?i)(^|[^\w:.])([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,8}(?:\.\d{1,3}){0,3})")
             .unwrap()
     });
-    // Before the URL and Basic/Bearer passes, which could take a quoted value's
-    // closing quote. The quotes stay, so the credential rule still sees where
-    // the value ends, and the placeholder holds nothing that ends a URL.
+    // Before the URL pass, which could take a quoted value's closing quote.
+    // The quotes stay, so the credential rule still sees where the value
+    // ends, and the placeholder holds nothing that ends a URL.
     static QUOTED_CREDENTIAL: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*"?\s*[=:]\s*)(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')"#).unwrap()
     });
@@ -182,9 +182,7 @@ fn scrub_line(text: &str) -> String {
             (r#"(?i)(/home/|/users/|/(?:run/)?media/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|[^\s\\/:"',;()]+)"#, "${1}<user>${2}"),
             // AppleScript's paths, like `Macintosh HD:Users:jane:Library`
             (r#"(?i)(:users:)[^:"]+"#, "${1}<user>"),
-            // Stops at a quote or backslash, so the next rule still sees where a quoted value ends
-            (r#"(?i)\b(basic|bearer)\s+[^\s"\\]+"#, "${1} <redacted>"),
-            (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)"#, "${1}=<redacted>"),
+            (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|(?:(?:basic|bearer)\s+)?\S+)"#, "${1}=<redacted>"),
             (r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<id>"),
             (r"[\w.+-]+@[\w.-]+", "<user>"),
             (r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "<ip>"),
@@ -723,11 +721,15 @@ mod tests {
             ),
             (
                 "ticket=PVE:root@pam:ABC CSRFPreventionToken: s3cret Authorization: Bearer abc",
-                "ticket=<redacted> CSRFPreventionToken=<redacted> Authorization=<redacted> <redacted>",
+                "ticket=<redacted> CSRFPreventionToken=<redacted> Authorization=<redacted>",
             ),
             (
                 "Authorization: Basic dXNlcjpwYXNz",
-                "Authorization=<redacted> <redacted>",
+                "Authorization=<redacted>",
+            ),
+            (
+                "Basic authentication failed; basic setup incomplete",
+                "Basic authentication failed; basic setup incomplete",
             ),
             (
                 "from 192.168.1.20 and fe80::1ff:fe23:4567:890a as root@pam",
