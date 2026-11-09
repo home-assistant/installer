@@ -175,11 +175,12 @@ fn scrub_line(text: &str) -> String {
     });
     static RULES: LazyLock<Vec<(Regex, &str)>> = LazyLock::new(|| {
         [
-            // Windows user folders and macOS volume labels. A name may hold spaces
-            // and parentheses, so it runs to the next separator, or else to a
-            // quote, comma, colon or `(os error N)`: more text rather than part
-            // of a name.
-            (r#"(?i)([a-z]:[\\/]+users[\\/]+|/volumes/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|(?:\((?:[^o\\/:"()]|o[^s\\/:"()])[^\\/:"()]*\)|[^\s\\/:",;()])+(?:\s+(?:\((?:[^o\\/:"()]|o[^s\\/:"()])[^\\/:"()]*\)|[^\s\\/:",;()])+)*)"#, "${1}<user>${2}"),
+            // Windows user folders and volume labels, on macOS and in a Linux
+            // user's media folder, whose user the next rule takes. A name may
+            // hold spaces and parentheses, so it runs to the next separator, or
+            // else to a quote, comma, colon or `(os error N)`: more text rather
+            // than part of a name.
+            (r#"(?i)([a-z]:[\\/]+users[\\/]+|/volumes/|/(?:run/)?media/[^\s\\/:"]+/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|(?:\((?:[^o\\/:"()]|o[^s\\/:"()])[^\\/:"()]*\)|[^\s\\/:",;()])+(?:\s+(?:\((?:[^o\\/:"()]|o[^s\\/:"()])[^\\/:"()]*\)|[^\s\\/:",;()])+)*)"#, "${1}<user>${2}"),
             // Unix user folders, also other users' and drives mounted per user.
             // A name runs to the next separator, or else to a space, as only a
             // separator says it holds one.
@@ -695,7 +696,11 @@ mod tests {
             ),
             (
                 "Permission denied: /home/jane/.cache and /run/media/jane/STICK",
-                "Permission denied: /home/<user>/.cache and /run/media/<user>/STICK",
+                "Permission denied: /home/<user>/.cache and /run/media/<user>/<user>",
+            ),
+            (
+                "Cannot unmount /media/jane/Jane's Backup/haos.img and /run/media/jane/Jane's Backup: busy",
+                "Cannot unmount /media/<user>/<user>/haos.img and /run/media/<user>/<user>: busy",
             ),
             (
                 "Saved to /Users/Jane Doe/Downloads/haos.iso and /home/Sean O'Brien/x",
