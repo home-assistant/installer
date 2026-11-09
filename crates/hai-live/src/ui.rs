@@ -335,7 +335,8 @@ fn content(screen: &Screen, lang: Language) -> Card {
         Screen::Confirm { disk, os, erase } => Card {
             title: lang.text("live.ui.confirm.title"),
             lines: vec![
-                Line::from(Span::from(disk.clone()).bold()),
+                // The Linux console takes bold from the color: only a bright one keeps it
+                Line::from(Span::from(disk.clone()).fg(Color::White).bold()),
                 Line::default(),
                 Line::from(lang.text("live.ui.confirm.warning"))
                     .fg(WARNING)
