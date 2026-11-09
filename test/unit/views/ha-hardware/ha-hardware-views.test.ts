@@ -723,7 +723,7 @@ describe("Home Assistant hardware views", () => {
         ).to.equal(installer);
         if (installer) {
           expect(first.querySelector("a")!.href).to.equal(
-            "https://www.home-assistant.io/common-tasks/general/#backups"
+            "https://www.home-assistant.io/common-tasks/general/backups/"
           );
         }
       });

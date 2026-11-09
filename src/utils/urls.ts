@@ -10,7 +10,7 @@ export const INSTALLATION_GUIDE_URL =
 export const INSTALLATION_TYPES_URL =
   "https://www.home-assistant.io/installation/#about-installation-types";
 export const BACKUP_GUIDE_URL =
-  "https://www.home-assistant.io/common-tasks/general/#backups";
+  "https://www.home-assistant.io/common-tasks/general/backups/";
 export const RASPBERRY_PI_GUIDE_URL =
   "https://www.home-assistant.io/installation/raspberrypi/";
 export const ODROID_GUIDE_URL =
