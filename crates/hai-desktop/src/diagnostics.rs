@@ -62,14 +62,14 @@ pub fn warning(code: &'static str) {
 }
 
 /// Record why `failure` happened, if it says. A poll can fail the same way
-/// for minutes, so a line still in the tail isn't repeated.
+/// for minutes, so the line logged last isn't repeated.
 pub fn failed(failure: &impl Categorized) {
     let Some(cause) = failure.cause() else {
         return;
     };
     let line = format!("rust error: {cause}");
     let logged = TAIL.lock().is_ok_and(|tail| {
-        tail.iter().any(|logged| {
+        tail.back().is_some_and(|logged| {
             logged
                 .split_once(' ')
                 .is_some_and(|(_, logged)| logged == line)
@@ -871,23 +871,40 @@ mod tests {
     #[test]
     // Other tests clear the shared tail
     #[serial_test::serial]
-    fn a_failing_query_is_logged_once_while_in_the_tail() {
+    fn a_failing_query_is_logged_once_in_a_row() {
         use crate::command_error::CommandError;
         use hai_core::Error;
 
+        let cause = "rust error: Download failed: HTTP 503 while polling";
+        let failed = || Error::DownloadFailed("HTTP 503 while polling".into());
+        let logged = || {
+            test_log_tail()
+                .iter()
+                .filter(|line| line.ends_with(cause))
+                .count()
+        };
         clear_test_log_tail();
         for _ in 0..2 {
-            CommandError::from_query(Error::DownloadFailed("HTTP 503 while polling".into()));
+            CommandError::from_query(failed());
         }
         // A cancel is the user's choice, not a failure to log
         CommandError::from_query(Error::Cancelled);
-        let tail = test_log_tail().join("\n");
-        assert_eq!(
-            tail.matches("rust error: Download failed: HTTP 503")
-                .count(),
-            1
+        // Other tests may log a line in between, after which it is logged again
+        let tail = test_log_tail();
+        assert!(logged() > 0, "{tail:?}");
+        assert!(
+            !tail
+                .windows(2)
+                .any(|pair| pair.iter().all(|line| line.ends_with(cause))),
+            "{tail:?}"
         );
-        assert!(!tail.contains("rust error: Operation cancelled"), "{tail}");
+        assert!(!tail.join("\n").contains("rust error: Operation cancelled"));
+        // A retry has its cause next to its own failure
+        let before = logged();
+        for _ in 0..2 {
+            let _ = Operation::new("retry-test").finish::<(), _>(Err(CommandError::from(failed())));
+        }
+        assert_eq!(logged(), before + 2);
     }
 
     #[test]
