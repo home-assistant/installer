@@ -175,7 +175,7 @@ test.describe("SBC Success", () => {
     await expect(page.locator("success-view")).toBeVisible({ timeout: 20000 });
   });
 
-  test("names the selected device, and Done returns to path selection", async ({
+  test("names the selected device, and Start over returns to the welcome screen", async ({
     page,
   }) => {
     const successView = page.locator("success-view");
@@ -191,9 +191,10 @@ test.describe("SBC Success", () => {
     await expect(nextButton).toHaveText("Skip");
     await nextButton.click();
     await expect(page.locator("device-done-view")).toBeVisible();
-    await expect(nextButton).toHaveText("Done");
-    await nextButton.click();
+    await expect(nextButton).toHaveText("Close");
+    await page.locator("wizard-shell .footer-left wa-button").click();
 
-    await expect(page.locator("path-selection-view")).toBeVisible();
+    // The button went with the flow; the welcome screen's heading has focus
+    await expect(page.locator("welcome-view h1")).toBeFocused();
   });
 });

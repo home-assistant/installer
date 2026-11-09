@@ -14,6 +14,16 @@ describe("installer errors", () => {
     expect(result.retryable).to.be.false;
   });
 
+  it("asks to wait for the restart when a job is refused during an update", () => {
+    const result = installerError(
+      ipcError("installer_updating", "English from Rust", true)
+    );
+    expect(result.message).to.equal(
+      "The installer is updating itself. Wait for it to restart, then try again."
+    );
+    expect(result.retryable).to.be.true;
+  });
+
   it("keeps internals of a configuration error out of the message", () => {
     const result = installerError(
       ipcError("invalid_config", "Cannot parse board from: haos_x.img.xz")
@@ -24,6 +34,16 @@ describe("installer errors", () => {
     expect(
       installerError(ipcError("proxmox_session_expired", "raw")).message
     ).to.contain("Reconnect to Proxmox");
+  });
+
+  it("says when the release, not the installer, is the problem", () => {
+    const result = installerError(
+      ipcError("release_unavailable", "No raw image in release", false)
+    );
+    expect(result.message).to.equal(
+      "The latest Home Assistant OS release can't be used for this installation."
+    );
+    expect(result.retryable).to.be.false;
   });
 
   it("formats structured capacity details and rejects unsafe retry", () => {

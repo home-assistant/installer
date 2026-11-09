@@ -18,26 +18,15 @@ const SIGNER_ISSUER: &str = "https://token.actions.githubusercontent.com";
 /// GitHub's ID of home-assistant/operating-system, which survives a rename.
 const HAOS_REPOSITORY_ID: &str = "115992009";
 
-/// Releases from before `SHA256SUMS` was signed, in its format. The digests are
+/// Releases without signed `SHA256SUMS`, in its format. The digests are
 /// GitHub's asset digests. Remove a release once stable.json no longer lists it.
 const UNSIGNED_RELEASES: &[(&str, &str)] = &[(
-    "18.3",
+    "18.5",
     "\
-93440a136e1e6b660e0b01dd27d3ecc858b4deacc68f7effcf1a32f34e266b9b  haos_generic-aarch64-18.3.img.xz\n\
-f54b659f12c665038134bdf9d4235903048056257368f82369dc230131f5a675  haos_generic-aarch64-18.3.qcow2.xz\n\
-121fcf49d373e6cfa68ce2176d740980b8856de263e876b9f6dfb299cbd51ef8  haos_generic-x86-64-18.3.img.xz\n\
-92fdf276bb94c67794ef96729f5fe6ee04b617598ef1b3a5b8cca52b0aee4b0d  haos_green-18.3.img.xz\n\
-c3e5581b5cd7a54a9a51c7fc070adf895fc2c76ecf36249aa09a377488303f8a  haos_khadas-vim3-18.3.img.xz\n\
-c951c21281c8bfb26a96ec0035e97f2cf40b2ac9dd3b18159122ca725938b6d3  haos_odroid-c2-18.3.img.xz\n\
-d9005b8735106d0b3a61a2f8c3368b29b5986ad18f3424667763e8dbeaf568e8  haos_odroid-c4-18.3.img.xz\n\
-0b35df3b53b687dee31918533138544b389d64e46d767d1b225ead6e4fc5b4ce  haos_odroid-m1-18.3.img.xz\n\
-c6682a5cc54fd917f8400428c8f12002c024aaade1c2ef93698de3e40cfc79c5  haos_odroid-m1s-18.3.img.xz\n\
-b762f8a50e9cad82f3a65649235ae6ca8d894ebdbfdc5535bd2b8f1618a17f18  haos_odroid-n2-18.3.img.xz\n\
-fae6a728768cc10aff60d4820bfcd40d64cd77fab82c8bd92af13b3d9d414090  haos_ova-18.3.qcow2.xz\n\
-46f95b9fc6acac6a8ec414291769ee2c5724850e2bc34f8139e856e8ea5c75ee  haos_rpi3-64-18.3.img.xz\n\
-611acc2d7437332dde18c2175134c5a9f859c7647ef6334a5b93b7278e67b185  haos_rpi4-64-18.3.img.xz\n\
-e148a92595059d71c8bbf4c80d66fcb9166b647e10024641936316402863c60f  haos_rpi5-64-18.3.img.xz\n\
-c5e599f7c23164cd9115ed7c233b89265d3a6ca680c1caaadde793fe4848b176  haos_yellow-18.3.img.xz\n\
+7f5871f0d5c8cd057521130d8f472782b24ebc628b530595146dcbb34addaf59  haos_rpi3-64-18.5.img.xz\n\
+779431180f4dbe4d2c33801e6bfe1d6fbff9ff4434f56a15282d0f23d45bdef8  haos_rpi4-64-18.5.img.xz\n\
+79004a2fda343f7cb9e6c510bfc56acac25f684d2ad20b7b116ef17c4c4b0136  haos_rpi5-64-18.5.img.xz\n\
+1f547b8fe7eef46d1eb6f22d528ebc58dba3c53b5f75a17cee9547feb9894e7e  haos_yellow-18.5.img.xz\n\
 ",
 )];
 
@@ -238,14 +227,14 @@ mod tests {
 
     #[tokio::test]
     async fn a_pinned_release_needs_no_request() {
-        let sums = verified(&client(), "http://127.0.0.1:9", "18.3")
+        let sums = verified(&client(), "http://127.0.0.1:9", "18.5")
             .await
             .unwrap();
 
-        assert_eq!(sums.len(), 15);
+        assert_eq!(sums.len(), 4);
         assert_eq!(
-            sums["haos_ova-18.3.qcow2.xz"],
-            "sha256:fae6a728768cc10aff60d4820bfcd40d64cd77fab82c8bd92af13b3d9d414090"
+            sums["haos_rpi5-64-18.5.img.xz"],
+            "sha256:79004a2fda343f7cb9e6c510bfc56acac25f684d2ad20b7b116ef17c4c4b0136"
         );
     }
 

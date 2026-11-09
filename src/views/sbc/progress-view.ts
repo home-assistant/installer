@@ -131,9 +131,8 @@ export class ProgressView extends InstallProgressView {
           label: this._getStageDescription(id),
         }))}
         .stage=${stage}
-        .stageTitle=${this._stopping
-          ? localize("common.install.stopping")
-          : this._getStageTitle(stage)}
+        .stageTitle=${this._getStageTitle(stage)}
+        .stopping=${this._stopping}
         .description=${this._getStageDescription(stage)}
         .progress=${this._progress?.progress || 0}
         .bytesProcessed=${this._progress?.bytes_processed || 0}
@@ -176,9 +175,9 @@ export class ProgressView extends InstallProgressView {
     switch (stage) {
       case "downloading":
         return installer
-          ? localize("views.sbc.progress_view.fetching_the_installer_image")
+          ? localize("views.sbc.progress_view.downloading_the_installer_image")
           : localize(
-              "views.sbc.progress_view.fetching_the_home_assistant_image"
+              "views.sbc.progress_view.downloading_the_home_assistant_image"
             );
       case "extracting":
         return localize("common.install.extracting_the_image");

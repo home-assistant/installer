@@ -57,11 +57,13 @@ describe("wifi-view", () => {
     const root = el.shadowRoot!;
     const toggle = root.querySelector<HTMLInputElement>("wa-switch")!;
     expect(root.querySelector("wa-input")).to.not.exist;
-    expect(root.textContent).to.contain("hidden networks aren't supported");
+    // Which networks work only matters once Wi-Fi is wanted
+    expect(root.textContent).not.to.contain("hidden networks aren't supported");
 
     toggle.checked = true;
     toggle.dispatchEvent(new Event("change"));
     await settle();
+    expect(root.textContent).to.contain("hidden networks aren't supported");
     const [ssid, password] = root.querySelectorAll<WaInput>("wa-input");
     await type(ssid, "Home");
     await type(password, "12345678");
@@ -79,11 +81,9 @@ describe("wifi-view", () => {
     expect(root.querySelector("wa-input")).to.not.exist;
   });
 
-  it("says which characters a password can have before any are typed", async () => {
+  it("says nothing about a password before any is typed", async () => {
     const { ssid, password } = await mountOn();
-    expect(hintOf(password)).to.equal(
-      "8 to 63 characters: letters A to Z without accents, numbers, spaces and symbols such as ! or #"
-    );
+    expect(hintOf(password)).to.equal("");
     // Untouched fields aren't wrong yet, though Next is off
     expect(hintOf(ssid)).to.equal("");
     expect(invalid(ssid)).to.be.false;
@@ -135,7 +135,7 @@ describe("wifi-view", () => {
   it("says a password is too short once it's left, not while typing", async () => {
     const { password } = await mountOn();
     await type(password, "1234567");
-    expect(hintOf(password)).to.contain("8 to 63 characters");
+    expect(hintOf(password)).to.equal("");
     expect(invalid(password)).to.be.false;
 
     await leave(password);
@@ -143,7 +143,7 @@ describe("wifi-view", () => {
     expect(invalid(password)).to.be.true;
 
     await type(password, "12345678");
-    expect(hintOf(password)).to.contain("8 to 63 characters");
+    expect(hintOf(password)).to.equal("");
     expect(invalid(password)).to.be.false;
   });
 
@@ -154,7 +154,7 @@ describe("wifi-view", () => {
     expect(invalid(password)).to.be.true;
 
     await type(password, "0123456789abcdef".repeat(4));
-    expect(hintOf(password)).to.contain("8 to 63 characters");
+    expect(hintOf(password)).to.equal("");
     expect(invalid(password)).to.be.false;
   });
 
@@ -185,7 +185,7 @@ describe("wifi-view", () => {
     await settle();
     const fresh = el.shadowRoot!.querySelectorAll<WaInput>("wa-input");
     expect(hintOf(fresh[0])).to.equal("");
-    expect(hintOf(fresh[1])).to.contain("8 to 63 characters");
+    expect(hintOf(fresh[1])).to.equal("");
     expect(invalid(fresh[0])).to.be.false;
     expect(invalid(fresh[1])).to.be.false;
   });

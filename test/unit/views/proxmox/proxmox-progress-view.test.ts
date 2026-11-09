@@ -314,7 +314,7 @@ describe("proxmox-progress-view", () => {
     expect(wizardState.getState().selections.proxmoxVmResult).to.exist;
     await el.updateComplete;
     expect(progressOf(el).querySelector("h2")!.textContent).to.equal(
-      "Waiting for Home Assistant"
+      "Starting Home Assistant OS"
     );
 
     haReady.resolve(true);
@@ -726,7 +726,7 @@ describe("proxmox-progress-view", () => {
     const el = mount();
     await el.updateComplete;
     const layout = el.shadowRoot!.querySelector("install-progress")!;
-    await waitUntil(() => layout.stage === "waiting");
+    await waitUntil(() => layout.stage === "ready");
     await layout.updateComplete;
 
     expect(layout.indeterminate).to.be.true;
@@ -793,8 +793,8 @@ describe("proxmox-progress-view", () => {
       };
     }
 
-    function stageTitle(el: ProxmoxProgressView): string {
-      return el.shadowRoot!.querySelector("install-progress")!.stageTitle;
+    function stopping(el: ProxmoxProgressView): boolean {
+      return el.shadowRoot!.querySelector("install-progress")!.stopping;
     }
 
     it("stops an install before the VM exists, and says nothing was created", async () => {
@@ -814,12 +814,11 @@ describe("proxmox-progress-view", () => {
 
       expect(install.stops).to.deep.equal([install.attempt()]);
       expect(el.stoppable, "a second stop has nothing to add").to.be.false;
-      expect(stageTitle(el)).to.equal("Stopping");
-      // The thinking cloud adds the ellipsis to the stage title
+      expect(stopping(el)).to.be.true;
       await el.shadowRoot!.querySelector("install-progress")!.updateComplete;
-      expect(
-        progressOf(el).querySelector(".cloud-text")!.textContent!.trim()
-      ).to.equal("Stopping...");
+      expect(progressOf(el).querySelector("h2")!.textContent!.trim()).to.equal(
+        "Stopping..."
+      );
 
       const failed = oneEvent(el, "install-error");
       install.createVm.reject(CANCELLED);
@@ -855,7 +854,7 @@ describe("proxmox-progress-view", () => {
       await completed;
 
       expect(showsError(el)).to.be.false;
-      expect(stageTitle(el)).to.not.equal("Stopping");
+      expect(stopping(el)).to.be.false;
     });
 
     it("offers the stop again when the request fails", async () => {
@@ -868,7 +867,7 @@ describe("proxmox-progress-view", () => {
 
       expect(install.stops).to.have.length(1);
       expect(el.stoppable).to.be.true;
-      expect(stageTitle(el)).to.not.equal("Stopping");
+      expect(stopping(el)).to.be.false;
     });
   });
 

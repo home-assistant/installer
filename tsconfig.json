@@ -19,7 +19,25 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true
+    "noUncheckedIndexedAccess": true,
+
+    /* Lit templates, with the Home Assistant frontend's rules */
+    "plugins": [
+      {
+        "name": "ts-lit-plugin",
+        "strict": true,
+        "rules": {
+          "no-unknown-tag-name": "error",
+          "no-missing-import": "error",
+          "no-missing-element-type-definition": "error",
+          "no-unknown-attribute": "off",
+          "no-legacy-attribute": "error",
+          "no-incompatible-type-binding": "warning",
+          "no-property-visibility-mismatch": "error",
+          "no-invalid-css": "off"
+        }
+      }
+    ]
   },
   "include": ["src"]
 }
