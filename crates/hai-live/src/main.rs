@@ -57,7 +57,11 @@ fn main() {
             .as_ref()
             .and_then(|selected| position(disks, selected))
             .unwrap_or(0);
-        selected = Some(selection(disks, index));
+        // Only a disk, so a list that's empty for a moment doesn't leave an action selected once
+        // the disks are back; the arrows remember actions
+        if let Some(choice) = disks.get(index) {
+            selected = Some(Selected::Disk(choice.disk.name.clone()));
+        }
         ui.show(&Screen::Disks {
             os: image.as_ref().map(BundledImage::name),
             disks: disks
