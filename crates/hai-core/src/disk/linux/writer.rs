@@ -354,7 +354,7 @@ fn has_siblings(objects: &ManagedObjects, drive: &OwnedObjectPath) -> bool {
 /// Unmount what the desktop mounted from the fresh image, then power the
 /// drive off, or eject its media when it can't be powered off. Skipped when
 /// the flashed drive is gone, or another drive took its place. Whether the
-/// drive is gone afterwards.
+/// drive is safe to remove afterwards.
 async fn eject_drive(conn: &Connection, flashed: &FlashedDrive) -> Result<bool> {
     let objects = managed_objects(conn).await?;
     if !objects.contains_key(&flashed.path) {
@@ -392,7 +392,9 @@ async fn eject_drive(conn: &Connection, flashed: &FlashedDrive) -> Result<bool> 
     } else if cleanup.eject {
         drive.eject(options()).await
     } else {
-        return Ok(false);
+        // Like an SD card in a built-in reader: with nothing mounted, it can
+        // be pulled, and the file manager has nothing left to eject
+        return Ok(true);
     };
     result.map_err(|e| map_udisks_error(e, context))?;
     Ok(true)
