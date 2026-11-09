@@ -170,16 +170,28 @@ impl BusyReason {
 }
 
 impl Error {
+    /// The catalog message this error carries, if it carries one.
+    pub fn message(&self) -> Option<&crate::Message> {
+        match self {
+            Self::PermissionDenied(message)
+            | Self::ProxmoxTwoFactor(message)
+            | Self::ProxmoxActionRequired(message)
+            | Self::RateLimited(message)
+            | Self::ServiceUnavailable(message)
+            | Self::Utm(message)
+            | Self::UtmOperationUncertain(message)
+            | Self::UtmVmCreated(message) => Some(message),
+            _ => None,
+        }
+    }
+
     /// This error as a parameter of another message. A catalog message stays
     /// a message, so the frontend translates it too; anything else is its
     /// English text.
     pub fn detail(&self) -> serde_json::Value {
-        match self {
-            Self::ProxmoxActionRequired(message)
-            | Self::Utm(message)
-            | Self::UtmOperationUncertain(message)
-            | Self::UtmVmCreated(message) => serde_json::json!(message),
-            other => serde_json::Value::String(other.to_string()),
+        match self.message() {
+            Some(message) => serde_json::json!(message),
+            None => serde_json::Value::String(self.to_string()),
         }
     }
 }

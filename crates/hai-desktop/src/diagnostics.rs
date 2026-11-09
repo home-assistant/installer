@@ -88,16 +88,7 @@ const USER_NAMED: [&str; 9] = [
 
 /// `error` with its causes, as one scrubbed line.
 pub fn describe(error: &hai_core::Error) -> String {
-    use hai_core::Error::*;
-    if let PermissionDenied(message)
-    | ProxmoxTwoFactor(message)
-    | ProxmoxActionRequired(message)
-    | RateLimited(message)
-    | ServiceUnavailable(message)
-    | Utm(message)
-    | UtmOperationUncertain(message)
-    | UtmVmCreated(message) = error
-    {
+    if let Some(message) = error.message() {
         let mut message = message.clone();
         for (name, value) in &mut message.params {
             hide_name(name, value);
@@ -119,7 +110,7 @@ pub fn describe(error: &hai_core::Error) -> String {
     // After the other rules, whose matches a placeholder could cut short. A
     // name may hold an apostrophe, so only one before a non-word character
     // closes it.
-    if let ProxmoxApi(_) = error {
+    if let hai_core::Error::ProxmoxApi(_) = error {
         static QUOTED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\B'.*?'\B").unwrap());
         line = QUOTED.replace_all(&line, "'<name>'").into_owned();
     }
