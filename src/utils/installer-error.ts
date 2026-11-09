@@ -59,6 +59,8 @@ const messages: Record<string, () => string> = {
   folder_name_taken: () => localize("utils.installer_error.folder_name_taken"),
   relaunch_cancelled: () =>
     localize("utils.installer_error.relaunch_cancelled"),
+  installer_updating: () =>
+    localize("utils.installer_error.installer_updating"),
 };
 
 /** Tauri rejects with JSON values, not JavaScript Error instances. */

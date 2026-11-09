@@ -53,7 +53,7 @@ pub async fn create_live_usb(
 ) -> Result<(), CommandError> {
     state
         .run(attempt, |cancelled| async move {
-            let _running = running_job();
+            let _running = running_job()?;
             let _awake = keep_awake("Creating a Home Assistant USB stick").await;
             let callback =
                 TauriProgressCallback::new(&progress_channel, "live_usb").cancellable(cancelled);
@@ -79,7 +79,7 @@ pub async fn save_live_iso(
 ) -> Result<String, CommandError> {
     state
         .run(attempt, |cancelled| async move {
-            let _running = running_job();
+            let _running = running_job()?;
             let _awake = keep_awake("Creating a Home Assistant ISO file").await;
             let callback =
                 TauriProgressCallback::new(&progress_channel, "live_iso").cancellable(cancelled);
@@ -612,6 +612,8 @@ mod tests {
     #[test]
     fn iso_target_refuses_the_installers_own_cache_folder() {
         let cache = hai_core::ReleaseSource::cache_dir(&Backend).unwrap();
+        // Created by the first download
+        std::fs::create_dir_all(&cache).unwrap();
         let error = iso_target(&cache, "stick.iso", false).unwrap_err();
         assert_eq!(error.code, "folder_in_cache");
     }

@@ -268,11 +268,17 @@ pub struct HaosRelease {
 }
 
 impl HaosRelease {
-    /// The image for `board` in `format`, if the release ships one.
-    pub fn image_for(&self, board: &str, format: ImageFormat) -> Option<&HaosImage> {
+    /// The image for `board` in `format`; a release without one never gets it.
+    pub fn require_image(&self, board: &str, format: ImageFormat) -> crate::Result<&HaosImage> {
         self.images
             .iter()
             .find(|img| img.board == board && img.format == format)
+            .ok_or_else(|| {
+                crate::Error::ReleaseUnusable(format!(
+                    "{} has no {format:?} image for {board}",
+                    self.version
+                ))
+            })
     }
 }
 
@@ -659,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn test_image_for() {
+    fn test_require_image() {
         use ImageFormat::{Qcow2, Raw};
 
         let image = |board: &str, format, download_url: &str| HaosImage {
@@ -688,7 +694,7 @@ mod tests {
             ("rpi5-64", Qcow2, None),
             ("nonexistent", Raw, None),
         ] {
-            let found = release.image_for(board, format);
+            let found = release.require_image(board, format).ok();
             assert_eq!(
                 found.map(|image| image.download_url.as_str()),
                 expected,

@@ -39,6 +39,12 @@ impl CommandError {
         }
     }
 
+    /// Log the error under `diagnostic`, a finer code than the public one.
+    pub fn with_diagnostic(mut self, diagnostic: &'static str) -> Self {
+        self.diagnostic = diagnostic;
+        self
+    }
+
     /// A drive that is part of this computer's storage: only another drive helps.
     pub fn drive_in_system_use() -> Self {
         Self::with_message(
@@ -55,6 +61,7 @@ impl CommandError {
             error.code,
             "unsupported_platform"
                 | "invalid_config"
+                | "release_unavailable"
                 | "utm_operation_uncertain"
                 | "proxmox_session_expired"
                 | "proxmox_certificate_changed"
@@ -115,10 +122,14 @@ impl From<Error> for CommandError {
             Error::RateLimited(message) => return Self::with_message("rate_limited", message, true),
             // Names the service, so the frontend doesn't say the image failed
             Error::ServiceUnavailable(message) => return Self::with_message("network", message, true),
+            // Generic text; the tag or asset is only for debugging
+            Error::UnexpectedRelease(_) => return Self::with_message("network", &hai_core::message!("backend.download.github_invalid_response"), true),
             Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and try again.", true),
+            // A download failure in the log, apart from a metadata service outage
+            Error::ImageUnavailable { status, .. } => return Self::with_message("download_failed", &hai_core::message!("backend.download.image_unavailable", status = status), true),
             // Rounded apart, so the text never reads as if it fits
             Error::NotEnoughSpace { needed, free } => return Self::with_message("not_enough_space", &hai_core::message!("backend.download.not_enough_space", needed_mb = needed.div_ceil(1_000_000), free_mb = free / 1_000_000), true),
-            Error::ExtractionFailed(_) => ("extraction_failed", "The image could not be unpacked. Check available storage.", true),
+            Error::ExtractionFailed(_) => ("extraction_failed", "The image could not be unpacked on this computer. Check available storage, then try again.", true),
             Error::VerificationFailed(_) => ("verification_failed", "The image could not be verified. Installation stopped to protect your device. See the installation help before continuing.", false),
             Error::ImageTooLarge { written, image_size, drive_size } => {
                 let mut result = Self::new("image_too_large", "The image does not fit on this drive. Choose a larger drive.", false);
@@ -126,7 +137,8 @@ impl From<Error> for CommandError {
                 return result;
             }
             Error::LiveUsbInvalidHaiLive => ("hai_live_invalid", "The program for the USB stick (hai-live) is not the Linux build. Rebuild it for x86_64-unknown-linux-musl, then try again.", true),
-            Error::LiveUsbReleaseUnusable(_) => ("release_unavailable", "The latest Home Assistant OS release can't be used right now. Try again later.", true),
+            // Release information is cached, so a retry gets the same release
+            Error::ReleaseUnusable(_) => ("release_unavailable", "The latest Home Assistant OS release can't be used for this installation.", false),
             Error::LiveUsbBuild(_) => ("image_build_failed", "The bootable media could not be built. Check available storage, then try again.", true),
         };
         Self::new(code, message, retryable)
@@ -157,6 +169,32 @@ mod tests {
                 "retryable": false, "details": { "written": 0, "image_size": 2048, "drive_size": 1024 }
             })
         );
+    }
+
+    #[test]
+    fn release_and_unpacking_failures_name_what_failed() {
+        let release = CommandError::from(Error::ReleaseUnusable("No raw image in release".into()));
+        assert_eq!(release.code, "release_unavailable");
+        assert!(!release.retryable);
+
+        // The download was verified, so this computer is what to check
+        let extraction = CommandError::from(Error::ExtractionFailed("corrupt".into()));
+        assert!(extraction.message.contains("storage"), "{extraction}");
+        assert!(extraction.retryable);
+
+        let image = CommandError::from(Error::ImageUnavailable {
+            status: 503,
+            url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_green-16.3.img.xz".into(),
+        });
+        assert!(!image.message.contains("github"), "{image}");
+        assert_eq!(image.diagnostic, "download_failed");
+        assert_eq!(
+            image.details["message_key"],
+            "backend.download.image_unavailable"
+        );
+
+        let unexpected = CommandError::from(Error::UnexpectedRelease("release 1.0".into()));
+        assert!(!unexpected.message.contains("1.0"), "{unexpected}");
     }
 
     #[test]

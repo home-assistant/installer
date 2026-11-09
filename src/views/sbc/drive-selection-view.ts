@@ -29,6 +29,7 @@ import {
   driveIdentity,
   findDrive,
   getDriveFit,
+  isComputeModuleEmmc,
   isEligibleFlashTarget,
   isSameDrive,
   readDriveSelection,
@@ -316,6 +317,11 @@ export class DriveSelectionView extends LitElement {
     return wizardState.getState().currentFlow === "ha-hardware";
   }
 
+  /** Whether a step before this one already showed how to connect the device */
+  private _connectedOnItsOwnStep(): boolean {
+    return wizardState.getState().steps.some(({ id }) => id === "connect");
+  }
+
   /** Making a USB stick to boot the mini PC from, not installing on its drive */
   private _isUsbBoot(): boolean {
     return wizardState.getState().selections.installMethod === "usb-boot";
@@ -329,7 +335,9 @@ export class DriveSelectionView extends LitElement {
       return localize("views.sbc.drive_selection_view.subtitle_nvme");
     }
     if (this._isHaHardwareFlow()) {
-      return localize("views.sbc.drive_selection_view.subtitle_device_storage");
+      return this._connectedOnItsOwnStep()
+        ? localize("views.sbc.drive_selection_view.subtitle_yellow_cm5")
+        : localize("views.sbc.drive_selection_view.subtitle_device_storage");
     }
     return localize("views.sbc.drive_selection_view.subtitle_removable");
   }
@@ -340,7 +348,7 @@ export class DriveSelectionView extends LitElement {
         localize("views.sbc.drive_selection_view.select_your_drive"),
         this._subtitle()
       )}
-      ${this._isHaHardwareFlow()
+      ${this._isHaHardwareFlow() && !this._connectedOnItsOwnStep()
         ? html`<ha-hardware-connect-instructions
             .hardware=${wizardState.getState().selections.haHardware}
           ></ha-hardware-connect-instructions>`
@@ -368,7 +376,11 @@ export class DriveSelectionView extends LitElement {
   }
 
   private _renderContent() {
-    const config = wizardState.getState().selections.deviceConfig;
+    const { deviceConfig: config, haHardware } =
+      wizardState.getState().selections;
+    // What rpiboot exposes is the drive the user is looking for
+    const isModuleEmmc = (drive: BlockDevice) =>
+      haHardware === "yellow-cm5" && isComputeModuleEmmc(drive);
     // Full-page spinner only on the initial scan (nothing to show yet).
     // A refresh keeps the list, the empty state or the error visible, and
     // shows the loading state on the button that started it, so the button
@@ -399,11 +411,13 @@ export class DriveSelectionView extends LitElement {
         ? localize("views.sbc.drive_selection_view.no_drives_usb_stick")
         : this._isMiniPCFlow()
           ? localize("views.sbc.drive_selection_view.no_drives_adapter")
-          : this._isHaHardwareFlow()
-            ? localize(
-                "views.sbc.drive_selection_view.no_drives_described_above"
-              )
-            : localize("views.sbc.drive_selection_view.no_drives_removable");
+          : this._connectedOnItsOwnStep()
+            ? localize("views.sbc.drive_selection_view.no_drives_connect_step")
+            : this._isHaHardwareFlow()
+              ? localize(
+                  "views.sbc.drive_selection_view.no_drives_described_above"
+                )
+              : localize("views.sbc.drive_selection_view.no_drives_removable");
 
       return html`
         <div class="empty-state">
@@ -452,7 +466,10 @@ export class DriveSelectionView extends LitElement {
           [...this._drives].sort((a, b) => {
             const aTooSmall = !isEligibleFlashTarget(a, config);
             const bTooSmall = !isEligibleFlashTarget(b, config);
-            // Sort selectable drives first, then by size descending
+            // The module's eMMC first, then selectable drives, then by size
+            // descending
+            if (isModuleEmmc(a) !== isModuleEmmc(b))
+              return isModuleEmmc(a) ? -1 : 1;
             if (aTooSmall !== bTooSmall) return aTooSmall ? 1 : -1;
             return b.size - a.size;
           }),
@@ -482,6 +499,11 @@ export class DriveSelectionView extends LitElement {
                 .deviceType=${drive.device_type}
                 .model=${drive.model || ""}
                 .vendor=${drive.vendor || ""}
+                .highlight=${isModuleEmmc(drive)
+                  ? localize(
+                      "views.sbc.drive_selection_view.compute_module_emmc"
+                    )
+                  : ""}
                 .disabled=${disabled}
                 .disabledReason=${reason}
                 .capacityWarning=${fit === "below-recommended"

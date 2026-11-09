@@ -147,7 +147,7 @@ describe("live-usb-progress-view", () => {
     el.stop();
     await settle();
     expect(calls.map(({ cmd }) => cmd)).to.include("cancel_flash");
-    expect(layout.stageTitle).to.equal("Stopping");
+    expect(layout.stopping).to.be.true;
   });
 
   it("leaves a flow started since alone when an earlier ISO save ends", async () => {

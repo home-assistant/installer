@@ -1,8 +1,0 @@
-[tools]
-node = "24"
-rust = "1.99.1"
-zizmor = "latest"
-
-[env]
-CARGO_HOME = "{{config_root}}/.cargo"
-RUSTUP_HOME = "{{config_root}}/.rustup"

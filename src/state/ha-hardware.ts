@@ -36,7 +36,7 @@ const GREEN_INSTALLER: HaHardwareInstaller = {
   board: "green-installer",
   // A calendar date, not an instant: local midnight shows this day in every
   // time zone, where a fixed UTC time moves a day in some of them.
-  released: new Date(2024, 3, 10),
+  released: new Date(2026, 9, 15),
 };
 
 const YELLOW_INSTALLER: HaHardwareInstaller = {
@@ -121,6 +121,14 @@ export function findInstaller(
   return [GREEN_INSTALLER, YELLOW_INSTALLER].find(
     (installer) => installer.board === board
   );
+}
+
+/**
+ * Whether the drive gets an installer rather than Home Assistant OS: it is
+ * created here, and installs once the device starts from it.
+ */
+export function writesInstaller(board: string | undefined): boolean {
+  return !!findInstaller(board);
 }
 
 /** Installer name with its release date, standing in for a HAOS version. */

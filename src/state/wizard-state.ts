@@ -7,7 +7,11 @@ import type {
   UtmVmConfig,
   WifiConfig,
 } from "../api/types.js";
-import type { HaHardwareId, YellowModuleId } from "./ha-hardware.js";
+import {
+  writesInstaller,
+  type HaHardwareId,
+  type YellowModuleId,
+} from "./ha-hardware.js";
 import type { DeviceFinder } from "../utils/device-discovery.js";
 import { supportsWifi } from "../utils/wifi.js";
 
@@ -211,10 +215,20 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
       () => localize("state.wizard_state.select_module"),
       (selections) => !!selections.yellowModules?.length
     ),
+    // Only for the CM5, which takes setting up before its eMMC shows up
+    localizedStep(
+      "connect",
+      () => localize("state.wizard_state.connect_device"),
+      (selections) => selections.haHardware === "yellow-cm5"
+    ),
     localizedStep("drive", () => localize("state.wizard_state.select_drive")),
     wifiStep,
     localizedStep("confirm", () => localize("common.confirm")),
-    localizedStep("flash", () => localize("common.install")),
+    localizedStep("flash", () =>
+      writesInstaller(wizardState.getState().selections.deviceConfig?.board)
+        ? localize("common.create")
+        : localize("common.install")
+    ),
     ...DEVICE_STEPS,
   ],
   proxmox: [
