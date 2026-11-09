@@ -191,9 +191,11 @@ fn scrub_line(text: &str) -> String {
             // Hosts outside URLs: a share, a certificate's names, or one with a port
             (r#"(^|[\s"'(])\\\\[^\\\s?.][^\\\s"']*"#, r"${1}\\<host>"),
             (r#"(not valid for name |DnsName\()"[^"]*""#, r#"${1}"<host>""#),
-            // A host name has a letter, unlike a time, and a port isn't
-            // followed by more of a timestamp
-            (r"(?i)\b(?:[\w-]+\.)*[\w-]*[a-z][\w-]*(?:\.[\w-]+)*(:\d{1,5})(:?(?:[^\w:]|$))", "<host>${1}${2}"),
+            // A host name has a dot, unlike a time or `VM:100`, and a port
+            // isn't followed by more of a timestamp
+            (r"\b[\w-]+(?:\.[\w-]+)+(:\d{1,5})(:?(?:[^\w:]|$))", "<host>${1}${2}"),
+            // A Proxmox task's ID starts with the node it runs on
+            (r"\bUPID:[^:\s]+", "UPID:<host>"),
         ]
         .into_iter()
         .map(|(pattern, replacement)| (Regex::new(pattern).unwrap(), replacement))
@@ -841,8 +843,12 @@ mod tests {
                 "connect to <host>:8123: failed at 14:07:29 in std::io",
             ),
             (
-                "2janesmacbook:8123, 123nas.local:8123 and 123.nas.local:8123 or 10.0.0.2:8123",
-                "<host>:8123, <host>:8123 and <host>:8123 or <ip>:8123",
+                "123nas.local:8123 and 123.nas.local:8123 or 10.0.0.2:8123",
+                "<host>:8123 and <host>:8123 or <ip>:8123",
+            ),
+            (
+                "UPID:pve-jane:000ABCDE:0012F00D:6543ABCD:qmcreate:100:root@pam: VM:100 exit code:1",
+                "UPID:<host>:000ABCDE:0012F00D:6543ABCD:qmcreate:100:<user>: VM:100 exit code:1",
             ),
             (
                 "at 2026-11-03T15:01:02, 12:34:56 and port 8123:",
