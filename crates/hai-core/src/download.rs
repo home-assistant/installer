@@ -1856,14 +1856,14 @@ mod tests {
         let data = b"what GitHub's metadata vouches for";
         let mut server = mockito::Server::new_async().await;
         let image = image_for_data(
-            &format!("{HAOS_DOWNLOADS}/18.3/haos_ova-18.3.qcow2.xz"),
+            &format!("{HAOS_DOWNLOADS}/18.5/haos_rpi5-64-18.5.img.xz"),
             data,
         );
-        let unlisted = format!("{HAOS_DOWNLOADS}/18.3/haos_tinker-18.3.img.xz");
-        server.mock("GET", "/tags/18.3").with_header("content-type", "application/json").with_body(serde_json::json!({
-            "tag_name": "18.3", "assets": [
-                { "name": "haos_ova-18.3.qcow2.xz", "size": data.len(), "browser_download_url": image.download_url, "digest": image.digest },
-                { "name": "haos_tinker-18.3.img.xz", "size": data.len(), "browser_download_url": unlisted, "digest": image.digest },
+        let unlisted = format!("{HAOS_DOWNLOADS}/18.5/haos_tinker-18.5.img.xz");
+        server.mock("GET", "/tags/18.5").with_header("content-type", "application/json").with_body(serde_json::json!({
+            "tag_name": "18.5", "assets": [
+                { "name": "haos_rpi5-64-18.5.img.xz", "size": data.len(), "browser_download_url": image.download_url, "digest": image.digest },
+                { "name": "haos_tinker-18.5.img.xz", "size": data.len(), "browser_download_url": unlisted, "digest": image.digest },
             ]
         }).to_string()).create_async().await;
         server
@@ -1873,19 +1873,19 @@ mod tests {
             .await;
         let url = server.url();
 
-        let release = fetch_cached_release(&Mutex::new(HashMap::new()), &url, &url, "18.3")
+        let release = fetch_cached_release(&Mutex::new(HashMap::new()), &url, &url, "18.5")
             .await
             .unwrap();
 
         let tinker = release.require_image("tinker", ImageFormat::Raw).unwrap();
         assert_eq!(tinker.digest, None);
         let mut selected = release
-            .require_image("ova", ImageFormat::Qcow2)
+            .require_image("rpi5-64", ImageFormat::Raw)
             .unwrap()
             .clone();
         assert_eq!(
             selected.digest.as_deref(),
-            Some("sha256:fae6a728768cc10aff60d4820bfcd40d64cd77fab82c8bd92af13b3d9d414090")
+            Some("sha256:79004a2fda343f7cb9e6c510bfc56acac25f684d2ad20b7b116ef17c4c4b0136")
         );
         selected.download_url = format!("{url}/image.xz");
         let directory = tempfile::tempdir().unwrap();
@@ -2185,27 +2185,27 @@ mod tests {
         let url = server.url();
         let cache = Mutex::new(HashMap::new());
         let failed = server
-            .mock("GET", "/tags/18.3")
+            .mock("GET", "/tags/18.5")
             .with_status(429)
             .expect(1)
             .create_async()
             .await;
-        assert!(fetch_cached_release(&cache, &url, &url, "18.3")
+        assert!(fetch_cached_release(&cache, &url, &url, "18.5")
             .await
             .is_err());
         failed.assert_async().await;
         failed.remove_async().await;
-        let download_url = format!("{HAOS_DOWNLOADS}/18.3/haos_rpi5-64-18.3.img.xz");
+        let download_url = format!("{HAOS_DOWNLOADS}/18.5/haos_rpi5-64-18.5.img.xz");
         let mock = server
-            .mock("GET", "/tags/18.3")
+            .mock("GET", "/tags/18.5")
             .match_header("User-Agent", USER_AGENT)
             .match_header("Accept", "application/vnd.github.v3+json")
             .with_status(200)
             .with_body(
                 serde_json::json!({
-                    "tag_name": "18.3",
+                    "tag_name": "18.5",
                     "assets": [{
-                        "name": "haos_rpi5-64-18.3.img.xz",
+                        "name": "haos_rpi5-64-18.5.img.xz",
                         "size": 123,
                         "browser_download_url": download_url,
                     }],
@@ -2216,11 +2216,11 @@ mod tests {
             .create_async()
             .await;
         let (first, second) = tokio::join!(
-            fetch_cached_release(&cache, &url, &url, "18.3"),
-            fetch_cached_release(&cache, &url, &url, "18.3")
+            fetch_cached_release(&cache, &url, &url, "18.5"),
+            fetch_cached_release(&cache, &url, &url, "18.5")
         );
         for release in [first.unwrap(), second.unwrap()] {
-            assert_eq!(release.version, "18.3");
+            assert_eq!(release.version, "18.5");
             let image = release.require_image("rpi5-64", ImageFormat::Raw).unwrap();
             assert_eq!(image.download_url, download_url);
             assert!(image.digest.is_some());
