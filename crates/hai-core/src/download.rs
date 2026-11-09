@@ -727,7 +727,10 @@ async fn download_image_with_client<P: ProgressCallback>(
     let response = client.get(&image.download_url).send().await?;
 
     if !response.status().is_success() {
-        return Err(Error::ImageUnavailable(response.status().as_u16()));
+        return Err(Error::ImageUnavailable {
+            status: response.status().as_u16(),
+            url: image.download_url.clone(),
+        });
     }
 
     let total_size = image.size;
@@ -2800,7 +2803,7 @@ mod tests {
         .await;
         // The server answered, so it names the server, not the connection
         assert!(
-            matches!(result, Err(Error::ImageUnavailable(404))),
+            matches!(result, Err(Error::ImageUnavailable { status: 404, url: ref failed }) if *failed == url),
             "{result:?}"
         );
 

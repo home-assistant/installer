@@ -104,9 +104,10 @@ pub enum Error {
     #[error("GitHub returned unexpected release information: {0}")]
     UnexpectedRelease(String),
 
-    /// The image server answered the download with this HTTP status.
-    #[error("The image server answered HTTP {0}")]
-    ImageUnavailable(u16),
+    /// The image server answered the download with this HTTP status. The URL
+    /// names the version, board and file for the log; the user sees the status.
+    #[error("The image server answered HTTP {status} for {url}")]
+    ImageUnavailable { status: u16, url: String },
 
     /// This computer has no room for an image it downloads or unpacks.
     #[error("Not enough free space: {needed} bytes needed, {free} bytes free")]

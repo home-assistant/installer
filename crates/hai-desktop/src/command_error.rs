@@ -126,7 +126,7 @@ impl From<Error> for CommandError {
             Error::UnexpectedRelease(_) => return Self::with_message("network", &hai_core::message!("backend.download.github_invalid_response"), true),
             Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and try again.", true),
             // A download failure in the log, apart from a metadata service outage
-            Error::ImageUnavailable(status) => return Self::with_message("download_failed", &hai_core::message!("backend.download.image_unavailable", status = status), true),
+            Error::ImageUnavailable { status, .. } => return Self::with_message("download_failed", &hai_core::message!("backend.download.image_unavailable", status = status), true),
             // Rounded apart, so the text never reads as if it fits
             Error::NotEnoughSpace { needed, free } => return Self::with_message("not_enough_space", &hai_core::message!("backend.download.not_enough_space", needed_mb = needed.div_ceil(1_000_000), free_mb = free / 1_000_000), true),
             Error::ExtractionFailed(_) => ("extraction_failed", "The image could not be unpacked on this computer. Check available storage, then try again.", true),
@@ -182,7 +182,11 @@ mod tests {
         assert!(extraction.message.contains("storage"), "{extraction}");
         assert!(extraction.retryable);
 
-        let image = CommandError::from(Error::ImageUnavailable(503));
+        let image = CommandError::from(Error::ImageUnavailable {
+            status: 503,
+            url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_green-16.3.img.xz".into(),
+        });
+        assert!(!image.message.contains("github"), "{image}");
         assert_eq!(image.diagnostic, "download_failed");
         assert_eq!(
             image.details["message_key"],
