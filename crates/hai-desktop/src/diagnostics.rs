@@ -88,12 +88,20 @@ const USER_NAMED: [&str; 9] = [
 
 /// `error` with its causes, as one scrubbed line.
 pub fn describe(error: &hai_core::Error) -> String {
+    use hai_core::Error::*;
     if let Some(message) = error.message() {
         let mut message = message.clone();
         for (name, value) in &mut message.params {
             hide_name(name, value);
         }
-        return scrub(&message.to_string());
+        let mut line = scrub_line(&message.to_string());
+        // AppleScript quotes what it echoes back, like a VM's name or a file's path
+        if let Utm(_) | UtmOperationUncertain(_) | UtmVmCreated(_) = error {
+            static QUOTED: LazyLock<Regex> =
+                LazyLock::new(|| Regex::new(r#""(?:[^"\\]|\\.)*""#).unwrap());
+            line = QUOTED.replace_all(&line, r#""<name>""#).into_owned();
+        }
+        return shorten(line);
     }
     let mut text = error.to_string();
     let mut source = std::error::Error::source(error);
@@ -110,7 +118,7 @@ pub fn describe(error: &hai_core::Error) -> String {
     // After the other rules, whose matches a placeholder could cut short. A
     // name may hold an apostrophe, so only one before a non-word character
     // closes it.
-    if let hai_core::Error::ProxmoxApi(_) = error {
+    if let ProxmoxApi(_) = error {
         static QUOTED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\B'.*?'\B").unwrap());
         line = QUOTED.replace_all(&line, "'<name>'").into_owned();
     }
@@ -142,10 +150,6 @@ const MAX_ERROR_CHARS: usize = 300;
 /// `text` on one line, without user names, credentials, private hosts,
 /// addresses or volume IDs. Best effort, as people review an issue before
 /// posting it.
-fn scrub(text: &str) -> String {
-    shorten(scrub_line(text))
-}
-
 fn scrub_line(text: &str) -> String {
     // Takes balanced parentheses, but not the one closing a URL in them, and
     // stops at a backslash, which may escape a quote in a credential's value.
@@ -176,6 +180,8 @@ fn scrub_line(text: &str) -> String {
             // A name runs to the next separator, or else to a space, as only a
             // separator says it holds one.
             (r#"(?i)(/home/|/users/|/(?:run/)?media/)(?:[^\\/:"]*[^\s\\/:"]([\\/])|[^\s\\/:"',;()]+)"#, "${1}<user>${2}"),
+            // AppleScript's paths, like `Macintosh HD:Users:jane:Library`
+            (r#"(?i)(:users:)[^:"]+"#, "${1}<user>"),
             // Stops at a quote or backslash, so the next rule still sees where a quoted value ends
             (r#"(?i)\b(basic|bearer)\s+[^\s"\\]+"#, "${1} <redacted>"),
             (r#"(?i)\b([\w-]*(?:password|passwd|secret|token|ticket|csrf|cookie|authorization)[\w-]*)"?\s*[=:]\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)"#, "${1}=<redacted>"),
@@ -702,6 +708,10 @@ mod tests {
                 "Cannot write /Volumes/<user>/haos.img",
             ),
             (
+                "File Macintosh HD:Users:Jane Doe:Library:Caches:haos.qcow2 wasn’t found. (-43)",
+                "File Macintosh HD:Users:<user>:Library:Caches:haos.qcow2 wasn’t found. (-43)",
+            ),
+            (
                 "error sending request for url (https://github.com/home-assistant/operating-system/releases/download/16.3/haos.img.xz?token=x)",
                 "error sending request for url (https://github.com/home-assistant/operating-system/releases/download/16.3/haos.img.xz)",
             ),
@@ -840,9 +850,12 @@ mod tests {
             ),
             ("first line\nInjected line", "first line Injected line"),
         ] {
-            assert_eq!(scrub(text), scrubbed);
+            assert_eq!(scrub_line(text), scrubbed);
         }
-        let long = scrub(&format!("{} (os error 10060)", "x".repeat(1000)));
+        let long = shorten(scrub_line(&format!(
+            "{} (os error 10060)",
+            "x".repeat(1000)
+        )));
         assert_eq!(long.chars().count(), MAX_ERROR_CHARS + 1);
         assert!(long.ends_with("(os error 10060)"), "{long}");
     }
@@ -931,6 +944,14 @@ mod tests {
         ));
         let created = describe(&created);
         assert!(!created.to_lowercase().contains("jane"), "{created}");
+        let echoed = hai_core::Error::Utm(hai_core::message!(
+            "backend.utm.applescript_error",
+            detail = r#"Can’t make {name:"Jane's Home", drives:{{source:file "Macintosh HD:Users:jane:Library:Caches:haos.qcow2"}}} into type record. (-1700)"#,
+        ));
+        assert_eq!(
+            describe(&echoed),
+            r#"Can’t make {name:"<name>", drives:{{source:file "<name>"}}} into type record. (-1700)"#
+        );
         let reply = hai_core::Error::ProxmoxApi(
             "VM creation (500): unable to create VM 100 - volume 'family-nas:vm-100-disk-0' already exists; storage 'jane backup' doesn't exist".into(),
         );
