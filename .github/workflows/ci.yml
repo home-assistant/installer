@@ -538,11 +538,12 @@ jobs:
 
   # The community translates en.json in Lokalise. Runs on main upload it and
   # hand the build jobs every translation that fits it, so translators only
-  # see reviewed copy and pull request builds are English only. Off until the
-  # LOKALISE_PROJECT_ID variable is set. See docs/spec/ci-cd.md.
+  # see reviewed copy and pull request builds are English only. Fails without
+  # the LOKALISE_PROJECT_ID variable and LOKALISE_TOKEN secret, so a build of
+  # main never ships English only by accident. See docs/spec/ci-cd.md.
   translations:
     name: Sync translations
-    if: vars.LOKALISE_PROJECT_ID && github.ref == 'refs/heads/main' && github.event_name != 'schedule'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -565,6 +566,19 @@ jobs:
     # Only the two Lokalise steps get the token, and they run before npm
     # installs anything, like the Apple credentials in the build job.
     steps:
+      # Only whether the token is set reaches this step, not the token
+      - name: Check the Lokalise configuration
+        env:
+          HAS_TOKEN: ${{ secrets.LOKALISE_TOKEN != '' }}
+        run: |
+          missing=()
+          [[ -n $LOKALISE_PROJECT_ID ]] || missing+=("the LOKALISE_PROJECT_ID repository variable")
+          [[ $HAS_TOKEN == true ]] || missing+=("the LOKALISE_TOKEN secret of the release environment")
+          for what in "${missing[@]}"; do
+            echo "::error::Can't sync translations without $what. See docs/spec/ci-cd.md#translations."
+          done
+          (( ${#missing[@]} == 0 ))
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -997,7 +1011,10 @@ jobs:
   # see it.
   release:
     name: Release
-    if: github.event_name == 'workflow_dispatch'
+    # Without !cancelled(), a job that failed or was skipped anywhere upstream
+    # would only skip this one. It runs instead, and its first step fails and
+    # names those jobs.
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
     # Two release runs at once would both find no draft and create two.
     concurrency:
       group: release
@@ -1012,6 +1029,7 @@ jobs:
       - test-frontend
       - test-e2e
       - test-backend
+      - translations
       - build
     runs-on: ubuntu-latest
     permissions:
@@ -1020,6 +1038,15 @@ jobs:
       attestations: write
       artifact-metadata: write
     steps:
+      # Every job above has to have passed. None may be skipped: a release
+      # without translations would be English only.
+      - name: Check every job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | select(.value.result != "success") | "::error::Not releasing: \(.key) \(.value.result)"' <<< "$NEEDS"
+          jq -e 'all(.[]; .result == "success")' <<< "$NEEDS" > /dev/null
+
       # The installers were uploaded unarchived, so each one downloads as the
       # file itself. Each artifact is named after its installer, which starts
       # with the product name; the pattern leaves out anything else in the

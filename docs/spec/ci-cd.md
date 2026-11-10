@@ -75,8 +75,10 @@ their builds are English only. A build ships the translations Lokalise had
 when it ran, so two runs of one commit can differ; each run's `translations`
 artifact holds what it shipped.
 
-The job is off until the `LOKALISE_PROJECT_ID` repository variable is set. To
-turn it on:
+The job fails, with an error naming what's missing, when the
+`LOKALISE_PROJECT_ID` repository variable or the `LOKALISE_TOKEN` secret isn't
+set. The build jobs and the release then don't run, so `main` is never built
+or released English only by accident. To set it up:
 
 - In the Lokalise project, make English (`en`) the base language and turn on
   the **Auto-toggle Unverified** automation. It marks a message's translations
@@ -84,9 +86,7 @@ turn it on:
   translations of the old English don't ship with the new one.
 - Add `LOKALISE_TOKEN` to the `release` environment (see
   [Required Secrets](#required-secrets)).
-- Then set the `LOKALISE_PROJECT_ID` repository variable to the project's ID.
-  The other way round, a push in between runs the job without a token and
-  skips the builds.
+- Set the `LOKALISE_PROJECT_ID` repository variable to the project's ID.
 
 A language whose Lokalise code isn't its canonical language tag once `_`
 becomes `-`, like `tl` for `fil`, is dropped with a warning; give it a custom
@@ -151,7 +151,11 @@ A release run differs from a push to `main` in these ways:
   and the AppImage) and signs it with the update key from the `release`
   environment, so the Windows and Linux build jobs bind to that environment
   too. Other builds leave the updates out, as `tauri.conf.json` does.
-- **Release job:** downloads the installers the build jobs uploaded, writes
+- **Release job:** runs in every release run that isn't cancelled, and fails
+  first thing, naming the jobs, unless every job it waits for passed,
+  translations included, so a release is never skipped without an error or
+  made English only. Then it downloads the installers the build jobs uploaded,
+  writes
   `latest.json` (`scripts/updater-manifest.mjs`), which lists the update and
   signature of each platform for the installers' update check, creates a
   signed [SLSA build provenance](https://slsa.dev/provenance/) attestation for
