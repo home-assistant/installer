@@ -5,7 +5,8 @@
 - **Immutable releases**: Once a version is released, it cannot be changed
 - **Signed artifacts**: Release binaries are signed where the platform has a
   signing scheme we've set up (macOS today; Windows is #158)
-- **Reproducible builds**: Same commit = same output
+- **Reproducible builds**: Same commit = same output, apart from the
+  translations (see [Translations](#translations))
 - **Multi-platform**: Build and test on macOS, Windows, Linux
 
 ---
@@ -28,6 +29,9 @@ the jobs and their steps; in short:
 - **Test** jobs run the frontend unit tests, the Playwright E2E tests in
   Chromium and WebKit (each split across three jobs), and the Rust tests on
   all three platforms. Frontend and Linux backend coverage go to Codecov.
+- **Translations** uploads the English catalog to Lokalise and downloads the
+  translations for the build jobs, on `main` only (see
+  [Translations](#translations)).
 - **Build** produces the installers for each platform and uploads each one as
   an unarchived workflow artifact. On pushes to `main` and in release runs,
   the macOS build is signed and notarized (see
@@ -38,6 +42,55 @@ A new push to a pull request cancels the run for the push before it. Only
 runs on `main` save the cargo and apt caches; pull requests restore them but
 don't write their own, so they don't push `main`'s caches out of the 10 GB
 GitHub keeps per repository.
+
+---
+
+## Translations
+
+The community translates `src/localization/en.json` in the installer's
+[Lokalise](https://lokalise.com/) project. On pushes to `main` and in release
+runs, the `translations` job:
+
+1. uploads `en.json`, with its ICU placeholders and plurals kept as written,
+   and deletes the keys it no longer has, unless `main` has moved on to a
+   newer commit (so re-running an older run can't put back English that
+   `main` has changed since);
+2. downloads every verified translation, leaves out those whose English in
+   Lokalise isn't this commit's (once `main` has changed it, as for a re-run
+   of an older run), and names each catalog after its language tag, with
+   `zh-Hans` and `zh-Hant` for Lokalise's `zh_CN` and `zh_TW`;
+3. runs `npm run localization:check` on them, which drops each message whose
+   key `en.json` doesn't have, whose placeholders don't match the English, or
+   that isn't valid ICU, with a warning on the run, so it shows the English
+   until it's fixed in Lokalise, and removes languages with nothing
+   translated;
+4. names a language's only regional catalog left after the language: `pt` for
+   `pt-BR` while it's the only Portuguese, so every Portuguese locale finds
+   it, and `pt-BR` once `pt_PT` has usable translations too;
+5. uploads them as the `translations` artifact, which each build job puts next
+   to `en.json` before it builds.
+
+Pull requests don't run the job, so translators only see reviewed copy, and
+their builds are English only. A build ships the translations Lokalise had
+when it ran, so two runs of one commit can differ; each run's `translations`
+artifact holds what it shipped.
+
+The job is off until the `LOKALISE_PROJECT_ID` repository variable is set. To
+turn it on:
+
+- In the Lokalise project, make English (`en`) the base language and turn on
+  the **Auto-toggle Unverified** automation. It marks a message's translations
+  unverified when the English changes, and the download leaves those out, so
+  translations of the old English don't ship with the new one.
+- Add `LOKALISE_TOKEN` to the `release` environment (see
+  [Required Secrets](#required-secrets)).
+- Then set the `LOKALISE_PROJECT_ID` repository variable to the project's ID.
+  The other way round, a push in between runs the job without a token and
+  skips the builds.
+
+A language whose Lokalise code isn't its canonical language tag once `_`
+becomes `-`, like `tl` for `fil`, is dropped with a warning; give it a custom
+ISO code in Lokalise.
 
 ---
 
@@ -250,10 +303,13 @@ The workflow uses no repository secrets.
 Secrets of the protected `release` environment, which only `main` may deploy
 to. The macOS build job binds to this environment on pushes to `main` and in
 release runs, signs and notarizes the app and the DMG, and uploads the result.
-Pull request builds don't reference the environment and stay unsigned.
+Pull request builds don't reference the environment and stay unsigned. The
+`translations` job binds to it too, so only `main` can use the Lokalise
+token.
 
 | Secret | Description |
 |--------|-------------|
+| `LOKALISE_TOKEN` | Lokalise API token with read and write access to the installer's project (see [Translations](#translations)) |
 | `APPLE_CERTIFICATE` | Base64-encoded .p12 export of the "Developer ID Application" certificate and its private key |
 | `APPLE_CERTIFICATE_PASSWORD` | Password chosen when exporting the .p12 |
 | `APPLE_SIGNING_IDENTITY` | Name of that certificate, e.g. `Developer ID Application: Open Home Foundation (TEAMID)`. Tauri refuses to sign if the imported certificate doesn't match it |

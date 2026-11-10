@@ -13,7 +13,7 @@
     "lint": "eslint --max-warnings 0 src/ test/",
     "lint:lit": "lit-analyzer \"src/**/*.ts\"",
     "localization:check": "node scripts/check-localization.mjs",
-    "test:localization": "node --test scripts/check-localization.test.mjs",
+    "test:localization": "node --test scripts/check-localization.test.mjs scripts/import-translations.test.mjs",
     "test:release": "node --test scripts/next-version.test.mjs scripts/updater-manifest.test.mjs",
     "lint:fix": "eslint src/ test/ --fix",
     "format": "prettier --write \"{src,test}/**/*.{ts,css,json}\"",
