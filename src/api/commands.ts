@@ -331,6 +331,7 @@ async function simulateFlashProgress(
 
   return {
     duration_secs: 45,
+    ejected: true,
   };
 }
 

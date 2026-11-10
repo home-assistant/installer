@@ -156,8 +156,9 @@ describe("progress-view", () => {
       stage: "complete",
       progress: 100,
     });
-    attempts[0].result.resolve({ duration_secs: 1 });
+    attempts[0].result.resolve({ duration_secs: 1, ejected: false });
     await settle();
+    expect(wizardState.getState().selections.driveEjected).to.equal(false);
     expect(completed).to.equal(1);
     expect(errors).to.equal(0);
     expect(showsError(el)).to.be.false;
@@ -202,7 +203,7 @@ describe("progress-view", () => {
       total_bytes: 2048,
       message: "Complete",
     });
-    attempts[1].result.resolve({ duration_secs: 1 });
+    attempts[1].result.resolve({ duration_secs: 1, ejected: true });
     await settle();
     expect(completed).to.equal(1);
     expect(errors).to.equal(1);

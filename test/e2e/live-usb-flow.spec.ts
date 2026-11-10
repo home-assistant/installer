@@ -48,7 +48,7 @@ test("writes a bootable USB stick", async ({ page }) => {
     "choose Erase and install"
   );
   await expect(page.locator("live-usb-success-view")).toContainText(
-    "eject it before you disconnect it"
+    "remove the USB stick and restart"
   );
 });
 

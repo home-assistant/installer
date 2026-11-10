@@ -1,4 +1,5 @@
 import type { BlockDevice, HaosConfig } from "../api/types.js";
+import { localize } from "../localization/localize.js";
 import { wizardState, type WizardSelections } from "../state/wizard-state.js";
 
 /**
@@ -190,4 +191,9 @@ export function clearDriveSelection() {
     driveSerial: undefined,
     driveType: undefined,
   });
+}
+
+/** The success step to eject the written drive, when writing didn't. */
+export function ejectStep(selections: WizardSelections): string[] {
+  return selections.driveEjected ? [] : [localize("common.success.step_eject")];
 }

@@ -80,12 +80,13 @@ describe("localized view contracts", () => {
 
   it("uses whole unnamed-device success sentences and preserves named-device text", () => {
     const element = view("success-view");
+    select(element, { driveEjected: true });
     const insertStep = () =>
       (
         output(element).querySelector("install-success") as unknown as {
           steps: unknown[];
         }
-      ).steps[1];
+      ).steps[0];
     expect(insertStep()).to.equal(
       "Insert the written storage into your device."
     );
@@ -94,7 +95,7 @@ describe("localized view contracts", () => {
       "Insert fixture."
     );
     expect(insertStep()).to.equal("Insert fixture.");
-    select(element, { deviceName: "Raspberry Pi 5" });
+    select(element, { driveEjected: true, deviceName: "Raspberry Pi 5" });
     expect(insertStep()).to.equal(
       "Insert the written storage into Raspberry Pi 5."
     );

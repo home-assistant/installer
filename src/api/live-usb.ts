@@ -27,26 +27,27 @@ export async function getLiveUsbStatus(): Promise<LiveUsbStatus> {
 
 /**
  * Build the bootable stick and write it to `deviceId`, with verification.
- * The stick starts in the app's language. `attempt` names this run, so
- * `cancelLiveUsb` can never stop another.
+ * The stick starts in the app's language. Resolves to whether the stick was
+ * ejected. `attempt` names this run, so `cancelLiveUsb` can never stop
+ * another.
  */
 export async function createLiveUsb(
   deviceId: string,
   expectedDevice: ExpectedDevice,
   onProgress: (progress: FlashProgress) => void,
   attempt: string
-): Promise<void> {
+): Promise<boolean> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     await simulate(
       ["downloading", "extracting", "writing", "verifying"],
       onProgress,
       attempt
     );
-    return;
+    return true;
   }
   const channel = new Channel<FlashProgress>();
   channel.onmessage = onProgress;
-  await invoke("create_live_usb", {
+  return invoke<boolean>("create_live_usb", {
     deviceId,
     expectedDevice,
     language: shownLanguage(),

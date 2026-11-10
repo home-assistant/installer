@@ -310,7 +310,10 @@ where
     if let Some(wifi) = request.wifi.clone() {
         image = tokio::task::spawn_blocking(move || hai_core::haos_config::with_wifi(image, &wifi))
             .await
-            .map_err(|e| hai_core::Error::Io(std::io::Error::other(e)))??;
+            // A panic's message may hold the Wi-Fi password, and the log keeps causes
+            .map_err(|_| {
+                hai_core::Error::Io(std::io::Error::other("Wi-Fi setup stopped unexpectedly"))
+            })??;
     }
 
     // Check image size vs device size
@@ -334,7 +337,7 @@ where
     check_cancelled(callback)?;
 
     // Write to device
-    backend
+    let ejected = backend
         .write_image(
             &image,
             &request.device_id,
@@ -357,6 +360,7 @@ where
 
     Ok(FlashResult {
         duration_secs: duration.as_secs(),
+        ejected,
     })
 }
 
@@ -569,11 +573,9 @@ async fn run_utm_creation<B: UtmBackend>(
     // Fully qualified: `create_vm` is defined on both UtmBackend and ProxmoxBackend.
     let result = UtmBackend::create_vm(backend, config, &hai_core::NoOpProgress).await;
     if let Err(hai_core::Error::UtmOperationUncertain(error)) = &result {
-        return Err(CommandError::with_message(
-            "utm_operation_uncertain",
-            &hai_core::message!("backend.utm.import_uncertain", detail = error),
-            false,
-        ));
+        return Err(CommandError::from(hai_core::Error::UtmOperationUncertain(
+            hai_core::message!("backend.utm.import_uncertain", detail = error),
+        )));
     }
     result.map(|result| result.id).map_err(CommandError::from)
 }
@@ -588,7 +590,7 @@ pub fn start_utm_vm(vm_id: String) -> Result<(), CommandError> {
 #[tauri::command(async)]
 pub fn get_utm_vm_status(vm_id: String) -> Result<VmStatusInfo, CommandError> {
     // Fully qualified: `vm_status` is defined on both UtmBackend and ProxmoxBackend.
-    UtmBackend::vm_status(&Backend, &vm_id).map_err(CommandError::from)
+    UtmBackend::vm_status(&Backend, &vm_id).map_err(CommandError::from_query)
 }
 
 // =============================================================================
@@ -1169,10 +1171,13 @@ mod tests {
     #[test]
     fn flash_command_result_keeps_its_wire_shape() {
         // Failures reject the command with a CommandError instead
-        let result = FlashResult { duration_secs: 42 };
+        let result = FlashResult {
+            duration_secs: 42,
+            ejected: true,
+        };
         assert_eq!(
             serde_json::to_value(result).unwrap(),
-            serde_json::json!({"duration_secs": 42})
+            serde_json::json!({"duration_secs": 42, "ejected": true})
         );
     }
 
@@ -1704,7 +1709,7 @@ mod tests {
             _: &hai_core::ExpectedDevice,
             _: bool,
             _: &P,
-        ) -> hai_core::Result<()> {
+        ) -> hai_core::Result<bool> {
             panic!("must not write a drive");
         }
     }
@@ -1916,7 +1921,7 @@ mod mock_tests {
             _: &hai_core::ExpectedDevice,
             _: bool,
             _: &P,
-        ) -> hai_core::Result<()> {
+        ) -> hai_core::Result<bool> {
             assert_ne!(
                 self.outcome, "oversized",
                 "oversized image reached disk writer"
@@ -1931,7 +1936,7 @@ mod mock_tests {
                     self.write_started.notify_one();
                     std::future::pending().await
                 }
-                _ => Ok(()),
+                _ => Ok(true),
             }
         }
     }
@@ -2158,6 +2163,16 @@ mod mock_tests {
                         } else {
                             "backend.utm.applescript_lost"
                         }
+                    );
+                    // The log keeps the reason the message wraps
+                    let cause = error.cause.as_deref().unwrap();
+                    assert!(
+                        cause.contains(if outcome == "timeout" {
+                            "AppleEvent timed out (-1712)"
+                        } else {
+                            "Failed to wait for AppleScript: broken pipe"
+                        }),
+                        "{cause}"
                     );
                 }
                 if outcome == "start-failed" {
@@ -2410,7 +2425,7 @@ mod mock_tests {
             _: &hai_core::ExpectedDevice,
             _: bool,
             _: &P,
-        ) -> hai_core::Result<()> {
+        ) -> hai_core::Result<bool> {
             panic!("unverified image reached the writer")
         }
     }
@@ -2561,7 +2576,7 @@ mod mock_tests {
             expected: &hai_core::ExpectedDevice,
             verify: bool,
             callback: &P,
-        ) -> hai_core::Result<()> {
+        ) -> hai_core::Result<bool> {
             BackendMock
                 .write_image(image, device_id, expected, verify, callback)
                 .await
