@@ -139,7 +139,7 @@ describe("wizard-steps", () => {
     }
   });
 
-  it("only holds Next for Proxmox and the official hardware", () => {
+  it("only holds Next for the VM settings, Proxmox and the official hardware", () => {
     expect(wizardStep("proxmox", "connection")?.beforeNext?.until).to.equal(
       "flow"
     );
@@ -150,7 +150,12 @@ describe("wizard-steps", () => {
     expect(wizardStep("ha-hardware", "device")?.beforeNext?.until).to.equal(
       "flow"
     );
+    // Asks UTM whether the name is taken, which UTM only says after the download
+    expect(wizardStep("vm", "configure")?.beforeNext?.until).to.equal(
+      "selections"
+    );
     const held = new Set([
+      "vm/configure",
       "proxmox/connection",
       "proxmox/configure",
       "ha-hardware/device",
@@ -216,8 +221,13 @@ describe("wizard-steps", () => {
     for (const flow of ["vm", "proxmox"] as const) {
       const install = wizardStep(flow, "install")!.install!;
       expect(install.backAfterError, flow).to.be.undefined;
-      expect(install.changeChoice, flow).to.be.undefined;
     }
+    expect(wizardStep("proxmox", "install")!.install!.changeChoice).to.be
+      .undefined;
+    // UTM refused the name, so no VM was made
+    expect(
+      wizardStep("vm", "install")!.install!.changeChoice!({})
+    ).to.deep.equal({ step: "configure", label: "Choose another name" });
     expect(wizardStep("vm", "install")!.install!.reconnect).to.be.undefined;
     expect(
       wizardStep("proxmox", "install")!.install!.reconnect!()

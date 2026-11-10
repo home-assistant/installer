@@ -8,6 +8,7 @@ import type { HaHardwareDeviceSelectionView } from "../views/ha-hardware/device-
 import type { LiveIsoLocationView } from "../views/live-usb/live-iso-location-view.js";
 import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-view.js";
 import type { ProxmoxConnectView } from "../views/proxmox/proxmox-connect-view.js";
+import type { UtmConfigureView } from "../views/utm/utm-configure-view.js";
 import { enabledImportStorageList } from "../views/proxmox/proxmox-success-view.js";
 
 import "../views/sbc/device-selection-view.js";
@@ -266,6 +267,12 @@ export const WIZARD_STEPS: Record<
       // the view first saves there is none, and the default name applies.
       ready: (selections) =>
         selections.vmName === undefined || isValidUtmVmName(selections.vmName),
+      // UTM refuses a name it already has, but only once the image is in
+      beforeNext: {
+        run: (view) => (view as UtmConfigureView).check(),
+        label: () => localize("components.wizard_steps.checking_settings"),
+        until: "selections",
+      },
     },
     confirm: {
       render: () => html`<utm-confirm-view></utm-confirm-view>`,
@@ -273,7 +280,14 @@ export const WIZARD_STEPS: Record<
     },
     install: {
       render: () => html`<utm-progress-view></utm-progress-view>`,
-      install: vmInstall,
+      install: {
+        ...vmInstall,
+        // A VM of that name was made in UTM after the configure step
+        changeChoice: () => ({
+          step: "configure",
+          label: localize("components.wizard_steps.choose_another_name"),
+        }),
+      },
     },
     success: { render: () => html`<utm-success-view></utm-success-view>` },
   },

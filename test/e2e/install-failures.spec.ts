@@ -13,7 +13,8 @@ const next = (page: Page) =>
   page.locator("wizard-shell .footer-right wa-button");
 
 // Recovery follows each error's retryability: a retry, picking the drive
-// again, or only cancelling when a retry could repeat a hidden VM creation.
+// or VM name again, or only cancelling when a retry could repeat a hidden VM
+// creation.
 for (const scenario of [
   {
     failure: "flash-write",
@@ -57,6 +58,14 @@ for (const scenario of [
     message:
       "Home Assistant Installer is not allowed to control UTM. Open System Settings > Privacy & Security > Automation, enable UTM under Home Assistant Installer, then try again.",
     recovery: "retry",
+  },
+  // A VM of that name was made in UTM after the configure step checked it
+  {
+    failure: "utm-create-name-taken",
+    flow: "utm",
+    message:
+      'UTM already has a virtual machine named "Home Assistant". Choose another name, or remove that virtual machine in UTM.',
+    recovery: "choose-name",
   },
 ] as const) {
   test(`${scenario.failure} shows an error and recovers through the real wizard flow`, async ({
@@ -115,6 +124,8 @@ for (const scenario of [
       await expect(next(page)).toHaveText("Try again");
     } else if (scenario.recovery === "choose-drive") {
       await expect(next(page)).toHaveText("Choose another drive");
+    } else if (scenario.recovery === "choose-name") {
+      await expect(next(page)).toHaveText("Choose another name");
     } else {
       await expect(next(page)).not.toBeVisible();
     }
@@ -144,6 +155,17 @@ for (const scenario of [
       await skipWifiStep(page);
       await next(page).click();
       await page.locator('confirm-dialog wa-button[variant="danger"]').click();
+    }
+    if (scenario.recovery === "choose-name") {
+      // Back at the name, to install again under another one
+      const configure = page.locator("utm-configure-view");
+      await expect(configure).toBeVisible();
+      await configure.locator("wa-input input").fill("Home Assistant 2");
+      await next(page).click();
+      await expect(page.locator("utm-confirm-view")).toContainText(
+        "Home Assistant 2"
+      );
+      await next(page).click();
     }
     await expect(progress.locator(".error-message")).toHaveCount(0);
     // A running flash offers Cancel only; the VM installs show no buttons

@@ -547,6 +547,13 @@ pub fn check_utm_automation() -> Result<(), CommandError> {
     UtmBackend::check_automation(&Backend).map_err(CommandError::from_query)
 }
 
+/// Refuse a VM name UTM already has, while another can still be chosen.
+/// Async, so waiting for UTM to answer never holds up the window.
+#[tauri::command(async)]
+pub fn check_utm_vm_name(name: String) -> Result<(), CommandError> {
+    UtmBackend::check_vm_name(&Backend, &name).map_err(CommandError::from_query)
+}
+
 /// Create a Home Assistant VM in UTM
 #[tauri::command]
 pub async fn create_utm_vm(
@@ -1371,6 +1378,21 @@ mod tests {
         assert!(check_utm_automation().is_ok());
     }
 
+    #[test]
+    #[cfg(feature = "mock")]
+    fn test_check_utm_vm_name_mock_returns_ok() {
+        assert!(check_utm_vm_name("Home Assistant".to_string()).is_ok());
+    }
+
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn test_check_utm_vm_name_unsupported_off_macos() {
+        let err = check_utm_vm_name("Home Assistant".to_string()).unwrap_err();
+        assert_eq!(err.code, "unsupported_platform");
+        assert!(!err.retryable);
+    }
+
     // Asking again can't change the platform, so the check offers no retry.
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[test]
@@ -2064,6 +2086,10 @@ mod mock_tests {
         }
 
         fn check_automation(&self) -> hai_core::Result<()> {
+            unreachable!()
+        }
+
+        fn check_vm_name(&self, _: &str) -> hai_core::Result<()> {
             unreachable!()
         }
 

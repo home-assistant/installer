@@ -13,6 +13,7 @@ import "../../../../src/views/utm/utm-configure-view.js";
 import type { UtmConfigureView } from "../../../../src/views/utm/utm-configure-view.js";
 import {
   deferred,
+  ipcError,
   mockTauriIpc,
   restoreTauriIpc,
   settle,
@@ -26,6 +27,29 @@ async function resourcesOf(el: HTMLElement): Promise<ShadowRoot> {
   const resources = el.shadowRoot!.querySelector("vm-resources")!;
   await resources.updateComplete;
   return resources.shadowRoot!;
+}
+
+/** What the backend answers for a name UTM already has */
+const nameTaken = (name: string) =>
+  ipcError(
+    "utm_vm_name_taken",
+    `UTM already has a virtual machine named "${name}".`,
+    false,
+    {
+      message_key: "backend.utm.vm_name_taken",
+      message_params: { name },
+    }
+  );
+
+/** Answer the system lookup, and the name check with `checkName` */
+function mockNameCheck(checkName: (name: string) => unknown) {
+  mockTauriIpc((cmd, args) => {
+    if (cmd === "get_system_info") return { cpu_cores: 10, memory_mb: 32768 };
+    if (cmd === "check_utm_vm_name") {
+      return checkName((args as { name: string }).name);
+    }
+    throw new Error(`Unexpected IPC command: ${cmd}`);
+  });
 }
 
 /** Mount the view and wait for the system-info lookup to settle */
@@ -288,6 +312,86 @@ describe("utm-configure-view", () => {
         .shadowRoot!.querySelector('[role="slider"]')!
         .getAttribute("aria-valuetext")
     ).to.equal("10 cores");
+  });
+
+  it("lets Next go on when UTM has no VM by the name", async () => {
+    const asked: string[] = [];
+    mockNameCheck((name) => {
+      asked.push(name);
+    });
+    const el = await mount();
+
+    expect(await el.check()).to.be.true;
+    expect(asked).to.deep.equal(["Home Assistant"]);
+    expect(el.shadowRoot!.querySelector(".error-text")).to.be.null;
+  });
+
+  it("refuses a name UTM already has at the name, until it changes", async () => {
+    mockNameCheck((name) => {
+      if (name === "Home Assistant") throw nameTaken(name);
+    });
+    const el = await mount();
+    const name = el.shadowRoot!.querySelector<WaInput>("wa-input")!;
+    const hint = () => el.shadowRoot!.querySelector(".name-hint")!;
+
+    expect(await el.check()).to.be.false;
+    await name.updateComplete;
+    expect(hint().textContent).to.contain(
+      'UTM already has a virtual machine named "Home Assistant". Choose another name, or remove that virtual machine in UTM.'
+    );
+    expect(name.input.getAttribute("aria-invalid")).to.equal("true");
+    expect(getComputedStyle(hint()).color).to.equal(ERROR_COLOR);
+    // The field that says why takes the focus, so the reason is read out
+    expect(el.shadowRoot!.activeElement).to.equal(name);
+    // Not repeated below the settings
+    expect(el.shadowRoot!.querySelector(".error-text")).to.be.null;
+
+    // Another name clears the error, and Next asks about it
+    name.value = "Home Assistant 2";
+    name.dispatchEvent(new Event("input"));
+    await el.updateComplete;
+    await name.updateComplete;
+    expect(hint().textContent).to.contain(
+      "Shown in UTM's virtual machine list"
+    );
+    expect(name.input.getAttribute("aria-invalid")).to.equal("false");
+    expect(await el.check()).to.be.true;
+  });
+
+  it("stays on the step and says why when UTM can't answer", async () => {
+    mockNameCheck(() => {
+      throw ipcError("utm", "UTM didn't respond.", true, {});
+    });
+    const el = await mount();
+
+    expect(await el.check()).to.be.false;
+    await el.updateComplete;
+    const error = el.shadowRoot!.querySelector(".error-text")!;
+    expect(error.textContent).to.contain("UTM didn't respond.");
+    expect(error.hasAttribute("data-focus-alert")).to.be.true;
+    // It is not the name's fault
+    expect(el.shadowRoot!.querySelector(".name-hint")!.textContent).to.contain(
+      "Shown in UTM's virtual machine list"
+    );
+  });
+
+  it("ignores an answer about a name changed meanwhile", async () => {
+    const answer = deferred<never>();
+    mockNameCheck(() => answer.promise);
+    const el = await mount();
+
+    const checking = el.check();
+    const name = el.shadowRoot!.querySelector<WaInput>("wa-input")!;
+    name.value = "My Home";
+    name.dispatchEvent(new Event("input"));
+    answer.reject(nameTaken("Home Assistant"));
+
+    expect(await checking).to.be.false;
+    await el.updateComplete;
+    // The old name's error must not show under the new one
+    expect(el.shadowRoot!.querySelector(".name-hint")!.textContent).to.contain(
+      "Shown in UTM's virtual machine list"
+    );
   });
 
   it("asks for Next on Enter in the name, not on the sliders", async () => {
