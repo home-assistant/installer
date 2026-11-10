@@ -190,7 +190,7 @@ describe("localized view contracts", () => {
   });
 
   it("keeps the VM name placeholder as data and separates disk from pool labels", () => {
-    replace("views.welcome_view.home_assistant", "Brand translation fixture");
+    replace("views.welcome_view.title", "Brand translation fixture");
     replace(
       "views.proxmox.proxmox_configure_view.storage_pool",
       "Pool fixture"

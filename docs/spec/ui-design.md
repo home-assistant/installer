@@ -91,7 +91,7 @@ High-quality product photos or illustrations for:
 
 ### Logos
 
-- Home Assistant logo (main branding, welcome screen)
+- Installer app icon with the "Home Assistant Installer" name (welcome screen)
 - Open Home Foundation logo (welcome screen, below "Let's go" button)
 - Proxmox logo (for Proxmox option)
 - UTM logo (for macOS VM option)
@@ -122,9 +122,9 @@ Casita helps make the app feel friendly and approachable, especially for non-tec
 │                                                                     │
 │                                                                     │
 │                                                                     │
-│                      [Home Assistant Logo]                          │
+│                      [Installer app icon]                           │
 │                                                                     │
-│                          Installer                                  │
+│                    Home Assistant Installer                         │
 │                                                                     │
 │                                                                     │
 │            Welcome to your privacy-first, local,                    │

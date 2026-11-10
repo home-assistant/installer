@@ -17,19 +17,13 @@ describe("welcome-view", () => {
     setLanguage("en");
     document.documentElement.lang = "";
   });
-  it("renders the Home Assistant logo", async () => {
+  it("names the installer under its own icon", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
-    const lightLogo = el.shadowRoot!.querySelector(".logo-light");
-    const darkLogo = el.shadowRoot!.querySelector(".logo-dark");
-
-    expect(lightLogo).to.exist;
-    expect(darkLogo).to.exist;
-    expect(lightLogo!.getAttribute("src")).to.include(
-      "home-assistant-logo-light.svg"
-    );
-    expect(darkLogo!.getAttribute("src")).to.include(
-      "home-assistant-logo-dark.svg"
+    const heading = el.shadowRoot!.querySelector("h1");
+    expect(heading!.textContent).to.include("Home Assistant Installer");
+    expect(heading!.querySelector(".app-icon")!.getAttribute("src")).to.include(
+      "installer-icon.png"
     );
   });
 
@@ -93,6 +87,9 @@ describe("welcome-view", () => {
     expect(ohfLink!.getAttribute("href")).to.include("openhomefoundation.org");
     expect(lightLogo).to.exist;
     expect(darkLogo).to.exist;
+    expect(ohfLink!.querySelector(".ohf-attribution")!.textContent).to.include(
+      "A project from the"
+    );
   });
 
   it("puts Report a problem and Learn more in the footer", async () => {

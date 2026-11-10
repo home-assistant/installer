@@ -395,10 +395,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/");
     await page.locator(".logo-container").hover();
-    await expect(page.locator(".logo:visible")).toHaveCSS(
-      "animation-name",
-      "none"
-    );
+    await expect(page.locator(".app-icon")).toHaveCSS("animation-name", "none");
     // Each pair is a foreground, then what it is drawn on from the top down
     const text = [
       ["--ha-primary-fill", "#ffffff"],

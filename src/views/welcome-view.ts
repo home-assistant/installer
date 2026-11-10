@@ -125,19 +125,27 @@ export class WelcomeView extends LitElement {
         justify-content: center;
       }
 
+      /* The installer's own icon and name, so the screen reads as a tool
+         that puts Home Assistant somewhere, not as Home Assistant itself */
       .logo-container {
-        margin: 0 0 2rem;
-        font-size: inherit;
-        line-height: 1;
+        margin: 0 0 1.5rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.5rem;
+        font-size: 2.5rem;
+        font-weight: 600;
+        line-height: 1.15;
+        letter-spacing: -0.01em;
+        text-wrap: balance;
       }
 
-      .logo {
-        width: 500px;
-        max-width: 100%;
-        height: auto;
+      .app-icon {
+        width: 128px;
+        height: 128px;
       }
 
-      .logo-container:hover .logo {
+      .logo-container:hover .app-icon {
         animation: soft-pulse 3s ease-in-out infinite;
       }
 
@@ -195,15 +203,27 @@ export class WelcomeView extends LitElement {
         }
       }
 
+      /* The attribution and wordmark, set like Home Assistant's own launch
+         screen: a small uppercase line over the horizontal logo */
       .ohf-link {
-        display: block;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.25rem;
         line-height: 0;
         text-decoration: none;
+        color: inherit;
+      }
+
+      .ohf-attribution {
+        font-size: 0.75rem;
+        line-height: 1;
+        text-transform: uppercase;
       }
 
       /* Quiet until pointed at: the footer should not compete with Let's go */
       .ohf-logo {
-        width: 140px;
+        width: 200px;
         filter: grayscale(1);
         opacity: 0.6;
         transition:
@@ -244,16 +264,8 @@ export class WelcomeView extends LitElement {
       <update-banner></update-banner>
       <main>
         <h1 class="logo-container" @click=${this._onLogoClick}>
-          <img
-            class="logo logo-light"
-            src="/assets/home-assistant-logo-light.svg"
-            alt=${localize("views.welcome_view.home_assistant")}
-          />
-          <img
-            class="logo logo-dark"
-            src="/assets/home-assistant-logo-dark.svg"
-            alt=${localize("views.welcome_view.home_assistant")}
-          />
+          <img class="app-icon" src="/assets/installer-icon.png" alt="" />
+          ${localize("views.welcome_view.title")}
         </h1>
 
         <p class="intro">${localize("views.welcome_view.subtitle")}</p>
@@ -274,7 +286,10 @@ export class WelcomeView extends LitElement {
         <diagnostics-actions class="report"></diagnostics-actions>
         ${renderExternalLink(
           OPEN_HOME_FOUNDATION_URL,
-          html`<img
+          html`<span class="ohf-attribution"
+              >${localize("views.welcome_view.project_from")}</span
+            >
+            <img
               class="ohf-logo ohf-logo-light"
               src="/assets/ohf-logo-light.svg"
               alt=${localize("views.welcome_view.open_home_foundation")}
