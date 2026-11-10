@@ -15,7 +15,7 @@ pub async fn write_image<P: ProgressCallback>(
     expected: &ExpectedDevice,
     verify: bool,
     progress_callback: &P,
-) -> Result<()> {
+) -> Result<bool> {
     let disk_number = parse_disk_number(device_id)?;
     check_identity(&super::device::list_devices_sync()?, device_id, expected)?;
     let image_size = image.size()?;
@@ -86,9 +86,13 @@ pub async fn write_image<P: ProgressCallback>(
     // Best effort, like "Safely Remove Hardware": the write and the verify
     // passed, so the drive is done. If Windows refuses or it's skipped, the
     // success screen tells the user to eject the drive themselves.
-    if let Some(flashed) = flashed {
-        let _ = tokio::task::spawn_blocking(move || super::eject::eject_disk(&flashed)).await;
-    }
+    let ejected = match flashed {
+        Some(flashed) => matches!(
+            tokio::task::spawn_blocking(move || super::eject::eject_disk(&flashed)).await,
+            Ok(Ok(true))
+        ),
+        None => false,
+    };
 
     progress_callback.on_progress(FlashProgress::new(
         FlashStage::Complete,
@@ -96,7 +100,7 @@ pub async fn write_image<P: ProgressCallback>(
         image_size,
         "Complete",
     ));
-    Ok(())
+    Ok(ejected)
 }
 
 fn open_device_for_write(device_path: &str) -> Result<File> {

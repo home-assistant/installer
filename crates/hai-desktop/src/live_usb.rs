@@ -41,7 +41,8 @@ pub async fn live_usb_status() -> LiveUsbStatus {
 
 /// Downloads Alpine and HAOS (or reuses the cache), builds the stick image and writes it to
 /// the removable drive `device_id` with read-back verification. The stick starts in
-/// `language`, the app's BCP 47 tag. `cancel_flash(attempt)` stops it.
+/// `language`, the app's BCP 47 tag. Returns whether the stick was ejected.
+/// `cancel_flash(attempt)` stops it.
 #[tauri::command]
 pub async fn create_live_usb(
     device_id: String,
@@ -50,7 +51,7 @@ pub async fn create_live_usb(
     attempt: String,
     progress_channel: Channel<FlashProgress>,
     state: tauri::State<'_, FlashState>,
-) -> Result<(), CommandError> {
+) -> Result<bool, CommandError> {
     state
         .run(attempt, |cancelled| async move {
             let _running = running_job()?;
@@ -149,7 +150,7 @@ async fn run_create_live_usb<P: ProgressCallback>(
     expected: &ExpectedDevice,
     language: &str,
     callback: &P,
-) -> Result<(), CommandError> {
+) -> Result<bool, CommandError> {
     // Same order as the regular flash: no download when the write can't happen anyway.
     Backend
         .check_write_privileges()
@@ -174,11 +175,11 @@ async fn run_create_live_usb<P: ProgressCallback>(
 
     // Last point where the stick is still untouched
     check_cancelled(callback)?;
-    write_to_usb(&image, device_id, expected, callback).await?;
+    let ejected = write_to_usb(&image, device_id, expected, callback).await?;
     drop(temp);
     remove_downloads();
     report(callback, FlashStage::Complete, "USB stick ready");
-    Ok(())
+    Ok(ejected)
 }
 
 /// Made, so the downloads are no longer needed. Failing to remove them only costs
@@ -192,14 +193,15 @@ fn remove_downloads() {
     }
 }
 
-/// Writes `image` to the stick `device_id` with read-back verification.
+/// Writes `image` to the stick `device_id` with read-back verification, then ejects it.
+/// Whether it was ejected.
 #[cfg(not(feature = "mock"))]
 async fn write_to_usb<P: ProgressCallback>(
     image: &Path,
     device_id: &str,
     expected: &ExpectedDevice,
     progress: &P,
-) -> Result<(), CommandError> {
+) -> Result<bool, CommandError> {
     Backend.check_write_privileges()?;
     let image_size = std::fs::metadata(image)?.len();
     let devices = Backend.list_devices().await?;
@@ -212,8 +214,8 @@ async fn write_to_usb<P: ProgressCallback>(
             true,
             progress,
         )
-        .await?;
-    Ok(())
+        .await
+        .map_err(CommandError::from)
 }
 
 /// Find the stick among the currently attached devices.
@@ -251,7 +253,7 @@ async fn run_create_live_usb<P: ProgressCallback>(
     _expected: &ExpectedDevice,
     _language: &str,
     callback: &P,
-) -> Result<(), CommandError> {
+) -> Result<bool, CommandError> {
     for stage in [
         FlashStage::Downloading,
         FlashStage::Extracting,
@@ -261,7 +263,7 @@ async fn run_create_live_usb<P: ProgressCallback>(
         mock::simulate(callback, stage).await?;
     }
     report(callback, FlashStage::Complete, "USB stick ready (mock)");
-    Ok(())
+    Ok(true)
 }
 
 async fn run_save_live_iso<P: ProgressCallback>(

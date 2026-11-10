@@ -98,7 +98,11 @@ fn optional_values_serialize_as_required_nullable_fields() {
         })
         .unwrap(),
         serde_json::to_value(ExpectedDevice::default()).unwrap(),
-        serde_json::to_value(FlashResult { duration_secs: 1 }).unwrap(),
+        serde_json::to_value(FlashResult {
+            duration_secs: 1,
+            ejected: true,
+        })
+        .unwrap(),
         serde_json::to_value(UtmStatus {
             installed: false,
             path: None,
