@@ -158,9 +158,9 @@ describe("shared install layouts", () => {
           ? layout.querySelector("wa-button")!
           : content.querySelector<HTMLAnchorElement>(".step-text a")!;
       link.click();
-      for (const appLink of content.querySelectorAll<HTMLAnchorElement>(
-        ".app-link"
-      ))
+      for (const appLink of content
+        .querySelector("companion-app")!
+        .shadowRoot!.querySelectorAll<HTMLAnchorElement>(".app-link"))
         appLink.click();
       await settle();
       expect(opened).to.deep.equal([

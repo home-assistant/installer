@@ -297,10 +297,16 @@ Casita helps make the app feel friendly and approachable, especially for non-tec
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Platform-specific companion apps:**
+**Companion app:**
 
-| Running on | Show |
-|------------|------|
+The panel shows one QR code and a link to each store. The code holds
+`https://my.home-assistant.io/app/`, which sends a phone to the Home Assistant
+app in its own store, so nobody picks a platform before scanning. The links
+open the App Store and Google Play pages in this computer's browser. The same
+panel is shown while Home Assistant installs, under the progress, and on the
+last step.
+
+------------|------|
 | macOS | iOS QR, Android QR, Mac App install button |
 | Windows | iOS QR, Android QR, Windows App download link |
 | Linux | iOS QR, Android QR only |

@@ -101,17 +101,17 @@ describe("section label styles", () => {
       marginTop: "0px",
       marginBottom: "16px",
     });
-    // The panel's gap sets it apart from the app links
-    expect(pick(root.querySelector("h3.companion-title")!, LOOK)).to.deep.equal(
-      {
-        fontSize: "16px",
-        fontWeight: "500",
-        textTransform: "none",
-        letterSpacing: "normal",
-        marginTop: "0px",
-        marginBottom: "0px",
-      }
-    );
+    // The panel's gap sets it apart from the code and the app links
+    const app = root.querySelector("companion-app")!;
+    await app.updateComplete;
+    expect(pick(app.shadowRoot!.querySelector("h3")!, LOOK)).to.deep.equal({
+      fontSize: "16px",
+      fontWeight: "500",
+      textTransform: "none",
+      letterSpacing: "normal",
+      marginTop: "0px",
+      marginBottom: "0px",
+    });
   });
 
   // Copies of these rules could drift apart

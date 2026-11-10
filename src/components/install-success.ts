@@ -1,17 +1,13 @@
 import { LitElement, html, css, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { localize } from "../localization/localize.js";
-import { renderExternalLink } from "../utils/external-link.js";
 import { badgeStyles } from "../utils/card-styles.js";
 import { linkStyles } from "../utils/link-styles.js";
-import { panelStyles } from "../utils/panel-styles.js";
 import { roomForMascotBeside } from "../utils/breakpoints.js";
 import { sectionLabelStyles } from "../utils/section-label-styles.js";
 import { getPlatform } from "../utils/platform.js";
-import { mdiApple, mdiGooglePlay } from "../utils/icons.js";
-import { APP_STORE_URL, GOOGLE_PLAY_URL } from "../utils/urls.js";
-import { renderIcon } from "../utils/render-icon.js";
 import { renderCasitaHappy } from "./install-mascot.js";
+import "./companion-app.js";
 import "./inline-notice.js";
 import {
   ViewAccessibility,
@@ -136,59 +132,6 @@ export class InstallSuccess extends LitElement {
         padding-top: 2px;
         min-width: 0;
         overflow-wrap: anywhere;
-      }
-
-      /* Its heading as close to the links as the next steps' heading is
-         to the steps */
-      .companion-section {
-        ${panelStyles}
-        gap: 1rem;
-      }
-
-      .companion-title {
-        font-size: 1rem;
-        font-weight: 500;
-        color: var(--ha-text-color);
-        margin: 0;
-      }
-
-      .app-links {
-        display: flex;
-        justify-content: center;
-        gap: 1rem;
-        flex-wrap: wrap;
-      }
-
-      .app-link {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.625rem 1rem;
-        background-color: var(--ha-background-color);
-        border: 1px solid var(--ha-control-border-color);
-        border-radius: var(--ha-small-border-radius);
-        color: var(--ha-text-color);
-        text-decoration: none;
-        font-size: 0.875rem;
-        font-weight: 500;
-        transition: all 0.2s ease;
-      }
-
-      .app-link:hover {
-        background-color: var(--ha-primary-fill);
-        border-color: var(--ha-primary-color);
-        color: var(--wa-color-brand-on-loud);
-      }
-
-      .app-link:hover svg {
-        fill: var(--wa-color-brand-on-loud);
-      }
-
-      .app-link svg {
-        width: 20px;
-        height: 20px;
-        fill: var(--ha-text-color);
-        transition: fill 0.2s ease;
       }
 
       .tip-section {
@@ -322,37 +265,7 @@ export class InstallSuccess extends LitElement {
           </div>
           <slot></slot>
           ${this.tip ? html`<div class="tip-section">${this.tip}</div>` : ""}
-          ${this.companion
-            ? html`<!-- A heading of its own, so the app links don't read as part of
-                 the next steps -->
-                <div class="companion-section">
-                  <h3 class="companion-title">
-                    ${localize("components.install_success.companion_app")}
-                  </h3>
-                  <div class="app-links">
-                    ${renderExternalLink(
-                      APP_STORE_URL,
-                      html`${renderIcon(mdiApple)}
-                        <span
-                          >${localize(
-                            "components.install_success.app_store"
-                          )}</span
-                        >`,
-                      { className: "app-link" }
-                    )}
-                    ${renderExternalLink(
-                      GOOGLE_PLAY_URL,
-                      html`${renderIcon(mdiGooglePlay)}
-                        <span
-                          >${localize(
-                            "components.install_success.google_play"
-                          )}</span
-                        >`,
-                      { className: "app-link" }
-                    )}
-                  </div>
-                </div>`
-            : ""}
+          ${this.companion ? html`<companion-app></companion-app>` : ""}
         </div>
       </div>
     `;

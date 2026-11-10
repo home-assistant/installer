@@ -177,6 +177,30 @@ describe("device-setup-view", () => {
     expect(progress.address).to.be.null;
     // Found, so no need to say how to find it
     expect(view.shadowRoot!.querySelector('[slot="help"]')).to.be.null;
+    // The problem is what to read now, not where to get the app
+    expect(progress.companion).to.be.false;
+  });
+
+  it("offers the companion app while Home Assistant installs, not before", async () => {
+    let found = false;
+    device({
+      ready: () => found,
+      updated: () => false,
+      setup: () => status(10),
+    });
+    await noted();
+    const { progress } = await render();
+
+    // Looking for the device: it may not start, and there is help to read
+    await waitUntil(() => progress.stage === "waiting");
+    expect(progress.companion).to.be.false;
+
+    found = true;
+    await waitUntil(
+      () => progress.stage === "updating",
+      "Home Assistant never started installing"
+    );
+    await waitUntil(() => progress.companion, "the app was never offered");
   });
 
   it("shows what the landing page reports while Home Assistant installs", async () => {
