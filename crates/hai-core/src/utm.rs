@@ -782,11 +782,12 @@ mod tests {
             asked,
             [(VM_EXISTS_SCRIPT.to_string(), "Home Assistant".to_string())]
         );
-        let Error::UtmVmNameTaken(message) = error else {
-            panic!("expected a taken name, got {error:?}")
-        };
-        assert_eq!(message.key, "backend.utm.vm_name_taken");
-        let english = message.to_string();
+        assert!(matches!(error, Error::UtmVmNameTaken(_)), "{error:?}");
+        assert_eq!(
+            error.message().map(|message| message.key),
+            Some("backend.utm.vm_name_taken")
+        );
+        let english = error.to_string();
         assert!(english.contains("\"Home Assistant\""), "{english}");
         assert!(english.contains("Choose another name"), "{english}");
     }
@@ -820,10 +821,11 @@ mod tests {
             ))
         })
         .unwrap_err();
-        let Error::Utm(message) = error else {
-            panic!("expected a UTM error")
-        };
-        assert_eq!(message.key, "backend.utm.automation_denied");
+        assert!(matches!(error, Error::Utm(_)), "{error:?}");
+        assert_eq!(
+            error.message().map(|message| message.key),
+            Some("backend.utm.automation_denied")
+        );
     }
 
     fn import_config() -> UtmVmConfig {

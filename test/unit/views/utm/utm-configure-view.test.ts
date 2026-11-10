@@ -394,6 +394,21 @@ describe("utm-configure-view", () => {
     );
   });
 
+  it("doesn't go on with a free answer about a name changed meanwhile", async () => {
+    const answer = deferred<void>();
+    mockNameCheck(() => answer.promise);
+    const el = await mount();
+
+    const checking = el.check();
+    const name = el.shadowRoot!.querySelector<WaInput>("wa-input")!;
+    name.value = "My Home";
+    name.dispatchEvent(new Event("input"));
+    answer.resolve();
+
+    // UTM was asked about the old name; Next asks about the new one
+    expect(await checking).to.be.false;
+  });
+
   it("asks for Next on Enter in the name, not on the sliders", async () => {
     const el = await mount();
     let next = 0;

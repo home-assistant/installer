@@ -156,16 +156,18 @@ export class UtmConfigureView extends LitElement {
       recordFailure("utm", error);
       const checkError = installerError(error);
       this._checkError = checkError;
-      if (checkError.code === NAME_TAKEN) await this._focusName(checkError);
+      if (checkError.code === NAME_TAKEN) await this._focusName();
       return false;
     }
   }
 
-  /** The name field, which says why its name can't be used */
-  private async _focusName(error: InstallerError) {
+  /**
+   * The name field, which says why its name can't be used. It takes the
+   * focus once it shows the error, so the error is read out with it. Only
+   * renders run meanwhile, never typing, so the error is still the field's.
+   */
+  private async _focusName() {
     await this.updateComplete;
-    if (!this.isConnected || this._checkError !== error) return;
-    // Once the field shows the error, so it is read out with it
     await this._nameInput?.updateComplete;
     this._nameInput?.focus();
   }
