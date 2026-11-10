@@ -100,7 +100,7 @@ export class LiveUsbProgressView extends InstallProgressView {
           localize("views.live_usb.live_usb_progress_view.no_stick_selected")
         );
       }
-      await this._runStoppable((attempt) =>
+      const ejected = await this._runStoppable((attempt) =>
         createLiveUsb(
           drive.id,
           {
@@ -113,6 +113,8 @@ export class LiveUsbProgressView extends InstallProgressView {
           attempt
         )
       );
+      throwIfCancelled(signal);
+      wizardState.setSelection("driveEjected", ejected);
     } else {
       const path = await this._runStoppable((attempt) =>
         saveLiveIso(

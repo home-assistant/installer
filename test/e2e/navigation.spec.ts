@@ -179,7 +179,7 @@ test.describe("SBC Success", () => {
     page,
   }) => {
     const successView = page.locator("success-view");
-    await expect(successView.locator(".step-item").nth(1)).toContainText(
+    await expect(successView.locator(".step-item").first()).toContainText(
       `Insert the written storage into ${selectedDeviceName}.`
     );
 

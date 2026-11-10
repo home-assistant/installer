@@ -173,7 +173,11 @@ export type FlashResult = {
 /**
  * Duration in seconds
  */
-duration_secs: number, };
+duration_secs: number,
+/**
+ * Whether the drive was ejected; if not, the user has to before unplugging it
+ */
+ejected: boolean, };
 
 export type ProxmoxCredentials = {
 /**

@@ -336,6 +336,8 @@ pub struct GitHubRelease {
 pub struct FlashResult {
     /// Duration in seconds
     pub duration_secs: u64,
+    /// Whether the drive was ejected; if not, the user has to before unplugging it
+    pub ejected: bool,
 }
 
 /// Stable version info from version.home-assistant.io/stable.json
