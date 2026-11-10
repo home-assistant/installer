@@ -133,6 +133,7 @@ export class UpdateBanner extends LitElement {
       <div class="actions">
         ${canInstall
           ? html`<wa-button
+              pill
               class="install"
               size="s"
               variant="brand"
@@ -148,6 +149,7 @@ export class UpdateBanner extends LitElement {
           : nothing}
         ${failed || !update.installable
           ? html`<wa-button
+              pill
               class="download"
               size="s"
               appearance=${canInstall ? "outlined" : "accent"}
@@ -160,6 +162,7 @@ export class UpdateBanner extends LitElement {
         ${busy || installerUpdate.restartRequested
           ? nothing
           : html`<wa-button
+              pill
               class="dismiss"
               size="s"
               appearance="plain"

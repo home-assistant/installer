@@ -236,6 +236,7 @@ export class WizardShell extends LitElement {
     return html`
       <header class="header">
         <wa-button
+          pill
           appearance="plain"
           @click=${this._onBack}
           ?disabled=${this.hideBack}
@@ -264,7 +265,7 @@ export class WizardShell extends LitElement {
 
       <footer class="footer ${this.hideFooter ? "idle" : ""}">
         <div class="footer-left">
-          <wa-button appearance="plain" @click=${this._onCancel}>
+          <wa-button pill appearance="plain" @click=${this._onCancel}>
             ${this.cancelLabel}
           </wa-button>
         </div>
@@ -276,6 +277,7 @@ export class WizardShell extends LitElement {
           ${!this.hideNext
             ? html`
                 <wa-button
+                  pill
                   variant="brand"
                   appearance="accent"
                   @click=${this._onNext}

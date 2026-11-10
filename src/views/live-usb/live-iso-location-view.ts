@@ -189,7 +189,7 @@ export class LiveIsoLocationView extends LitElement {
               @input=${this._onFolderInput}
               @keydown=${nextOnEnter}
             ></wa-input>
-            <wa-button appearance="outlined" @click=${this._browse}>
+            <wa-button pill appearance="outlined" @click=${this._browse}>
               ${localize("views.live_usb.live_iso_location_view.browse")}
             </wa-button>
           </div>

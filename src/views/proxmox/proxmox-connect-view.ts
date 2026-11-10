@@ -561,12 +561,14 @@ export class ProxmoxConnectView extends LitElement {
           >
         </div>
         <wa-button
+          pill
           slot="footer"
           appearance="outlined"
           @click=${this._rejectCertificate}
           >${localize("common.cancel")}</wa-button
         >
         <wa-button
+          pill
           slot="footer"
           variant="brand"
           @click=${this._trustCertificate}

@@ -124,6 +124,7 @@ export class LiveUsbSuccessView extends LitElement {
               >
               ${path
                 ? html`<wa-button
+                    pill
                     size="s"
                     appearance="outlined"
                     @click=${this._onReveal}

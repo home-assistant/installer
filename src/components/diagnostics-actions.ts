@@ -177,12 +177,17 @@ export class DiagnosticsActions extends LitElement {
           : ""}
         <p role="status">${this._status}</p>
         <div class="actions">
-          <wa-button variant="brand" ?disabled=${!report} @click=${this._report}
+          <wa-button
+            pill
+            variant="brand"
+            ?disabled=${!report}
+            @click=${this._report}
             >${localize(
               "components.diagnostics_actions.report_a_problem"
             )}</wa-button
           >
           <wa-button
+            pill
             appearance="outlined"
             ?disabled=${!this._data}
             @click=${this._copy}
@@ -190,7 +195,7 @@ export class DiagnosticsActions extends LitElement {
               "components.diagnostics_actions.copy_diagnostics"
             )}</wa-button
           >
-          <wa-button appearance="outlined" @click=${this._openLogs}
+          <wa-button pill appearance="outlined" @click=${this._openLogs}
             >${localize(
               "components.diagnostics_actions.open_logs_folder"
             )}</wa-button
