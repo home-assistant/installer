@@ -594,6 +594,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           LOKALISE_TOKEN: ${{ secrets.LOKALISE_TOKEN }}
+        # Unlike the default shell, fails on a failed CLI ahead of tail
+        shell: bash
         run: |
           docker pull -q "$LOKALISE"
           # Assigned on its own line so a failed lookup fails the step
@@ -607,7 +609,7 @@ jobs:
             file upload --file /catalogs/en.json --lang-iso en \
             --convert-placeholders=false --replace-modified --cleanup-mode \
             --poll --poll-timeout 5m \
-            > "$RUNNER_TEMP/upload.json"
+            | tail -n +2 > "$RUNNER_TEMP/upload.json" # Drops "Uploading …"
           cat "$RUNNER_TEMP/upload.json"
           # The CLI exits 0 when Lokalise rejects the file
           jq -e '.process.status == "finished"' "$RUNNER_TEMP/upload.json" > /dev/null
