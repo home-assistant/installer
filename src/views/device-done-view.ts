@@ -48,6 +48,7 @@ export class DeviceDoneView extends LitElement {
         >
           <p class="open" slot="action">
             <wa-button
+              pill
               variant="brand"
               href=${homeAssistantUrl(ipAddress)}
               target=${EXTERNAL_LINK_TARGET}

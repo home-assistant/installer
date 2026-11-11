@@ -317,6 +317,7 @@ export class ProxmoxImportStorage {
           <div class="import-actions">
             ${selected
               ? html`<wa-button
+                  pill
                   class="enable-import"
                   variant="brand"
                   size="s"
@@ -334,6 +335,7 @@ export class ProxmoxImportStorage {
                 </wa-button>`
               : ""}
             <wa-button
+              pill
               class="refresh-storage"
               appearance="outlined"
               size="s"

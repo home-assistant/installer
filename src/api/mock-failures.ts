@@ -8,6 +8,7 @@ export function failMockOperation(
     | "proxmox"
     | "proxmox-download"
     | "utm"
+    | "utm-name"
     | "update"
 ) {
   if (!import.meta.env.DEV || isTauri()) return;
@@ -77,6 +78,30 @@ export function failMockOperation(
       details: {
         message_key: "backend.utm.automation_denied",
         message_params: {},
+      },
+    },
+    // A VM of that name left over from an earlier install
+    "utm-name-taken": {
+      operation: "utm-name",
+      code: "utm_vm_name_taken",
+      message:
+        'UTM already has a virtual machine named "Home Assistant". Choose another name, or remove that virtual machine in UTM.',
+      retryable: false,
+      details: {
+        message_key: "backend.utm.vm_name_taken",
+        message_params: { name: "Home Assistant" },
+      },
+    },
+    // UTM got a VM of that name after the configure step checked it
+    "utm-create-name-taken": {
+      operation: "utm",
+      code: "utm_vm_name_taken",
+      message:
+        'UTM already has a virtual machine named "Home Assistant". Choose another name, or remove that virtual machine in UTM.',
+      retryable: false,
+      details: {
+        message_key: "backend.utm.vm_name_taken",
+        message_params: { name: "Home Assistant" },
       },
     },
     "update-install": {

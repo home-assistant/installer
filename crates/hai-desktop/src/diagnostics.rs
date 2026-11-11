@@ -511,6 +511,7 @@ pub enum ErrorCategory {
     ProxmoxTwoFactor,
     UtmOperationUncertain,
     UtmVmCreated,
+    UtmVmNameTaken,
     UnsupportedPlatform,
     Json,
     InvalidConfig,
@@ -968,6 +969,14 @@ mod tests {
         ));
         let created = describe(&created);
         assert!(!created.to_lowercase().contains("jane"), "{created}");
+        let taken = hai_core::Error::UtmVmNameTaken(hai_core::message!(
+            "backend.utm.vm_name_taken",
+            name = "Jane's VM",
+        ));
+        assert_eq!(
+            describe(&taken),
+            "UTM already has a virtual machine named \"<name>\". Choose another name, or remove that virtual machine in UTM."
+        );
         let echoed = hai_core::Error::Utm(hai_core::message!(
             "backend.utm.applescript_error",
             detail = r#"Can’t make {name:"Jane's Home", drives:{{source:file "Macintosh HD:Users:jane:Library:Caches:haos.qcow2"}}} into type record. (-1700)"#,
@@ -1140,6 +1149,7 @@ mod tests {
             "utm",
             "utm_operation_uncertain",
             "utm_vm_created",
+            "utm_vm_name_taken",
             "drive_disconnected",
             "write_protected",
             "unsupported_sector_size",

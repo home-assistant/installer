@@ -11,6 +11,10 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const catalogPath =
   process.argv[2] ?? path.join(root, "src/localization/en.json");
 const read = (filename) => JSON.parse(fs.readFileSync(filename, "utf8"));
+// CI sets this for the translations it downloads from Lokalise, so a
+// community string that doesn't fit shows the English instead of blocking
+// every build until someone fixes it there.
+const prune = process.env.LOCALIZATION_PRUNE === "1";
 
 function placeholders(key, message) {
   assert.equal(typeof message, "string", `${key}: messages must be plain text`);
@@ -62,22 +66,50 @@ for (const filename of fs.readdirSync(path.dirname(catalogPath))) {
   } catch {
     // Reported below
   }
+  const translationPath = path.join(path.dirname(catalogPath), filename);
+  if (tag !== language && prune) {
+    // The app would never look it up, like Lokalise's tl for fil
+    console.log(
+      `::warning::Dropped ${filename}: not named after its language tag`
+    );
+    fs.rmSync(translationPath);
+    continue;
+  }
   assert.equal(
     tag,
     language,
     `${filename}: name a catalog after its language tag, like pt-BR.json`
   );
-  const translation = read(path.join(path.dirname(catalogPath), filename));
+  const translation = read(translationPath);
+  let dropped = false;
   for (const [key, message] of Object.entries(translation)) {
-    assert(parameters.has(key), `${filename}: unknown key ${key}`);
-    // An export can list untranslated keys with empty text
-    if (typeof message === "string" && !message.trim()) continue;
-    assert.deepEqual(
-      placeholders(`${filename}: ${key}`, message),
-      parameters.get(key),
-      `${filename}: ${key} placeholder mismatch`
-    );
+    try {
+      assert(parameters.has(key), `${filename}: unknown key ${key}`);
+      // An export can list untranslated keys with empty text. Pruning drops
+      // them, so a catalog of nothing else is removed like an empty one.
+      if (typeof message === "string" && !message.trim()) {
+        if (prune) {
+          delete translation[key];
+          dropped = true;
+        }
+        continue;
+      }
+      assert.deepEqual(
+        placeholders(`${filename}: ${key}`, message),
+        parameters.get(key),
+        `${filename}: ${key} placeholder mismatch`
+      );
+    } catch (error) {
+      if (!prune) throw error;
+      console.log(`::warning::Dropped ${error.message}`);
+      delete translation[key];
+      dropped = true;
+    }
   }
+  // An empty catalog would stop the app from trying the next language
+  if (prune && !Object.keys(translation).length) fs.rmSync(translationPath);
+  else if (dropped)
+    fs.writeFileSync(translationPath, JSON.stringify(translation, null, 2));
 }
 
 // A key under a file's namespace (views.sbc.success_view.title for

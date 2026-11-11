@@ -15,6 +15,8 @@ describe("browser mock failures", () => {
     ["flash-permission", "flash", "permission_denied", false],
     ["proxmox-install", "proxmox", "proxmox_api", false],
     ["utm-create", "utm", "utm", true],
+    ["utm-name-taken", "utm-name", "utm_vm_name_taken", false],
+    ["utm-create-name-taken", "utm", "utm_vm_name_taken", false],
     ["update-install", "update", "update_failed", true],
   ] as const) {
     it(`rejects ${scenario} once like a native command error`, () => {

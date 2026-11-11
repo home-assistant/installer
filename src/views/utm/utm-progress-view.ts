@@ -1,4 +1,7 @@
-import { installerError } from "../../utils/installer-error.js";
+import {
+  installerError,
+  type InstallerError,
+} from "../../utils/installer-error.js";
 import { localize } from "../../localization/localize.js";
 import { logFrontendError } from "../../utils/diagnostics.js";
 import { customElement } from "lit/decorators.js";
@@ -68,6 +71,12 @@ export class UtmProgressView extends VmProgressView<UtmStage> {
 
   protected _stoppedMessage(): string {
     return localize("views.utm.utm_progress_view.stopped_nothing_created");
+  }
+
+  // UTM got a VM of the chosen name after the configure step checked it,
+  // so only another name helps
+  protected _choiceCanFix(error: InstallerError): boolean {
+    return error.code === "utm_vm_name_taken";
   }
 
   protected _startFailure() {

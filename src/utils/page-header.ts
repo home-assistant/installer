@@ -87,7 +87,7 @@ export const pageStyles = css`
 export function renderBackHeader(onBack: (event: MouseEvent) => void) {
   return html`
     <div class="header">
-      <wa-button appearance="plain" @click=${onBack}>
+      <wa-button pill appearance="plain" @click=${onBack}>
         <span slot="start" aria-hidden="true">←</span>
         ${localize("common.back")}
       </wa-button>
