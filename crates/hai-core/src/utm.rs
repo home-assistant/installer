@@ -189,6 +189,51 @@ fn automation_allowed(mut run: impl FnMut(&str, &[&str]) -> Result<String>) -> R
         })
 }
 
+/// Refuse a name UTM already has a VM by, before anything is downloaded
+fn check_vm_name(name: &str) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        vm_name_available(name, macos::run_applescript)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = name;
+        Err(Error::UnsupportedPlatform(
+            "UTM is only available on macOS".to_string(),
+        ))
+    }
+}
+
+/// Asks UTM whether it has a VM named `name`. UTM refuses to create a second
+/// one, but only says so once the image is downloaded and copied.
+///
+/// UTM matches the name ignoring case here, while its own check when
+/// creating doesn't. Its VMs are bundles named after them on a disk that
+/// usually ignores case, so a name differing only in case is refused too.
+#[cfg(any(target_os = "macos", test))]
+fn vm_name_available(
+    name: &str,
+    mut run: impl FnMut(&str, &[&str]) -> Result<String>,
+) -> Result<()> {
+    let taken = run(VM_EXISTS_SCRIPT, &[name]).map_err(|error| match error {
+        // Nothing is created, so an unanswered question is nothing to keep
+        Error::UtmOperationUncertain(message) => Error::Utm(message),
+        error => error,
+    })?;
+    match taken.as_str() {
+        "false" => Ok(()),
+        "true" => Err(Error::UtmVmNameTaken(crate::message!(
+            "backend.utm.vm_name_taken",
+            name = name,
+        ))),
+        other => Err(Error::Utm(crate::message!(
+            "backend.utm.applescript_error",
+            detail = format!("Unexpected answer from UTM: {other}"),
+        ))),
+    }
+}
+
 /// Create a Home Assistant VM using UTM
 async fn create_vm<P: ProgressCallback>(
     config: &UtmVmConfig,
@@ -272,6 +317,13 @@ const AUTOMATION_SCRIPT: &str = r#"tell application "UTM"
 end tell"#;
 
 #[cfg(any(target_os = "macos", test))]
+const VM_EXISTS_SCRIPT: &str = r#"on run {vmName}
+    tell application "UTM"
+        return exists virtual machine named vmName
+    end tell
+end run"#;
+
+#[cfg(any(target_os = "macos", test))]
 const STATUS_SCRIPT: &str = r#"on run {vmId}
     tell application "UTM"
         return status of virtual machine id vmId
@@ -298,7 +350,7 @@ end run"#;
 // - hypervisor:true for hardware acceleration (uses macOS Hypervisor.framework)
 // - uefi:true for UEFI boot (required by HAOS)
 // - bridged network for direct LAN access (required for Home Assistant)
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 const CREATE_SCRIPT: &str = r#"on run {vmName, imagePath, hostInterface, cpuCores, memorySize}
     set imageFile to POSIX file imagePath
     tell application "UTM"
@@ -389,6 +441,46 @@ fn choose_bridge_interface(
         .find(|device| has_ipv4(device))
         .unwrap_or("en0")
         .to_string()
+}
+
+/// Have UTM import a copy of the image at `image_path` as a new VM, and
+/// return its id. The copy has the chosen disk size, and is removed once UTM
+/// took it or refused it.
+#[cfg(any(target_os = "macos", test))]
+fn import_vm(
+    config: &UtmVmConfig,
+    image_path: &std::path::Path,
+    network_interface: &str,
+    mut run: impl FnMut(&str, &[&str]) -> Result<String>,
+) -> Result<String> {
+    // The configure step checked this, but a VM of that name may have been
+    // made since. Refuse it before the copy, which takes a while.
+    vm_name_available(&config.name, &mut run)?;
+
+    // UTM ignores `guest size` for an imported drive and keeps the size
+    // of the image, so the image gets the chosen size before the import.
+    let disk_size_bytes = u64::from(config.disk_size_gb) * 1024 * 1024 * 1024;
+    let source = qcow2::grown_copy(image_path, disk_size_bytes)?;
+
+    let cpu_cores = config.cpu_cores.to_string();
+    let memory_mb = config.memory_mb.to_string();
+    let vm_id = run(
+        CREATE_SCRIPT,
+        &[
+            &config.name,
+            &source.to_string_lossy(),
+            network_interface,
+            &cpu_cores,
+            &memory_mb,
+        ],
+    );
+    if let Err(Error::UtmOperationUncertain(_)) = vm_id {
+        crate::download::keep_for_import(source);
+    } else {
+        // UTM copied the drive into its VM, or never took it
+        let _ = std::fs::remove_file(&source);
+    }
+    vm_id
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -580,31 +672,7 @@ mod macos {
 
         ensure_apple_silicon()?;
         let network_interface = get_primary_network_interface();
-
-        // UTM ignores `guest size` for an imported drive and keeps the size
-        // of the image, so the image gets the chosen size before the import.
-        let disk_size_bytes = u64::from(config.disk_size_gb) * 1024 * 1024 * 1024;
-        let source = qcow2::grown_copy(image_path, disk_size_bytes)?;
-
-        let cpu_cores = config.cpu_cores.to_string();
-        let memory_mb = config.memory_mb.to_string();
-        let vm_id = run_applescript(
-            CREATE_SCRIPT,
-            &[
-                &config.name,
-                &source.to_string_lossy(),
-                &network_interface,
-                &cpu_cores,
-                &memory_mb,
-            ],
-        );
-        if let Err(Error::UtmOperationUncertain(_)) = vm_id {
-            crate::download::keep_for_import(source);
-        } else {
-            // UTM copied the drive into its VM, or never took it
-            let _ = std::fs::remove_file(&source);
-        }
-        let vm_id = vm_id?;
+        let vm_id = import_vm(config, image_path, &network_interface, run_applescript)?;
 
         finish_vm_creation(config, vm_id, progress_callback, |vm_id| {
             // The VM exists now, so a failed start must not invite a blind retry
@@ -620,6 +688,10 @@ impl UtmBackend for Backend {
 
     fn check_automation(&self) -> Result<()> {
         check_automation()
+    }
+
+    fn check_vm_name(&self, name: &str) -> Result<()> {
+        check_vm_name(name)
     }
 
     async fn create_vm<P: ProgressCallback>(
@@ -694,6 +766,182 @@ mod tests {
             unanswered,
             Err(Error::Utm(message)) if message.key == "backend.utm.no_response"
         ));
+    }
+
+    #[test]
+    fn a_name_utm_already_has_is_refused_by_name() {
+        let mut asked = Vec::new();
+        let error = vm_name_available("Home Assistant", |script, arguments| {
+            asked.push((script.to_string(), arguments.join("|")));
+            Ok("true".to_string())
+        })
+        .unwrap_err();
+
+        // The name reaches the script as data, never as part of its source
+        assert_eq!(
+            asked,
+            [(VM_EXISTS_SCRIPT.to_string(), "Home Assistant".to_string())]
+        );
+        assert!(matches!(error, Error::UtmVmNameTaken(_)), "{error:?}");
+        assert_eq!(
+            error.message().map(|message| message.key),
+            Some("backend.utm.vm_name_taken")
+        );
+        let english = error.to_string();
+        assert!(english.contains("\"Home Assistant\""), "{english}");
+        assert!(english.contains("Choose another name"), "{english}");
+    }
+
+    #[test]
+    fn a_name_utm_does_not_have_is_available() {
+        assert!(vm_name_available("Home Assistant", |_, _| Ok("false".to_string())).is_ok());
+    }
+
+    #[test]
+    fn an_unexpected_answer_about_a_name_is_no_guess() {
+        let error = vm_name_available("Home Assistant", |_, _| Ok(String::new())).unwrap_err();
+        assert!(matches!(error, Error::Utm(_)), "{error:?}");
+    }
+
+    #[test]
+    fn asking_about_a_name_creates_nothing_to_keep() {
+        // Like the Automation check: no answer is no VM, and no import to wait for
+        let error = vm_name_available("Home Assistant", |_, _| {
+            Err(Error::UtmOperationUncertain(crate::message!(
+                "backend.utm.no_answer",
+                detail = "AppleEvent timed out (-1712)",
+            )))
+        })
+        .unwrap_err();
+        assert!(matches!(error, Error::Utm(_)), "{error:?}");
+
+        let error = vm_name_available("Home Assistant", |_, _| {
+            Err(applescript_error(
+                "Not authorized to send Apple events to UTM. (-1743)",
+            ))
+        })
+        .unwrap_err();
+        assert!(matches!(error, Error::Utm(_)), "{error:?}");
+        assert_eq!(
+            error.message().map(|message| message.key),
+            Some("backend.utm.automation_denied")
+        );
+    }
+
+    fn import_config() -> UtmVmConfig {
+        UtmVmConfig {
+            name: "Home Assistant".into(),
+            image_path: String::new(),
+            cpu_cores: 4,
+            memory_mb: 4096,
+            disk_size_gb: 64,
+            auto_start: false,
+        }
+    }
+
+    /// The files in `dir`, which holds the downloaded image and any copy
+    fn files_in(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut files: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        files.sort();
+        files
+    }
+
+    #[test]
+    fn a_name_taken_since_the_configure_step_stops_the_import_before_the_copy() {
+        let (dir, image) = qcow2::tests::haos_like_image();
+        let mut scripts = Vec::new();
+
+        let error = import_vm(&import_config(), &image, "en0", |script, _| {
+            scripts.push(script.to_string());
+            Ok("true".to_string())
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, Error::UtmVmNameTaken(_)), "{error:?}");
+        // UTM was only asked about the name, and the image wasn't copied
+        assert_eq!(scripts, [VM_EXISTS_SCRIPT]);
+        assert_eq!(files_in(dir.path()), [image]);
+    }
+
+    #[test]
+    fn a_free_name_imports_a_grown_copy_and_removes_it() {
+        let (dir, image) = qcow2::tests::haos_like_image();
+        let mut calls = Vec::new();
+
+        let vm_id = import_vm(&import_config(), &image, "en0", |script, arguments| {
+            if script == CREATE_SCRIPT {
+                let source = std::path::Path::new(arguments[1]);
+                // UTM gets a copy with the chosen size, never the download
+                assert_ne!(source, image);
+                assert!(source.exists());
+                assert_eq!(qcow2::tests::virtual_size(source), 64 * 1024 * 1024 * 1024);
+            }
+            calls.push((
+                script.to_string(),
+                arguments
+                    .iter()
+                    .map(|argument| argument.to_string())
+                    .collect::<Vec<_>>(),
+            ));
+            Ok(if script == VM_EXISTS_SCRIPT {
+                "false"
+            } else {
+                "new-vm-id"
+            }
+            .to_string())
+        })
+        .unwrap();
+
+        assert_eq!(vm_id, "new-vm-id");
+        assert_eq!(calls.len(), 2);
+        assert_eq!(
+            calls[0],
+            (
+                VM_EXISTS_SCRIPT.to_string(),
+                vec!["Home Assistant".to_string()]
+            )
+        );
+        let (script, arguments) = &calls[1];
+        assert_eq!(script, CREATE_SCRIPT);
+        assert_eq!(arguments[0], "Home Assistant");
+        assert_eq!(arguments[2..], ["en0", "4", "4096"]);
+        // UTM has the drive now, and the download stays for another VM
+        assert_eq!(files_in(dir.path()), [image]);
+    }
+
+    #[test]
+    fn a_copy_utm_may_still_be_importing_is_kept() {
+        for (outcome, kept) in [
+            (
+                Error::UtmOperationUncertain(crate::message!(
+                    "backend.utm.no_answer",
+                    detail = "AppleEvent timed out (-1712)",
+                )),
+                true,
+            ),
+            (applescript_error("Invalid configuration"), false),
+        ] {
+            let (dir, image) = qcow2::tests::haos_like_image();
+            let mut outcome = Some(outcome);
+
+            let error = import_vm(&import_config(), &image, "en0", |script, _| {
+                if script == VM_EXISTS_SCRIPT {
+                    Ok("false".to_string())
+                } else {
+                    Err(outcome.take().unwrap())
+                }
+            })
+            .unwrap_err();
+
+            assert_eq!(
+                files_in(dir.path()).len(),
+                if kept { 2 } else { 1 },
+                "{error:?}"
+            );
+        }
     }
 
     #[test]
@@ -1108,6 +1356,37 @@ mod tests {
         };
         use crate::error::Error;
         use crate::types::UtmVmConfig;
+
+        /// Asks the UTM on this Mac, which needs UTM installed and the
+        /// test runner allowed to control it. Run with
+        /// `cargo test -p hai-core utm_answers_whether_it_has_a_vm_name -- --ignored`
+        #[test]
+        #[ignore = "asks the UTM installed on this Mac"]
+        fn utm_answers_whether_it_has_a_vm_name() {
+            let names = run_applescript(
+                r#"tell application "UTM"
+    set AppleScript's text item delimiters to linefeed
+    return (name of every virtual machine) as text
+end tell"#,
+                &[],
+            )
+            .unwrap();
+
+            // A name no VM has, with quotes that must stay data
+            let unused = format!("hai test {} \"quoted\"", std::process::id());
+            super::check_vm_name(&unused).unwrap();
+
+            // Every VM it has, by its own name and in other case
+            for name in names.lines().filter(|name| !name.is_empty()) {
+                for asked in [name.to_string(), name.to_lowercase()] {
+                    let error = super::check_vm_name(&asked).unwrap_err();
+                    assert!(
+                        matches!(error, Error::UtmVmNameTaken(_)),
+                        "{asked}: {error:?}"
+                    );
+                }
+            }
+        }
 
         #[test]
         fn test_get_primary_network_interface() {

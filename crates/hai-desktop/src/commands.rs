@@ -547,6 +547,13 @@ pub fn check_utm_automation() -> Result<(), CommandError> {
     UtmBackend::check_automation(&Backend).map_err(CommandError::from_query)
 }
 
+/// Refuse a VM name UTM already has, while another can still be chosen.
+/// Async, so waiting for UTM to answer never holds up the window.
+#[tauri::command(async)]
+pub fn check_utm_vm_name(name: String) -> Result<(), CommandError> {
+    UtmBackend::check_vm_name(&Backend, &name).map_err(CommandError::from_query)
+}
+
 /// Create a Home Assistant VM in UTM
 #[tauri::command]
 pub async fn create_utm_vm(
@@ -1371,6 +1378,69 @@ mod tests {
         assert!(check_utm_automation().is_ok());
     }
 
+    #[test]
+    #[cfg(feature = "mock")]
+    fn test_check_utm_vm_name_mock_returns_ok() {
+        assert!(check_utm_vm_name("Home Assistant".to_string()).is_ok());
+    }
+
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn test_check_utm_vm_name_unsupported_off_macos() {
+        let err = check_utm_vm_name("Home Assistant".to_string()).unwrap_err();
+        assert_eq!(err.code, "unsupported_platform");
+        assert!(!err.retryable);
+    }
+
+    /// Calls `check_utm_vm_name` the way `checkUtmVmName` does, through
+    /// Tauri's IPC, so the argument it sends is the one the command takes.
+    // On a Mac without the mock, this would ask the UTM installed there
+    #[cfg(any(feature = "mock", not(target_os = "macos")))]
+    #[test]
+    fn check_utm_vm_name_takes_the_name_the_frontend_sends() {
+        let app = tauri::test::mock_builder()
+            .invoke_handler(tauri::generate_handler![check_utm_vm_name])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let invoke = |body: serde_json::Value| {
+            tauri::test::get_ipc_response(
+                &webview,
+                tauri::webview::InvokeRequest {
+                    cmd: "check_utm_vm_name".into(),
+                    callback: tauri::ipc::CallbackFn(0),
+                    error: tauri::ipc::CallbackFn(1),
+                    url: if cfg!(windows) {
+                        "http://tauri.localhost"
+                    } else {
+                        "tauri://localhost"
+                    }
+                    .parse()
+                    .unwrap(),
+                    body: tauri::ipc::InvokeBody::Json(body),
+                    headers: Default::default(),
+                    invoke_key: tauri::test::INVOKE_KEY.to_string(),
+                },
+            )
+            .map(|answer| answer.deserialize::<serde_json::Value>().unwrap())
+        };
+
+        let answer = invoke(serde_json::json!({ "name": "Home Assistant" }));
+        if cfg!(feature = "mock") {
+            assert_eq!(answer, Ok(serde_json::Value::Null));
+        } else {
+            // It reached the backend, which has no UTM off macOS
+            assert_eq!(answer.unwrap_err()["code"], "unsupported_platform");
+        }
+
+        // Any other argument is refused before it reaches the backend
+        let refused = invoke(serde_json::json!({ "vmName": "Home Assistant" })).unwrap_err();
+        assert!(refused.to_string().contains("key name"), "{refused}");
+    }
+
     // Asking again can't change the platform, so the check offers no retry.
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
     #[test]
@@ -2064,6 +2134,10 @@ mod mock_tests {
         }
 
         fn check_automation(&self) -> hai_core::Result<()> {
+            unreachable!()
+        }
+
+        fn check_vm_name(&self, _: &str) -> hai_core::Result<()> {
             unreachable!()
         }
 

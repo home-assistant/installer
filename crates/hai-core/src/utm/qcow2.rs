@@ -208,8 +208,20 @@ fn be_u64(bytes: &[u8], offset: usize) -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
+
+    /// A HAOS-like image in a folder of its own, for tests of what the UTM
+    /// install does with the download
+    pub(in crate::utm) fn haos_like_image() -> (tempfile::TempDir, std::path::PathBuf) {
+        let (dir, path, _) = image_with(&haos_like_header());
+        (dir, path)
+    }
+
+    /// The disk size the image at `path` gives its VM
+    pub(in crate::utm) fn virtual_size(path: &Path) -> u64 {
+        read_header(path).size
+    }
 
     const GIB: u64 = 1024 * 1024 * 1024;
     const CLUSTER: u64 = 64 * 1024;
