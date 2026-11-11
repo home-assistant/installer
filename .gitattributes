@@ -1,2 +1,4 @@
 # Signed test fixtures must keep their exact bytes.
 crates/hai-core/testdata/** -text
+# Console fonts are loaded into the kernel byte for byte.
+crates/hai-live/fonts/*.psf binary

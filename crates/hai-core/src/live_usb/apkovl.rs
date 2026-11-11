@@ -1,9 +1,10 @@
 //! Builds the Alpine "apkovl": a .tar.gz that Alpine's initramfs unpacks over `/` at boot.
-//! Ours sets up autostart of `hai-live` on console 1.
+//! Ours sets up autostart of `hai-live` on console 1 and tells it which language to start in.
 
 use std::io::Write;
 
 use flate2::{write::GzEncoder, Compression};
+use icu_locale_core::LanguageIdentifier;
 use tar::{EntryType, Header};
 
 use crate::error::Result;
@@ -13,8 +14,10 @@ pub const APKOVL_NAME: &str = "hai.apkovl.tar.gz";
 
 const INITTAB: &str = include_str!("inittab");
 
-/// Returns the apkovl as gzipped tar bytes, with `hai_live` as `/usr/local/bin/hai-live`.
-pub fn build(hai_live: &[u8]) -> Result<Vec<u8>> {
+/// Returns the apkovl as gzipped tar bytes, with `hai_live` as `/usr/local/bin/hai-live` and
+/// `language` (a BCP 47 tag, canonicalised) as `/etc/hai-live/language`. Without that file
+/// `hai-live` starts in English, so a tag that can't be one is left out.
+pub fn build(hai_live: &[u8], language: &str) -> Result<Vec<u8>> {
     let mut tar = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
 
     for dir in ["etc", "usr", "usr/local", "usr/local/bin"] {
@@ -49,6 +52,16 @@ pub fn build(hai_live: &[u8]) -> Result<Vec<u8>> {
         0o755,
         hai_live,
     )?;
+    if let Ok(language) = LanguageIdentifier::try_from_str(language) {
+        append(&mut tar, "etc/hai-live", EntryType::Directory, 0o755, b"")?;
+        append(
+            &mut tar,
+            "etc/hai-live/language",
+            EntryType::Regular,
+            0o644,
+            format!("{language}\n").as_bytes(),
+        )?;
+    }
 
     Ok(tar.into_inner()?.finish()?)
 }
@@ -99,7 +112,7 @@ mod tests {
 
     #[test]
     fn contains_autostart_and_executable_hai_live() {
-        let all = entries(&build(b"\x7fELF fake").unwrap());
+        let all = entries(&build(b"\x7fELF fake", "en").unwrap());
         let find = |name: &str| all.iter().find(|(path, ..)| path == name).unwrap();
 
         let (_, mode, data) = find("usr/local/bin/hai-live");
@@ -112,5 +125,51 @@ mod tests {
         assert!(!inittab.contains('\r'));
 
         find("etc/.default_boot_services");
+    }
+
+    #[test]
+    fn holds_the_language_hai_live_starts_in() {
+        let all = entries(&build(b"\x7fELF fake", "de-AT").unwrap());
+        let find = |name: &str| all.iter().find(|(path, ..)| path == name).unwrap();
+
+        let (_, mode, _) = find("etc/hai-live");
+        assert_eq!(*mode, 0o755);
+        let (_, mode, data) = find("etc/hai-live/language");
+        assert_eq!(*mode, 0o644);
+        assert_eq!(data, b"de-AT\n");
+    }
+
+    #[test]
+    fn leaves_out_a_language_that_cannot_be_a_tag() {
+        for tag in [
+            "",
+            "-de",
+            "de-",
+            "de AT",
+            "de\nAT",
+            "../de",
+            "de_AT",
+            "dé",
+            "a-b-c-d",
+            "x1234567890",
+        ] {
+            let all = entries(&build(b"\x7fELF fake", tag).unwrap());
+            assert!(
+                all.iter()
+                    .all(|(path, ..)| !path.starts_with("etc/hai-live")),
+                "{tag:?}"
+            );
+        }
+        for (tag, written) in [("DE-at", "de-AT\n"), ("sr-latn", "sr-Latn\n")] {
+            let all = entries(&build(b"\x7fELF fake", tag).unwrap());
+            let language = all
+                .iter()
+                .find(|(path, ..)| path == "etc/hai-live/language");
+            assert_eq!(
+                language.map(|(.., data)| data.as_slice()),
+                Some(written.as_bytes()),
+                "{tag:?}"
+            );
+        }
     }
 }
