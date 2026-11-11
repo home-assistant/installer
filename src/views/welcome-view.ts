@@ -259,6 +259,7 @@ export class WelcomeView extends LitElement {
         <p class="intro">${localize("views.welcome_view.subtitle")}</p>
 
         <wa-button
+          pill
           variant="brand"
           appearance="accent"
           size="l"
