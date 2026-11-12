@@ -24,6 +24,9 @@ use crate::safety::{Hidden, Problem};
 /// the console shows bold blue text in its bright blue, entry 12.
 const ACCENT: Color = Color::Blue;
 const MUTED: Color = Color::DarkGray;
+/// Plain text. Not the console's default color: the Linux console draws dark gray as bold black,
+/// and text in the default color drawn after it stays bold.
+const TEXT: Color = Color::Gray;
 /// The bright yellow: plain yellow is brown on the Linux console.
 const WARNING: Color = Color::LightYellow;
 
@@ -56,14 +59,33 @@ const LOGO_WIDTH: u16 = 26;
 /// A key under the card, and the message for what it does.
 type Hint = (&'static str, &'static str);
 const CHOOSE: Hint = ("\u{2191}\u{2193}", "live.ui.keys.choose");
-const INSTALL: Hint = ("Enter", "live.ui.keys.install");
-const RESTART: Hint = ("R", "live.ui.keys.restart");
-const POWER_OFF: Hint = ("P", "live.ui.keys.power_off");
+const SELECT: Hint = ("Enter", "live.ui.keys.select");
 const SHELL: Hint = ("Alt+F2", "live.ui.keys.shell");
-const LANGUAGE: Hint = ("L", "live.ui.keys.language");
-const CONTINUE: Hint = ("Enter", "live.ui.keys.continue");
 const APPLY: Hint = ("Enter", "live.ui.keys.apply");
 const BACK: Hint = ("Esc", "live.ui.keys.back");
+
+/// What the disk list and the done screen offer besides installing. They're chosen like a disk,
+/// because arrows and Enter are the only keys in the same place on every keyboard: the console
+/// keeps the US keymap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    Restart,
+    PowerOff,
+    ChangeLanguage,
+}
+
+impl Action {
+    /// In the order they're listed.
+    pub const ALL: [Action; 3] = [Action::Restart, Action::PowerOff, Action::ChangeLanguage];
+
+    fn label(self, lang: Language) -> String {
+        match self {
+            Action::Restart => lang.text("live.ui.actions.restart"),
+            Action::PowerOff => lang.text("live.ui.actions.power_off"),
+            Action::ChangeLanguage => and_language(lang, lang.text("live.ui.languages.title")),
+        }
+    }
+}
 
 /// One disk in the list.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,25 +107,25 @@ pub enum TimeLeft {
 /// What the console shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
-    /// The disks to choose from.
+    /// The disks to choose from, and the actions under them.
     Disks {
         /// What the stick installs ("Home Assistant OS 18.3"), if it has an image.
         os: Option<String>,
         disks: Vec<DiskRow>,
+        /// One of `disks`, or after them one of [`Action::ALL`].
         selected: usize,
         /// Hidden devices, and why.
         hidden: Vec<(String, Hidden)>,
         /// Why the disks couldn't be listed, when they couldn't.
         scan_error: Option<String>,
     },
-    /// The typed confirmation before anything is erased.
+    /// The confirmation before anything is erased.
     Confirm {
         disk: String,
         /// What gets installed ("Home Assistant OS 18.3").
         os: String,
-        typed: String,
-        /// Something other than `erase` was typed.
-        mistyped: bool,
+        /// Erasing is selected, not going back.
+        erase: bool,
     },
     /// A long step, with how far along it is.
     Progress {
@@ -120,7 +142,11 @@ pub enum Screen {
         body: Vec<String>,
     },
     /// Home Assistant OS is on the disk.
-    Done { disk: String },
+    Done {
+        disk: String,
+        /// One of [`Action::ALL`].
+        selected: usize,
+    },
     /// The languages to switch to.
     Languages {
         languages: Vec<Language>,
@@ -192,6 +218,7 @@ pub fn render(frame: &mut Frame, screen: &Screen, lang: Language) {
     });
     frame.render_widget(
         Paragraph::new(lines)
+            .fg(TEXT)
             .wrap(Wrap { trim: false })
             .scroll((scroll, 0)),
         text_area,
@@ -251,11 +278,13 @@ fn content(screen: &Screen, lang: Language) -> Card {
         } => {
             let title = lang.text("live.ui.disks.title");
             let Some(os) = os else {
+                let mut lines = vec![Line::from(lang.text("live.ui.disks.no_image"))];
+                push_actions(&mut lines, lang, disks.len(), *selected);
                 return Card {
                     title,
-                    lines: vec![Line::from(lang.text("live.ui.disks.no_image"))],
+                    lines,
                     progress: None,
-                    keys: key_bar(lang, &[RESTART, POWER_OFF, LANGUAGE]),
+                    keys: key_bar(lang, &[CHOOSE, SELECT]),
                     focus: None,
                 };
             };
@@ -297,57 +326,33 @@ fn content(screen: &Screen, lang: Language) -> Card {
                     lines.push(Line::from(format!("  {line}")).fg(MUTED));
                 }
             }
-            let keys = if disks.is_empty() {
-                key_bar(lang, &[RESTART, POWER_OFF, SHELL, LANGUAGE])
-            } else {
-                key_bar(
-                    lang,
-                    &[CHOOSE, INSTALL, RESTART, POWER_OFF, SHELL, LANGUAGE],
-                )
-            };
+            let focus = push_actions(&mut lines, lang, disks.len(), *selected).or(focus);
             Card {
                 title,
                 lines,
                 progress: None,
-                keys,
+                keys: key_bar(lang, &[CHOOSE, SELECT, SHELL]),
                 focus,
             }
         }
-        Screen::Confirm {
-            disk,
-            os,
-            typed,
-            mistyped,
-        } => {
-            let erase: &Args = &[("word", &"erase")];
-            let mut prompt = spans(lang, "live.ui.confirm.prompt", erase, Style::new().bold());
-            prompt.push(Span::from(" "));
-            prompt.push(Span::from(format!("{typed}_")).fg(ACCENT).bold());
-            let mut lines = vec![
-                Line::from(Span::from(disk.clone()).bold()),
+        Screen::Confirm { disk, os, erase } => Card {
+            title: lang.text("live.ui.confirm.title"),
+            lines: vec![
+                // The Linux console takes bold from the color: only a bright one keeps it
+                Line::from(Span::from(disk.clone()).fg(Color::White).bold()),
                 Line::default(),
                 Line::from(lang.text("live.ui.confirm.warning"))
                     .fg(WARNING)
                     .bold(),
                 Line::from(lang.format("live.ui.confirm.os", &[("os", os)])),
                 Line::default(),
-                Line::from(prompt),
-            ];
-            if *mistyped {
-                lines.push(
-                    Line::from(lang.format("live.ui.confirm.mistyped", erase))
-                        .fg(WARNING)
-                        .bold(),
-                );
-            }
-            Card {
-                title: lang.text("live.ui.confirm.title"),
-                lines,
-                progress: None,
-                keys: key_bar(lang, &[CONTINUE, BACK]),
-                focus: None,
-            }
-        }
+                choice(&lang.text("live.ui.confirm.back"), !erase),
+                choice(&lang.text("live.ui.confirm.erase"), *erase),
+            ],
+            progress: None,
+            keys: key_bar(lang, &[CHOOSE, SELECT, BACK]),
+            focus: None,
+        },
         Screen::Progress {
             title,
             detail,
@@ -377,9 +382,8 @@ fn content(screen: &Screen, lang: Language) -> Card {
             keys: key_bar(lang, &[("Enter", "live.ui.keys.back")]),
             focus: None,
         },
-        Screen::Done { disk } => Card {
-            title: lang.text("live.ui.done.title"),
-            lines: vec![
+        Screen::Done { disk, selected } => {
+            let mut lines = vec![
                 Line::from(lang.format("live.ui.done.installed", &[("disk", disk)])),
                 Line::default(),
                 Line::from(lang.text("live.ui.done.remove_stick")),
@@ -390,11 +394,16 @@ fn content(screen: &Screen, lang: Language) -> Card {
                     // Can't be selected on the console, so it stands out as the thing to type
                     Style::new().fg(ACCENT).bold(),
                 )),
-            ],
-            progress: None,
-            keys: key_bar(lang, &[RESTART, POWER_OFF, LANGUAGE]),
-            focus: None,
-        },
+            ];
+            push_actions(&mut lines, lang, 0, *selected);
+            Card {
+                title: lang.text("live.ui.done.title"),
+                lines,
+                progress: None,
+                keys: key_bar(lang, &[CHOOSE, SELECT]),
+                focus: None,
+            }
+        }
         Screen::Languages {
             languages,
             selected,
@@ -423,6 +432,25 @@ fn choice(text: &str, chosen: bool) -> Line<'static> {
     }
 }
 
+/// Adds [`Action::ALL`] to `lines` after a blank line, as the choices after the first `offset`,
+/// and returns the line of the one at `selected`.
+fn push_actions(
+    lines: &mut Vec<Line<'static>>,
+    lang: Language,
+    offset: usize,
+    selected: usize,
+) -> Option<std::ops::Range<usize>> {
+    lines.push(Line::default());
+    let mut focus = None;
+    for (index, action) in (offset..).zip(Action::ALL) {
+        if index == selected {
+            focus = Some(lines.len()..lines.len() + 1);
+        }
+        lines.push(choice(&action.label(lang), index == selected));
+    }
+    focus
+}
+
 /// The message `key` as spans, with every placeholder's value in `style`.
 fn spans(lang: Language, key: &str, args: &Args, style: Style) -> Vec<Span<'static>> {
     lang.segments(key, args)
@@ -438,14 +466,7 @@ fn spans(lang: Language, key: &str, args: &Args, style: Style) -> Vec<Span<'stat
 fn key_bar(lang: Language, hints: &[Hint]) -> String {
     hints
         .iter()
-        .map(|&hint| {
-            let (key, action) = hint;
-            let mut action = lang.text(action);
-            if hint == LANGUAGE {
-                action = and_language(lang, action);
-            }
-            format!("{key} {action}").replace(' ', "\u{a0}")
-        })
+        .map(|&(key, action)| format!("{key} {}", lang.text(action)).replace(' ', "\u{a0}"))
         .collect::<Vec<_>>()
         .join("   ")
 }
@@ -603,6 +624,13 @@ impl Ui {
             }
         }
     }
+
+    /// Drops the keys pressed while nothing was reading them.
+    pub fn discard_keys(&mut self) {
+        while let Ok(true) = event::poll(Duration::ZERO) {
+            let _ = event::read();
+        }
+    }
 }
 
 impl Drop for Ui {
@@ -684,9 +712,29 @@ mod tests {
         assert!(shows(&rows, "\u{25ba} vda"));
         assert!(shows(&rows, "Can't be used: smaller than 32 GB"));
         assert!(shows(&rows, "optical drive: sr0"));
-        assert!(shows(&rows, "Enter install"));
-        assert!(shows(&rows, "L language"));
+        assert!(shows(&rows, "  Restart"));
+        assert!(shows(&rows, "  Language"));
+        assert!(shows(&rows, "Enter select"));
         assert!(!shows(&rows, "/Language"));
+    }
+
+    #[test]
+    fn the_actions_follow_the_disks_and_are_chosen_like_them() {
+        let Screen::Disks { disks, .. } = disks() else {
+            unreachable!()
+        };
+        let screen = |selected| Screen::Disks {
+            os: Some("Home Assistant OS 18.3".into()),
+            disks: disks.clone(),
+            selected,
+            hidden: vec![],
+            scan_error: None,
+        };
+        let rows = draw(&screen(2), 80, 25);
+        assert!(shows(&rows, "\u{25ba} Restart"), "{}", rows.join("\n"));
+        assert!(shows(&rows, "  vda"));
+        let rows = draw(&screen(4), 80, 25);
+        assert!(shows(&rows, "\u{25ba} Language"));
     }
 
     #[test]
@@ -735,11 +783,11 @@ mod tests {
             Screen::Confirm {
                 disk: "vda      VirtIO VirtIO disk          34.4 GB".into(),
                 os: "Home Assistant OS 18.3".into(),
-                typed: "eras".into(),
-                mistyped: true,
+                erase: true,
             },
             Screen::Done {
                 disk: "nvme0n1".into(),
+                selected: 0,
             },
             Screen::Languages {
                 languages: Language::all(),
@@ -866,41 +914,34 @@ mod tests {
     }
 
     #[test]
-    fn confirm_shows_what_is_typed_and_a_mistake() {
-        let rows = draw(
-            &Screen::Confirm {
-                disk: "vda".into(),
-                os: "Home Assistant OS 18.3".into(),
-                typed: "era".into(),
-                mistyped: true,
-            },
-            80,
-            25,
-        );
+    fn confirm_marks_going_back_or_erasing() {
+        let confirm = |erase| Screen::Confirm {
+            disk: "vda".into(),
+            os: "Home Assistant OS 18.3".into(),
+            erase,
+        };
+        let rows = draw(&confirm(false), 80, 25);
         assert!(shows(&rows, "Everything on this disk will be erased."));
-        assert!(shows(&rows, "to continue: era_"));
-        assert!(shows(&rows, "Type erase exactly"));
+        assert!(shows(&rows, "\u{25ba} Go back"));
+        assert!(shows(&rows, "  Erase and install"));
+        let rows = draw(&confirm(true), 80, 25);
+        assert!(shows(&rows, "  Go back"));
+        assert!(shows(&rows, "\u{25ba} Erase and install"));
     }
 
     #[test]
-    fn confirm_and_done_style_the_word_to_type_and_the_address() {
-        let bold = |screen: &Screen, text: &str| {
-            let card = content(screen, Language::english());
-            card.lines.iter().flat_map(|line| &line.spans).any(|span| {
-                span.content == text && span.style.add_modifier.contains(Modifier::BOLD)
-            })
-        };
-        let confirm = Screen::Confirm {
-            disk: "vda".into(),
-            os: "Home Assistant OS 18.3".into(),
-            typed: String::new(),
-            mistyped: false,
-        };
-        assert!(bold(&confirm, "erase"));
-        assert!(bold(
-            &Screen::Done { disk: "vda".into() },
-            HOME_ASSISTANT_URL
-        ));
+    fn done_styles_the_address() {
+        let card = content(
+            &Screen::Done {
+                disk: "vda".into(),
+                selected: 0,
+            },
+            Language::english(),
+        );
+        let bold = card.lines.iter().flat_map(|line| &line.spans).any(|span| {
+            span.content == HOME_ASSISTANT_URL && span.style.add_modifier.contains(Modifier::BOLD)
+        });
+        assert!(bold);
     }
 
     #[test]
@@ -921,7 +962,7 @@ mod tests {
     }
 
     #[test]
-    fn without_an_image_only_restart_and_power_off_are_offered() {
+    fn without_an_image_only_the_actions_are_offered() {
         let rows = draw(
             &Screen::Disks {
                 os: None,
@@ -934,8 +975,10 @@ mod tests {
             25,
         );
         assert!(shows(&rows, "no Home Assistant OS image"));
-        assert!(!shows(&rows, "Enter install"));
-        assert!(shows(&rows, "L language"));
+        assert!(shows(&rows, "\u{25ba} Restart"));
+        assert!(shows(&rows, "  Power off"));
+        assert!(shows(&rows, "  Language"));
+        assert!(!shows(&rows, "Alt+F2"));
     }
 
     #[test]
@@ -988,7 +1031,13 @@ mod tests {
 
     #[test]
     fn done_points_to_home_assistant_without_a_port() {
-        let card = content(&Screen::Done { disk: "vda".into() }, Language::english());
+        let card = content(
+            &Screen::Done {
+                disk: "vda".into(),
+                selected: 0,
+            },
+            Language::english(),
+        );
         let text: Vec<String> = card.lines.iter().map(ToString::to_string).collect();
         let text = text.join(" ");
         assert!(
