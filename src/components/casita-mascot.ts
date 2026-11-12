@@ -109,7 +109,8 @@ export class CasitaMascot extends LitElement {
   };
 
   private _resume() {
-    this._face?.start();
+    if (!this._face) return;
+    this._face.start();
     window.addEventListener("pointermove", this._onPointerMove);
     this._cheerIfShown();
   }
