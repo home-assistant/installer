@@ -1,19 +1,16 @@
-import { LitElement, html, css, nothing } from "lit";
+import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import {
   formatNumber,
   getLanguage,
   localize,
   localizeContent,
 } from "../localization/localize.js";
-import { customElement, property, state } from "lit/decorators.js";
+import { customElement, property, query, state } from "lit/decorators.js";
 import { formatBytes } from "../utils/format.js";
 import { mdiChevronRight } from "../utils/icons.js";
 import { renderIcon } from "../utils/render-icon.js";
-import {
-  renderCasitaFocusing,
-  renderCasitaHappy,
-  renderCasitaSad,
-} from "./install-mascot.js";
+import { renderCasita } from "./install-mascot.js";
+import type { CasitaMascot } from "./casita-mascot.js";
 import "./progress-bar.js";
 import "./inline-notice.js";
 import { renderErrorHelp } from "../utils/installer-error.js";
@@ -376,6 +373,16 @@ export class InstallProgress extends LitElement {
   /** Whether the stage list is open, which outlasts stage changes */
   @state() private _partsOpen = false;
 
+  @query("casita-mascot") private _mascot?: CasitaMascot;
+
+  protected updated(changed: PropertyValues<this>) {
+    const previous = changed.get("stage");
+    const working = (stage: string) =>
+      stage !== "complete" && stage !== "error";
+    if (previous === undefined || this.error) return;
+    if (working(previous) && working(this.stage)) this._mascot?.hop();
+  }
+
   render() {
     // The live region stays mounted through errors so a retry is announced
     return html`
@@ -394,24 +401,37 @@ export class InstallProgress extends LitElement {
   }
 
   private _renderContent() {
-    if (this.error) {
-      return html`
-        <div class="layout">
-          <div class="mascot-container" aria-hidden="true">
-            ${renderCasitaSad()}
-          </div>
-          <div class="details">
-            <h2>
-              ${this.errorHeading ??
-              localize("components.install_progress.installation_failed")}
-            </h2>
-            <p class="error-message" data-focus-alert>${this.error}</p>
-            ${renderErrorHelp()}
-            <slot name="help"></slot>
-          </div>
+    const mood =
+      this.error || this.stage === "error"
+        ? "problem"
+        : this.stage === "complete"
+          ? "happy"
+          : "focusing";
+    return html`
+      <div class="layout">
+        <div class="mascot-container" aria-hidden="true">
+          ${renderCasita(mood)}
         </div>
-      `;
-    }
+        ${this.error ? this._renderError() : this._renderProgress()}
+      </div>
+    `;
+  }
+
+  private _renderError() {
+    return html`
+      <div class="details">
+        <h2>
+          ${this.errorHeading ??
+          localize("components.install_progress.installation_failed")}
+        </h2>
+        <p class="error-message" data-focus-alert>${this.error}</p>
+        ${renderErrorHelp()}
+        <slot name="help"></slot>
+      </div>
+    `;
+  }
+
+  private _renderProgress() {
     // Its live region is mounted empty first, so the first warning is announced
     const warning = this._status.ready ? this.warning : null;
     const current = this.stages.findIndex((stage) => stage.id === this.stage);
@@ -421,124 +441,114 @@ export class InstallProgress extends LitElement {
     const parts = done.length + upcoming.length > 0 && !this.stopping;
     const open = parts && this._partsOpen;
     return html`
-      <div class="layout">
-        <div class="mascot-container" aria-hidden="true">
-          ${this.stage === "complete"
-            ? renderCasitaHappy()
-            : this.stage === "error"
-              ? renderCasitaSad()
-              : renderCasitaFocusing()}
-        </div>
-        <div class="details">
-          ${parts
-            ? html`<button
-                class="parts"
-                type="button"
-                aria-expanded=${open ? "true" : "false"}
-                aria-controls="stages"
-                @click=${this._toggleParts}
-              >
-                ${localize("components.install_progress.part_of", {
-                  current: current + 1,
-                  total: this.stages.length,
-                })}${renderIcon(mdiChevronRight, "chevron")}
-              </button>`
-            : nothing}
-          <!-- WebKit drops list semantics with list-style: none. Closed, it
+      <div class="details">
+        ${parts
+          ? html`<button
+              class="parts"
+              type="button"
+              aria-expanded=${open ? "true" : "false"}
+              aria-controls="stages"
+              @click=${this._toggleParts}
+            >
+              ${localize("components.install_progress.part_of", {
+                current: current + 1,
+                total: this.stages.length,
+              })}${renderIcon(mdiChevronRight, "chevron")}
+            </button>`
+          : nothing}
+        <!-- WebKit drops list semantics with list-style: none. Closed, it
                is only the heading. -->
-          <ol
-            id="stages"
-            class="stages ${open ? "open" : ""}"
-            role=${open ? "list" : "none"}
-            aria-label=${open
-              ? localize("components.install_progress.installation_stages")
-              : nothing}
-          >
-            ${done.map((stage) => this._renderStage(stage, true))}
-            <li class="current" aria-current=${open ? "step" : nothing}>
-              <span class="marker" aria-hidden="true">
-                <span class="status-dot active"></span>
-              </span>
-              <h2>${this.stopping ? this._title() : this.description}</h2>
-            </li>
-            ${upcoming.map((stage) => this._renderStage(stage, false))}
-          </ol>
-          <slot></slot>
-          <div class="progress-section">
-            <progress-bar
-              .progress=${this.progress}
-              ?indeterminate=${this.indeterminate}
-              .label=${this._title()}
-            ></progress-bar>
-            ${this.measurable || !this.hideEmptyDetails
-              ? html`
-                  <div class="progress-details">
-                    <div class="progress-left">
-                      <span class="bytes-info"
-                        >${this.showUnknownBytes && this.indeterminate
-                          ? formatBytes(this.bytesProcessed)
-                          : this.measurable && this.totalBytes > 0
-                            ? this.stage === "extracting"
-                              ? localize(
-                                  "components.install_progress.byte_progress_compressed",
-                                  {
-                                    completed: formatBytes(this.bytesProcessed),
-                                    total: formatBytes(this.totalBytes),
-                                  }
-                                )
-                              : localize(
-                                  "components.install_progress.byte_progress",
-                                  {
-                                    completed: formatBytes(this.bytesProcessed),
-                                    total: formatBytes(this.totalBytes),
-                                  }
-                                )
-                            : ""}</span
-                      >
-                      <span class="speed"
-                        >${this.measurable && this.totalBytes > 0
-                          ? this._calculateSpeed()
-                          : ""}</span
-                      >
-                    </div>
-                    <div class="progress-right">
-                      <span class="percentage"
-                        >${this.measurable
-                          ? formatNumber(this._percentage() / 100, {
-                              style: "percent",
-                            })
-                          : ""}</span
-                      >
-                      <span class="eta"
-                        >${this.measurable &&
-                        (this.totalBytes > 0 ||
-                          this.stageStartProgress !== null)
-                          ? this._calculateEta() ||
-                            localize("components.install_progress.calculating")
-                          : ""}</span
-                      >
-                    </div>
-                  </div>
-                `
-              : ""}
-          </div>
-          <div class="warning" role="status">
-            ${warning
-              ? html`<inline-notice><p>${warning}</p></inline-notice>`
-              : nothing}
-          </div>
-          ${this.address
-            ? html`<p class="address">
-                ${localizeContent(
-                  "components.install_progress.checking_address",
-                  {
-                    address: renderExternalLink(this.address, this.address),
-                  }
-                )}
-              </p>`
+        <ol
+          id="stages"
+          class="stages ${open ? "open" : ""}"
+          role=${open ? "list" : "none"}
+          aria-label=${open
+            ? localize("components.install_progress.installation_stages")
             : nothing}
-          <slot name="help"></slot>
+        >
+          ${done.map((stage) => this._renderStage(stage, true))}
+          <li class="current" aria-current=${open ? "step" : nothing}>
+            <span class="marker" aria-hidden="true">
+              <span class="status-dot active"></span>
+            </span>
+            <h2>${this.stopping ? this._title() : this.description}</h2>
+          </li>
+          ${upcoming.map((stage) => this._renderStage(stage, false))}
+        </ol>
+        <slot></slot>
+        <div class="progress-section">
+          <progress-bar
+            .progress=${this.progress}
+            ?indeterminate=${this.indeterminate}
+            .label=${this._title()}
+          ></progress-bar>
+          ${this.measurable || !this.hideEmptyDetails
+            ? html`
+                <div class="progress-details">
+                  <div class="progress-left">
+                    <span class="bytes-info"
+                      >${this.showUnknownBytes && this.indeterminate
+                        ? formatBytes(this.bytesProcessed)
+                        : this.measurable && this.totalBytes > 0
+                          ? this.stage === "extracting"
+                            ? localize(
+                                "components.install_progress.byte_progress_compressed",
+                                {
+                                  completed: formatBytes(this.bytesProcessed),
+                                  total: formatBytes(this.totalBytes),
+                                }
+                              )
+                            : localize(
+                                "components.install_progress.byte_progress",
+                                {
+                                  completed: formatBytes(this.bytesProcessed),
+                                  total: formatBytes(this.totalBytes),
+                                }
+                              )
+                          : ""}</span
+                    >
+                    <span class="speed"
+                      >${this.measurable && this.totalBytes > 0
+                        ? this._calculateSpeed()
+                        : ""}</span
+                    >
+                  </div>
+                  <div class="progress-right">
+                    <span class="percentage"
+                      >${this.measurable
+                        ? formatNumber(this._percentage() / 100, {
+                            style: "percent",
+                          })
+                        : ""}</span
+                    >
+                    <span class="eta"
+                      >${this.measurable &&
+                      (this.totalBytes > 0 || this.stageStartProgress !== null)
+                        ? this._calculateEta() ||
+                          localize("components.install_progress.calculating")
+                        : ""}</span
+                    >
+                  </div>
+                </div>
+              `
+            : ""}
         </div>
+        <div class="warning" role="status">
+          ${warning
+            ? html`<inline-notice><p>${warning}</p></inline-notice>`
+            : nothing}
+        </div>
+        ${this.address
+          ? html`<p class="address">
+              ${localizeContent(
+                "components.install_progress.checking_address",
+                {
+                  address: renderExternalLink(this.address, this.address),
+                }
+              )}
+            </p>`
+          : nothing}
+        <slot name="help"></slot>
       </div>
     `;
   }

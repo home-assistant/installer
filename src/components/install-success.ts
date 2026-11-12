@@ -11,7 +11,7 @@ import { getPlatform } from "../utils/platform.js";
 import { mdiApple, mdiGooglePlay } from "../utils/icons.js";
 import { APP_STORE_URL, GOOGLE_PLAY_URL } from "../utils/urls.js";
 import { renderIcon } from "../utils/render-icon.js";
-import { renderCasitaHappy } from "./install-mascot.js";
+import { renderCasita } from "./install-mascot.js";
 import "./inline-notice.js";
 import {
   ViewAccessibility,
@@ -280,7 +280,7 @@ export class InstallSuccess extends LitElement {
     return html`
       <div class=${this.steps.length ? "layout beside" : "layout"}>
         <div class="mascot-container" aria-hidden="true">
-          ${renderCasitaHappy()}
+          ${renderCasita("happy", true)}
         </div>
         <div class="heading">
           <h2>${title}</h2>

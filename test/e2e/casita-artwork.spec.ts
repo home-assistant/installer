@@ -111,10 +111,7 @@ test("UTM missing artwork leaves refresh and navigation reachable on mobile", as
   await expect(
     page.getByText("UTM is not installed", { exact: true })
   ).toBeVisible();
-  await expect(page.locator("casita-mascot img")).toHaveAttribute(
-    "src",
-    "/assets/casita/Sad.svg"
-  );
+  await expect(page.locator("casita-mascot")).toHaveAttribute("mood", "sad");
   const refresh = page.getByRole("button", { name: "I've installed UTM" });
   await refresh.scrollIntoViewIfNeeded();
   await expect(refresh).toBeInViewport();
@@ -130,37 +127,38 @@ test("UTM missing artwork leaves refresh and navigation reachable on mobile", as
   });
 });
 
-test("every supplied mood loads as nonblank static artwork", async ({
-  page,
-}) => {
-  await page.goto("/");
-  // The app shell loads after locale detection, so wait for it to render.
-  await page.locator("welcome-view").waitFor({ state: "attached" });
-  for (const mood of ["happy", "loading", "focusing", "sad", "problem"]) {
-    const result = await page.evaluate(async (mood) => {
-      await customElements.whenDefined("casita-mascot");
-      const mascot = document.createElement("casita-mascot") as HTMLElement & {
-        updateComplete: Promise<boolean>;
-      };
-      mascot.setAttribute("mood", mood);
-      document.body.replaceChildren(mascot);
-      await mascot.updateComplete;
-      const image = mascot.shadowRoot!.querySelector("img")!;
-      await image.decode();
-      const canvas = document.createElement("canvas");
-      canvas.width = canvas.height = 120;
-      const context = canvas.getContext("2d")!;
-      context.drawImage(image, 0, 0, 120, 120);
-      const pixels = context.getImageData(0, 0, 120, 120).data;
-      let opaque = 0;
-      for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) opaque++;
-      const source = await (await fetch(image.src)).text();
-      return {
-        opaque,
-        animated: /<animate|<set\b|@keyframes/.test(source),
-      };
-    }, mood);
-    expect(result.opaque).toBeGreaterThan(100);
-    expect(result.animated).toBe(false);
-  }
-});
+for (const reducedMotion of ["no-preference", "reduce"] as const) {
+  test(`Casita ${reducedMotion === "reduce" ? "holds still" : "moves"} with reduced motion ${reducedMotion}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion });
+    await page.goto("/");
+    // The app shell loads after locale detection, so wait for it to render.
+    await page.locator("welcome-view").waitFor({ state: "attached" });
+    for (const mood of ["happy", "loading", "focusing", "sad", "problem"]) {
+      const result = await page.evaluate(async (mood) => {
+        await customElements.whenDefined("casita-mascot");
+        const mascot = document.createElement(
+          "casita-mascot"
+        ) as HTMLElement & {
+          updateComplete: Promise<boolean>;
+        };
+        mascot.setAttribute("mood", mood);
+        document.body.replaceChildren(mascot);
+        await mascot.updateComplete;
+        const svg = mascot.shadowRoot!.querySelector("svg")!;
+        const before = svg.innerHTML;
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        const house = svg.querySelector("path")!.getBoundingClientRect();
+        return {
+          moved: svg.innerHTML !== before,
+          width: house.width,
+          height: house.height,
+        };
+      }, mood);
+      expect(result.width).toBeGreaterThan(100);
+      expect(result.height).toBeGreaterThan(90);
+      expect(result.moved).toBe(reducedMotion === "no-preference");
+    }
+  });
+}

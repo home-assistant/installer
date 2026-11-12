@@ -160,6 +160,10 @@ uses: Latin, Greek and Cyrillic, not CJK or right-to-left scripts. The font
 coverage test in `crates/hai-live/src/console_font.rs` rejects a catalog
 with a character the font lacks.
 
+### Casita
+
+Casita is drawn and animated in code, from `src/casita/`. To see every mood and try the hop and the celebration, run `npm run dev` and open `/dev/casita.html`.
+
 ### Code Style
 
 - **Rust**: Follow `rustfmt` defaults, run `cargo fmt` before committing

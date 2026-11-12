@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Casita</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <style>
+      html,
+      body {
+        height: auto;
+        overflow: auto;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        background: var(--ha-background-color);
+        color: var(--ha-text-color);
+        padding: 24px;
+      }
+      main {
+        display: flex;
+        gap: 48px;
+        align-items: center;
+        margin-bottom: 48px;
+      }
+      #main {
+        width: 240px;
+        height: 240px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 0 12px;
+      }
+      button {
+        font: inherit;
+        padding: 4px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--ha-divider-color);
+        background: none;
+        color: inherit;
+        cursor: pointer;
+      }
+      button[aria-pressed="true"] {
+        background: var(--ha-primary-color);
+        border-color: var(--ha-primary-color);
+        color: white;
+      }
+      .grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 32px;
+      }
+      figure {
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <casita-mascot id="main"></casita-mascot>
+      <div>
+        <p class="controls" id="moods"></p>
+        <p class="controls">
+          <button id="hop" type="button">Hop</button>
+          <button id="celebrate" type="button">Celebrate</button>
+        </p>
+      </div>
+    </main>
+    <h2>At the size the installer uses</h2>
+    <div class="grid" id="grid"></div>
+    <script type="module">
+      import "/src/components/casita-mascot.ts";
+      import { EXPRESSIONS } from "/src/casita/expressions.ts";
+
+      let main = document.getElementById("main");
+      const moods = document.getElementById("moods");
+      const select = (mood) => {
+        main.mood = mood;
+        for (const button of moods.children) {
+          button.setAttribute("aria-pressed", button.textContent === mood);
+        }
+      };
+      for (const mood of EXPRESSIONS) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = mood;
+        button.onclick = () => select(mood);
+        moods.append(button);
+
+        const figure = document.createElement("figure");
+        const mascot = document.createElement("casita-mascot");
+        mascot.mood = mood;
+        const caption = document.createElement("figcaption");
+        caption.textContent = mood;
+        figure.append(mascot, caption);
+        document.getElementById("grid").append(figure);
+      }
+      select("happy");
+
+      document.getElementById("hop").onclick = () => main.hop();
+      document.getElementById("celebrate").onclick = () => {
+        const fresh = document.createElement("casita-mascot");
+        fresh.id = "main";
+        fresh.mood = main.mood;
+        fresh.celebrate = true;
+        main.replaceWith(fresh);
+        main = fresh;
+      };
+    </script>
+  </body>
+</html>
