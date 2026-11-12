@@ -1,6 +1,6 @@
 import { expect } from "@open-wc/testing";
 import { html, render, type LitElement } from "lit";
-import "../../../src/components/install-success.js";
+import "../../../src/components/companion-app.js";
 import "../../../src/views/live-usb/live-iso-location-view.js";
 import "../../../src/views/live-usb/live-usb-summary-view.js";
 import "../../../src/views/proxmox/proxmox-configure-view.js";
@@ -37,8 +37,8 @@ const PANELS: {
     own: { alignItems: "center", rowGap: "16px" },
   },
   {
-    tag: "install-success",
-    selector: ".companion-section",
+    tag: "companion-app",
+    selector: ".panel",
     own: { rowGap: "16px" },
   },
 ];

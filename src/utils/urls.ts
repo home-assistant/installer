@@ -47,6 +47,8 @@ export const PROXMOX_DIRECTORY_STORAGE_URL =
   "https://pve.proxmox.com/pve-docs/pve-admin-guide.html#storage_directory";
 
 export const OPEN_HOME_FOUNDATION_URL = "https://www.openhomefoundation.org/";
+/** Sends a phone that opens it to the companion app in its own store */
+export const COMPANION_APP_URL = "https://my.home-assistant.io/app/";
 export const APP_STORE_URL =
   "https://apps.apple.com/app/home-assistant/id1099568401";
 export const GOOGLE_PLAY_URL =

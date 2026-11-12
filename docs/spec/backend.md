@@ -617,18 +617,9 @@ pub fn open_mac_app_store() {
 
 ## QR Code Generation (Frontend)
 
-```typescript
-import QRCode from 'qrcode';
-
-const IOS_APP_URL = 'https://apps.apple.com/app/home-assistant/id1099568401';
-const ANDROID_APP_URL = 'https://play.google.com/store/apps/details?id=io.homeassistant.companion.android';
-
-// In component
-async generateQRCodes() {
-  this.iosQR = await QRCode.toDataURL(IOS_APP_URL, { width: 120 });
-  this.androidQR = await QRCode.toDataURL(ANDROID_APP_URL, { width: 120 });
-}
-```
+The companion app's code is drawn by Web Awesome's `wa-qr-code` in
+`src/components/companion-app.ts`, on a canvas, with nothing fetched. Its
+address, `COMPANION_APP_URL`, is with the other links in `src/utils/urls.ts`.
 
 ---
 
