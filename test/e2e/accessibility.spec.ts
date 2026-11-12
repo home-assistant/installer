@@ -651,7 +651,7 @@ for (const tag of [
     }, tag);
     await expect(page.locator("[data-focus-alert]")).toBeFocused();
     await expect(
-      page.locator(`${tag} casita-mascot[mood="problem"] img`)
+      page.locator(`${tag} casita-mascot[mood="problem"]`)
     ).toBeVisible();
   });
 }
