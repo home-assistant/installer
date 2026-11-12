@@ -14,9 +14,6 @@ const MOUTH_FIELDS = [
   "bA",
   "bH",
   "tongue",
-  "tgX",
-  "tgY",
-  "tgH",
 ] as const satisfies readonly (keyof Mouth)[];
 
 export const PARAMS = [
@@ -189,9 +186,6 @@ const tongueOut = (): MouthShape => ({
   bA: 20,
   bH: 0,
   tongue: 1,
-  tgX: 68,
-  tgY: 88.88,
-  tgH: -12,
 });
 
 interface Pose {
@@ -272,7 +266,6 @@ function lookOf(pose: Pose): Look {
     "acc.bubbles": pose.bubbles ?? 0,
     "acc.question": pose.question ?? 0,
   };
-  // The tongue's anchor is left out when unused, so it goes back in from where it was
   for (const field of MOUTH_FIELDS) {
     const v = pose.mouth[field];
     if (v !== undefined) targets[`mouth.${field}`] = v;

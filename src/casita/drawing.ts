@@ -67,15 +67,13 @@ export interface Mouth {
   bH: number;
   /** How far the tongue is out, 0 to 1 */
   tongue: number;
-  tgX: number;
-  tgY: number;
-  /** Negative when the tongue sticks up */
-  tgH: number;
 }
 
 const MOUTH_X = 60;
 const MOUTH_POINTS = 90;
 const TONGUE_POINTS = 40;
+const TONGUE_X = 68;
+const TONGUE_Y = 88.88;
 
 function bump(x: number, c: number, a: number, h: number) {
   if (a <= 1e-6 || h <= 1e-6) return 0;
@@ -130,17 +128,12 @@ export function mouthOutline(m: Mouth): Point[] {
 
 export function tongueOutline(m: Mouth): Point[] {
   if (m.tongue <= 0.01 || m.s <= 0.01) return [];
-  const R = 12 * m.tongue;
-  const H = Math.abs(m.tgH) * m.tongue;
-  const points =
-    m.tgH < 0
-      ? [
-          ...curve(m.tgX, m.tgY, R, R, -H, TONGUE_POINTS, false),
-          ...curve(m.tgX, m.tgY + 1.2, R, R, 0, TONGUE_POINTS, true),
-        ]
-      : [
-          ...curve(m.tgX, m.tgY - 1.2, R, R, 0, TONGUE_POINTS, false),
-          ...curve(m.tgX, m.tgY, R, R, H, TONGUE_POINTS, true),
-        ];
-  return scaleMouth(points, m);
+  const r = 12 * m.tongue;
+  return scaleMouth(
+    [
+      ...curve(TONGUE_X, TONGUE_Y, r, r, -r, TONGUE_POINTS, false),
+      ...curve(TONGUE_X, TONGUE_Y + 1.2, r, r, 0, TONGUE_POINTS, true),
+    ],
+    m
+  );
 }

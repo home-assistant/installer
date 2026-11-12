@@ -29,7 +29,6 @@ import {
   type Life,
   type Param,
   type SpringPreset,
-  type Targets,
   type Values,
 } from "./expressions.js";
 
@@ -221,13 +220,7 @@ export class CasitaFace {
     const look = lookFor(this._expression);
     this._life = look.life;
 
-    const start: Targets = {
-      "mouth.tgX": 68,
-      "mouth.tgY": 86.88,
-      "mouth.tgH": 12,
-      ...look.targets,
-    };
-    this._pose = values((p) => start[p] ?? 0);
+    this._pose = values((p) => look.targets[p] ?? 0);
     this._value = { ...this._pose };
     this._out = { ...this._pose };
     this._target = { ...this._pose };
@@ -617,9 +610,6 @@ export class CasitaFace {
       bA: o["mouth.bA"],
       bH: o["mouth.bH"],
       tongue: o["mouth.tongue"],
-      tgX: o["mouth.tgX"],
-      tgY: o["mouth.tgY"],
-      tgH: o["mouth.tgH"],
     };
     const mouthKey = Object.values(mouth).map(round).join(" ");
     if (mouthKey !== this._mouthKey) {
