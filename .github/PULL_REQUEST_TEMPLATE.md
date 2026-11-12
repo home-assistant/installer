@@ -36,4 +36,3 @@
 - [ ] I have added tests for my changes
 - [ ] All new and existing tests pass
 - [ ] I have updated documentation if needed
-- [ ] My commits follow conventional commit format
