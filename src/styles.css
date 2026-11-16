@@ -155,28 +155,27 @@ body {
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ha-primary-color: #7bd4fb;
-    --ha-error-color: #fd8f90;
-    --ha-background-color: #1c1c1c;
-    --ha-card-background: #1e1e1e;
-    --ha-text-color: #e1e1e1;
-    --ha-secondary-text-color: #9e9e9e;
-    --ha-control-secondary-text-color: #9e9e9e;
-    --ha-border-color: #333333;
-    --ha-inactive-color: #707070;
-    --ha-control-border-color: #444444;
-    --ha-input-border-color: #707070;
-    --ha-card-hover-shadow: 0 4px 12px
-      color-mix(in srgb, var(--ha-primary-color) 25%, transparent);
-    --ha-warning-background: rgba(255, 152, 0, 0.15);
-    --ha-warning-border: rgba(255, 152, 0, 0.4);
-    --ha-warning-heading-color: #ffb74d;
-    --ha-error-background: rgba(219, 68, 55, 0.15);
-    --ha-error-border: rgba(219, 68, 55, 0.4);
-    --ha-success-color: #5dc36f;
-    --ha-warning-color: #ef9d00;
-    --ha-hover-fill: rgba(255, 255, 255, 0.1);
-  }
+/* The dark theme, by the OS's choice or the app's: src/utils/theme.ts */
+:root.wa-dark {
+  --ha-primary-color: #7bd4fb;
+  --ha-error-color: #fd8f90;
+  --ha-background-color: #1c1c1c;
+  --ha-card-background: #1e1e1e;
+  --ha-text-color: #e1e1e1;
+  --ha-secondary-text-color: #9e9e9e;
+  --ha-control-secondary-text-color: #9e9e9e;
+  --ha-border-color: #333333;
+  --ha-inactive-color: #707070;
+  --ha-control-border-color: #444444;
+  --ha-input-border-color: #707070;
+  --ha-card-hover-shadow: 0 4px 12px
+    color-mix(in srgb, var(--ha-primary-color) 25%, transparent);
+  --ha-warning-background: rgba(255, 152, 0, 0.15);
+  --ha-warning-border: rgba(255, 152, 0, 0.4);
+  --ha-warning-heading-color: #ffb74d;
+  --ha-error-background: rgba(219, 68, 55, 0.15);
+  --ha-error-border: rgba(219, 68, 55, 0.4);
+  --ha-success-color: #5dc36f;
+  --ha-warning-color: #ef9d00;
+  --ha-hover-fill: rgba(255, 255, 255, 0.1);
 }
