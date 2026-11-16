@@ -17,7 +17,10 @@ import {
   forgetProxmoxSession,
   needsReconnect,
 } from "./proxmox-session.js";
-import { fixedOnConfigure } from "./proxmox-validation.js";
+import {
+  fixedOnConfigure,
+  refusedBeforeCreating,
+} from "./proxmox-validation.js";
 import { VmProgressView } from "../vm-progress-view.js";
 
 /** The stages `proxmoxCreateVm` reports, in order */
@@ -187,10 +190,11 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
     // server may have changed since, like a VM ID taken during the download.
     // Trying again works once that is undone in Proxmox, and so does another
     // choice on the configure step while there is no VM yet.
+    const refusal = installerError(error);
     const changeChoice =
-      this._atStoppableStage &&
       !made &&
-      fixedOnConfigure(installerError(error));
+      (this._atStoppableStage || refusedBeforeCreating(refusal)) &&
+      fixedOnConfigure(refusal);
     super._fail(error, message, { reconnect, changeChoice });
   }
 

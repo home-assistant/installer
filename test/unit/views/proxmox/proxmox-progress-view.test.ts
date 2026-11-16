@@ -650,6 +650,55 @@ describe("proxmox-progress-view", () => {
     });
   }
 
+  // The bridge is checked once more right before the VM is asked for, when
+  // the stage already says it is being created: a refusal there made
+  // nothing. Any other refusal then may have made part of it.
+  for (const [key, params, changeChoice] of [
+    [
+      "backend.proxmox.bridge_unavailable",
+      { bridge: "vmbr1", node: "pve" },
+      true,
+    ],
+    ["backend.proxmox.bridge_not_vlan_aware", { bridge: "vmbr0" }, true],
+    ["backend.proxmox.vm_id_unavailable", { vm_id: 100 }, false],
+  ] as const) {
+    it(`${changeChoice ? "offers" : "does not offer"} another choice after ${key} while creating_vm`, async () => {
+      const createVm = deferred<ProxmoxVmResult>();
+      let report!: (progress: FlashProgress) => void;
+      mockTauriIpc((cmd, args) => {
+        if (cmd === "proxmox_create_vm") {
+          const { progressChannel } = args as {
+            progressChannel: { onmessage: (progress: FlashProgress) => void };
+          };
+          report = (progress) => progressChannel.onmessage(progress);
+          return createVm.promise;
+        }
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+
+      const el = mount();
+      await settle();
+      report({
+        stage: "creating_vm",
+        progress: 0,
+        bytes_processed: 0,
+        total_bytes: 0,
+        message: "",
+      });
+      const failed = oneEvent(el, "install-error");
+      createVm.reject(
+        ipcError("proxmox_action_required", "Refused.", false, {
+          message_key: key,
+          message_params: params,
+        })
+      );
+
+      const { detail } = await failed;
+      expect(detail.retryable).to.be.false;
+      expect(detail.changeChoice).to.equal(changeChoice);
+    });
+  }
+
   it("shows the step the backend reports", async () => {
     const createVm = deferred<ProxmoxVmResult>();
     let report!: (progress: FlashProgress) => void;
