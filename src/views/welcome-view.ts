@@ -6,7 +6,7 @@ import {
 } from "../utils/view-accessibility.js";
 import { logFrontendError } from "../utils/diagnostics.js";
 import { narrowWindow, tooLowForWelcome } from "../utils/breakpoints.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import { renderExternalLink } from "../utils/external-link.js";
 import {
   INSTALLATION_GUIDE_URL,
@@ -38,6 +38,8 @@ function languageName(tag: string): string {
 @customElement("welcome-view")
 export class WelcomeView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
+
+  @query("h1") private _heading?: HTMLElement;
   @state()
   private _logoClickCount = 0;
 
@@ -241,7 +243,9 @@ export class WelcomeView extends LitElement {
   render() {
     return html`
       ${this._renderLanguages()}
-      <update-banner></update-banner>
+      <update-banner
+        @update-banner-closed=${this._onUpdateBannerClosed}
+      ></update-banner>
       <main>
         <h1 class="logo-container" @click=${this._onLogoClick}>
           <img
@@ -323,6 +327,11 @@ export class WelcomeView extends LitElement {
 
   private _onLanguageChange(event: Event) {
     void chooseLanguage((event.target as WaSelect).value as string);
+  }
+
+  // Continue after the banner, from the heading below it
+  private _onUpdateBannerClosed() {
+    this._accessibility.restoreFocus(this._heading);
   }
 
   private _onLogoClick() {
