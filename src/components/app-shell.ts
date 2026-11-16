@@ -303,12 +303,14 @@ export class AppShell extends LitElement {
       running && !this._installStoppable && !this._installLeavable;
 
     // Back from an install only once it failed or was stopped, where a choice
-    // can still change. The flow ends on its last step.
+    // can still change, or after a failure another choice fixes. The flow
+    // ends on its last step.
     const last = wizardState.isLastStep;
     const hideBack =
       last ||
       !!step?.noBack ||
-      (!!install && (running || !install.backAfterError));
+      (!!install &&
+        (running || !(install.backAfterError || this._installChangeChoice)));
 
     const hideNext =
       running ||

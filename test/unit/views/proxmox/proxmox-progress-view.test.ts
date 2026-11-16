@@ -230,18 +230,21 @@ describe("proxmox-progress-view", () => {
 
   // Before the VM is being created, the backend keeps the retry: nothing is
   // left on the server that a new attempt would trip over
-  for (const [error, shown] of [
+  for (const [error, shown, changeChoice] of [
     [
       ipcError("download_failed", "Download failed: connection reset", true),
       "could not be downloaded",
+      false,
     ],
     [
-      // Taken by someone else after Confirm, and freed in Proxmox again
+      // Taken by someone else after Confirm, and freed in Proxmox again, or
+      // another one chosen on the configure step
       ipcError("proxmox_action_required", "VM ID 100 can't be used.", true, {
         message_key: "backend.proxmox.vm_id_unavailable",
         message_params: { vm_id: 100 },
       }),
       "VM ID 100 can't be used",
+      true,
     ],
   ] as const) {
     it(`tries ${error.code} before the VM exists again, with the same login and settings`, async () => {
@@ -269,6 +272,7 @@ describe("proxmox-progress-view", () => {
 
       expect(failed.detail.retryable).to.be.true;
       expect(failed.detail.reconnect).to.be.false;
+      expect(failed.detail.changeChoice).to.equal(changeChoice);
       expect(errorText(el)).to.contain(shown);
       const selections = wizardState.getState().selections;
       expect(selections.proxmoxSession).to.exist;

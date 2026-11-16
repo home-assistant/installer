@@ -1171,6 +1171,40 @@ describe("app-shell", () => {
         .to.be.true;
     });
 
+    // A server that changed since the check, like a VM ID taken during the
+    // download: freeing it in Proxmox and trying again works, and so does
+    // another choice on the configure step
+    for (const [error, back] of [
+      [
+        ipcError("proxmox_action_required", "VM ID 100 can't be used.", true, {
+          message_key: "backend.proxmox.vm_id_unavailable",
+          message_params: { vm_id: 100 },
+        }),
+        true,
+      ],
+      [ipcError("download_failed", "Download failed", true), false],
+    ] as const) {
+      it(`${back ? "goes" : "does not go"} back after ${error.code} before the VM exists`, async () => {
+        await enterProxmoxInstall(() =>
+          mockTauriIpc((cmd) => {
+            if (cmd === "proxmox_create_vm") return Promise.reject(error);
+            throw new Error(`Unexpected IPC command: ${cmd}`);
+          })
+        );
+        await waitUntil(() => shellOf(el).nextLabel === "Try again");
+        expect(shellOf(el).hideNext).to.be.false;
+        expect(shellOf(el).hideBack).to.equal(!back);
+        if (!back) return;
+
+        shellOf(el)
+          .shadowRoot!.querySelector<HTMLElement>(".header wa-button")!
+          .click();
+        await el.updateComplete;
+        expect(wizardState.currentStep?.id).to.equal("confirm");
+        expect((el as unknown as ErrorFlags)._installError).to.be.false;
+      });
+    }
+
     it("offers to leave once the VM runs, and leaves it running", async () => {
       const ready = deferred<boolean>();
       const calls: string[] = [];

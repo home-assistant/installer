@@ -17,6 +17,7 @@ import {
   forgetProxmoxSession,
   needsReconnect,
 } from "./proxmox-session.js";
+import { fixedOnConfigure } from "./proxmox-validation.js";
 import { VmProgressView } from "../vm-progress-view.js";
 
 /** The stages `proxmoxCreateVm` reports, in order */
@@ -169,13 +170,12 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
    * only logging in again can get past it.
    */
   protected _fail(error: unknown, message?: string) {
+    const made = !!wizardState.getState().selections.proxmoxVmResult;
     // Reconnecting resumes a VM made in full, or starts one not made yet. A
     // VM that failed while being made may exist half way, unknown to the
     // installer: a new install would find its VM ID taken, or leave it
     // behind under another one.
-    const halfMade =
-      !this._atStoppableStage &&
-      !wizardState.getState().selections.proxmoxVmResult;
+    const halfMade = !this._atStoppableStage && !made;
     const reconnect = needsReconnect(error) && !halfMade;
     if (needsReconnect(error) && halfMade) {
       message = localize(
@@ -183,7 +183,15 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
       );
     }
     if (reconnect) forgetProxmoxSession();
-    super._fail(error, message, { reconnect });
+    // The install checks the settings again before it makes the VM, and the
+    // server may have changed since, like a VM ID taken during the download.
+    // Trying again works once that is undone in Proxmox, and so does another
+    // choice on the configure step while there is no VM yet.
+    const changeChoice =
+      this._atStoppableStage &&
+      !made &&
+      fixedOnConfigure(installerError(error));
+    super._fail(error, message, { reconnect, changeChoice });
   }
 
   protected _stageTitle(stage: BackendStage): string {
