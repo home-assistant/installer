@@ -127,6 +127,10 @@ describe("live-iso-location-view", () => {
       expect(input.querySelector('[slot="hint"]')!.textContent).to.not.equal(
         ""
       );
+      // The field says it as it takes the focus, so the status line doesn't
+      expect(
+        el.shadowRoot!.querySelector('[role="status"]')!.textContent!.trim()
+      ).to.equal("");
       for (const other of el.shadowRoot!.querySelectorAll<WaInput>(
         `wa-input:not(.${field})`
       )) {
@@ -173,6 +177,39 @@ describe("live-iso-location-view", () => {
     } finally {
       outside.remove();
     }
+  });
+
+  // Enter in the field leaves the focus there, so the field says nothing new
+  it("says a refusal on the field that has the focus, every time it comes", async () => {
+    const el = fixtureSync<LiveIsoLocationView>(
+      html`<live-iso-location-view></live-iso-location-view>`
+    );
+    await settle();
+    const name = el.shadowRoot!.querySelector<WaInput>("wa-input.name")!;
+    name.focus();
+    const status = el.shadowRoot!.querySelector('[role="status"]')!;
+
+    const said: string[] = [];
+    for (let press = 0; press < 2; press++) {
+      const checking = el.check();
+      location.reject(ipcError("invalid_file_name", "Refused"));
+      expect(await checking).to.equal(false);
+      await settle();
+      expect(el.shadowRoot!.activeElement).to.equal(name);
+      said.push(status.textContent!);
+      location = deferred();
+    }
+
+    const hint = name.querySelector('[slot="hint"]')!.textContent!.trim();
+    expect(said.map((text) => text.trim())).to.deep.equal([hint, hint]);
+    // Changed, so that it is read out again
+    expect(said[1]).to.not.equal(said[0]);
+
+    // Gone with the problem
+    name.value = "other.iso";
+    name.dispatchEvent(new Event("input"));
+    await settle();
+    expect(status.textContent!.trim()).to.equal("");
   });
 
   it("asks for Next on Enter in the folder or the file name, not on Browse", async () => {

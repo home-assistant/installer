@@ -5,6 +5,7 @@ import type WaInput from "@home-assistant/webawesome/dist/components/input/input
 import {
   ViewAccessibility,
   focusAlert,
+  srOnlyStyles,
 } from "../../utils/view-accessibility.js";
 import {
   checkIsoLocation,
@@ -56,6 +57,7 @@ export class LiveIsoLocationView extends LitElement {
   static styles = [
     liveUsbStyles,
     fieldErrorStyles,
+    srOnlyStyles,
     css`
       .folder-row {
         display: flex;
@@ -84,6 +86,10 @@ export class LiveIsoLocationView extends LitElement {
   /** Why the location can't be used, on its field or under the fields */
   @state()
   private _problem: IsoProblem | null = null;
+
+  /** A field's problem said again, while that field kept the focus */
+  @state()
+  private _sayAgain = "";
 
   @query("wa-input.folder")
   private _folderInput?: WaInput;
@@ -151,7 +157,18 @@ export class LiveIsoLocationView extends LitElement {
     }
     const input = field === "folder" ? this._folderInput : this._nameInput;
     await input?.updateComplete;
-    input?.focus();
+    if (!input?.matches(":focus-within")) {
+      this._sayAgain = "";
+      input?.focus();
+      return;
+    }
+    // Enter in the field leaves the focus there, so nothing new is read
+    // out, not even the hint when it comes back the same: the status line
+    // says it instead, changed every time so that it is said again
+    this._sayAgain =
+      this._sayAgain === error.message
+        ? `${error.message}\u00a0`
+        : error.message;
   }
 
   private _answer(replace: boolean) {
@@ -251,6 +268,9 @@ export class LiveIsoLocationView extends LitElement {
           localize("views.live_usb.live_iso_location_view.where_to_save"),
           localize("views.live_usb.live_iso_location_view.subtitle")
         )}
+        <p class="sr-only" role="status">
+          ${problem?.field ? this._sayAgain : ""}
+        </p>
         <div class="card">
           <div class="folder-row">
             <wa-input
