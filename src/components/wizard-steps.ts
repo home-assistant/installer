@@ -82,8 +82,8 @@ export interface InstallStep {
   stopMessage(selections: WizardSelections): string;
   /**
    * Once the install failed or was stopped, Back returns to the step
-   * before, to change a choice and install again. Without it, Back stays
-   * hidden.
+   * before, to change a choice and install again. Without it, Back shows
+   * only after a failure that the view says choosing differently fixes.
    */
   backAfterError?: boolean;
   /**

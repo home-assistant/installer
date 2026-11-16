@@ -69,6 +69,17 @@ export function failMockOperation(
       message: "Download failed: connection reset",
       retryable: true,
     },
+    // Proxmox gave the VM ID to another VM while the image downloaded
+    "proxmox-download-vm-id-taken": {
+      operation: "proxmox-download",
+      code: "proxmox_action_required",
+      message: "VM ID 100 can't be used. Choose a different ID.",
+      retryable: true,
+      details: {
+        message_key: "backend.proxmox.vm_id_unavailable",
+        message_params: { vm_id: 100 },
+      },
+    },
     "utm-create": {
       operation: "utm",
       code: "utm",
