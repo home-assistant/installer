@@ -10,7 +10,7 @@ import { mdiHuman, mdiMinus, mdiPlus } from "../utils/icons.js";
 import {
   TEXT_SIZES,
   TEXT_SIZE_CHANGE,
-  setTextSize,
+  stepTextSize,
   textSize,
 } from "../utils/text-size.js";
 import { type Theme, setTheme, theme } from "../utils/theme.js";
@@ -82,7 +82,11 @@ export class AccessibilityMenu extends LitElement {
 
   render() {
     const size = TEXT_SIZES.indexOf(textSize());
-    const percent = new Intl.NumberFormat(getLanguage(), { style: "percent" });
+    // 1000% without a separator, so it fits where 100% does
+    const percent = new Intl.NumberFormat(getLanguage(), {
+      style: "percent",
+      useGrouping: false,
+    });
     return html`<header-menu
       label=${localize("components.accessibility_menu.accessibility")}
       .icon=${mdiHuman}
@@ -149,9 +153,7 @@ export class AccessibilityMenu extends LitElement {
   }
 
   private async _step(by: number) {
-    const next = TEXT_SIZES[TEXT_SIZES.indexOf(textSize()) + by];
-    if (next === undefined) return;
-    setTextSize(next);
+    stepTextSize(by);
     await this.updateComplete;
     // At either end of the range its button turns off, so the focus moves to
     // the other one rather than leaving the panel
