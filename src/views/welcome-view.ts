@@ -1,5 +1,5 @@
-import { getLanguage, localize } from "../localization/localize.js";
-import { LitElement, html, css, nothing } from "lit";
+import { localize } from "../localization/localize.js";
+import { LitElement, html, css } from "lit";
 import {
   ViewAccessibility,
   reducedMotionStyles,
@@ -7,40 +7,19 @@ import {
 import { logFrontendError } from "../utils/diagnostics.js";
 import { narrowWindow, tooLowForWelcome } from "../utils/breakpoints.js";
 import { customElement, state } from "lit/decorators.js";
-import { live } from "lit/directives/live.js";
 import { renderExternalLink } from "../utils/external-link.js";
 import {
   INSTALLATION_GUIDE_URL,
   OPEN_HOME_FOUNDATION_URL,
 } from "../utils/urls.js";
 import { fireEvent } from "../utils/fire-event.js";
-import {
-  chooseLanguage,
-  shippedLanguages,
-  shownLanguage,
-} from "../localization/initialize.js";
-import { mdiFormatSize, mdiTranslate } from "../utils/icons.js";
-import {
-  TEXT_SIZES,
-  TEXT_SIZE_CHANGE,
-  setTextSize,
-  textSize,
-} from "../utils/text-size.js";
+import { THEME_CHANGE, darkTheme } from "../utils/theme.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
-import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
-import "@home-assistant/webawesome/dist/components/select/select.js";
-import "@home-assistant/webawesome/dist/components/option/option.js";
-import "../components/ha-svg-icon.js";
+import "../components/accessibility-menu.js";
+import "../components/language-menu.js";
 import "../components/diagnostics-actions.js";
 import "../components/update-banner.js";
 import { installerUpdate } from "../state/installer-update.js";
-
-// Each language in its own words, like Deutsch, capitalized as in a menu
-function languageName(tag: string): string {
-  const name =
-    new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag;
-  return name.charAt(0).toLocaleUpperCase(tag) + name.slice(1);
-}
 
 @customElement("welcome-view")
 export class WelcomeView extends LitElement {
@@ -56,8 +35,8 @@ export class WelcomeView extends LitElement {
 
   private _unsubscribeUpdate?: () => void;
 
-  // Ctrl or Cmd with + and − change the size too
-  private readonly _onTextSizeChanged = () => this.requestUpdate();
+  // The logos come as artwork for each theme
+  private readonly _onThemeChanged = () => this.requestUpdate();
 
   connectedCallback() {
     super.connectedCallback();
@@ -65,7 +44,7 @@ export class WelcomeView extends LitElement {
     this._unsubscribeUpdate = installerUpdate.subscribe(() => {
       this._updating = installerUpdate.applying;
     });
-    window.addEventListener(TEXT_SIZE_CHANGE, this._onTextSizeChanged);
+    window.addEventListener(THEME_CHANGE, this._onThemeChanged);
   }
 
   static styles = [
@@ -73,14 +52,16 @@ export class WelcomeView extends LitElement {
     css`
       /* The content centers in the space above the footer, and the footer
          sits at the bottom. A window too low for both scrolls, footer last.
-         The footer is the page's own, so it stays out of the main landmark. */
+         The footer is the page's own, so it stays out of the main landmark.
+         The header lines up with the next screens', so Accessibility stays
+         in its place. */
       :host {
         display: flex;
         flex-direction: column;
         align-items: center;
         box-sizing: border-box;
         height: 100%;
-        padding: 2rem var(--ha-page-gutter) 1rem;
+        padding: 1rem var(--ha-page-gutter);
         text-align: center;
       }
 
@@ -111,31 +92,7 @@ export class WelcomeView extends LitElement {
       header {
         align-self: flex-end;
         display: flex;
-        flex-wrap: wrap;
-        justify-content: flex-end;
-        gap: 0.5rem;
-      }
-
-      header wa-select {
-        text-align: start;
-      }
-
-      .text-size {
-        width: 9rem;
-      }
-
-      .language {
-        width: 12rem;
-      }
-
-      /* The icons and the values say what each one is */
-      header wa-select::part(form-control-label) {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
+        gap: 0.25rem;
       }
 
       main {
@@ -238,42 +195,24 @@ export class WelcomeView extends LitElement {
         filter: none;
         opacity: 1;
       }
-
-      /* Both logos come as artwork for each theme */
-      .logo-dark,
-      .ohf-logo-dark {
-        display: none;
-      }
-
-      @media (prefers-color-scheme: dark) {
-        .logo-light,
-        .ohf-logo-light {
-          display: none;
-        }
-        .logo-dark,
-        .ohf-logo-dark {
-          display: block;
-        }
-      }
     `,
   ];
 
   // The logo's easter egg is hidden on purpose, so it needs no keyboard way in
   /* eslint-disable lit-a11y/click-events-have-key-events */
   render() {
+    const theme = darkTheme() ? "dark" : "light";
     return html`
-      <header>${this._renderTextSize()} ${this._renderLanguages()}</header>
+      <header>
+        <language-menu></language-menu>
+        <accessibility-menu></accessibility-menu>
+      </header>
       <update-banner></update-banner>
       <main>
         <h1 class="logo-container" @click=${this._onLogoClick}>
           <img
-            class="logo logo-light"
-            src="/assets/home-assistant-logo-light.svg"
-            alt=${localize("views.welcome_view.home_assistant")}
-          />
-          <img
-            class="logo logo-dark"
-            src="/assets/home-assistant-logo-dark.svg"
+            class="logo"
+            src="/assets/home-assistant-logo-${theme}.svg"
             alt=${localize("views.welcome_view.home_assistant")}
           />
         </h1>
@@ -297,15 +236,10 @@ export class WelcomeView extends LitElement {
         ${renderExternalLink(
           OPEN_HOME_FOUNDATION_URL,
           html`<img
-              class="ohf-logo ohf-logo-light"
-              src="/assets/ohf-logo-light.svg"
-              alt=${localize("views.welcome_view.open_home_foundation")}
-            />
-            <img
-              class="ohf-logo ohf-logo-dark"
-              src="/assets/ohf-logo-dark.svg"
-              alt=${localize("views.welcome_view.open_home_foundation")}
-            />`,
+            class="ohf-logo"
+            src="/assets/ohf-logo-${theme}.svg"
+            alt=${localize("views.welcome_view.open_home_foundation")}
+          />`,
           { className: "ohf-link" }
         )}
         ${renderExternalLink(
@@ -317,55 +251,6 @@ export class WelcomeView extends LitElement {
     `;
   }
   /* eslint-enable lit-a11y/click-events-have-key-events */
-
-  private _renderTextSize() {
-    const percent = new Intl.NumberFormat(getLanguage(), { style: "percent" });
-    return html`<wa-select
-      class="text-size"
-      size="s"
-      label=${localize("views.welcome_view.text_size")}
-      .value=${live(String(textSize()))}
-      @change=${this._onTextSizeChange}
-    >
-      <ha-svg-icon slot="start" .path=${mdiFormatSize}></ha-svg-icon>
-      ${TEXT_SIZES.map(
-        (size) =>
-          html`<wa-option value=${String(size)}
-            >${percent.format(size)}</wa-option
-          >`
-      )}
-    </wa-select>`;
-  }
-
-  private _onTextSizeChange(event: Event) {
-    setTextSize(Number((event.target as WaSelect).value));
-  }
-
-  // Hidden while English is the only language
-  private _renderLanguages() {
-    const languages = shippedLanguages();
-    if (languages.length < 2) return nothing;
-    return html`<wa-select
-      class="language"
-      size="s"
-      label=${localize("views.welcome_view.language")}
-      .value=${shownLanguage()}
-      @change=${this._onLanguageChange}
-    >
-      <ha-svg-icon slot="start" .path=${mdiTranslate}></ha-svg-icon>
-      ${languages
-        .map((tag) => ({ tag, name: languageName(tag) }))
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map(
-          ({ tag, name }) =>
-            html`<wa-option value=${tag} lang=${tag}>${name}</wa-option>`
-        )}
-    </wa-select>`;
-  }
-
-  private _onLanguageChange(event: Event) {
-    void chooseLanguage((event.target as WaSelect).value as string);
-  }
 
   private _onLogoClick() {
     this._logoClickCount++;
@@ -409,7 +294,7 @@ export class WelcomeView extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    window.removeEventListener(TEXT_SIZE_CHANGE, this._onTextSizeChanged);
+    window.removeEventListener(THEME_CHANGE, this._onThemeChanged);
     this._unsubscribeUpdate?.();
     if (this._clickResetTimer) {
       clearTimeout(this._clickResetTimer);

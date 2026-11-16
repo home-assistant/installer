@@ -30,7 +30,7 @@ test.describe("Other Options View", () => {
     await expect(otherOptionsView).toBeVisible();
 
     // Click back button
-    const backButton = otherOptionsView.locator("wa-button");
+    const backButton = otherOptionsView.locator(".header > wa-button");
     await expect(backButton).toBeVisible();
     await backButton.click();
 

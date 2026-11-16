@@ -19,6 +19,11 @@ export function textSize(): number {
   return current;
 }
 
+/** How far the window is zoomed: a browser leaves that to its own controls */
+export function windowZoom(): number {
+  return isTauri() ? current : 1;
+}
+
 /** Zooms the window to one of `TEXT_SIZES` and remembers it for next time */
 export function setTextSize(size: number): void {
   current = size;
