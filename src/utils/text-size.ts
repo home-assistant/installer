@@ -61,7 +61,7 @@ function onKeyDown(event: KeyboardEvent): void {
       stepTextSize(1);
       break;
     case "0":
-      if (current !== TEXT_SIZES[0]) setTextSize(TEXT_SIZES[0]);
+      if (current !== 1) setTextSize(1);
       break;
     default:
       return;
