@@ -45,8 +45,9 @@ export function stepTextSize(by: number): void {
 }
 
 // Ctrl or Cmd with + and − step through the sizes, and 0 resets them, like
-// a browser's zoom
+// a browser's zoom. A browser running the app keeps its own.
 function onKeyDown(event: KeyboardEvent): void {
+  if (!isTauri()) return;
   if (!(getPlatform() === "macos" ? event.metaKey : event.ctrlKey)) return;
   // AltGr reports Ctrl and Alt on Windows, and types characters such as "@"
   if (event.altKey) return;
@@ -74,18 +75,25 @@ const WHEEL_STEP = 50;
 let wheeled = 0;
 
 // Ctrl with the mouse wheel, or a pinch on a touchpad, zooms like a browser.
-// A touchpad sends many small turns, which add up to a step.
+// A touchpad sends many small turns, which add up to a step. A wheel set to
+// scroll by lines or pages turns a step at a time.
 function onWheel(event: WheelEvent): void {
-  if (!event.ctrlKey) return;
+  if (!isTauri() || !event.ctrlKey) return;
   event.preventDefault();
   if (Math.sign(event.deltaY) !== Math.sign(wheeled)) wheeled = 0;
-  wheeled += event.deltaY;
+  wheeled +=
+    event.deltaMode === WheelEvent.DOM_DELTA_PIXEL
+      ? event.deltaY
+      : Math.sign(event.deltaY) * WHEEL_STEP;
   if (Math.abs(wheeled) < WHEEL_STEP) return;
   stepTextSize(wheeled < 0 ? 1 : -1);
   wheeled = 0;
 }
 
-/** Restores the last size and takes over the zoom keys and wheel */
+/**
+ * Restores the last size and, in the desktop app, takes over the zoom keys
+ * and wheel
+ */
 export function initializeTextSize(): void {
   let stored = NaN;
   try {

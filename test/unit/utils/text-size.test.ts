@@ -29,14 +29,28 @@ function press(
   return event;
 }
 
-function wheel(deltaY: number, ctrlKey = true): WheelEvent {
-  const event = new WheelEvent("wheel", { deltaY, ctrlKey, cancelable: true });
+function wheel(
+  deltaY: number,
+  ctrlKey = true,
+  deltaMode: number = WheelEvent.DOM_DELTA_PIXEL
+): WheelEvent {
+  const event = new WheelEvent("wheel", {
+    deltaY,
+    deltaMode,
+    ctrlKey,
+    cancelable: true,
+  });
   window.dispatchEvent(event);
   return event;
 }
 
 describe("text size", () => {
-  beforeEach(() => initializeTextSize());
+  // The zoom keys and wheel are the app's only in the desktop app
+  beforeEach(() => {
+    mockTauriIpc(() => undefined);
+    mockWindows("main");
+    initializeTextSize();
+  });
 
   afterEach(() => {
     restoreTauriIpc();
@@ -105,6 +119,21 @@ describe("text size", () => {
     wheel(-20);
     wheel(30);
     expect(textSize()).to.equal(1.2);
+  });
+
+  it("steps once per notch of a wheel that scrolls by lines or pages", () => {
+    wheel(-3, true, WheelEvent.DOM_DELTA_LINE);
+    expect(textSize()).to.equal(1.2);
+    wheel(-1, true, WheelEvent.DOM_DELTA_PAGE);
+    expect(textSize()).to.equal(1.4);
+  });
+
+  it("leaves the zoom keys and wheel to a browser running the app", () => {
+    restoreTauriIpc();
+
+    expect(press("+").defaultPrevented).to.be.false;
+    expect(wheel(-100).defaultPrevented).to.be.false;
+    expect(textSize()).to.equal(1);
   });
 
   it("leaves the wheel to scrolling without Ctrl", () => {
