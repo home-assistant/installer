@@ -4,12 +4,10 @@ import { logFrontendError } from "./diagnostics.js";
 import { getPlatform } from "./platform.js";
 
 /**
- * The sizes on offer, as zoom factors of the whole window: 20% to 1000% in
- * steps of 20%, as Tauri's own zoom keys had them. The layout fits the
- * smallest window up to 200% (see breakpoints.ts); beyond that, a larger
- * window does.
+ * The sizes on offer, as zoom factors of the whole window, in steps of 20%.
+ * The layout fits the smallest window up to 200% (see breakpoints.ts).
  */
-export const TEXT_SIZES = Array.from({ length: 50 }, (_, i) => (i + 1) / 5);
+export const TEXT_SIZES = [1, 1.2, 1.4, 1.6, 1.8, 2];
 
 export const TEXT_SIZE_CHANGE = "text-size-change";
 
@@ -62,7 +60,7 @@ function onKeyDown(event: KeyboardEvent): void {
       stepTextSize(1);
       break;
     case "0":
-      if (current !== 1) setTextSize(1);
+      if (current !== TEXT_SIZES[0]) setTextSize(TEXT_SIZES[0]);
       break;
     default:
       return;

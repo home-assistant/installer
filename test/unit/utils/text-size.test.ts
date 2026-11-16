@@ -71,7 +71,7 @@ describe("text size", () => {
     expect(textSize()).to.equal(1);
   });
 
-  it("steps through the sizes with the zoom keys, from 20% to 1000%", () => {
+  it("steps through the sizes with the zoom keys, from 100% to 200%", () => {
     expect(press("=").defaultPrevented).to.be.true;
     expect(textSize()).to.equal(1.2);
     press("+");
@@ -79,22 +79,20 @@ describe("text size", () => {
     press("-");
     press("-");
     press("-");
-    expect(textSize()).to.equal(0.8);
+    expect(textSize()).to.equal(1);
 
-    for (let i = 0; i < 10; i++) press("-");
-    expect(textSize()).to.equal(0.2);
-    for (let i = 0; i < 60; i++) press("+");
-    expect(textSize()).to.equal(10);
+    for (let i = 0; i < 8; i++) press("+");
+    expect(textSize()).to.equal(2);
     press("0");
     expect(textSize()).to.equal(1);
   });
 
   it("zooms with Ctrl and the mouse wheel, a step per notch", () => {
     expect(wheel(-100).defaultPrevented).to.be.true;
+    wheel(-100);
+    expect(textSize()).to.equal(1.4);
+    wheel(100);
     expect(textSize()).to.equal(1.2);
-    wheel(100);
-    wheel(100);
-    expect(textSize()).to.equal(0.8);
   });
 
   it("adds up a touchpad's small turns to a step", () => {

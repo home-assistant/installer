@@ -82,11 +82,7 @@ export class AccessibilityMenu extends LitElement {
 
   render() {
     const size = TEXT_SIZES.indexOf(textSize());
-    // 1000% without a separator, so it fits where 100% does
-    const percent = new Intl.NumberFormat(getLanguage(), {
-      style: "percent",
-      useGrouping: false,
-    });
+    const percent = new Intl.NumberFormat(getLanguage(), { style: "percent" });
     return html`<header-menu
       label=${localize("components.accessibility_menu.accessibility")}
       .icon=${mdiHuman}

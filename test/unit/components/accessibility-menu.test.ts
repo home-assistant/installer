@@ -64,7 +64,7 @@ describe("accessibility-menu", () => {
     expect(size()).to.equal("100%");
     expect(smaller.accessibleLabel).to.equal("Smaller text");
     expect(larger.accessibleLabel).to.equal("Larger text");
-    expect(smaller.disabled).to.be.false;
+    expect(smaller.disabled).to.be.true;
     expect(larger.disabled).to.be.false;
   });
 
@@ -75,6 +75,7 @@ describe("accessibility-menu", () => {
     await menu.updateComplete;
     expect(textSize()).to.equal(1.2);
     expect(size()).to.equal("120%");
+    expect(smaller.disabled).to.be.false;
 
     smaller.click();
     await menu.updateComplete;
@@ -82,7 +83,7 @@ describe("accessibility-menu", () => {
   });
 
   it("keeps the focus in the panel at the end of the range", async () => {
-    setTextSize(9.8);
+    setTextSize(1.8);
     const { menu, smaller, larger, size } = await renderMenu();
     // Only the open panel's buttons take the focus
     menu
@@ -94,8 +95,8 @@ describe("accessibility-menu", () => {
     larger.click();
 
     await waitUntil(() => menu.shadowRoot!.activeElement === smaller);
-    expect(textSize()).to.equal(10);
-    expect(size()).to.equal("1000%");
+    expect(textSize()).to.equal(2);
+    expect(size()).to.equal("200%");
     expect(larger.disabled).to.be.true;
   });
 
