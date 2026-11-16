@@ -196,7 +196,9 @@ describe("live-iso-location-view", () => {
       expect(await checking).to.equal(false);
       await settle();
       expect(el.shadowRoot!.activeElement).to.equal(name);
-      said.push(status.textContent!);
+      // As Chrome's accessibility tree has it, where screen readers hear it
+      const [region] = findByRole(await fullA11ySnapshot(), "status");
+      said.push(region.children?.[0]?.name ?? "");
       location = deferred();
     }
 
