@@ -251,9 +251,7 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, CommandError> {
         "title": "Home Assistant Installer",
         "width": 900,
         "height": 780,
-        "resizable": true,
-        "minWidth": 800,
-        "minHeight": 750
+        "resizable": false
       }
     ],
     "security": {
