@@ -199,6 +199,31 @@ describe("proxmox-configure-view check errors", () => {
     expect(el.shadowRoot!.querySelectorAll("[custom-error]")).to.have.length(0);
   });
 
+  // It stays on show while the check runs, so it isn't new the second time
+  it("reads the same error below the form out again on another press of Next", async () => {
+    check = () => {
+      throw refusal("missing_privileges", {
+        privileges: "VM.Allocate",
+        path: "/vms/100",
+      });
+    };
+    const el = await mount();
+    expect(await el.check()).to.be.false;
+    const [alert] = focusAlerts(el);
+
+    // Next keeps the focus while the check runs
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    try {
+      outside.focus();
+      expect(await el.check()).to.be.false;
+      expect(focusAlerts(el)[0]).to.equal(alert);
+      expect(focused(el)).to.equal(alert);
+    } finally {
+      outside.remove();
+    }
+  });
+
   it("drops a field's error once it changes", async () => {
     check = () => {
       throw refusal("vm_id_unavailable", { vm_id: 100 });

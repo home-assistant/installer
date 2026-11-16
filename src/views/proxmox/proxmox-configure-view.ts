@@ -7,6 +7,7 @@ import { formatNumber, localize } from "../../localization/localize.js";
 import { LitElement, html, css, noChange } from "lit";
 import {
   ViewAccessibility,
+  focusAlert,
   reducedMotionStyles,
   srOnlyStyles,
 } from "../../utils/view-accessibility.js";
@@ -228,6 +229,7 @@ export class ProxmoxConfigureView extends LitElement {
   /** What the lookup error offers: Try again, or Reconnect */
   @query(".error > wa-button") private _loadRetryButton?: HTMLElement;
   @query("h2") private _heading?: HTMLElement;
+  @query(".general-error") private _generalError?: HTMLElement;
   /** The lookup error Try again is retrying, kept on screen meanwhile */
   @state() private _retrying: InstallerError | null = null;
   /**
@@ -303,7 +305,11 @@ export class ProxmoxConfigureView extends LitElement {
         const checkError = installerError(error);
         this._checkError = checkError;
         const setting = checkedSetting(checkError);
-        if (setting) await this._focusSetting(setting, checkError);
+        if (setting) {
+          await this._focusSetting(setting, checkError);
+        } else {
+          await this._focusGeneralError(checkError);
+        }
       }
       return false;
     }
@@ -342,6 +348,16 @@ export class ProxmoxConfigureView extends LitElement {
     await (field as { updateComplete?: Promise<unknown> } | null | undefined)
       ?.updateComplete;
     field?.focus();
+  }
+
+  /**
+   * Read out the error below the settings again when another press of Next
+   * gets the same: it stays on show while the check runs, so it isn't new.
+   */
+  private async _focusGeneralError(error: InstallerError) {
+    await this.updateComplete;
+    if (!this.isConnected || this._checkError !== error) return;
+    focusAlert(this._generalError);
   }
 
   private async _enableImport() {
@@ -854,7 +870,7 @@ export class ProxmoxConfigureView extends LitElement {
         </wa-input>
       </wa-details>
       ${generalError
-        ? html`<p class="error-text" data-focus-alert>
+        ? html`<p class="error-text general-error" data-focus-alert>
             ${generalError.message}
           </p>`
         : ""}
