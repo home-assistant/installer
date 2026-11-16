@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { locale } from "@tauri-apps/plugin-os";
 import { ReactiveElement } from "lit";
+import { registerTranslation } from "@home-assistant/webawesome/dist/utilities/localize.js";
 import { getLanguageOverride } from "../api/commands.js";
 import {
   type Catalog,
@@ -98,9 +99,32 @@ function showLanguage(): void {
     textInfo?: { direction: string };
   };
   // Web views have either the newer method or the older getter
-  document.documentElement.dir =
-    (tag.getTextInfo?.() ?? tag.textInfo)?.direction ?? "ltr";
+  const dir = (tag.getTextInfo?.() ?? tag.textInfo)?.direction ?? "ltr";
+  document.documentElement.dir = dir;
   document.title = localize("common.app_title");
+  translateWebAwesome(tag.language, dir === "rtl" ? "rtl" : "ltr");
+}
+
+/**
+ * Web Awesome names some of its controls itself, like a dialog's Close and
+ * the spinner of a busy button, in the language of `<html lang>`. It has
+ * only English unless given more: give it the app's words for those, under
+ * the language, which it falls back to from any region of it. Words a
+ * catalog leaves out stay English, from Web Awesome's own.
+ */
+function translateWebAwesome(language: string, dir: "ltr" | "rtl"): void {
+  if (language === "en") return;
+  const translation = {
+    $code: language,
+    $name: language,
+    $dir: dir,
+    close: localize("common.controls.close"),
+    loading: localize("common.controls.loading"),
+    progress: localize("common.controls.progress"),
+    showPassword: localize("common.controls.show_password"),
+    hidePassword: localize("common.controls.hide_password"),
+  };
+  registerTranslation(translation);
 }
 
 // Components localize as they render, so rendering again translates them

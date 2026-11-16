@@ -14,6 +14,7 @@ import {
   setLanguage,
 } from "../../src/localization/localize.js";
 import { formatBytes } from "../../src/utils/format.js";
+import "@home-assistant/webawesome/dist/components/spinner/spinner.js";
 
 // Stands in for the catalogs shipped next to en.json
 const shipped: Record<string, Catalog> = {
@@ -166,6 +167,27 @@ describe("localization", () => {
     await chooseLanguage("en");
     await german;
     expect(getLanguage()).to.equal("en");
+  });
+
+  // Its own labels, like the spinner's, would stay English otherwise
+  it("gives Web Awesome the app's words for the labels it sets itself", async () => {
+    const spinner = document.createElement("wa-spinner");
+    document.body.append(spinner);
+    const label = () =>
+      spinner.shadowRoot!.querySelector("svg")!.getAttribute("aria-label");
+    try {
+      await chooseLanguage("de");
+      await spinner.updateComplete;
+      expect(label()).to.equal("Wird geladen");
+
+      await chooseLanguage("en");
+      await spinner.updateComplete;
+      expect(label()).to.equal("Loading");
+    } finally {
+      spinner.remove();
+      document.documentElement.lang = "";
+      document.documentElement.dir = "";
+    }
   });
 
   it("keeps the decimal byte basis and flooring", () => {
