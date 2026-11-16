@@ -808,6 +808,11 @@ describe("app-shell", () => {
         await waitUntil(() => shellOf(el).nextLabel === "Checking drive...");
 
         wizardState.previousStep();
+        await el.updateComplete;
+        // The check is Confirm's: the step before has a Next of its own
+        expect(shellOf(el).nextLabel).to.equal("Next");
+        expect(shellOf(el).nextBusy).to.be.false;
+
         scan.resolve(MOCK_BLOCK_DEVICES);
         await flush();
 
