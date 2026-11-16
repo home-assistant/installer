@@ -33,7 +33,7 @@ This architecture enables future additions like a TUI installer for live USB env
 
 ## Quick Links
 
-- [Contributing Guide](./contributing.md#contributing-guide)
+- [Contributing Guide](../../CONTRIBUTING.md)
 
 ## Target Platforms
 
