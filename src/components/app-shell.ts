@@ -27,6 +27,7 @@ import "./info-dialog.js";
 import {
   wizardState,
   type WizardFlow,
+  type WizardSelections,
   type WizardState,
 } from "../state/wizard-state.js";
 import { WizardStateController } from "../state/wizard-state-controller.js";
@@ -105,8 +106,11 @@ export class AppShell extends LitElement {
   @state()
   private _pendingNext?: unknown;
 
+  // The selections the drive check before erasing started from. Back,
+  // Cancel or another choice replaces them, so a check left behind holds up
+  // nothing on the step shown next.
   @state()
-  private _verifyingDrive = false;
+  private _verifyingDrive?: WizardSelections;
 
   @state()
   private _showStopDialog = false;
@@ -291,7 +295,7 @@ export class AppShell extends LitElement {
     // would drop the focus to the page
     const busy = this._isBusy(step)
       ? step?.beforeNext?.label?.()
-      : this._verifyingDrive
+      : this._isVerifyingDrive
         ? localize("components.app_shell.checking_drive")
         : undefined;
 
@@ -385,6 +389,14 @@ export class AppShell extends LitElement {
       !!step?.beforeNext &&
       this._pendingNext !== undefined &&
       this._pendingNext === this._pendingToken(step)
+    );
+  }
+
+  /** Whether the drive check of the step on screen is running */
+  private get _isVerifyingDrive(): boolean {
+    return (
+      this._verifyingDrive !== undefined &&
+      this._verifyingDrive === wizardState.getState().selections
     );
   }
 
@@ -548,7 +560,7 @@ export class AppShell extends LitElement {
     // Check the drive is still there, then ask before erasing it
     if (step?.erasesDrive?.(this._wizardState.selections)) {
       // Next is busy with this already, whatever else sent the event
-      if (this._verifyingDrive) return;
+      if (this._isVerifyingDrive) return;
       if (!(await this._verifySelectedDrive())) {
         return;
       }
@@ -584,7 +596,7 @@ export class AppShell extends LitElement {
     let found = false;
 
     if (selection) {
-      this._verifyingDrive = true;
+      this._verifyingDrive = started.selections;
       try {
         found = !!findDrive(
           await listBlockDevices(),
@@ -595,7 +607,9 @@ export class AppShell extends LitElement {
         // The scan failed, so the device cannot be confirmed. Treat that the
         // same as a device that is gone.
       } finally {
-        this._verifyingDrive = false;
+        if (this._verifyingDrive === started.selections) {
+          this._verifyingDrive = undefined;
+        }
       }
     }
 
