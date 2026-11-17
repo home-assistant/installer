@@ -278,7 +278,6 @@ function liveUsbSteps(target: WizardStep): WizardStep[] {
     localizedStep("method", () =>
       localize("state.wizard_state.installation_method")
     ),
-    localizedStep("media", () => localize("state.wizard_state.media_type")),
     target,
     localizedStep("confirm", () => localize("common.confirm")),
     localizedStep("flash", () => localize("common.create")),

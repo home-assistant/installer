@@ -330,7 +330,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectAccessible(page, method, "setup method");
       await method
         .locator("option-card")
-        .filter({ hasText: "I can connect the drive" })
+        .filter({ hasText: "Write the mini PC's drive here" })
         .click();
       await expectAccessible(
         page,
@@ -352,12 +352,6 @@ for (const colorScheme of ["light", "dark"] as const) {
         await start(page, "Mini PC or other computer");
         await page
           .locator("minipc-setup-method-view option-card")
-          .filter({ hasText: "I need to boot from USB" })
-          .click();
-        const mediaView = page.locator("minipc-media-view");
-        await expectAccessible(page, mediaView, "bootable media");
-        await mediaView
-          .locator("option-card")
           .filter({ hasText: media })
           .click();
 

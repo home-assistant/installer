@@ -187,7 +187,6 @@ describe("wizard-steps", () => {
       "ha-hardware/module",
       "minipc/method",
       "minipc/architecture",
-      "minipc/usb/media",
     ]);
   });
 

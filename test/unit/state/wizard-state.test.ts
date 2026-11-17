@@ -62,7 +62,6 @@ describe("wizard-state", () => {
     expect(state.currentStepIndex).to.equal(1);
     expect(state.steps.map((step) => step.id)).to.deep.equal([
       "method",
-      "media",
       "location",
       "confirm",
       "flash",
