@@ -104,6 +104,15 @@ describe("minipc-setup-method-view", () => {
     expect(wizardState.currentStep!.id).to.equal("architecture");
   });
 
+  it("restores the direct steps, without Wi-Fi, after going back from the stick", async () => {
+    const { connectDrive, usbStick } = await renderMethod();
+    usbStick.click();
+    wizardState.previousStep();
+    connectDrive.click();
+    expect(wizardState.currentStep!.id).to.equal("architecture");
+    expect(stepIds()).to.deep.equal(MINIPC_STEPS.direct.map((step) => step.id));
+  });
+
   it("keeps the Wi-Fi step after going back and writing the drive again", async () => {
     const { connectDrive } = await renderMethod();
     connectDrive.click();

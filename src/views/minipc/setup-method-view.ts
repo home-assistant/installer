@@ -5,7 +5,7 @@ import {
   reducedMotionStyles,
 } from "../../utils/view-accessibility.js";
 import { customElement } from "lit/decorators.js";
-import { minipcDirectSteps, wizardState } from "../../state/wizard-state.js";
+import { wizardState } from "../../state/wizard-state.js";
 import { clearDriveSelection } from "../../utils/drive-selection.js";
 import type { HaosConfig } from "../../api/types.js";
 import { goToNextStep } from "../../components/wizard-next.js";
@@ -84,8 +84,12 @@ export class MiniPCSetupMethodView extends LitElement {
   }
 
   private _onConnectDrive() {
-    wizardState.setSteps(minipcDirectSteps(wizardState.getState().selections));
-    wizardState.setSelection("installMethod", "direct");
+    const { device } = wizardState.getState().selections;
+    wizardState.setSelections({
+      installMethod: "direct",
+      // Until a processor is picked, the stick's board would add the Wi-Fi step
+      ...(device ? {} : { deviceConfig: undefined }),
+    });
     goToNextStep(this);
   }
 

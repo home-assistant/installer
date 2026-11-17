@@ -301,12 +301,6 @@ export const MINIPC_STEPS = {
   ),
 };
 
-/** The direct path's steps, with Wi-Fi if the architecture picked earlier has it. */
-export function minipcDirectSteps(selections: WizardSelections): WizardStep[] {
-  // Without a picked architecture, deviceConfig may still be the USB path's
-  return stepsFor("minipc", selections.device ? selections : {});
-}
-
 function createInitialState(): WizardState {
   return {
     currentFlow: null,
