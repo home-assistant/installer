@@ -1,6 +1,9 @@
 import { localize } from "../../localization/localize.js";
 import { LitElement, css, html } from "lit";
-import { ViewAccessibility } from "../../utils/view-accessibility.js";
+import {
+  ViewAccessibility,
+  focusAlert,
+} from "../../utils/view-accessibility.js";
 import { logFrontendError, recordFailure } from "../../utils/diagnostics.js";
 import { customElement, query, state } from "lit/decorators.js";
 import { wizardState } from "../../state/wizard-state.js";
@@ -91,6 +94,8 @@ export class UtmConfigureView extends LitElement {
     updateComplete?: Promise<unknown>;
   };
 
+  @query(".general-error") private _generalError?: HTMLElement;
+
   connectedCallback() {
     super.connectedCallback();
     this._vm.restore(wizardState.getState().selections);
@@ -156,7 +161,14 @@ export class UtmConfigureView extends LitElement {
       recordFailure("utm", error);
       const checkError = installerError(error);
       this._checkError = checkError;
-      if (checkError.code === NAME_TAKEN) await this._focusName();
+      if (checkError.code === NAME_TAKEN) {
+        await this._focusName();
+      } else {
+        // It stays on show while the check runs, so the same one again
+        // isn't new, and would go unsaid
+        await this.updateComplete;
+        if (this._checkError === checkError) focusAlert(this._generalError);
+      }
       return false;
     }
   }
@@ -189,7 +201,7 @@ export class UtmConfigureView extends LitElement {
         ${this._vm.renderResources(this._options.cores, this._options.memory)}
       </div>
       ${generalError
-        ? html`<p class="error-text" data-focus-alert>
+        ? html`<p class="error-text general-error" data-focus-alert>
             ${generalError.message}
           </p>`
         : ""}
