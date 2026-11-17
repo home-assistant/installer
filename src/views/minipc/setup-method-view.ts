@@ -52,6 +52,7 @@ export class MiniPCSetupMethodView extends LitElement {
           description=${localize(
             "views.minipc.setup_method_view.create_a_usb_installer_description"
           )}
+          tag=${localize("views.minipc.setup_method_view.recommended")}
           icon="usb-boot"
           @click=${this._onUsbStick}
           ><span slot="end" aria-hidden="true">→</span></option-card

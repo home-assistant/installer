@@ -34,7 +34,9 @@ describe("minipc-setup-method-view", () => {
       "How will you install?"
     );
     expect(usbStick.heading).to.equal("Create a USB installer");
-    expect(usbStick.description).to.contain("Recommended");
+    expect(usbStick.tag).to.equal("Recommended");
+    expect(connectDrive.tag).to.equal("");
+    expect(isoFile.tag).to.equal("");
     expect(connectDrive.heading).to.equal("Write the mini PC's drive here");
     expect(connectDrive.description).to.contain("SSD or NVMe");
     expect(isoFile.heading).to.equal("Save an ISO file");
