@@ -431,16 +431,6 @@ class WizardStateStore {
     this.notify();
   }
 
-  /** Replaces the step list when a choice splits the flow; keeps the position. */
-  setSteps(steps: WizardStep[]) {
-    this.state = {
-      ...this.state,
-      steps,
-      currentStepIndex: Math.min(this.state.currentStepIndex, steps.length - 1),
-    };
-    this.notify();
-  }
-
   reset() {
     this._flowGeneration++;
     this.state = createInitialState();
