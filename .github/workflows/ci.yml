@@ -442,6 +442,17 @@ jobs:
       - name: Run E2E tests
         run: npm run test:e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/3
 
+      # The flow tests save a screenshot of each step they take, under the
+      # browser and the flow; a release run zips those of every shard and
+      # both browsers onto the release. A shard with no flow tests has none.
+      - name: Upload flow screenshots
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flow-screenshots-${{ matrix.browser }}-${{ matrix.shard }}
+          path: test-results/flow-screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -1060,6 +1071,15 @@ jobs:
           pattern: Home Assistant Installer*
           merge-multiple: true
 
+      # Each shard's artifact holds <browser>/<flow>/<step>.png, so together
+      # they make one tree.
+      - name: Download flow screenshots
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: ${{ runner.temp }}/flow-screenshots
+          pattern: flow-screenshots-*
+          merge-multiple: true
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -1090,6 +1110,20 @@ jobs:
         with:
           subject-path: ${{ runner.temp }}/installers/*
 
+      # A picture of every step of every flow as released, for reviewing the
+      # release and for documentation. Not an installer, so it is zipped
+      # after the update manifest and the provenance, which cover only those.
+      - name: Zip the flow screenshots
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        working-directory: ${{ runner.temp }}/flow-screenshots
+        run: |
+          if [[ -z "$(find . -name '*.png' -print -quit)" ]]; then
+            echo "::error::The E2E tests saved no flow screenshots"
+            exit 1
+          fi
+          zip -rq "$RUNNER_TEMP/flow-screenshots-$VERSION.zip" .
+
       # The release targets the commit this run built, and GitHub creates the
       # tag on it when someone publishes the draft. The tag rulesets decide
       # who may create which tag, and so who may publish which release. A
@@ -1106,6 +1140,7 @@ jobs:
           PRERELEASE: ${{ needs.version.outputs.prerelease }}
           PREVIOUS: ${{ needs.version.outputs.previous }}
           INSTALLERS: ${{ runner.temp }}/installers
+          SCREENSHOTS: ${{ runner.temp }}/flow-screenshots-${{ needs.version.outputs.version }}.zip
           RELEASE_NOTES: >-
             **Windows:** the installer isn't signed yet, so Microsoft Defender
             SmartScreen may warn about an unknown publisher when you open it.
@@ -1131,4 +1166,4 @@ jobs:
           if [[ -n "$PREVIOUS" ]]; then
             args+=(--notes-start-tag "$PREVIOUS")
           fi
-          gh release create "$VERSION" "${args[@]}" "$INSTALLERS"/*
+          gh release create "$VERSION" "${args[@]}" "$INSTALLERS"/* "$SCREENSHOTS"

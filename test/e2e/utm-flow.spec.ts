@@ -1,5 +1,5 @@
 import { type Page } from "@playwright/test";
-import { allowUtmControl, test, expect } from "./fixtures.js";
+import { allowUtmControl, flowScreenshot, test, expect } from "./fixtures.js";
 
 test.use({ platform: "macos" });
 
@@ -170,13 +170,16 @@ test.describe("UTM Installation Flow", () => {
       .locator(".footer-right wa-button");
 
     await expect(nextButton).toHaveJSProperty("disabled", true);
+    await flowScreenshot(page, "vm-utm", "check");
     await allowUtmControl(page);
     await expect(nextButton).toHaveJSProperty("disabled", false);
+    await flowScreenshot(page, "vm-utm", "check-allowed");
 
     await nextButton.click();
 
     // Step 2: Configure
     await expect(page.locator("utm-configure-view")).toBeVisible();
+    await flowScreenshot(page, "vm-utm", "configure");
     await page
       .locator("wizard-shell")
       .locator(".footer-right wa-button")
@@ -184,6 +187,7 @@ test.describe("UTM Installation Flow", () => {
 
     // Step 3: Confirm - click Install (no confirmation dialog for VM flow)
     await expect(page.locator("utm-confirm-view")).toBeVisible();
+    await flowScreenshot(page, "vm-utm", "confirm");
     await page
       .locator("wizard-shell")
       .locator(".footer-right wa-button")
@@ -195,11 +199,13 @@ test.describe("UTM Installation Flow", () => {
       "visibility",
       "hidden"
     );
+    await flowScreenshot(page, "vm-utm", "progress");
 
     // Step 5: Success
     await expect(page.locator("utm-success-view")).toBeVisible({
       timeout: 30000,
     });
+    await flowScreenshot(page, "vm-utm", "success");
 
     // Start over returns to the welcome screen
     await expect(
