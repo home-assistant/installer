@@ -77,14 +77,16 @@ async fn release_for_board_from(
         *cache = None;
     }
     let release = match &*cache {
-        Some(release) => release.clone(),
-        None => {
-            let release = fetch_latest(api_url, downloads_url).await?;
-            cache.insert(release).clone()
-        }
+        Some(release) => release,
+        None => cache.insert(fetch_latest(api_url, downloads_url).await?),
     };
-    drop(cache);
-    release.for_board(board, version)
+    let images = release.for_board(board, version);
+    // Asked for again next time: its images may still have been uploading,
+    // or a release built from that version may be out by then
+    if images.is_err() {
+        *cache = None;
+    }
+    images
 }
 
 /// The latest release, once its checksums and build inputs are verified.
@@ -452,6 +454,35 @@ mod tests {
                 if message.key == "backend.download.full_images_not_ready"),
             "{result:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_release_lacking_the_boards_image_is_asked_for_again() {
+        let mut server = files_server(INPUTS).await;
+        // Built from 18.5 for the board, but its image isn't uploaded yet
+        let uploading = server
+            .mock("GET", "/latest")
+            .with_body(release_json(TAG, vec![asset(BUILD_INPUTS)]))
+            .expect(1)
+            .create_async()
+            .await;
+        let cache = Mutex::new(None);
+        let (api, downloads) = (format!("{}/latest", server.url()), server.url());
+
+        let first = release_for_board_from(&cache, &api, &downloads, "rpi5-64", "18.5").await;
+        uploading.assert_async().await;
+        uploading.remove_async().await;
+        let uploaded = server
+            .mock("GET", "/latest")
+            .with_body(release_json(TAG, current_assets()))
+            .expect(1)
+            .create_async()
+            .await;
+        let retry = release_for_board_from(&cache, &api, &downloads, "rpi5-64", "18.5").await;
+
+        assert!(matches!(first, Err(Error::ServiceUnavailable(_))));
+        assert!(retry.is_ok());
+        uploaded.assert_async().await;
     }
 
     #[test]

@@ -667,6 +667,7 @@ export async function findHomeAssistants(): Promise<HaAnnouncement[]> {
         id: `mock-landing-page-${mockLookups++}`,
         address: MOCK_DEVICE_ADDRESS,
         landing_page: true,
+        needs_onboarding: false,
       },
     ];
   }

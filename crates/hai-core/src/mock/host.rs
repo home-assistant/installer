@@ -58,6 +58,7 @@ impl HostBackend for BackendMock {
             id: format!("mock-landing-page-{lookup}"),
             address: DEVICE_ADDRESS.into(),
             landing_page: true,
+            needs_onboarding: false,
         }])
     }
 }

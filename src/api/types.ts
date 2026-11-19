@@ -419,4 +419,10 @@ address: string,
  * Whether it is the page Home Assistant OS shows while it installs
  * Home Assistant, rather than Home Assistant itself.
  */
-landing_page: boolean, };
+landing_page: boolean,
+/**
+ * Whether it is Home Assistant itself and answers that its onboarding is
+ * unfinished, as on a device started from a full image, which runs
+ * Home Assistant without showing a landing page first.
+ */
+needs_onboarding: boolean, };

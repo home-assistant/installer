@@ -382,7 +382,14 @@ that starts from it. Since 2026.6 the landing page announces itself over mDNS as
 starts; older ones announce `version=0.0.0` and no `uuid`. The step first
 notes what announces itself already, then takes the first landing page that
 wasn't there for the device, and follows it at the address it announces.
-Home Assistant itself is never taken for it. The Start device step before it,
+A device started from a full image (see Image Download) runs Core at once,
+without a landing page. Then the device is the first Home Assistant that wasn't
+there and answers `GET /api/onboarding`, which Core serves without signing in,
+with its `user` step not done. Every Home Assistant that isn't a landing page
+is asked once a lookup has found them all, and asked no more once it answers
+that onboarding is done. Other Home Assistants are never taken for the device,
+so one that was off while the step noted what was there doesn't count. The
+Start device step before it,
 which comes as soon as the drive is written, notes what is there, then
 watches for the device while it stays open, in case Home Assistant replaces
 the landing page before Next. Only
@@ -392,13 +399,8 @@ for three seconds: on Windows through the system's DNS-SD
 (`DnsServiceBrowse` and `DnsServiceResolve`), whose mDNS traffic Windows
 Firewall lets through, elsewhere with `mdns-sd`, which sends its own queries.
 Addresses only Home Assistant OS itself can reach, like its Docker networks',
-are left out. Diagnostics record how many answered, never which or where.
-
-A full image (see Image Download) tells Supervisor which Core it holds, so
-Supervisor may start Core without showing the landing page first. Until that is
-checked on a device, the Set up step may then not find the device, and
-Next goes on without it; finding a fresh Core by its unfinished onboarding is the
-planned change if it does.
+are left out. Diagnostics record how many answered, and how many were landing
+pages or needed onboarding, never which or where.
 
 ---
 
