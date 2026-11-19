@@ -19,6 +19,20 @@ function next(page: Page, name = "Next") {
   return page.getByRole("button", { name, exact: true }).click();
 }
 
+/** From the success step, on through starting the computer to done */
+async function finishDeviceSteps(
+  page: Page,
+  shot: (step: string) => Promise<void>
+) {
+  const forward = page.locator("wizard-shell .footer-right wa-button");
+  await forward.click();
+  await expect(page.locator("device-setup-view")).toBeVisible();
+  await shot("setup");
+  await forward.click();
+  await expect(page.locator("device-done-view")).toBeVisible();
+  await shot("done");
+}
+
 test("writes a bootable USB stick", async ({ page }) => {
   const shot = (step: string) => flowScreenshot(page, "minipc-usb-stick", step);
   await openMediaChoice(page);
@@ -61,6 +75,7 @@ test("writes a bootable USB stick", async ({ page }) => {
   await expect(page.locator("live-usb-success-view")).toContainText(
     "remove the USB stick and restart"
   );
+  await finishDeviceSteps(page, shot);
 });
 
 test("saves an ISO file without the erase confirmation", async ({ page }) => {
@@ -91,6 +106,8 @@ test("saves an ISO file without the erase confirmation", async ({ page }) => {
   await shot("summary");
   await next(page, "Create");
   await expect(page.locator("confirm-dialog")).not.toHaveAttribute("open");
+  await expect(page.locator("live-usb-progress-view")).toBeVisible();
+  await shot("progress");
 
   const success = page.locator("live-usb-success-view");
   await expect(success).toContainText("Your ISO file is saved", {
@@ -101,6 +118,7 @@ test("saves an ISO file without the erase confirmation", async ({ page }) => {
   await expect(
     success.getByRole("button", { name: "Show in folder" })
   ).toBeVisible();
+  await finishDeviceSteps(page, shot);
 });
 
 test("asks before replacing an existing ISO file", async ({ page }) => {

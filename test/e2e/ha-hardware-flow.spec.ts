@@ -163,15 +163,22 @@ test.describe("Home Assistant hardware flow", () => {
         serial: null,
       });
     });
+    const shot = (step: string) => flowScreenshot(page, "ha-yellow-cm5", step);
     await pickDevice(page, "ha-yellow");
+    await expect(
+      page.locator("ha-hardware-module-selection-view option-card").first()
+    ).toBeVisible();
+    await shot("module");
     await pickModule(page, "yellow-cm5");
     await expect(page.locator("ha-hardware-connect-view")).toBeVisible();
+    await shot("connect");
     await next(page).click();
 
     const drives = page.locator("drive-selection-view").getByRole("radio");
     await expect(drives.first()).toContainText("Compute Module eMMC");
     await expect(drives.first()).toContainText("/dev/sdx");
     await expect(drives.first()).not.toBeChecked();
+    await shot("drive");
   });
 
   test("Back keeps the device and Cancel leaves the flow", async ({ page }) => {
