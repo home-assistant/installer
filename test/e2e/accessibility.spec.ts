@@ -2,6 +2,7 @@ import {
   approveProxmoxImport,
   skipWifiStep,
   expect,
+  setMockDelayScale,
   test,
 } from "./fixtures.js";
 
@@ -374,6 +375,7 @@ test("a VM install moves the focus from Cancel as it hides", async ({
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await approveProxmoxImport(page);
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await setMockDelayScale(page, 1);
   await page.getByRole("button", { name: "Install", exact: true }).click();
   const cancel = page.getByRole("button", { name: "Cancel", exact: true });
   const footer = page.locator("wizard-shell .footer:has(.footer-left)");

@@ -5,6 +5,8 @@ import {
   allowUtmControl,
   approveProxmoxImport,
   expect,
+  MOCK_DELAY_SCALE,
+  setMockDelayScale,
   test,
 } from "./fixtures.js";
 
@@ -221,6 +223,8 @@ for (const colorScheme of ["light", "dark"] as const) {
       await page
         .getByRole("button", { name: "Raspberry Pi 5", exact: true })
         .click();
+      // At full length, so the write still runs while its questions are checked
+      await setMockDelayScale(page, 1);
       await startWrite(page);
 
       const progress = page.locator("progress-view");
@@ -244,6 +248,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       await page
         .getByRole("button", { name: "Keep installing", exact: true })
         .click();
+      await setMockDelayScale(page, MOCK_DELAY_SCALE);
 
       await expect(page.locator("success-view")).toBeVisible({
         timeout: 45000,
@@ -296,8 +301,10 @@ for (const colorScheme of ["light", "dark"] as const) {
         .getByRole("button", { name: /^(Reinstall|Install)$/ })
         .click();
       // The Green gets an installer, created now and installing later
+      await setMockDelayScale(page, 1);
       await startWrite(page, "Create");
       await expectAccessible(page, page.locator("progress-view"), "progress");
+      await setMockDelayScale(page, MOCK_DELAY_SCALE);
       await expect(page.locator("ha-hardware-success-view")).toBeVisible({
         timeout: 45000,
       });
@@ -338,8 +345,10 @@ for (const colorScheme of ["light", "dark"] as const) {
         "processor"
       );
       await page.getByRole("button", { name: "Intel/AMD (x86-64)" }).click();
+      await setMockDelayScale(page, 1);
       await startWrite(page);
       await expectAccessible(page, page.locator("progress-view"), "progress");
+      await setMockDelayScale(page, MOCK_DELAY_SCALE);
       await expect(page.locator("success-view")).toBeVisible({
         timeout: 45000,
       });
@@ -387,6 +396,7 @@ for (const colorScheme of ["light", "dark"] as const) {
             dialog(page, "confirm-dialog"),
             "erase confirmation"
           );
+          await setMockDelayScale(page, 1);
           await page
             .getByRole("button", { name: "Erase and install", exact: true })
             .click();
@@ -395,6 +405,7 @@ for (const colorScheme of ["light", "dark"] as const) {
             page.locator("live-usb-progress-view"),
             "progress"
           );
+          await setMockDelayScale(page, MOCK_DELAY_SCALE);
         }
         const success = page.locator("live-usb-success-view");
         await expect(success).toBeVisible({ timeout: 30000 });
@@ -428,12 +439,14 @@ for (const colorScheme of ["light", "dark"] as const) {
         page.locator("proxmox-confirm-view"),
         "confirm"
       );
+      await setMockDelayScale(page, 1);
       await next(page, "Install").click();
       await expectAccessible(
         page,
         page.locator("proxmox-progress-view"),
         "progress"
       );
+      await setMockDelayScale(page, MOCK_DELAY_SCALE);
       await expect(page.locator("proxmox-success-view")).toBeVisible({
         timeout: 45000,
       });
@@ -474,12 +487,14 @@ for (const colorScheme of ["light", "dark"] as const) {
           page.locator("utm-confirm-view"),
           "confirm"
         );
+        await setMockDelayScale(page, 1);
         await next(page, "Install").click();
         await expectAccessible(
           page,
           page.locator("utm-progress-view"),
           "progress"
         );
+        await setMockDelayScale(page, MOCK_DELAY_SCALE);
         await expect(page.locator("utm-success-view")).toBeVisible({
           timeout: 45000,
         });

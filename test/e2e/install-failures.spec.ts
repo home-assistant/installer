@@ -4,6 +4,7 @@ import {
   approveProxmoxImport,
   test,
   expect,
+  setMockDelayScale,
   skipWifiStep,
 } from "./fixtures.js";
 
@@ -165,6 +166,8 @@ for (const scenario of [
       await back(page).click();
       await expect(page.locator("proxmox-confirm-view")).toBeVisible();
     }
+    // The VM install that follows is checked while it creates the VM
+    if (scenario.flow !== "sbc") await setMockDelayScale(page, 1);
     await next(page).click();
     if (scenario.recovery === "choose-drive") {
       await page.locator("drive-selection-view drive-card").first().click();

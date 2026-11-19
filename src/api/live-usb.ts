@@ -1,5 +1,6 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { shownLanguage } from "../localization/initialize.js";
+import { mockDelay } from "./mock-delay.js";
 import { failMockOperation } from "./mock-failures.js";
 import type { ExpectedDevice, FlashProgress } from "./types.js";
 
@@ -174,8 +175,8 @@ async function simulate(
         message: "",
       });
       if (stage === "writing" && percent === 0) failMockOperation("flash");
-      // Slow enough that browser tests can stop it halfway
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      // Slow enough at full length that browser tests can stop it halfway
+      await mockDelay(250);
     }
   }
   onProgress({
