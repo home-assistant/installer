@@ -187,10 +187,32 @@ export async function listBlockDevices(): Promise<BlockDevice[]> {
   return invoke<BlockDevice[]>("list_block_devices");
 }
 
-/** Restart as administrator. The app closes if Windows grants it. */
-export async function relaunchAsAdmin(): Promise<void> {
-  if (MOCK_ALLOWED && isBrowserOnly()) return;
-  await invoke("relaunch_as_admin");
+/** Where the browser mock's restart hands the flow to the reloaded page */
+const MOCK_RESUME_KEY = "hai:mock-resume";
+
+/**
+ * Restart as administrator. The app closes if Windows grants it.
+ * @param resume Where the restarted app opens, from `encodeResumeState`
+ */
+export async function relaunchAsAdmin(resume: string | null): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    if (resume) sessionStorage.setItem(MOCK_RESUME_KEY, resume);
+    return;
+  }
+  await invoke("relaunch_as_admin", { resume });
+}
+
+/**
+ * Where a restart as administrator asked this app to open, once: a second
+ * call resolves to null.
+ */
+export async function takeResumeState(): Promise<string | null> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    const resume = sessionStorage.getItem(MOCK_RESUME_KEY);
+    sessionStorage.removeItem(MOCK_RESUME_KEY);
+    return resume;
+  }
+  return invoke<string | null>("take_resume_state");
 }
 
 /**

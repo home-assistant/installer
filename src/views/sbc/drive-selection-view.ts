@@ -24,6 +24,7 @@ import {
 } from "../../api/index.js";
 import { formatBytes } from "../../utils/format.js";
 import { wizardState } from "../../state/wizard-state.js";
+import { encodeResumeState } from "../../state/resume-state.js";
 import {
   clearDriveSelection,
   driveIdentity,
@@ -545,7 +546,7 @@ export class DriveSelectionView extends LitElement {
   private async _relaunch() {
     this._relaunchError = "";
     try {
-      await relaunchAsAdmin();
+      await relaunchAsAdmin(encodeResumeState(wizardState.getState()));
     } catch (error) {
       this._relaunchError = installerError(error).message;
     }

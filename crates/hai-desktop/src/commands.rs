@@ -137,10 +137,14 @@ async fn list_drives(backend: &impl DeviceBackend) -> Result<Vec<BlockDevice>, C
 }
 
 /// Restarts the app as administrator, which the drive step offers when
-/// listing refused. The flow starts again in the new window.
+/// listing refused. The flow opens again at `resume`, as the frontend
+/// encoded it, or on the welcome screen without it.
 #[tauri::command]
-pub fn relaunch_as_admin(app: tauri::AppHandle) -> Result<(), CommandError> {
-    crate::elevation::relaunch_as_admin()?;
+pub fn relaunch_as_admin(
+    app: tauri::AppHandle,
+    resume: Option<String>,
+) -> Result<(), CommandError> {
+    crate::elevation::relaunch_as_admin(resume.as_deref())?;
     app.exit(0);
     Ok(())
 }

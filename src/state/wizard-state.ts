@@ -258,7 +258,7 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
 };
 
 /** The steps of `flow` that apply to `selections`. */
-function stepsFor(
+export function stepsFor(
   flow: WizardFlow,
   selections: WizardSelections
 ): WizardStep[] {
@@ -347,6 +347,22 @@ class WizardStateStore {
       currentStepIndex: 0,
       steps: stepsFor(flow, {}),
       selections: {},
+    };
+    this.notify();
+  }
+
+  /** Start `flow` with `selections` made, on the step `stepId`, or its first. */
+  resumeFlow(flow: WizardFlow, selections: WizardSelections, stepId: string) {
+    this._flowGeneration++;
+    const steps = stepsFor(flow, selections);
+    this.state = {
+      currentFlow: flow,
+      currentStepIndex: Math.max(
+        steps.findIndex((step) => step.id === stepId),
+        0
+      ),
+      steps,
+      selections: { ...selections },
     };
     this.notify();
   }

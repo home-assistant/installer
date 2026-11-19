@@ -7,6 +7,7 @@ import {
   MOCK_MANIFEST,
 } from "../../../../src/api/mock-data.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
+import { decodeResumeState } from "../../../../src/state/resume-state.js";
 import {
   isEligibleFlashTarget,
   storeDriveSelection,
@@ -212,10 +213,14 @@ describe("drive-selection-view", () => {
 
     async function mountRefused(relaunch: () => unknown) {
       const calls: string[] = [];
-      mockTauriIpc((cmd) => {
+      const relaunchArgs: unknown[] = [];
+      mockTauriIpc((cmd, args) => {
         calls.push(cmd);
         if (cmd === "list_block_devices") return Promise.reject(notElevated);
-        if (cmd === "relaunch_as_admin") return relaunch();
+        if (cmd === "relaunch_as_admin") {
+          relaunchArgs.push(args);
+          return relaunch();
+        }
         throw new Error(`unexpected command ${cmd}`);
       });
       const el = await fixture<DriveSelectionView>(
@@ -226,19 +231,24 @@ describe("drive-selection-view", () => {
         "the scan was never refused"
       );
       await el.updateComplete;
-      return { el, calls };
+      return { el, calls, relaunchArgs };
     }
 
     for (const flow of ["sbc", "minipc"] as const) {
       it(`offers to restart as administrator (${flow})`, async () => {
         wizardState.startFlow(flow);
-        const { el, calls } = await mountRefused(() => undefined);
+        wizardState.setSelections({
+          device: "rpi5-64",
+          deviceConfig: MOCK_MANIFEST.devices[0].haos,
+        });
+        wizardState.goToStep(
+          wizardState.getState().steps.findIndex((step) => step.id === "drive")
+        );
+        const { el, calls, relaunchArgs } = await mountRefused(() => undefined);
         const root = el.shadowRoot!;
         const notice = root.querySelector(".admin-needed")!;
         expect(notice.textContent).to.contain("needs administrator access");
-        expect(notice.textContent).to.contain(
-          "starts again from the beginning"
-        );
+        expect(notice.textContent).to.contain("opens again on this step");
         // Read out when it appears, like any failed scan
         expect(root.activeElement === notice).to.be.true;
         // Scanning again can't help: the rights last until a restart
@@ -250,6 +260,16 @@ describe("drive-selection-view", () => {
 
         (buttons[0] as HTMLElement).click();
         await waitUntil(() => calls.includes("relaunch_as_admin"));
+        // The restarted app opens on this step, with the device kept
+        const { resume } = relaunchArgs[0] as { resume: string };
+        expect(decodeResumeState(resume)).to.deep.equal({
+          flow,
+          step: "drive",
+          selections: {
+            device: "rpi5-64",
+            deviceConfig: MOCK_MANIFEST.devices[0].haos,
+          },
+        });
       });
     }
 
