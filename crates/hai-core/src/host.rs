@@ -99,8 +99,32 @@ struct OnboardingStep {
 /// serves them, and Home Assistant only starts its web server after it has
 /// set up the integration, so a 404 means it is onboarded. Home Assistant's
 /// own frontend reads a 401 the same way.
+///
+/// It is asked over plain HTTP, unless it serves HTTPS itself: then it drops
+/// that request without an answer. Its `internal_url` can't tell: that may
+/// be a proxy's in front of it.
 async fn ha_onboarded(ip: &str) -> Option<bool> {
-    let response = get(ip, "/api/onboarding").await?;
+    const PATH: &str = "/api/onboarding";
+    // Never probe an empty host, as `get` doesn't either
+    if ip.trim().is_empty() {
+        return None;
+    }
+    let response = match HA_CLIENT
+        .as_ref()?
+        .get(format!("http://{ip}{PATH}"))
+        .send()
+        .await
+    {
+        Ok(response) => response,
+        // One that took too long over HTTP would only keep HTTPS waiting too
+        Err(error) if error.is_timeout() => return None,
+        Err(_) => HA_HTTPS_CLIENT
+            .as_ref()?
+            .get(format!("https://{ip}{PATH}"))
+            .send()
+            .await
+            .ok()?,
+    };
     match response.status() {
         reqwest::StatusCode::NOT_FOUND | reqwest::StatusCode::UNAUTHORIZED => Some(true),
         status if status.is_success() => {
@@ -119,6 +143,23 @@ static HA_CLIENT: LazyLock<Option<reqwest::Client>> = LazyLock::new(|| {
         // The VM is on the local network, out of reach for a corporate proxy.
         // The proxy's own 407 would pass as ready, its 502 would never pass.
         .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .ok()
+});
+
+/// For Home Assistant that serves HTTPS itself. Its certificate is for the
+/// name it has, or one it signed itself, and neither is for the address it is
+/// asked at, so it is not checked. Nothing is sent but the question whether
+/// it is onboarded, whose answer only picks what the welcome screen says
+/// about it, and the mDNS announcement that named the address is no more
+/// authentic than a certificate it doesn't match.
+static HA_HTTPS_CLIENT: LazyLock<Option<reqwest::Client>> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .no_proxy()
+        .https_only(true)
+        .redirect(reqwest::redirect::Policy::none())
+        .tls_danger_accept_invalid_certs(true)
         .timeout(Duration::from_secs(5))
         .build()
         .ok()
@@ -598,6 +639,62 @@ mod tests {
         // Nothing answers, or there is nowhere to ask
         assert_eq!(ha_onboarded("127.0.0.1:1").await, None);
         assert_eq!(ha_onboarded("").await, None);
+    }
+
+    /// Home Assistant that serves HTTPS itself, with a certificate it signed
+    /// for its name, answering `body` to each request
+    async fn https_home_assistant(body: &'static str) -> (String, tokio::task::JoinHandle<()>) {
+        use std::sync::Arc;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let rcgen::CertifiedKey { cert, signing_key } =
+            rcgen::generate_simple_self_signed(vec!["homeassistant.local".into()]).unwrap();
+        let config = rustls::ServerConfig::builder_with_provider(Arc::new(
+            rustls::crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![cert.der().clone()],
+            rustls::pki_types::PrivatePkcs8KeyDer::from(signing_key.serialize_der()).into(),
+        )
+        .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let task = tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                // Plain HTTP fails the handshake, which closes the connection
+                let Ok(mut tls) = acceptor.accept(stream).await else {
+                    continue;
+                };
+                let mut request = Vec::new();
+                let mut buf = [0; 1024];
+                while !request.windows(4).any(|end| end == b"\r\n\r\n") {
+                    match tls.read(&mut buf).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(read) => request.extend_from_slice(&buf[..read]),
+                    }
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                     content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = tls.write_all(response.as_bytes()).await;
+                let _ = tls.shutdown().await;
+            }
+        });
+        (address, task)
+    }
+
+    #[tokio::test]
+    async fn test_ha_onboarded_asks_over_https_when_it_serves_that() {
+        let (address, server) = https_home_assistant(r#"[{"step":"user","done":false}]"#).await;
+        // Over HTTPS, though the certificate is for another name, and its own
+        assert_eq!(ha_onboarded(&address).await, Some(false));
+        server.abort();
     }
 
     #[tokio::test]

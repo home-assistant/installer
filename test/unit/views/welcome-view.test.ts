@@ -11,6 +11,7 @@ import {
   RESTART_TIMEOUT_MS,
 } from "../../../src/state/installer-update.js";
 import type { HaAnnouncement } from "../../../src/api/types.js";
+import { expectReadsLeftToRight } from "../helpers/bidi.js";
 import { mockTauriIpc, restoreTauriIpc } from "../tauri-ipc.js";
 
 describe("welcome-view", () => {
@@ -190,18 +191,22 @@ describe("welcome-view", () => {
             id: "home",
             name: "Home",
             address: "192.0.2.20:8123",
+            url: "http://192.0.2.20:8123/",
             landing_page: false,
           },
           {
             id: "cabin",
             name: "Cabin",
             address: "192.0.2.30:8123",
+            // Its internal_url, by name and over HTTPS
+            url: "https://cabin.example:8123/",
             landing_page: false,
           },
           {
             id: "new",
             name: null,
             address: "192.0.2.50",
+            url: "http://192.0.2.50/",
             landing_page: true,
           },
         ],
@@ -218,15 +223,16 @@ describe("welcome-view", () => {
       );
       const links = instances(el);
       expect(links.map((link) => link.getAttribute("href"))).to.deep.equal([
-        "http://192.0.2.30:8123",
-        "http://192.0.2.20:8123",
-        "http://192.0.2.50",
+        "https://cabin.example:8123/",
+        "http://192.0.2.20:8123/",
+        "http://192.0.2.50/",
       ]);
-      // Each says what it is ready for, and that it leaves the installer
+      // Each says where it opens, what it is ready for, and that it leaves
+      // the installer
       expect(
         links.map((link) => link.textContent!.replace(/\s+/g, " ").trim())
       ).to.deep.equal([
-        "Cabin 192.0.2.30:8123 Not set up yet Opens in your browser.",
+        "Cabin cabin.example:8123 Not set up yet Opens in your browser.",
         "Home 192.0.2.20:8123 Opens in your browser.",
         "Home Assistant 192.0.2.50 Installing Opens in your browser.",
       ]);
@@ -237,7 +243,54 @@ describe("welcome-view", () => {
 
       links[0].click();
       await waitUntil(() => opened.length === 1);
-      expect(opened).to.deep.equal(["http://192.0.2.30:8123"]);
+      expect(opened).to.deep.equal(["https://cabin.example:8123/"]);
+    });
+
+    it("lays them out in one row that scrolls", async () => {
+      const { el } = await welcome(
+        ["A", "B", "C", "D", "E", "F", "G"].map((name, index) => ({
+          id: name,
+          name,
+          address: `192.0.2.${index + 1}:8123`,
+          url: `http://192.0.2.${index + 1}:8123/`,
+          landing_page: false,
+        })),
+        {}
+      );
+      await waitUntil(() => instances(el).length === 7);
+
+      const tops = instances(el).map(
+        (link) => link.getBoundingClientRect().top
+      );
+      expect(new Set(tops).size).to.equal(1);
+      expect(el.shadowRoot!.querySelector(".found scroll-row ul")).to.exist;
+    });
+
+    it("keeps each name its own direction, and each address left to right", async () => {
+      document.documentElement.dir = "rtl";
+      try {
+        const { el } = await welcome([
+          {
+            id: "home",
+            name: "Home",
+            address: "192.0.2.20:8123",
+            url: "http://192.0.2.20:8123/",
+            landing_page: false,
+          },
+        ]);
+        await waitUntil(() => instances(el).length === 1);
+
+        expect(
+          el
+            .shadowRoot!.querySelector(".instance-name bdi")!
+            .hasAttribute("dir")
+        ).to.be.false;
+        expectReadsLeftToRight(
+          el.shadowRoot!.querySelector(".instance-address")!
+        );
+      } finally {
+        document.documentElement.dir = "";
+      }
     });
 
     it("shows nothing while no Home Assistant answers", async () => {

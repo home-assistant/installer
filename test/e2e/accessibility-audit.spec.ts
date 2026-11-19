@@ -158,6 +158,20 @@ for (const colorScheme of ["light", "dark"] as const) {
       );
     });
 
+    test("the welcome screen, with more Home Assistant than fit", async ({
+      page,
+    }) => {
+      await page.addInitScript(() =>
+        sessionStorage.setItem("hai:mock-network", "many")
+      );
+      await page.goto("/");
+      const found = page.getByRole("region", {
+        name: "Home Assistant on your network",
+      });
+      await expect(found.getByRole("link")).toHaveCount(8);
+      await expectAccessible(page, found, "Home Assistant on the network");
+    });
+
     test("the connection check, while it checks and when it fails", async ({
       page,
     }) => {

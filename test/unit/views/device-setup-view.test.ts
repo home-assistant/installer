@@ -54,6 +54,7 @@ describe("device-setup-view", () => {
                   id: "device",
                   name: null,
                   address: "192.0.2.60",
+                  url: "http://192.0.2.60/",
                   landing_page: true,
                 },
               ];

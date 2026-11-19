@@ -1069,12 +1069,14 @@ mod tests {
             id: "private-core-uuid".into(),
             name: Some("private-home".into()),
             address: "192.168.1.20:8123".into(),
+            url: "http://192.168.1.20:8123/".into(),
             landing_page: false,
         };
         let landing_page = HaAnnouncement {
             id: "private-landing-page-uuid".into(),
             name: None,
             address: "192.168.1.50".into(),
+            url: "http://192.168.1.50/".into(),
             landing_page: true,
         };
 

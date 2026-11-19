@@ -32,6 +32,8 @@ export type HomeAssistantState =
 export interface FoundHomeAssistant {
   /** Where it answers: an IPv4 address, with the port unless that is 80 */
   address: string;
+  /** Where to open it in the browser, over HTTPS if it takes that */
+  url: string;
   /** The name it announces, if any */
   name: string | null;
   state: HomeAssistantState;
@@ -65,6 +67,7 @@ export class HomeAssistantScan implements ReactiveController {
     return [...this._entries.values()]
       .map(({ announcement, onboarded }) => ({
         address: announcement.address,
+        url: announcement.url,
         name: announcement.name,
         state: announcement.landing_page
           ? ("installing" as const)

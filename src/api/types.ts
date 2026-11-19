@@ -421,6 +421,12 @@ name: string | null,
  */
 address: string,
 /**
+ * Where to open it in the browser: the `internal_url` it announces,
+ * which says whether it takes HTTPS and may name it, else `http://`
+ * and its address.
+ */
+url: string,
+/**
  * Whether it is the page Home Assistant OS shows while it installs
  * Home Assistant, rather than Home Assistant itself.
  */

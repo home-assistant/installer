@@ -27,13 +27,15 @@ class Host implements ReactiveControllerHost {
 
 const homeAssistant = (
   address: string,
-  name: string | null = "Home"
-): HaAnnouncement => ({ id: address, name, address, landing_page: false });
+  name: string | null = "Home",
+  url = `http://${address}/`
+): HaAnnouncement => ({ id: address, name, address, url, landing_page: false });
 
 const landingPage = (address: string, id = address): HaAnnouncement => ({
   id,
   name: "Home (preparing setup)",
   address,
+  url: `http://${address}/`,
   landing_page: true,
 });
 
@@ -116,7 +118,11 @@ describe("home-assistant-scan", () => {
     const { checked } = network(
       [
         [
-          homeAssistant("192.0.2.30:8123", "Cabin"),
+          homeAssistant(
+            "192.0.2.30:8123",
+            "Cabin",
+            "https://cabin.example:8123/"
+          ),
           homeAssistant("192.0.2.20:8123", "Home"),
           landingPage("192.0.2.50"),
           homeAssistant("192.0.2.40:8123", null),
@@ -133,14 +139,30 @@ describe("home-assistant-scan", () => {
     await looked();
 
     expect(scan.found).to.deep.equal([
-      { address: "192.0.2.30:8123", name: "Cabin", state: "not_onboarded" },
-      { address: "192.0.2.20:8123", name: "Home", state: "onboarded" },
+      {
+        address: "192.0.2.30:8123",
+        url: "https://cabin.example:8123/",
+        name: "Cabin",
+        state: "not_onboarded",
+      },
+      {
+        address: "192.0.2.20:8123",
+        url: "http://192.0.2.20:8123/",
+        name: "Home",
+        state: "onboarded",
+      },
       {
         address: "192.0.2.50",
+        url: "http://192.0.2.50/",
         name: "Home (preparing setup)",
         state: "installing",
       },
-      { address: "192.0.2.40:8123", name: null, state: "unknown" },
+      {
+        address: "192.0.2.40:8123",
+        url: "http://192.0.2.40:8123/",
+        name: null,
+        state: "unknown",
+      },
     ]);
     // A landing page isn't asked: Home Assistant isn't installed yet
     expect(checked).to.have.members([
@@ -205,7 +227,12 @@ describe("home-assistant-scan", () => {
     await lookAgain();
     expect(lookups()).to.equal(3);
     expect(scan.found).to.deep.equal([
-      { address: "192.0.2.20:8123", name: "Home", state: "onboarded" },
+      {
+        address: "192.0.2.20:8123",
+        url: "http://192.0.2.20:8123/",
+        name: "Home",
+        state: "onboarded",
+      },
     ]);
 
     // Only lookups that answered count as missing it
@@ -250,7 +277,12 @@ describe("home-assistant-scan", () => {
 
     await lookAgain();
     expect(scan.found).to.deep.equal([
-      { address, name: "Home", state: "not_onboarded" },
+      {
+        address,
+        url: `http://${address}/`,
+        name: "Home",
+        state: "not_onboarded",
+      },
     ]);
   });
 

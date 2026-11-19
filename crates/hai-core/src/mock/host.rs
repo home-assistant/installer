@@ -64,6 +64,7 @@ impl HostBackend for BackendMock {
             id: format!("mock-landing-page-{lookup}"),
             name: Some("Home (preparing setup)".into()),
             address: DEVICE_ADDRESS.into(),
+            url: format!("http://{DEVICE_ADDRESS}/"),
             landing_page: true,
         }])
     }

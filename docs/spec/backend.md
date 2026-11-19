@@ -374,17 +374,26 @@ Addresses only Home Assistant OS itself can reach, like its Docker networks',
 are left out. Diagnostics record how many answered, never which or where.
 
 The welcome screen looks up the Home Assistants already on the network as
-well, every 10 seconds while it shows, and offers each to open in the browser
-at `http://<address>`. It names each by the `location_name` it announces,
-else by its service name. A landing page shows as installing. For Home
-Assistant itself, `ha_onboarded` reads `/api/onboarding`, which the
-onboarding integration serves without authentication until every step is
-done: a list with a step not done means its owner has yet to onboard it. A
-404 means it is onboarded, as the integration no longer serves the list then
-and Home Assistant starts its web server only after setting it up; like Home
-Assistant's own frontend, a 401 reads the same. Any other answer tells
-nothing, and the screen keeps what the last answer told. One that two
-lookups in a row miss is no longer shown.
+well, every 10 seconds while it shows, and offers each to open in the
+browser. It names each by the `location_name` it announces, else by its
+service name, and opens the `internal_url` it announces: that says whether it
+takes HTTPS, and may name it as its certificate does. An `internal_url` that
+names another IP address than the one it is reached at keeps only its scheme;
+without a web address there, it opens at `http://<address>`. A landing page
+shows as installing. For Home Assistant itself, `ha_onboarded` reads
+`/api/onboarding`, which the onboarding integration serves without
+authentication until every step is done: a list with a step not done means its
+owner has yet to onboard it. A 404 means it is onboarded, as the integration
+no longer serves the list then and Home Assistant starts its web server only
+after setting it up; like Home Assistant's own frontend, a 401 reads the same.
+It asks over plain HTTP at the announced address, and over HTTPS when that
+gets no answer, as from Home Assistant with a certificate of its own. The
+`internal_url` can't decide that, as it may be a proxy's in front of Home
+Assistant. Over HTTPS the certificate is not checked: it is for a name, or
+self-signed, not for the address asked at; nothing is sent, and the answer
+only picks a label for an announcement that is no more authentic itself. Any
+other answer tells nothing, and the screen keeps what the last answer told.
+One that two lookups in a row miss is no longer shown.
 
 ---
 

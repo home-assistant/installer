@@ -22,6 +22,7 @@ const landingPage = (id: string, address = "192.0.2.50"): HaAnnouncement => ({
   id,
   name: null,
   address,
+  url: `http://${address}/`,
   landing_page: true,
 });
 
@@ -29,6 +30,7 @@ const homeAssistant = (id: string): HaAnnouncement => ({
   id,
   name: "Home",
   address: "192.0.2.10:8123",
+  url: "http://192.0.2.10:8123/",
   landing_page: false,
 });
 

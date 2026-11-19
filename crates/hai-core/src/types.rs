@@ -577,6 +577,10 @@ pub struct HaAnnouncement {
     pub name: Option<String>,
     /// Where it answers: an IPv4 address, with the port unless that is 80.
     pub address: String,
+    /// Where to open it in the browser: the `internal_url` it announces,
+    /// which says whether it takes HTTPS and may name it, else `http://`
+    /// and its address.
+    pub url: String,
     /// Whether it is the page Home Assistant OS shows while it installs
     /// Home Assistant, rather than Home Assistant itself.
     pub landing_page: bool,

@@ -23,7 +23,6 @@ import {
   mdiOpenInNew,
   mdiTranslate,
 } from "../utils/icons.js";
-import { homeAssistantUrl } from "../utils/external-url.js";
 import {
   HomeAssistantScan,
   type FoundHomeAssistant,
@@ -36,6 +35,7 @@ import "@home-assistant/webawesome/dist/components/option/option.js";
 import "../components/ha-svg-icon.js";
 import "../components/diagnostics-actions.js";
 import "../components/update-banner.js";
+import "../components/scroll-row.js";
 import { installerUpdate } from "../state/installer-update.js";
 
 // Each language in its own words, like Deutsch, capitalized as in a menu
@@ -43,6 +43,15 @@ function languageName(tag: string): string {
   const name =
     new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag;
   return name.charAt(0).toLocaleUpperCase(tag) + name.slice(1);
+}
+
+/** Where a URL opens, as a card names it: its host, with any port */
+function hostOf(url: string, address: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return address;
+  }
 }
 
 @customElement("welcome-view")
@@ -189,35 +198,28 @@ export class WelcomeView extends LitElement {
 
       .found {
         width: 100%;
-        max-width: 46rem;
         margin-top: 1.5rem;
         animation: appear 0.3s ease-out;
       }
 
+      /* The row keeps room above its cards for their focus ring */
       .found .section-label {
-        margin-bottom: 0.75rem;
+        margin-bottom: 0.25rem;
       }
 
+      /* One row, which scrolls when it doesn't fit */
       .found ul {
         list-style: none;
-        margin: 0;
+        margin-block: 0;
         padding: 0;
         display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
         gap: 0.75rem;
       }
 
       .found li {
         display: flex;
-        flex: 0 1 14.5rem;
-        min-width: 0;
-      }
-
-      @media ${narrowWindow} {
-        .found li {
-          flex-basis: 100%;
-        }
+        width: 14.5rem;
+        scroll-snap-align: start;
       }
 
       /* A card that opens the Home Assistant in the browser */
@@ -265,11 +267,15 @@ export class WelcomeView extends LitElement {
         gap: 0.125rem;
       }
 
-      /* A long name wraps rather than hiding the end of it */
+      /* A long name takes two lines; the rest shows when pointed at */
       .instance-name {
         max-width: 100%;
         font-weight: 500;
         overflow-wrap: anywhere;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
       }
 
       .instance-address {
@@ -458,28 +464,33 @@ export class WelcomeView extends LitElement {
       <h2 class="section-label" id="found-title">
         ${localize("views.welcome_view.found_title")}
       </h2>
-      <ul>
-        ${found.map(
-          (instance) => html`<li>${this._renderInstance(instance)}</li>`
-        )}
-      </ul>
+      <scroll-row>
+        <ul>
+          ${found.map(
+            (instance) => html`<li>${this._renderInstance(instance)}</li>`
+          )}
+        </ul>
+      </scroll-row>
     </section>`;
   }
 
   // Each opens in the browser, where one still to be onboarded starts that
-  private _renderInstance({ address, name, state }: FoundHomeAssistant) {
+  private _renderInstance({ address, url, name, state }: FoundHomeAssistant) {
+    const shownName = name || localize("views.welcome_view.unnamed_instance");
     return renderExternalLink(
-      homeAssistantUrl(address),
+      url,
       html`<ha-svg-icon
           class="instance-logo"
           .path=${homeAssistantLogo}
           .viewBox=${"0 0 240 240"}
         ></ha-svg-icon>
         <span class="instance-text">
-          <span class="instance-name"
-            >${name || localize("views.welcome_view.unnamed_instance")}</span
+          <span class="instance-name" title=${shownName}
+            ><bdi>${shownName}</bdi></span
           >
-          <span class="instance-address">${address}</span>
+          <span class="instance-address"
+            ><bdi dir="ltr">${hostOf(url, address)}</bdi></span
+          >
           ${this._renderState(state)}
         </span>
         <ha-svg-icon
