@@ -572,6 +572,9 @@ pub struct HaAnnouncement {
     /// it announces none. A landing page announces a new one each time it
     /// starts.
     pub id: String,
+    /// The name it announces, like "Home": its `location_name`, or its
+    /// service name's own part without one. `None` when it announces neither.
+    pub name: Option<String>,
     /// Where it answers: an IPv4 address, with the port unless that is 80.
     pub address: String,
     /// Whether it is the page Home Assistant OS shows while it installs

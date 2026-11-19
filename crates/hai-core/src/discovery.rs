@@ -82,9 +82,23 @@ fn announcement(resolved: Resolved) -> Option<HaAnnouncement> {
     };
     Some(HaAnnouncement {
         id: property("uuid").unwrap_or(&resolved.fullname).to_owned(),
+        name: property("location_name")
+            .map(str::to_owned)
+            .or_else(|| instance_name(&resolved.fullname)),
         address,
         landing_page,
     })
+}
+
+/// The instance's own part of a service name, like "Home" in
+/// `Home._home-assistant._tcp.local.`. Windows leaves out the final dot.
+fn instance_name(fullname: &str) -> Option<String> {
+    let service = SERVICE_TYPE.trim_end_matches('.');
+    let fullname = fullname.trim_end_matches('.');
+    let (instance, suffix) =
+        fullname.split_at_checked(fullname.len().checked_sub(service.len())?)?;
+    let instance = instance.strip_suffix('.')?;
+    (suffix.eq_ignore_ascii_case(service) && !instance.is_empty()).then(|| instance.to_owned())
 }
 
 /// The address to reach it at: the one its `internal_url` names when it
@@ -152,6 +166,8 @@ mod tests {
             announced,
             Some(HaAnnouncement {
                 id: "3f1c2a".into(),
+                // It announces no location_name
+                name: Some("Home (preparing setup)".into()),
                 address: "192.168.1.50".into(),
                 landing_page: true,
             })
@@ -163,12 +179,44 @@ mod tests {
         let announced = announcement(resolved(
             8123,
             &["192.168.1.20"],
-            &[("uuid", "core-uuid"), ("version", "2026.10.2")],
+            &[
+                ("uuid", "core-uuid"),
+                ("version", "2026.10.2"),
+                ("location_name", "Cabin"),
+            ],
         ))
         .unwrap();
         assert!(!announced.landing_page);
         // Asked on its own port
         assert_eq!(announced.address, "192.168.1.20:8123");
+        // By the name its owner gave it, over its service name's
+        assert_eq!(announced.name.as_deref(), Some("Cabin"));
+    }
+
+    #[test]
+    fn the_name_falls_back_to_the_service_name() {
+        for (fullname, name) in [
+            ("Home._home-assistant._tcp.local.", Some("Home")),
+            // As Windows gives it, without the final dot
+            ("Home._home-assistant._tcp.local", Some("Home")),
+            ("Home 2._HOME-ASSISTANT._tcp.local.", Some("Home 2")),
+            // A name with dots of its own keeps them
+            ("my.home._home-assistant._tcp.local.", Some("my.home")),
+            ("._home-assistant._tcp.local.", None),
+            ("_home-assistant._tcp.local.", None),
+            ("Home._other._tcp.local.", None),
+            ("", None),
+        ] {
+            assert_eq!(instance_name(fullname).as_deref(), name, "{fullname}");
+        }
+
+        // An empty location_name counts as none
+        let announced = announcement(Resolved {
+            fullname: "Home._home-assistant._tcp.local.".into(),
+            ..resolved(80, &["192.168.1.20"], &[("location_name", "")])
+        })
+        .unwrap();
+        assert_eq!(announced.name.as_deref(), Some("Home"));
     }
 
     #[test]

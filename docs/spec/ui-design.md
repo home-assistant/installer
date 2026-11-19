@@ -147,6 +147,12 @@ Casita helps make the app feel friendly and approachable, especially for non-tec
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+Below Let's go, the welcome screen lists the Home Assistants it finds on the
+local network, each with its name and address. One that Home Assistant OS
+still installs says Installing, and one whose owner has yet to create their
+account says Not set up yet. Each opens in the browser. Nothing shows while
+none answers, and Let's go keeps its place as long as the list fits below it.
+
 ### Installation Path Selection (After "Let's go")
 
 ```

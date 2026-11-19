@@ -84,6 +84,33 @@ async fn check_ha_updated(ip: &str) -> bool {
         .is_some_and(|status| status.is_success())
 }
 
+/// One step of Home Assistant's onboarding, as `/api/onboarding` lists it
+#[derive(Deserialize)]
+struct OnboardingStep {
+    done: bool,
+}
+
+/// Whether Home Assistant at `ip` is onboarded: its owner created their
+/// account and went through the steps after it. `None` without an answer
+/// that tells, as from a landing page, or while it restarts.
+///
+/// Until every step is done, the onboarding integration lists them at
+/// `/api/onboarding`, without authentication. Once they are, it no longer
+/// serves them, and Home Assistant only starts its web server after it has
+/// set up the integration, so a 404 means it is onboarded. Home Assistant's
+/// own frontend reads a 401 the same way.
+async fn ha_onboarded(ip: &str) -> Option<bool> {
+    let response = get(ip, "/api/onboarding").await?;
+    match response.status() {
+        reqwest::StatusCode::NOT_FOUND | reqwest::StatusCode::UNAUTHORIZED => Some(true),
+        status if status.is_success() => {
+            let steps = response.json::<Vec<OnboardingStep>>().await.ok()?;
+            Some(steps.iter().all(|step| step.done))
+        }
+        _ => None,
+    }
+}
+
 /// Shared by every check: the frontend polls these every 2 seconds, for up to
 /// an hour, and a client per check would redo its setup and drop its
 /// connections each time.
@@ -273,6 +300,10 @@ impl HostBackend for Backend {
 
     async fn ha_setup_status(&self, ip: &str) -> Option<HaSetupStatus> {
         ha_setup_status(ip).await
+    }
+
+    async fn ha_onboarded(&self, ip: &str) -> Option<bool> {
+        ha_onboarded(ip).await
     }
 
     async fn find_home_assistants(&self) -> Result<Vec<HaAnnouncement>> {
@@ -521,6 +552,52 @@ mod tests {
         let server = Server::new_async().await;
         assert_eq!(ha_setup_status(&server.host_with_port()).await, None);
         assert_eq!(ha_setup_status("").await, None);
+    }
+
+    #[tokio::test]
+    async fn test_ha_onboarded_reads_the_onboarding_steps() {
+        for (status, body, expected) in [
+            // Onboarding left to do, as before the owner created an account
+            (
+                200,
+                r#"[{"step":"user","done":false},{"step":"core_config","done":false}]"#,
+                Some(false),
+            ),
+            // Still listed until a restart, but all of them done
+            (
+                200,
+                r#"[{"step":"user","done":true},{"step":"core_config","done":true}]"#,
+                Some(true),
+            ),
+            (
+                200,
+                r#"[{"step":"user","done":true},{"step":"analytics","done":false}]"#,
+                Some(false),
+            ),
+            // No longer served once onboarded, as Home Assistant's frontend reads it
+            (404, "", Some(true)),
+            (401, "", Some(true)),
+            // Neither tells, like a page that isn't Home Assistant's
+            (200, "<!DOCTYPE html>", None),
+            (502, "", None),
+        ] {
+            let mut server = Server::new_async().await;
+            let mock = server
+                .mock("GET", "/api/onboarding")
+                .with_status(status)
+                .with_body(body)
+                .create_async()
+                .await;
+            assert_eq!(
+                ha_onboarded(&server.host_with_port()).await,
+                expected,
+                "{status} {body}"
+            );
+            mock.assert_async().await;
+        }
+        // Nothing answers, or there is nowhere to ask
+        assert_eq!(ha_onboarded("127.0.0.1:1").await, None);
+        assert_eq!(ha_onboarded("").await, None);
     }
 
     #[tokio::test]

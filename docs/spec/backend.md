@@ -332,6 +332,10 @@ pub trait HostBackend {
     /// progress and problems that hold it up (`None` without a full answer)
     async fn ha_setup_status(&self, ip: &str) -> Option<HaSetupStatus>;
 
+    /// Whether Home Assistant at `ip` is onboarded (`None` without an answer
+    /// that tells)
+    async fn ha_onboarded(&self, ip: &str) -> Option<bool>;
+
     /// The Home Assistants that announce `_home-assistant._tcp` on the local
     /// network within a few seconds (discovery.rs)
     async fn find_home_assistants(&self) -> Result<Vec<HaAnnouncement>>;
@@ -368,6 +372,19 @@ for three seconds: on Windows through the system's DNS-SD
 Firewall lets through, elsewhere with `mdns-sd`, which sends its own queries.
 Addresses only Home Assistant OS itself can reach, like its Docker networks',
 are left out. Diagnostics record how many answered, never which or where.
+
+The welcome screen looks up the Home Assistants already on the network as
+well, every 10 seconds while it shows, and offers each to open in the browser
+at `http://<address>`. It names each by the `location_name` it announces,
+else by its service name. A landing page shows as installing. For Home
+Assistant itself, `ha_onboarded` reads `/api/onboarding`, which the
+onboarding integration serves without authentication until every step is
+done: a list with a step not done means its owner has yet to onboard it. A
+404 means it is onboarded, as the integration no longer serves the list then
+and Home Assistant starts its web server only after setting it up; like Home
+Assistant's own frontend, a 401 reads the same. Any other answer tells
+nothing, and the screen keeps what the last answer told. One that two
+lookups in a row miss is no longer shown.
 
 ---
 

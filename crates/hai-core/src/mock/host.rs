@@ -47,6 +47,12 @@ impl HostBackend for BackendMock {
         })
     }
 
+    /// Home Assistant on the device, once it installed it, is still to be
+    /// onboarded. Any other is onboarded already.
+    async fn ha_onboarded(&self, ip: &str) -> Option<bool> {
+        Some(ip != DEVICE_ADDRESS)
+    }
+
     /// A landing page that wasn't there at the last lookup, as a device that
     /// just started announces, after listening for a moment
     async fn find_home_assistants(&self) -> Result<Vec<HaAnnouncement>> {
@@ -56,6 +62,7 @@ impl HostBackend for BackendMock {
         DOWNLOAD.store(0, Ordering::Relaxed);
         Ok(vec![HaAnnouncement {
             id: format!("mock-landing-page-{lookup}"),
+            name: Some("Home (preparing setup)".into()),
             address: DEVICE_ADDRESS.into(),
             landing_page: true,
         }])

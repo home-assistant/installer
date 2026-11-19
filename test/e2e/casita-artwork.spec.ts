@@ -75,6 +75,10 @@ for (const [width, height] of [
   test(`welcome keeps its footer at the bottom at ${width}x${height}`, async ({
     page,
   }) => {
+    // Without Home Assistant on the network, all of it fits
+    await page.addInitScript(() =>
+      sessionStorage.setItem("hai:mock-network", "empty")
+    );
     await page.setViewportSize({ width, height });
     await page.goto("/");
     const footer = page.locator("welcome-view .welcome-footer");

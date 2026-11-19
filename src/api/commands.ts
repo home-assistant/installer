@@ -675,8 +675,29 @@ export async function getHaSetupStatus(
   return invoke<HaSetupStatus | null>("get_ha_setup_status", { ipAddress });
 }
 
+/**
+ * Whether Home Assistant at the given address is onboarded: its owner
+ * created their account and went through the steps after it.
+ * @returns null without an answer that tells, as from a landing page
+ */
+export async function checkHaOnboarded(
+  ipAddress: string
+): Promise<boolean | null> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    // The device is still to be onboarded once it installed Home Assistant
+    return (
+      ipAddress !== MOCK_DEVICE_ADDRESS &&
+      ipAddress !== MOCK_NOT_ONBOARDED_ADDRESS
+    );
+  }
+  return invoke<boolean | null>("check_ha_onboarded", { ipAddress });
+}
+
 /** Counts the simulated lookups, so each finds a new landing page */
 let mockLookups = 0;
+
+/** Where the simulated Home Assistant that is still to be onboarded answers */
+const MOCK_NOT_ONBOARDED_ADDRESS = "192.168.1.30:8123";
 
 /**
  * The Home Assistants that announce themselves on the local network, as far
@@ -684,15 +705,31 @@ let mockLookups = 0;
  */
 export async function findHomeAssistants(): Promise<HaAnnouncement[]> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // E2E tests that measure the welcome screen find nothing
+    if (sessionStorage.getItem("hai:mock-network") === "empty") return [];
     // A landing page the last lookup didn't find, as a device that just
     // started announces. It has yet to download Home Assistant.
-    await new Promise((resolve) => setTimeout(resolve, 1000));
     mockDeviceDownload = 0;
     return [
       {
         id: `mock-landing-page-${mockLookups++}`,
+        name: "Home (preparing setup)",
         address: MOCK_DEVICE_ADDRESS,
         landing_page: true,
+      },
+      // Home Assistants that were there already: one onboarded, one not
+      {
+        id: "mock-home",
+        name: "Home",
+        address: "192.168.1.20:8123",
+        landing_page: false,
+      },
+      {
+        id: "mock-cabin",
+        name: "Cabin",
+        address: MOCK_NOT_ONBOARDED_ADDRESS,
+        landing_page: false,
       },
     ];
   }

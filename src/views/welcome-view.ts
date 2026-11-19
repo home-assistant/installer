@@ -5,7 +5,7 @@ import {
   reducedMotionStyles,
 } from "../utils/view-accessibility.js";
 import { logFrontendError } from "../utils/diagnostics.js";
-import { narrowWindow, tooLowForWelcome } from "../utils/breakpoints.js";
+import { narrowWindow } from "../utils/breakpoints.js";
 import { customElement, state } from "lit/decorators.js";
 import { renderExternalLink } from "../utils/external-link.js";
 import {
@@ -18,7 +18,17 @@ import {
   shippedLanguages,
   shownLanguage,
 } from "../localization/initialize.js";
-import { mdiTranslate } from "../utils/icons.js";
+import {
+  homeAssistantLogo,
+  mdiOpenInNew,
+  mdiTranslate,
+} from "../utils/icons.js";
+import { homeAssistantUrl } from "../utils/external-url.js";
+import {
+  HomeAssistantScan,
+  type FoundHomeAssistant,
+} from "../utils/home-assistant-scan.js";
+import { sectionLabelStyles } from "../utils/section-label-styles.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 import "@home-assistant/webawesome/dist/components/select/select.js";
@@ -38,6 +48,10 @@ function languageName(tag: string): string {
 @customElement("welcome-view")
 export class WelcomeView extends LitElement {
   protected readonly _accessibility = new ViewAccessibility(this);
+
+  /** The Home Assistants already on the network, to open instead */
+  private readonly _scan = new HomeAssistantScan(this);
+
   @state()
   private _logoClickCount = 0;
 
@@ -59,29 +73,26 @@ export class WelcomeView extends LitElement {
 
   static styles = [
     reducedMotionStyles,
+    sectionLabelStyles,
     css`
       /* The content centers in the space above the footer, and the footer
-         sits at the bottom. A window too low for both scrolls, footer last.
-         The footer is the page's own, so it stays out of the main landmark. */
+         sits at the bottom. A window too low for all of it scrolls, footer
+         last. The footer is the page's own, so it stays out of the main
+         landmark. */
       :host {
         display: flex;
         flex-direction: column;
         align-items: center;
         box-sizing: border-box;
         height: 100%;
+        min-height: 0;
+        overflow-y: auto;
         padding: 2rem var(--ha-page-gutter) 1rem;
         text-align: center;
       }
 
-      @media ${tooLowForWelcome} {
-        :host {
-          min-height: 0;
-          overflow-y: auto;
-        }
-
-        :host > * {
-          flex-shrink: 0;
-        }
+      :host > * {
+        flex-shrink: 0;
       }
 
       @keyframes soft-pulse {
@@ -116,13 +127,35 @@ export class WelcomeView extends LitElement {
         white-space: nowrap;
       }
 
+      /* The logo, intro and Let's go center in the space above the footer.
+         What is found on the network goes in the half below them, so they
+         only move up when it needs more room than that half has. */
       main {
         flex: 1 0 auto;
         align-self: stretch;
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
+      }
+
+      main::before {
+        content: "";
+      }
+
+      main::before,
+      .below {
+        flex: 1 1 0;
+      }
+
+      .start,
+      .below {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .below {
+        align-self: stretch;
       }
 
       .logo-container {
@@ -146,6 +179,123 @@ export class WelcomeView extends LitElement {
         color: var(--ha-secondary-text-color);
         line-height: 1.6;
         margin: 0 0 3rem;
+      }
+
+      @keyframes appear {
+        from {
+          opacity: 0;
+        }
+      }
+
+      .found {
+        width: 100%;
+        max-width: 46rem;
+        margin-top: 1.5rem;
+        animation: appear 0.3s ease-out;
+      }
+
+      .found .section-label {
+        margin-bottom: 0.75rem;
+      }
+
+      .found ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.75rem;
+      }
+
+      .found li {
+        display: flex;
+        flex: 0 1 14.5rem;
+        min-width: 0;
+      }
+
+      @media ${narrowWindow} {
+        .found li {
+          flex-basis: 100%;
+        }
+      }
+
+      /* A card that opens the Home Assistant in the browser */
+      .instance {
+        flex: 1;
+        min-width: 0;
+        box-sizing: border-box;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        background-color: var(--ha-card-background);
+        border: 2px solid var(--ha-border-color);
+        border-radius: var(--ha-card-border-radius);
+        color: var(--ha-text-color);
+        text-align: start;
+        text-decoration: none;
+        transition:
+          border-color 0.2s ease,
+          box-shadow 0.2s ease;
+      }
+
+      .instance:hover {
+        border-color: var(--ha-primary-color);
+        box-shadow: var(--ha-card-hover-shadow);
+      }
+
+      .instance:focus-visible {
+        outline: var(--wa-focus-ring);
+        outline-offset: var(--wa-focus-ring-offset);
+      }
+
+      .instance-logo {
+        flex-shrink: 0;
+        --mdc-icon-size: 28px;
+        color: var(--ha-primary-color);
+      }
+
+      .instance-text {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.125rem;
+      }
+
+      /* A long name wraps rather than hiding the end of it */
+      .instance-name {
+        max-width: 100%;
+        font-weight: 500;
+        overflow-wrap: anywhere;
+      }
+
+      .instance-address {
+        font-size: 0.8125rem;
+        color: var(--ha-secondary-text-color);
+      }
+
+      .instance-state {
+        margin-top: 0.125rem;
+        padding: 0 0.5rem;
+        border: 1px solid currentColor;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        line-height: 1.5;
+        color: var(--ha-secondary-text-color);
+      }
+
+      .instance-state.not-onboarded {
+        color: var(--ha-primary-color);
+      }
+
+      .instance-open {
+        flex-shrink: 0;
+        --mdc-icon-size: 16px;
+        color: var(--ha-secondary-text-color);
       }
 
       /* The arrow points the way the page reads */
@@ -243,32 +393,35 @@ export class WelcomeView extends LitElement {
       ${this._renderLanguages()}
       <update-banner></update-banner>
       <main>
-        <h1 class="logo-container" @click=${this._onLogoClick}>
-          <img
-            class="logo logo-light"
-            src="/assets/home-assistant-logo-light.svg"
-            alt=${localize("views.welcome_view.home_assistant")}
-          />
-          <img
-            class="logo logo-dark"
-            src="/assets/home-assistant-logo-dark.svg"
-            alt=${localize("views.welcome_view.home_assistant")}
-          />
-        </h1>
+        <div class="start">
+          <h1 class="logo-container" @click=${this._onLogoClick}>
+            <img
+              class="logo logo-light"
+              src="/assets/home-assistant-logo-light.svg"
+              alt=${localize("views.welcome_view.home_assistant")}
+            />
+            <img
+              class="logo logo-dark"
+              src="/assets/home-assistant-logo-dark.svg"
+              alt=${localize("views.welcome_view.home_assistant")}
+            />
+          </h1>
 
-        <p class="intro">${localize("views.welcome_view.subtitle")}</p>
+          <p class="intro">${localize("views.welcome_view.subtitle")}</p>
 
-        <wa-button
-          pill
-          variant="brand"
-          appearance="accent"
-          size="l"
-          ?disabled=${this._updating}
-          @click=${this._onLetsGo}
-        >
-          ${localize("views.welcome_view.let_s_go")}
-          <span slot="end" aria-hidden="true">→</span>
-        </wa-button>
+          <wa-button
+            pill
+            variant="brand"
+            appearance="accent"
+            size="l"
+            ?disabled=${this._updating}
+            @click=${this._onLetsGo}
+          >
+            ${localize("views.welcome_view.let_s_go")}
+            <span slot="end" aria-hidden="true">→</span>
+          </wa-button>
+        </div>
+        <div class="below">${this._renderFound()}</div>
       </main>
 
       <footer class="welcome-footer">
@@ -296,6 +449,61 @@ export class WelcomeView extends LitElement {
     `;
   }
   /* eslint-enable lit-a11y/click-events-have-key-events */
+
+  // Nothing until a Home Assistant answers
+  private _renderFound() {
+    const found = this._scan.found;
+    if (found.length === 0) return nothing;
+    return html`<section class="found" aria-labelledby="found-title">
+      <h2 class="section-label" id="found-title">
+        ${localize("views.welcome_view.found_title")}
+      </h2>
+      <ul>
+        ${found.map(
+          (instance) => html`<li>${this._renderInstance(instance)}</li>`
+        )}
+      </ul>
+    </section>`;
+  }
+
+  // Each opens in the browser, where one still to be onboarded starts that
+  private _renderInstance({ address, name, state }: FoundHomeAssistant) {
+    return renderExternalLink(
+      homeAssistantUrl(address),
+      html`<ha-svg-icon
+          class="instance-logo"
+          .path=${homeAssistantLogo}
+          .viewBox=${"0 0 240 240"}
+        ></ha-svg-icon>
+        <span class="instance-text">
+          <span class="instance-name"
+            >${name || localize("views.welcome_view.unnamed_instance")}</span
+          >
+          <span class="instance-address">${address}</span>
+          ${this._renderState(state)}
+        </span>
+        <ha-svg-icon
+          class="instance-open"
+          .path=${mdiOpenInNew}
+        ></ha-svg-icon>`,
+      { className: "instance" }
+    );
+  }
+
+  private _renderState(state: FoundHomeAssistant["state"]) {
+    switch (state) {
+      case "installing":
+        return html`<span class="instance-state installing"
+          >${localize("views.welcome_view.state_installing")}</span
+        >`;
+      case "not_onboarded":
+        return html`<span class="instance-state not-onboarded"
+          >${localize("views.welcome_view.state_not_onboarded")}</span
+        >`;
+      default:
+        return nothing;
+    }
+  }
 
   // Hidden while English is the only language
   private _renderLanguages() {
