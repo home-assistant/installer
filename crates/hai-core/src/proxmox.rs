@@ -2350,9 +2350,6 @@ mod tests {
             async fn get_device_manifest(&self) -> Result<crate::DeviceManifest> {
                 unreachable!()
             }
-            async fn get_haos_release(&self, _: &str) -> Result<HaosRelease> {
-                unreachable!("must use OVA's board-specific release")
-            }
             async fn get_latest_haos_release_for_board(&self, board: &str) -> Result<HaosRelease> {
                 assert_eq!(board, "ova");
                 Ok(HaosRelease {

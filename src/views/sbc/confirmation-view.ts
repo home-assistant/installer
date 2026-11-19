@@ -74,7 +74,7 @@ export class ConfirmationView extends LitElement {
     // An installer is pinned and named by date; it has no release to show.
     if (findInstaller(board)) return undefined;
     if (!board) throw new Error("No board selected");
-    return getHaosRelease(undefined, board);
+    return getHaosRelease(board);
   });
 
   render() {

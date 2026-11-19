@@ -118,48 +118,44 @@ pub async fn list_internal_devices() -> Result<Vec<BlockDevice>>;
 
 ### Image Download
 
-Installation requires a `sha256:` digest with exactly 64 hexadecimal digits
-from the release's `SHA256SUMS`, trusted only with a Sigstore signature
-(`SHA256SUMS.sigstore.json`) from the build that made the release, never
-because GitHub serves it. The downloader hashes
-the compressed bytes while streaming them to a private temporary file and only
-publishes the file after a match. Missing, null, malformed, and unsupported
-digests stop installation before download; a mismatch stops before extraction,
-drive writing, or VM import. There is no fallback to an XZ checksum or a guessed
-download URL. Releases without signed checksums cannot be installed, except
-those whose digests are pinned in `download/sha256sums.rs`.
-
-The same policy applies to raw images and UTM/Proxmox qcow2 images, selected from
-the version for their board in `stable.json`. Images are kept for the session
-only; see below.
-
-#### Full images
-
-Every flow prefers a full image: HAOS with Home Assistant and its components
+Every flow installs a full image: HAOS with Home Assistant and its components
 already on the data partition, built by
 [home-assistant/operating-system-full-images](https://github.com/home-assistant/operating-system-full-images)
 from a `stable.json` snapshot, so the device skips downloading Home Assistant on
-first boot. `download/full_images.rs` looks up that repository's latest release.
-Its tag must be `stable-<home-assistant/version commit>`, and its `SHA256SUMS`
-must be signed by `build-channel.yml` running on `main` in that repository
-(checked by repository ID as well). That signature names no release, so the
-release's `build-inputs.json`, whose digest is in the signed `SHA256SUMS`, decides
-whether it is current: a board gets its full images only when they were built
-from the HAOS version `stable.json` lists for the board now. Image names are
+first boot. There are no regular HAOS images to fall back to.
+
+`download/full_images.rs` looks up that repository's latest release. Its tag
+must be `stable-<home-assistant/version commit>`, and its `SHA256SUMS` must be
+signed with Sigstore (`SHA256SUMS.sigstore.json`) by `build-channel.yml` running
+on `main` in that repository, checked by repository ID as well, never trusted
+because GitHub serves it. That signature names no release, so the release's
+`build-inputs.json`, whose digest is in the signed `SHA256SUMS`, decides whether
+it is current. As before, `stable.json` decides which HAOS version a board gets.
+The board gets its full images only when they were built from that version.
+Image names are
 `haos_<board>-<os>-full-core-<core>-stable-<first 12 digits of the commit>`, and
 each must download from that release of that repository.
 
-Otherwise the board gets the regular HAOS release, as before: when the full
-release was built from another HAOS version (for about 20 minutes after
-`stable.json` changes, or longer if its build fails), lacks the board, can't be
-reached, is rate-limited, or fails any check. The regular release is verified on
-its own, so falling back never lowers what is checked. The reason is logged. The
-full release is cached for the session like a regular one, and asked for again
-once a board finds it built from an older version. Core in a full image can be
-behind `stable.json`; Supervisor offers the newer one as an update.
+When the latest release was built from another HAOS version for the board (for
+about 20 minutes after `stable.json` moves it, or longer if its build fails), or
+has no signed image of it, installation stops with a retryable "isn't ready yet"
+error, and the reason is logged. The release is cached for the session, and
+asked for again once a board finds it built from another version. Core in a full
+image can be behind `stable.json`; Supervisor offers the newer one as an update.
 
-Full images are about three times the download of regular ones, and the extracted
-generic x86-64 image is about 5 GB. The live USB stick therefore needs 4 GB.
+Installation requires a `sha256:` digest with exactly 64 hexadecimal digits from
+that signed `SHA256SUMS`. The downloader hashes the compressed bytes while
+streaming them to a private temporary file and only publishes the file after a
+match. Missing, null, malformed, and unsupported digests stop installation
+before download; a mismatch stops before extraction, drive writing, or VM
+import. There is no fallback to an XZ checksum or a guessed download URL.
+
+The same policy applies to raw images and UTM/Proxmox qcow2 images. Images are
+kept for the session only; see below.
+
+Full images are about three times the download of regular HAOS images, and the
+extracted generic x86-64 image is about 5 GB. The live USB stick therefore needs
+4 GB.
 
 Metadata and image requests share a client with a 10-second connection timeout
 and a 30-second idle-read timeout. Downloads that keep making progress have no

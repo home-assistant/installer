@@ -184,6 +184,7 @@ pub fn storage_requirements(board: &str) -> Option<HaosConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::ImageFormat;
 
     #[test]
     fn storage_requirements_cover_manifest_and_installer_boards() {
@@ -280,108 +281,39 @@ mod tests {
             );
         }
     }
-    fn required_release_assets(
+    /// The stable.json version of each bundled board.
+    fn bundled_board_versions(
         stable: &crate::types::StableVersionInfo,
-    ) -> Result<std::collections::BTreeMap<String, Vec<String>>, String> {
-        let mut releases = std::collections::BTreeMap::<String, Vec<String>>::new();
-        for device in bundled_manifest().devices {
-            let board = &device.haos.board;
-            let version = stable
-                .hassos
-                .get(board)
-                .ok_or_else(|| format!("Bundled board {board} is missing from stable.json"))?;
-            releases
-                .entry(version.clone())
-                .or_default()
-                .push(format!("haos_{board}-{version}.img.xz"));
-        }
-        Ok(releases)
-    }
-
-    /// The expected images that aren't release assets or lack a verified digest.
-    fn unusable_release_assets(
-        expected: &[String],
-        assets: &[crate::types::GitHubAsset],
-        sums: &std::collections::HashMap<String, String>,
-    ) -> Vec<String> {
-        expected
-            .iter()
-            .filter(|name| {
-                !sums.contains_key(*name) || !assets.iter().any(|asset| asset.name == **name)
+    ) -> Result<std::collections::BTreeMap<String, String>, String> {
+        bundled_manifest()
+            .devices
+            .into_iter()
+            .map(|device| {
+                let board = device.haos.board;
+                let version =
+                    stable.hassos.get(&board).cloned().ok_or_else(|| {
+                        format!("Bundled board {board} is missing from stable.json")
+                    })?;
+                Ok((board, version))
             })
-            .cloned()
             .collect()
     }
 
-    fn release_asset_fixture(name: String) -> crate::types::GitHubAsset {
-        crate::types::GitHubAsset {
-            name,
-            size: 1,
-            browser_download_url: "https://example.test/image.img.xz".into(),
-        }
-    }
-
-    fn sums_fixture(names: &[String]) -> std::collections::HashMap<String, String> {
-        let digest = format!("sha256:{}", "00".repeat(32));
-        names
-            .iter()
-            .map(|name| (name.clone(), digest.clone()))
-            .collect()
-    }
-
-    fn stable_catalog_fixture() -> crate::types::StableVersionInfo {
-        crate::types::StableVersionInfo {
+    #[test]
+    fn catalog_check_needs_every_bundled_board_in_stable_json() {
+        let mut stable = crate::types::StableVersionInfo {
             hassos: bundled_manifest()
                 .devices
                 .into_iter()
                 .map(|device| (device.haos.board, "18.3".into()))
                 .collect(),
-        }
-    }
-
-    #[test]
-    fn catalog_asset_check_requires_every_raw_image() {
-        let releases = required_release_assets(&stable_catalog_fixture()).unwrap();
-        let expected = &releases["18.3"];
-        let sums = sums_fixture(expected);
-        let mut assets: Vec<_> = expected
-            .iter()
-            .cloned()
-            .map(release_asset_fixture)
-            .collect();
-        assert!(unusable_release_assets(expected, &assets, &sums).is_empty());
-        assets.retain(|asset| asset.name != "haos_rpi5-64-18.3.img.xz");
-        assets.extend([
-            release_asset_fixture("haos_rpi5-64-18.3.qcow2.xz".into()),
-            release_asset_fixture("haos_rpi5-64-18.2.img.xz".into()),
-        ]);
-        assert_eq!(
-            unusable_release_assets(expected, &assets, &sums),
-            ["haos_rpi5-64-18.3.img.xz"]
-        );
-    }
-
-    #[test]
-    fn catalog_asset_check_requires_a_verified_digest() {
-        let expected: Vec<String> = vec!["haos_rpi5-64-18.3.img.xz".into()];
-        let assets = [release_asset_fixture(expected[0].clone())];
-        assert_eq!(
-            unusable_release_assets(&expected, &assets, &sums_fixture(&[])),
-            expected
-        );
-        assert!(unusable_release_assets(&expected, &assets, &sums_fixture(&expected)).is_empty());
-    }
-
-    #[test]
-    fn catalog_asset_check_groups_each_boards_stable_version() {
-        let mut stable = stable_catalog_fixture();
+        };
         stable.hassos.insert("odroid-n2".into(), "18.2".into());
-        let releases = required_release_assets(&stable).unwrap();
-        assert_eq!(releases.len(), 2);
-        assert_eq!(releases["18.2"], ["haos_odroid-n2-18.2.img.xz"]);
-        assert_eq!(releases["18.3"].len(), bundled_manifest().devices.len() - 1);
+        let versions = bundled_board_versions(&stable).unwrap();
+        assert_eq!(versions["odroid-n2"], "18.2");
+        assert_eq!(versions["rpi5-64"], "18.3");
         stable.hassos.remove("odroid-n2");
-        assert!(required_release_assets(&stable)
+        assert!(bundled_board_versions(&stable)
             .unwrap_err()
             .contains("odroid-n2 is missing"));
     }
@@ -389,56 +321,26 @@ mod tests {
     #[tokio::test]
     #[ignore = "live GitHub metadata and signature check; run explicitly in CI"]
     async fn bundled_boards_have_stable_release_assets() {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .unwrap();
-        // HAOS publishes releases before uploading assets; stable.json advances
-        // only after the build/upload jobs finish. Check each board's stable tag.
-        let stable: crate::types::StableVersionInfo = client
-            .get("https://version.home-assistant.io/stable.json")
-            .send()
+        // Fails for a while after stable.json moves a board to a new HAOS
+        // version, until the full images built from it are out.
+        let stable = crate::download::get_stable_version()
             .await
-            .expect("Could not fetch stable HAOS board versions")
-            .error_for_status()
-            .expect("Stable HAOS board lookup failed")
-            .json()
-            .await
-            .expect("Invalid stable HAOS board metadata");
-        for (version, expected) in
-            required_release_assets(&stable).expect("Bundled board has no stable release")
+            .expect("Could not fetch stable HAOS board versions");
+        let mut unusable = Vec::new();
+        for (board, version) in
+            bundled_board_versions(&stable).expect("Bundled board has no stable release")
         {
-            let mut request = client
-                .get(format!("https://api.github.com/repos/home-assistant/operating-system/releases/tags/{version}"))
-                .header("User-Agent", "home-assistant-installer-catalog-check");
-            if let Ok(token) = std::env::var("GITHUB_TOKEN") {
-                request = request.bearer_auth(token);
+            match crate::download::full_images::release_for_board(&board, &version).await {
+                Ok(release) if release.require_image(&board, ImageFormat::Raw).is_ok() => {}
+                Ok(_) => unusable.push(format!("{board} {version}: no raw image")),
+                Err(error) => unusable.push(format!("{board} {version}: {error}")),
             }
-            let release: crate::types::GitHubRelease = request
-                .send()
-                .await
-                .expect("Could not fetch stable HAOS release metadata")
-                .error_for_status()
-                .expect("GitHub release lookup failed (check connectivity or API rate limit)")
-                .json()
-                .await
-                .expect("Invalid GitHub release metadata");
-            assert_eq!(release.tag_name, version);
-            let sums = crate::download::sha256sums::verified(
-                &client,
-                &crate::download::sha256sums::HAOS_BUILD,
-                crate::download::HAOS_DOWNLOADS,
-                &version,
-            )
-            .await
-            .expect("Could not verify the checksums of the stable HAOS release");
-            let missing = unusable_release_assets(&expected, &release.assets, &sums);
-            assert!(
-                missing.is_empty(),
-                "Bundled images missing or lacking verified SHA-256 digests in stable HAOS {version}: {}",
-                missing.join(", ")
-            );
         }
+        assert!(
+            unusable.is_empty(),
+            "Bundled boards without a verified full image of their stable HAOS: {}",
+            unusable.join("; ")
+        );
     }
 
     #[test]

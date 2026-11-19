@@ -5,10 +5,11 @@
 //! A board gets one only when the latest release was built from the HAOS
 //! version stable.json lists for the board now. The release's signature names
 //! no release, so this check is also what keeps an older one from being
-//! offered. Whenever a board gets none, it gets the regular HAOS image.
+//! offered. Until a release built from that version is out, the board has
+//! nothing to install.
 
-use super::sha256sums::{self, FULL_IMAGES_BUILD};
-use super::{request_github_release, shared_client};
+use super::sha256sums;
+use super::{parse_version, request_github_release, shared_client, version_service_invalid};
 use crate::error::{Error, Result};
 use crate::types::{GitHubAsset, HaosImage, HaosRelease, ImageFormat};
 use sha2::{Digest, Sha256};
@@ -19,8 +20,8 @@ use tokio::sync::Mutex;
 const LATEST_RELEASE_API: &str =
     "https://api.github.com/repos/home-assistant/operating-system-full-images/releases/latest";
 
-/// Full images are only ever downloaded from their own repository.
-pub(crate) const DOWNLOADS: &str =
+/// Images are only ever downloaded from the full-images repository.
+const DOWNLOADS: &str =
     "https://github.com/home-assistant/operating-system-full-images/releases/download";
 
 /// The part of the stable.json snapshot that the images were built from.
@@ -49,8 +50,8 @@ struct BuildInputs {
     hassos: HashMap<String, String>,
 }
 
-/// The full images of `board`, built from HAOS `version`. Fails when there
-/// are none for that version, so the caller can use the regular images.
+/// The full images of `board`, built from HAOS `version`, the one stable.json
+/// lists for it.
 pub(crate) async fn release_for_board(board: &str, version: &str) -> Result<HaosRelease> {
     release_for_board_from(&LATEST, LATEST_RELEASE_API, DOWNLOADS, board, version).await
 }
@@ -62,6 +63,10 @@ async fn release_for_board_from(
     board: &str,
     version: &str,
 ) -> Result<HaosRelease> {
+    // stable.json supplies the version, and it becomes part of image names
+    if parse_version(version).is_none() {
+        return Err(Error::ServiceUnavailable(version_service_invalid()));
+    }
     // Serialize misses so concurrent installations do not spend multiple API requests.
     let mut cache = cache.lock().await;
     // A release built before stable.json moved on may have a successor by now
@@ -93,7 +98,7 @@ async fn fetch_latest(api_url: &str, downloads_url: &str) -> Result<FullRelease>
         )));
     }
     let client = shared_client()?;
-    let sums = sha256sums::verified(client, &FULL_IMAGES_BUILD, downloads_url, &tag).await?;
+    let sums = sha256sums::verified(client, downloads_url, &tag).await?;
     let inputs = sha256sums::fetch(client, downloads_url, &tag, BUILD_INPUTS).await?;
     let digest = format!("sha256:{}", hex::encode(Sha256::digest(&inputs)));
     if sums.get(BUILD_INPUTS) != Some(&digest) {
@@ -128,16 +133,16 @@ impl FullRelease {
         match self.hassos.get(board) {
             Some(built) if built == version => {}
             Some(built) => {
-                return Err(Error::ReleaseUnusable(format!(
-                    "full images {} have {board} {built}, not {version}",
-                    self.tag
-                )))
+                return Err(not_ready(
+                    version,
+                    &format!("full images {} have {board} {built}", self.tag),
+                ))
             }
             None => {
-                return Err(Error::ReleaseUnusable(format!(
-                    "full images {} have no {board}",
-                    self.tag
-                )))
+                return Err(not_ready(
+                    version,
+                    &format!("full images {} have no {board}", self.tag),
+                ))
             }
         }
         // `haos_<board>-<os>-full-core-<core>-stable-<revision>.<format>`
@@ -183,16 +188,27 @@ impl FullRelease {
             });
         }
         if images.is_empty() {
-            return Err(Error::ReleaseUnusable(format!(
-                "full images {} have no signed {board} {version} image",
-                self.tag
-            )));
+            return Err(not_ready(
+                version,
+                &format!("full images {} have no signed {board} image", self.tag),
+            ));
         }
         Ok(HaosRelease {
             version: version.to_string(),
             images,
         })
     }
+}
+
+/// No full image of HAOS `version` for the board yet: the build after a
+/// stable.json change takes a while, or failed. Asking again later can find it,
+/// as the cached release is replaced then.
+fn not_ready(version: &str, detail: &str) -> Error {
+    eprintln!("No full image of Home Assistant OS {version}: {detail}");
+    Error::ServiceUnavailable(crate::message!(
+        "backend.download.full_images_not_ready",
+        version = version,
+    ))
 }
 
 /// A Home Assistant version like `2026.11.1`.
@@ -314,8 +330,8 @@ mod tests {
         let newer = lookup(&server, "rpi5-64", "18.6").await;
         let older = lookup(&server, "rpi5-64", "18.4").await;
 
-        assert!(matches!(newer, Err(Error::ReleaseUnusable(_))));
-        assert!(matches!(older, Err(Error::ReleaseUnusable(_))));
+        assert!(matches!(newer, Err(Error::ServiceUnavailable(_))));
+        assert!(matches!(older, Err(Error::ServiceUnavailable(_))));
     }
 
     #[tokio::test]
@@ -326,8 +342,8 @@ mod tests {
         // Built from the right version, but no image was uploaded
         let unlisted = lookup(&server, "green", "18.4").await;
 
-        assert!(matches!(unbuilt, Err(Error::ReleaseUnusable(_))));
-        assert!(matches!(unlisted, Err(Error::ReleaseUnusable(_))));
+        assert!(matches!(unbuilt, Err(Error::ServiceUnavailable(_))));
+        assert!(matches!(unlisted, Err(Error::ServiceUnavailable(_))));
     }
 
     #[tokio::test]
@@ -362,7 +378,7 @@ mod tests {
 
         let result = lookup(&server, "rpi5-64", "18.5").await;
 
-        assert!(matches!(result, Err(Error::ReleaseUnusable(_))));
+        assert!(matches!(result, Err(Error::ServiceUnavailable(_))));
     }
 
     #[tokio::test]
@@ -401,6 +417,41 @@ mod tests {
 
         assert!(outdated.is_err());
         latest.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn a_version_that_is_no_plain_number_is_refused_before_any_request() {
+        for version in ["", "18", "18.5/../x", "18.5-full"] {
+            let cache = Mutex::new(None);
+
+            let result = release_for_board_from(
+                &cache,
+                "http://127.0.0.1:0",
+                "http://127.0.0.1:0",
+                "rpi5-64",
+                version,
+            )
+            .await;
+
+            assert!(
+                matches!(&result, Err(Error::ServiceUnavailable(message))
+                    if message.key == "backend.download.version_service_invalid_response"),
+                "{version}: {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_board_waiting_for_its_build_is_told_to_try_again() {
+        let server = server(release_json(TAG, current_assets()), INPUTS).await;
+
+        let result = lookup(&server, "rpi5-64", "18.6").await;
+
+        assert!(
+            matches!(&result, Err(Error::ServiceUnavailable(message))
+                if message.key == "backend.download.full_images_not_ready"),
+            "{result:?}"
+        );
     }
 
     #[test]
