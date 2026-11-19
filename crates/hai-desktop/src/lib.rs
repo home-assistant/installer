@@ -51,6 +51,7 @@ pub fn run() {
         .manage(commands::PendingUtmImages::default())
         .manage(install_jobs::InstallJobs::default())
         .manage(updates::PendingUpdate::default())
+        .manage(elevation::ResumeState::from_args(std::env::args()))
         .plugin(diagnostics::plugin())
         .setup(|app| {
             diagnostics::init();
@@ -76,6 +77,7 @@ pub fn run() {
             check_connection,
             list_block_devices,
             relaunch_as_admin,
+            elevation::take_resume_state,
             flash_image,
             cancel_flash,
             get_manifest,

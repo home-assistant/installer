@@ -389,7 +389,7 @@
   "views.sbc.drive_selection_view.no_drives_usb_stick": "Insert a USB stick and select Refresh.",
   "views.sbc.drive_selection_view.failed_to_load_drives": "Failed to load drives",
   "views.sbc.drive_selection_view.admin_needed": "Writing to a drive on Windows needs administrator access.",
-  "views.sbc.drive_selection_view.admin_restart_note": "Restart the installer as administrator to continue. It starts again from the beginning.",
+  "views.sbc.drive_selection_view.admin_restart_note": "Restart the installer as administrator to continue. It opens again on this step, with your choices kept.",
   "views.sbc.drive_selection_view.restart_as_administrator": "Restart as administrator",
   "views.sbc.drive_selection_view.no_drives_removable": "Insert an SD card or USB drive and select Refresh.",
   "views.sbc.drive_selection_view.no_drives_found": "No drives found",
