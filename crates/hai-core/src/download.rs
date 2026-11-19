@@ -18,6 +18,7 @@ use std::sync::LazyLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
+mod full_images;
 pub(crate) mod sha256sums;
 
 /// The extracted image of `source`, in the cache folder under its release's
@@ -428,9 +429,16 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
     if parse_version(version).is_none() {
         return Err(Error::ServiceUnavailable(version_service_invalid()));
     }
+    let release =
+        request_github_release(&format!("{api_base_url}/tags/{version}"), version).await?;
+    parse_github_release(release, version)
+}
+
+/// The GitHub release at API `url`; `version` names it in errors.
+async fn request_github_release(url: &str, version: &str) -> Result<GitHubRelease> {
     let client = shared_client()?;
     let response = client
-        .get(format!("{}/tags/{}", api_base_url, version))
+        .get(url)
         .header("User-Agent", USER_AGENT)
         .header("Accept", "application/vnd.github.v3+json")
         .timeout(METADATA_TIMEOUT)
@@ -479,9 +487,7 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
         )));
     }
 
-    let release: GitHubRelease =
-        metadata_json(response, github_unreachable, github_invalid).await?;
-    parse_github_release(release, version)
+    metadata_json(response, github_unreachable, github_invalid).await
 }
 
 fn rate_limit_wait(headers: &reqwest::header::HeaderMap, now: u64) -> u64 {
@@ -512,7 +518,13 @@ async fn fetch_cached_release(
         return Ok(release.clone());
     }
     let mut release = fetch_release_from_api(api_base_url, version).await?;
-    let sums = sha256sums::verified(shared_client()?, downloads_url, version).await?;
+    let sums = sha256sums::verified(
+        shared_client()?,
+        &sha256sums::HAOS_BUILD,
+        downloads_url,
+        version,
+    )
+    .await?;
     for image in &mut release.images {
         // Without a digest, the download is refused
         let name = image.download_url.rsplit('/').next();
@@ -525,6 +537,24 @@ async fn fetch_cached_release(
 /// Fetch a specific HAOS release by version
 async fn fetch_release(version: &str) -> Result<HaosRelease> {
     fetch_cached_release(&RELEASE_CACHE, HAOS_RELEASES_API, HAOS_DOWNLOADS, version).await
+}
+
+/// The full images of `board` with HAOS `version` when `full` has them, so
+/// the device starts with Home Assistant on it. Otherwise, for whatever
+/// reason, the regular release from `regular`: either is verified on its own.
+async fn preferring_full_images<R: std::future::Future<Output = Result<HaosRelease>>>(
+    board: &str,
+    version: &str,
+    full: impl std::future::Future<Output = Result<HaosRelease>>,
+    regular: impl FnOnce() -> R,
+) -> Result<HaosRelease> {
+    match full.await {
+        Ok(release) => Ok(release),
+        Err(error) => {
+            eprintln!("Using the regular Home Assistant OS {version} for {board}: {error}");
+            regular().await
+        }
+    }
 }
 
 /// Fetch HAOS release info for a specific version (or "latest")
@@ -1048,7 +1078,13 @@ impl ReleaseSource for Backend {
 
     async fn get_latest_haos_release_for_board(&self, board: &str) -> Result<HaosRelease> {
         let version = get_latest_haos_version_for_board(board).await?;
-        fetch_release(&version).await
+        preferring_full_images(
+            board,
+            &version,
+            full_images::release_for_board(board, &version),
+            || fetch_release(&version),
+        )
+        .await
     }
 
     async fn download_image<P: ProgressCallback>(
@@ -2570,6 +2606,44 @@ mod tests {
                     "{filename} {version}"
                 ),
             }
+        }
+    }
+
+    fn release_with(url: &str) -> HaosRelease {
+        HaosRelease {
+            version: "18.5".into(),
+            images: vec![image_for_data(url, b"image")],
+        }
+    }
+
+    #[tokio::test]
+    async fn current_full_images_are_used_without_asking_for_the_regular_release() {
+        let full = release_with("full");
+
+        let release = preferring_full_images("rpi5-64", "18.5", async { Ok(full) }, || async {
+            unreachable!("the regular release is not needed")
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(release.images[0].download_url, "full");
+    }
+
+    #[tokio::test]
+    async fn without_full_images_the_regular_release_is_used() {
+        for missing in [
+            Error::ReleaseUnusable("built from 18.4".into()),
+            Error::VerificationFailed("not signed".into()),
+            Error::ServiceUnavailable(github_unreachable()),
+        ] {
+            let release =
+                preferring_full_images("rpi5-64", "18.5", async { Err(missing) }, || async {
+                    Ok(release_with("regular"))
+                })
+                .await
+                .unwrap();
+
+            assert_eq!(release.images[0].download_url, "regular");
         }
     }
 

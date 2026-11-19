@@ -426,6 +426,7 @@ mod tests {
             assert_eq!(release.tag_name, version);
             let sums = crate::download::sha256sums::verified(
                 &client,
+                &crate::download::sha256sums::HAOS_BUILD,
                 crate::download::HAOS_DOWNLOADS,
                 &version,
             )
