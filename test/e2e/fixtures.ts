@@ -1,3 +1,4 @@
+import path from "node:path";
 import { test as base, expect, type Page } from "@playwright/test";
 import tauriConfig from "../../crates/hai-desktop/tauri.conf.json" with { type: "json" };
 
@@ -55,6 +56,31 @@ export async function skipWifiStep(page: Page) {
     await page.locator("wizard-shell .footer-right wa-button").click();
   }
   await expect(page.locator("confirmation-view")).toBeVisible();
+}
+
+const flowSteps = new WeakMap<Page, number>();
+
+/**
+ * Saves what the page shows as the next step of `flow`, numbered in the order
+ * the test takes them. CI collects these from every browser into one zip on
+ * the release, a picture of each step of each flow as it was released. A
+ * retry of the test writes the same files again.
+ */
+export async function flowScreenshot(page: Page, flow: string, step: string) {
+  const n = (flowSteps.get(page) ?? 0) + 1;
+  flowSteps.set(page, n);
+  const info = base.info();
+  await page.screenshot({
+    path: path.join(
+      info.project.outputDir,
+      "flow-screenshots",
+      info.project.name,
+      flow,
+      `${String(n).padStart(2, "0")}-${step}.png`
+    ),
+    animations: "disabled",
+    fullPage: true,
+  });
 }
 
 /**

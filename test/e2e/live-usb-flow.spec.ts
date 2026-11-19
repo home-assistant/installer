@@ -1,5 +1,5 @@
 import { type Page } from "@playwright/test";
-import { test, expect } from "./fixtures.js";
+import { flowScreenshot, test, expect } from "./fixtures.js";
 
 async function openMediaChoice(page: Page) {
   await page.goto("/");
@@ -20,7 +20,9 @@ function next(page: Page, name = "Next") {
 }
 
 test("writes a bootable USB stick", async ({ page }) => {
+  const shot = (step: string) => flowScreenshot(page, "minipc-usb-stick", step);
   await openMediaChoice(page);
+  await shot("media");
   await page
     .locator("minipc-media-view")
     .locator("option-card")
@@ -30,20 +32,29 @@ test("writes a bootable USB stick", async ({ page }) => {
   const drives = page.locator("drive-selection-view");
   await expect(drives).toContainText("Choose the USB stick to write");
   await drives.getByRole("radio").first().click();
+  await shot("usb-stick");
   await next(page);
 
   const summary = page.locator("live-usb-summary-view");
   await expect(summary).toContainText("Ready to create");
   await expect(summary).toContainText("will be erased");
+  await shot("summary");
   await next(page, "Create");
-  await page
-    .getByRole("button", { name: "Erase and install", exact: true })
-    .click();
+  const erase = page.getByRole("button", {
+    name: "Erase and install",
+    exact: true,
+  });
+  await expect(erase).toBeVisible();
+  await shot("erase-dialog");
+  await erase.click();
+  await expect(page.locator("live-usb-progress-view")).toBeVisible();
+  await shot("progress");
 
   await expect(page.locator("live-usb-success-view")).toContainText(
     "Your USB stick is ready",
     { timeout: 20000 }
   );
+  await shot("success");
   await expect(page.locator("live-usb-success-view")).toContainText(
     "choose Erase and install"
   );
@@ -53,6 +64,7 @@ test("writes a bootable USB stick", async ({ page }) => {
 });
 
 test("saves an ISO file without the erase confirmation", async ({ page }) => {
+  const shot = (step: string) => flowScreenshot(page, "minipc-iso-file", step);
   await openMediaChoice(page);
   await page
     .locator("minipc-media-view")
@@ -70,11 +82,13 @@ test("saves an ISO file without the erase confirmation", async ({ page }) => {
     page.getByRole("button", { name: "Next", exact: true })
   ).toBeDisabled();
   await location.getByLabel("File name").fill("my-stick.iso");
+  await shot("save-location");
   await next(page);
 
   await expect(page.locator("live-usb-summary-view")).toContainText(
     "my-stick.iso"
   );
+  await shot("summary");
   await next(page, "Create");
   await expect(page.locator("confirm-dialog")).not.toHaveAttribute("open");
 
@@ -82,6 +96,7 @@ test("saves an ISO file without the erase confirmation", async ({ page }) => {
   await expect(success).toContainText("Your ISO file is saved", {
     timeout: 20000,
   });
+  await shot("success");
   await expect(success).toContainText("my-stick.iso");
   await expect(
     success.getByRole("button", { name: "Show in folder" })

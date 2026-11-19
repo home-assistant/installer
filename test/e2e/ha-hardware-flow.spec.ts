@@ -1,5 +1,5 @@
 import { type Page } from "@playwright/test";
-import { skipWifiStep, test, expect } from "./fixtures.js";
+import { flowScreenshot, skipWifiStep, test, expect } from "./fixtures.js";
 
 // The browser mock serves the device catalog, the drives and a simulated
 // write, so a device can go all the way to its next steps.
@@ -81,27 +81,46 @@ test.describe("Home Assistant hardware flow", () => {
     page,
   }) => {
     test.setTimeout(60000);
+    const shot = (step: string) => flowScreenshot(page, "ha-green", step);
     await openHaHardware(page);
+    await shot("device");
 
-    await pickDevice(page, "ha-green");
+    await page.locator('device-card[value="ha-green"]').click();
+    await expect(reinstallDialog(page)).toBeVisible();
+    await shot("reinstall-dialog");
+    await reinstallDialog(page)
+      .getByRole("button", { name: /^(Reinstall|Install)$/ })
+      .click();
 
     const drive = page.locator("drive-selection-view");
     await drive.locator("drive-card").first().click();
+    await shot("drive");
     await next(page).click();
+    await expect(
+      page.locator("wifi-view, confirmation-view").first()
+    ).toBeVisible();
+    if ((await page.locator("wifi-view").count()) > 0) await shot("wifi");
     await skipWifiStep(page);
+    await shot("confirm");
 
     await next(page).click();
+    await expect(page.locator("confirm-dialog")).toHaveAttribute("open");
+    await shot("erase-dialog");
     await page.locator('confirm-dialog wa-button[variant="danger"]').click();
     await expect(page.locator("progress-view")).toBeVisible();
+    await shot("progress");
 
     await expect(page.locator("ha-hardware-success-view")).toBeVisible({
       timeout: 45000,
     });
+    await shot("success");
     // Then the device starts, which can be skipped, and the flow is done
     await next(page).click();
     await expect(page.locator("device-setup-view")).toBeVisible();
+    await shot("setup");
     await next(page).click();
     await expect(page.locator("device-done-view")).toBeVisible();
+    await shot("done");
     await expect(next(page)).toHaveText("Close");
     await cancel(page).click();
     await expect(page.locator("welcome-view")).toBeVisible();

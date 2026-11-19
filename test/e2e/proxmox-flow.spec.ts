@@ -1,5 +1,10 @@
 import { type Page } from "@playwright/test";
-import { approveProxmoxImport, test, expect } from "./fixtures.js";
+import {
+  approveProxmoxImport,
+  flowScreenshot,
+  test,
+  expect,
+} from "./fixtures.js";
 
 test.describe("Proxmox Installation Flow", () => {
   test.beforeEach(async ({ page }) => {
@@ -51,6 +56,7 @@ test.describe("Proxmox Installation Flow", () => {
     await connectView.locator("#server-url").fill("https://192.168.1.100:8006");
     await connectView.locator("#username").fill("root@pam");
     await connectView.locator("#password").fill("test");
+    await flowScreenshot(page, "proxmox", "connect");
 
     await page
       .locator("wizard-shell")
@@ -64,10 +70,12 @@ test.describe("Proxmox Installation Flow", () => {
       .locator("wizard-shell")
       .locator(".footer-right wa-button");
     await expect(configNext).toHaveJSProperty("disabled", false);
+    await flowScreenshot(page, "proxmox", "configure");
     await configNext.click();
 
     // Step 3: Confirm - click Install (no confirmation dialog for Proxmox)
     await expect(page.locator("proxmox-confirm-view")).toBeVisible();
+    await flowScreenshot(page, "proxmox", "confirm");
     await page
       .locator("wizard-shell")
       .locator(".footer-right wa-button")
@@ -79,11 +87,13 @@ test.describe("Proxmox Installation Flow", () => {
       "visibility",
       "hidden"
     );
+    await flowScreenshot(page, "proxmox", "progress");
 
     // Step 5: Success
     await expect(page.locator("proxmox-success-view")).toBeVisible({
       timeout: 30000,
     });
+    await flowScreenshot(page, "proxmox", "success");
 
     // Start over returns to the welcome screen
     await expect(
