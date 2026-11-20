@@ -109,6 +109,19 @@ describe("scroll-row", () => {
     );
   });
 
+  for (const dir of ["ltr", "rtl"] as const) {
+    it(`fades out toward both edges midway along a ${dir} row`, async () => {
+      const el = await row(6, dir);
+
+      // Halfway, to the right in a left-to-right row, else to the left
+      await scrollTo(el, (dir === "ltr" ? 1 : -1) * 150);
+      expect(back(el).hidden).to.be.false;
+      expect(forward(el).hidden).to.be.false;
+      // Only the mask of both edges stops short of the far one
+      expect(getComputedStyle(viewport(el)).maskImage).to.include("calc(");
+    });
+  }
+
   it("notices content that grows past its room", async () => {
     const el = await row(2);
     expect(forward(el).hidden).to.be.true;

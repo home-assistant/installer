@@ -11,6 +11,7 @@ import {
   RESTART_TIMEOUT_MS,
 } from "../../../src/state/installer-update.js";
 import type { HaAnnouncement } from "../../../src/api/types.js";
+import { SCAN_INTERVAL_MS } from "../../../src/utils/home-assistant-scan.js";
 import { expectReadsLeftToRight } from "../helpers/bidi.js";
 import { mockTauriIpc, restoreTauriIpc } from "../tauri-ipc.js";
 
@@ -264,6 +265,47 @@ describe("welcome-view", () => {
       );
       expect(new Set(tops).size).to.equal(1);
       expect(el.shadowRoot!.querySelector(".found scroll-row ul")).to.exist;
+    });
+
+    it("keeps the card that has the focus as another comes before it", async () => {
+      const setTimeout = window.setTimeout;
+      // The wait before the next lookup, which the test ends
+      let lookAgain: (() => void) | undefined;
+      window.setTimeout = ((
+        handler: () => void,
+        timeout?: number,
+        ...args: unknown[]
+      ) => {
+        if (timeout !== SCAN_INTERVAL_MS)
+          return setTimeout(handler, timeout, ...args);
+        lookAgain = handler;
+        return 0;
+      }) as typeof window.setTimeout;
+      const homeAssistant = (name: string, address: string) => ({
+        id: name,
+        name,
+        address,
+        url: `http://${address}/`,
+        landing_page: false,
+      });
+      try {
+        const found = [homeAssistant("Home", "192.0.2.20:8123")];
+        const { el } = await welcome(found);
+        await waitUntil(() => instances(el).length === 1 && lookAgain);
+        const home = instances(el)[0];
+        home.focus();
+
+        // The next lookup finds one that goes before it
+        found.push(homeAssistant("Cabin", "192.0.2.30:8123"));
+        lookAgain!();
+        await waitUntil(() => instances(el).length === 2);
+
+        expect(instances(el)[1]).to.equal(home);
+        expect(el.shadowRoot!.activeElement).to.equal(home);
+        expect(home.getAttribute("href")).to.equal("http://192.0.2.20:8123/");
+      } finally {
+        window.setTimeout = setTimeout;
+      }
     });
 
     it("keeps each name its own direction, and each address left to right", async () => {

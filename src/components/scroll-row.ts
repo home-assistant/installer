@@ -58,7 +58,18 @@ export class ScrollRow extends LitElement {
         mask-image: linear-gradient(to left, transparent, #000 ${FADE});
       }
 
-      .viewport.more-back.more-forward {
+      :host(:dir(rtl)) .viewport.more-back {
+        mask-image: linear-gradient(to left, transparent, #000 ${FADE});
+      }
+
+      :host(:dir(rtl)) .viewport.more-forward {
+        mask-image: linear-gradient(to right, transparent, #000 ${FADE});
+      }
+
+      /* Both edges, either way the row reads. Last, and as specific as the
+         right-to-left edges, so it wins over each of them. */
+      .viewport.more-back.more-forward,
+      :host(:dir(rtl)) .viewport.more-back.more-forward {
         mask-image: linear-gradient(
           to right,
           transparent,
@@ -66,14 +77,6 @@ export class ScrollRow extends LitElement {
           #000 calc(100% - ${FADE}),
           transparent
         );
-      }
-
-      :host(:dir(rtl)) .viewport.more-back {
-        mask-image: linear-gradient(to left, transparent, #000 ${FADE});
-      }
-
-      :host(:dir(rtl)) .viewport.more-forward {
-        mask-image: linear-gradient(to right, transparent, #000 ${FADE});
       }
 
       /* In the middle of the content, beside the room for its shadow */

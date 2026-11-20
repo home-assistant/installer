@@ -286,6 +286,69 @@ describe("home-assistant-scan", () => {
     ]);
   });
 
+  it("forgets a landing page Home Assistant replaced on another port", async () => {
+    const { checked } = network(
+      [
+        [landingPage("192.0.2.50")],
+        // Its announcement lingers beside Home Assistant's own
+        [landingPage("192.0.2.50"), homeAssistant("192.0.2.50:8123")],
+      ],
+      { "192.0.2.50:8123": [false] }
+    );
+
+    scan.hostConnected();
+    await looked();
+    expect(scan.found.map(({ state }) => state)).to.deep.equal(["installing"]);
+
+    await lookAgain();
+    expect(scan.found).to.deep.equal([
+      {
+        address: "192.0.2.50:8123",
+        url: "http://192.0.2.50:8123/",
+        name: "Home",
+        state: "not_onboarded",
+      },
+    ]);
+    expect(checked).to.deep.equal(["192.0.2.50:8123"]);
+  });
+
+  it("forgets a kept landing page once Home Assistant answers instead", async () => {
+    network(
+      [
+        [landingPage("192.0.2.50")],
+        // Missed once, so kept, as Home Assistant answers on its own port
+        [homeAssistant("192.0.2.50:8123")],
+      ],
+      { "192.0.2.50:8123": [true] }
+    );
+
+    scan.hostConnected();
+    await looked();
+    await lookAgain();
+    expect(scan.found.map(({ address }) => address)).to.deep.equal([
+      "192.0.2.50:8123",
+    ]);
+  });
+
+  it("keeps each Home Assistant on its own port of a device", async () => {
+    network([
+      [
+        homeAssistant("192.0.2.20:8123", "Home"),
+        homeAssistant("192.0.2.20:8124", "Test"),
+        // Only another device's landing page
+        landingPage("192.0.2.50"),
+      ],
+    ]);
+
+    scan.hostConnected();
+    await looked();
+    expect(scan.found.map(({ address }) => address)).to.deep.equal([
+      "192.0.2.20:8123",
+      "192.0.2.50",
+      "192.0.2.20:8124",
+    ]);
+  });
+
   it("stops looking once its host is gone", async () => {
     const lookup = deferred<HaAnnouncement[]>();
     const { looked: lookups, checked } = network([lookup.promise]);

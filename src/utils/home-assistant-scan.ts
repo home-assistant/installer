@@ -147,8 +147,33 @@ export class HomeAssistantScan implements ReactiveController {
         missed: 0,
       });
     });
+    this._forgetReplacedLandingPages();
     this._host.requestUpdate();
   }
+
+  /**
+   * A landing page Home Assistant replaced can linger, in a lookup or kept
+   * from one. Home Assistant OS shows it on another port than Home Assistant
+   * itself, so one that answers on the same device means it is gone. Home
+   * Assistants on different ports of a device are each their own.
+   */
+  private _forgetReplacedLandingPages() {
+    const homeAssistants = new Set(
+      [...this._entries.values()]
+        .filter(({ announcement }) => !announcement.landing_page)
+        .map(({ announcement }) => device(announcement.address))
+    );
+    for (const [address, { announcement }] of this._entries) {
+      if (announcement.landing_page && homeAssistants.has(device(address))) {
+        this._entries.delete(address);
+      }
+    }
+  }
+}
+
+/** The device at `address`: its IPv4 address, without the port */
+function device(address: string): string {
+  return address.replace(/:\d+$/, "");
 }
 
 /**

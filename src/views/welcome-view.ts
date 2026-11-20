@@ -1,5 +1,6 @@
 import { localize } from "../localization/localize.js";
 import { LitElement, html, css, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import {
   ViewAccessibility,
   reducedMotionStyles,
@@ -466,7 +467,11 @@ export class WelcomeView extends LitElement {
       </h2>
       <scroll-row>
         <ul>
-          ${found.map(
+          ${repeat(
+            found,
+            // Each keeps its card, and with it the focus, as others come
+            // and go before it
+            ({ address }) => address,
             (instance) => html`<li>${this._renderInstance(instance)}</li>`
           )}
         </ul>
