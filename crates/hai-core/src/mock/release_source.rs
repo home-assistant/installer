@@ -120,10 +120,6 @@ impl ReleaseSource for BackendMock {
         Ok(crate::manifest::bundled_manifest())
     }
 
-    async fn get_haos_release(&self, _version: &str) -> Result<HaosRelease> {
-        Ok(mock_haos_release())
-    }
-
     async fn get_latest_haos_release_for_board(&self, _board: &str) -> Result<HaosRelease> {
         Ok(mock_haos_release())
     }

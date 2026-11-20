@@ -369,18 +369,14 @@ export async function getManifest(): Promise<DeviceManifest> {
 }
 
 /**
- * Get HAOS release information.
- * @param version Optional specific version to fetch (defaults to latest stable)
+ * The HAOS release stable.json lists for `board`, as its full images.
  * @param board Board whose stable release should be shown
  */
-export async function getHaosRelease(
-  version?: string,
-  board?: string
-): Promise<HaosRelease> {
+export async function getHaosRelease(board: string): Promise<HaosRelease> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     return MOCK_HAOS_RELEASE;
   }
-  return invoke<HaosRelease>("get_haos_release", { version, board });
+  return invoke<HaosRelease>("get_haos_release", { board });
 }
 
 /** Get the stable release for the backend's UTM download architecture. */
@@ -694,6 +690,7 @@ export async function findHomeAssistants(): Promise<HaAnnouncement[]> {
         id: `mock-landing-page-${mockLookups++}`,
         address: MOCK_DEVICE_ADDRESS,
         landing_page: true,
+        needs_onboarding: false,
       },
     ];
   }

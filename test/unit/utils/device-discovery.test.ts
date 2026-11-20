@@ -22,12 +22,22 @@ const landingPage = (id: string, address = "192.0.2.50"): HaAnnouncement => ({
   id,
   address,
   landing_page: true,
+  needs_onboarding: false,
 });
 
 const homeAssistant = (id: string): HaAnnouncement => ({
   id,
   address: "192.0.2.10:8123",
   landing_page: false,
+  needs_onboarding: false,
+});
+
+/** Home Assistant started from a full image, before anyone onboarded it */
+const freshHomeAssistant = (id: string, address: string): HaAnnouncement => ({
+  id,
+  address,
+  landing_page: false,
+  needs_onboarding: true,
 });
 
 /** Answer the lookups in turn, the last one again once they run out */
@@ -110,6 +120,29 @@ describe("device-discovery", () => {
 
     expect(await finder.find(signal)).to.be.null;
     expect(await finder.find(signal)).to.be.null;
+  });
+
+  it("finds a new Home Assistant that needs onboarding, as a full image starts", async () => {
+    answer(
+      [
+        homeAssistant("existing"),
+        freshHomeAssistant("left-unfinished", "192.0.2.71"),
+      ],
+      [
+        homeAssistant("existing"),
+        freshHomeAssistant("left-unfinished", "192.0.2.71"),
+      ],
+      [
+        homeAssistant("existing"),
+        freshHomeAssistant("left-unfinished", "192.0.2.71"),
+        homeAssistant("back-on"),
+        freshHomeAssistant("device", "192.0.2.70"),
+      ]
+    );
+    const finder = new DeviceFinder();
+
+    expect(await finder.find(signal)).to.be.null;
+    expect(await finder.find(signal)).to.equal("192.0.2.70");
   });
 
   it("asks again after a lookup that failed", async () => {

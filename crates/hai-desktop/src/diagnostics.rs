@@ -294,9 +294,10 @@ pub fn lookup<E: Categorized>(result: &Result<Vec<hai_core::HaAnnouncement>, E>)
             &LAST_LOOKUP,
             log::Level::Info,
             format!(
-                "home_assistant_lookup found={} landing_pages={}",
+                "home_assistant_lookup found={} landing_pages={} needing_onboarding={}",
                 found.len(),
-                found.iter().filter(|found| found.landing_page).count()
+                found.iter().filter(|found| found.landing_page).count(),
+                found.iter().filter(|found| found.needs_onboarding).count()
             ),
         ),
         Err(error) => record_change(
@@ -1069,11 +1070,13 @@ mod tests {
             id: "private-core-uuid".into(),
             address: "192.168.1.20:8123".into(),
             landing_page: false,
+            needs_onboarding: false,
         };
         let landing_page = HaAnnouncement {
             id: "private-landing-page-uuid".into(),
             address: "192.168.1.50".into(),
             landing_page: true,
+            needs_onboarding: false,
         };
 
         lookup::<String>(&Ok(vec![core.clone()]));
@@ -1091,8 +1094,8 @@ mod tests {
         assert_eq!(
             lines,
             [
-                "home_assistant_lookup found=1 landing_pages=0",
-                "home_assistant_lookup found=2 landing_pages=1",
+                "home_assistant_lookup found=1 landing_pages=0 needing_onboarding=0",
+                "home_assistant_lookup found=2 landing_pages=1 needing_onboarding=0",
                 "home_assistant_lookup failed network_error",
             ]
         );

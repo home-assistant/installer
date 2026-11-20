@@ -84,6 +84,28 @@ async fn check_ha_updated(ip: &str) -> bool {
         .is_some_and(|status| status.is_success())
 }
 
+/// One step of onboarding, as Home Assistant reports it before it is done
+#[derive(Deserialize)]
+struct OnboardingStep {
+    step: String,
+    done: bool,
+}
+
+/// Whether Home Assistant at `address` answers that no owner has been made
+/// yet, `None` without a full answer. Core serves this without signing in;
+/// once onboarding is done it may not serve it at all.
+pub(crate) async fn needs_onboarding(address: &str) -> Option<bool> {
+    let response = get(address, "/api/onboarding").await?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Some(false);
+    }
+    if !response.status().is_success() {
+        return None;
+    }
+    let steps: Vec<OnboardingStep> = response.json().await.ok()?;
+    Some(steps.iter().any(|step| step.step == "user" && !step.done))
+}
+
 /// Shared by every check: the frontend polls these every 2 seconds, for up to
 /// an hour, and a client per check would redo its setup and drop its
 /// connections each time.
@@ -331,6 +353,53 @@ mod tests {
             assert_eq!(answer, expected, "{path} {status}");
             mock.assert_async().await;
         }
+    }
+
+    #[tokio::test]
+    async fn only_an_unfinished_user_step_needs_onboarding() {
+        let fresh = r#"[{"step":"user","done":false},{"step":"core_config","done":false}]"#;
+        let owned = r#"[{"step":"user","done":true},{"step":"core_config","done":false}]"#;
+        for (status, body, expected) in [
+            (200, fresh, Some(true)),
+            (200, owned, Some(false)),
+            // Done, and no longer served
+            (404, "", Some(false)),
+            (200, "<html>", None),
+            (503, "", None),
+        ] {
+            let mut server = Server::new_async().await;
+            let mock = server
+                .mock("GET", "/api/onboarding")
+                .with_status(status)
+                .with_body(body)
+                .create_async()
+                .await;
+
+            let answer = needs_onboarding(&server.host_with_port()).await;
+
+            assert_eq!(answer, expected, "{status} {body}");
+            mock.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn onboarding_is_asked_where_core_redirects_to() {
+        // Core 2026.11 serves on port 80 and redirects 8123 there
+        let mut server = Server::new_async().await;
+        let target = format!("{}/real/api/onboarding", server.url());
+        server
+            .mock("GET", "/api/onboarding")
+            .with_status(307)
+            .with_header("location", &target)
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/real/api/onboarding")
+            .with_body(r#"[{"step":"user","done":false}]"#)
+            .create_async()
+            .await;
+
+        assert_eq!(needs_onboarding(&server.host_with_port()).await, Some(true));
     }
 
     /// Answer a landing page path with a Supervisor reply holding `data`.
