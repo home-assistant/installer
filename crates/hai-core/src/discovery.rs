@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 use crate::host::is_reachable_vm_address;
 use crate::types::HaAnnouncement;
 use std::collections::HashMap;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 
 #[cfg(not(windows))]
@@ -105,13 +105,34 @@ fn browser_url(internal_url: Option<&str>, address: &str) -> String {
                 // Nothing that would log in somewhere on opening it
                 && url.username().is_empty()
                 && url.password().is_none()
-                && url.host_str().is_some_and(|host| {
-                    host.parse::<Ipv4Addr>()
-                        .ok()
-                        .is_none_or(is_reachable_vm_address)
-                })
+                && url.host_str().is_some_and(reachable_host)
         })
         .map_or_else(|| format!("http://{address}/"), |url| url.to_string())
+}
+
+/// Whether this computer can open a URL's `host`: a name, which the network
+/// resolves, or an IP address on a network it can reach
+fn reachable_host(host: &str) -> bool {
+    if let Ok(ip) = host.parse::<Ipv4Addr>() {
+        return is_reachable_vm_address(ip);
+    }
+    let ipv6 = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .and_then(|host| host.parse::<Ipv6Addr>().ok());
+    match ipv6 {
+        Some(ip) => match ip.to_ipv4_mapped() {
+            Some(ip) => is_reachable_vm_address(ip),
+            // Link-local needs the interface, which a URL doesn't name
+            None => {
+                !(ip.is_loopback()
+                    || ip.is_unspecified()
+                    || ip.is_multicast()
+                    || ip.is_unicast_link_local())
+            }
+        },
+        None => true,
+    }
 }
 
 /// The instance's own part of a service name, like "Home" in
@@ -243,6 +264,18 @@ mod tests {
             // An address only it can reach gives way to the one it answers at
             (Some("http://172.30.32.1:8123"), "http://192.168.1.20:8123/"),
             (Some("http://127.0.0.1:8123"), "http://192.168.1.20:8123/"),
+            // So does an IPv6 address that isn't this network's
+            (Some("http://[::1]:8123"), "http://192.168.1.20:8123/"),
+            (Some("http://[fe80::1]:8123"), "http://192.168.1.20:8123/"),
+            (
+                Some("http://[::ffff:172.30.32.1]:8123"),
+                "http://192.168.1.20:8123/",
+            ),
+            // One that is, is taken
+            (
+                Some("http://[2001:db8::20]:8123"),
+                "http://[2001:db8::20]:8123/",
+            ),
             // Anything but a web address is plain HTTP at its address
             (None, "http://192.168.1.20:8123/"),
             (Some("not a url"), "http://192.168.1.20:8123/"),

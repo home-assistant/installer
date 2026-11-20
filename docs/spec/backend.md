@@ -379,7 +379,8 @@ browser. It names each by the `location_name` it announces, else by its
 service name, and opens the `internal_url` it announces: that says whether it
 takes HTTPS, may name it as its certificate does, and may be a proxy's in
 front of it, on another address. One that names an IP address this computer
-can't reach, like one of Home Assistant OS's own networks, is not opened;
+can't reach, like one of Home Assistant OS's own networks, loopback or an
+IPv6 link-local address, is not opened;
 without a web address there, it opens at `http://<address>`. A landing page
 shows as installing. For Home Assistant itself, `ha_onboarded` reads
 `/api/onboarding`, which the onboarding integration serves without
