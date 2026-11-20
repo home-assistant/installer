@@ -278,7 +278,6 @@ function liveUsbSteps(target: WizardStep): WizardStep[] {
     localizedStep("method", () =>
       localize("state.wizard_state.installation_method")
     ),
-    localizedStep("media", () => localize("state.wizard_state.media_type")),
     target,
     localizedStep("confirm", () => localize("common.confirm")),
     localizedStep("flash", () => localize("common.create")),
@@ -301,12 +300,6 @@ export const MINIPC_STEPS = {
     )
   ),
 };
-
-/** The direct path's steps, with Wi-Fi if the architecture picked earlier has it. */
-export function minipcDirectSteps(selections: WizardSelections): WizardStep[] {
-  // Without a picked architecture, deviceConfig may still be the USB path's
-  return stepsFor("minipc", selections.device ? selections : {});
-}
 
 function createInitialState(): WizardState {
   return {
@@ -450,16 +443,6 @@ class WizardStateStore {
       steps: changed ? next : steps,
       currentStepIndex: index >= 0 ? index : currentStepIndex,
       selections,
-    };
-    this.notify();
-  }
-
-  /** Replaces the step list when a choice splits the flow; keeps the position. */
-  setSteps(steps: WizardStep[]) {
-    this.state = {
-      ...this.state,
-      steps,
-      currentStepIndex: Math.min(this.state.currentStepIndex, steps.length - 1),
     };
     this.notify();
   }

@@ -505,7 +505,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page
       .locator("minipc-setup-method-view")
       .locator("option-card")
-      .filter({ hasText: "I can connect the drive" })
+      .filter({ hasText: "Write the mini PC's drive here" })
       .click();
     const cards = page
       .locator("minipc-architecture-selection-view")
@@ -537,7 +537,9 @@ test("forced colors keep step states apart", async ({ page }, testInfo) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Let's go" }).click();
   await page.getByRole("button", { name: "Mini PC or other computer" }).click();
-  await page.getByRole("button", { name: "I can connect the drive" }).click();
+  await page
+    .getByRole("button", { name: "Write the mini PC's drive here" })
+    .click();
   const system = await page.evaluate(() => {
     const probe = document.createElement("span");
     document.body.append(probe);
@@ -715,28 +717,18 @@ test("a step that grows past the window can be scrolled with the keyboard", asyn
   await page
     .locator('option-card[heading="Mini PC or other computer"]')
     .click();
-  // The shared step styles, and the media step's own
-  for (const step of ["minipc-setup-method-view", "minipc-media-view"]) {
-    await expect(page.locator(step)).toBeVisible();
-    await expect(main).not.toHaveAttribute("tabindex");
+  const step = "minipc-setup-method-view";
+  await expect(page.locator(step)).toBeVisible();
+  await expect(main).not.toHaveAttribute("tabindex");
 
-    await grow(step, 2000);
-    await expect(main).toHaveAttribute("tabindex", "0");
-    await main.focus();
-    await page.keyboard.press("End");
-    await expect
-      .poll(() => main.evaluate((element) => element.scrollTop))
-      .toBeGreaterThan(0);
+  await grow(step, 2000);
+  await expect(main).toHaveAttribute("tabindex", "0");
+  await main.focus();
+  await page.keyboard.press("End");
+  await expect
+    .poll(() => main.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
 
-    await grow(step, 0);
-    await expect(main).not.toHaveAttribute("tabindex");
-
-    if (step === "minipc-setup-method-view") {
-      await page
-        .locator(step)
-        .locator("option-card")
-        .filter({ hasText: "I need to boot from USB" })
-        .click();
-    }
-  }
+  await grow(step, 0);
+  await expect(main).not.toHaveAttribute("tabindex");
 });
