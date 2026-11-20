@@ -676,8 +676,38 @@ export async function getHaSetupStatus(
   return invoke<HaSetupStatus | null>("get_ha_setup_status", { ipAddress });
 }
 
+/**
+ * Whether Home Assistant at the given address is onboarded: its owner
+ * created their account and went through the steps after it.
+ * @returns null without an answer that tells, as from a landing page
+ */
+export async function checkHaOnboarded(
+  ipAddress: string
+): Promise<boolean | null> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    // The device is still to be onboarded once it installed Home Assistant
+    return (
+      ipAddress !== MOCK_DEVICE_ADDRESS &&
+      ipAddress !== MOCK_NOT_ONBOARDED_ADDRESS
+    );
+  }
+  return invoke<boolean | null>("check_ha_onboarded", { ipAddress });
+}
+
 /** Counts the simulated lookups, so each finds a new landing page */
 let mockLookups = 0;
+
+/** Where the simulated Home Assistant that is still to be onboarded answers */
+const MOCK_NOT_ONBOARDED_ADDRESS = "192.168.1.30:8123";
+
+/** A Home Assistant on the simulated network, at plain HTTP unless given */
+function mockHomeAssistant(
+  name: string,
+  address: string,
+  url = `http://${address}/`
+): HaAnnouncement {
+  return { id: `mock-${name}`, name, address, url, landing_page: false };
+}
 
 /**
  * The Home Assistants that announce themselves on the local network, as far
@@ -685,16 +715,35 @@ let mockLookups = 0;
  */
 export async function findHomeAssistants(): Promise<HaAnnouncement[]> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
+    await mockDelay(1000);
+    // E2E tests that measure the welcome screen find nothing, and those
+    // that scroll through what it found find more than fit
+    const network = sessionStorage.getItem("hai:mock-network");
+    if (network === "empty") return [];
     // A landing page the last lookup didn't find, as a device that just
     // started announces. It has yet to download Home Assistant.
-    await mockDelay(1000);
     mockDeviceDownload = 0;
     return [
       {
         id: `mock-landing-page-${mockLookups++}`,
+        name: "Home (preparing setup)",
         address: MOCK_DEVICE_ADDRESS,
+        url: `http://${MOCK_DEVICE_ADDRESS}/`,
         landing_page: true,
       },
+      // Home Assistants that were there already: one onboarded, one not,
+      // which serves HTTPS itself
+      mockHomeAssistant("Home", "192.168.1.20:8123"),
+      mockHomeAssistant(
+        "Cabin",
+        MOCK_NOT_ONBOARDED_ADDRESS,
+        `https://${MOCK_NOT_ONBOARDED_ADDRESS}/`
+      ),
+      ...(network === "many"
+        ? ["Attic", "Barn", "Garage", "Office", "Studio"].map((name, index) =>
+            mockHomeAssistant(name, `192.168.1.${40 + index}:8123`)
+          )
+        : []),
     ];
   }
   return invoke<HaAnnouncement[]>("find_home_assistants");

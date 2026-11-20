@@ -631,6 +631,12 @@ pub async fn get_ha_setup_status(ip_address: String) -> Option<HaSetupStatus> {
     status
 }
 
+/// Whether Home Assistant is onboarded, or `None` without an answer that tells
+#[tauri::command]
+pub async fn check_ha_onboarded(ip_address: String) -> Option<bool> {
+    Backend.ha_onboarded(&ip_address).await
+}
+
 /// The Home Assistants that announce themselves on the local network
 #[tauri::command]
 pub async fn find_home_assistants() -> Result<Vec<HaAnnouncement>, CommandError> {
