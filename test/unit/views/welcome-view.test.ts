@@ -1,11 +1,12 @@
 import { expect, fixture, html, oneEvent, waitUntil } from "@open-wc/testing";
-import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
+import type WaRadioGroup from "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../../src/views/welcome-view.js";
 import type { WelcomeView } from "../../../src/views/welcome-view.js";
 import {
   getLanguage,
   setLanguage,
 } from "../../../src/localization/localize.js";
+import { setTheme } from "../../../src/utils/theme.js";
 import {
   installerUpdate,
   RESTART_TIMEOUT_MS,
@@ -16,21 +17,33 @@ describe("welcome-view", () => {
   afterEach(() => {
     setLanguage("en");
     document.documentElement.lang = "";
+    setTheme("system");
+    localStorage.removeItem("hai:theme");
   });
-  it("renders the Home Assistant logo", async () => {
+  it("renders the logos for the theme shown", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
+    const logo = () => el.shadowRoot!.querySelector(".logo")!;
+    const ohfLogo = () => el.shadowRoot!.querySelector(".ohf-logo")!;
 
-    const lightLogo = el.shadowRoot!.querySelector(".logo-light");
-    const darkLogo = el.shadowRoot!.querySelector(".logo-dark");
-
-    expect(lightLogo).to.exist;
-    expect(darkLogo).to.exist;
-    expect(lightLogo!.getAttribute("src")).to.include(
+    expect(logo().getAttribute("src")).to.include(
       "home-assistant-logo-light.svg"
     );
-    expect(darkLogo!.getAttribute("src")).to.include(
+    expect(ohfLogo().getAttribute("src")).to.include("ohf-logo-light.svg");
+
+    setTheme("dark");
+    await el.updateComplete;
+    expect(logo().getAttribute("src")).to.include(
       "home-assistant-logo-dark.svg"
     );
+    expect(ohfLogo().getAttribute("src")).to.include("ohf-logo-dark.svg");
+  });
+
+  it("offers Accessibility at the end of the header", async () => {
+    const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
+
+    expect(
+      el.shadowRoot!.querySelector("header > :last-child")!.localName
+    ).to.equal("accessibility-menu");
   });
 
   it("says what the installer does in one line", async () => {
@@ -82,17 +95,11 @@ describe("welcome-view", () => {
     expect(event.defaultPrevented).to.be.true;
   });
 
-  it("renders the OHF logo with light and dark variants", async () => {
+  it("links the OHF logo to the foundation", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
     const ohfLink = el.shadowRoot!.querySelector(".ohf-link");
-    const lightLogo = el.shadowRoot!.querySelector(".ohf-logo-light");
-    const darkLogo = el.shadowRoot!.querySelector(".ohf-logo-dark");
-
-    expect(ohfLink).to.exist;
     expect(ohfLink!.getAttribute("href")).to.include("openhomefoundation.org");
-    expect(lightLogo).to.exist;
-    expect(darkLogo).to.exist;
   });
 
   it("puts Report a problem and Learn more in the footer", async () => {
@@ -105,35 +112,40 @@ describe("welcome-view", () => {
     );
   });
 
-  it("offers each shipped language by its own name", async () => {
+  // The language menu, whose own tests cover a long list
+  async function languages(el: WelcomeView) {
+    const menu = el.shadowRoot!.querySelector("language-menu")!;
+    await menu.updateComplete;
+    return menu.shadowRoot!.querySelector<WaRadioGroup>("wa-radio-group")!;
+  }
+
+  it("offers each shipped language by its own name, without a search for two", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
-    const select = el.shadowRoot!.querySelector<WaSelect>("wa-select")!;
-    expect(select.label).to.equal("Language");
-    expect(select.value).to.equal("en");
-    const options = Array.from(select.querySelectorAll("wa-option"));
-    expect(options.map((option) => option.textContent)).to.deep.equal([
+    const group = await languages(el);
+    expect(group.value).to.equal("en");
+    const radios = Array.from(group.querySelectorAll("wa-radio"));
+    expect(radios.map((radio) => radio.textContent)).to.deep.equal([
       "Deutsch",
       "English",
     ]);
-    expect(options.map((option) => option.lang)).to.deep.equal(["de", "en"]);
+    expect(radios.map((radio) => radio.lang)).to.deep.equal(["de", "en"]);
+    expect(group.parentElement!.querySelector("wa-input")).to.be.null;
   });
 
   it("selects the shipped language a regional one uses", async () => {
     setLanguage("de-AT");
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
-    expect(el.shadowRoot!.querySelector<WaSelect>("wa-select")!.value).to.equal(
-      "de"
-    );
+    expect((await languages(el)).value).to.equal("de");
   });
 
   it("shows the page in the chosen language", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
-    const select = el.shadowRoot!.querySelector<WaSelect>("wa-select")!;
+    const group = await languages(el);
 
-    select.value = "de";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    group.value = "de";
+    group.dispatchEvent(new Event("change", { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve));
     await el.updateComplete;
 

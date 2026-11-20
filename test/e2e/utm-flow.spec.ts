@@ -100,7 +100,7 @@ test.describe("UTM Installation Flow", () => {
 
     const backButton = page
       .locator("wizard-shell")
-      .locator(".header wa-button");
+      .locator(".header > wa-button");
     await expect(backButton).toHaveJSProperty("disabled", false);
     await backButton.click();
 
@@ -198,7 +198,7 @@ test.describe("UTM Installation Flow", () => {
 
     // Step 4: Progress (proceeds directly, no dialog)
     await expect(page.locator("utm-progress-view")).toBeVisible();
-    await expect(page.locator("wizard-shell .header wa-button")).toHaveCSS(
+    await expect(page.locator("wizard-shell .header > wa-button")).toHaveCSS(
       "visibility",
       "hidden"
     );
