@@ -1,5 +1,5 @@
 import { type Page } from "@playwright/test";
-import { test, expect } from "./fixtures.js";
+import { test, expect, setMockDelayScale } from "./fixtures.js";
 
 async function openMediaChoice(page: Page) {
   await page.goto("/");
@@ -187,6 +187,7 @@ test("stopping a USB stick asks first and can be tried again", async ({
   page,
 }) => {
   await openMediaChoice(page);
+  await setMockDelayScale(page, 1);
   await startUsbWrite(page);
   const progress = page.locator("live-usb-progress-view");
   await expect(progress).toBeVisible();
@@ -212,6 +213,7 @@ test("stopping an ISO says nothing was saved", async ({ page }) => {
   await openMediaChoice(page);
   await chooseMedia(page, "ISO file");
   await next(page);
+  await setMockDelayScale(page, 1);
   await next(page, "Create");
   await expect(page.locator("live-usb-progress-view")).toBeVisible();
 

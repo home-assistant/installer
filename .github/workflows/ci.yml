@@ -366,8 +366,8 @@ jobs:
           flags: frontend
           fail_ci_if_error: false
 
-  # The E2E suite takes over ten minutes per browser in one job, longer than
-  # any other job, so each browser's tests are split across three.
+  # The E2E suite takes several minutes per browser in one job, so each
+  # browser's tests are split across three.
   test-e2e:
     name: Test E2E (${{ matrix.browser }}, ${{ matrix.shard }}/3)
     if: github.event_name != 'schedule'
