@@ -279,7 +279,10 @@ export class WelcomeView extends LitElement {
         overflow: hidden;
       }
 
+      /* A long name it is opened at breaks rather than running out */
       .instance-address {
+        max-width: 100%;
+        overflow-wrap: anywhere;
         font-size: 0.8125rem;
         color: var(--ha-secondary-text-color);
       }

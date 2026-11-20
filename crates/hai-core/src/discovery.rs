@@ -85,43 +85,33 @@ fn announcement(resolved: Resolved) -> Option<HaAnnouncement> {
         name: property("location_name")
             .map(str::to_owned)
             .or_else(|| instance_name(&resolved.fullname)),
-        url: browser_url(property("internal_url"), ip, &address),
+        url: browser_url(property("internal_url"), &address),
         address,
         landing_page,
     })
 }
 
-/// Where to open Home Assistant at `address` in the browser. The
-/// `internal_url` it announces knows best: whether it takes HTTPS, and the
-/// name its certificate is for. One that names another IP address than the
-/// one it is reached at has gone stale, and keeps only its scheme. Without a
-/// web address there, it is plain HTTP at `address`.
-fn browser_url(internal_url: Option<&str>, ip: Ipv4Addr, address: &str) -> String {
-    let url = internal_url
+/// Where to open Home Assistant at `address` in the browser: the
+/// `internal_url` it announces. That knows best whether it takes HTTPS, the
+/// name its certificate is for, and a proxy in front of it, which can be on
+/// another address. One that names an IP address this computer can't reach,
+/// like one of Home Assistant OS's own networks, can't be opened from here.
+/// Without a web address there, it is plain HTTP at `address`.
+fn browser_url(internal_url: Option<&str>, address: &str) -> String {
+    internal_url
         .and_then(|url| reqwest::Url::parse(url).ok())
         .filter(|url| {
             matches!(url.scheme(), "http" | "https")
-                && url.host_str().is_some()
                 // Nothing that would log in somewhere on opening it
                 && url.username().is_empty()
                 && url.password().is_none()
-        });
-    match url {
-        Some(url) if url.host_str().and_then(|host| host.parse().ok()) == Some(ip) => {
-            url.to_string()
-        }
-        Some(url)
-            if url
-                .host_str()
-                .unwrap_or_default()
-                .parse::<Ipv4Addr>()
-                .is_ok() =>
-        {
-            format!("{}://{address}/", url.scheme())
-        }
-        Some(url) => url.to_string(),
-        None => format!("http://{address}/"),
-    }
+                && url.host_str().is_some_and(|host| {
+                    host.parse::<Ipv4Addr>()
+                        .ok()
+                        .is_none_or(is_reachable_vm_address)
+                })
+        })
+        .map_or_else(|| format!("http://{address}/"), |url| url.to_string())
 }
 
 /// The instance's own part of a service name, like "Home" in
@@ -230,7 +220,6 @@ mod tests {
 
     #[test]
     fn it_opens_where_its_internal_url_says() {
-        let ip = Ipv4Addr::new(192, 168, 1, 20);
         let address = "192.168.1.20:8123";
         for (internal_url, url) in [
             // As Home Assistant announces it by default
@@ -249,11 +238,11 @@ mod tests {
                 Some("http://homeassistant.local:8123"),
                 "http://homeassistant.local:8123/",
             ),
-            // An address it no longer has gives way to the one it answers at
-            (
-                Some("https://192.168.1.99:8123"),
-                "https://192.168.1.20:8123/",
-            ),
+            // A proxy in front of it, on another address
+            (Some("https://192.168.1.10"), "https://192.168.1.10/"),
+            // An address only it can reach gives way to the one it answers at
+            (Some("http://172.30.32.1:8123"), "http://192.168.1.20:8123/"),
+            (Some("http://127.0.0.1:8123"), "http://192.168.1.20:8123/"),
             // Anything but a web address is plain HTTP at its address
             (None, "http://192.168.1.20:8123/"),
             (Some("not a url"), "http://192.168.1.20:8123/"),
@@ -263,12 +252,18 @@ mod tests {
                 "http://192.168.1.20:8123/",
             ),
         ] {
-            assert_eq!(
-                browser_url(internal_url, ip, address),
-                url,
-                "{internal_url:?}"
-            );
+            assert_eq!(browser_url(internal_url, address), url, "{internal_url:?}");
         }
+
+        // Asked at its own address, opened at its proxy's
+        let proxied = announcement(resolved(
+            8123,
+            &["192.168.1.20"],
+            &[("internal_url", "https://192.168.1.10/")],
+        ))
+        .unwrap();
+        assert_eq!(proxied.address, "192.168.1.20:8123");
+        assert_eq!(proxied.url, "https://192.168.1.10/");
 
         let announced = announcement(resolved(
             8123,

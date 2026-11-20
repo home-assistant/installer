@@ -377,8 +377,9 @@ The welcome screen looks up the Home Assistants already on the network as
 well, every 10 seconds while it shows, and offers each to open in the
 browser. It names each by the `location_name` it announces, else by its
 service name, and opens the `internal_url` it announces: that says whether it
-takes HTTPS, and may name it as its certificate does. An `internal_url` that
-names another IP address than the one it is reached at keeps only its scheme;
+takes HTTPS, may name it as its certificate does, and may be a proxy's in
+front of it, on another address. One that names an IP address this computer
+can't reach, like one of Home Assistant OS's own networks, is not opened;
 without a web address there, it opens at `http://<address>`. A landing page
 shows as installing. For Home Assistant itself, `ha_onboarded` reads
 `/api/onboarding`, which the onboarding integration serves without

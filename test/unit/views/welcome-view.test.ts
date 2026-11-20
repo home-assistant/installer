@@ -308,6 +308,29 @@ describe("welcome-view", () => {
       }
     });
 
+    it("keeps a long name it is opened at within its card", async () => {
+      const { el } = await welcome([
+        {
+          id: "long",
+          name: "Home",
+          address: "192.0.2.20:8123",
+          url: "https://homeassistantwithalonghostname.example:8123/",
+          landing_page: false,
+        },
+      ]);
+      await waitUntil(() => instances(el).length === 1);
+
+      const card = instances(el)[0];
+      const address = card
+        .querySelector(".instance-address")!
+        .getBoundingClientRect();
+      // Clear of the icon that says it opens in the browser
+      expect(address.right).to.be.at.most(
+        card.querySelector(".instance-open")!.getBoundingClientRect().left
+      );
+      expect(card.scrollWidth).to.equal(card.clientWidth);
+    });
+
     it("keeps each name its own direction, and each address left to right", async () => {
       document.documentElement.dir = "rtl";
       try {
