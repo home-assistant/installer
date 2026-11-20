@@ -1,5 +1,11 @@
 import { type Page } from "@playwright/test";
-import { skipWifiStep, test, expect } from "./fixtures.js";
+import {
+  MOCK_DELAY_SCALE,
+  setMockDelayScale,
+  skipWifiStep,
+  test,
+  expect,
+} from "./fixtures.js";
 
 // The browser mock serves the device catalog, the drives and a simulated
 // write, so a device can go all the way to its next steps.
@@ -91,8 +97,10 @@ test.describe("Home Assistant hardware flow", () => {
     await skipWifiStep(page);
 
     await next(page).click();
+    await setMockDelayScale(page, 1);
     await page.locator('confirm-dialog wa-button[variant="danger"]').click();
     await expect(page.locator("progress-view")).toBeVisible();
+    await setMockDelayScale(page, MOCK_DELAY_SCALE);
 
     await expect(page.locator("ha-hardware-success-view")).toBeVisible({
       timeout: 45000,

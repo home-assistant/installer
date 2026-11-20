@@ -2,6 +2,7 @@ import {
   approveProxmoxImport,
   skipWifiStep,
   expect,
+  MOCK_DELAY_SCALE,
   setMockDelayScale,
   test,
 } from "./fixtures.js";
@@ -322,8 +323,9 @@ test("connecting to Proxmox keeps the focus and says so", async ({ page }) => {
     .fill("https://pve.test:8006");
   const password = page.getByRole("textbox", { name: "Password", exact: true });
   await password.fill("mock-password");
+  // The browser mock takes a moment to log in, at full length
+  await setMockDelayScale(page, 1);
   await password.press("Enter");
-  // The browser mock takes a moment to log in
   const next = page.locator("wizard-shell .footer-right wa-button");
   await expect(next).toHaveText("Connecting...");
   await expect(next).toHaveAttribute("loading", "");
@@ -332,6 +334,7 @@ test("connecting to Proxmox keeps the focus and says so", async ({ page }) => {
     page.locator("wizard-shell .footer-right [aria-live=polite]")
   ).toHaveText("Connecting...");
   await expect(password).toBeFocused();
+  await setMockDelayScale(page, MOCK_DELAY_SCALE);
   await expect(
     page.getByRole("heading", { name: "Configure virtual machine" })
   ).toBeFocused();
@@ -673,6 +676,7 @@ test("disk installation keeps heading focus after the confirmation dialog closes
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await skipWifiStep(page);
   await page.getByRole("button", { name: "Install", exact: true }).click();
+  await setMockDelayScale(page, 1);
   await page
     .getByRole("button", { name: "Erase and install", exact: true })
     .click();
@@ -680,6 +684,7 @@ test("disk installation keeps heading focus after the confirmation dialog closes
   await expect(
     page.locator("progress-view").getByRole("heading")
   ).toBeFocused();
+  await setMockDelayScale(page, MOCK_DELAY_SCALE);
   await expect(
     page.locator("success-view").getByRole("heading", { name: "Almost there!" })
   ).toBeFocused({ timeout: 20000 });

@@ -4,6 +4,7 @@ import {
   approveProxmoxImport,
   test,
   expect,
+  MOCK_DELAY_SCALE,
   setMockDelayScale,
   skipWifiStep,
 } from "./fixtures.js";
@@ -166,8 +167,8 @@ for (const scenario of [
       await back(page).click();
       await expect(page.locator("proxmox-confirm-view")).toBeVisible();
     }
-    // The VM install that follows is checked while it creates the VM
-    if (scenario.flow !== "sbc") await setMockDelayScale(page, 1);
+    // The install that follows is checked while it runs
+    await setMockDelayScale(page, 1);
     await next(page).click();
     if (scenario.recovery === "choose-drive") {
       await page.locator("drive-selection-view drive-card").first().click();
@@ -203,6 +204,7 @@ for (const scenario of [
       await expect(progress).toBeVisible();
       await expect(page.locator("wizard-shell .footer-left")).toBeVisible();
     }
+    await setMockDelayScale(page, MOCK_DELAY_SCALE);
     await expect(page.locator(`${prefix}success-view`)).toBeVisible({
       timeout: 45000,
     });
