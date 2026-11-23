@@ -442,6 +442,34 @@ describe("welcome-view", () => {
       expect(letsGo().disabled).to.be.true;
     });
 
+    it("continues from the heading once Not now took the focus away", async () => {
+      mockTauriIpc((cmd) => {
+        if (cmd === "check_for_update")
+          return {
+            version: "2026.12.0",
+            release_url:
+              "https://github.com/home-assistant/installer/releases/tag/2026.12.0",
+            installable: true,
+          };
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+      const el = await fixture<WelcomeView>(
+        html`<welcome-view></welcome-view>`
+      );
+      await installerUpdate.check();
+      const banner = el.shadowRoot!.querySelector("update-banner")!;
+      await banner.updateComplete;
+      const notNow =
+        banner.shadowRoot!.querySelector<HTMLElement>("wa-button.dismiss")!;
+
+      notNow.focus();
+      notNow.click();
+      await banner.updateComplete;
+      expect(el.shadowRoot!.activeElement).to.equal(
+        el.shadowRoot!.querySelector("h1")
+      );
+    });
+
     it("still starts a flow while the update downloads", async () => {
       let finishDownload!: () => void;
       mockTauriIpc((cmd) => {

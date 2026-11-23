@@ -7,7 +7,7 @@ import {
 } from "../utils/view-accessibility.js";
 import { logFrontendError } from "../utils/diagnostics.js";
 import { narrowWindow } from "../utils/breakpoints.js";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import { renderExternalLink } from "../utils/external-link.js";
 import {
   INSTALLATION_GUIDE_URL,
@@ -62,6 +62,7 @@ export class WelcomeView extends LitElement {
   /** The Home Assistants already on the network, to open instead */
   private readonly _scan = new HomeAssistantScan(this);
 
+  @query("h1") private _heading?: HTMLElement;
   @state()
   private _logoClickCount = 0;
 
@@ -401,7 +402,9 @@ export class WelcomeView extends LitElement {
   render() {
     return html`
       ${this._renderLanguages()}
-      <update-banner></update-banner>
+      <update-banner
+        @update-banner-closed=${this._onUpdateBannerClosed}
+      ></update-banner>
       <main>
         <div class="start">
           <h1 class="logo-container" @click=${this._onLogoClick}>
@@ -550,6 +553,11 @@ export class WelcomeView extends LitElement {
 
   private _onLanguageChange(event: Event) {
     void chooseLanguage((event.target as WaSelect).value as string);
+  }
+
+  // Continue after the banner, from the heading below it
+  private _onUpdateBannerClosed() {
+    this._accessibility.restoreFocus(this._heading);
   }
 
   private _onLogoClick() {
