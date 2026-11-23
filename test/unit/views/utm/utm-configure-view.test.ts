@@ -375,6 +375,28 @@ describe("utm-configure-view", () => {
     );
   });
 
+  // It stays on show while the check runs, so it isn't new the second time
+  it("reads the same error out again on another press of Next", async () => {
+    mockNameCheck(() => {
+      throw ipcError("utm", "UTM didn't respond.", true, {});
+    });
+    const el = await mount();
+    expect(await el.check()).to.be.false;
+    const error = el.shadowRoot!.querySelector(".error-text")!;
+
+    // Next keeps the focus while the check runs
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    try {
+      outside.focus();
+      expect(await el.check()).to.be.false;
+      expect(el.shadowRoot!.querySelector(".error-text")).to.equal(error);
+      expect(el.shadowRoot!.activeElement).to.equal(error);
+    } finally {
+      outside.remove();
+    }
+  });
+
   it("ignores an answer about a name changed meanwhile", async () => {
     const answer = deferred<never>();
     mockNameCheck(() => answer.promise);

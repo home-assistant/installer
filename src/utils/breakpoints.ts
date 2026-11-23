@@ -22,9 +22,6 @@ export const veryNarrowWindow = unsafeCSS("(max-width: 500px)");
 /** A low window: the header and footer get thinner */
 export const lowWindow = unsafeCSS("(max-height: 600px)");
 
-/** Too low for all of the welcome screen, which scrolls instead */
-export const tooLowForWelcome = unsafeCSS("(max-height: 700px)");
-
 /**
  * For `@container`, on the install progress and success screens: wide
  * enough for Casita beside the details, instead of above them

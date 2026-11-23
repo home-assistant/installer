@@ -31,6 +31,7 @@ import {
   type WizardState,
 } from "../state/wizard-state.js";
 import { WizardStateController } from "../state/wizard-state-controller.js";
+import { decodeResumeState, type ResumeState } from "../state/resume-state.js";
 import { writesInstaller } from "../state/ha-hardware.js";
 import { installerUpdate } from "../state/installer-update.js";
 import {
@@ -38,6 +39,7 @@ import {
   listBlockDevices,
   onCloseBlocked,
   quitAnyway,
+  takeResumeState,
 } from "../api/index.js";
 import {
   clearDriveSelection,
@@ -148,9 +150,12 @@ export class AppShell extends LitElement {
 
   private _stopCloseListener?: Promise<() => void>;
   private _pendingFlow?: WizardFlow;
+  /** Where the flow opens once the connection check passes, after a restart */
+  private _pendingResume?: ResumeState;
 
   connectedCallback() {
     super.connectedCallback();
+    void this._resumeAfterRestart();
     // A failed install ends the wait the update dialog tells about
     this._stopUpdateListener = installerUpdate.subscribe(() => {
       if (!installerUpdate.applying) this._showUpdateQuitDialog = false;
@@ -419,21 +424,45 @@ export class AppShell extends LitElement {
     this._currentView = e.detail.view;
   }
 
+  /**
+   * After a restart as administrator, open the flow where it was, past the
+   * connection check, instead of on the welcome screen.
+   */
+  private async _resumeAfterRestart() {
+    // Failing to ask only means starting on the welcome screen
+    const text = await takeResumeState().catch(() => null);
+    const resume = text ? decodeResumeState(text) : null;
+    // The user may have moved on while the answer came
+    if (!resume || this._currentView !== "welcome") return;
+    this._resetErrorState();
+    this._pendingFlow = resume.flow;
+    this._pendingResume = resume;
+    this._currentView = "connection-check";
+  }
+
   private _onSelectPath(e: HAIEvent<"select-path">) {
     this._resetErrorState();
     this._pendingFlow = e.detail.path;
+    this._pendingResume = undefined;
     this._currentView = "connection-check";
   }
 
   private _onConnectionReady() {
     if (this._currentView !== "connection-check" || !this._pendingFlow) return;
-    wizardState.startFlow(this._pendingFlow);
+    const resume = this._pendingResume;
+    if (resume) {
+      wizardState.resumeFlow(resume.flow, resume.selections, resume.step);
+    } else {
+      wizardState.startFlow(this._pendingFlow);
+    }
     this._pendingFlow = undefined;
+    this._pendingResume = undefined;
     this._currentView = "wizard";
   }
 
   private _onConnectionBack() {
     this._pendingFlow = undefined;
+    this._pendingResume = undefined;
     this._currentView = "path-selection";
   }
 

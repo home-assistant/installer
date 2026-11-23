@@ -137,10 +137,14 @@ async fn list_drives(backend: &impl DeviceBackend) -> Result<Vec<BlockDevice>, C
 }
 
 /// Restarts the app as administrator, which the drive step offers when
-/// listing refused. The flow starts again in the new window.
+/// listing refused. The flow opens again at `resume`, as the frontend
+/// encoded it, or on the welcome screen without it.
 #[tauri::command]
-pub fn relaunch_as_admin(app: tauri::AppHandle) -> Result<(), CommandError> {
-    crate::elevation::relaunch_as_admin()?;
+pub fn relaunch_as_admin(
+    app: tauri::AppHandle,
+    resume: Option<String>,
+) -> Result<(), CommandError> {
+    crate::elevation::relaunch_as_admin(resume.as_deref())?;
     app.exit(0);
     Ok(())
 }
@@ -625,6 +629,12 @@ pub async fn get_ha_setup_status(ip_address: String) -> Option<HaSetupStatus> {
         crate::diagnostics::setup_status(status);
     }
     status
+}
+
+/// Whether Home Assistant is onboarded, or `None` without an answer that tells
+#[tauri::command]
+pub async fn check_ha_onboarded(ip_address: String) -> Option<bool> {
+    Backend.ha_onboarded(&ip_address).await
 }
 
 /// The Home Assistants that announce themselves on the local network
@@ -1580,6 +1590,51 @@ mod tests {
     async fn ha_setup_status_mock_has_no_landing_page() {
         // The mock's Home Assistant is ready at once, so its landing page is gone
         assert_eq!(get_ha_setup_status("192.168.1.100".into()).await, None);
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn ha_onboarded_mock_leaves_only_the_new_device_to_onboard() {
+        // The device the mock installs Home Assistant on, as the lookup finds it
+        assert_eq!(
+            check_ha_onboarded("192.168.1.101".into()).await,
+            Some(false)
+        );
+        assert_eq!(
+            check_ha_onboarded("192.168.1.20:8123".into()).await,
+            Some(true)
+        );
+    }
+
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[tokio::test]
+    async fn check_ha_onboarded_asks_the_address_it_is_given() {
+        let mut server = mockito::Server::new_async().await;
+        let onboarding = server
+            .mock("GET", "/api/onboarding")
+            .with_body(r#"[{"step":"user","done":false}]"#)
+            .create_async()
+            .await;
+        assert_eq!(
+            check_ha_onboarded(server.host_with_port()).await,
+            Some(false)
+        );
+        onboarding.assert_async().await;
+
+        // No longer served once onboarded
+        onboarding.remove_async().await;
+        let _onboarded = server
+            .mock("GET", "/api/onboarding")
+            .with_status(404)
+            .create_async()
+            .await;
+        assert_eq!(
+            check_ha_onboarded(server.host_with_port()).await,
+            Some(true)
+        );
+
+        // Nowhere to ask
+        assert_eq!(check_ha_onboarded(String::new()).await, None);
     }
 
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
