@@ -135,10 +135,13 @@ export class HomeAssistantScan implements ReactiveController {
     }
     announcements.forEach((announcement, index) => {
       const known = this._entries.get(announcement.address);
-      // An answer that doesn't tell keeps what the last one told, unless
-      // Home Assistant has since replaced its landing page
+      // An answer that doesn't tell keeps what the last one told about the
+      // same Home Assistant: not one that has since replaced its landing
+      // page, nor another that now answers at the address
       const kept =
-        known && known.announcement.landing_page === announcement.landing_page
+        known &&
+        known.announcement.id === announcement.id &&
+        known.announcement.landing_page === announcement.landing_page
           ? known.onboarded
           : null;
       this._entries.set(announcement.address, {

@@ -256,6 +256,24 @@ describe("home-assistant-scan", () => {
     expect(scan.found[0].state).to.equal("onboarded");
   });
 
+  it("keeps nothing another Home Assistant at the address said about onboarding", async () => {
+    // Another Home Assistant got the address, as DHCP can hand it out again
+    network(
+      [
+        [homeAssistant("192.0.2.20:8123")],
+        [{ ...homeAssistant("192.0.2.20:8123"), id: "another" }],
+      ],
+      { "192.0.2.20:8123": [false, null] }
+    );
+
+    scan.hostConnected();
+    await looked();
+    expect(scan.found[0].state).to.equal("not_onboarded");
+
+    await lookAgain();
+    expect(scan.found[0].state).to.equal("unknown");
+  });
+
   it("shows Home Assistant rather than the landing page it replaced", async () => {
     const address = "192.0.2.50";
     const { checked } = network(
