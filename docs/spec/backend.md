@@ -124,6 +124,13 @@ already on the data partition, built by
 from a `stable.json` snapshot, so the device skips downloading Home Assistant on
 first boot. There are no regular HAOS images to fall back to.
 
+The one exception is resetting a Green or a Yellow with a CM4. Those write a
+small installer image from NabuCasa/buildroot-installer instead, pinned with its
+size and digest in `hardware_installer.rs`, so no release is looked up and
+nothing below about full images applies to them. The installer then writes Home
+Assistant OS itself, without Home Assistant preloaded. A Yellow with a CM5 gets
+a full image like any other board.
+
 `download/full_images.rs` looks up that repository's latest release. Its tag
 must be `stable-<home-assistant/version commit>`, and its `SHA256SUMS` must be
 signed with Sigstore (`SHA256SUMS.sigstore.json`) by `build-channel.yml` running

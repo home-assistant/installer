@@ -37,6 +37,9 @@ use std::collections::HashSet;
 /// Version 8.4.1 added support for uploading qcow2/raw/img/vmdk files with content=import.
 const MIN_PROXMOX_VERSION: (u32, u32, u32) = (8, 4, 1);
 
+/// HAOS board whose qcow2 image Proxmox imports
+pub const HAOS_BOARD: &str = "ova";
+
 /// Minimum size of the HAOS OVA disk, matching the configure view.
 const MIN_DISK_SIZE_GB: u32 = 32;
 
@@ -989,8 +992,12 @@ async fn check_install<B: ReleaseSource>(
     validate_disk_size(config.disk_size_gb)?;
     validate_vm_name(&config.name)?;
 
-    let release: HaosRelease = backend.get_latest_haos_release_for_board("ova").await?;
-    let image = release.require_image("ova", ImageFormat::Qcow2)?.clone();
+    let release: HaosRelease = backend
+        .get_latest_haos_release_for_board(HAOS_BOARD)
+        .await?;
+    let image = release
+        .require_image(HAOS_BOARD, ImageFormat::Qcow2)?
+        .clone();
 
     pre_install_checks(session, config, image.size).await?;
     Ok(image)

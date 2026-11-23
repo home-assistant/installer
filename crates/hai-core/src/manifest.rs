@@ -326,13 +326,25 @@ mod tests {
         let stable = crate::download::get_stable_version()
             .await
             .expect("Could not fetch stable HAOS board versions");
+        let mut needed: Vec<(String, String, ImageFormat)> = bundled_board_versions(&stable)
+            .expect("Bundled board has no stable release")
+            .into_iter()
+            .map(|(board, version)| (board, version, ImageFormat::Raw))
+            .collect();
+        // The VMs: Proxmox imports the ova board's qcow2, UTM generic-aarch64's
+        for board in [crate::proxmox::HAOS_BOARD, crate::utm::HAOS_BOARD] {
+            let version = stable
+                .hassos
+                .get(board)
+                .unwrap_or_else(|| panic!("VM board {board} is missing from stable.json"))
+                .clone();
+            needed.push((board.to_string(), version, ImageFormat::Qcow2));
+        }
         let mut unusable = Vec::new();
-        for (board, version) in
-            bundled_board_versions(&stable).expect("Bundled board has no stable release")
-        {
+        for (board, version, format) in needed {
             match crate::download::full_images::release_for_board(&board, &version).await {
-                Ok(release) if release.require_image(&board, ImageFormat::Raw).is_ok() => {}
-                Ok(_) => unusable.push(format!("{board} {version}: no raw image")),
+                Ok(release) if release.require_image(&board, format).is_ok() => {}
+                Ok(_) => unusable.push(format!("{board} {version}: no {format:?} image")),
                 Err(error) => unusable.push(format!("{board} {version}: {error}")),
             }
         }
