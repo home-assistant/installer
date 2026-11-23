@@ -128,11 +128,36 @@ async fn ha_onboarded(ip: &str) -> Option<bool> {
     match response.status() {
         reqwest::StatusCode::NOT_FOUND | reqwest::StatusCode::UNAUTHORIZED => Some(true),
         status if status.is_success() => {
-            let steps = response.json::<Vec<OnboardingStep>>().await.ok()?;
+            let body = body_within(response, ONBOARDING_LIMIT).await?;
+            let steps = serde_json::from_slice::<Vec<OnboardingStep>>(&body).ok()?;
             Some(steps.iter().all(|step| step.done))
         }
         _ => None,
     }
+}
+
+/// Far more than `/api/onboarding` lists, which is a few short steps. Any
+/// device on the network can announce itself, and answer at any length.
+const ONBOARDING_LIMIT: usize = 64 * 1024;
+
+/// The body of `response`, unless it is longer than `limit`, which is all
+/// that is ever held of it
+async fn body_within(mut response: reqwest::Response, limit: usize) -> Option<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit as u64)
+    {
+        return None;
+    }
+    let mut body = Vec::new();
+    // A length it doesn't announce, or doesn't keep to, ends here too
+    while let Some(chunk) = response.chunk().await.ok()? {
+        if body.len() + chunk.len() > limit {
+            return None;
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Some(body)
 }
 
 /// Shared by every check: the frontend polls these every 2 seconds, for up to
@@ -677,6 +702,37 @@ mod tests {
         // A redirect tells nothing, and leads nowhere
         assert_eq!(ha_onboarded(&announced.host_with_port()).await, None);
         followed.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_ha_onboarded_reads_no_more_than_its_limit() {
+        // Steps enough to pass the limit, else as Home Assistant lists them
+        let step = r#"{"step":"user","done":false},"#;
+        let steps = step.repeat(ONBOARDING_LIMIT / step.len() + 1);
+        let long = format!("[{}]", steps.trim_end_matches(','));
+        assert!(long.len() > ONBOARDING_LIMIT);
+
+        let mut server = Server::new_async().await;
+        let _announced = server
+            .mock("GET", "/api/onboarding")
+            .with_body(&long)
+            .create_async()
+            .await;
+        assert_eq!(ha_onboarded(&server.host_with_port()).await, None);
+
+        // Nor when it doesn't say how long, streaming it in chunks
+        server.reset();
+        let _streamed = server
+            .mock("GET", "/api/onboarding")
+            .with_chunked_body(move |writer| {
+                for _ in 0..4 {
+                    writer.write_all(long.as_bytes())?;
+                }
+                Ok(())
+            })
+            .create_async()
+            .await;
+        assert_eq!(ha_onboarded(&server.host_with_port()).await, None);
     }
 
     /// Home Assistant that serves HTTPS itself, with a certificate it signed
