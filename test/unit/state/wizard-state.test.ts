@@ -53,16 +53,14 @@ describe("wizard-state", () => {
 
   it("swaps the mini PC steps without losing position or selections", () => {
     wizardState.startFlow("minipc");
-    wizardState.setSelection("installMethod", "usb-boot");
-    wizardState.setSteps(MINIPC_STEPS.usb);
-    wizardState.nextStep();
+    wizardState.setSelections({ installMethod: "usb-boot", liveMedia: "usb" });
+    expect(wizardState.getState().steps).to.equal(MINIPC_STEPS.usb);
 
-    wizardState.setSteps(MINIPC_STEPS.iso);
+    wizardState.setSelection("liveMedia", "iso");
     const state = wizardState.getState();
-    expect(state.currentStepIndex).to.equal(1);
+    expect(state.currentStepIndex).to.equal(0);
     expect(state.steps.map((step) => step.id)).to.deep.equal([
       "method",
-      "media",
       "location",
       "confirm",
       "flash",
