@@ -837,6 +837,11 @@ jobs:
 
       # Only release runs build the updates, as only they have the key to sign
       # them; tauri.conf.json leaves them off for every other build.
+      #
+      # Without a certificate, Tauri leaves the app signed by the linker alone,
+      # as hai_desktop. macOS then applies no local network access given to
+      # Home Assistant Installer to it, and finds no Home Assistant on the
+      # network. Signed ad hoc, the app is io.home-assistant.installer.
       - name: Bundle
         if: env.SIGN_MACOS != 'true'
         shell: bash
@@ -844,6 +849,9 @@ jobs:
           args=(--target "$BUILD_TARGET" --config "$LIVE_USB_CONFIG")
           if [[ "$SIGN_UPDATES" == true ]]; then
             args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+          fi
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            args+=(--config '{"bundle":{"macOS":{"signingIdentity":"-"}}}')
           fi
           npm run tauri bundle -- "${args[@]}"
         env:
