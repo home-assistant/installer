@@ -72,7 +72,7 @@ urlencoding = "2"
 # Scrubbing error text for the diagnostics log
 regex = "1"
 
-# mDNS lookup of Home Assistant on the local network (Windows uses its own)
+# mDNS lookup of Home Assistant on the local network (Windows and macOS use their own)
 mdns-sd = { version = "0.21", default-features = false }
 
 # Testing

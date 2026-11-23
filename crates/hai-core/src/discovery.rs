@@ -5,8 +5,9 @@
 //! That landing page announces a new `uuid` each time it starts, so one that
 //! wasn't there before a drive was written is the device booting from it.
 //!
-//! Windows looks it up through its own DNS-SD, which its firewall lets
-//! through. Elsewhere the lookup sends its own mDNS queries.
+//! Windows and macOS look it up through their own DNS-SD: Windows Firewall
+//! lets its mDNS through, and macOS's mDNSResponder owns the mDNS port. On
+//! Linux the lookup sends its own mDNS queries.
 
 use crate::error::{Error, Result};
 use crate::host::is_reachable_vm_address;
@@ -15,12 +16,16 @@ use std::collections::HashMap;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(not(any(windows, target_os = "macos")))]
 mod mdns;
 #[cfg(windows)]
 mod windows;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+use macos::lookup;
+#[cfg(not(any(windows, target_os = "macos")))]
 use mdns::lookup;
 #[cfg(windows)]
 use windows::lookup;

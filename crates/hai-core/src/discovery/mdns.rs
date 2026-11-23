@@ -1,4 +1,4 @@
-//! The lookup on macOS and Linux, which sends mDNS queries of its own.
+//! The lookup on Linux, which sends mDNS queries of its own.
 
 use super::Resolved;
 use crate::error::{Error, Result};

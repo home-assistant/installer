@@ -51,8 +51,8 @@ plist = { workspace = true }
 security-framework = { workspace = true }
 rustix = { workspace = true }
 
-# Windows looks Home Assistant up through its own DNS-SD instead
-[target.'cfg(not(windows))'.dependencies]
+# Windows and macOS look Home Assistant up through their own DNS-SD instead
+[target.'cfg(not(any(windows, target_os = "macos")))'.dependencies]
 mdns-sd = { workspace = true }
 
 # Linux specific

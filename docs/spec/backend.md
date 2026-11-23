@@ -369,7 +369,11 @@ lookups in that first minute count, before the device can have started; when
 none answered by then, any landing page is the device. `find_home_assistants` listens
 for three seconds: on Windows through the system's DNS-SD
 (`DnsServiceBrowse` and `DnsServiceResolve`), whose mDNS traffic Windows
-Firewall lets through, elsewhere with `mdns-sd`, which sends its own queries.
+Firewall lets through; on macOS through its DNS-SD too (`DNSServiceBrowse`,
+`DNSServiceResolve` and `DNSServiceGetAddrInfo`), as mDNSResponder owns the
+mDNS port there and a lookup of the app's own got no answers, with
+`NSBonjourServices` naming `_home-assistant._tcp`; on Linux with `mdns-sd`,
+which sends its own queries.
 Addresses only Home Assistant OS itself can reach, like its Docker networks',
 are left out. Diagnostics record how many answered, never which or where.
 
