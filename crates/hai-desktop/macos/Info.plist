@@ -6,12 +6,6 @@
 	<string>Home Assistant Installer needs permission to control UTM to create and start your Home Assistant virtual machine.</string>
 	<!-- TCC checks the responsible process, so the elevated authopen helper
 	     still needs this application's removable-volumes access. -->
-	<!-- The service types the installer browses for through Bonjour, which
-	     macOS only lets an app browse for when it lists them here. -->
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_home-assistant._tcp</string>
-	</array>
 	<!-- Asked when the welcome screen first looks for Home Assistant on the
 	     network, and before the installer checks one at its address. -->
 	<key>NSLocalNetworkUsageDescription</key>
