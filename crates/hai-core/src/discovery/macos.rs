@@ -155,6 +155,9 @@ pub(super) fn lookup(service_type: &str, wait: Duration) -> Result<Vec<Resolved>
     }
     let mut operations = vec![Operation(browse)];
 
+    // A browse that fails is the lookup's: it found nothing it can tell.
+    // A resolve that fails leaves out only its instance.
+    let mut failure = None;
     let deadline = Instant::now() + wait;
     while let Some(left) = deadline.checked_duration_since(Instant::now()) {
         operations.extend(STATE.with(|state| std::mem::take(&mut state.borrow_mut().started)));
@@ -175,7 +178,8 @@ pub(super) fn lookup(service_type: &str, wait: Duration) -> Result<Vec<Resolved>
             if error.kind() == std::io::ErrorKind::Interrupted {
                 continue;
             }
-            return Err(Error::Io(error));
+            failure = Some(Error::Io(error));
+            break;
         }
         // An operation that fails stays readable: it is no longer polled
         let mut failed = Vec::new();
@@ -183,15 +187,20 @@ pub(super) fn lookup(service_type: &str, wait: Duration) -> Result<Vec<Resolved>
             if fd.revents == 0 {
                 continue;
             }
-            if unsafe { DNSServiceProcessResult(operations[index].0) } != NO_ERROR {
-                failed.push(index);
+            let status = unsafe { DNSServiceProcessResult(operations[index].0) };
+            if status == NO_ERROR {
+                continue;
             }
+            if operations[index].0 == browse {
+                failure = Some(dns_sd_error("browse", status));
+            }
+            failed.push(index);
+        }
+        if failure.is_some() {
+            break;
         }
         for index in failed.into_iter().rev() {
             operations.remove(index);
-        }
-        if operations.is_empty() {
-            break;
         }
     }
 
@@ -199,10 +208,11 @@ pub(super) fn lookup(service_type: &str, wait: Duration) -> Result<Vec<Resolved>
     drop(operations);
     let state = STATE.with(|state| std::mem::take(&mut *state.borrow_mut()));
     drop(state.started);
-    if state.instances.is_empty() {
-        if let Some(status) = state.browse_error {
-            return Err(dns_sd_error("browse", status));
-        }
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    if let Some(status) = state.browse_error {
+        return Err(dns_sd_error("browse", status));
     }
     Ok(state
         .instances
