@@ -109,7 +109,7 @@ async fn ha_onboarded(ip: &str) -> Option<bool> {
     if ip.trim().is_empty() {
         return None;
     }
-    let response = match HA_CLIENT
+    let response = match HA_ONBOARDING_CLIENT
         .as_ref()?
         .get(format!("http://{ip}{PATH}"))
         .send()
@@ -143,6 +143,19 @@ static HA_CLIENT: LazyLock<Option<reqwest::Client>> = LazyLock::new(|| {
         // The VM is on the local network, out of reach for a corporate proxy.
         // The proxy's own 407 would pass as ready, its 502 would never pass.
         .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .ok()
+});
+
+/// For the onboarding check, which the welcome screen makes of each Home
+/// Assistant the lookup finds, without the user asking. A redirect, which
+/// `/api/onboarding` never answers with, is not followed: it could send the
+/// check on to this computer itself, or anywhere else on the network.
+static HA_ONBOARDING_CLIENT: LazyLock<Option<reqwest::Client>> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(5))
         .build()
         .ok()
@@ -639,6 +652,31 @@ mod tests {
         // Nothing answers, or there is nowhere to ask
         assert_eq!(ha_onboarded("127.0.0.1:1").await, None);
         assert_eq!(ha_onboarded("").await, None);
+    }
+
+    #[tokio::test]
+    async fn test_ha_onboarded_follows_no_redirect() {
+        let mut elsewhere = Server::new_async().await;
+        let followed = elsewhere
+            .mock("GET", "/api/onboarding")
+            .with_body(r#"[{"step":"user","done":false}]"#)
+            .expect(0)
+            .create_async()
+            .await;
+        let mut announced = Server::new_async().await;
+        let _redirect = announced
+            .mock("GET", "/api/onboarding")
+            .with_status(302)
+            .with_header(
+                "location",
+                &format!("http://{}/api/onboarding", elsewhere.host_with_port()),
+            )
+            .create_async()
+            .await;
+
+        // A redirect tells nothing, and leads nowhere
+        assert_eq!(ha_onboarded(&announced.host_with_port()).await, None);
+        followed.assert_async().await;
     }
 
     /// Home Assistant that serves HTTPS itself, with a certificate it signed
