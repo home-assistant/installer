@@ -159,11 +159,17 @@ export class HomeAssistantScan implements ReactiveController {
    * from one. Home Assistant OS shows it on another port than Home Assistant
    * itself, so one that answers on the same device means it is gone. Home
    * Assistants on different ports of a device are each their own.
+   *
+   * Only one that answered this lookup counts: one kept from an earlier one
+   * may be gone itself, as from a device written again, which starts over
+   * with the landing page.
    */
   private _forgetReplacedLandingPages() {
     const homeAssistants = new Set(
       [...this._entries.values()]
-        .filter(({ announcement }) => !announcement.landing_page)
+        .filter(
+          ({ announcement, missed }) => !announcement.landing_page && !missed
+        )
         .map(({ announcement }) => device(announcement.address))
     );
     for (const [address, { announcement }] of this._entries) {

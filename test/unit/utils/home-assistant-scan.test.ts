@@ -348,6 +348,30 @@ describe("home-assistant-scan", () => {
     ]);
   });
 
+  it("shows the landing page of a device written again, beside Home Assistant it kept", async () => {
+    network(
+      [
+        [homeAssistant("192.0.2.50:8123")],
+        // Written again, it starts over with the landing page
+        [landingPage("192.0.2.50")],
+      ],
+      { "192.0.2.50:8123": [true] }
+    );
+
+    scan.hostConnected();
+    await looked();
+    await lookAgain();
+    // Home Assistant is kept through the lookup that missed it, and doesn't
+    // hide the landing page that answered
+    expect(scan.found.map(({ state }) => state)).to.deep.equal([
+      "onboarded",
+      "installing",
+    ]);
+
+    await lookAgain();
+    expect(scan.found.map(({ state }) => state)).to.deep.equal(["installing"]);
+  });
+
   it("keeps each Home Assistant on its own port of a device", async () => {
     network([
       [
