@@ -406,6 +406,10 @@ fn show_progress(
 /// Shows `body`, one paragraph each, until Enter or Esc.
 fn message(ui: &mut Ui, title: String, body: Vec<String>) {
     let screen = Screen::Message { title, body };
+
+    // A key pressed during a long step, like a repeated Enter during the
+    // write, is still queued and would dismiss a failure before it's read
+    ui.discard_keys();
     loop {
         ui.show(&screen);
         if matches!(ui.key(None), Some(KeyCode::Enter | KeyCode::Esc)) {
