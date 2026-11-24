@@ -1604,8 +1604,37 @@ async fn import_and_cleanup_image(
                 config.vm_id
             );
         }
+        return result;
     }
-    result
+
+    result.map_err(|error| import_image_kept(config, storage_name, image_filename, error))
+}
+
+/// The error for a VM that may still be importing the uploaded image, so the
+/// image stays: deleting it would break the import. The image is the user's
+/// to delete once Proxmox is done, so name it.
+fn import_image_kept(
+    config: &ProxmoxVmConfig,
+    storage_name: &str,
+    image_filename: &str,
+    error: Error,
+) -> Error {
+    // Keep their own codes, so the user is told to reconnect, or that the VM
+    // may be incomplete
+    if matches!(
+        error,
+        Error::ProxmoxSessionExpired | Error::ProxmoxCertificateChanged
+    ) {
+        return error;
+    }
+
+    eprintln!("Creating VM {} failed: {error}", config.vm_id);
+    Error::ProxmoxActionRequired(crate::message!(
+        "backend.proxmox.import_image_kept",
+        vm_id = config.vm_id,
+        volume = format!("{storage_name}:import/{image_filename}"),
+        node = config.node,
+    ))
 }
 
 /// Start a VM.
@@ -5050,14 +5079,29 @@ mod tests {
                     .expect(deletes)
                     .create_async()
                     .await;
-                assert!(import_and_cleanup_image(
+                let result = import_and_cleanup_image(
                     &session(server.url()),
                     &vm_config(),
                     "hai-image-unique.qcow2",
-                    "local-import"
+                    "local-import",
                 )
-                .await
-                .is_err());
+                .await;
+                if deletes == 0 {
+                    // Kept, in case Proxmox still imports it, so the user
+                    // is told what to delete once it's done
+                    assert_eq!(
+                        action_required(result),
+                        message!(
+                            "backend.proxmox.import_image_kept",
+                            vm_id = 100,
+                            volume = "local-import:import/hai-image-unique.qcow2",
+                            node = "pve",
+                        ),
+                        "create {create_status}, task {task_status}"
+                    );
+                } else {
+                    assert!(result.is_err());
+                }
                 delete.assert_async().await;
                 network.assert_async().await;
                 permissions.assert_async().await;
