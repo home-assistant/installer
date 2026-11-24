@@ -350,6 +350,38 @@ describe("update-banner", () => {
     await waitUntil(() => downloads === 2);
   });
 
+  // Focus left on the page would make a screen reader start over from the top
+  it("keeps the focus on the download when a failure takes the update away", async () => {
+    mockUpdate({
+      download_update: () => {
+        throw ipcError("update_failed", "The update could not be installed.");
+      },
+    });
+    const el = await banner();
+
+    button(el, "install")!.focus();
+    button(el, "install")!.click();
+    await waitUntil(() => button(el, "download"));
+    expect(button(el, "install")).to.equal(null);
+    await waitUntil(
+      () => el.shadowRoot!.activeElement === button(el, "download"),
+      "the focus fell to the page"
+    );
+  });
+
+  it("says when Not now took the focus away with the banner", async () => {
+    mockUpdate();
+    const el = await banner();
+    let closed = 0;
+    el.addEventListener("update-banner-closed", () => closed++);
+
+    button(el, "dismiss")!.focus();
+    button(el, "dismiss")!.click();
+    await el.updateComplete;
+    expect(shown(el)).to.be.false;
+    expect(closed).to.equal(1);
+  });
+
   it("only offers the download where the app can't replace itself", async () => {
     mockUpdate({
       check_for_update: () => ({ ...UPDATE, installable: false }),

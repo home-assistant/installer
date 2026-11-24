@@ -364,7 +364,12 @@ export class OptionCard extends LitElement {
 
 ### Windows
 
-- Disk access requires Administrator privileges
+- Disk access requires Administrator privileges. Without them, the drive step
+  offers to restart the installer as administrator. The new instance gets
+  `--resume` with the flow, the step and the choices made before it (only
+  non-secret ones, as base64url JSON), and opens the flow on the drive step
+  again after the connection check. It treats the argument as untrusted input
+  and starts on the welcome screen when it can't use it.
 - Use `CreateFile` with `\\.\PhysicalDriveN` for raw access
 - Consider Windows Defender / SmartScreen implications
 

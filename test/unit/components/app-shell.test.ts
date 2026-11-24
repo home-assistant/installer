@@ -12,6 +12,7 @@ import {
   MOCK_MANIFEST,
 } from "../../../src/api/mock-data.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
+import { encodeResumeState } from "../../../src/state/resume-state.js";
 import { installerUpdate } from "../../../src/state/installer-update.js";
 import { storeDriveSelection } from "../../../src/utils/drive-selection.js";
 import { fireEvent } from "../../../src/utils/fire-event.js";
@@ -472,6 +473,85 @@ describe("app-shell", () => {
         expect(wizardState.getState().currentFlow).to.equal(null);
       });
     }
+  });
+
+  describe("after a restart as administrator", () => {
+    const rpi5 = MOCK_MANIFEST.devices[0];
+
+    /** A fresh shell, started with what the restart passed on */
+    async function restartWith(resume: string | null) {
+      el.remove();
+      await settle();
+      if (resume) sessionStorage.setItem("hai:mock-resume", resume);
+      el = await fixture<AppShell>(html`<app-shell></app-shell>`);
+    }
+
+    function driveStepResume() {
+      wizardState.startFlow("sbc");
+      wizardState.setSelections({
+        device: rpi5.id,
+        deviceName: rpi5.name,
+        deviceConfig: rpi5.haos,
+      });
+      wizardState.goToStep(1);
+      const resume = encodeResumeState(wizardState.getState());
+      wizardState.reset();
+      return resume;
+    }
+
+    afterEach(() => sessionStorage.removeItem("hai:mock-resume"));
+
+    it("opens the flow on the drive step, past the connection check", async () => {
+      await restartWith(driveStepResume());
+
+      await waitUntil(() => !!shellOf(el), "the flow never opened");
+      expect(wizardState.currentStep?.id).to.equal("drive");
+      expect(wizardState.getState().selections).to.include({
+        device: rpi5.id,
+        deviceName: rpi5.name,
+      });
+      expect(shellOf(el).querySelector("drive-selection-view")).to.exist;
+      // Back goes to the device picked before the restart
+      wizardState.previousStep();
+      expect(wizardState.currentStep?.id).to.equal("device");
+    });
+
+    it("hands the state on only once", async () => {
+      await restartWith(driveStepResume());
+      await waitUntil(() => !!shellOf(el));
+
+      await restartWith(null);
+      await settle();
+      expect(el.shadowRoot!.querySelector("welcome-view")).to.exist;
+    });
+
+    it("waits for the connection check like any flow", async () => {
+      const pending = deferred<void>();
+      const resume = driveStepResume();
+      el.remove();
+      await settle();
+      mockTauriIpc((cmd) => {
+        if (cmd === "take_resume_state") return resume;
+        if (cmd === "check_connection") return pending.promise;
+        if (cmd === "list_block_devices") return [];
+        return undefined;
+      });
+      el = await fixture<AppShell>(html`<app-shell></app-shell>`);
+
+      await waitUntil(
+        () => !!el.shadowRoot!.querySelector("connection-check-view")
+      );
+      expect(wizardState.getState().currentFlow).to.equal(null);
+      pending.resolve();
+      await waitUntil(() => wizardState.currentStep?.id === "drive");
+    });
+
+    it("starts on the welcome screen when it can't use what was passed on", async () => {
+      await restartWith("bm90IGEgc3RhdGU");
+      await settle();
+      expect(el.shadowRoot!.querySelector("welcome-view")).to.exist;
+      expect(wizardState.getState().currentFlow).to.equal(null);
+    });
   });
 
   // The welcome screen has nothing new for someone who already used it

@@ -20,14 +20,18 @@ import {
 
 const landingPage = (id: string, address = "192.0.2.50"): HaAnnouncement => ({
   id,
+  name: null,
   address,
+  url: `http://${address}/`,
   landing_page: true,
   needs_onboarding: false,
 });
 
 const homeAssistant = (id: string): HaAnnouncement => ({
   id,
+  name: "Home",
   address: "192.0.2.10:8123",
+  url: "http://192.0.2.10:8123/",
   landing_page: false,
   needs_onboarding: false,
 });
@@ -35,7 +39,9 @@ const homeAssistant = (id: string): HaAnnouncement => ({
 /** Home Assistant started from a full image, before anyone onboarded it */
 const freshHomeAssistant = (id: string, address: string): HaAnnouncement => ({
   id,
+  name: "Home",
   address,
+  url: `http://${address}/`,
   landing_page: false,
   needs_onboarding: true,
 });

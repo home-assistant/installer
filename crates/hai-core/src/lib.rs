@@ -249,6 +249,10 @@ pub trait HostBackend {
     /// without a full answer from a landing page there.
     async fn ha_setup_status(&self, ip: &str) -> Option<HaSetupStatus>;
 
+    /// Whether Home Assistant at `ip` is onboarded, or `None` without an
+    /// answer that tells.
+    async fn ha_onboarded(&self, ip: &str) -> Option<bool>;
+
     /// The Home Assistants that announce themselves on the local network,
     /// as far as they answer within a few seconds.
     async fn find_home_assistants(&self) -> Result<Vec<HaAnnouncement>>;

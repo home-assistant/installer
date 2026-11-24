@@ -1,6 +1,7 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { mockDelay } from "./mock-delay.js";
 import { failMockOperation } from "./mock-failures.js";
 import { getPlatform } from "../utils/platform.js";
 import type {
@@ -133,7 +134,7 @@ export async function downloadUpdate(
     const total = 8 * 1024 * 1024;
     for (let downloaded = 0; downloaded <= total; downloaded += total / 4) {
       onProgress({ downloaded, total });
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await mockDelay(50);
     }
     failMockOperation("update");
     return;
@@ -187,10 +188,32 @@ export async function listBlockDevices(): Promise<BlockDevice[]> {
   return invoke<BlockDevice[]>("list_block_devices");
 }
 
-/** Restart as administrator. The app closes if Windows grants it. */
-export async function relaunchAsAdmin(): Promise<void> {
-  if (MOCK_ALLOWED && isBrowserOnly()) return;
-  await invoke("relaunch_as_admin");
+/** Where the browser mock's restart hands the flow to the reloaded page */
+const MOCK_RESUME_KEY = "hai:mock-resume";
+
+/**
+ * Restart as administrator. The app closes if Windows grants it.
+ * @param resume Where the restarted app opens, from `encodeResumeState`
+ */
+export async function relaunchAsAdmin(resume: string | null): Promise<void> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    if (resume) sessionStorage.setItem(MOCK_RESUME_KEY, resume);
+    return;
+  }
+  await invoke("relaunch_as_admin", { resume });
+}
+
+/**
+ * Where a restart as administrator asked this app to open, once: a second
+ * call resolves to null.
+ */
+export async function takeResumeState(): Promise<string | null> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    const resume = sessionStorage.getItem(MOCK_RESUME_KEY);
+    sessionStorage.removeItem(MOCK_RESUME_KEY);
+    return resume;
+  }
+  return invoke<string | null>("take_resume_state");
 }
 
 /**
@@ -317,7 +340,7 @@ async function simulateFlashProgress(
 
       if (stage === "writing" && step === 0) failMockOperation("flash");
 
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      await mockDelay(delay);
     }
   }
 
@@ -539,7 +562,7 @@ async function simulateUtmDownload(
         message: "",
       });
 
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      await mockDelay(delay);
     }
   }
 
@@ -563,7 +586,7 @@ export async function createUtmVm(config: UtmVmConfig): Promise<string> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     failMockOperation("utm");
     // Simulate VM creation
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await mockDelay(2000);
     return "mock-vm-id-12345";
   }
   return invoke<string>("create_utm_vm", { config });
@@ -575,7 +598,7 @@ export async function createUtmVm(config: UtmVmConfig): Promise<string> {
  */
 export async function startUtmVm(vmId: string): Promise<void> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await mockDelay(500);
     return;
   }
   return invoke<void>("start_utm_vm", { vmId });
@@ -649,8 +672,45 @@ export async function getHaSetupStatus(
   return invoke<HaSetupStatus | null>("get_ha_setup_status", { ipAddress });
 }
 
+/**
+ * Whether Home Assistant at the given address is onboarded: its owner
+ * created their account and went through the steps after it.
+ * @returns null without an answer that tells, as from a landing page
+ */
+export async function checkHaOnboarded(
+  ipAddress: string
+): Promise<boolean | null> {
+  if (MOCK_ALLOWED && isBrowserOnly()) {
+    // The device is still to be onboarded once it installed Home Assistant
+    return (
+      ipAddress !== MOCK_DEVICE_ADDRESS &&
+      ipAddress !== MOCK_NOT_ONBOARDED_ADDRESS
+    );
+  }
+  return invoke<boolean | null>("check_ha_onboarded", { ipAddress });
+}
+
 /** Counts the simulated lookups, so each finds a new landing page */
 let mockLookups = 0;
+
+/** Where the simulated Home Assistant that is still to be onboarded answers */
+const MOCK_NOT_ONBOARDED_ADDRESS = "192.168.1.30:8123";
+
+/** A Home Assistant on the simulated network, at plain HTTP unless given */
+function mockHomeAssistant(
+  name: string,
+  address: string,
+  url = `http://${address}/`
+): HaAnnouncement {
+  return {
+    id: `mock-${name}`,
+    name,
+    address,
+    url,
+    landing_page: false,
+    needs_onboarding: false,
+  };
+}
 
 /**
  * The Home Assistants that announce themselves on the local network, as far
@@ -658,17 +718,36 @@ let mockLookups = 0;
  */
 export async function findHomeAssistants(): Promise<HaAnnouncement[]> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
+    await mockDelay(1000);
+    // E2E tests that measure the welcome screen find nothing, and those
+    // that scroll through what it found find more than fit
+    const network = sessionStorage.getItem("hai:mock-network");
+    if (network === "empty") return [];
     // A landing page the last lookup didn't find, as a device that just
     // started announces. It has yet to download Home Assistant.
-    await new Promise((resolve) => setTimeout(resolve, 1000));
     mockDeviceDownload = 0;
     return [
       {
         id: `mock-landing-page-${mockLookups++}`,
+        name: "Home (preparing setup)",
         address: MOCK_DEVICE_ADDRESS,
+        url: `http://${MOCK_DEVICE_ADDRESS}/`,
         landing_page: true,
         needs_onboarding: false,
       },
+      // Home Assistants that were there already: one onboarded, one not,
+      // which serves HTTPS itself
+      mockHomeAssistant("Home", "192.168.1.20:8123"),
+      mockHomeAssistant(
+        "Cabin",
+        MOCK_NOT_ONBOARDED_ADDRESS,
+        `https://${MOCK_NOT_ONBOARDED_ADDRESS}/`
+      ),
+      ...(network === "many"
+        ? ["Attic", "Barn", "Garage", "Office", "Studio"].map((name, index) =>
+            mockHomeAssistant(name, `192.168.1.${40 + index}:8123`)
+          )
+        : []),
     ];
   }
   return invoke<HaAnnouncement[]>("find_home_assistants");
@@ -701,7 +780,7 @@ export async function proxmoxConnect(
 ): Promise<ProxmoxSession> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
     // Simulate connection delay
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await mockDelay(1500);
     mockProxmoxSession = {
       server_url: credentials.server_url,
       ticket: "mock-ticket-" + Date.now(),
@@ -721,7 +800,7 @@ export async function proxmoxListNodes(
   session: ProxmoxSession
 ): Promise<ProxmoxNode[]> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await mockDelay(500);
     return [
       {
         name: "pve",
@@ -754,7 +833,7 @@ export async function proxmoxListStorage(
   node: string
 ): Promise<ProxmoxStorage[]> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await mockDelay(500);
     return [
       {
         name: "local",
@@ -855,7 +934,7 @@ export async function proxmoxGetNextVmId(
   session: ProxmoxSession
 ): Promise<number> {
   if (MOCK_ALLOWED && isBrowserOnly()) {
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await mockDelay(200);
     return 100;
   }
   return invoke<number>("proxmox_get_next_vm_id", { session });
@@ -1007,12 +1086,12 @@ async function simulateProxmoxInstall(
       }
       if (stage === "creating_vm" && step === 0) failMockOperation("proxmox");
 
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      await mockDelay(delay);
     }
     // The last step left every byte sent at 95%, while Proxmox processes
     // the upload; only then does the backend report 100%
     if (stage === "uploading") {
-      await new Promise((resolve) => setTimeout(resolve, delay * 5));
+      await mockDelay(delay * 5);
       throwIfMockVmCancelled();
       onProgress({
         stage,

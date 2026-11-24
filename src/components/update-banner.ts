@@ -1,14 +1,16 @@
 import { LitElement, css, html, nothing } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import { formatNumber, localize } from "../localization/localize.js";
 import {
   installerUpdate,
   type InstallerUpdateState,
 } from "../state/installer-update.js";
 import { openExternalUrl } from "../utils/external-url.js";
+import { fireEvent } from "../utils/fire-event.js";
 import { renderExternalLink } from "../utils/external-link.js";
 import { linkStyles } from "../utils/link-styles.js";
 import { LiveStatus, srOnlyStyles } from "../utils/view-accessibility.js";
+import type WaButton from "@home-assistant/webawesome/dist/components/button/button.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 
 /**
@@ -78,6 +80,12 @@ export class UpdateBanner extends LitElement {
 
   private _unsubscribe?: () => void;
 
+  /** Whether one of the buttons had the focus before the update */
+  private _hadFocus = false;
+
+  /** The first of the buttons on show */
+  @query(".actions wa-button") private _firstAction?: WaButton;
+
   connectedCallback() {
     super.connectedCallback();
     this._unsubscribe = installerUpdate.subscribe((state) => {
@@ -92,6 +100,28 @@ export class UpdateBanner extends LitElement {
     super.disconnectedCallback();
     this._unsubscribe?.();
     installerUpdate.setVisible(false);
+  }
+
+  protected willUpdate() {
+    this._hadFocus = !!this.shadowRoot?.activeElement;
+  }
+
+  protected updated() {
+    // An update can take away the button that has the focus: Update after a
+    // failure that can't be tried again, or the whole banner after Not now.
+    // The focus would fall to the page, and a screen reader start over from
+    // the top. Continue from the button that is left, or after the banner.
+    if (!this._hadFocus || this.shadowRoot?.activeElement) return;
+    const action = this._firstAction;
+    if (!action) {
+      fireEvent(this, "update-banner-closed");
+      return;
+    }
+    // A button just added renders the one inside it first
+    void action.updateComplete.then(() => {
+      // Unless the user moved on meanwhile
+      if (document.activeElement === document.body) action.focus();
+    });
   }
 
   render() {
@@ -233,5 +263,10 @@ export class UpdateBanner extends LitElement {
 declare global {
   interface HTMLElementTagNameMap {
     "update-banner": UpdateBanner;
+  }
+
+  interface HAIEvents {
+    /** The banner went away with the focus in it, like after Not now */
+    "update-banner-closed": undefined;
   }
 }

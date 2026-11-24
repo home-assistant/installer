@@ -1,8 +1,8 @@
 import { type Locator, type Page } from "@playwright/test";
 import { test, expect } from "./fixtures.js";
 
-// The Mini PC's method and media steps have no Next: picking a card moves on
-// at once, the way Next does
+// The Mini PC's method step has no Next: picking a card moves on at once, the
+// way Next does
 
 // Traverse the real tab order instead of focusing controls programmatically.
 async function tabTo(page: Page, control: Locator) {
@@ -24,10 +24,10 @@ async function openMethod(page: Page) {
 for (const [key, card, heading] of [
   [
     "Enter",
-    "I can connect the drive",
+    "Write the mini PC's drive here",
     "Which processor does your mini PC have?",
   ],
-  ["Space", "I need to boot from USB", "Create bootable media"],
+  ["Space", "Save an ISO file", "Where should the ISO be saved?"],
 ] as const) {
   test(`${key} on "${card}" continues from the next step's heading`, async ({
     page,
@@ -48,18 +48,6 @@ test("a picked medium continues at once, and Back returns to the choice", async 
   page,
 }) => {
   await openMethod(page);
-  await tabTo(
-    page,
-    page.getByRole("button", { name: "I need to boot from USB" })
-  );
-  await page.keyboard.press("Enter");
-  await expect(
-    page.getByRole("heading", { name: "Create bootable media" })
-  ).toBeFocused();
-  await expect(
-    page.getByRole("button", { name: "Next", exact: true })
-  ).toHaveCount(0);
-
   await tabTo(page, page.getByRole("button", { name: "Save an ISO file" }));
   await page.keyboard.press("Enter");
   await expect(page.locator("live-iso-location-view")).toBeVisible();
@@ -67,8 +55,6 @@ test("a picked medium continues at once, and Back returns to the choice", async 
     page.getByRole("button", { name: "Next", exact: true })
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Back", exact: false }).click();
-  await expect(page.locator("minipc-media-view")).toBeVisible();
   await page.getByRole("button", { name: "Back", exact: false }).click();
   await expect(page.locator("minipc-setup-method-view")).toBeVisible();
 });

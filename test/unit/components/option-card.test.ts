@@ -25,6 +25,33 @@ describe("option-card", () => {
     expect(el.hasAttribute("title")).to.be.false;
   });
 
+  it("sets a tag apart next to the heading, and leaves it out unless set", async () => {
+    const tagged = await fixture<OptionCard>(html`
+      <option-card
+        heading="Create a USB installer"
+        tag="Recommended"
+      ></option-card>
+    `);
+    const tag = tagged.shadowRoot!.querySelector(".heading .tag");
+    expect(tag!.textContent).to.equal("Recommended");
+    // The heading alone names the card; the tag describes it first
+    const card = tagged.shadowRoot!.querySelector(".card")!;
+    expect(card.getAttribute("aria-describedby")).to.equal(
+      "tag description more"
+    );
+    expect(tagged.shadowRoot!.querySelector(".title")!.textContent).to.equal(
+      "Create a USB installer"
+    );
+
+    const plain = await fixture<OptionCard>(html`
+      <option-card heading="Save an ISO file"></option-card>
+    `);
+    expect(plain.shadowRoot!.querySelector(".tag")).to.equal(null);
+    expect(
+      plain.shadowRoot!.querySelector(".card")!.getAttribute("aria-describedby")
+    ).to.equal("description more");
+  });
+
   it("renders with an icon from the icon map", async () => {
     const el = await fixture<OptionCard>(html`
       <option-card heading="SBC" icon="sbc"></option-card>

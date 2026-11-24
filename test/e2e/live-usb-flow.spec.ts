@@ -1,5 +1,5 @@
 import { type Page } from "@playwright/test";
-import { test, expect } from "./fixtures.js";
+import { test, expect, setMockDelayScale } from "./fixtures.js";
 
 async function openMediaChoice(page: Page) {
   await page.goto("/");
@@ -7,12 +7,7 @@ async function openMediaChoice(page: Page) {
   await page
     .locator('option-card[heading="Mini PC or other computer"]')
     .click();
-  await page
-    .locator("minipc-setup-method-view")
-    .locator("option-card")
-    .filter({ hasText: "I need to boot from USB" })
-    .click();
-  await expect(page.locator("minipc-media-view")).toBeVisible();
+  await expect(page.locator("minipc-setup-method-view")).toBeVisible();
 }
 
 function next(page: Page, name = "Next") {
@@ -22,7 +17,7 @@ function next(page: Page, name = "Next") {
 test("writes a bootable USB stick", async ({ page }) => {
   await openMediaChoice(page);
   await page
-    .locator("minipc-media-view")
+    .locator("minipc-setup-method-view")
     .locator("option-card")
     .filter({ hasText: "USB stick" })
     .click();
@@ -55,7 +50,7 @@ test("writes a bootable USB stick", async ({ page }) => {
 test("saves an ISO file without the erase confirmation", async ({ page }) => {
   await openMediaChoice(page);
   await page
-    .locator("minipc-media-view")
+    .locator("minipc-setup-method-view")
     .locator("option-card")
     .filter({ hasText: "ISO file" })
     .click();
@@ -91,7 +86,7 @@ test("saves an ISO file without the erase confirmation", async ({ page }) => {
 test("asks before replacing an existing ISO file", async ({ page }) => {
   await openMediaChoice(page);
   await page
-    .locator("minipc-media-view")
+    .locator("minipc-setup-method-view")
     .locator("option-card")
     .filter({ hasText: "ISO file" })
     .click();
@@ -113,7 +108,7 @@ test("asks before replacing an existing ISO file", async ({ page }) => {
 
 function chooseMedia(page: Page, name: "USB stick" | "ISO file") {
   return page
-    .locator("minipc-media-view")
+    .locator("minipc-setup-method-view")
     .locator("option-card")
     .filter({ hasText: name })
     .click();
@@ -187,6 +182,7 @@ test("stopping a USB stick asks first and can be tried again", async ({
   page,
 }) => {
   await openMediaChoice(page);
+  await setMockDelayScale(page, 1);
   await startUsbWrite(page);
   const progress = page.locator("live-usb-progress-view");
   await expect(progress).toBeVisible();
@@ -212,6 +208,7 @@ test("stopping an ISO says nothing was saved", async ({ page }) => {
   await openMediaChoice(page);
   await chooseMedia(page, "ISO file");
   await next(page);
+  await setMockDelayScale(page, 1);
   await next(page, "Create");
   await expect(page.locator("live-usb-progress-view")).toBeVisible();
 
