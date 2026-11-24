@@ -53,6 +53,12 @@ export const configCardStyles = css`
 export class VmSettings {
   private _values: VmSettingValues;
 
+  /**
+   * The cores picked, or the default. A node with fewer CPUs lowers
+   * `cpuCores`, and a larger one gets these back.
+   */
+  private _askedCores = DEFAULT_CPU_CORES;
+
   constructor(
     private readonly _host: ReactiveControllerHost,
     private readonly _options: VmSettingsOptions
@@ -69,13 +75,18 @@ export class VmSettings {
     return this._values.cpuCores;
   }
 
+  get askedCores(): number {
+    return this._askedCores;
+  }
+
   get memoryMb(): number {
     return this._values.memoryMb;
   }
 
   /** What the step saves of these */
-  get selections(): VmSettingValues {
-    return { ...this._values };
+  get selections(): VmSettingValues &
+    Required<Pick<WizardSelections, "cpuCoresAsked">> {
+    return { ...this._values, cpuCoresAsked: this._askedCores };
   }
 
   get nameError(): string | undefined {
@@ -88,6 +99,8 @@ export class VmSettings {
    * only apply on the first visit.
    */
   restore(selections: WizardSelections) {
+    this._askedCores =
+      selections.cpuCoresAsked ?? selections.cpuCores ?? DEFAULT_CPU_CORES;
     this.set({
       vmName: selections.vmName ?? this._options.defaultName,
       cpuCores: selections.cpuCores ?? DEFAULT_CPU_CORES,
@@ -114,6 +127,8 @@ export class VmSettings {
 
   private readonly _onResourcesChange = (e: HAIEvent<"resources-change">) => {
     const { cpuCores, memoryMb, diskSizeGb } = e.detail;
+    // Moving another slider reports the cores as they are, not as asked
+    if (cpuCores !== this._values.cpuCores) this._askedCores = cpuCores;
     this.set({ cpuCores, memoryMb, diskSizeGb });
     this._options.save();
   };
