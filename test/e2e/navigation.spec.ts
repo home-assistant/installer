@@ -19,7 +19,7 @@ test.describe("Navigation Flow", () => {
     await expect(pathSelectionView).toBeVisible();
 
     // Click back button
-    await pathSelectionView.locator("wa-button").click();
+    await pathSelectionView.locator(".header > wa-button").click();
 
     // Should be back on welcome view
     const welcomeView = page.locator("welcome-view");
@@ -65,7 +65,7 @@ test.describe("Wizard Flow", () => {
     await deviceCard.click();
     await expect(page.locator("drive-selection-view")).toBeVisible();
 
-    const backButton = wizardShell.locator(".header wa-button");
+    const backButton = wizardShell.locator(".header > wa-button");
 
     // Click back
     await backButton.click();
@@ -109,7 +109,7 @@ test.describe("SBC Confirmation", () => {
     page,
   }) => {
     const wizardShell = page.locator("wizard-shell");
-    const backButton = wizardShell.locator(".header wa-button");
+    const backButton = wizardShell.locator(".header > wa-button");
 
     // The first board has Wi-Fi, so its step comes before Confirm
     await backButton.click();

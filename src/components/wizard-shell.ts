@@ -8,6 +8,7 @@ import {
 } from "../state/wizard-state.js";
 import { WizardStateController } from "../state/wizard-state-controller.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
+import "./accessibility-menu.js";
 import "./step-indicator.js";
 import { pageHeaderStyles } from "../utils/page-header.js";
 import { lowWindow, narrowWindow } from "../utils/breakpoints.js";
@@ -41,7 +42,6 @@ export class WizardShell extends LitElement {
       }
 
       .header {
-        justify-content: space-between;
         border-bottom: 1px solid var(--ha-border-color);
       }
 
@@ -59,7 +59,10 @@ export class WizardShell extends LitElement {
         min-width: 0;
       }
 
+      /* As wide as Back, so the steps stay centered */
       .header-right {
+        display: flex;
+        justify-content: flex-end;
         min-width: 80px;
       }
 
@@ -253,7 +256,9 @@ export class WizardShell extends LitElement {
           ></step-indicator>
         </div>
 
-        <div class="header-right"></div>
+        <div class="header-right">
+          <accessibility-menu></accessibility-menu>
+        </div>
       </header>
 
       <main class="content" tabindex=${this._scrolls ? "0" : nothing}>

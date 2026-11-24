@@ -49,7 +49,7 @@ describe("decorative glyphs in accessible names", () => {
     );
     await (header.querySelector("wa-button") as WaButton).updateComplete;
 
-    expect(await buttonNames()).to.deep.equal(["Back"]);
+    expect(await buttonNames()).to.deep.equal(["Back", "Accessibility"]);
   });
 
   it("leaves the arrow out of Let's go", async () => {

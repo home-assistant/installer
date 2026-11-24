@@ -72,7 +72,7 @@ test("retains the chosen bridge and sends it to VM creation", async ({
   await expect(page.locator("proxmox-confirm-view")).toContainText(
     "Network bridge: vmbr1"
   );
-  await page.locator("wizard-shell .header wa-button").click();
+  await page.locator("wizard-shell .header > wa-button").click();
   await expect(
     configure.locator('wa-select[label="Network bridge"]')
   ).toHaveJSProperty("value", "vmbr1");
@@ -107,7 +107,7 @@ test("retains the VLAN tag and sends it to VM creation", async ({ page }) => {
   await expect(page.locator("proxmox-confirm-view")).not.toContainText(
     "VLAN tag:"
   );
-  await page.locator("wizard-shell .header wa-button").click();
+  await page.locator("wizard-shell .header > wa-button").click();
   await configure
     .getByRole("button", { name: "Advanced", exact: true })
     .click();
@@ -120,7 +120,7 @@ test("retains the VLAN tag and sends it to VM creation", async ({ page }) => {
   await page.locator("proxmox-confirm-view").screenshot({
     path: test.info().outputPath(`vlan-confirmation-${width}.png`),
   });
-  await page.locator("wizard-shell .header wa-button").click();
+  await page.locator("wizard-shell .header > wa-button").click();
   await expect(tag).toHaveValue("42");
   await expect(configure.locator("wa-details")).toHaveAttribute("open");
   await expect(next).toBeEnabled();

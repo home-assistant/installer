@@ -15,7 +15,7 @@ test("catalog navigation preserves selection without a Lit mount-update warning"
     .click();
   await page.locator("device-selection-view device-card").first().click();
   await expect(page.locator("drive-selection-view")).toBeVisible();
-  await page.locator("wizard-shell .header wa-button").click();
+  await page.locator("wizard-shell .header > wa-button").click();
   await expect(page.locator("device-selection-view")).toBeVisible();
   // The board stays chosen once the catalog is in again
   await expect

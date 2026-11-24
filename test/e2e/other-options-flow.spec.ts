@@ -32,7 +32,7 @@ test.describe("Other Options View", () => {
     await flowScreenshot(page, "other-options", "other-options");
 
     // Click back button
-    const backButton = otherOptionsView.locator("wa-button");
+    const backButton = otherOptionsView.locator(".header > wa-button");
     await expect(backButton).toBeVisible();
     await backButton.click();
 

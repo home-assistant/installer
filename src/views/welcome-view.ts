@@ -14,37 +14,21 @@ import {
   OPEN_HOME_FOUNDATION_URL,
 } from "../utils/urls.js";
 import { fireEvent } from "../utils/fire-event.js";
-import {
-  chooseLanguage,
-  shippedLanguages,
-  shownLanguage,
-} from "../localization/initialize.js";
-import {
-  homeAssistantLogo,
-  mdiOpenInNew,
-  mdiTranslate,
-} from "../utils/icons.js";
+import { THEME_CHANGE, darkTheme } from "../utils/theme.js";
+import { homeAssistantLogo, mdiOpenInNew } from "../utils/icons.js";
 import {
   HomeAssistantScan,
   type FoundHomeAssistant,
 } from "../utils/home-assistant-scan.js";
 import { sectionLabelStyles } from "../utils/section-label-styles.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
-import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
-import "@home-assistant/webawesome/dist/components/select/select.js";
-import "@home-assistant/webawesome/dist/components/option/option.js";
 import "../components/ha-svg-icon.js";
+import "../components/accessibility-menu.js";
+import "../components/language-menu.js";
 import "../components/diagnostics-actions.js";
 import "../components/update-banner.js";
 import "../components/scroll-row.js";
 import { installerUpdate } from "../state/installer-update.js";
-
-// Each language in its own words, like Deutsch, capitalized as in a menu
-function languageName(tag: string): string {
-  const name =
-    new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag;
-  return name.charAt(0).toLocaleUpperCase(tag) + name.slice(1);
-}
 
 /** Where a URL opens, as a card names it: its host, with any port */
 function hostOf(url: string, address: string): string {
@@ -74,12 +58,16 @@ export class WelcomeView extends LitElement {
 
   private _unsubscribeUpdate?: () => void;
 
+  // The logos come as artwork for each theme
+  private readonly _onThemeChanged = () => this.requestUpdate();
+
   connectedCallback() {
     super.connectedCallback();
     this._updating = installerUpdate.applying;
     this._unsubscribeUpdate = installerUpdate.subscribe(() => {
       this._updating = installerUpdate.applying;
     });
+    window.addEventListener(THEME_CHANGE, this._onThemeChanged);
   }
 
   static styles = [
@@ -89,7 +77,8 @@ export class WelcomeView extends LitElement {
       /* The content centers in the space above the footer, and the footer
          sits at the bottom. A window too low for all of it scrolls, footer
          last. The footer is the page's own, so it stays out of the main
-         landmark. */
+         landmark. The header lines up with the next screens', so
+         Accessibility stays in its place. */
       :host {
         display: flex;
         flex-direction: column;
@@ -98,7 +87,7 @@ export class WelcomeView extends LitElement {
         height: 100%;
         min-height: 0;
         overflow-y: auto;
-        padding: 2rem var(--ha-page-gutter) 1rem;
+        padding: 1rem var(--ha-page-gutter);
         text-align: center;
       }
 
@@ -121,21 +110,8 @@ export class WelcomeView extends LitElement {
       /* At the end of the first line, where a page offers its languages */
       header {
         align-self: flex-end;
-      }
-
-      .language {
-        width: 12rem;
-        text-align: start;
-      }
-
-      /* The translate icon and the names say what it is */
-      .language::part(form-control-label) {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
+        display: flex;
+        gap: 0.25rem;
       }
 
       /* The logo, intro and Let's go center in the space above the footer.
@@ -189,7 +165,7 @@ export class WelcomeView extends LitElement {
         max-width: var(--ha-content-width);
         color: var(--ha-secondary-text-color);
         line-height: 1.6;
-        margin: 0 0 3rem;
+        margin: 0 0 2rem;
       }
 
       @keyframes appear {
@@ -377,31 +353,18 @@ export class WelcomeView extends LitElement {
         filter: none;
         opacity: 1;
       }
-
-      /* Both logos come as artwork for each theme */
-      .logo-dark,
-      .ohf-logo-dark {
-        display: none;
-      }
-
-      @media (prefers-color-scheme: dark) {
-        .logo-light,
-        .ohf-logo-light {
-          display: none;
-        }
-        .logo-dark,
-        .ohf-logo-dark {
-          display: block;
-        }
-      }
     `,
   ];
 
   // The logo's easter egg is hidden on purpose, so it needs no keyboard way in
   /* eslint-disable lit-a11y/click-events-have-key-events */
   render() {
+    const theme = darkTheme() ? "dark" : "light";
     return html`
-      ${this._renderLanguages()}
+      <header>
+        <language-menu></language-menu>
+        <accessibility-menu></accessibility-menu>
+      </header>
       <update-banner
         @update-banner-closed=${this._onUpdateBannerClosed}
       ></update-banner>
@@ -409,13 +372,8 @@ export class WelcomeView extends LitElement {
         <div class="start">
           <h1 class="logo-container" @click=${this._onLogoClick}>
             <img
-              class="logo logo-light"
-              src="/assets/home-assistant-logo-light.svg"
-              alt=${localize("views.welcome_view.home_assistant")}
-            />
-            <img
-              class="logo logo-dark"
-              src="/assets/home-assistant-logo-dark.svg"
+              class="logo"
+              src="/assets/home-assistant-logo-${theme}.svg"
               alt=${localize("views.welcome_view.home_assistant")}
             />
           </h1>
@@ -442,15 +400,10 @@ export class WelcomeView extends LitElement {
         ${renderExternalLink(
           OPEN_HOME_FOUNDATION_URL,
           html`<img
-              class="ohf-logo ohf-logo-light"
-              src="/assets/ohf-logo-light.svg"
-              alt=${localize("views.welcome_view.open_home_foundation")}
-            />
-            <img
-              class="ohf-logo ohf-logo-dark"
-              src="/assets/ohf-logo-dark.svg"
-              alt=${localize("views.welcome_view.open_home_foundation")}
-            />`,
+            class="ohf-logo"
+            src="/assets/ohf-logo-${theme}.svg"
+            alt=${localize("views.welcome_view.open_home_foundation")}
+          />`,
           { className: "ohf-link" }
         )}
         ${renderExternalLink(
@@ -527,34 +480,6 @@ export class WelcomeView extends LitElement {
     }
   }
 
-  // Hidden while English is the only language
-  private _renderLanguages() {
-    const languages = shippedLanguages();
-    if (languages.length < 2) return nothing;
-    return html`<header>
-      <wa-select
-        class="language"
-        size="s"
-        label=${localize("views.welcome_view.language")}
-        .value=${shownLanguage()}
-        @change=${this._onLanguageChange}
-      >
-        <ha-svg-icon slot="start" .path=${mdiTranslate}></ha-svg-icon>
-        ${languages
-          .map((tag) => ({ tag, name: languageName(tag) }))
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map(
-            ({ tag, name }) =>
-              html`<wa-option value=${tag} lang=${tag}>${name}</wa-option>`
-          )}
-      </wa-select>
-    </header>`;
-  }
-
-  private _onLanguageChange(event: Event) {
-    void chooseLanguage((event.target as WaSelect).value as string);
-  }
-
   // Continue after the banner, from the heading below it
   private _onUpdateBannerClosed() {
     this._accessibility.restoreFocus(this._heading);
@@ -602,6 +527,7 @@ export class WelcomeView extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    window.removeEventListener(THEME_CHANGE, this._onThemeChanged);
     this._unsubscribeUpdate?.();
     if (this._clickResetTimer) {
       clearTimeout(this._clickResetTimer);
