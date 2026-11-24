@@ -165,7 +165,7 @@ export class WelcomeView extends LitElement {
         max-width: var(--ha-content-width);
         color: var(--ha-secondary-text-color);
         line-height: 1.6;
-        margin: 0 0 3rem;
+        margin: 0 0 2rem;
       }
 
       @keyframes appear {
