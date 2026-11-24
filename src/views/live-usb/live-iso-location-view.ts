@@ -203,7 +203,7 @@ export class LiveIsoLocationView extends LitElement {
   private async _fillName() {
     let name = FALLBACK_NAME;
     try {
-      const release = await getHaosRelease(undefined, "generic-x86-64");
+      const release = await getHaosRelease("generic-x86-64");
       name = `hai-live-haos-${release.version}.iso`;
     } catch {
       // Offline: the cached files may still work, so keep a generic name.

@@ -83,7 +83,11 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let archive = directory.path().join("haos.img.xz");
         let extracted = directory.path().join("haos.img");
-        let image = &BackendMock.get_haos_release("latest").await.unwrap().images[0];
+        let image = &BackendMock
+            .get_latest_haos_release_for_board("generic-x86-64")
+            .await
+            .unwrap()
+            .images[0];
         for verify in [true, false] {
             let progress = Recorder::default();
             BackendMock

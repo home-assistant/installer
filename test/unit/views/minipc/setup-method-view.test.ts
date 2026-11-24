@@ -87,7 +87,7 @@ describe("minipc-setup-method-view", () => {
     const { selections } = wizardState.getState();
     expect(selections.device).to.be.undefined;
     expect(selections.deviceConfig?.minimum_storage_bytes).to.equal(
-      2_000_000_000
+      4_000_000_000
     );
   });
 

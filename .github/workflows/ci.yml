@@ -562,11 +562,9 @@ jobs:
 
       # This checks only public release metadata, never downloads an image.
       # Run after coverage upload so network/rate-limit failures cannot suppress coverage.
-      - name: Check bundled boards against stable HAOS release assets
+      - name: Check bundled boards against the stable full images
         if: runner.os == 'Linux'
         run: cargo test -p hai-core manifest::tests::bundled_boards_have_stable_release_assets -- --ignored --exact
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
 
   # The community translates en.json in Lokalise. Runs on main upload it and
   # hand the build jobs every translation that fits it, so translators only
