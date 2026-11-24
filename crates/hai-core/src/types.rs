@@ -584,6 +584,10 @@ pub struct HaAnnouncement {
     /// Whether it is the page Home Assistant OS shows while it installs
     /// Home Assistant, rather than Home Assistant itself.
     pub landing_page: bool,
+    /// Whether it is Home Assistant itself and answers that its onboarding is
+    /// unfinished, as on a device started from a full image, which runs
+    /// Home Assistant without showing a landing page first.
+    pub needs_onboarding: bool,
 }
 
 #[cfg(test)]

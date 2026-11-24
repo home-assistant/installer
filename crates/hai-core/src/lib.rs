@@ -69,10 +69,7 @@ pub trait ReleaseSource {
     /// Fetch the device manifest (list of supported boards).
     async fn get_device_manifest(&self) -> Result<DeviceManifest>;
 
-    /// Fetch a HAOS release by version, or the latest when `version == "latest"`.
-    async fn get_haos_release(&self, version: &str) -> Result<HaosRelease>;
-
-    /// Fetch the release stable.json currently lists for `board`.
+    /// Fetch the full images of the release stable.json currently lists for `board`.
     async fn get_latest_haos_release_for_board(&self, board: &str) -> Result<HaosRelease>;
 
     /// Download an image to `dest_path`, verifying its trusted compressed-asset digest.

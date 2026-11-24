@@ -134,10 +134,6 @@ test("Enter in the ISO location checks it, and goes on once it can be used", asy
   await start(page, "Mini PC or other computer");
   await page
     .locator("minipc-setup-method-view option-card")
-    .filter({ hasText: "I need to boot from USB" })
-    .click();
-  await page
-    .locator("minipc-media-view option-card")
     .filter({ hasText: "ISO file" })
     .click();
   const location = page.locator("live-iso-location-view");

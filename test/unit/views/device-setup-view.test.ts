@@ -56,6 +56,7 @@ describe("device-setup-view", () => {
                   address: "192.0.2.60",
                   url: "http://192.0.2.60/",
                   landing_page: true,
+                  needs_onboarding: false,
                 },
               ];
         case "check_ha_ready":
