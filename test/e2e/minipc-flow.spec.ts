@@ -1,5 +1,12 @@
 import { type Page } from "@playwright/test";
-import { flowScreenshot, skipWifiStep, test, expect } from "./fixtures.js";
+import {
+  flowScreenshot,
+  MOCK_DELAY_SCALE,
+  setMockDelayScale,
+  skipWifiStep,
+  test,
+  expect,
+} from "./fixtures.js";
 
 // Mini PC flow order: method → architecture → drive → confirm → flash → success
 
@@ -47,9 +54,11 @@ test("Mini PC Flow - installs to a connected drive through to the done step", as
   await nextButton(page).click();
   await expect(page.locator("confirm-dialog")).toHaveAttribute("open");
   await shot("erase-dialog");
+  await setMockDelayScale(page, 1);
   await page.locator('confirm-dialog wa-button[variant="danger"]').click();
   await expect(page.locator("progress-view")).toBeVisible();
   await shot("progress");
+  await setMockDelayScale(page, MOCK_DELAY_SCALE);
 
   await expect(page.locator("success-view")).toBeVisible({ timeout: 45000 });
   await shot("success");

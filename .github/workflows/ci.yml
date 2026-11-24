@@ -443,8 +443,8 @@ jobs:
         run: npm run test:e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/3
 
       # The flow tests save a screenshot of each step they take, under the
-      # browser and the flow; a release run zips those of every shard and
-      # both browsers onto the release. A shard with no flow tests has none.
+      # browser and the flow; merge-flow-screenshots folds those of every
+      # shard into one artifact. A shard with no flow tests has none.
       - name: Upload flow screenshots
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -459,6 +459,25 @@ jobs:
         with:
           name: playwright-report-${{ matrix.browser }}-${{ matrix.shard }}
           path: playwright-report/
+          retention-days: 7
+
+  # One artifact with the screenshots of every flow in both browsers, instead
+  # of one per shard. Each shard's holds <browser>/<flow>/<step>.png, so
+  # together they make one tree; the shards' own artifacts are deleted. It
+  # also runs when a shard failed, to show how far the others got.
+  merge-flow-screenshots:
+    name: Merge flow screenshots
+    needs: test-e2e
+    if: ${{ !cancelled() && github.event_name != 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Merge flow screenshots
+        uses: actions/upload-artifact/merge@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flow-screenshots
+          pattern: flow-screenshots-*
+          delete-merged: true
           retention-days: 7
 
   test-backend:
@@ -1049,6 +1068,7 @@ jobs:
       - lint-backend
       - test-frontend
       - test-e2e
+      - merge-flow-screenshots
       - test-backend
       - translations
       - build
@@ -1079,14 +1099,11 @@ jobs:
           pattern: Home Assistant Installer*
           merge-multiple: true
 
-      # Each shard's artifact holds <browser>/<flow>/<step>.png, so together
-      # they make one tree.
       - name: Download flow screenshots
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: ${{ runner.temp }}/flow-screenshots
-          pattern: flow-screenshots-*
-          merge-multiple: true
+          name: flow-screenshots
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

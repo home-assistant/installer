@@ -1,5 +1,11 @@
 import { type Page } from "@playwright/test";
-import { flowScreenshot, test, expect, setMockDelayScale } from "./fixtures.js";
+import {
+  flowScreenshot,
+  MOCK_DELAY_SCALE,
+  setMockDelayScale,
+  test,
+  expect,
+} from "./fixtures.js";
 
 async function openMediaChoice(page: Page) {
   await page.goto("/");
@@ -31,7 +37,7 @@ async function finishDeviceSteps(
 test("writes a bootable USB stick", async ({ page }) => {
   const shot = (step: string) => flowScreenshot(page, "minipc-usb-stick", step);
   await openMediaChoice(page);
-  await shot("media");
+  await shot("method");
   await page
     .locator("minipc-setup-method-view")
     .locator("option-card")
@@ -55,9 +61,11 @@ test("writes a bootable USB stick", async ({ page }) => {
   });
   await expect(erase).toBeVisible();
   await shot("erase-dialog");
+  await setMockDelayScale(page, 1);
   await erase.click();
   await expect(page.locator("live-usb-progress-view")).toBeVisible();
   await shot("progress");
+  await setMockDelayScale(page, MOCK_DELAY_SCALE);
 
   await expect(page.locator("live-usb-success-view")).toContainText(
     "Your USB stick is ready",
@@ -99,10 +107,12 @@ test("saves an ISO file without the erase confirmation", async ({ page }) => {
     "my-stick.iso"
   );
   await shot("summary");
+  await setMockDelayScale(page, 1);
   await next(page, "Create");
   await expect(page.locator("confirm-dialog")).not.toHaveAttribute("open");
   await expect(page.locator("live-usb-progress-view")).toBeVisible();
   await shot("progress");
+  await setMockDelayScale(page, MOCK_DELAY_SCALE);
 
   const success = page.locator("live-usb-success-view");
   await expect(success).toContainText("Your ISO file is saved", {
