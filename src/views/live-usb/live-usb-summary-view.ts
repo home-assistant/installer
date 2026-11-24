@@ -58,7 +58,7 @@ export class LiveUsbSummaryView extends LitElement {
 
   private async _loadVersion() {
     try {
-      const release = await getHaosRelease(undefined, "generic-x86-64");
+      const release = await getHaosRelease("generic-x86-64");
       if (this.isConnected) this._version = release.version;
     } catch {
       if (this.isConnected) this._versionUnknown = true;

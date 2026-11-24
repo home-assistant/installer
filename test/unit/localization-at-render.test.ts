@@ -3,7 +3,6 @@ import messages from "../../src/localization/en.json";
 import { setLanguage } from "../../src/localization/localize.js";
 import {
   MINIPC_STEPS,
-  minipcDirectSteps,
   wizardState,
   type WizardFlow,
   type WizardStep,
@@ -72,7 +71,6 @@ describe("labels localized when shown", () => {
       MINIPC_STEPS.direct,
       MINIPC_STEPS.usb,
       MINIPC_STEPS.iso,
-      minipcDirectSteps({}),
     ]) {
       expect(steps.length).to.be.greaterThan(0);
       for (const title of titles(steps)) {

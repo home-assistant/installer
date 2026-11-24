@@ -194,6 +194,7 @@ describe("welcome-view", () => {
             address: "192.0.2.20:8123",
             url: "http://192.0.2.20:8123/",
             landing_page: false,
+            needs_onboarding: false,
           },
           {
             id: "cabin",
@@ -202,6 +203,7 @@ describe("welcome-view", () => {
             // Its internal_url, by name and over HTTPS
             url: "https://cabin.example:8123/",
             landing_page: false,
+            needs_onboarding: false,
           },
           {
             id: "new",
@@ -209,6 +211,7 @@ describe("welcome-view", () => {
             address: "192.0.2.50",
             url: "http://192.0.2.50/",
             landing_page: true,
+            needs_onboarding: false,
           },
         ],
         { "192.0.2.20:8123": true, "192.0.2.30:8123": false }
@@ -255,6 +258,7 @@ describe("welcome-view", () => {
           address: `192.0.2.${index + 1}:8123`,
           url: `http://192.0.2.${index + 1}:8123/`,
           landing_page: false,
+          needs_onboarding: false,
         })),
         {}
       );
@@ -287,6 +291,7 @@ describe("welcome-view", () => {
         address,
         url: `http://${address}/`,
         landing_page: false,
+        needs_onboarding: false,
       });
       try {
         const found = [homeAssistant("Home", "192.0.2.20:8123")];
@@ -316,6 +321,7 @@ describe("welcome-view", () => {
           address: "192.0.2.20:8123",
           url: "https://homeassistantwithalonghostname.example:8123/",
           landing_page: false,
+          needs_onboarding: false,
         },
       ]);
       await waitUntil(() => instances(el).length === 1);
@@ -341,6 +347,7 @@ describe("welcome-view", () => {
             address: "192.0.2.20:8123",
             url: "http://192.0.2.20:8123/",
             landing_page: false,
+            needs_onboarding: false,
           },
         ]);
         await waitUntil(() => instances(el).length === 1);

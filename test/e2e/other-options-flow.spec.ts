@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures.js";
+import { flowScreenshot, test, expect } from "./fixtures.js";
 
 test.describe("Other Options View", () => {
   test.beforeEach(async ({ page }) => {
@@ -24,10 +24,12 @@ test.describe("Other Options View", () => {
   });
 
   test("has back button that returns to path selection", async ({ page }) => {
+    await flowScreenshot(page, "other-options", "path-selection");
     await page.locator('option-card[heading="Other options"]').click();
 
     const otherOptionsView = page.locator("other-options-view");
     await expect(otherOptionsView).toBeVisible();
+    await flowScreenshot(page, "other-options", "other-options");
 
     // Click back button
     const backButton = otherOptionsView.locator("wa-button");
