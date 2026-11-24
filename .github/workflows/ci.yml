@@ -463,8 +463,10 @@ jobs:
 
   # One artifact with the screenshots of every flow in both browsers, instead
   # of one per shard. Each shard's holds <browser>/<flow>/<step>.png, so
-  # together they make one tree; the shards' own artifacts are deleted. It
-  # also runs when a shard failed, to show how far the others got.
+  # together they make one tree. It also runs when a shard failed, to show how
+  # far the others got. The shards' own artifacts stay: "Re-run failed jobs"
+  # only runs the failed shard again, and this merge then needs the others'
+  # too, and replaces the one it made the first time.
   merge-flow-screenshots:
     name: Merge flow screenshots
     needs: test-e2e
@@ -477,7 +479,7 @@ jobs:
         with:
           name: flow-screenshots
           pattern: flow-screenshots-*
-          delete-merged: true
+          overwrite: true
           retention-days: 7
 
   test-backend:
