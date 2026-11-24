@@ -1,0 +1,25 @@
+savePrefix: ""
+autoInstallPeers: false
+
+# Supply-chain protection
+minimumReleaseAge: 4320 # 3 days, in minutes
+minimumReleaseAgeExclude:
+  # Our own packages, published from our own CI. Keep in sync with renovate.json
+  - "@home-assistant/*"
+trustPolicy: no-downgrade
+trustPolicyExclude:
+  # Published by Google's chrome-devtools-npm without provenance, after
+  # 17.0.2 was published from GitHub Actions with it. Pinned by Puppeteer,
+  # which the unit tests run Chrome with
+  - chromium-bidi@157.0.8090-0
+
+# Dependency build scripts are denied unless listed here with true
+allowBuilds:
+  # Checks its own binary, which comes from its platform package anyway
+  esbuild: false
+  # Ships its binary prebuilt; the script only rebuilds it
+  fsevents: false
+
+overrides:
+  glob: ^14.0.2
+  minimatch: ^11.0.1

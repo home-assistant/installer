@@ -8,7 +8,8 @@ and instructions for contributing.
 ### Prerequisites
 
 - Rust (via rustup)
-- Node.js 24+
+- Node.js, the version in `.nvmrc`
+- pnpm, the version in `packageManager` in `package.json`
 - Platform-specific Tauri dependencies
 
 ### Setup
@@ -19,26 +20,26 @@ git clone https://github.com/home-assistant/installer.git
 cd installer
 
 # Install dependencies
-npm install
+pnpm install
 
 # Start development server
-npm run tauri dev
+pnpm tauri dev
 ```
 
 ### Running Tests
 
 ```bash
 # Type-check source and tests
-npm run typecheck
+pnpm run typecheck
 
 # All tests
-npm test
+pnpm test
 
 # Unit tests only
-npm run test:unit
+pnpm run test:unit
 
 # E2E tests
-npm run test:e2e
+pnpm run test:e2e
 
 # Rust tests
 cargo test --workspace
@@ -54,7 +55,7 @@ preview MSI to NSIS is not promised.
 ### Shared Wire Types
 
 `src/api/types.ts` is generated from the Rust types in `hai-core`. After changing
-an IPC request, response, or progress type, run `npm run generate:types` and commit
+an IPC request, response, or progress type, run `pnpm run generate:types` and commit
 the output. Register new shared types in `types/bindings.rs`. The generator runs
 only in tests and preserves serde names and nullable `Option` fields. JSON integer
 fields remain TypeScript `number`, matching Tauri's existing wire representation
@@ -73,14 +74,14 @@ with Lokalise's JSON/ICU format; no translation service configuration is
 required to develop locally. A translation is another catalog in the same
 folder, named after its language tag (`de.json`, `pt-BR.json`); adding the
 file ships it. Keys it leaves out or empty show the English, and so does a
-message that fails to format. `npm run localization:check` rejects keys that
+message that fails to format. `pnpm run localization:check` rejects keys that
 `en.json` lacks and placeholders that differ from the English.
 
 Use `localize` for text and attributes, and `localizeContent` for sentences
 containing code-owned Lit placeholders (for example, a link or emphasized
 drive name). Catalog values must never contain HTML. Keep whole sentences
 together and use ICU plurals instead of assembling English suffixes. Keys
-are type-checked; `npm run localization:check` checks every call's placeholder
+are type-checked; `pnpm run localization:check` checks every call's placeholder
 names, catalog syntax, and unused entries in CI. Call them where the text is
 shown, in `render()` or a function it calls, never while a module loads: that
 text would not follow the language, and the check rejects such a call.
@@ -101,12 +102,12 @@ that path is a translator's main hint where a string appears. A string shared
 by several screens goes under `common.*`, grouped by where it appears, like
 `common.install.*` for the progress of every flow or `common.vm.*` for UTM and
 Proxmox. Only `backend.*` falls outside both, for the messages the Rust code
-sends. `npm run localization:check` enforces both the namespace and the
+sends. `pnpm run localization:check` enforces both the namespace and the
 placeholder names. No keys have been published to a translation service yet.
 
 Startup reads the OS locale through Tauri's locale-only command permission before
 loading component modules. A language tag in `HAI_LANGUAGE` takes its place, so
-`HAI_LANGUAGE=de npm run tauri dev` shows a translation without changing the OS.
+`HAI_LANGUAGE=de pnpm tauri dev` shows a translation without changing the OS.
 Browser development uses `navigator.languages`.
 The first preference with a catalog wins, matching its exact tag, then its
 script (`zh-TW` loads `zh-Hant.json`), then its base language (`de-AT` loads
@@ -162,12 +163,12 @@ with a character the font lacks.
 
 ### Casita
 
-Casita is drawn and animated in code, from `src/casita/`. To see every mood and try the hop and the celebration, run `npm run dev` and open `/dev/casita.html`.
+Casita is drawn and animated in code, from `src/casita/`. To see every mood and try the hop and the celebration, run `pnpm run dev` and open `/dev/casita.html`.
 
 ### Code Style
 
 - **Rust**: Follow `rustfmt` defaults, run `cargo fmt` before committing
-- **TypeScript**: Follow ESLint config, run `npm run lint` before committing
+- **TypeScript**: Follow ESLint config, run `pnpm run lint` before committing
 - **Commits**: Say what changes, as described below
 
 ### Commit Message Format

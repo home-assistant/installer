@@ -1,5 +1,5 @@
 // Generated from hai-core Rust wire types by ts-rs. Do not edit.
-// Regenerate with npm run generate:types.
+// Regenerate with pnpm run generate:types.
 
 export type BlockDevice = {
 /**

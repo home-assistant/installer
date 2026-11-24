@@ -4,7 +4,7 @@
     {
       "label": "dev-server",
       "type": "shell",
-      "command": "npm run dev",
+      "command": "pnpm run dev",
       "isBackground": true,
       "problemMatcher": {
         "owner": "vite",
@@ -22,7 +22,7 @@
     {
       "label": "build",
       "type": "shell",
-      "command": "npm run tauri build",
+      "command": "pnpm tauri build",
       "group": {
         "kind": "build",
         "isDefault": true
@@ -32,7 +32,7 @@
     {
       "label": "lint",
       "type": "shell",
-      "command": "npm run lint && cargo clippy --workspace",
+      "command": "pnpm run lint && cargo clippy --workspace",
       "problemMatcher": ["$eslint-stylish", "$rustc"]
     }
   ]

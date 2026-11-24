@@ -4,12 +4,12 @@
   "identifier": "io.home-assistant.installer",
   "build": {
     "beforeDevCommand": {
-      "script": "npm run dev",
+      "script": "pnpm run dev",
       "cwd": "../.."
     },
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": {
-      "script": "npm run build",
+      "script": "pnpm run build",
       "cwd": "../.."
     },
     "frontendDist": "../../dist"

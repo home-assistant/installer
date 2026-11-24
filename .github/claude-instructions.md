@@ -27,12 +27,12 @@ It helps users install Home Assistant OS on various hardware platforms.
 ## When Making Changes
 1. Check if similar patterns exist in codebase
 2. Ensure Rust code passes `cargo clippy`
-3. Ensure TypeScript passes `npm run lint`
+3. Ensure TypeScript passes `pnpm run lint`
 4. Add tests for new functionality
 5. Update relevant documentation
 
 ## Important Notes
-- Mock backend available for testing: `npm run tauri dev -- --features mock`
+- Mock backend available for testing: `pnpm tauri dev --features mock`
 - Manifest data comes from version.home-assistant.io
 - The installer updates itself from its GitHub releases (`crates/hai-desktop/src/updates.rs`); builds that aren't releases report `0.0.0` and never check
 - Release installers come with GitHub build provenance attestations; GitHub records each asset's SHA-256

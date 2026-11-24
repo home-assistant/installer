@@ -42,7 +42,7 @@ env:
 
 jobs:
   audit-frontend:
-    name: Audit npm dependencies
+    name: Audit frontend dependencies
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -51,36 +51,19 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      # Reads the lockfile only, so nothing needs installing
+      - name: Setup pnpm and Node
+        uses: ./.github/actions/setup
         with:
-          node-version: "26"
+          install: false
 
-      # npm audit can't skip an advisory, so this reads its report and fails
-      # on every advisory that isn't accepted below. Only accept one that has
-      # no fixed release yet, and say here why it can't hurt us. Separate the
-      # IDs with spaces.
-      #
-      # GHSA-gcqx-w48m-w2h4 (deepmerge): only the test runner's dev server
-      # uses it, to merge its defaults with our own test config. No fix coming soon as maintainer declined it
-      - name: Audit npm dependencies
-        env:
-          ACCEPTED_ADVISORIES: "GHSA-gcqx-w48m-w2h4"
-        run: |
-          npm audit --package-lock-only --json > "$RUNNER_TEMP/audit.json" || true
-          jq -nr --arg accepted "$ACCEPTED_ADVISORIES" '
-            ($accepted | split(" ")) as $accepted
-            | (try input catch error("npm audit wrote no readable report"))
-            | (.vulnerabilities // error("npm audit gave no report: \(.message // .error.summary // .)"))
-            | [.[].via[] | objects | .id = (.url | ltrimstr("https://github.com/advisories/"))]
-            | unique_by(.id)
-            | (.[] | select(.id | IN($accepted[]) | not) | "::error::\(.title) (\(.url))"),
-              (($accepted - map(.id))[] | "::warning::\(.) is no longer reported, so it can come off ACCEPTED_ADVISORIES")
-          ' "$RUNNER_TEMP/audit.json" > "$RUNNER_TEMP/audit.txt"
-          cat "$RUNNER_TEMP/audit.txt"
-          if grep -q '^::error::' "$RUNNER_TEMP/audit.txt"; then
-            exit 1
-          fi
+      # Only accept an advisory that has no fixed release yet, with an
+      # `--ignore <GHSA ID>` here and a comment on why it can't hurt us
+      - name: Audit frontend dependencies
+        run: pnpm audit
+
+      - name: Check for duplicate dependencies
+        run: pnpm dedupe --check
 
   audit-backend:
     name: Audit Rust dependencies
@@ -207,41 +190,37 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Setup Node and install
+        uses: ./.github/actions/setup
         with:
-          node-version: "26"
-          cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
-
-      - name: Install dependencies
-        run: npm ci
+          cache: ${{ github.event_name != 'workflow_dispatch' }}
 
       - name: Type-check source and tests
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Run ESLint
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Check Lit templates
-        run: npm run lint:lit
+        run: pnpm run lint:lit
 
       - name: Check localization catalog and placeholders
         run: |
-          npm run localization:check
-          npm run test:localization
+          pnpm run localization:check
+          pnpm run test:localization
 
       - name: Test the release scripts
-        run: npm run test:release
+        run: pnpm run test:release
 
       - name: Check formatting
-        run: npm run format:check
+        run: pnpm run format:check
 
       # The browser mock reports a successful flash without writing anything,
       # so it may only exist in development builds. The unit and E2E tests
       # all run in development mode and can't see this; check the real build.
       - name: Check the production build has no browser mock
         run: |
-          npm run build
+          pnpm run build
           if grep -l -E 'isTauri. ?in window|mock-ticket|hai:mock-failure' dist/assets/*.js; then
             echo "::error::The production bundle contains the browser mock"
             exit 1
@@ -348,17 +327,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Setup Node and install
+        uses: ./.github/actions/setup
         with:
-          node-version: "26"
-          cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
-
-      - name: Install dependencies
-        run: npm ci
+          cache: ${{ github.event_name != 'workflow_dispatch' }}
 
       - name: Run unit tests with coverage
-        run: npm run test:unit -- --coverage
+        run: pnpm run test:unit --coverage
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
@@ -384,14 +359,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Setup Node and install
+        uses: ./.github/actions/setup
         with:
-          node-version: "26"
-          cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
-
-      - name: Install dependencies
-        run: npm ci
+          cache: ${{ github.event_name != 'workflow_dispatch' }}
 
       # Playwright downloads browser builds and system packages for the
       # runner's Ubuntu release, so the caches are kept per release.
@@ -428,7 +399,7 @@ jobs:
         run: |
           sudo install -d -o _apt /tmp/apt-archives/partial
           echo 'Dir::Cache::Archives "/tmp/apt-archives";' | sudo tee /etc/apt/apt.conf.d/90-ci-archives > /dev/null
-          npx playwright install --with-deps ${{ matrix.browser }}
+          pnpm exec playwright install --with-deps ${{ matrix.browser }}
           sudo apt-get autoclean
           echo "key=$APT_CACHE_KEY$(printf '%s\n' /tmp/apt-archives/*.deb | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
 
@@ -440,7 +411,7 @@ jobs:
           key: ${{ steps.apt.outputs.key }}
 
       - name: Run E2E tests
-        run: npm run test:e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/3
+        run: pnpm run test:e2e --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/3
 
       - name: Upload Playwright report
         if: failure()
@@ -563,7 +534,7 @@ jobs:
     env:
       LOKALISE: lokalise/lokalise-cli-2:v3.1.7@sha256:bbba240819aa93cf3926f1c1c88411de2c1c2fb92aad3ef45911453a6d1d9972
       LOKALISE_PROJECT_ID: ${{ vars.LOKALISE_PROJECT_ID }}
-    # Only the two Lokalise steps get the token, and they run before npm
+    # Only the two Lokalise steps get the token, and they run before pnpm
     # installs anything, like the Apple credentials in the build job.
     steps:
       # Only whether the token is set reaches this step, not the token
@@ -626,17 +597,13 @@ jobs:
             --bundle-structure "%LANG_ISO%.json" --filter-data nonfuzzy \
             --export-empty-as skip --replace-breaks=false --unzip-to /out
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Setup Node and install
+        uses: ./.github/actions/setup
         with:
-          node-version: "26"
-          cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
+          cache: ${{ github.event_name != 'workflow_dispatch' }}
 
       - name: Import the catalogs
         run: node scripts/import-translations.mjs "$RUNNER_TEMP/lokalise"
-
-      - name: Install dependencies
-        run: npm ci
 
       # Drops a message that doesn't fit the English, like a key a run of an
       # older commit finds in Lokalise, with a warning on the run. A language
@@ -645,7 +612,7 @@ jobs:
       - name: Check the translations
         env:
           LOCALIZATION_PRUNE: "1"
-        run: npm run localization:check
+        run: pnpm run localization:check
 
       - name: Name the catalogs left after the check
         run: node scripts/import-translations.mjs --regions
@@ -701,11 +668,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Setup Node and install
+        uses: ./.github/actions/setup
         with:
-          node-version: "26"
-          cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
+          cache: ${{ github.event_name != 'workflow_dispatch' }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
@@ -775,9 +741,6 @@ jobs:
           path: /tmp/apt-archives/*.deb
           key: ${{ steps.apt.outputs.key }}
 
-      - name: Install dependencies
-        run: npm ci
-
       - name: Download translations
         if: needs.translations.result == 'success'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -793,11 +756,11 @@ jobs:
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
 
       # Compiling and bundling are separate steps so that the Apple credentials
-      # below are only ever in the environment of the bundler, never of npm or
+      # below are only ever in the environment of the bundler, never of pnpm or
       # cargo build scripts.
       - name: Build
         shell: bash
-        run: npm run tauri build -- --target "$BUILD_TARGET" --config "$LIVE_USB_CONFIG" --no-bundle
+        run: pnpm tauri build --target "$BUILD_TARGET" --config "$LIVE_USB_CONFIG" --no-bundle
 
       - name: Verify universal macOS binary
         if: runner.os == 'macOS'
@@ -853,7 +816,7 @@ jobs:
           if [[ "$RUNNER_OS" == macOS ]]; then
             args+=(--config '{"bundle":{"macOS":{"signingIdentity":"-"}}}')
           fi
-          npm run tauri bundle -- "${args[@]}"
+          pnpm tauri bundle "${args[@]}"
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ github.event_name == 'workflow_dispatch' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
@@ -901,7 +864,7 @@ jobs:
           if [[ "$SIGN_UPDATES" == true ]]; then
             args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
           fi
-          npm run tauri bundle -- "${args[@]}"
+          pnpm tauri bundle "${args[@]}"
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ github.event_name == 'workflow_dispatch' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}

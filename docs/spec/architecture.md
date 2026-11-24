@@ -239,9 +239,9 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, CommandError> {
   "productName": "Home Assistant Installer",
   "identifier": "io.home-assistant.installer",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "pnpm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -284,16 +284,16 @@ pub async fn list_block_devices() -> Result<Vec<BlockDevice>, CommandError> {
 
 ```bash
 # Create Tauri app
-npm create tauri-app@latest hai -- --template vanilla-ts
+pnpm create tauri-app hai --template vanilla-ts
 
 cd hai
 
 # Add Lit and Web Awesome
-npm install lit
-npm install qrcode
+pnpm add lit
+pnpm add qrcode
 
 # Start development
-npm run tauri dev
+pnpm tauri dev
 ```
 
 ## Web Awesome Integration

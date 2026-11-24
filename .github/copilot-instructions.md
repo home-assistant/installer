@@ -30,7 +30,7 @@ This is a Tauri desktop application for installing Home Assistant OS.
 - All Tauri commands need unit tests
 - All components need basic render tests
 - User flows need Playwright E2E tests
-- Use the mock backend (`npm run tauri dev -- --features mock`) for testing without hardware
+- Use the mock backend (`pnpm tauri dev --features mock`) for testing without hardware
 
 ## Common Tasks
 - Add new device: Update manifest schema and device selector component
