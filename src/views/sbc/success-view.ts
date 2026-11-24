@@ -15,6 +15,7 @@ import {
 } from "../../utils/urls.js";
 import { DeviceSurvey } from "../../utils/device-discovery.js";
 import { selectedWifi } from "../../utils/wifi.js";
+import { ejectStep } from "../../utils/drive-selection.js";
 
 import "../../components/install-success.js";
 
@@ -75,7 +76,7 @@ export class SuccessView extends LitElement {
         .formatWarning=${true}
         .companion=${false}
         .steps=${[
-          localize("common.success.step_eject"),
+          ...ejectStep(selections),
           isMiniPc
             ? localize("views.sbc.success_view.step_minipc_install_drive")
             : supportsDirectUsb
@@ -104,9 +105,6 @@ export class SuccessView extends LitElement {
                 network: wifi.ssid,
               })
             : localize("common.success.step_connect_ethernet_and_power"),
-          wifi
-            ? localize("common.success.step_next_wifi")
-            : localize("common.success.step_next"),
         ]}
         .footer=${renderExternalLink(
           guide,

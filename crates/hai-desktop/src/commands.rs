@@ -10,7 +10,6 @@ use crate::diagnostics::Operation;
 use crate::flash_state::FlashState;
 use crate::install_jobs::InstallJobs;
 use hai_core::disk::Image;
-use hai_core::download::TemporaryImage;
 use hai_core::keep_awake::KeepAwake;
 use hai_core::{
     BlockDevice, DeviceBackend, DeviceManifest, ExpectedDevice, FlashProgress, FlashRequest,
@@ -23,20 +22,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::ipc::Channel;
 
+/// The images `download_utm_image` handed out, so a VM is only ever created
+/// from one of them, never from a path the frontend passes in.
 #[derive(Default)]
-pub struct PendingUtmImages(std::sync::Mutex<std::collections::HashMap<String, TemporaryImage>>);
+pub struct PendingUtmImages(std::sync::Mutex<std::collections::HashSet<String>>);
 
 impl PendingUtmImages {
-    fn insert(&self, image_path: String, image: TemporaryImage) {
-        self.lock().insert(image_path, image);
+    fn insert(&self, image_path: String) {
+        self.lock().insert(image_path);
     }
 
-    fn take(&self, image_path: &str) -> Option<TemporaryImage> {
+    fn take(&self, image_path: &str) -> bool {
         self.lock().remove(image_path)
     }
 
-    /// A single insert or remove can't leave the map half-changed after a panic.
-    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, TemporaryImage>> {
+    /// A single insert or remove can't leave the set half-changed after a panic.
+    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashSet<String>> {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
@@ -136,10 +137,14 @@ async fn list_drives(backend: &impl DeviceBackend) -> Result<Vec<BlockDevice>, C
 }
 
 /// Restarts the app as administrator, which the drive step offers when
-/// listing refused. The flow starts again in the new window.
+/// listing refused. The flow opens again at `resume`, as the frontend
+/// encoded it, or on the welcome screen without it.
 #[tauri::command]
-pub fn relaunch_as_admin(app: tauri::AppHandle) -> Result<(), CommandError> {
-    crate::elevation::relaunch_as_admin()?;
+pub fn relaunch_as_admin(
+    app: tauri::AppHandle,
+    resume: Option<String>,
+) -> Result<(), CommandError> {
+    crate::elevation::relaunch_as_admin(resume.as_deref())?;
     app.exit(0);
     Ok(())
 }
@@ -288,13 +293,8 @@ where
             // ship a qcow2 under the same board name, which must never be
             // written to a drive.
             release
-                .image_for(&request.board, ImageFormat::Raw)
-                .cloned()
-                .ok_or_else(|| {
-                    hai_core::Error::InvalidConfig(
-                        "No compatible image was found for this device.".into(),
-                    )
-                })?
+                .require_image(&request.board, ImageFormat::Raw)?
+                .clone()
         }
     };
 
@@ -306,23 +306,7 @@ where
         message: "Starting download...".to_string(),
     });
 
-    // Get cache directory and download
-    let cache_dir = backend.cache_dir().map_err(CommandError::from)?;
-    let temporary_image =
-        TemporaryImage::new(&cache_dir, ImageFormat::Raw).map_err(CommandError::from)?;
-    let compressed_path = temporary_image.archive_path();
-
-    backend
-        .download_image(&image, &compressed_path, callback)
-        .await
-        .map_err(CommandError::from)?;
-
-    // Extract the image
-    let extracted_path = temporary_image.path();
-
-    check_cancelled(callback)?;
-    backend
-        .extract_temporary_image(&temporary_image, callback)
+    let extracted_path = hai_core::download::fetch_image(backend, &image, callback)
         .await
         .map_err(CommandError::from)?;
 
@@ -330,7 +314,10 @@ where
     if let Some(wifi) = request.wifi.clone() {
         image = tokio::task::spawn_blocking(move || hai_core::haos_config::with_wifi(image, &wifi))
             .await
-            .map_err(|e| hai_core::Error::Io(std::io::Error::other(e)))??;
+            // A panic's message may hold the Wi-Fi password, and the log keeps causes
+            .map_err(|_| {
+                hai_core::Error::Io(std::io::Error::other("Wi-Fi setup stopped unexpectedly"))
+            })??;
     }
 
     // Check image size vs device size
@@ -354,7 +341,7 @@ where
     check_cancelled(callback)?;
 
     // Write to device
-    backend
+    let ejected = backend
         .write_image(
             &image,
             &request.device_id,
@@ -364,8 +351,6 @@ where
         )
         .await
         .map_err(CommandError::from)?;
-
-    drop(temporary_image);
 
     let duration = start_time.elapsed();
 
@@ -379,6 +364,7 @@ where
 
     Ok(FlashResult {
         duration_secs: duration.as_secs(),
+        ejected,
     })
 }
 
@@ -386,27 +372,20 @@ where
 // Release/Manifest Commands
 // =============================================================================
 
-/// Get the latest HAOS release information
+/// The release stable.json lists for `board`, as its full images
 #[tauri::command]
-pub async fn get_haos_release(
-    version: Option<String>,
-    board: Option<String>,
-) -> Result<HaosRelease, CommandError> {
-    release_for_selection(&Backend, version.as_deref(), board.as_deref()).await
+pub async fn get_haos_release(board: String) -> Result<HaosRelease, CommandError> {
+    release_for_selection(&Backend, &board).await
 }
 
 async fn release_for_selection<B: ReleaseSource>(
     backend: &B,
-    version: Option<&str>,
-    board: Option<&str>,
+    board: &str,
 ) -> Result<HaosRelease, CommandError> {
-    let release = match (version, board) {
-        (None | Some("latest"), Some(board)) => {
-            backend.get_latest_haos_release_for_board(board).await
-        }
-        (version, _) => backend.get_haos_release(version.unwrap_or("latest")).await,
-    };
-    release.map_err(CommandError::from_query)
+    backend
+        .get_latest_haos_release_for_board(board)
+        .await
+        .map_err(CommandError::from_query)
 }
 
 /// Get the device manifest
@@ -466,7 +445,7 @@ fn supports_utm(apple_silicon: hai_core::Result<()>) -> bool {
 /// Get the release for the same board used by UTM downloads.
 #[tauri::command]
 pub async fn get_utm_haos_release() -> Result<HaosRelease, CommandError> {
-    release_for_selection(&Backend, None, Some(utm_board()?)).await
+    release_for_selection(&Backend, utm_board()?).await
 }
 
 /// Download the HAOS qcow2 image for UTM
@@ -495,8 +474,8 @@ pub async fn download_utm_image(
     let image = callback
         .operation
         .finish(run_utm_download(&Backend, board, &callback).await)?;
-    let path = image.path().to_string_lossy().into_owned();
-    pending.insert(path.clone(), image);
+    let path = image.to_string_lossy().into_owned();
+    pending.insert(path.clone());
     Ok(path)
 }
 
@@ -507,7 +486,7 @@ async fn run_utm_download<B, P>(
     backend: &B,
     arch: &str,
     callback: &P,
-) -> Result<TemporaryImage, CommandError>
+) -> Result<std::path::PathBuf, CommandError>
 where
     B: ReleaseSource,
     P: ProgressCallback,
@@ -525,22 +504,9 @@ where
         .await
         .map_err(CommandError::from)?;
 
-    let image = release.image_for(arch, ImageFormat::Qcow2).ok_or_else(|| {
-        hai_core::Error::InvalidConfig("No compatible virtual-machine image was found.".into())
-    })?;
+    let image = release.require_image(arch, ImageFormat::Qcow2)?;
 
-    let cache_dir = backend.cache_dir().map_err(CommandError::from)?;
-    let temporary_image =
-        TemporaryImage::new(&cache_dir, ImageFormat::Qcow2).map_err(CommandError::from)?;
-    let compressed_path = temporary_image.archive_path();
-
-    backend
-        .download_image(image, &compressed_path, callback)
-        .await
-        .map_err(CommandError::from)?;
-
-    backend
-        .extract_temporary_image(&temporary_image, callback)
+    let path = hai_core::download::fetch_image(backend, image, callback)
         .await
         .map_err(CommandError::from)?;
 
@@ -552,11 +518,11 @@ where
         message: "Download complete!".to_string(),
     });
 
-    Ok(temporary_image)
+    Ok(path)
 }
 
-/// Release a downloaded image abandoned before VM creation. Unknown paths are
-/// never deleted, and an image being imported has already left this registry.
+/// Forget a downloaded image abandoned before VM creation. The file stays for
+/// a retry; the cache folder is cleared when the installer closes.
 #[tauri::command]
 pub fn discard_utm_image(image_path: String, pending: tauri::State<'_, PendingUtmImages>) {
     pending.take(&image_path);
@@ -578,6 +544,13 @@ pub fn check_utm_automation() -> Result<(), CommandError> {
     UtmBackend::check_automation(&Backend).map_err(CommandError::from_query)
 }
 
+/// Refuse a VM name UTM already has, while another can still be chosen.
+/// Async, so waiting for UTM to answer never holds up the window.
+#[tauri::command(async)]
+pub fn check_utm_vm_name(name: String) -> Result<(), CommandError> {
+    UtmBackend::check_vm_name(&Backend, &name).map_err(CommandError::from_query)
+}
+
 /// Create a Home Assistant VM in UTM
 #[tauri::command]
 pub async fn create_utm_vm(
@@ -594,40 +567,19 @@ async fn run_utm_creation<B: UtmBackend>(
     config: &hai_core::UtmVmConfig,
     pending: &PendingUtmImages,
 ) -> Result<String, CommandError> {
-    let image = pending.take(&config.image_path).ok_or_else(|| {
-        CommandError::with_message(
+    if !pending.take(&config.image_path) {
+        return Err(CommandError::with_message(
             "temporary_image_unavailable",
             &hai_core::message!("backend.utm.temporary_image_gone"),
             true,
-        )
-    })?;
-    image.begin_utm_import().map_err(|error| {
-        CommandError::with_message(
-            "utm",
-            &hai_core::message!(
-                "backend.utm.import_not_prepared",
-                detail = error.to_string(),
-                path = image.path().parent().unwrap().display().to_string(),
-            ),
-            false,
-        )
-    })?;
+        ));
+    }
     // Fully qualified: `create_vm` is defined on both UtmBackend and ProxmoxBackend.
     let result = UtmBackend::create_vm(backend, config, &hai_core::NoOpProgress).await;
     if let Err(hai_core::Error::UtmOperationUncertain(error)) = &result {
-        return Err(CommandError::with_message(
-            "utm_operation_uncertain",
-            &hai_core::message!(
-                "backend.utm.import_uncertain",
-                detail = error,
-                path = image.path().parent().unwrap().display().to_string(),
-            ),
-            false,
-        ));
-    }
-    // A completed creation or confirmed rejection no longer needs the source.
-    if image.finish_utm_import().is_err() {
-        crate::diagnostics::warning("utm_source_cleanup_failed");
+        return Err(CommandError::from(hai_core::Error::UtmOperationUncertain(
+            hai_core::message!("backend.utm.import_uncertain", detail = error),
+        )));
     }
     result.map(|result| result.id).map_err(CommandError::from)
 }
@@ -642,7 +594,7 @@ pub fn start_utm_vm(vm_id: String) -> Result<(), CommandError> {
 #[tauri::command(async)]
 pub fn get_utm_vm_status(vm_id: String) -> Result<VmStatusInfo, CommandError> {
     // Fully qualified: `vm_status` is defined on both UtmBackend and ProxmoxBackend.
-    UtmBackend::vm_status(&Backend, &vm_id).map_err(CommandError::from)
+    UtmBackend::vm_status(&Backend, &vm_id).map_err(CommandError::from_query)
 }
 
 // =============================================================================
@@ -670,6 +622,12 @@ pub async fn get_ha_setup_status(ip_address: String) -> Option<HaSetupStatus> {
         crate::diagnostics::setup_status(status);
     }
     status
+}
+
+/// Whether Home Assistant is onboarded, or `None` without an answer that tells
+#[tauri::command]
+pub async fn check_ha_onboarded(ip_address: String) -> Option<bool> {
+    Backend.ha_onboarded(&ip_address).await
 }
 
 /// The Home Assistants that announce themselves on the local network
@@ -1223,10 +1181,13 @@ mod tests {
     #[test]
     fn flash_command_result_keeps_its_wire_shape() {
         // Failures reject the command with a CommandError instead
-        let result = FlashResult { duration_secs: 42 };
+        let result = FlashResult {
+            duration_secs: 42,
+            ejected: true,
+        };
         assert_eq!(
             serde_json::to_value(result).unwrap(),
-            serde_json::json!({"duration_secs": 42})
+            serde_json::json!({"duration_secs": 42, "ejected": true})
         );
     }
 
@@ -1257,13 +1218,6 @@ mod tests {
             unreachable!()
         }
 
-        async fn get_haos_release(&self, version: &str) -> hai_core::Result<HaosRelease> {
-            Ok(HaosRelease {
-                version: format!("explicit:{version}"),
-                images: vec![],
-            })
-        }
-
         async fn get_latest_haos_release_for_board(
             &self,
             board: &str,
@@ -1273,7 +1227,7 @@ mod tests {
                 "odroid-n2" => "18.2",
                 "ova" => "18.1",
                 "generic-aarch64" | "generic-x86-64" => "18.0",
-                _ => return Err(hai_core::Error::DownloadFailed("Board unavailable".into())),
+                _ => return Err(hai_core::Error::ReleaseUnusable("Board unavailable".into())),
             };
             Ok(HaosRelease {
                 version: version.into(),
@@ -1312,34 +1266,17 @@ mod tests {
             ("ova", "18.1"),
             ("generic-aarch64", "18.0"),
         ] {
-            for version in [None, Some("latest")] {
-                let release = release_for_selection(&SelectionReleaseBackend, version, Some(board))
-                    .await
-                    .unwrap();
-                assert_eq!(release.version, expected);
-            }
+            let release = release_for_selection(&SelectionReleaseBackend, board)
+                .await
+                .unwrap();
+            assert_eq!(release.version, expected);
         }
-        let error = release_for_selection(&SelectionReleaseBackend, None, Some("retired-board"))
+        let error = release_for_selection(&SelectionReleaseBackend, "retired-board")
             .await
             .unwrap_err();
         // Remote details stay out of the error; the code says what happened
-        assert_eq!(error.code, "download_failed");
-    }
-
-    #[tokio::test]
-    async fn confirmation_release_preserves_explicit_versions_and_boardless_calls() {
-        for (version, board, expected) in [
-            (Some("17.0"), Some("rpi5-64"), "explicit:17.0"),
-            (None, None, "explicit:latest"),
-        ] {
-            assert_eq!(
-                release_for_selection(&SelectionReleaseBackend, version, board)
-                    .await
-                    .unwrap()
-                    .version,
-                expected
-            );
-        }
+        assert_eq!(error.code, "release_unavailable");
+        assert!(!error.retryable);
     }
 
     #[tokio::test]
@@ -1417,6 +1354,69 @@ mod tests {
     #[cfg(feature = "mock")]
     fn test_check_utm_automation_mock_returns_ok() {
         assert!(check_utm_automation().is_ok());
+    }
+
+    #[test]
+    #[cfg(feature = "mock")]
+    fn test_check_utm_vm_name_mock_returns_ok() {
+        assert!(check_utm_vm_name("Home Assistant".to_string()).is_ok());
+    }
+
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn test_check_utm_vm_name_unsupported_off_macos() {
+        let err = check_utm_vm_name("Home Assistant".to_string()).unwrap_err();
+        assert_eq!(err.code, "unsupported_platform");
+        assert!(!err.retryable);
+    }
+
+    /// Calls `check_utm_vm_name` the way `checkUtmVmName` does, through
+    /// Tauri's IPC, so the argument it sends is the one the command takes.
+    // On a Mac without the mock, this would ask the UTM installed there
+    #[cfg(any(feature = "mock", not(target_os = "macos")))]
+    #[test]
+    fn check_utm_vm_name_takes_the_name_the_frontend_sends() {
+        let app = tauri::test::mock_builder()
+            .invoke_handler(tauri::generate_handler![check_utm_vm_name])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let invoke = |body: serde_json::Value| {
+            tauri::test::get_ipc_response(
+                &webview,
+                tauri::webview::InvokeRequest {
+                    cmd: "check_utm_vm_name".into(),
+                    callback: tauri::ipc::CallbackFn(0),
+                    error: tauri::ipc::CallbackFn(1),
+                    url: if cfg!(windows) {
+                        "http://tauri.localhost"
+                    } else {
+                        "tauri://localhost"
+                    }
+                    .parse()
+                    .unwrap(),
+                    body: tauri::ipc::InvokeBody::Json(body),
+                    headers: Default::default(),
+                    invoke_key: tauri::test::INVOKE_KEY.to_string(),
+                },
+            )
+            .map(|answer| answer.deserialize::<serde_json::Value>().unwrap())
+        };
+
+        let answer = invoke(serde_json::json!({ "name": "Home Assistant" }));
+        if cfg!(feature = "mock") {
+            assert_eq!(answer, Ok(serde_json::Value::Null));
+        } else {
+            // It reached the backend, which has no UTM off macOS
+            assert_eq!(answer.unwrap_err()["code"], "unsupported_platform");
+        }
+
+        // Any other argument is refused before it reaches the backend
+        let refused = invoke(serde_json::json!({ "vmName": "Home Assistant" })).unwrap_err();
+        assert!(refused.to_string().contains("key name"), "{refused}");
     }
 
     // Asking again can't change the platform, so the check offers no retry.
@@ -1558,6 +1558,51 @@ mod tests {
     async fn ha_setup_status_mock_has_no_landing_page() {
         // The mock's Home Assistant is ready at once, so its landing page is gone
         assert_eq!(get_ha_setup_status("192.168.1.100".into()).await, None);
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn ha_onboarded_mock_leaves_only_the_new_device_to_onboard() {
+        // The device the mock installs Home Assistant on, as the lookup finds it
+        assert_eq!(
+            check_ha_onboarded("192.168.1.101".into()).await,
+            Some(false)
+        );
+        assert_eq!(
+            check_ha_onboarded("192.168.1.20:8123".into()).await,
+            Some(true)
+        );
+    }
+
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[tokio::test]
+    async fn check_ha_onboarded_asks_the_address_it_is_given() {
+        let mut server = mockito::Server::new_async().await;
+        let onboarding = server
+            .mock("GET", "/api/onboarding")
+            .with_body(r#"[{"step":"user","done":false}]"#)
+            .create_async()
+            .await;
+        assert_eq!(
+            check_ha_onboarded(server.host_with_port()).await,
+            Some(false)
+        );
+        onboarding.assert_async().await;
+
+        // No longer served once onboarded
+        onboarding.remove_async().await;
+        let _onboarded = server
+            .mock("GET", "/api/onboarding")
+            .with_status(404)
+            .create_async()
+            .await;
+        assert_eq!(
+            check_ha_onboarded(server.host_with_port()).await,
+            Some(true)
+        );
+
+        // Nowhere to ask
+        assert_eq!(check_ha_onboarded(String::new()).await, None);
     }
 
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
@@ -1757,7 +1802,7 @@ mod tests {
             _: &hai_core::ExpectedDevice,
             _: bool,
             _: &P,
-        ) -> hai_core::Result<()> {
+        ) -> hai_core::Result<bool> {
             panic!("must not write a drive");
         }
     }
@@ -1769,10 +1814,6 @@ mod tests {
 
         async fn get_device_manifest(&self) -> hai_core::Result<DeviceManifest> {
             panic!("must not fetch a manifest");
-        }
-
-        async fn get_haos_release(&self, _: &str) -> hai_core::Result<HaosRelease> {
-            panic!("must not fetch a release by version");
         }
 
         async fn get_latest_haos_release_for_board(
@@ -1864,11 +1905,38 @@ mod mock_tests {
     use hai_core::{BackendMock, NoOpProgress};
     use serial_test::serial;
 
+    /// Images stay in the mock cache like in a session; a test that needs a
+    /// download starts without them.
+    fn clear_mock_cache() {
+        hai_core::download::clear_cache(&BackendMock.cache_dir().unwrap()).unwrap();
+    }
+
     struct LifecycleBackend {
         cache: tempfile::TempDir,
         outcome: &'static str,
         extracted: std::sync::Mutex<Option<std::path::PathBuf>>,
         write_started: tokio::sync::Notify,
+        downloads: std::sync::atomic::AtomicUsize,
+    }
+
+    impl LifecycleBackend {
+        fn new(outcome: &'static str) -> Self {
+            Self {
+                cache: tempfile::tempdir().unwrap(),
+                outcome,
+                extracted: Default::default(),
+                write_started: Default::default(),
+                downloads: Default::default(),
+            }
+        }
+
+        /// Everything left in the cache folder.
+        fn cached(&self) -> Vec<std::path::PathBuf> {
+            std::fs::read_dir(self.cache.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect()
+        }
     }
 
     impl ReleaseSource for LifecycleBackend {
@@ -1879,14 +1947,16 @@ mod mock_tests {
         async fn get_device_manifest(&self) -> hai_core::Result<DeviceManifest> {
             BackendMock.get_device_manifest().await
         }
-        async fn get_haos_release(&self, version: &str) -> hai_core::Result<HaosRelease> {
-            BackendMock.get_haos_release(version).await
-        }
         async fn get_latest_haos_release_for_board(
             &self,
             board: &str,
         ) -> hai_core::Result<HaosRelease> {
-            BackendMock.get_latest_haos_release_for_board(board).await
+            // A checksum, as real releases have, so the session keeps the image
+            let mut release = BackendMock.get_latest_haos_release_for_board(board).await?;
+            for image in &mut release.images {
+                image.digest = Some(format!("sha256:{}", "ab".repeat(32)));
+            }
+            Ok(release)
         }
         async fn download_image<P: ProgressCallback>(
             &self,
@@ -1894,22 +1964,25 @@ mod mock_tests {
             dest: &std::path::Path,
             _: &P,
         ) -> hai_core::Result<()> {
+            self.downloads.fetch_add(1, Ordering::SeqCst);
             std::fs::write(dest, b"archive")?;
             Ok(())
         }
         async fn extract_xz<P: ProgressCallback>(
             &self,
-            _: &std::path::Path,
+            archive: &std::path::Path,
             dest: &std::path::Path,
             _: &P,
         ) -> hai_core::Result<()> {
             *self.extracted.lock().unwrap() = Some(dest.to_path_buf());
-            std::fs::write(dest, b"image")?;
+            // Like the real one: the archive goes, the image only appears complete
+            std::fs::remove_file(archive)?;
             if self.outcome == "extract" {
                 return Err(hai_core::Error::ExtractionFailed(
                     "test extraction failure".into(),
                 ));
             }
+            std::fs::write(dest, b"image")?;
             Ok(())
         }
         fn cache_dir(&self) -> hai_core::Result<std::path::PathBuf> {
@@ -1934,7 +2007,7 @@ mod mock_tests {
             _: &hai_core::ExpectedDevice,
             _: bool,
             _: &P,
-        ) -> hai_core::Result<()> {
+        ) -> hai_core::Result<bool> {
             assert_ne!(
                 self.outcome, "oversized",
                 "oversized image reached disk writer"
@@ -1949,13 +2022,13 @@ mod mock_tests {
                     self.write_started.notify_one();
                     std::future::pending().await
                 }
-                _ => Ok(()),
+                _ => Ok(true),
             }
         }
     }
 
     #[tokio::test]
-    async fn flash_releases_extraction_on_every_exit() {
+    async fn flash_keeps_only_a_complete_image_on_every_exit() {
         for outcome in [
             "success",
             "extract",
@@ -1964,12 +2037,7 @@ mod mock_tests {
             "suspend",
             "oversized",
         ] {
-            let backend = LifecycleBackend {
-                cache: tempfile::tempdir().unwrap(),
-                outcome,
-                extracted: Default::default(),
-                write_started: Default::default(),
-            };
+            let backend = LifecycleBackend::new(outcome);
             let mut request = request("mock-sd-card-32gb", "rpi5-64").await;
             if outcome == "oversized" {
                 request.expected_device.size = Some(4);
@@ -2001,61 +2069,62 @@ mod mock_tests {
                 _ => assert!(result.unwrap().is_err()),
             }
             let path = backend.extracted.lock().unwrap().clone().unwrap();
-            assert!(!path.exists(), "{outcome}");
-            assert!(!path.parent().unwrap().exists(), "{outcome}");
-            assert_eq!(std::fs::read_dir(backend.cache.path()).unwrap().count(), 0);
+            let kept: &[_] = if outcome == "extract" { &[] } else { &[path] };
+            assert_eq!(backend.cached(), kept, "{outcome}");
         }
     }
 
     #[tokio::test]
-    async fn utm_download_keeps_images_private_until_owner_releases_them() {
+    async fn flash_retry_reuses_the_extracted_image() {
+        let backend = LifecycleBackend::new("write");
+        let request = request("mock-sd-card-32gb", "rpi5-64").await;
+        for _ in 0..2 {
+            // The writer checks it gets the extracted image
+            assert!(run_flash(&backend, &request, &NoOpProgress).await.is_err());
+        }
+        assert_eq!(backend.downloads.load(Ordering::SeqCst), 1);
+        assert_eq!(backend.cached().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn utm_retry_reuses_the_extracted_image() {
+        let backend = LifecycleBackend::new("success");
+        let first = run_utm_download(&backend, "generic-aarch64", &NoOpProgress)
+            .await
+            .unwrap();
+        let second = run_utm_download(&backend, "generic-aarch64", &NoOpProgress)
+            .await
+            .unwrap();
+        assert_eq!(backend.downloads.load(Ordering::SeqCst), 1);
+        assert_eq!(first, second);
+        assert_eq!(backend.cached(), [first]);
+    }
+
+    #[tokio::test]
+    async fn utm_download_keeps_only_a_complete_image() {
         for outcome in ["success", "extract"] {
-            let backend = LifecycleBackend {
-                cache: tempfile::tempdir().unwrap(),
-                outcome,
-                extracted: Default::default(),
-                write_started: Default::default(),
-            };
+            let backend = LifecycleBackend::new(outcome);
             let result = run_utm_download(&backend, "generic-aarch64", &NoOpProgress).await;
             assert_eq!(result.is_ok(), outcome == "success");
-            if let Ok(image) = &result {
-                assert!(image.path().exists());
-                assert!(image.archive_path().exists());
-            }
-            drop(result);
-            let path = backend.extracted.lock().unwrap().clone().unwrap();
-            assert!(!path.exists());
-            assert_eq!(std::fs::read_dir(backend.cache.path()).unwrap().count(), 0);
+            let kept: Vec<_> = result.into_iter().collect();
+            assert_eq!(backend.cached(), kept);
         }
     }
 
     #[test]
-    fn utm_registry_never_deletes_unknown_or_in_use_images() {
-        let cache = tempfile::tempdir().unwrap();
-        let user_file = cache.path().join("user.qcow2");
-        std::fs::write(&user_file, b"user image").unwrap();
+    fn utm_registry_only_accepts_images_it_handed_out() {
         let pending = PendingUtmImages::default();
-        assert!(pending.take(user_file.to_str().unwrap()).is_none());
-        assert!(user_file.exists());
-        let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
-        let path = image.path().to_string_lossy().into_owned();
-        std::fs::write(&path, b"owned image").unwrap();
-        pending.insert(path.clone(), image);
-        let importing = pending.take(&path).unwrap();
-        assert!(pending.take(&path).is_none());
-        assert!(std::path::Path::new(&path).exists());
-        drop(importing);
-        assert!(!std::path::Path::new(&path).exists());
-        assert!(user_file.exists());
+        assert!(!pending.take("/Users/someone/user.qcow2"));
+        pending.insert("/cache/haos.qcow2".into());
+        assert!(pending.take("/cache/haos.qcow2"));
+        assert!(!pending.take("/cache/haos.qcow2"));
     }
 
     #[test]
     fn utm_registry_keeps_working_after_a_panic_while_locked() {
-        let cache = tempfile::tempdir().unwrap();
         let pending = PendingUtmImages::default();
-        let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
-        let path = image.path().to_string_lossy().into_owned();
-        pending.insert(path.clone(), image);
+        let path = "/cache/haos.qcow2".to_string();
+        pending.insert(path.clone());
         std::thread::scope(|scope| {
             let panicked = scope.spawn(|| {
                 let _images = pending.0.lock().unwrap();
@@ -2065,11 +2134,9 @@ mod mock_tests {
         });
         assert!(pending.0.is_poisoned());
 
-        assert!(pending.take(&path).is_some());
-        let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
-        let path = image.path().to_string_lossy().into_owned();
-        pending.insert(path.clone(), image);
-        assert!(pending.take(&path).is_some());
+        assert!(pending.take(&path));
+        pending.insert(path.clone());
+        assert!(pending.take(&path));
     }
 
     struct UtmCreationBackend {
@@ -2086,26 +2153,18 @@ mod mock_tests {
             unreachable!()
         }
 
+        fn check_vm_name(&self, _: &str) -> hai_core::Result<()> {
+            unreachable!()
+        }
+
         async fn create_vm<P: ProgressCallback>(
             &self,
             config: &hai_core::UtmVmConfig,
             _: &P,
         ) -> hai_core::Result<hai_core::UtmVmResult> {
-            let source = std::path::Path::new(&config.image_path);
-            assert!(source.exists());
-            assert!(source.parent().unwrap().join(".utm-import").exists());
+            assert!(std::path::Path::new(&config.image_path).exists());
             self.started.notify_one();
             match self.outcome {
-                "release-failure" => {
-                    let marker = source.parent().unwrap().join(".utm-import");
-                    std::fs::remove_file(&marker).unwrap();
-                    std::fs::create_dir(marker).unwrap();
-                    Ok(hai_core::UtmVmResult {
-                        id: "stable-utm-id".into(),
-                        name: config.name.clone(),
-                        path: None,
-                    })
-                }
                 "success" => Ok(hai_core::UtmVmResult {
                     id: "stable-utm-id".into(),
                     name: config.name.clone(),
@@ -2142,7 +2201,7 @@ mod mock_tests {
     }
 
     #[tokio::test]
-    async fn utm_source_cleanup_requires_a_confirmed_outcome() {
+    async fn utm_creation_keeps_the_image_for_the_session() {
         for outcome in [
             "success",
             "rejected",
@@ -2150,18 +2209,12 @@ mod mock_tests {
             "timeout",
             "transport",
             "cancelled",
-            "marker-failure",
-            "release-failure",
         ] {
             let cache = tempfile::tempdir().unwrap();
-            let image = TemporaryImage::new(cache.path(), ImageFormat::Qcow2).unwrap();
-            let path = image.path();
+            let path = cache.path().join("haos_generic-aarch64-17.0.qcow2");
             std::fs::write(&path, b"source image").unwrap();
-            if outcome == "marker-failure" {
-                std::fs::create_dir(path.parent().unwrap().join(".utm-import")).unwrap();
-            }
             let pending = PendingUtmImages::default();
-            pending.insert(path.to_string_lossy().into_owned(), image);
+            pending.insert(path.to_string_lossy().into_owned());
             let config = hai_core::UtmVmConfig {
                 name: "Test VM".into(),
                 image_path: path.to_string_lossy().into_owned(),
@@ -2181,27 +2234,16 @@ mod mock_tests {
                     _ = &mut creation => panic!("Creation must still be pending"),
                     _ = backend.started.notified() => {}
                 }
-                assert!(pending.take(&config.image_path).is_none());
-                assert!(path.exists());
             } else {
                 let result = run_utm_creation(&backend, &config, &pending).await;
-                assert_eq!(
-                    result.is_ok(),
-                    matches!(outcome, "success" | "release-failure"),
-                    "{outcome}"
-                );
+                assert_eq!(result.is_ok(), outcome == "success", "{outcome}");
                 if let Ok(id) = &result {
                     assert_eq!(id, "stable-utm-id");
                     assert_ne!(id, &config.name);
                 }
                 if matches!(outcome, "timeout" | "transport") {
                     let error = result.as_ref().unwrap_err();
-                    assert!(error.message.contains(&format!(
-                        "Source retained at {}.",
-                        path.parent().unwrap().display()
-                    )));
-                    assert!(!error.message.contains(&config.image_path));
-                    assert!(error.message.contains("manually"));
+                    assert!(error.message.contains("keep the installer open"));
                     // The frontend translates the sentence and the reason inside it
                     assert_eq!(error.details["message_key"], "backend.utm.import_uncertain");
                     assert_eq!(
@@ -2211,6 +2253,16 @@ mod mock_tests {
                         } else {
                             "backend.utm.applescript_lost"
                         }
+                    );
+                    // The log keeps the reason the message wraps
+                    let cause = error.cause.as_deref().unwrap();
+                    assert!(
+                        cause.contains(if outcome == "timeout" {
+                            "AppleEvent timed out (-1712)"
+                        } else {
+                            "Failed to wait for AppleScript: broken pipe"
+                        }),
+                        "{cause}"
                     );
                 }
                 if outcome == "start-failed" {
@@ -2223,32 +2275,10 @@ mod mock_tests {
                         "backend.utm.vm_created_not_started"
                     );
                 }
-                if outcome == "marker-failure" {
-                    let error = result.unwrap_err();
-                    assert!(error.message.contains("UTM was not contacted"));
-                    assert!(error
-                        .message
-                        .contains(path.parent().unwrap().to_str().unwrap()));
-                    assert!(error.message.contains("manually"));
-                    assert_eq!(
-                        error.details["message_key"],
-                        "backend.utm.import_not_prepared"
-                    );
-                    assert_eq!(
-                        error.details["message_params"]["path"],
-                        path.parent().unwrap().display().to_string()
-                    );
-                }
             }
-            // This is the same removal used by the frontend's discard command.
-            assert!(pending.take(&config.image_path).is_none());
-            drop(pending);
-            hai_core::download::prune_cached_images(cache.path()).unwrap();
-            assert_eq!(
-                path.exists(),
-                !matches!(outcome, "success" | "rejected" | "start-failed"),
-                "{outcome}"
-            );
+            // A creation takes the image out of the registry, never off the disk
+            assert!(!pending.take(&config.image_path));
+            assert!(path.exists(), "{outcome}");
         }
     }
 
@@ -2435,10 +2465,6 @@ mod mock_tests {
             unreachable!()
         }
 
-        async fn get_haos_release(&self, _: &str) -> hai_core::Result<HaosRelease> {
-            unreachable!("must use the selected board's release")
-        }
-
         async fn get_latest_haos_release_for_board(
             &self,
             board: &str,
@@ -2485,7 +2511,7 @@ mod mock_tests {
             _: &hai_core::ExpectedDevice,
             _: bool,
             _: &P,
-        ) -> hai_core::Result<()> {
+        ) -> hai_core::Result<bool> {
             panic!("unverified image reached the writer")
         }
     }
@@ -2594,9 +2620,6 @@ mod mock_tests {
         async fn get_device_manifest(&self) -> hai_core::Result<DeviceManifest> {
             panic!("must not fetch a manifest");
         }
-        async fn get_haos_release(&self, _: &str) -> hai_core::Result<HaosRelease> {
-            panic!("an installer must not look up a release");
-        }
         async fn get_latest_haos_release_for_board(
             &self,
             _: &str,
@@ -2636,7 +2659,7 @@ mod mock_tests {
             expected: &hai_core::ExpectedDevice,
             verify: bool,
             callback: &P,
-        ) -> hai_core::Result<()> {
+        ) -> hai_core::Result<bool> {
             BackendMock
                 .write_image(image, device_id, expected, verify, callback)
                 .await
@@ -2666,6 +2689,7 @@ mod mock_tests {
     #[tokio::test]
     #[serial] // all share the mock cache directory
     async fn run_flash_writes_the_pinned_installer_without_a_release_lookup() {
+        clear_mock_cache();
         for installer in &hai_core::hardware_installer::INSTALLERS {
             let backend = PinnedInstallerBackend::default();
             run_flash(
@@ -2686,6 +2710,7 @@ mod mock_tests {
     #[tokio::test]
     #[serial] // all share the mock cache directory
     async fn run_flash_cancelled_before_writing_never_touches_the_drive() {
+        clear_mock_cache();
         let callback = CancelDuringExtraction::default();
 
         let error = run_flash(
@@ -2706,7 +2731,7 @@ mod mock_tests {
 
     #[tokio::test]
     #[serial] // all share the mock cache directory
-    async fn run_flash_rejects_unknown_board() {
+    async fn flash_and_utm_blame_a_release_without_the_boards_image() {
         let err = run_flash(
             &BackendMock,
             &request("mock-sd-card-32gb", "no-such-board").await,
@@ -2714,7 +2739,11 @@ mod mock_tests {
         )
         .await
         .unwrap_err();
-        assert_eq!(err.code, "invalid_config");
+        assert_eq!(err.code, "release_unavailable");
+        let err = run_utm_download(&BackendMock, "no-such-board", &NoOpProgress)
+            .await
+            .unwrap_err();
+        assert_eq!(err.code, "release_unavailable");
     }
 
     #[tokio::test]
@@ -2749,17 +2778,15 @@ mod mock_tests {
             .get_latest_haos_release_for_board(board)
             .await
             .unwrap();
-        let image = release.image_for(board, ImageFormat::Qcow2).unwrap();
+        let image = release.require_image(board, ImageFormat::Qcow2).unwrap();
         assert!(image
             .download_url
             .ends_with(&format!("haos_{board}-16.3.qcow2.xz")));
-        let image = run_utm_download(&BackendMock, board, &NoOpProgress)
+        let path = run_utm_download(&BackendMock, board, &NoOpProgress)
             .await
             .unwrap();
-        let path = image.path();
+        assert!(path.ends_with(format!("haos_{board}-16.3.qcow2")));
         assert!(path.exists());
-        drop(image);
-        assert!(!path.exists());
     }
 
     #[tokio::test]
@@ -2787,19 +2814,29 @@ mod mock_tests {
             .0
             .lock()
             .unwrap()
-            .contains_key(&path));
+            .contains(&path));
         discard_utm_image(path.clone(), app.state());
-        assert!(!std::path::Path::new(&path).exists());
+        assert!(!app
+            .state::<PendingUtmImages>()
+            .0
+            .lock()
+            .unwrap()
+            .contains(&path));
+        // Kept for a retry until the installer closes
+        assert!(std::path::Path::new(&path).exists());
     }
 
     #[tokio::test]
     async fn mock_release_preserves_raw_intel_image_without_inventing_qcow2() {
-        let release = BackendMock.get_haos_release("latest").await.unwrap();
+        let release = BackendMock
+            .get_latest_haos_release_for_board("generic-x86-64")
+            .await
+            .unwrap();
         assert!(release
-            .image_for("generic-x86-64", ImageFormat::Raw)
-            .is_some());
+            .require_image("generic-x86-64", ImageFormat::Raw)
+            .is_ok());
         assert!(release
-            .image_for("generic-x86-64", ImageFormat::Qcow2)
-            .is_none());
+            .require_image("generic-x86-64", ImageFormat::Qcow2)
+            .is_err());
     }
 }

@@ -117,6 +117,8 @@ fn add_network(partition: &mut [u8], keyfile: &[u8]) -> std::io::Result<()> {
 }
 
 /// A NetworkManager keyfile that joins `wifi` with DHCP and IPv6 autoconfiguration.
+/// The `[user]` section marks the profile for the Supervisor to take over;
+/// NetworkManager ignores it.
 fn keyfile(wifi: &WifiConfig) -> String {
     // NetworkManager reads a list of byte values as the raw SSID, whatever
     // the characters in it
@@ -126,7 +128,8 @@ fn keyfile(wifi: &WifiConfig) -> String {
          [wifi]\nmode=infrastructure\nssid={ssid}\n\n\
          [wifi-security]\nkey-mgmt=wpa-psk\npsk={psk}\n\n\
          [ipv4]\nmethod=auto\n\n\
-         [ipv6]\nmethod=auto\n",
+         [ipv6]\nmethod=auto\n\n\
+         [user]\nio.home-assistant.import=supervisor\n",
         id = escape(&wifi.ssid),
         psk = escape(&wifi.password),
     )
@@ -196,6 +199,15 @@ mod tests {
         );
         assert!(keyfile.contains("\npsk=a\\sb\\\\c\\s\n"), "{keyfile}");
         assert!(keyfile.contains("\nkey-mgmt=wpa-psk\n"));
+    }
+
+    #[test]
+    fn keyfile_marks_the_profile_for_the_supervisor() {
+        let keyfile = keyfile(&wifi("Home", "12345678"));
+        assert!(
+            keyfile.ends_with("\n[user]\nio.home-assistant.import=supervisor\n"),
+            "{keyfile}"
+        );
     }
 
     #[test]

@@ -173,7 +173,11 @@ export type FlashResult = {
 /**
  * Duration in seconds
  */
-duration_secs: number, };
+duration_secs: number,
+/**
+ * Whether the drive was ejected; if not, the user has to before unplugging it
+ */
+ejected: boolean, };
 
 export type ProxmoxCredentials = {
 /**
@@ -408,11 +412,28 @@ export type HaAnnouncement = {
  */
 id: string,
 /**
+ * The name it announces, like "Home": its `location_name`, or its
+ * service name's own part without one. `None` when it announces neither.
+ */
+name: string | null,
+/**
  * Where it answers: an IPv4 address, with the port unless that is 80.
  */
 address: string,
 /**
+ * Where to open it in the browser: the `internal_url` it announces,
+ * which says whether it takes HTTPS and may name it, else `http://`
+ * and its address.
+ */
+url: string,
+/**
  * Whether it is the page Home Assistant OS shows while it installs
  * Home Assistant, rather than Home Assistant itself.
  */
-landing_page: boolean, };
+landing_page: boolean,
+/**
+ * Whether it is Home Assistant itself and answers that its onboarding is
+ * unfinished, as on a device started from a full image, which runs
+ * Home Assistant without showing a landing page first.
+ */
+needs_onboarding: boolean, };

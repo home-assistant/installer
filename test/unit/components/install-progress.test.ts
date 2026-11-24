@@ -477,6 +477,23 @@ describe("install-progress", () => {
     expect(await eta()).to.equal("");
   });
 
+  it("keeps one Casita through the stages, success and failure", async () => {
+    const el = await fixture<InstallProgress>(
+      html`<install-progress stage="downloading"></install-progress>`
+    );
+    const casita = el.shadowRoot!.querySelector("casita-mascot")!;
+
+    el.stage = "complete";
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector("casita-mascot")).to.equal(casita);
+    expect(casita.mood).to.equal("happy");
+
+    el.error = "Failed";
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector("casita-mascot")).to.equal(casita);
+    expect(casita.mood).to.equal("problem");
+  });
+
   it("shows error text safely while leaving retry to the owning flow's footer", async () => {
     const el = await fixture<InstallProgress>(
       html`<install-progress

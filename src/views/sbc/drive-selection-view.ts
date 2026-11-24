@@ -24,6 +24,7 @@ import {
 } from "../../api/index.js";
 import { formatBytes } from "../../utils/format.js";
 import { wizardState } from "../../state/wizard-state.js";
+import { encodeResumeState } from "../../state/resume-state.js";
 import {
   clearDriveSelection,
   driveIdentity,
@@ -425,6 +426,7 @@ export class DriveSelectionView extends LitElement {
           <p class="empty-title">${emptyTitle}</p>
           <p class="empty-text">${emptyText}</p>
           <wa-button
+            pill
             variant="brand"
             appearance="outlined"
             ?loading=${this._loading}
@@ -445,6 +447,7 @@ export class DriveSelectionView extends LitElement {
           ${localize("views.sbc.drive_selection_view.available_drives")}
         </h3>
         <wa-button
+          pill
           variant="brand"
           appearance="outlined"
           @click=${this._loadDrives}
@@ -528,7 +531,7 @@ export class DriveSelectionView extends LitElement {
       <inline-notice class="admin-needed" data-focus-alert>
         <p>${localize("views.sbc.drive_selection_view.admin_needed")}</p>
         <p>${localize("views.sbc.drive_selection_view.admin_restart_note")}</p>
-        <wa-button variant="brand" @click=${this._relaunch}>
+        <wa-button pill variant="brand" @click=${this._relaunch}>
           ${localize("views.sbc.drive_selection_view.restart_as_administrator")}
         </wa-button>
       </inline-notice>
@@ -543,7 +546,7 @@ export class DriveSelectionView extends LitElement {
   private async _relaunch() {
     this._relaunchError = "";
     try {
-      await relaunchAsAdmin();
+      await relaunchAsAdmin(encodeResumeState(wizardState.getState()));
     } catch (error) {
       this._relaunchError = installerError(error).message;
     }

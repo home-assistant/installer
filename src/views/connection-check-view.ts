@@ -81,11 +81,9 @@ export class ConnectionCheckView extends LitElement {
       ${renderBackHeader(this._back)}
       <div class="content">
         ${this._checking
-          ? html`<loading-spinner
-              aria-label=${localize(
-                "views.connection_check_view.checking_connection"
-              )}
-            ></loading-spinner>`
+          ? // The heading and the status say what it waits for. A label on
+            // the element itself would go unread: it has no role to carry one
+            html`<loading-spinner aria-hidden="true"></loading-spinner>`
           : html`<casita-mascot mood="sad"></casita-mascot>`}
         <h1>
           ${this._checking

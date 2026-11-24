@@ -268,11 +268,17 @@ pub struct HaosRelease {
 }
 
 impl HaosRelease {
-    /// The image for `board` in `format`, if the release ships one.
-    pub fn image_for(&self, board: &str, format: ImageFormat) -> Option<&HaosImage> {
+    /// The image for `board` in `format`; a release without one never gets it.
+    pub fn require_image(&self, board: &str, format: ImageFormat) -> crate::Result<&HaosImage> {
         self.images
             .iter()
             .find(|img| img.board == board && img.format == format)
+            .ok_or_else(|| {
+                crate::Error::ReleaseUnusable(format!(
+                    "{} has no {format:?} image for {board}",
+                    self.version
+                ))
+            })
     }
 }
 
@@ -330,6 +336,8 @@ pub struct GitHubRelease {
 pub struct FlashResult {
     /// Duration in seconds
     pub duration_secs: u64,
+    /// Whether the drive was ejected; if not, the user has to before unplugging it
+    pub ejected: bool,
 }
 
 /// Stable version info from version.home-assistant.io/stable.json
@@ -564,11 +572,22 @@ pub struct HaAnnouncement {
     /// it announces none. A landing page announces a new one each time it
     /// starts.
     pub id: String,
+    /// The name it announces, like "Home": its `location_name`, or its
+    /// service name's own part without one. `None` when it announces neither.
+    pub name: Option<String>,
     /// Where it answers: an IPv4 address, with the port unless that is 80.
     pub address: String,
+    /// Where to open it in the browser: the `internal_url` it announces,
+    /// which says whether it takes HTTPS and may name it, else `http://`
+    /// and its address.
+    pub url: String,
     /// Whether it is the page Home Assistant OS shows while it installs
     /// Home Assistant, rather than Home Assistant itself.
     pub landing_page: bool,
+    /// Whether it is Home Assistant itself and answers that its onboarding is
+    /// unfinished, as on a device started from a full image, which runs
+    /// Home Assistant without showing a landing page first.
+    pub needs_onboarding: bool,
 }
 
 #[cfg(test)]
@@ -659,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    fn test_image_for() {
+    fn test_require_image() {
         use ImageFormat::{Qcow2, Raw};
 
         let image = |board: &str, format, download_url: &str| HaosImage {
@@ -688,7 +707,7 @@ mod tests {
             ("rpi5-64", Qcow2, None),
             ("nonexistent", Raw, None),
         ] {
-            let found = release.image_for(board, format);
+            let found = release.require_image(board, format).ok();
             assert_eq!(
                 found.map(|image| image.download_url.as_str()),
                 expected,

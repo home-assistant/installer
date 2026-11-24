@@ -81,18 +81,14 @@ pub async fn fetch_haos<B: ReleaseSource, P: ProgressCallback>(
     let version = release.version.clone();
     // The version becomes a folder name.
     if parse_version(&version).is_none() {
-        return Err(Error::LiveUsbReleaseUnusable(format!(
+        return Err(Error::ReleaseUnusable(format!(
             "unexpected version {version:?}"
         )));
     }
-    let image = release
-        .image_for(HAOS_BOARD, ImageFormat::Raw)
-        .ok_or_else(|| {
-            Error::LiveUsbReleaseUnusable(format!("{version} has no generic x86-64 image"))
-        })?;
-    let sha256 = expected_sha256(image).map(hex::encode).map_err(|_| {
-        Error::LiveUsbReleaseUnusable(format!("{version} has no usable SHA-256 checksum"))
-    })?;
+    let image = release.require_image(HAOS_BOARD, ImageFormat::Raw)?;
+    let sha256 = expected_sha256(image)
+        .map(hex::encode)
+        .map_err(|_| Error::ReleaseUnusable(format!("{version} has no usable SHA-256 checksum")))?;
 
     let path = cache
         .join("haos")
@@ -119,6 +115,9 @@ async fn fetch<B: ReleaseSource, P: ProgressCallback>(
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
+    // What the other flows left goes before this build's own files
+    let downloads = backend.cache_dir()?;
+    crate::download::make_room(&downloads, &downloads.join(FOLDER), image.size).await?;
     // Verifies size and SHA-256, and only moves the file into place once both match.
     backend.download_image(image, path, progress).await?;
     Ok(())

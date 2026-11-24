@@ -97,9 +97,10 @@ export class OptionCard extends CardButton {
         margin: 0;
       }
 
-      :host([horizontal]) .title,
+      :host([horizontal]) .heading,
       :host([horizontal]) .description {
         grid-column: 2;
+        justify-content: start;
         text-align: start;
         margin: 0;
       }
@@ -154,12 +155,38 @@ export class OptionCard extends CardButton {
         }
       }
 
+      .heading {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 0.25rem 0.5rem;
+        text-align: center;
+        margin: 0 0 0.5rem 0;
+      }
+
       .title {
         font-size: 1rem;
         font-weight: 500;
         color: var(--ha-text-color);
-        text-align: center;
-        margin: 0 0 0.5rem 0;
+        text-align: inherit;
+        margin: 0;
+      }
+
+      .tag {
+        padding: 0.125rem 0.625rem;
+        border-radius: 999px;
+        background-color: var(--wa-color-brand-fill-quiet);
+        color: var(--wa-color-brand-on-quiet);
+        font-size: 0.75rem;
+        line-height: 1.4;
+      }
+
+      /* Forced colors drop the fill, so a border keeps it a pill */
+      @media (forced-colors: active) {
+        .tag {
+          border: 1px solid CanvasText;
+        }
       }
 
       .description {
@@ -184,6 +211,10 @@ export class OptionCard extends CardButton {
   @property({ type: String })
   icon: OptionCardIcon = "others";
 
+  /** A short word set apart next to the heading, such as Recommended */
+  @property({ type: String })
+  tag = "";
+
   /**
    * Opens a page in the browser rather than going on in the app, so it is a
    * link, and says that it opens in the browser.
@@ -205,15 +236,25 @@ export class OptionCard extends CardButton {
         role=${this.external ? "link" : "button"}
         tabindex="0"
         aria-labelledby="title"
-        aria-describedby=${this.external
-          ? "external description more"
-          : "description more"}
+        aria-describedby=${[
+          this.tag && "tag",
+          this.external && "external",
+          "description",
+          "more",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         @keydown=${this._onKeyDown}
         @keyup=${this._onKeyUp}
         @blur=${this._onBlur}
       >
         <div class="icon-container">${this._renderIcon()}</div>
-        <p class="title" id="title">${this.heading}</p>
+        <div class="heading">
+          <p class="title" id="title">${this.heading}</p>
+          ${this.tag
+            ? html`<span class="tag" id="tag">${this.tag}</span>`
+            : nothing}
+        </div>
         ${this.external
           ? html`<span class="sr-only" id="external"
               >${localize("common.opens_in_browser")}</span

@@ -126,7 +126,7 @@ test("waits for the device the drive starts until Home Assistant is ready", asyn
     start.getByRole("heading", { name: "Almost there!" })
   ).toBeVisible({ timeout: 45000 });
   await expect(start.locator(".next-steps")).toContainText(
-    "Once the device is on, select Next"
+    "Then connect power to start the device"
   );
   await next(page).click();
 

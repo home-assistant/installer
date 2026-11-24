@@ -52,8 +52,8 @@ pub(super) fn flashed_disk(disk_number: u32) -> io::Result<FlashedDisk> {
 
 /// Ask Windows to remove the flashed disk, the way "Safely Remove Hardware"
 /// does. Skipped when the disk is gone, or nothing on its way up the device
-/// tree says it can be removed.
-pub(super) fn eject_disk(flashed: &FlashedDisk) -> io::Result<()> {
+/// tree says it can be removed. Whether the disk is gone afterwards.
+pub(super) fn eject_disk(flashed: &FlashedDisk) -> io::Result<bool> {
     let mut disk = 0;
     // SAFETY: `disk` is a valid out pointer and the ID is NUL-terminated.
     // NORMAL only finds devices that are present right now.
@@ -65,11 +65,11 @@ pub(super) fn eject_disk(flashed: &FlashedDisk) -> io::Result<()> {
         )
     };
     if located != CR_SUCCESS {
-        return Ok(());
+        return Ok(true);
     }
 
     let Some(target) = removal_target(disk, parent_of, is_removable) else {
-        return Ok(());
+        return Ok(false);
     };
 
     let mut last_veto = PNP_VetoTypeUnknown;
@@ -84,7 +84,7 @@ pub(super) fn eject_disk(flashed: &FlashedDisk) -> io::Result<()> {
             CM_Request_Device_EjectW(target, &mut veto, veto_name.as_mut_ptr(), MAX_PATH, 0)
         };
         if result == CR_SUCCESS && veto == PNP_VetoTypeUnknown {
-            return Ok(());
+            return Ok(true);
         }
 
         last_veto = veto;

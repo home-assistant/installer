@@ -635,6 +635,37 @@ describe("utm-progress-view", () => {
     ).to.contain("Open UTM to start it");
   });
 
+  it("leads back to the name when UTM got a VM of that name meanwhile", async () => {
+    mockTauriIpc((cmd) => {
+      if (cmd === "download_utm_image") return "/tmp/fixture.qcow2";
+      if (cmd === "discard_utm_image") return;
+      if (cmd === "create_utm_vm") {
+        return Promise.reject(
+          ipcError(
+            "utm_vm_name_taken",
+            'UTM already has a virtual machine named "Home Assistant".',
+            false,
+            {
+              message_key: "backend.utm.vm_name_taken",
+              message_params: { name: "Home Assistant" },
+            }
+          )
+        );
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+    const el = mount();
+    const event = await oneEvent(el, "install-error");
+    // Trying the same name again can't work, another name can
+    expect(event.detail.retryable).to.be.false;
+    expect(event.detail.changeChoice).to.be.true;
+    await el.updateComplete;
+    expect(errorText(el)).to.contain(
+      'UTM already has a virtual machine named "Home Assistant". Choose another name'
+    );
+    expect(wizardState.getState().selections.vmId).to.be.undefined;
+  });
+
   it("only lets the shell offer leaving once the VM was started", async () => {
     wizardState.setSelection("vmId", "existing-vm");
     const firstStatus = deferred<{ status: string; ip_address: null }>();

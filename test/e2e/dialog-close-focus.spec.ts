@@ -1,5 +1,12 @@
 import type { Page } from "@playwright/test";
-import { allowUtmControl, expect, skipWifiStep, test } from "./fixtures.js";
+import {
+  allowUtmControl,
+  expect,
+  MOCK_DELAY_SCALE,
+  setMockDelayScale,
+  skipWifiStep,
+  test,
+} from "./fixtures.js";
 
 // A dialog leaves the rest of the page inert while it is open, and gives the
 // focus back to what opened it as it closes. When the screen changes under
@@ -22,6 +29,7 @@ async function startFlash(page: Page) {
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await skipWifiStep(page);
   await page.getByRole("button", { name: "Install", exact: true }).click();
+  await setMockDelayScale(page, 1);
   await page
     .getByRole("button", { name: "Erase and install", exact: true })
     .click();
@@ -52,6 +60,7 @@ test("a flash that ends while asking to stop continues from the success", async 
   test.setTimeout(60000);
   await startFlash(page);
   await askToStop(page);
+  await setMockDelayScale(page, MOCK_DELAY_SCALE);
 
   // The flash finishes meanwhile, and Cancel goes with the step
   const heading = page
@@ -72,6 +81,7 @@ test("a flash that fails while asking to stop continues from the error", async (
   });
   await startFlash(page);
   await askToStop(page);
+  await setMockDelayScale(page, MOCK_DELAY_SCALE);
 
   // Cancel stays, but the error was never read out
   const error = page.locator("progress-view [data-focus-alert]");
@@ -133,6 +143,7 @@ test.describe("on a Mac", () => {
     await expect(page.locator("utm-configure-view")).toBeVisible();
     await next.click();
     await expect(page.locator("utm-confirm-view")).toBeVisible();
+    await setMockDelayScale(page, 1);
     await next.click();
     await expect(cancel(page)).toBeVisible();
 

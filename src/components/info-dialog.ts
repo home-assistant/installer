@@ -1,5 +1,5 @@
 import { localize } from "../localization/localize.js";
-import { html } from "lit";
+import { html, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
 import { DialogBase } from "./dialog-base.js";
@@ -49,13 +49,15 @@ export class InfoDialog extends DialogBase {
         this.heading,
         this.primaryVariant === "danger" ? "warning" : "info"
       )}
-
-      <p class="dialog-message">${this.message}</p>
+      ${this.message
+        ? html`<p class="dialog-message">${this.message}</p>`
+        : nothing}
       <slot></slot>
 
       ${this.secondaryLabel
         ? html`
             <wa-button
+              pill
               slot="footer"
               variant=${secondaryStandsOut ? "brand" : "neutral"}
               appearance=${secondaryStandsOut ? "accent" : "outlined"}
@@ -66,6 +68,7 @@ export class InfoDialog extends DialogBase {
           `
         : ""}
       <wa-button
+        pill
         slot="footer"
         variant=${secondaryStandsOut ? "neutral" : this.primaryVariant}
         appearance=${secondaryStandsOut ? "outlined" : "accent"}

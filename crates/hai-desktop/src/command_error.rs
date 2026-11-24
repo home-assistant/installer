@@ -14,6 +14,9 @@ pub struct CommandError {
     /// code covers several causes. Never sent to the frontend.
     #[serde(skip)]
     pub diagnostic: &'static str,
+    /// What failed, scrubbed, for the local log. Never sent to the frontend.
+    #[serde(skip)]
+    pub cause: Option<String>,
 }
 
 impl CommandError {
@@ -24,6 +27,7 @@ impl CommandError {
             retryable,
             details: json!({}),
             diagnostic: code,
+            cause: None,
         }
     }
 
@@ -36,6 +40,7 @@ impl CommandError {
             retryable,
             details: json!({ "message_key": message.key, "message_params": message.params_json() }),
             diagnostic: code,
+            cause: None,
         }
     }
 
@@ -57,11 +62,16 @@ impl CommandError {
     /// A read-only query can be repeated after the user restores access or service.
     pub fn from_query(error: Error) -> Self {
         let mut error = Self::from(error);
+        // A query has no operation to log this as it finishes; inside one,
+        // the repeat check keeps it to one line
+        crate::diagnostics::failed(&error);
         error.retryable = !matches!(
             error.code,
             "unsupported_platform"
                 | "invalid_config"
+                | "release_unavailable"
                 | "utm_operation_uncertain"
+                | "utm_vm_name_taken"
                 | "proxmox_session_expired"
                 | "proxmox_certificate_changed"
         );
@@ -77,7 +87,20 @@ impl std::fmt::Display for CommandError {
 
 impl From<Error> for CommandError {
     fn from(error: Error) -> Self {
-        let (code, message, retryable) = match &error {
+        let mut result = Self::public(&error);
+        // The log keeps what the frontend only names by its code; a cancel
+        // is the user's choice, with nothing to explain
+        if !matches!(error, Error::Cancelled) {
+            result.cause = Some(crate::diagnostics::describe(&error));
+        }
+        result
+    }
+}
+
+impl CommandError {
+    /// What the frontend gets for `error`.
+    fn public(error: &Error) -> Self {
+        let (code, message, retryable) = match error {
             // Never serialize URLs, response bodies, or authentication data from remote errors.
             Error::Network(_) => ("network", "Could not connect. Check your internet connection.", true),
             Error::Io(_) => ("io", "Could not read or write a file. Check available storage and access permissions.", false),
@@ -109,6 +132,8 @@ impl From<Error> for CommandError {
             Error::Utm(message) => return Self::with_message("utm", message, true),
             Error::UtmOperationUncertain(message) => return Self::with_message("utm_operation_uncertain", message, false),
             Error::UtmVmCreated(message) => return Self::with_message("utm_vm_created", message, false),
+            // Choosing another name is the fix, not asking UTM again
+            Error::UtmVmNameTaken(message) => return Self::with_message("utm_vm_name_taken", message, false),
             Error::DriveDisconnected => ("drive_disconnected", "The drive was disconnected. Reconnect it and select it again.", false),
             Error::DriveIo(_) => return Self::with_message("drive_io", &hai_core::message!("backend.disk.drive_io"), true),
             Error::DriveVerificationFailed => return Self::with_message("drive_verification_failed", &hai_core::message!("backend.disk.drive_verification_failed"), false),
@@ -121,10 +146,14 @@ impl From<Error> for CommandError {
             Error::RateLimited(message) => return Self::with_message("rate_limited", message, true),
             // Names the service, so the frontend doesn't say the image failed
             Error::ServiceUnavailable(message) => return Self::with_message("network", message, true),
+            // Generic text; the tag or asset is only for debugging
+            Error::UnexpectedRelease(_) => return Self::with_message("network", &hai_core::message!("backend.download.github_invalid_response"), true),
             Error::DownloadFailed(_) => ("download_failed", "The image could not be downloaded. Check your connection and try again.", true),
+            // A download failure in the log, apart from a metadata service outage
+            Error::ImageUnavailable { status, .. } => return Self::with_message("download_failed", &hai_core::message!("backend.download.image_unavailable", status = status), true),
             // Rounded apart, so the text never reads as if it fits
             Error::NotEnoughSpace { needed, free } => return Self::with_message("not_enough_space", &hai_core::message!("backend.download.not_enough_space", needed_mb = needed.div_ceil(1_000_000), free_mb = free / 1_000_000), true),
-            Error::ExtractionFailed(_) => ("extraction_failed", "The image could not be unpacked. Check available storage.", true),
+            Error::ExtractionFailed(_) => ("extraction_failed", "The image could not be unpacked on this computer. Check available storage, then try again.", true),
             Error::VerificationFailed(_) => ("verification_failed", "The image could not be verified. Installation stopped to protect your device. See the installation help before continuing.", false),
             Error::ImageTooLarge { written, image_size, drive_size } => {
                 let mut result = Self::new("image_too_large", "The image does not fit on this drive. Choose a larger drive.", false);
@@ -132,7 +161,8 @@ impl From<Error> for CommandError {
                 return result;
             }
             Error::LiveUsbInvalidHaiLive => ("hai_live_invalid", "The program for the USB stick (hai-live) is not the Linux build. Rebuild it for x86_64-unknown-linux-musl, then try again.", true),
-            Error::LiveUsbReleaseUnusable(_) => ("release_unavailable", "The latest Home Assistant OS release can't be used right now. Try again later.", true),
+            // Release information is cached, so a retry gets the same release
+            Error::ReleaseUnusable(_) => ("release_unavailable", "The latest Home Assistant OS release can't be used for this installation.", false),
             Error::LiveUsbBuild(_) => ("image_build_failed", "The bootable media could not be built. Check available storage, then try again.", true),
         };
         Self::new(code, message, retryable)
@@ -163,6 +193,32 @@ mod tests {
                 "retryable": false, "details": { "written": 0, "image_size": 2048, "drive_size": 1024 }
             })
         );
+    }
+
+    #[test]
+    fn release_and_unpacking_failures_name_what_failed() {
+        let release = CommandError::from(Error::ReleaseUnusable("No raw image in release".into()));
+        assert_eq!(release.code, "release_unavailable");
+        assert!(!release.retryable);
+
+        // The download was verified, so this computer is what to check
+        let extraction = CommandError::from(Error::ExtractionFailed("corrupt".into()));
+        assert!(extraction.message.contains("storage"), "{extraction}");
+        assert!(extraction.retryable);
+
+        let image = CommandError::from(Error::ImageUnavailable {
+            status: 503,
+            url: "https://github.com/home-assistant/operating-system/releases/download/16.3/haos_green-16.3.img.xz".into(),
+        });
+        assert!(!image.message.contains("github"), "{image}");
+        assert_eq!(image.diagnostic, "download_failed");
+        assert_eq!(
+            image.details["message_key"],
+            "backend.download.image_unavailable"
+        );
+
+        let unexpected = CommandError::from(Error::UnexpectedRelease("release 1.0".into()));
+        assert!(!unexpected.message.contains("1.0"), "{unexpected}");
     }
 
     #[test]
@@ -198,6 +254,9 @@ mod tests {
         let serialized = serde_json::to_string(&error).unwrap();
         assert!(!serialized.contains("diagnostic"), "{serialized}");
         assert!(!serialized.contains("private"), "{serialized}");
+        assert!(!serialized.contains("\"cause\""), "{serialized}");
+        // A cancel is the user's choice, not a failure to log
+        assert_eq!(CommandError::from(Error::Cancelled).cause, None);
     }
 
     #[test]
@@ -318,6 +377,26 @@ mod tests {
             )))
             .retryable
         );
+    }
+
+    #[test]
+    fn a_taken_utm_name_asks_for_another_without_retry() {
+        for error in [
+            CommandError::from(Error::UtmVmNameTaken(hai_core::message!(
+                "backend.utm.vm_name_taken",
+                name = "Home Assistant",
+            ))),
+            CommandError::from_query(Error::UtmVmNameTaken(hai_core::message!(
+                "backend.utm.vm_name_taken",
+                name = "Home Assistant",
+            ))),
+        ] {
+            assert_eq!(error.code, "utm_vm_name_taken");
+            assert!(!error.retryable);
+            assert_eq!(error.details["message_key"], "backend.utm.vm_name_taken");
+            assert_eq!(error.details["message_params"]["name"], "Home Assistant");
+            assert!(error.message.contains("Choose another name"));
+        }
     }
 
     #[test]

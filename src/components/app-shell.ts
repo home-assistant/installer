@@ -27,9 +27,11 @@ import "./info-dialog.js";
 import {
   wizardState,
   type WizardFlow,
+  type WizardSelections,
   type WizardState,
 } from "../state/wizard-state.js";
 import { WizardStateController } from "../state/wizard-state-controller.js";
+import { decodeResumeState, type ResumeState } from "../state/resume-state.js";
 import { writesInstaller } from "../state/ha-hardware.js";
 import { installerUpdate } from "../state/installer-update.js";
 import {
@@ -37,6 +39,7 @@ import {
   listBlockDevices,
   onCloseBlocked,
   quitAnyway,
+  takeResumeState,
 } from "../api/index.js";
 import {
   clearDriveSelection,
@@ -105,8 +108,11 @@ export class AppShell extends LitElement {
   @state()
   private _pendingNext?: unknown;
 
+  // The selections the drive check before erasing started from. Back,
+  // Cancel or another choice replaces them, so a check left behind holds up
+  // nothing on the step shown next.
   @state()
-  private _verifyingDrive = false;
+  private _verifyingDrive?: WizardSelections;
 
   @state()
   private _showStopDialog = false;
@@ -144,9 +150,12 @@ export class AppShell extends LitElement {
 
   private _stopCloseListener?: Promise<() => void>;
   private _pendingFlow?: WizardFlow;
+  /** Where the flow opens once the connection check passes, after a restart */
+  private _pendingResume?: ResumeState;
 
   connectedCallback() {
     super.connectedCallback();
+    void this._resumeAfterRestart();
     // A failed install ends the wait the update dialog tells about
     this._stopUpdateListener = installerUpdate.subscribe(() => {
       if (!installerUpdate.applying) this._showUpdateQuitDialog = false;
@@ -291,7 +300,7 @@ export class AppShell extends LitElement {
     // would drop the focus to the page
     const busy = this._isBusy(step)
       ? step?.beforeNext?.label?.()
-      : this._verifyingDrive
+      : this._isVerifyingDrive
         ? localize("components.app_shell.checking_drive")
         : undefined;
 
@@ -303,12 +312,14 @@ export class AppShell extends LitElement {
       running && !this._installStoppable && !this._installLeavable;
 
     // Back from an install only once it failed or was stopped, where a choice
-    // can still change. The flow ends on its last step.
+    // can still change, or after a failure another choice fixes. The flow
+    // ends on its last step.
     const last = wizardState.isLastStep;
     const hideBack =
       last ||
       !!step?.noBack ||
-      (!!install && (running || !install.backAfterError));
+      (!!install &&
+        (running || !(install.backAfterError || this._installChangeChoice)));
 
     const hideNext =
       running ||
@@ -386,6 +397,14 @@ export class AppShell extends LitElement {
     );
   }
 
+  /** Whether the drive check of the step on screen is running */
+  private get _isVerifyingDrive(): boolean {
+    return (
+      this._verifyingDrive !== undefined &&
+      this._verifyingDrive === wizardState.getState().selections
+    );
+  }
+
   /** The definition of the step on screen. */
   private get _step(): WizardStepDefinition | undefined {
     return wizardStep(
@@ -405,21 +424,45 @@ export class AppShell extends LitElement {
     this._currentView = e.detail.view;
   }
 
+  /**
+   * After a restart as administrator, open the flow where it was, past the
+   * connection check, instead of on the welcome screen.
+   */
+  private async _resumeAfterRestart() {
+    // Failing to ask only means starting on the welcome screen
+    const text = await takeResumeState().catch(() => null);
+    const resume = text ? decodeResumeState(text) : null;
+    // The user may have moved on while the answer came
+    if (!resume || this._currentView !== "welcome") return;
+    this._resetErrorState();
+    this._pendingFlow = resume.flow;
+    this._pendingResume = resume;
+    this._currentView = "connection-check";
+  }
+
   private _onSelectPath(e: HAIEvent<"select-path">) {
     this._resetErrorState();
     this._pendingFlow = e.detail.path;
+    this._pendingResume = undefined;
     this._currentView = "connection-check";
   }
 
   private _onConnectionReady() {
     if (this._currentView !== "connection-check" || !this._pendingFlow) return;
-    wizardState.startFlow(this._pendingFlow);
+    const resume = this._pendingResume;
+    if (resume) {
+      wizardState.resumeFlow(resume.flow, resume.selections, resume.step);
+    } else {
+      wizardState.startFlow(this._pendingFlow);
+    }
     this._pendingFlow = undefined;
+    this._pendingResume = undefined;
     this._currentView = "wizard";
   }
 
   private _onConnectionBack() {
     this._pendingFlow = undefined;
+    this._pendingResume = undefined;
     this._currentView = "path-selection";
   }
 
@@ -546,7 +589,7 @@ export class AppShell extends LitElement {
     // Check the drive is still there, then ask before erasing it
     if (step?.erasesDrive?.(this._wizardState.selections)) {
       // Next is busy with this already, whatever else sent the event
-      if (this._verifyingDrive) return;
+      if (this._isVerifyingDrive) return;
       if (!(await this._verifySelectedDrive())) {
         return;
       }
@@ -582,7 +625,7 @@ export class AppShell extends LitElement {
     let found = false;
 
     if (selection) {
-      this._verifyingDrive = true;
+      this._verifyingDrive = started.selections;
       try {
         found = !!findDrive(
           await listBlockDevices(),
@@ -593,7 +636,9 @@ export class AppShell extends LitElement {
         // The scan failed, so the device cannot be confirmed. Treat that the
         // same as a device that is gone.
       } finally {
-        this._verifyingDrive = false;
+        if (this._verifyingDrive === started.selections) {
+          this._verifyingDrive = undefined;
+        }
       }
     }
 

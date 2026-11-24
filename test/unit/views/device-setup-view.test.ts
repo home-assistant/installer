@@ -49,7 +49,16 @@ describe("device-setup-view", () => {
           onLookup(lookups);
           return lookups++ < 2 || !starts
             ? []
-            : [{ id: "device", address: "192.0.2.60", landing_page: true }];
+            : [
+                {
+                  id: "device",
+                  name: null,
+                  address: "192.0.2.60",
+                  url: "http://192.0.2.60/",
+                  landing_page: true,
+                  needs_onboarding: false,
+                },
+              ];
         case "check_ha_ready":
           return ready();
         case "check_ha_updated":

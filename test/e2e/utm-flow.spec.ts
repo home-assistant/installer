@@ -1,5 +1,12 @@
 import { type Page } from "@playwright/test";
-import { allowUtmControl, test, expect } from "./fixtures.js";
+import {
+  allowUtmControl,
+  flowScreenshot,
+  test,
+  expect,
+  MOCK_DELAY_SCALE,
+  setMockDelayScale,
+} from "./fixtures.js";
 
 test.use({ platform: "macos" });
 
@@ -105,6 +112,40 @@ test.describe("UTM Installation Flow", () => {
     await expect(page.locator("utm-check-view")).toBeVisible();
   });
 
+  test("refuses a name UTM already has before anything is downloaded", async ({
+    page,
+  }) => {
+    // UTM still has the VM of an earlier install
+    await page.evaluate(() =>
+      sessionStorage.setItem("hai:mock-failure", "utm-name-taken")
+    );
+    await navigateToUtmStep2(page);
+    const configureView = page.locator("utm-configure-view");
+    const next = page
+      .locator("wizard-shell")
+      .locator(".footer-right wa-button");
+
+    await next.click();
+
+    // Still here, with the reason at the name, which has the focus
+    await expect(configureView.locator(".name-hint")).toHaveText(
+      'UTM already has a virtual machine named "Home Assistant". Choose another name, or remove that virtual machine in UTM.'
+    );
+    await expect(configureView.locator("wa-input")).toBeFocused();
+    await expect(page.locator("utm-confirm-view")).toHaveCount(0);
+
+    // Another name goes on
+    await configureView.locator("wa-input input").fill("Home Assistant 2");
+    await expect(configureView.locator(".name-hint")).toHaveText(
+      "Shown in UTM's virtual machine list"
+    );
+    await next.click();
+    await expect(page.locator("utm-confirm-view")).toBeVisible();
+    await expect(page.locator("utm-confirm-view")).toContainText(
+      "Home Assistant 2"
+    );
+  });
+
   test("can cancel wizard at any step before installation", async ({
     page,
   }) => {
@@ -136,13 +177,16 @@ test.describe("UTM Installation Flow", () => {
       .locator(".footer-right wa-button");
 
     await expect(nextButton).toHaveJSProperty("disabled", true);
+    await flowScreenshot(page, "vm-utm", "check");
     await allowUtmControl(page);
     await expect(nextButton).toHaveJSProperty("disabled", false);
+    await flowScreenshot(page, "vm-utm", "check-allowed");
 
     await nextButton.click();
 
     // Step 2: Configure
     await expect(page.locator("utm-configure-view")).toBeVisible();
+    await flowScreenshot(page, "vm-utm", "configure");
     await page
       .locator("wizard-shell")
       .locator(".footer-right wa-button")
@@ -150,6 +194,8 @@ test.describe("UTM Installation Flow", () => {
 
     // Step 3: Confirm - click Install (no confirmation dialog for VM flow)
     await expect(page.locator("utm-confirm-view")).toBeVisible();
+    await flowScreenshot(page, "vm-utm", "confirm");
+    await setMockDelayScale(page, 1);
     await page
       .locator("wizard-shell")
       .locator(".footer-right wa-button")
@@ -161,11 +207,14 @@ test.describe("UTM Installation Flow", () => {
       "visibility",
       "hidden"
     );
+    await flowScreenshot(page, "vm-utm", "progress");
+    await setMockDelayScale(page, MOCK_DELAY_SCALE);
 
     // Step 5: Success
     await expect(page.locator("utm-success-view")).toBeVisible({
       timeout: 30000,
     });
+    await flowScreenshot(page, "vm-utm", "success");
 
     // Start over returns to the welcome screen
     await expect(

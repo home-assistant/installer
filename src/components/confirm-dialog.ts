@@ -110,10 +110,16 @@ export class ConfirmDialog extends DialogBase {
           </p>`
         : ""}
 
-      <wa-button slot="footer" appearance="outlined" @click=${this._onCancel}>
+      <wa-button
+        pill
+        slot="footer"
+        appearance="outlined"
+        @click=${this._onCancel}
+      >
         ${localize("common.cancel")}
       </wa-button>
       <wa-button
+        pill
         slot="footer"
         variant="danger"
         appearance="accent"

@@ -5,8 +5,13 @@ import "../../../../src/views/sbc/success-view.js";
 import type { SuccessView } from "../../../../src/views/sbc/success-view.js";
 import { mockTauriIpc, restoreTauriIpc, settle } from "../../tauri-ipc.js";
 
-async function renderSuccess(board = "rpi5-64", flow: WizardFlow = "sbc") {
+async function renderSuccess(
+  board = "rpi5-64",
+  flow: WizardFlow = "sbc",
+  ejected = true
+) {
   wizardState.startFlow(flow);
+  wizardState.setSelection("driveEjected", ejected);
   wizardState.setSelection("deviceName", "Selected device");
   wizardState.setSelection("deviceConfig", {
     board,
@@ -42,10 +47,8 @@ describe("success-view next steps", () => {
     expect(text(el)).to.contain("Ethernet cable to the same network");
     expect(text(el)).to.contain("with internet access");
     expect(text(el)).to.contain("Then connect power");
-    expect(text(el)).to.contain("Once the device is on, select Next");
-    expect(text(el)).to.contain("installs Home Assistant");
-    expect(text(el)).to.contain("about 20 minutes");
-    expect(text(el)).to.contain("Keep power and Ethernet connected");
+    // Next follows the device from there, so no step says to select it
+    expect(text(el)).not.to.contain("select Next");
     expect(text(el)).not.to.contain("Wait a few minutes");
   });
 
@@ -56,7 +59,6 @@ describe("success-view next steps", () => {
     await el.shadowRoot!.querySelector("install-success")!.updateComplete;
     expect(text(el)).to.contain("joins the Wi-Fi network Home");
     expect(text(el)).not.to.contain("Ethernet cable to the same network");
-    expect(text(el)).not.to.contain("Keep power and Ethernet connected");
   });
 
   it("says how to start the device, and leaves the rest to the next steps", async () => {
@@ -79,13 +81,21 @@ describe("success-view next steps", () => {
     ]);
   });
 
-  it("asks for manual ejection without claiming native ejection succeeded", async () => {
+  it("leaves ejecting out once writing ejected the drive", async () => {
     const el = await renderSuccess();
-    expect(text(el)).to.contain("If your computer still shows the drive");
-    expect(text(el)).to.contain("eject it before you disconnect it");
-    expect(text(el)).not.to.contain("safely ejected");
+    expect(text(el)).not.to.contain("eject");
     const success = el.shadowRoot!.querySelector("install-success")!;
     expect(success.formatWarning).to.equal(true);
+  });
+
+  it("asks to eject the drive first when writing couldn't", async () => {
+    const el = await renderSuccess("rpi5-64", "sbc", false);
+    const steps = [...content(el).querySelectorAll(".step-text")].map(
+      (step) => step.textContent!
+    );
+    expect(steps[0]).to.equal(
+      "Your computer couldn't eject the drive. Eject it before you disconnect it."
+    );
   });
 
   for (const board of ["odroid-n2", "odroid-m1s"]) {

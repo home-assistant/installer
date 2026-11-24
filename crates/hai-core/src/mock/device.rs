@@ -73,7 +73,7 @@ impl DeviceBackend for BackendMock {
         _expected: &crate::types::ExpectedDevice,
         verify: bool,
         cb: &P,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let size = image.size()?;
         simulate(cb, FlashStage::Writing, size, "Writing to device (mock)...").await?;
         if verify {
@@ -81,6 +81,6 @@ impl DeviceBackend for BackendMock {
         }
         simulate(cb, FlashStage::Finalizing, 0, "Ejecting (mock)...").await?;
         cb.on_progress(FlashProgress::new(FlashStage::Complete, size, size, "Done"));
-        Ok(())
+        Ok(true)
     }
 }

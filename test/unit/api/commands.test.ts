@@ -1,6 +1,7 @@
 import { expect } from "@open-wc/testing";
 import {
   checkForUpdate,
+  checkUtmVmName,
   downloadUpdate,
   downloadUtmImage,
   flashImage,
@@ -183,6 +184,27 @@ describe("api/commands", () => {
         .map((step) => (step as { wait: number }).wait);
       expect(Math.max(...processing)).to.be.greaterThan(stepWait);
       expectNoMessages(progressOf(steps));
+    });
+  });
+
+  describe("browser mock UTM name check", () => {
+    afterEach(() => sessionStorage.removeItem("hai:mock-failure"));
+
+    it("finds every name free unless a test takes it, once", async () => {
+      await checkUtmVmName("Home Assistant");
+
+      sessionStorage.setItem("hai:mock-failure", "utm-name-taken");
+      let rejection: unknown;
+      try {
+        await checkUtmVmName("Home Assistant");
+      } catch (error) {
+        rejection = error;
+      }
+      expect(rejection).to.include({
+        code: "utm_vm_name_taken",
+        retryable: false,
+      });
+      await checkUtmVmName("Home Assistant");
     });
   });
 

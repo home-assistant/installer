@@ -31,6 +31,57 @@ impl Kind {
     }
 }
 
+/// What a disk is, as far as the kernel says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Model {
+    /// Vendor and model as reported by the kernel.
+    Reported(String),
+    /// A VirtIO disk, which reports no model.
+    Virtio,
+    /// The kernel reports none.
+    Unknown,
+}
+
+/// Why a device is never offered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Reason {
+    LoopDevice,
+    RamDisk,
+    OpticalDrive,
+    EmmcBootArea,
+    UnsupportedType,
+    /// Its place in the hardware tree can't be read, so it may be on USB.
+    ConnectionUnknown,
+    UsbDevice,
+    SdCard,
+    /// An `mmcblk` that says neither eMMC nor SD card.
+    CardTypeUnknown,
+    NoMedia,
+    /// Logical sectors other than 512 bytes.
+    LargeSectors,
+    SectorSizeUnknown,
+}
+
+impl Reason {
+    /// The message that says it.
+    pub fn key(self) -> &'static str {
+        match self {
+            Reason::LoopDevice => "live.drives.hidden.loop_device",
+            Reason::RamDisk => "live.drives.hidden.ram_disk",
+            Reason::OpticalDrive => "live.drives.hidden.optical_drive",
+            Reason::EmmcBootArea => "live.drives.hidden.emmc_boot_area",
+            Reason::UnsupportedType => "live.drives.hidden.unsupported_type",
+            Reason::ConnectionUnknown => "live.drives.hidden.connection_unknown",
+            Reason::UsbDevice => "live.drives.hidden.usb_device",
+            Reason::SdCard => "live.drives.hidden.sd_card",
+            Reason::CardTypeUnknown => "live.drives.hidden.card_type_unknown",
+            Reason::NoMedia => "live.drives.hidden.no_media",
+            Reason::LargeSectors => "live.drives.hidden.large_sectors",
+            Reason::SectorSizeUnknown => "live.drives.hidden.sector_size_unknown",
+        }
+    }
+}
+
 /// A whole disk that could be an install target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Disk {
@@ -38,8 +89,8 @@ pub struct Disk {
     pub name: String,
     /// Disk type.
     pub kind: Kind,
-    /// Vendor and model as reported by the kernel.
-    pub model: String,
+    /// Vendor and model.
+    pub model: Model,
     /// Size in bytes.
     pub size_bytes: u64,
     /// Hardware serial, if the kernel reports one. Part of the identity re-checked before writing.
@@ -56,7 +107,7 @@ pub enum Entry {
         /// Kernel name.
         name: String,
         /// Why it isn't offered.
-        reason: &'static str,
+        reason: Reason,
     },
 }
 
@@ -101,21 +152,21 @@ fn entry(
     let Ok(link) = read_link(&dir) else {
         return Entry::Skipped {
             name,
-            reason: "connection type unknown",
+            reason: Reason::ConnectionUnknown,
         };
     };
     if is_usb_path(&link.to_string_lossy()) {
         return Entry::Skipped {
             name,
-            reason: "USB device",
+            reason: Reason::UsbDevice,
         };
     }
     // mmcblk is used for both soldered eMMC and SD cards; only eMMC reports "MMC".
     if kind == Kind::Emmc {
         let reason = match read_trimmed(&dir.join("device").join("type")).as_deref() {
             Some("MMC") => None,
-            Some("SD") => Some("SD card"),
-            _ => Some("card type unknown"),
+            Some("SD") => Some(Reason::SdCard),
+            _ => Some(Reason::CardTypeUnknown),
         };
         if let Some(reason) = reason {
             return Entry::Skipped { name, reason };
@@ -128,7 +179,7 @@ fn entry(
     if size_bytes == 0 {
         return Entry::Skipped {
             name,
-            reason: "no media",
+            reason: Reason::NoMedia,
         };
     }
     // The Home Assistant OS image has a partition table for 512-byte sectors, written as is.
@@ -140,13 +191,13 @@ fn entry(
         Some(_) => {
             return Entry::Skipped {
                 name,
-                reason: "not 512-byte sectors",
+                reason: Reason::LargeSectors,
             };
         }
         None => {
             return Entry::Skipped {
                 name,
-                reason: "sector size unknown",
+                reason: Reason::SectorSizeUnknown,
             };
         }
     }
@@ -160,19 +211,19 @@ fn entry(
 }
 
 /// Maps a kernel name to a supported disk type, or the reason it's never offered.
-fn classify(name: &str) -> Result<Kind, &'static str> {
+fn classify(name: &str) -> Result<Kind, Reason> {
     let rest_is_digits = |prefix: &str| {
         name.strip_prefix(prefix)
             .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|c| c.is_ascii_digit()))
     };
     if name.starts_with("loop") {
-        Err("loop device")
+        Err(Reason::LoopDevice)
     } else if name.starts_with("ram") || name.starts_with("zram") {
-        Err("RAM disk")
+        Err(Reason::RamDisk)
     } else if name.starts_with("sr") {
-        Err("optical drive")
+        Err(Reason::OpticalDrive)
     } else if name.starts_with("mmcblk") && (name.contains("boot") || name.contains("rpmb")) {
-        Err("eMMC boot area")
+        Err(Reason::EmmcBootArea)
     } else if rest_is_digits("mmcblk") {
         Ok(Kind::Emmc)
     } else if is_nvme_namespace(name) {
@@ -182,7 +233,7 @@ fn classify(name: &str) -> Result<Kind, &'static str> {
     } else if name.starts_with("vd") && name[2..].bytes().all(|c| c.is_ascii_lowercase()) {
         Ok(Kind::Virtio)
     } else {
-        Err("not a supported disk type")
+        Err(Reason::UnsupportedType)
     }
 }
 
@@ -198,7 +249,7 @@ fn is_usb_path(sys_path: &str) -> bool {
     sys_path.split('/').any(|part| part.starts_with("usb"))
 }
 
-fn model(dir: &Path, kind: Kind) -> String {
+fn model(dir: &Path, kind: Kind) -> Model {
     let device = dir.join("device");
     let parts: Vec<String> = match kind {
         Kind::Sata => ["vendor", "model"]
@@ -207,13 +258,12 @@ fn model(dir: &Path, kind: Kind) -> String {
             .collect(),
         Kind::Nvme => read_trimmed(&device.join("model")).into_iter().collect(),
         Kind::Emmc => read_trimmed(&device.join("name")).into_iter().collect(),
-        Kind::Virtio => vec!["VirtIO disk".to_string()],
+        Kind::Virtio => return Model::Virtio,
     };
-    let model = parts.join(" ");
-    if model.is_empty() {
-        "unknown model".to_string()
+    if parts.is_empty() {
+        Model::Unknown
     } else {
-        model
+        Model::Reported(parts.join(" "))
     }
 }
 
@@ -424,31 +474,32 @@ pub(crate) mod tests {
             Entry::Disk(Disk {
                 name: "sda".into(),
                 kind: Kind::Sata,
-                model: "ATA Samsung SSD 870".into(),
+                model: Model::Reported("ATA Samsung SSD 870".into()),
                 size_bytes: 34_359_738_368,
                 serial: Some("t10.ATA Samsung SSD 870 S5Y1NX0R".into()),
             })
         );
         assert!(matches!(&entries[1], Entry::Disk(d)
-            if d.model == "WD Blue SN570" && d.serial.as_deref() == Some("22123K801234")));
+            if d.model == Model::Reported("WD Blue SN570".into())
+                && d.serial.as_deref() == Some("22123K801234")));
         assert!(matches!(
             entries[0],
             Entry::Skipped {
-                reason: "loop device",
+                reason: Reason::LoopDevice,
                 ..
             }
         ));
         assert!(matches!(
             entries[3],
             Entry::Skipped {
-                reason: "no media",
+                reason: Reason::NoMedia,
                 ..
             }
         ));
         assert!(matches!(
             entries[4],
             Entry::Skipped {
-                reason: "optical drive",
+                reason: Reason::OpticalDrive,
                 ..
             }
         ));
@@ -466,14 +517,14 @@ pub(crate) mod tests {
         assert!(matches!(
             entries[1],
             Entry::Skipped {
-                reason: "SD card",
+                reason: Reason::SdCard,
                 ..
             }
         ));
         assert!(matches!(
             entries[2],
             Entry::Skipped {
-                reason: "card type unknown",
+                reason: Reason::CardTypeUnknown,
                 ..
             }
         ));
@@ -496,14 +547,14 @@ pub(crate) mod tests {
         assert!(matches!(
             entries[0],
             Entry::Skipped {
-                reason: "USB device",
+                reason: Reason::UsbDevice,
                 ..
             }
         ));
         assert!(matches!(
             entries[1],
             Entry::Skipped {
-                reason: "connection type unknown",
+                reason: Reason::ConnectionUnknown,
                 ..
             }
         ));
@@ -524,9 +575,9 @@ pub(crate) mod tests {
         let entries = list_with(sys, &fake_link).unwrap();
         assert!(matches!(&entries[0], Entry::Disk(d) if d.name == "sda"));
         for (entry, expected) in entries[1..].iter().zip([
-            "not 512-byte sectors",
-            "sector size unknown",
-            "sector size unknown",
+            Reason::LargeSectors,
+            Reason::SectorSizeUnknown,
+            Reason::SectorSizeUnknown,
         ]) {
             assert!(
                 matches!(entry, Entry::Skipped { reason, .. } if *reason == expected),

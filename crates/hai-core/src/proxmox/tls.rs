@@ -689,6 +689,7 @@ mod tests {
             &session,
             "pve",
             &file.path().to_path_buf(),
+            "hai.qcow2",
             &crate::NoOpProgress,
             "local",
         )

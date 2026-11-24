@@ -189,6 +189,51 @@ fn automation_allowed(mut run: impl FnMut(&str, &[&str]) -> Result<String>) -> R
         })
 }
 
+/// Refuse a name UTM already has a VM by, before anything is downloaded
+fn check_vm_name(name: &str) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        vm_name_available(name, macos::run_applescript)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = name;
+        Err(Error::UnsupportedPlatform(
+            "UTM is only available on macOS".to_string(),
+        ))
+    }
+}
+
+/// Asks UTM whether it has a VM named `name`. UTM refuses to create a second
+/// one, but only says so once the image is downloaded and copied.
+///
+/// UTM matches the name ignoring case here, while its own check when
+/// creating doesn't. Its VMs are bundles named after them on a disk that
+/// usually ignores case, so a name differing only in case is refused too.
+#[cfg(any(target_os = "macos", test))]
+fn vm_name_available(
+    name: &str,
+    mut run: impl FnMut(&str, &[&str]) -> Result<String>,
+) -> Result<()> {
+    let taken = run(VM_EXISTS_SCRIPT, &[name]).map_err(|error| match error {
+        // Nothing is created, so an unanswered question is nothing to keep
+        Error::UtmOperationUncertain(message) => Error::Utm(message),
+        error => error,
+    })?;
+    match taken.as_str() {
+        "false" => Ok(()),
+        "true" => Err(Error::UtmVmNameTaken(crate::message!(
+            "backend.utm.vm_name_taken",
+            name = name,
+        ))),
+        other => Err(Error::Utm(crate::message!(
+            "backend.utm.applescript_error",
+            detail = format!("Unexpected answer from UTM: {other}"),
+        ))),
+    }
+}
+
 /// Create a Home Assistant VM using UTM
 async fn create_vm<P: ProgressCallback>(
     config: &UtmVmConfig,
@@ -272,6 +317,13 @@ const AUTOMATION_SCRIPT: &str = r#"tell application "UTM"
 end tell"#;
 
 #[cfg(any(target_os = "macos", test))]
+const VM_EXISTS_SCRIPT: &str = r#"on run {vmName}
+    tell application "UTM"
+        return exists virtual machine named vmName
+    end tell
+end run"#;
+
+#[cfg(any(target_os = "macos", test))]
 const STATUS_SCRIPT: &str = r#"on run {vmId}
     tell application "UTM"
         return status of virtual machine id vmId
@@ -298,7 +350,7 @@ end run"#;
 // - hypervisor:true for hardware acceleration (uses macOS Hypervisor.framework)
 // - uefi:true for UEFI boot (required by HAOS)
 // - bridged network for direct LAN access (required for Home Assistant)
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 const CREATE_SCRIPT: &str = r#"on run {vmName, imagePath, hostInterface, cpuCores, memorySize}
     set imageFile to POSIX file imagePath
     tell application "UTM"
@@ -391,6 +443,46 @@ fn choose_bridge_interface(
         .to_string()
 }
 
+/// Have UTM import a copy of the image at `image_path` as a new VM, and
+/// return its id. The copy has the chosen disk size, and is removed once UTM
+/// took it or refused it.
+#[cfg(any(target_os = "macos", test))]
+fn import_vm(
+    config: &UtmVmConfig,
+    image_path: &std::path::Path,
+    network_interface: &str,
+    mut run: impl FnMut(&str, &[&str]) -> Result<String>,
+) -> Result<String> {
+    // The configure step checked this, but a VM of that name may have been
+    // made since. Refuse it before the copy, which takes a while.
+    vm_name_available(&config.name, &mut run)?;
+
+    // UTM ignores `guest size` for an imported drive and keeps the size
+    // of the image, so the image gets the chosen size before the import.
+    let disk_size_bytes = u64::from(config.disk_size_gb) * 1024 * 1024 * 1024;
+    let source = qcow2::grown_copy(image_path, disk_size_bytes)?;
+
+    let cpu_cores = config.cpu_cores.to_string();
+    let memory_mb = config.memory_mb.to_string();
+    let vm_id = run(
+        CREATE_SCRIPT,
+        &[
+            &config.name,
+            &source.to_string_lossy(),
+            network_interface,
+            &cpu_cores,
+            &memory_mb,
+        ],
+    );
+    if let Err(Error::UtmOperationUncertain(_)) = vm_id {
+        crate::download::keep_for_import(source);
+    } else {
+        // UTM copied the drive into its VM, or never took it
+        let _ = std::fs::remove_file(&source);
+    }
+    vm_id
+}
+
 #[cfg(any(target_os = "macos", test))]
 fn finish_vm_creation(
     config: &UtmVmConfig,
@@ -433,9 +525,60 @@ fn finish_vm_creation(
 #[cfg(target_os = "macos")]
 mod macos {
     use super::*;
+    use core_foundation::array::{CFArray, CFArrayRef};
+    use core_foundation::base::TCFType;
+    use core_foundation::error::CFErrorRef;
+    use core_foundation::string::{CFString, CFStringRef};
+    use core_foundation::url::CFURL;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
 
-    const UTM_APP_PATH: &str = "/Applications/UTM.app";
+    /// The same for the App Store copy and the download from the website
+    const UTM_BUNDLE_ID: &str = "com.utmapp.UTM";
+
+    #[link(name = "CoreServices", kind = "framework")]
+    extern "C" {
+        fn LSCopyApplicationURLsForBundleIdentifier(
+            bundle_identifier: CFStringRef,
+            error: *mut CFErrorRef,
+        ) -> CFArrayRef;
+    }
+
+    /// Where UTM is installed, wherever that is, like in `~/Applications`.
+    /// Launch Services knows, and finds the same copy `tell application
+    /// "UTM"` talks to.
+    fn find_utm_app() -> Option<PathBuf> {
+        let bundle_identifier = CFString::from_static_string(UTM_BUNDLE_ID);
+
+        // SAFETY: the identifier is a valid CFString for the duration of the
+        // call, and a null error pointer means no error is wanted.
+        let urls = unsafe {
+            LSCopyApplicationURLsForBundleIdentifier(
+                bundle_identifier.as_concrete_TypeRef(),
+                std::ptr::null_mut(),
+            )
+        };
+        if urls.is_null() {
+            return None;
+        }
+
+        // SAFETY: a Copy function's result is ours to release, and it holds
+        // CFURLs
+        let urls: CFArray<CFURL> = unsafe { CFArray::wrap_under_create_rule(urls) };
+        usable_app(urls.iter().filter_map(|url| url.to_path()))
+    }
+
+    /// The first of `candidates`, best first, that can still be started.
+    /// Launch Services also remembers copies that are gone, like one on an
+    /// ejected disk image, and ones in the Trash.
+    pub(super) fn usable_app(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+        candidates.into_iter().find(|app| {
+            let in_trash = app
+                .components()
+                .any(|part| matches!(part.as_os_str().to_str(), Some(".Trash" | ".Trashes")));
+            !in_trash && app.join("Contents/Info.plist").is_file()
+        })
+    }
 
     pub(super) fn translation_status() -> std::io::Result<i32> {
         let mut translated: libc::c_int = 0;
@@ -465,28 +608,22 @@ mod macos {
     }
 
     pub(super) async fn check_utm_status() -> Result<UtmStatus> {
-        // Check if UTM.app exists
-        let utm_path = std::path::Path::new(UTM_APP_PATH);
-        if !utm_path.exists() {
+        let Some(app) = find_utm_app() else {
             return Ok(UtmStatus {
                 installed: false,
                 version: None,
                 path: None,
             });
-        }
-
-        // Try to get UTM version from Info.plist
-        let info_plist_path = format!("{}/Contents/Info.plist", UTM_APP_PATH);
-        let version = get_utm_version(&info_plist_path);
+        };
 
         Ok(UtmStatus {
             installed: true,
-            version,
-            path: Some(UTM_APP_PATH.to_string()),
+            version: get_utm_version(app.join("Contents/Info.plist")),
+            path: Some(app.to_string_lossy().into_owned()),
         })
     }
 
-    pub(super) fn get_utm_version(plist_path: &str) -> Option<String> {
+    pub(super) fn get_utm_version(plist_path: impl AsRef<Path>) -> Option<String> {
         let plist_content = std::fs::read(plist_path).ok()?;
         let plist: plist::Value = plist::from_bytes(&plist_content).ok()?;
         let dict = plist.as_dictionary()?;
@@ -580,24 +717,7 @@ mod macos {
 
         ensure_apple_silicon()?;
         let network_interface = get_primary_network_interface();
-
-        // UTM ignores `guest size` for an imported drive and keeps the size
-        // of the image, so the image gets the chosen size before the import.
-        let disk_size_bytes = u64::from(config.disk_size_gb) * 1024 * 1024 * 1024;
-        qcow2::grow(image_path, disk_size_bytes)?;
-
-        let cpu_cores = config.cpu_cores.to_string();
-        let memory_mb = config.memory_mb.to_string();
-        let vm_id = run_applescript(
-            CREATE_SCRIPT,
-            &[
-                &config.name,
-                &config.image_path,
-                &network_interface,
-                &cpu_cores,
-                &memory_mb,
-            ],
-        )?;
+        let vm_id = import_vm(config, image_path, &network_interface, run_applescript)?;
 
         finish_vm_creation(config, vm_id, progress_callback, |vm_id| {
             // The VM exists now, so a failed start must not invite a blind retry
@@ -613,6 +733,10 @@ impl UtmBackend for Backend {
 
     fn check_automation(&self) -> Result<()> {
         check_automation()
+    }
+
+    fn check_vm_name(&self, name: &str) -> Result<()> {
+        check_vm_name(name)
     }
 
     async fn create_vm<P: ProgressCallback>(
@@ -687,6 +811,182 @@ mod tests {
             unanswered,
             Err(Error::Utm(message)) if message.key == "backend.utm.no_response"
         ));
+    }
+
+    #[test]
+    fn a_name_utm_already_has_is_refused_by_name() {
+        let mut asked = Vec::new();
+        let error = vm_name_available("Home Assistant", |script, arguments| {
+            asked.push((script.to_string(), arguments.join("|")));
+            Ok("true".to_string())
+        })
+        .unwrap_err();
+
+        // The name reaches the script as data, never as part of its source
+        assert_eq!(
+            asked,
+            [(VM_EXISTS_SCRIPT.to_string(), "Home Assistant".to_string())]
+        );
+        assert!(matches!(error, Error::UtmVmNameTaken(_)), "{error:?}");
+        assert_eq!(
+            error.message().map(|message| message.key),
+            Some("backend.utm.vm_name_taken")
+        );
+        let english = error.to_string();
+        assert!(english.contains("\"Home Assistant\""), "{english}");
+        assert!(english.contains("Choose another name"), "{english}");
+    }
+
+    #[test]
+    fn a_name_utm_does_not_have_is_available() {
+        assert!(vm_name_available("Home Assistant", |_, _| Ok("false".to_string())).is_ok());
+    }
+
+    #[test]
+    fn an_unexpected_answer_about_a_name_is_no_guess() {
+        let error = vm_name_available("Home Assistant", |_, _| Ok(String::new())).unwrap_err();
+        assert!(matches!(error, Error::Utm(_)), "{error:?}");
+    }
+
+    #[test]
+    fn asking_about_a_name_creates_nothing_to_keep() {
+        // Like the Automation check: no answer is no VM, and no import to wait for
+        let error = vm_name_available("Home Assistant", |_, _| {
+            Err(Error::UtmOperationUncertain(crate::message!(
+                "backend.utm.no_answer",
+                detail = "AppleEvent timed out (-1712)",
+            )))
+        })
+        .unwrap_err();
+        assert!(matches!(error, Error::Utm(_)), "{error:?}");
+
+        let error = vm_name_available("Home Assistant", |_, _| {
+            Err(applescript_error(
+                "Not authorized to send Apple events to UTM. (-1743)",
+            ))
+        })
+        .unwrap_err();
+        assert!(matches!(error, Error::Utm(_)), "{error:?}");
+        assert_eq!(
+            error.message().map(|message| message.key),
+            Some("backend.utm.automation_denied")
+        );
+    }
+
+    fn import_config() -> UtmVmConfig {
+        UtmVmConfig {
+            name: "Home Assistant".into(),
+            image_path: String::new(),
+            cpu_cores: 4,
+            memory_mb: 4096,
+            disk_size_gb: 64,
+            auto_start: false,
+        }
+    }
+
+    /// The files in `dir`, which holds the downloaded image and any copy
+    fn files_in(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut files: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        files.sort();
+        files
+    }
+
+    #[test]
+    fn a_name_taken_since_the_configure_step_stops_the_import_before_the_copy() {
+        let (dir, image) = qcow2::tests::haos_like_image();
+        let mut scripts = Vec::new();
+
+        let error = import_vm(&import_config(), &image, "en0", |script, _| {
+            scripts.push(script.to_string());
+            Ok("true".to_string())
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, Error::UtmVmNameTaken(_)), "{error:?}");
+        // UTM was only asked about the name, and the image wasn't copied
+        assert_eq!(scripts, [VM_EXISTS_SCRIPT]);
+        assert_eq!(files_in(dir.path()), [image]);
+    }
+
+    #[test]
+    fn a_free_name_imports_a_grown_copy_and_removes_it() {
+        let (dir, image) = qcow2::tests::haos_like_image();
+        let mut calls = Vec::new();
+
+        let vm_id = import_vm(&import_config(), &image, "en0", |script, arguments| {
+            if script == CREATE_SCRIPT {
+                let source = std::path::Path::new(arguments[1]);
+                // UTM gets a copy with the chosen size, never the download
+                assert_ne!(source, image);
+                assert!(source.exists());
+                assert_eq!(qcow2::tests::virtual_size(source), 64 * 1024 * 1024 * 1024);
+            }
+            calls.push((
+                script.to_string(),
+                arguments
+                    .iter()
+                    .map(|argument| argument.to_string())
+                    .collect::<Vec<_>>(),
+            ));
+            Ok(if script == VM_EXISTS_SCRIPT {
+                "false"
+            } else {
+                "new-vm-id"
+            }
+            .to_string())
+        })
+        .unwrap();
+
+        assert_eq!(vm_id, "new-vm-id");
+        assert_eq!(calls.len(), 2);
+        assert_eq!(
+            calls[0],
+            (
+                VM_EXISTS_SCRIPT.to_string(),
+                vec!["Home Assistant".to_string()]
+            )
+        );
+        let (script, arguments) = &calls[1];
+        assert_eq!(script, CREATE_SCRIPT);
+        assert_eq!(arguments[0], "Home Assistant");
+        assert_eq!(arguments[2..], ["en0", "4", "4096"]);
+        // UTM has the drive now, and the download stays for another VM
+        assert_eq!(files_in(dir.path()), [image]);
+    }
+
+    #[test]
+    fn a_copy_utm_may_still_be_importing_is_kept() {
+        for (outcome, kept) in [
+            (
+                Error::UtmOperationUncertain(crate::message!(
+                    "backend.utm.no_answer",
+                    detail = "AppleEvent timed out (-1712)",
+                )),
+                true,
+            ),
+            (applescript_error("Invalid configuration"), false),
+        ] {
+            let (dir, image) = qcow2::tests::haos_like_image();
+            let mut outcome = Some(outcome);
+
+            let error = import_vm(&import_config(), &image, "en0", |script, _| {
+                if script == VM_EXISTS_SCRIPT {
+                    Ok("false".to_string())
+                } else {
+                    Err(outcome.take().unwrap())
+                }
+            })
+            .unwrap_err();
+
+            assert_eq!(
+                files_in(dir.path()).len(),
+                if kept { 2 } else { 1 },
+                "{error:?}"
+            );
+        }
     }
 
     #[test]
@@ -1097,10 +1397,41 @@ mod tests {
         use super::create_vm;
         use super::macos::{
             check_utm_status, get_primary_network_interface, get_utm_version, run_applescript,
-            start_vm,
+            start_vm, usable_app,
         };
         use crate::error::Error;
         use crate::types::UtmVmConfig;
+
+        /// Asks the UTM on this Mac, which needs UTM installed and the
+        /// test runner allowed to control it. Run with
+        /// `cargo test -p hai-core utm_answers_whether_it_has_a_vm_name -- --ignored`
+        #[test]
+        #[ignore = "asks the UTM installed on this Mac"]
+        fn utm_answers_whether_it_has_a_vm_name() {
+            let names = run_applescript(
+                r#"tell application "UTM"
+    set AppleScript's text item delimiters to linefeed
+    return (name of every virtual machine) as text
+end tell"#,
+                &[],
+            )
+            .unwrap();
+
+            // A name no VM has, with quotes that must stay data
+            let unused = format!("hai test {} \"quoted\"", std::process::id());
+            super::check_vm_name(&unused).unwrap();
+
+            // Every VM it has, by its own name and in other case
+            for name in names.lines().filter(|name| !name.is_empty()) {
+                for asked in [name.to_string(), name.to_lowercase()] {
+                    let error = super::check_vm_name(&asked).unwrap_err();
+                    assert!(
+                        matches!(error, Error::UtmVmNameTaken(_)),
+                        "{asked}: {error:?}"
+                    );
+                }
+            }
+        }
 
         #[test]
         fn test_get_primary_network_interface() {
@@ -1114,17 +1445,53 @@ mod tests {
             );
         }
 
+        /// A UTM.app with only what `usable_app` looks at
+        fn app_in(parent: &std::path::Path) -> std::path::PathBuf {
+            let app = parent.join("UTM.app");
+            std::fs::create_dir_all(app.join("Contents")).unwrap();
+            std::fs::write(app.join("Contents/Info.plist"), "").unwrap();
+            app
+        }
+
+        #[test]
+        fn finds_utm_outside_applications() {
+            let home = tempfile::tempdir().unwrap();
+            let app = app_in(&home.path().join("Applications"));
+
+            assert_eq!(usable_app([app.clone()]), Some(app));
+        }
+
+        // Launch Services remembers copies that can't be started anymore
+        #[test]
+        fn skips_utm_that_is_gone_or_in_the_trash() {
+            let home = tempfile::tempdir().unwrap();
+            let gone = home.path().join("Volumes/UTM/UTM.app");
+            let trashed = app_in(&home.path().join(".Trash"));
+            let trashed_on_a_disk = app_in(&home.path().join(".Trashes/501"));
+            let installed = app_in(&home.path().join("Applications"));
+
+            assert_eq!(
+                usable_app([
+                    gone.clone(),
+                    trashed.clone(),
+                    trashed_on_a_disk,
+                    installed.clone()
+                ]),
+                Some(installed)
+            );
+            assert_eq!(usable_app([gone, trashed]), None);
+        }
+
         #[tokio::test]
         #[serial_test::serial]
         async fn test_check_utm_status_not_installed() {
-            // Since UTM is unlikely to be installed at the exact path we check,
-            // or if it is, we can still verify the logic works
             let status = check_utm_status().await.unwrap();
 
             // Either UTM is installed or not, both are valid states
             if status.installed {
-                assert!(status.path.is_some());
-                assert_eq!(status.path.as_ref().unwrap(), "/Applications/UTM.app");
+                // Wherever it is installed
+                let app = std::path::Path::new(status.path.as_deref().unwrap());
+                assert!(app.join("Contents/Info.plist").is_file());
             } else {
                 assert!(!status.installed);
                 assert!(status.version.is_none());

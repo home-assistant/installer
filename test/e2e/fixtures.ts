@@ -1,3 +1,4 @@
+import path from "node:path";
 import { test as base, expect, type Page } from "@playwright/test";
 import tauriConfig from "../../crates/hai-desktop/tauri.conf.json" with { type: "json" };
 
@@ -57,6 +58,49 @@ export async function skipWifiStep(page: Page) {
   await expect(page.locator("confirmation-view")).toBeVisible();
 }
 
+const flowSteps = new WeakMap<Page, number>();
+
+/**
+ * Saves what the page shows as the next step of `flow`, numbered in the order
+ * the test takes them. CI collects these from every browser into one zip on
+ * the release, a picture of each step of each flow as it was released. A
+ * retry of the test writes the same files again.
+ */
+export async function flowScreenshot(page: Page, flow: string, step: string) {
+  const n = (flowSteps.get(page) ?? 0) + 1;
+  flowSteps.set(page, n);
+  const info = base.info();
+  await page.screenshot({
+    path: path.join(
+      info.project.outputDir,
+      "flow-screenshots",
+      info.project.name,
+      flow,
+      `${String(n).padStart(2, "0")}-${step}.png`
+    ),
+    animations: "disabled",
+    fullPage: true,
+  });
+}
+
+/**
+ * The browser mocks take about as long as the real operations, a flash 15
+ * seconds, so the tests run them ten times faster. A test that acts while an
+ * install runs, like stopping it or checking its progress, sets the scale to
+ * 1 before it starts, and back to `MOCK_DELAY_SCALE` once it is done there.
+ */
+export const MOCK_DELAY_SCALE = 0.1;
+
+/**
+ * Every wait in the browser mocks from now on takes `scale` times as long as
+ * the real operation, also after the page loads again.
+ */
+export async function setMockDelayScale(page: Page, scale: number) {
+  await page.evaluate((scale) => {
+    sessionStorage.setItem("hai:mock-delay-scale", String(scale));
+  }, scale);
+}
+
 /**
  * Every page runs under the CSP the desktop app ships with, which dev does
  * not apply, and a test fails if anything runs into it. `platform` is an
@@ -92,6 +136,12 @@ export const test = base.extend<{ platform: "default" | "macos" }>({
         ).reportCspViolation(`${e.effectiveDirective} ${e.blockedURI}`);
       });
     });
+
+    await page.addInitScript((scale) => {
+      if (sessionStorage.getItem("hai:mock-delay-scale") === null) {
+        sessionStorage.setItem("hai:mock-delay-scale", String(scale));
+      }
+    }, MOCK_DELAY_SCALE);
 
     if (platform === "macos") {
       await page.addInitScript(() => {

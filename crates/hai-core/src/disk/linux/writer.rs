@@ -15,7 +15,7 @@ pub async fn write_image<P: ProgressCallback>(
     expected: &ExpectedDevice,
     verify: bool,
     progress_callback: &P,
-) -> Result<()> {
+) -> Result<bool> {
     check_identity(&super::device::list_devices().await?, device_id, expected)?;
     let connection = Connection::system()
         .await
@@ -102,9 +102,10 @@ pub async fn write_image<P: ProgressCallback>(
     // Best effort, like "Safely remove" in the file manager: the write and the
     // verify passed, so the drive is done. If this fails or is skipped, the
     // success screen tells the user to eject the drive themselves.
-    if let Some(flashed) = flashed {
-        let _ = eject_drive(&connection, &flashed).await;
-    }
+    let ejected = match flashed {
+        Some(flashed) => eject_drive(&connection, &flashed).await.unwrap_or(false),
+        None => false,
+    };
 
     progress_callback.on_progress(FlashProgress::new(
         FlashStage::Complete,
@@ -113,7 +114,7 @@ pub async fn write_image<P: ProgressCallback>(
         "Complete",
     ));
 
-    Ok(())
+    Ok(ejected)
 }
 
 /// Read the written image back from the medium and compare it.
@@ -352,10 +353,15 @@ fn has_siblings(objects: &ManagedObjects, drive: &OwnedObjectPath) -> bool {
 
 /// Unmount what the desktop mounted from the fresh image, then power the
 /// drive off, or eject its media when it can't be powered off. Skipped when
-/// the flashed drive is gone, or another drive took its place.
-async fn eject_drive(conn: &Connection, flashed: &FlashedDrive) -> Result<()> {
-    let Some(cleanup) = cleanup_for(&managed_objects(conn).await?, flashed) else {
-        return Ok(());
+/// the flashed drive is gone, or another drive took its place. Whether the
+/// drive is safe to remove afterwards.
+async fn eject_drive(conn: &Connection, flashed: &FlashedDrive) -> Result<bool> {
+    let objects = managed_objects(conn).await?;
+    if !objects.contains_key(&flashed.path) {
+        return Ok(true);
+    }
+    let Some(cleanup) = cleanup_for(&objects, flashed) else {
+        return Ok(false);
     };
 
     // Never raise a second password prompt for cleanup the user didn't ask for
@@ -386,9 +392,12 @@ async fn eject_drive(conn: &Connection, flashed: &FlashedDrive) -> Result<()> {
     } else if cleanup.eject {
         drive.eject(options()).await
     } else {
-        Ok(())
+        // Like an SD card in a built-in reader: with nothing mounted, it can
+        // be pulled, and the file manager has nothing left to eject
+        return Ok(true);
     };
-    result.map_err(|e| map_udisks_error(e, context))
+    result.map_err(|e| map_udisks_error(e, context))?;
+    Ok(true)
 }
 
 /// Unmount everything on the disk before writing.

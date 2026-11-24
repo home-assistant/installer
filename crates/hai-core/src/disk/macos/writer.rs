@@ -74,7 +74,7 @@ pub async fn write_image<P: ProgressCallback>(
     expected: &ExpectedDevice,
     verify: bool,
     progress_callback: &P,
-) -> Result<()> {
+) -> Result<bool> {
     super::device::validate_flash_target(device_id)?;
     check_identity(&super::device::list_devices_sync()?, device_id, expected)?;
 
@@ -131,10 +131,13 @@ pub async fn write_image<P: ProgressCallback>(
 
     // Best effort: the write and the verify passed, so the drive is done.
     // Spotlight or automount grabbing the new boot partition is enough to make
-    // the eject fail, and the success screen tells the user to eject the
-    // drive themselves if it's still listed.
+    // the eject fail, and then the success screen tells the user to eject the
+    // drive themselves.
     let disk = disk_id.to_string();
-    let _ = tokio::task::spawn_blocking(move || eject_disk(&disk)).await;
+    let ejected = matches!(
+        tokio::task::spawn_blocking(move || eject_disk(&disk)).await,
+        Ok(Ok(()))
+    );
 
     progress_callback.on_progress(FlashProgress::new(
         FlashStage::Complete,
@@ -143,7 +146,7 @@ pub async fn write_image<P: ProgressCallback>(
         "Complete",
     ));
 
-    Ok(())
+    Ok(ejected)
 }
 
 fn write_and_verify(

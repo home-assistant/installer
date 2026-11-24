@@ -61,6 +61,8 @@ export interface WizardSelections {
    * drive step explains why.
    */
   driveSelectionLost?: boolean;
+  /** Writing ejected the drive; if not, the success screen says to. */
+  driveEjected?: boolean;
   /** Network to add to the drive. Its password is cleared once written. */
   wifi?: WifiConfig;
 
@@ -256,7 +258,7 @@ const FLOW_STEPS: Record<WizardFlow, WizardStep[]> = {
 };
 
 /** The steps of `flow` that apply to `selections`. */
-function stepsFor(
+export function stepsFor(
   flow: WizardFlow,
   selections: WizardSelections
 ): WizardStep[] {
@@ -276,7 +278,6 @@ function liveUsbSteps(target: WizardStep): WizardStep[] {
     localizedStep("method", () =>
       localize("state.wizard_state.installation_method")
     ),
-    localizedStep("media", () => localize("state.wizard_state.media_type")),
     target,
     localizedStep("confirm", () => localize("common.confirm")),
     localizedStep("flash", () => localize("common.create")),
@@ -299,12 +300,6 @@ export const MINIPC_STEPS = {
     )
   ),
 };
-
-/** The direct path's steps, with Wi-Fi if the architecture picked earlier has it. */
-export function minipcDirectSteps(selections: WizardSelections): WizardStep[] {
-  // Without a picked architecture, deviceConfig may still be the USB path's
-  return stepsFor("minipc", selections.device ? selections : {});
-}
 
 function createInitialState(): WizardState {
   return {
@@ -345,6 +340,22 @@ class WizardStateStore {
       currentStepIndex: 0,
       steps: stepsFor(flow, {}),
       selections: {},
+    };
+    this.notify();
+  }
+
+  /** Start `flow` with `selections` made, on the step `stepId`, or its first. */
+  resumeFlow(flow: WizardFlow, selections: WizardSelections, stepId: string) {
+    this._flowGeneration++;
+    const steps = stepsFor(flow, selections);
+    this.state = {
+      currentFlow: flow,
+      currentStepIndex: Math.max(
+        steps.findIndex((step) => step.id === stepId),
+        0
+      ),
+      steps,
+      selections: { ...selections },
     };
     this.notify();
   }
@@ -432,16 +443,6 @@ class WizardStateStore {
       steps: changed ? next : steps,
       currentStepIndex: index >= 0 ? index : currentStepIndex,
       selections,
-    };
-    this.notify();
-  }
-
-  /** Replaces the step list when a choice splits the flow; keeps the position. */
-  setSteps(steps: WizardStep[]) {
-    this.state = {
-      ...this.state,
-      steps,
-      currentStepIndex: Math.min(this.state.currentStepIndex, steps.length - 1),
     };
     this.notify();
   }

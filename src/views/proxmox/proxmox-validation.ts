@@ -49,6 +49,46 @@ export function checkedSetting(
   return typeof key === "string" ? CHECKED_SETTINGS.get(key) : undefined;
 }
 
+/**
+ * Refusals another choice on the configure step fixes, besides the checked
+ * settings: the node, the bridge, the disk size and the Import storage.
+ * An install repeats the check before it makes the VM, and may get these
+ * from a server that changed since.
+ */
+const CONFIGURE_REFUSALS = new Set([
+  ...CHECKED_SETTINGS.keys(),
+  "backend.proxmox.node_not_found",
+  "backend.proxmox.node_offline",
+  "backend.proxmox.too_many_cores",
+  "backend.proxmox.bridge_unavailable",
+  "backend.proxmox.bridge_not_vlan_aware",
+  "backend.proxmox.disk_too_small",
+  "backend.proxmox.no_import_storage",
+  "backend.proxmox.import_storage_too_small",
+]);
+
+/** Whether another choice on the configure step can fix `error` */
+export function fixedOnConfigure(error: InstallerError): boolean {
+  const key = error.details.message_key;
+  return typeof key === "string" && CONFIGURE_REFUSALS.has(key);
+}
+
+/**
+ * Refusals of the bridge check the install makes once more right before it
+ * asks Proxmox for the VM, after it already says the VM is being created.
+ * Nothing was sent, so no VM exists.
+ */
+const REFUSED_BEFORE_CREATING = new Set([
+  "backend.proxmox.bridge_unavailable",
+  "backend.proxmox.bridge_not_vlan_aware",
+]);
+
+/** Whether `error` came before the VM was asked for, whatever the stage */
+export function refusedBeforeCreating(error: InstallerError): boolean {
+  const key = error.details.message_key;
+  return typeof key === "string" && REFUSED_BEFORE_CREATING.has(key);
+}
+
 export const CORE_OPTIONS = [2, 4, 6, 8, 10, 12, 16];
 export const MEMORY_OPTIONS_MB = memoryOptionsUpTo(32768);
 

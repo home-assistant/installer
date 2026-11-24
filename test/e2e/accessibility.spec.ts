@@ -2,6 +2,8 @@ import {
   approveProxmoxImport,
   skipWifiStep,
   expect,
+  MOCK_DELAY_SCALE,
+  setMockDelayScale,
   test,
 } from "./fixtures.js";
 
@@ -321,8 +323,9 @@ test("connecting to Proxmox keeps the focus and says so", async ({ page }) => {
     .fill("https://pve.test:8006");
   const password = page.getByRole("textbox", { name: "Password", exact: true });
   await password.fill("mock-password");
+  // The browser mock takes a moment to log in, at full length
+  await setMockDelayScale(page, 1);
   await password.press("Enter");
-  // The browser mock takes a moment to log in
   const next = page.locator("wizard-shell .footer-right wa-button");
   await expect(next).toHaveText("Connecting...");
   await expect(next).toHaveAttribute("loading", "");
@@ -331,6 +334,7 @@ test("connecting to Proxmox keeps the focus and says so", async ({ page }) => {
     page.locator("wizard-shell .footer-right [aria-live=polite]")
   ).toHaveText("Connecting...");
   await expect(password).toBeFocused();
+  await setMockDelayScale(page, MOCK_DELAY_SCALE);
   await expect(
     page.getByRole("heading", { name: "Configure virtual machine" })
   ).toBeFocused();
@@ -374,6 +378,7 @@ test("a VM install moves the focus from Cancel as it hides", async ({
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await approveProxmoxImport(page);
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await setMockDelayScale(page, 1);
   await page.getByRole("button", { name: "Install", exact: true }).click();
   const cancel = page.getByRole("button", { name: "Cancel", exact: true });
   const footer = page.locator("wizard-shell .footer:has(.footer-left)");
@@ -500,7 +505,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page
       .locator("minipc-setup-method-view")
       .locator("option-card")
-      .filter({ hasText: "I can connect the drive" })
+      .filter({ hasText: "Write the mini PC's drive here" })
       .click();
     const cards = page
       .locator("minipc-architecture-selection-view")
@@ -532,7 +537,9 @@ test("forced colors keep step states apart", async ({ page }, testInfo) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Let's go" }).click();
   await page.getByRole("button", { name: "Mini PC or other computer" }).click();
-  await page.getByRole("button", { name: "I can connect the drive" }).click();
+  await page
+    .getByRole("button", { name: "Write the mini PC's drive here" })
+    .click();
   const system = await page.evaluate(() => {
     const probe = document.createElement("span");
     document.body.append(probe);
@@ -651,7 +658,7 @@ for (const tag of [
     }, tag);
     await expect(page.locator("[data-focus-alert]")).toBeFocused();
     await expect(
-      page.locator(`${tag} casita-mascot[mood="problem"] img`)
+      page.locator(`${tag} casita-mascot[mood="problem"]`)
     ).toBeVisible();
   });
 }
@@ -671,6 +678,7 @@ test("disk installation keeps heading focus after the confirmation dialog closes
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await skipWifiStep(page);
   await page.getByRole("button", { name: "Install", exact: true }).click();
+  await setMockDelayScale(page, 1);
   await page
     .getByRole("button", { name: "Erase and install", exact: true })
     .click();
@@ -678,6 +686,7 @@ test("disk installation keeps heading focus after the confirmation dialog closes
   await expect(
     page.locator("progress-view").getByRole("heading")
   ).toBeFocused();
+  await setMockDelayScale(page, MOCK_DELAY_SCALE);
   await expect(
     page.locator("success-view").getByRole("heading", { name: "Almost there!" })
   ).toBeFocused({ timeout: 20000 });
@@ -708,28 +717,18 @@ test("a step that grows past the window can be scrolled with the keyboard", asyn
   await page
     .locator('option-card[heading="Mini PC or other computer"]')
     .click();
-  // The shared step styles, and the media step's own
-  for (const step of ["minipc-setup-method-view", "minipc-media-view"]) {
-    await expect(page.locator(step)).toBeVisible();
-    await expect(main).not.toHaveAttribute("tabindex");
+  const step = "minipc-setup-method-view";
+  await expect(page.locator(step)).toBeVisible();
+  await expect(main).not.toHaveAttribute("tabindex");
 
-    await grow(step, 2000);
-    await expect(main).toHaveAttribute("tabindex", "0");
-    await main.focus();
-    await page.keyboard.press("End");
-    await expect
-      .poll(() => main.evaluate((element) => element.scrollTop))
-      .toBeGreaterThan(0);
+  await grow(step, 2000);
+  await expect(main).toHaveAttribute("tabindex", "0");
+  await main.focus();
+  await page.keyboard.press("End");
+  await expect
+    .poll(() => main.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
 
-    await grow(step, 0);
-    await expect(main).not.toHaveAttribute("tabindex");
-
-    if (step === "minipc-setup-method-view") {
-      await page
-        .locator(step)
-        .locator("option-card")
-        .filter({ hasText: "I need to boot from USB" })
-        .click();
-    }
-  }
+  await grow(step, 0);
+  await expect(main).not.toHaveAttribute("tabindex");
 });

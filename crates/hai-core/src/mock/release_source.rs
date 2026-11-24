@@ -120,10 +120,6 @@ impl ReleaseSource for BackendMock {
         Ok(crate::manifest::bundled_manifest())
     }
 
-    async fn get_haos_release(&self, _version: &str) -> Result<HaosRelease> {
-        Ok(mock_haos_release())
-    }
-
     async fn get_latest_haos_release_for_board(&self, _board: &str) -> Result<HaosRelease> {
         Ok(mock_haos_release())
     }
@@ -168,8 +164,6 @@ impl ReleaseSource for BackendMock {
 
     /// Keeps placeholder files out of the user's real image cache.
     fn cache_dir(&self) -> Result<PathBuf> {
-        let dir = std::env::temp_dir().join("hai-mock");
-        std::fs::create_dir_all(&dir)?;
-        Ok(dir)
+        Ok(std::env::temp_dir().join("hai-mock"))
     }
 }

@@ -1,4 +1,10 @@
-import { skipWifiStep, test, expect } from "./fixtures.js";
+import {
+  MOCK_DELAY_SCALE,
+  setMockDelayScale,
+  skipWifiStep,
+  test,
+  expect,
+} from "./fixtures.js";
 
 test.describe("Navigation Flow", () => {
   test.beforeEach(async ({ page }) => {
@@ -168,10 +174,12 @@ test.describe("SBC Success", () => {
       .click();
     const dialog = page.locator("confirm-dialog[open]");
     await expect(dialog).toBeVisible();
+    await setMockDelayScale(page, 1);
     await dialog.locator("wa-button[variant='danger']").click();
 
-    // Wait for flashing to complete (mock takes ~16 seconds total)
+    // Then wait for the flash to complete
     await expect(page.locator("progress-view")).toBeVisible();
+    await setMockDelayScale(page, MOCK_DELAY_SCALE);
     await expect(page.locator("success-view")).toBeVisible({ timeout: 20000 });
   });
 
@@ -179,7 +187,7 @@ test.describe("SBC Success", () => {
     page,
   }) => {
     const successView = page.locator("success-view");
-    await expect(successView.locator(".step-item").nth(1)).toContainText(
+    await expect(successView.locator(".step-item").first()).toContainText(
       `Insert the written storage into ${selectedDeviceName}.`
     );
 

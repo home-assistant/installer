@@ -11,7 +11,7 @@ import { getPlatform } from "../utils/platform.js";
 import { mdiApple, mdiGooglePlay } from "../utils/icons.js";
 import { APP_STORE_URL, GOOGLE_PLAY_URL } from "../utils/urls.js";
 import { renderIcon } from "../utils/render-icon.js";
-import { renderCasitaHappy } from "./install-mascot.js";
+import { renderCasita } from "./install-mascot.js";
 import "./inline-notice.js";
 import {
   ViewAccessibility,
@@ -107,6 +107,26 @@ export class InstallSuccess extends LitElement {
 
       .badge {
         font-weight: 500;
+      }
+
+      /* Step 0, which may be skipped: quieter than the steps that follow */
+      .optional .badge {
+        background-color: transparent;
+        border: 1.5px solid var(--ha-secondary-text-color);
+        color: var(--ha-secondary-text-color);
+        box-sizing: border-box;
+      }
+
+      .optional .step-text {
+        color: var(--ha-secondary-text-color);
+      }
+
+      @media (forced-colors: active) {
+        .optional .badge {
+          background-color: Canvas;
+          border-color: CanvasText;
+          color: CanvasText;
+        }
       }
 
       .step-text {
@@ -237,6 +257,8 @@ export class InstallSuccess extends LitElement {
   @property({ attribute: false }) subtitle: string | TemplateResult = "";
   /** Under "Next steps", which is left out without any */
   @property({ attribute: false }) steps: (string | TemplateResult)[] = [];
+  /** A step before the first, numbered 0, that may be skipped */
+  @property({ attribute: false }) optionalStep: string | TemplateResult = "";
   @property({ attribute: false }) tip: string | TemplateResult = "";
   /** Warns not to format the written drive, where the OS offers to. */
   @property({ attribute: false }) formatWarning = false;
@@ -258,7 +280,7 @@ export class InstallSuccess extends LitElement {
     return html`
       <div class=${this.steps.length ? "layout beside" : "layout"}>
         <div class="mascot-container" aria-hidden="true">
-          ${renderCasitaHappy()}
+          ${renderCasita("happy", true)}
         </div>
         <div class="heading">
           <h2>${title}</h2>
@@ -279,6 +301,12 @@ export class InstallSuccess extends LitElement {
               role="list"
               aria-label=${localize("components.install_success.next_steps")}
             >
+              ${this.optionalStep
+                ? html`<li class="step-item optional">
+                    <span class="badge">0</span>
+                    <span class="step-text">${this.optionalStep}</span>
+                  </li>`
+                : ""}
               ${this.steps.map(
                 (step, index) => html`
                   <li class="step-item">

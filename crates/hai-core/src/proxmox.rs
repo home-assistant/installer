@@ -37,6 +37,9 @@ use std::collections::HashSet;
 /// Version 8.4.1 added support for uploading qcow2/raw/img/vmdk files with content=import.
 const MIN_PROXMOX_VERSION: (u32, u32, u32) = (8, 4, 1);
 
+/// HAOS board whose qcow2 image Proxmox imports
+pub const HAOS_BOARD: &str = "ova";
+
 /// Minimum size of the HAOS OVA disk, matching the configure view.
 const MIN_DISK_SIZE_GB: u32 = 32;
 
@@ -989,13 +992,12 @@ async fn check_install<B: ReleaseSource>(
     validate_disk_size(config.disk_size_gb)?;
     validate_vm_name(&config.name)?;
 
-    let release: HaosRelease = backend.get_latest_haos_release_for_board("ova").await?;
+    let release: HaosRelease = backend
+        .get_latest_haos_release_for_board(HAOS_BOARD)
+        .await?;
     let image = release
-        .image_for("ova", ImageFormat::Qcow2)
-        .cloned()
-        .ok_or_else(|| {
-            Error::DownloadFailed(format!("No OVA image in HAOS release {}", release.version))
-        })?;
+        .require_image(HAOS_BOARD, ImageFormat::Qcow2)?
+        .clone();
 
     pre_install_checks(session, config, image.size).await?;
     Ok(image)
@@ -1072,6 +1074,27 @@ const TASK_POLL_INTERVAL: std::time::Duration = if cfg!(test) {
 } else {
     std::time::Duration::from_secs(2)
 };
+
+/// How long an upload may go without Proxmox taking any of it. The upload
+/// itself has no time limit: a slow link takes as long as it takes.
+const UPLOAD_STALL: std::time::Duration = if cfg!(test) {
+    std::time::Duration::from_millis(500)
+} else {
+    std::time::Duration::from_secs(60)
+};
+
+/// How long Proxmox may take to answer once the whole upload is sent. It
+/// starts once the last of the file is handed to the connection, which may
+/// still hold a few MB of it: half a minute at 1 Mbit/s.
+const UPLOAD_ANSWER_TIMEOUT: std::time::Duration = if cfg!(test) {
+    std::time::Duration::from_secs(2)
+} else {
+    std::time::Duration::from_secs(5 * 60)
+};
+
+/// Only so the client has a limit at all; `UPLOAD_STALL` ends an upload
+/// that stopped long before this does. A day is 1.2 GB at about 110 kbit/s.
+const UPLOAD_REQUEST_LIMIT_SECS: u64 = 24 * 60 * 60;
 
 /// Failed task status checks in a row before giving up on a task.
 const MAX_TASK_POLL_FAILURES: u32 = 3;
@@ -1225,26 +1248,22 @@ async fn wait_for_task_completion(
 
 /// Upload a disk image to Proxmox storage with progress reporting.
 ///
-/// Uploads to `storage_name` with content type "import".
+/// Uploads to `storage_name` as `filename`, with content type "import".
 async fn upload_image_to_proxmox<P: ProgressCallback>(
     session: &ProxmoxSession,
     node: &str,
     local_path: &std::path::PathBuf,
+    filename: &str,
     progress_callback: &P,
     storage_name: &str,
 ) -> Result<String> {
     use futures_util::TryStreamExt;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Arc;
     use tokio::fs::File;
     use tokio::io::AsyncReadExt;
     use tokio::sync::watch;
     use tokio_util::io::ReaderStream;
-
-    // Get the filename from the path
-    let filename = local_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| Error::ProxmoxApi("Invalid file path".to_string()))?
-        .to_string();
 
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Uploading,
@@ -1254,15 +1273,8 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
         message: format!("Preparing {} for upload...", filename),
     });
 
-    let file = File::open(local_path)
-        .await
-        .map_err(|e| Error::ProxmoxApi(format!("Failed to open image file: {}", e)))?;
-
-    let file_size = file
-        .metadata()
-        .await
-        .map_err(|e| Error::ProxmoxApi(format!("Failed to get file metadata: {}", e)))?
-        .len();
+    let file = File::open(local_path).await?;
+    let file_size = file.metadata().await?.len();
 
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Uploading,
@@ -1276,8 +1288,9 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
         ),
     });
 
-    // Upload to Proxmox using multipart form, with a longer timeout for large uploads
-    let api = Api::new(session, 1800)?; // 30 minutes
+    // A slow link takes as long as it needs. The upload fails once Proxmox
+    // stops taking data instead, see the loop below.
+    let api = Api::new(session, UPLOAD_REQUEST_LIMIT_SECS)?;
     let url = api.node_url(
         node,
         &format!("/storage/{}/upload", urlencoding::encode(storage_name)),
@@ -1286,11 +1299,15 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     // The body owns the file; a watch channel keeps progress bounded while the
     // caller retains its borrowed callback. Reads follow HTTP backpressure.
     let (progress_tx, mut progress_rx) = watch::channel(0_u64);
+    // Every chunk Proxmox takes, where progress only reports every few MB
+    let taken = Arc::new(AtomicU64::new(0));
+    let chunk_taken = Arc::clone(&taken);
     let mut bytes_sent = 0;
     let mut last_progress_bytes = 0;
     let progress_stream =
         ReaderStream::with_capacity(file.take(file_size), 256 * 1024).inspect_ok(move |chunk| {
             bytes_sent += chunk.len() as u64;
+            chunk_taken.store(bytes_sent, Ordering::Relaxed);
             if bytes_sent - last_progress_bytes >= PROGRESS_UPDATE_INTERVAL
                 || bytes_sent == file_size
             {
@@ -1302,7 +1319,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     // Create the multipart part with streaming body
     let body = reqwest::Body::wrap_stream(progress_stream);
     let file_part = reqwest::multipart::Part::stream_with_length(body, file_size)
-        .file_name(filename.clone())
+        .file_name(filename.to_string())
         .mime_str("application/octet-stream")
         .map_err(|e| Error::ProxmoxApi(format!("Failed to create file part: {}", e)))?;
 
@@ -1315,6 +1332,8 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     let mut progress_open = true;
     // A stop must land even while the server reads nothing
     let mut cancel_check = tokio::time::interval(std::time::Duration::from_millis(250));
+    let mut last_taken = 0;
+    let mut taken_at = tokio::time::Instant::now();
     let response = loop {
         tokio::select! {
             biased;
@@ -1326,6 +1345,24 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
                 // delete the image again.
                 if progress_callback.is_cancelled() && *progress_rx.borrow() < file_size {
                     return Err(Error::Cancelled);
+                }
+
+                let now_taken = taken.load(Ordering::Relaxed);
+                if now_taken != last_taken {
+                    last_taken = now_taken;
+                    taken_at = tokio::time::Instant::now();
+                }
+                if now_taken < file_size && taken_at.elapsed() > UPLOAD_STALL {
+                    return Err(Error::ProxmoxApi(format!(
+                        "Failed to upload image: Proxmox took none of it for {} seconds",
+                        UPLOAD_STALL.as_secs()
+                    )));
+                }
+                if now_taken == file_size && taken_at.elapsed() > UPLOAD_ANSWER_TIMEOUT {
+                    return Err(Error::ProxmoxApi(format!(
+                        "Failed to upload image: Proxmox didn't answer within {} seconds of getting all of it",
+                        UPLOAD_ANSWER_TIMEOUT.as_secs()
+                    )));
                 }
             }
             changed = progress_rx.changed(), if progress_open => {
@@ -1394,7 +1431,7 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
         message: "Upload complete".to_string(),
     });
 
-    Ok(filename)
+    Ok(filename.to_string())
 }
 
 /// Create a VM with the disk imported during creation.
@@ -1574,8 +1611,37 @@ async fn import_and_cleanup_image(
                 config.vm_id
             );
         }
+        return result;
     }
-    result
+
+    result.map_err(|error| import_image_kept(config, storage_name, image_filename, error))
+}
+
+/// The error for a VM that may still be importing the uploaded image, so the
+/// image stays: deleting it would break the import. The image is the user's
+/// to delete once Proxmox is done, so name it.
+fn import_image_kept(
+    config: &ProxmoxVmConfig,
+    storage_name: &str,
+    image_filename: &str,
+    error: Error,
+) -> Error {
+    // Keep their own codes, so the user is told to reconnect, or that the VM
+    // may be incomplete
+    if matches!(
+        error,
+        Error::ProxmoxSessionExpired | Error::ProxmoxCertificateChanged
+    ) {
+        return error;
+    }
+
+    eprintln!("Creating VM {} failed: {error}", config.vm_id);
+    Error::ProxmoxActionRequired(crate::message!(
+        "backend.proxmox.import_image_kept",
+        vm_id = config.vm_id,
+        volume = format!("{storage_name}:import/{image_filename}"),
+        node = config.node,
+    ))
 }
 
 /// Start a VM.
@@ -1743,7 +1809,7 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
     let image = check_install(backend, session, config).await?;
     stop_if_cancelled(progress_callback)?;
 
-    // Step 2: Download the compressed image locally
+    // Step 2: Download and extract the image, or reuse an earlier attempt's
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::Downloading,
         progress: 5,
@@ -1752,44 +1818,26 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
         message: "Downloading HAOS image...".to_string(),
     });
 
-    let cache_dir = backend.cache_dir()?;
-    let temporary_image =
-        crate::download::TemporaryImage::new(&cache_dir, crate::ImageFormat::Qcow2)?;
-    let compressed_path = temporary_image.archive_path();
-
-    // Download the image
-    backend
-        .download_image(&image, &compressed_path, progress_callback)
-        .await?;
-
-    // Step 3: Extract the compressed image
-    progress_callback.on_progress(FlashProgress {
-        stage: FlashStage::Extracting,
-        progress: 0,
-        bytes_processed: 0,
-        total_bytes: 0,
-        message: "Extracting image...".to_string(),
-    });
-
-    let extracted_path = temporary_image.path();
-
-    backend
-        .extract_temporary_image(&temporary_image, progress_callback)
-        .await?;
+    let extracted_path = crate::download::fetch_image(backend, &image, progress_callback).await?;
 
     let storage_name = recheck_before_upload(session, config, &extracted_path).await?;
     stop_if_cancelled(progress_callback)?;
 
-    // Step 4: Upload the extracted image to Proxmox storage, fetched dynamically with import flag
+    // Step 3: Upload the extracted image to Proxmox storage, fetched dynamically with import flag.
+    // A name of its own, so it never meets an earlier upload on the server.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
     let image_filename = upload_image_to_proxmox(
         session,
         &config.node,
         &extracted_path,
+        &format!("hai-image-{nanos:x}.qcow2"),
         progress_callback,
         &storage_name,
     )
     .await?;
-    drop(temporary_image);
 
     // The last moment a stop leaves nothing behind: past this, the VM exists
     discard_upload_if_stopped(
@@ -1801,7 +1849,7 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
     )
     .await?;
 
-    // Step 5: Create the VM with disk import and apply the selected size
+    // Step 4: Create the VM with disk import and apply the selected size
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::CreatingVm,
         progress: 0,
@@ -1812,7 +1860,7 @@ async fn create_vm<B: ReleaseSource, P: ProgressCallback>(
 
     import_and_cleanup_image(session, config, &image_filename, &storage_name).await?;
 
-    // Step 6: Start the VM
+    // Step 5: Start the VM
     progress_callback.on_progress(FlashProgress {
         stage: FlashStage::StartingVm,
         progress: 0,
@@ -2385,9 +2433,6 @@ mod tests {
             }
             async fn get_device_manifest(&self) -> Result<crate::DeviceManifest> {
                 unreachable!()
-            }
-            async fn get_haos_release(&self, _: &str) -> Result<HaosRelease> {
-                unreachable!("must use OVA's board-specific release")
             }
             async fn get_latest_haos_release_for_board(&self, board: &str) -> Result<HaosRelease> {
                 assert_eq!(board, "ova");
@@ -3976,6 +4021,7 @@ mod tests {
                 matches!(result, Err(Error::ChecksumMismatch { .. })),
                 "unexpected result: {result:?}"
             );
+            // The unverified download is gone
             let cache = backend.cache.unwrap();
             assert_eq!(std::fs::read_dir(cache.path()).unwrap().count(), 0);
             asset_mock.assert_async().await;
@@ -4043,6 +4089,32 @@ mod tests {
                 message!("backend.proxmox.node_offline", node = "pve")
             );
             nodes_mock.assert_async().await;
+        }
+
+        #[tokio::test]
+        async fn test_check_install_blames_a_release_without_an_ova_image() {
+            let release = OvaRelease {
+                image: HaosImage {
+                    board: "ova".into(),
+                    format: ImageFormat::Raw,
+                    download_url: String::new(),
+                    size: 1,
+                    digest: None,
+                },
+                cache: None,
+            };
+
+            // Port 0 refuses any request, though none should be made
+            let result = check_install(
+                &release,
+                &session("http://127.0.0.1:0".into()),
+                &vm_config(),
+            )
+            .await;
+            assert!(
+                matches!(result, Err(Error::ReleaseUnusable(_))),
+                "{result:?}"
+            );
         }
 
         /// How waiting for a task handles each answer to its status check.
@@ -4646,6 +4718,7 @@ mod tests {
                         &session,
                         "pve",
                         &image,
+                        "hai.qcow2",
                         &crate::NoOpProgress,
                         "local",
                     )
@@ -4782,7 +4855,14 @@ mod tests {
             };
 
             // The upload must wait for Proxmox, so the image can be deleted
-            let upload = upload_image_to_proxmox(&session, "pve", &path, &progress, "local-import");
+            let upload = upload_image_to_proxmox(
+                &session,
+                "pve",
+                &path,
+                "hai.qcow2",
+                &progress,
+                "local-import",
+            );
             let (_, result) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
                 tokio::join!(server, upload)
             })
@@ -4819,7 +4899,8 @@ mod tests {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 while socket.read(&mut buffer).await.unwrap_or(0) > 0 {}
             };
-            let upload = upload_image_to_proxmox(&session, "pve", &path, &progress, "local");
+            let upload =
+                upload_image_to_proxmox(&session, "pve", &path, "hai.qcow2", &progress, "local");
             let (_, result) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
                 tokio::join!(server, upload)
             })
@@ -5002,14 +5083,29 @@ mod tests {
                     .expect(deletes)
                     .create_async()
                     .await;
-                assert!(import_and_cleanup_image(
+                let result = import_and_cleanup_image(
                     &session(server.url()),
                     &vm_config(),
                     "hai-image-unique.qcow2",
-                    "local-import"
+                    "local-import",
                 )
-                .await
-                .is_err());
+                .await;
+                if deletes == 0 {
+                    // Kept, in case Proxmox still imports it, so the user
+                    // is told what to delete once it's done
+                    assert_eq!(
+                        action_required(result),
+                        message!(
+                            "backend.proxmox.import_image_kept",
+                            vm_id = 100,
+                            volume = "local-import:import/hai-image-unique.qcow2",
+                            node = "pve",
+                        ),
+                        "create {create_status}, task {task_status}"
+                    );
+                } else {
+                    assert!(result.is_err());
+                }
                 delete.assert_async().await;
                 network.assert_async().await;
                 permissions.assert_async().await;
@@ -5259,6 +5355,7 @@ mod tests {
                 &session(server.url()),
                 "pve",
                 &temp_file,
+                "test-image.qcow2",
                 &callback,
                 "local-import",
             )
@@ -5311,7 +5408,8 @@ mod tests {
                     .all(|update| update.progress > 5 && update.progress < 95));
                 // Dropping the socket makes the in-flight request fail.
             };
-            let upload = upload_image_to_proxmox(&session, "pve", &path, &callback, "local");
+            let upload =
+                upload_image_to_proxmox(&session, "pve", &path, "hai.qcow2", &callback, "local");
             let (_, result) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
                 tokio::join!(server, upload)
             })
@@ -5326,6 +5424,166 @@ mod tests {
                 pair[0].bytes_processed <= pair[1].bytes_processed
                     && pair[0].progress <= pair[1].progress
             }));
+        }
+
+        /// A Proxmox that reads an upload the way `read` says, and answers the
+        /// task status check right away when `read` answered the upload.
+        async fn serve_upload<F, Fut>(listener: tokio::net::TcpListener, read: F)
+        where
+            F: FnOnce(tokio::net::TcpStream, u64) -> Fut,
+            Fut: std::future::Future<Output = bool>,
+        {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut head = Vec::new();
+            let mut byte = [0; 1];
+            while !head.ends_with(b"\r\n\r\n") {
+                socket.read_exact(&mut byte).await.unwrap();
+                head.push(byte[0]);
+            }
+            let head = String::from_utf8_lossy(&head).to_ascii_lowercase();
+            let length = head
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length: "))
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap();
+            if !read(socket, length).await {
+                return;
+            }
+
+            // The upload task, on a connection of its own
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            let _ = socket.read(&mut request).await.unwrap();
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{TASK_OK}",
+                        TASK_OK.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+        }
+
+        async fn answer_upload(socket: &mut tokio::net::TcpStream) {
+            use tokio::io::AsyncWriteExt;
+
+            let body = serde_json::json!({ "data": UPID }).to_string();
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+        }
+
+        /// Upload `size` bytes to a Proxmox that reads the way `read` says.
+        /// Fails the test when the upload doesn't end by itself.
+        async fn upload_to<F, Fut>(size: u64, read: F) -> Result<String>
+        where
+            F: FnOnce(tokio::net::TcpStream, u64) -> Fut,
+            Fut: std::future::Future<Output = bool>,
+        {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let session = session(format!("http://{}", listener.local_addr().unwrap()));
+            let temp_dir = tempfile::tempdir().unwrap();
+            let path = temp_dir.path().join("hai.qcow2");
+            std::fs::File::create(&path).unwrap().set_len(size).unwrap();
+            let callback = TestProgress::default();
+            let upload =
+                upload_image_to_proxmox(&session, "pve", &path, "hai.qcow2", &callback, "local");
+
+            // The server is done with the upload once it ends, however it ends.
+            // Once the server has answered everything, the upload still reads it.
+            tokio::time::timeout(std::time::Duration::from_secs(20), async {
+                tokio::pin!(upload);
+                tokio::select! {
+                    result = &mut upload => result,
+                    () = serve_upload(listener, read) => upload.await,
+                }
+            })
+            .await
+            .expect("the upload must end")
+        }
+
+        // A slow link takes as long as it takes, as long as data keeps going
+        #[tokio::test]
+        async fn slow_upload_that_keeps_going_has_no_time_limit() {
+            use tokio::io::AsyncReadExt;
+
+            let started = std::time::Instant::now();
+            let result = upload_to(16 * 1024 * 1024, |mut socket, length| async move {
+                let mut received = 0;
+                let mut buffer = [0; 64 * 1024];
+                while received < length {
+                    match socket.read(&mut buffer).await {
+                        Ok(0) | Err(_) => return false,
+                        Ok(count) => received += count as u64,
+                    }
+                    // Many times longer than a stall, in total
+                    tokio::time::sleep(UPLOAD_STALL / 50).await;
+                }
+                answer_upload(&mut socket).await;
+                true
+            })
+            .await;
+
+            assert_eq!(result.unwrap(), "hai.qcow2");
+            assert!(
+                started.elapsed() > UPLOAD_STALL * 3,
+                "{:?}",
+                started.elapsed()
+            );
+        }
+
+        #[tokio::test]
+        async fn upload_proxmox_stops_taking_fails() {
+            use tokio::io::AsyncReadExt;
+
+            let result = upload_to(64 * 1024 * 1024, |mut socket, _| async move {
+                let mut buffer = [0; 64 * 1024];
+                let _ = socket.read(&mut buffer).await;
+                // Holds the connection open, and reads no more
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                false
+            })
+            .await;
+
+            assert!(
+                matches!(&result, Err(Error::ProxmoxApi(message)) if message.contains("took none of it")),
+                "{result:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn upload_proxmox_never_answers_fails() {
+            use tokio::io::AsyncReadExt;
+
+            let result = upload_to(1024 * 1024, |mut socket, length| async move {
+                let mut received = 0;
+                let mut buffer = [0; 64 * 1024];
+                while received < length {
+                    received += socket.read(&mut buffer).await.unwrap() as u64;
+                }
+                // Has it all, and doesn't answer
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                false
+            })
+            .await;
+
+            assert!(
+                matches!(&result, Err(Error::ProxmoxApi(message)) if message.contains("didn't answer")),
+                "{result:?}"
+            );
         }
 
         #[tokio::test]
@@ -5358,7 +5616,7 @@ mod tests {
             let callback = TruncateOnUpload(&path);
             let result = tokio::time::timeout(
                 std::time::Duration::from_secs(10),
-                upload_image_to_proxmox(&session, "pve", &path, &callback, "local"),
+                upload_image_to_proxmox(&session, "pve", &path, "hai.qcow2", &callback, "local"),
             )
             .await
             .expect("short body must fail without waiting for the upload timeout");
@@ -5378,9 +5636,10 @@ mod tests {
             std::fs::write(temp_dir.path().join("image.qcow2"), b"image").unwrap();
             let path = temp_dir.path().to_path_buf();
             let callback = TestProgress::default();
-            let error = upload_image_to_proxmox(&session, "pve", &path, &callback, "local")
-                .await
-                .unwrap_err();
+            let error =
+                upload_image_to_proxmox(&session, "pve", &path, "hai.qcow2", &callback, "local")
+                    .await
+                    .unwrap_err();
             let cause = std::io::Error::from_raw_os_error(libc::EISDIR).to_string();
             assert!(error.to_string().contains(&cause), "{error}");
             assert!(callback
@@ -5397,11 +5656,18 @@ mod tests {
 
             let session = session(server.url());
             let progress = crate::NoOpProgress;
-            let result =
-                upload_image_to_proxmox(&session, "pve", &nonexistent_file, &progress, "local")
-                    .await;
+            let result = upload_image_to_proxmox(
+                &session,
+                "pve",
+                &nonexistent_file,
+                "hai.qcow2",
+                &progress,
+                "local",
+            )
+            .await;
+            // A local file problem, not the server's
             assert!(
-                matches!(&result, Err(Error::ProxmoxApi(msg)) if msg.contains("Failed to open image file")),
+                matches!(&result, Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound),
                 "{result:?}"
             );
         }

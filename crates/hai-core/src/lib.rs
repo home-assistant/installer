@@ -69,10 +69,7 @@ pub trait ReleaseSource {
     /// Fetch the device manifest (list of supported boards).
     async fn get_device_manifest(&self) -> Result<DeviceManifest>;
 
-    /// Fetch a HAOS release by version, or the latest when `version == "latest"`.
-    async fn get_haos_release(&self, version: &str) -> Result<HaosRelease>;
-
-    /// Fetch the release stable.json currently lists for `board`.
+    /// Fetch the full images of the release stable.json currently lists for `board`.
     async fn get_latest_haos_release_for_board(&self, board: &str) -> Result<HaosRelease>;
 
     /// Download an image to `dest_path`, verifying its trusted compressed-asset digest.
@@ -91,18 +88,8 @@ pub trait ReleaseSource {
         progress_callback: &P,
     ) -> Result<()>;
 
-    /// Extract into an owned temporary image. Background workers must retain a
-    /// clone until they stop using the directory, even if the caller is cancelled.
-    async fn extract_temporary_image<P: ProgressCallback>(
-        &self,
-        image: &download::TemporaryImage,
-        progress_callback: &P,
-    ) -> Result<()> {
-        self.extract_xz(&image.archive_path(), &image.path(), progress_callback)
-            .await
-    }
-
-    /// Directory where downloaded images are cached.
+    /// Folder for everything the installer downloads. hai-desktop empties it at
+    /// startup and on exit, so nothing in it outlives a session.
     fn cache_dir(&self) -> Result<PathBuf>;
 }
 
@@ -123,7 +110,8 @@ pub trait DeviceBackend {
     /// List block devices, subject to platform-specific filtering.
     async fn list_devices(&self) -> Result<Vec<BlockDevice>>;
 
-    /// Write an image to the device with this id, reporting progress.
+    /// Write an image to the device with this id, reporting progress, and
+    /// eject it. Whether it was ejected; if not, the user has to.
     ///
     /// Re-checks the expected identity. Platform safety checks do not replace
     /// caller validation of removability.
@@ -134,7 +122,7 @@ pub trait DeviceBackend {
         expected: &ExpectedDevice,
         verify: bool,
         progress_callback: &P,
-    ) -> Result<()>;
+    ) -> Result<bool>;
 }
 
 /// Proxmox VE provisioning.
@@ -228,6 +216,10 @@ pub trait UtmBackend {
     /// time shows the Automation prompt, and opens UTM.
     fn check_automation(&self) -> Result<()>;
 
+    /// Refuse a VM name UTM already has, with [`Error::UtmVmNameTaken`].
+    /// UTM would only refuse it once the image is downloaded and copied.
+    fn check_vm_name(&self, name: &str) -> Result<()>;
+
     /// Create a Home Assistant VM in UTM, reporting progress.
     async fn create_vm<P: ProgressCallback>(
         &self,
@@ -256,6 +248,10 @@ pub trait HostBackend {
     /// What Supervisor reports while it installs Core at `ip`, or `None`
     /// without a full answer from a landing page there.
     async fn ha_setup_status(&self, ip: &str) -> Option<HaSetupStatus>;
+
+    /// Whether Home Assistant at `ip` is onboarded, or `None` without an
+    /// answer that tells.
+    async fn ha_onboarded(&self, ip: &str) -> Option<bool>;
 
     /// The Home Assistants that announce themselves on the local network,
     /// as far as they answer within a few seconds.
