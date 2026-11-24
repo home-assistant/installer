@@ -13,7 +13,7 @@
 
 ## Workflow: CI
 
-Everything runs in one workflow,
+Everything but the actions lockfile check runs in one workflow,
 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml); there is no
 separate release workflow. It runs on every pull request, on every push to
 `main`, daily on `main` for the audits alone, and by hand to make a release. The workflow file is the reference for
@@ -23,6 +23,14 @@ the jobs and their steps; in short:
   (`cargo audit`) for known vulnerabilities. On a pull request, `cargo audit`
   only runs when the pull request changes `Cargo.lock`.
 - **zizmor** lints the workflow itself.
+- **Actions lockfile**: every action the workflows use, also inside
+  `.github/actions/` and inside other actions, is pinned to a commit in
+  `.github/workflows/actions.lock`. A separate workflow,
+  [`actions-lock.yml`](../../.github/workflows/actions-lock.yml), runs
+  `gh actions-lock --verify` on every pull request. The workflows keep their
+  SHA pins too. After changing a workflow or action, run
+  `gh actions-lock --no-narrow`; without `--no-narrow`, it rewrites the SHA
+  pins into tags. Renovate regenerates the lockfile when it updates an action.
 - **Lint** jobs run ESLint, Prettier, the TypeScript type check, the
   localization catalog check, `cargo fmt`, `cargo shear` and Clippy (on all
   three platforms, since the disk code is split per OS).
