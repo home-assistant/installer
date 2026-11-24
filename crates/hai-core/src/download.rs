@@ -298,6 +298,15 @@ static RELEASE_CACHE: LazyLock<Mutex<HashMap<String, HaosRelease>>> =
 /// How often to send progress updates (every N bytes)
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
 
+/// The longest a download goes without a progress update while data comes
+/// in. On a slow link 10 MB takes minutes, and a bar that stands still looks
+/// like a hang.
+const PROGRESS_UPDATE_TIME: std::time::Duration = if cfg!(test) {
+    std::time::Duration::from_millis(100)
+} else {
+    std::time::Duration::from_secs(1)
+};
+
 /// The folder for everything the installer downloads.
 pub(crate) fn get_cache_dir() -> Result<PathBuf> {
     // A subfolder: `clear_cache` must not take the logs or the web view's data.
@@ -746,6 +755,7 @@ async fn download_image_with_client<P: ProgressCallback>(
     let mut file = std::fs::File::create(&part.0)?;
     let mut downloaded: u64 = 0;
     let mut last_progress_update: u64 = 0;
+    let mut last_progress_at = std::time::Instant::now();
     let mut stream = response.bytes_stream();
     let mut hasher = Sha256::new();
 
@@ -768,8 +778,10 @@ async fn download_image_with_client<P: ProgressCallback>(
 
         downloaded += chunk.len() as u64;
 
-        // Send progress update every PROGRESS_UPDATE_INTERVAL bytes
-        if downloaded - last_progress_update >= PROGRESS_UPDATE_INTERVAL {
+        // Every 10 MB on a fast link, every second on a slow one
+        if downloaded - last_progress_update >= PROGRESS_UPDATE_INTERVAL
+            || last_progress_at.elapsed() >= PROGRESS_UPDATE_TIME
+        {
             let progress = if total_size > 0 {
                 ((downloaded as f64 / total_size as f64) * 100.0) as u8
             } else {
@@ -784,6 +796,7 @@ async fn download_image_with_client<P: ProgressCallback>(
                 message: "Downloading image...".to_string(),
             });
             last_progress_update = downloaded;
+            last_progress_at = std::time::Instant::now();
         }
     }
 
@@ -2753,6 +2766,59 @@ mod tests {
         mock.assert_async().await;
 
         crate::types::assert_progress_shape(&calls.lock().unwrap(), &[FlashStage::Downloading]);
+    }
+
+    // On a slow link, 10 MB can take minutes: the bar must move before that
+    #[tokio::test]
+    async fn slow_download_reports_progress_before_10_mb() {
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Default)]
+        struct Updates(Mutex<Vec<FlashProgress>>);
+
+        impl crate::ProgressCallback for Arc<Updates> {
+            fn on_progress(&self, progress: FlashProgress) {
+                self.0.lock().unwrap().push(progress);
+            }
+        }
+
+        let mut server = mockito::Server::new_async().await;
+        let chunk = vec![0u8; 64 * 1024];
+        let data = chunk.repeat(16);
+        let mock = server
+            .mock("GET", "/slow.img.xz")
+            .with_chunked_body(move |writer| {
+                for _ in 0..16 {
+                    writer.write_all(&chunk)?;
+                    writer.flush()?;
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Ok(())
+            })
+            .create_async()
+            .await;
+        let directory = tempfile::tempdir().unwrap();
+        let updates = Arc::new(Updates::default());
+
+        download_image_with_client(
+            &image_for_data(&format!("{}/slow.img.xz", server.url()), &data),
+            &directory.path().join("slow.img"),
+            &updates,
+            shared_client().unwrap(),
+            |_| Ok(u64::MAX),
+        )
+        .await
+        .unwrap();
+        mock.assert_async().await;
+
+        let updates = updates.0.lock().unwrap();
+        let during: Vec<_> = updates
+            .iter()
+            .map(|update| update.bytes_processed)
+            .filter(|&bytes| bytes > 0 && bytes < data.len() as u64)
+            .collect();
+        assert!(during.len() >= 2, "updates during the download: {during:?}");
+        crate::types::assert_progress_shape(&updates, &[FlashStage::Downloading]);
     }
 
     #[tokio::test]
