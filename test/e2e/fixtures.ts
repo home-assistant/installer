@@ -84,6 +84,24 @@ export async function flowScreenshot(page: Page, flow: string, step: string) {
 }
 
 /**
+ * The browser mocks take about as long as the real operations, a flash 15
+ * seconds, so the tests run them ten times faster. A test that acts while an
+ * install runs, like stopping it or checking its progress, sets the scale to
+ * 1 before it starts, and back to `MOCK_DELAY_SCALE` once it is done there.
+ */
+export const MOCK_DELAY_SCALE = 0.1;
+
+/**
+ * Every wait in the browser mocks from now on takes `scale` times as long as
+ * the real operation, also after the page loads again.
+ */
+export async function setMockDelayScale(page: Page, scale: number) {
+  await page.evaluate((scale) => {
+    sessionStorage.setItem("hai:mock-delay-scale", String(scale));
+  }, scale);
+}
+
+/**
  * Every page runs under the CSP the desktop app ships with, which dev does
  * not apply, and a test fails if anything runs into it. `platform` is an
  * explicit input to getPlatform(), independent of the browser project.
@@ -118,6 +136,12 @@ export const test = base.extend<{ platform: "default" | "macos" }>({
         ).reportCspViolation(`${e.effectiveDirective} ${e.blockedURI}`);
       });
     });
+
+    await page.addInitScript((scale) => {
+      if (sessionStorage.getItem("hai:mock-delay-scale") === null) {
+        sessionStorage.setItem("hai:mock-delay-scale", String(scale));
+      }
+    }, MOCK_DELAY_SCALE);
 
     if (platform === "macos") {
       await page.addInitScript(() => {

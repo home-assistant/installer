@@ -22,7 +22,7 @@ test("Mini PC Flow - installs to a connected drive through to the done step", as
   await shot("method");
   await setupView
     .locator("option-card")
-    .filter({ hasText: "I can connect the drive" })
+    .filter({ hasText: "Write the mini PC's drive here" })
     .click();
 
   const archView = page.locator("minipc-architecture-selection-view");
@@ -74,14 +74,9 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
     await page
       .locator('option-card[heading="Mini PC or other computer"]')
       .click();
-    await page
-      .locator("minipc-setup-method-view")
-      .locator("option-card")
-      .filter({ hasText: "I need to boot from USB" })
-      .click();
 
     await page
-      .locator("minipc-media-view")
+      .locator("minipc-setup-method-view")
       .locator("option-card")
       .filter({ hasText: "ISO file" })
       .click();
@@ -91,7 +86,7 @@ test.describe("Mini PC Flow - Setup Method Selection", () => {
 
     await page.getByRole("button", { name: "Back", exact: false }).click();
     await page
-      .locator("minipc-media-view")
+      .locator("minipc-setup-method-view")
       .locator("option-card")
       .filter({ hasText: "USB stick" })
       .click();
@@ -113,7 +108,7 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
     await expect(setupView).toBeVisible();
     const connectDriveOption = setupView
       .locator("option-card")
-      .filter({ hasText: "I can connect the drive" });
+      .filter({ hasText: "Write the mini PC's drive here" });
     await connectDriveOption.click();
   });
 
@@ -134,21 +129,14 @@ test.describe("Mini PC Flow - Architecture Selection", () => {
     const setupView = page.locator("minipc-setup-method-view");
     await setupView
       .locator("option-card")
-      .filter({ hasText: "I need to boot from USB" })
-      .click();
-    await page
-      .locator("minipc-media-view")
-      .locator("option-card")
       .filter({ hasText: "USB stick" })
       .click();
     await expect(page.locator("drive-selection-view")).toBeVisible();
     await back.click();
-    await expect(page.locator("minipc-media-view")).toBeVisible();
-    await back.click();
 
     await setupView
       .locator("option-card")
-      .filter({ hasText: "I can connect the drive" })
+      .filter({ hasText: "Write the mini PC's drive here" })
       .click();
     await expect(archView).toBeVisible();
     const picked = await page.evaluate(async () => {

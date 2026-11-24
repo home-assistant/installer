@@ -4,6 +4,8 @@ import {
   flowScreenshot,
   test,
   expect,
+  MOCK_DELAY_SCALE,
+  setMockDelayScale,
 } from "./fixtures.js";
 
 test.describe("Proxmox Installation Flow", () => {
@@ -76,6 +78,7 @@ test.describe("Proxmox Installation Flow", () => {
     // Step 3: Confirm - click Install (no confirmation dialog for Proxmox)
     await expect(page.locator("proxmox-confirm-view")).toBeVisible();
     await flowScreenshot(page, "proxmox", "confirm");
+    await setMockDelayScale(page, 1);
     await page
       .locator("wizard-shell")
       .locator(".footer-right wa-button")
@@ -88,6 +91,7 @@ test.describe("Proxmox Installation Flow", () => {
       "hidden"
     );
     await flowScreenshot(page, "proxmox", "progress");
+    await setMockDelayScale(page, MOCK_DELAY_SCALE);
 
     // Step 5: Success
     await expect(page.locator("proxmox-success-view")).toBeVisible({

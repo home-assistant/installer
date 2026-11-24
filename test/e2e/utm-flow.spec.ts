@@ -1,5 +1,12 @@
 import { type Page } from "@playwright/test";
-import { allowUtmControl, flowScreenshot, test, expect } from "./fixtures.js";
+import {
+  allowUtmControl,
+  flowScreenshot,
+  test,
+  expect,
+  MOCK_DELAY_SCALE,
+  setMockDelayScale,
+} from "./fixtures.js";
 
 test.use({ platform: "macos" });
 
@@ -188,6 +195,7 @@ test.describe("UTM Installation Flow", () => {
     // Step 3: Confirm - click Install (no confirmation dialog for VM flow)
     await expect(page.locator("utm-confirm-view")).toBeVisible();
     await flowScreenshot(page, "vm-utm", "confirm");
+    await setMockDelayScale(page, 1);
     await page
       .locator("wizard-shell")
       .locator(".footer-right wa-button")
@@ -200,6 +208,7 @@ test.describe("UTM Installation Flow", () => {
       "hidden"
     );
     await flowScreenshot(page, "vm-utm", "progress");
+    await setMockDelayScale(page, MOCK_DELAY_SCALE);
 
     // Step 5: Success
     await expect(page.locator("utm-success-view")).toBeVisible({
