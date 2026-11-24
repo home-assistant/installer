@@ -324,10 +324,14 @@ describe("device-setup-view", () => {
     device();
     await noted();
     const view = document.createElement("device-setup-view");
+    let held = false;
+    view.addEventListener("wizard-hold-next", () => (held = true));
     const next = oneEvent(view, "wizard-next");
     document.body.append(view);
     try {
       await next;
+      // By itself, so Skip, turning into Close, takes no clicks for a moment
+      expect(held).to.be.true;
       const { selections } = wizardState.getState();
       expect(selections.ipAddress).to.equal("192.0.2.60");
       expect(selections.homeAssistantReady).to.be.true;

@@ -3,7 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import { localize, localizeContent } from "../localization/localize.js";
 import { WizardStateController } from "../state/wizard-state-controller.js";
 import { wizardState } from "../state/wizard-state.js";
-import { goToNextStep } from "../components/wizard-next.js";
+import { goOnByItself } from "../components/wizard-next.js";
 import {
   renderAnnouncedName,
   renderHomeAssistantLink,
@@ -206,7 +206,7 @@ export class DeviceSetupView extends LitElement {
       });
       this._stage = "complete";
       wizardState.setSelection("homeAssistantReady", true);
-      goToNextStep(this);
+      goOnByItself(this);
     } catch (error) {
       // Gone from the page, or tried again
       if (isCancelled(error) || controller.signal.aborted) return;

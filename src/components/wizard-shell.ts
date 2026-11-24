@@ -38,6 +38,13 @@ function isDoubleClick(event: MouseEvent): boolean {
   return event.detail > 1;
 }
 
+/**
+ * How long Next takes no clicks after the step went on by itself. Next turns
+ * into the next step's button in the same place, so a click meant for what
+ * it was would do what it is now: Close where Skip was.
+ */
+export const NEXT_HOLD_MS = 1000;
+
 @customElement("wizard-shell")
 export class WizardShell extends LitElement {
   static styles = [
@@ -145,6 +152,9 @@ export class WizardShell extends LitElement {
   private _scrolls = false;
 
   private _resizeObserver = new ResizeObserver(() => this._checkScrolling());
+
+  /** Until when Next takes no clicks, after the step went on by itself */
+  private _nextHeldUntil = 0;
 
   @query(".content")
   private _content?: HTMLElement;
@@ -270,7 +280,10 @@ export class WizardShell extends LitElement {
         ${this.flowTitle
           ? html`<h1 class="sr-only">${this.flowTitle}</h1>`
           : nothing}
-        <slot @slotchange=${this._observeContent}></slot>
+        <slot
+          @slotchange=${this._observeContent}
+          @wizard-hold-next=${this._holdNext}
+        ></slot>
       </main>
 
       <footer class="footer ${this.hideFooter ? "idle" : ""}">
@@ -315,8 +328,13 @@ export class WizardShell extends LitElement {
     fireEvent(this, "wizard-back");
   }
 
+  private _holdNext() {
+    this._nextHeldUntil = performance.now() + NEXT_HOLD_MS;
+  }
+
   private _onNext(event: MouseEvent) {
     if (isDoubleClick(event)) return;
+    if (performance.now() < this._nextHeldUntil) return;
 
     fireEvent(this, "wizard-next");
   }
@@ -338,5 +356,7 @@ declare global {
     /** Next, or a step's view moving on the way Next does */
     "wizard-next": undefined;
     "wizard-cancel": undefined;
+    /** The step is about to go on by itself; see `goOnByItself` */
+    "wizard-hold-next": undefined;
   }
 }

@@ -1,6 +1,10 @@
 import { expect, fixture, fixtureSync, html, oneEvent } from "@open-wc/testing";
 import "../../../src/components/wizard-shell.js";
-import type { WizardShell } from "../../../src/components/wizard-shell.js";
+import {
+  NEXT_HOLD_MS,
+  type WizardShell,
+} from "../../../src/components/wizard-shell.js";
+import { goOnByItself } from "../../../src/components/wizard-next.js";
 import { wizardState } from "../../../src/state/wizard-state.js";
 
 describe("wizard-shell", () => {
@@ -170,6 +174,29 @@ describe("wizard-shell", () => {
 
     expect(fired).to.deep.equal([]);
     expect(wizardState.getState().currentStepIndex).to.equal(1);
+  });
+
+  // Next turns into the next step's button in the same place, so a click
+  // meant for Skip would press Close
+  it("holds Next for a moment after the step went on by itself", async () => {
+    const el = await fixture<WizardShell>(
+      html`<wizard-shell><div></div></wizard-shell>`
+    );
+    const nextButton = el.shadowRoot!.querySelector<HTMLElement>(
+      ".footer-right wa-button"
+    )!;
+    let presses = 0;
+    el.addEventListener("wizard-next", (event) => {
+      if (event.target === el) presses++;
+    });
+
+    goOnByItself(el.firstElementChild as HTMLElement);
+    nextButton.click();
+    expect(presses).to.equal(0);
+
+    await new Promise((resolve) => setTimeout(resolve, NEXT_HOLD_MS));
+    nextButton.click();
+    expect(presses).to.equal(1);
   });
 
   it("hides the footer's buttons in place when hideFooter is true", async () => {
