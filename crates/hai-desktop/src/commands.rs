@@ -995,6 +995,7 @@ mod tests {
 
     #[cfg(all(not(feature = "mock"), not(target_os = "macos")))]
     #[tokio::test]
+    #[serial_test::serial]
     async fn utm_download_logs_failed_precheck_without_success() {
         use tauri::Manager;
 
