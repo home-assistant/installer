@@ -447,6 +447,41 @@ describe("proxmox-configure-view", () => {
       expect(cores()).to.equal(12);
     });
 
+    it("keeps the cores picked while memory and disk change on a smaller node", async () => {
+      mockNodes();
+      wizardState.setSelection("proxmoxNode", "large");
+      const first = await mount();
+      const change = (detail: {
+        cpuCores: number;
+        memoryMb: number;
+        diskSizeGb: number;
+      }) =>
+        fireEvent(
+          first.shadowRoot!.querySelector("vm-resources")!,
+          "resources-change",
+          detail
+        );
+      change({ cpuCores: 12, memoryMb: 4096, diskSizeGb: 32 });
+      pickNode(first, "small");
+      await first.updateComplete;
+
+      // The sliders report the lowered cores along with what changed
+      change({ cpuCores: 2, memoryMb: 8192, diskSizeGb: 32 });
+      change({ cpuCores: 2, memoryMb: 8192, diskSizeGb: 64 });
+      expect(cores()).to.equal(2);
+      expect(wizardState.getState().selections.cpuCoresAsked).to.equal(12);
+      first.remove();
+
+      // Back and Next, then the larger node
+      const el = await mount();
+      pickNode(el, "large");
+      await el.updateComplete;
+
+      expect(cores()).to.equal(12);
+      expect(wizardState.getState().selections.memoryMb).to.equal(8192);
+      expect(wizardState.getState().selections.diskSizeGb).to.equal(64);
+    });
+
     it("still gets the default back after Back and Next", async () => {
       mockNodes();
       const first = await mount();
