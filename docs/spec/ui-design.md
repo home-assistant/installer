@@ -300,8 +300,9 @@ Casita helps make the app feel friendly and approachable, especially for non-tec
 **Companion app:**
 
 The panel shows one QR code and a link to each store. The code holds
-`https://my.home-assistant.io/app/`, which sends a phone to the Home Assistant
-app in its own store, so nobody picks a platform before scanning. The links
+`https://www.home-assistant.io/get-mobile-app/`, which sends a phone to the
+Home Assistant app in its own store, so nobody picks a platform before
+scanning. On a phone that already has the app, the link opens the app. The links
 open the App Store and Google Play pages in this computer's browser. The same
 panel is shown while Home Assistant installs, under the progress, and on the
 last step.

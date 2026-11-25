@@ -15,7 +15,9 @@ describe("companion-app", () => {
     const codes = el.shadowRoot!.querySelectorAll("wa-qr-code");
     expect(codes).to.have.length(1);
     const [code] = codes;
-    expect(code.value).to.equal("https://my.home-assistant.io/app/");
+    expect(code.value).to.equal(
+      "https://www.home-assistant.io/get-mobile-app/"
+    );
     await code.updateComplete;
     // Named for what it does, not read out as an address
     const canvas = code.shadowRoot!.querySelector("canvas")!;
