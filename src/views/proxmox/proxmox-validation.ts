@@ -67,10 +67,24 @@ const CONFIGURE_REFUSALS = new Set([
   "backend.proxmox.import_storage_too_small",
 ]);
 
+/**
+ * The key of the refusal in `error`. One that left the uploaded image behind
+ * comes inside a message that names the image, and is still that refusal.
+ */
+function refusalKey(error: InstallerError): string | undefined {
+  const { message_key: key, message_params: params } = error.details;
+  if (key === "backend.proxmox.image_left_behind") {
+    const reason = (params as { reason?: { key?: unknown } } | undefined)
+      ?.reason?.key;
+    return typeof reason === "string" ? reason : undefined;
+  }
+  return typeof key === "string" ? key : undefined;
+}
+
 /** Whether another choice on the configure step can fix `error` */
 export function fixedOnConfigure(error: InstallerError): boolean {
-  const key = error.details.message_key;
-  return typeof key === "string" && CONFIGURE_REFUSALS.has(key);
+  const key = refusalKey(error);
+  return key !== undefined && CONFIGURE_REFUSALS.has(key);
 }
 
 /**
@@ -85,8 +99,8 @@ const REFUSED_BEFORE_CREATING = new Set([
 
 /** Whether `error` came before the VM was asked for, whatever the stage */
 export function refusedBeforeCreating(error: InstallerError): boolean {
-  const key = error.details.message_key;
-  return typeof key === "string" && REFUSED_BEFORE_CREATING.has(key);
+  const key = refusalKey(error);
+  return key !== undefined && REFUSED_BEFORE_CREATING.has(key);
 }
 
 export const CORE_OPTIONS = [2, 4, 6, 8, 10, 12, 16];

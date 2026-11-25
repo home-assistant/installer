@@ -81,6 +81,37 @@ fn request_error(error: reqwest::Error, context: &str) -> Error {
         .unwrap_or_else(|| Error::ProxmoxApi(format!("{}: {}", context, error)))
 }
 
+/// The longest reason from Proxmox a message shows
+const MAX_REASON_CHARS: usize = 300;
+
+/// Proxmox's own words for a rejected request: the message in its JSON answer
+/// and the parameters it names, or the status when it gave neither. Never
+/// the raw body, which a proxy in between may fill with a whole page.
+fn proxmox_reason(status: reqwest::StatusCode, body: &str) -> String {
+    let json: serde_json::Value = serde_json::from_str(body).unwrap_or_default();
+
+    let mut parts = Vec::new();
+    if let Some(message) = json.get("message").and_then(|value| value.as_str()) {
+        parts.push(message.trim().trim_end_matches('.').to_string());
+    }
+    if let Some(errors) = json.get("errors").and_then(|value| value.as_object()) {
+        for (parameter, problem) in errors {
+            let problem = problem
+                .as_str()
+                .map_or_else(|| problem.to_string(), str::to_string);
+            parts.push(format!("{parameter}: {}", problem.trim()));
+        }
+    }
+    parts.retain(|part| !part.is_empty());
+
+    let reason = if parts.is_empty() {
+        status.to_string()
+    } else {
+        parts.join("; ")
+    };
+    reason.chars().take(MAX_REASON_CHARS).collect()
+}
+
 /// Parse a Proxmox version string like "8.4.1" into (major, minor, patch).
 fn parse_version(version_str: &str) -> Option<(u32, u32, u32)> {
     let parts: Vec<&str> = version_str.split('.').collect();
@@ -753,8 +784,9 @@ fn check_disk_storage(
 async fn ensure_vm_id_free(session: &ProxmoxSession, vm_id: u32) -> Result<()> {
     let response = send_nextid_request(session, Some(vm_id)).await?;
 
-    // Also runs right before the upload, after a download that can outlast the
-    // ticket: an expired one is already an error by now
+    // Also runs right before the upload and right before the create, after a
+    // download and an upload that can outlast the ticket: an expired one is
+    // already an error by now
     let status = response.status();
     if status.is_success() {
         return Ok(());
@@ -1483,8 +1515,13 @@ async fn create_vm_with_disk(
     storage_name: &str,
     source_unused: &mut bool,
 ) -> Result<()> {
-    // Networks and ACLs can change during the download/upload.
-    if let Err(error) = ensure_bridge_access(session, config).await {
+    // Networks, ACLs and free VM IDs can all change during the download and
+    // upload, which take long enough for someone to create a VM meanwhile.
+    let still_possible = async {
+        ensure_vm_id_free(session, config.vm_id).await?;
+        ensure_bridge_access(session, config).await
+    };
+    if let Err(error) = still_possible.await {
         // No create request was sent, so the uploaded source is unused.
         *source_unused = true;
         return Err(error);
@@ -1542,6 +1579,23 @@ async fn create_vm_with_disk(
         if status == reqwest::StatusCode::UNAUTHORIZED {
             return Err(Error::ProxmoxSessionExpired);
         }
+
+        eprintln!(
+            "Creating VM {} failed ({status}): {response_text}",
+            config.vm_id
+        );
+
+        // Proxmox said why it refused, like a storage that can't hold disks
+        // or a missing permission. Without it, installing again fails the
+        // same way with nothing that says why.
+        if *source_unused {
+            return Err(Error::ProxmoxActionRequired(crate::message!(
+                "backend.proxmox.vm_create_rejected",
+                vm_id = config.vm_id,
+                reason = proxmox_reason(status, &response_text),
+            )));
+        }
+
         return Err(Error::ProxmoxApi(format!(
             "Failed to create VM ({}): {}",
             status, response_text
@@ -1679,20 +1733,60 @@ async fn import_and_cleanup_image(
     )
     .await;
     // Creation was prevented/rejected or the import task stopped. Cleanup is
-    // best effort and must never replace the original installation result.
+    // best effort and must never hide why the installation failed.
     if source_unused {
-        if let Err(error) =
+        if let Err(cleanup_error) =
             delete_import_image(session, &config.node, storage_name, image_filename).await
         {
             eprintln!(
-                "Temporary import cleanup for VM {} failed: {error}",
+                "Temporary import cleanup for VM {} failed: {cleanup_error}",
                 config.vm_id
             );
+            return result
+                .map_err(|error| image_left_behind(config, storage_name, image_filename, error));
         }
         return result;
     }
 
     result.map_err(|error| import_image_kept(config, storage_name, image_filename, error))
+}
+
+/// The error for an install that stopped while the uploaded image couldn't
+/// be removed. Installing again uploads another one next to it under a new
+/// name, so name this one, next to what went wrong.
+fn image_left_behind(
+    config: &ProxmoxVmConfig,
+    storage_name: &str,
+    image_filename: &str,
+    error: Error,
+) -> Error {
+    let volume = format!("{storage_name}:import/{image_filename}");
+    match error {
+        // Installer guidance stays as is, like a VM ID taken during the
+        // upload or the reason Proxmox gave, and gets the image added
+        Error::ProxmoxActionRequired(reason) => Error::ProxmoxActionRequired(crate::message!(
+            "backend.proxmox.image_left_behind",
+            reason = reason,
+            volume = volume,
+            node = config.node,
+        )),
+        // Checking the server again right before the create failed, like
+        // Proxmox not answering: no create request was sent
+        Error::ProxmoxApi(_) => {
+            eprintln!(
+                "Checking the server before creating VM {} failed: {error}",
+                config.vm_id
+            );
+            Error::ProxmoxActionRequired(crate::message!(
+                "backend.proxmox.recheck_failed_image_left",
+                vm_id = config.vm_id,
+                volume = volume,
+                node = config.node,
+            ))
+        }
+        // Logging in again or checking the certificate comes first
+        error => error,
+    }
 }
 
 /// The error for a VM that may still be importing the uploaded image, so the
@@ -3219,6 +3313,16 @@ mod tests {
                 .await
         }
 
+        /// Proxmox says VM ID 100 is still free; creating a VM checks that again.
+        async fn mock_vm_id_free(server: &mut Server) -> Mock {
+            server
+                .mock("GET", "/api2/json/cluster/nextid")
+                .match_query(Matcher::UrlEncoded("vmid".to_string(), "100".to_string()))
+                .with_body(r#"{"data": "100"}"#)
+                .create_async()
+                .await
+        }
+
         async fn mock_default_bridge(server: &mut Server) -> Mock {
             mock_bridges(
                 server,
@@ -3273,6 +3377,7 @@ mod tests {
         #[tokio::test]
         async fn test_bridge_validation_rejects_net0_and_path_injection_before_create() {
             let mut server = Server::new_async().await;
+            mock_vm_id_free(&mut server).await;
             mock_default_bridge(&mut server).await;
             for name in [
                 "",
@@ -3417,6 +3522,7 @@ mod tests {
         async fn test_invalid_vlan_and_changed_capability_never_create_vm() {
             for tag in [0, 4095, u16::MAX] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 let network = server
                     .mock("GET", "/api2/json/nodes/pve/network")
                     .match_query(Matcher::Any)
@@ -3449,6 +3555,7 @@ mod tests {
                 create.assert_async().await;
             }
             let mut server = Server::new_async().await;
+            mock_vm_id_free(&mut server).await;
             let network = mock_default_bridge(&mut server).await;
             let create = server
                 .mock("POST", "/api2/json/nodes/pve/qemu")
@@ -3480,6 +3587,7 @@ mod tests {
             for tag in [1, 42, 4094] {
                 for allowed in [false, true] {
                     let mut server = Server::new_async().await;
+                    mock_vm_id_free(&mut server).await;
                     let network = mock_bridges(&mut server, serde_json::json!([{"iface":"vmbr0","type":"bridge","bridge_vlan_aware":1}])).await;
                     let permissions = mock_privileges(
                         &mut server,
@@ -3625,6 +3733,7 @@ mod tests {
                 "localnetwork",
             ] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 let network = mock_bridges(
                     &mut server,
                     serde_json::json!([{"iface":"lan", "type":"vnet"}]),
@@ -4473,6 +4582,7 @@ mod tests {
 
         async fn check_create_vm_with_disk_size(disk_size_gb: u32) {
             let mut server = Server::new_async().await;
+            mock_vm_id_free(&mut server).await;
             let requests = std::sync::Arc::new(Mutex::new(Vec::new()));
             let network = mock_bridges(
                 &mut server,
@@ -4621,6 +4731,7 @@ mod tests {
                 ),
             ] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 // Creating the VM first rechecks the selected bridge
                 let _network = mock_default_bridge(&mut server).await;
                 let _permissions =
@@ -4665,13 +4776,19 @@ mod tests {
                 )
                 .await;
                 // Every resize failure leaves the VM behind, so each one tells
-                // the user to remove it, without the server's response
+                // the user to remove it, without the server's response. The
+                // image it no longer needs couldn't be removed, so it's named.
                 assert_eq!(
                     action_required(result),
                     message!(
-                        "backend.proxmox.vm_created_resize_failed",
-                        vm_id = 100,
-                        size_gb = 32,
+                        "backend.proxmox.image_left_behind",
+                        reason = message!(
+                            "backend.proxmox.vm_created_resize_failed",
+                            vm_id = 100,
+                            size_gb = 32,
+                        ),
+                        volume = "local:import/haos.qcow2",
+                        node = "pve",
                     )
                 );
                 create_mock.assert_async().await;
@@ -4686,6 +4803,7 @@ mod tests {
         async fn test_disk_resize_requires_successful_import() {
             for body in [r#"{"data":null}"#, r#"{"data":"create-task"}"#] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 // Creating the VM first rechecks the selected bridge
                 let _network = mock_default_bridge(&mut server).await;
                 let _permissions =
@@ -4810,6 +4928,7 @@ mod tests {
                 ),
             ] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 if matches!(call, Create) {
                     // Creating the VM first rechecks the selected bridge
                     mock_default_bridge(&mut server).await;
@@ -5037,6 +5156,7 @@ mod tests {
         async fn failed_bridge_recheck_deletes_unused_import_without_creating_vm() {
             for bridge_removed in [true, false] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 let session = session(server.url());
                 let config = vm_config();
                 let initial_network = mock_default_bridge(&mut server).await;
@@ -5103,10 +5223,100 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn vm_id_taken_during_the_upload_deletes_the_image_without_creating_a_vm() {
+            let mut server = Server::new_async().await;
+            let session = session(server.url());
+            // Someone created VM 100 while the image was being uploaded
+            let vm_id = server
+                .mock("GET", "/api2/json/cluster/nextid")
+                .match_query(Matcher::UrlEncoded("vmid".to_string(), "100".to_string()))
+                .with_status(400)
+                .with_body(r#"{"errors": {"vmid": "VM 100 already exists"}, "data": null}"#)
+                .create_async()
+                .await;
+            let create = server
+                .mock("POST", "/api2/json/nodes/pve/qemu")
+                .expect(0)
+                .create_async()
+                .await;
+            let delete = server
+                .mock(
+                    "DELETE",
+                    "/api2/json/nodes/pve/storage/local-import/content/local-import%3Aimport%2Fhai.qcow2",
+                )
+                .with_body(r#"{"data":"delete-task"}"#)
+                .create_async()
+                .await;
+            let cleanup_task = mock_task(&mut server, "delete-task", TASK_OK).await;
+
+            let result =
+                import_and_cleanup_image(&session, &vm_config(), "hai.qcow2", "local-import").await;
+            assert_eq!(
+                action_required(result),
+                message!("backend.proxmox.vm_id_unavailable", vm_id = 100)
+            );
+            vm_id.assert_async().await;
+            create.assert_async().await;
+            delete.assert_async().await;
+            cleanup_task.assert_async().await;
+        }
+
+        #[tokio::test]
+        async fn a_rejected_create_names_the_image_it_could_not_remove() {
+            // (row, create status, outcome)
+            for (row, status, expected) in [
+                // Proxmox's reason, or its status when it gave none, with
+                // the image to delete
+                (
+                    "rejected",
+                    400,
+                    Action(message!(
+                        "backend.proxmox.image_left_behind",
+                        reason = message!(
+                            "backend.proxmox.vm_create_rejected",
+                            vm_id = 100,
+                            reason = "400 Bad Request",
+                        ),
+                        volume = "local-import:import/hai.qcow2",
+                        node = "pve",
+                    )),
+                ),
+                // Logging in again is offered instead
+                ("session expired", 401, SessionExpired),
+            ] {
+                let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
+                mock_default_bridge(&mut server).await;
+                mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"]).await;
+                server
+                    .mock("POST", "/api2/json/nodes/pve/qemu")
+                    .with_status(status)
+                    .create_async()
+                    .await;
+                let delete = server
+                    .mock("DELETE", Matcher::Any)
+                    .with_status(500)
+                    .create_async()
+                    .await;
+
+                let result = import_and_cleanup_image(
+                    &session(server.url()),
+                    &vm_config(),
+                    "hai.qcow2",
+                    "local-import",
+                )
+                .await;
+                assert_outcome(row, result, &expected);
+                assert!(delete.matched_async().await, "{row}: no cleanup tried");
+            }
+        }
+
+        #[tokio::test]
         async fn import_cleanup_waits_for_completion_and_preserves_install_result() {
             use std::sync::Arc;
             for cleanup_status in [200, 403, 500] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 let network = mock_default_bridge(&mut server).await;
                 let permissions =
                     mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"])
@@ -5167,24 +5377,64 @@ mod tests {
 
         #[tokio::test]
         async fn failed_import_cleanup_requires_a_known_terminal_outcome() {
-            for (create_status, response, task_status, task_body, deletes) in [
-                (200, r#"{"data":null}"#, 200, "{}", 0),
-                (200, r#"{"data":""}"#, 200, "{}", 0),
-                (200, r#"{"data":"import-task"}"#, 503, "unavailable", 0),
-                // A rejected session started no import, so the image goes
-                (401, "", 200, "{}", 1),
-                (403, "denied", 200, "{}", 1),
-                (500, "unknown", 200, "{}", 0),
-                (408, "timeout", 200, "{}", 0),
+            let volume = "local-import:import/hai-image-unique.qcow2";
+            // Kept, in case Proxmox still imports it, so the user is told
+            // what to delete once it's done
+            let kept = || {
+                Action(message!(
+                    "backend.proxmox.import_image_kept",
+                    vm_id = 100,
+                    volume = volume,
+                    node = "pve",
+                ))
+            };
+            // Removing it failed, so it's named next to what went wrong
+            let left = |reason: crate::Message| {
+                Action(message!(
+                    "backend.proxmox.image_left_behind",
+                    reason = reason,
+                    volume = volume,
+                    node = "pve",
+                ))
+            };
+            let disk_full = r#"{"data":{"status":"stopped","exitstatus":"disk full"}}"#;
+            let import_task = r#"{"data":"import-task"}"#;
+            // (create status, its body, task status, task body, deletes, outcome)
+            for (create_status, response, task_status, task_body, deletes, expected) in [
+                (200, r#"{"data":null}"#, 200, "{}", 0, kept()),
+                (200, r#"{"data":""}"#, 200, "{}", 0, kept()),
+                (200, import_task, 503, "unavailable", 0, kept()),
+                // A rejected session started no import, so the image goes;
+                // logging in again comes first
+                (401, "", 200, "{}", 1, SessionExpired),
+                // Proxmox's reason stays, so installing again isn't a guess
+                (
+                    403,
+                    r#"{"data":null,"message":"Permission check failed (/vms/100, VM.Allocate)"}"#,
+                    200,
+                    "{}",
+                    1,
+                    left(message!(
+                        "backend.proxmox.vm_create_rejected",
+                        vm_id = 100,
+                        reason = "Permission check failed (/vms/100, VM.Allocate)",
+                    )),
+                ),
+                (500, "unknown", 200, "{}", 0, kept()),
+                (408, "timeout", 200, "{}", 0, kept()),
+                // The import failed, and Proxmox said so
                 (
                     200,
-                    r#"{"data":"import-task"}"#,
+                    import_task,
                     200,
-                    r#"{"data":{"status":"stopped","exitstatus":"disk full"}}"#,
+                    disk_full,
                     1,
+                    left(message!("backend.proxmox.vm_creation_failed", vm_id = 100)),
                 ),
             ] {
+                let row = format!("create {create_status}, task {task_status}");
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 let network = mock_default_bridge(&mut server).await;
                 let permissions =
                     mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"])
@@ -5214,26 +5464,92 @@ mod tests {
                     "local-import",
                 )
                 .await;
-                if deletes == 0 {
-                    // Kept, in case Proxmox still imports it, so the user
-                    // is told what to delete once it's done
-                    assert_eq!(
-                        action_required(result),
-                        message!(
-                            "backend.proxmox.import_image_kept",
-                            vm_id = 100,
-                            volume = "local-import:import/hai-image-unique.qcow2",
-                            node = "pve",
-                        ),
-                        "create {create_status}, task {task_status}"
-                    );
-                } else {
-                    assert!(result.is_err());
-                }
+                assert_outcome(&row, result, &expected);
                 delete.assert_async().await;
                 network.assert_async().await;
                 permissions.assert_async().await;
             }
+        }
+
+        #[tokio::test]
+        async fn a_failed_check_before_the_create_names_the_image_left_behind() {
+            let volume = "local-import:import/hai-image-unique.qcow2";
+            // (row, VM ID check status, outcome)
+            for (row, nextid_status, expected) in [
+                // Taken during the upload: the guidance stays, with the image
+                (
+                    "VM ID taken",
+                    400,
+                    Action(message!(
+                        "backend.proxmox.image_left_behind",
+                        reason = message!("backend.proxmox.vm_id_unavailable", vm_id = 100),
+                        volume = volume,
+                        node = "pve",
+                    )),
+                ),
+                // Proxmox didn't answer the check: no create was sent, so
+                // it's not "Proxmox didn't create it"
+                (
+                    "VM ID check failed",
+                    503,
+                    Action(message!(
+                        "backend.proxmox.recheck_failed_image_left",
+                        vm_id = 100,
+                        volume = volume,
+                        node = "pve",
+                    )),
+                ),
+            ] {
+                let mut server = Server::new_async().await;
+                server
+                    .mock("GET", "/api2/json/cluster/nextid")
+                    .match_query(Matcher::UrlEncoded("vmid".to_string(), "100".to_string()))
+                    .with_status(nextid_status)
+                    .create_async()
+                    .await;
+                let create = server
+                    .mock("POST", "/api2/json/nodes/pve/qemu")
+                    .expect(0)
+                    .create_async()
+                    .await;
+                let delete = server
+                    .mock("DELETE", Matcher::Any)
+                    .with_status(500)
+                    .create_async()
+                    .await;
+
+                let result = import_and_cleanup_image(
+                    &session(server.url()),
+                    &vm_config(),
+                    "hai-image-unique.qcow2",
+                    "local-import",
+                )
+                .await;
+                assert_outcome(row, result, &expected);
+                assert!(create.matched_async().await, "{row}: create sent");
+                assert!(delete.matched_async().await, "{row}: no cleanup tried");
+            }
+        }
+
+        #[test]
+        fn proxmox_reason_uses_its_words_and_never_a_raw_page() {
+            let bad_request = reqwest::StatusCode::BAD_REQUEST;
+            for (row, body, expected) in [
+                (
+                    "message and parameters",
+                    r#"{"message":"Parameter verification failed.\n","errors":{"scsi0":"storage 'local' does not support content type 'images'\n"}}"#,
+                    "Parameter verification failed; scsi0: storage 'local' does not support content type 'images'",
+                ),
+                ("a page from a proxy", "<html>Bad gateway</html>", "400 Bad Request"),
+                ("nothing", "", "400 Bad Request"),
+            ] {
+                assert_eq!(proxmox_reason(bad_request, body), expected, "{row}");
+            }
+            let long = format!(r#"{{"message":"{}"}}"#, "x".repeat(1000));
+            assert_eq!(
+                proxmox_reason(bad_request, &long).chars().count(),
+                MAX_REASON_CHARS
+            );
         }
 
         #[tokio::test]
@@ -5604,6 +5920,7 @@ mod tests {
                 ("session expired", 401, "", false, SessionExpired),
             ] {
                 let mut server = Server::new_async().await;
+                mock_vm_id_free(&mut server).await;
                 mock_default_bridge(&mut server).await;
                 mock_privileges(&mut server, "/sdn/zones/localnetwork/vmbr0", &["SDN.Use"]).await;
                 server
