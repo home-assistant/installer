@@ -525,9 +525,60 @@ fn finish_vm_creation(
 #[cfg(target_os = "macos")]
 mod macos {
     use super::*;
+    use core_foundation::array::{CFArray, CFArrayRef};
+    use core_foundation::base::TCFType;
+    use core_foundation::error::CFErrorRef;
+    use core_foundation::string::{CFString, CFStringRef};
+    use core_foundation::url::CFURL;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
 
-    const UTM_APP_PATH: &str = "/Applications/UTM.app";
+    /// The same for the App Store copy and the download from the website
+    const UTM_BUNDLE_ID: &str = "com.utmapp.UTM";
+
+    #[link(name = "CoreServices", kind = "framework")]
+    extern "C" {
+        fn LSCopyApplicationURLsForBundleIdentifier(
+            bundle_identifier: CFStringRef,
+            error: *mut CFErrorRef,
+        ) -> CFArrayRef;
+    }
+
+    /// Where UTM is installed, wherever that is, like in `~/Applications`.
+    /// Launch Services knows, and finds the same copy `tell application
+    /// "UTM"` talks to.
+    fn find_utm_app() -> Option<PathBuf> {
+        let bundle_identifier = CFString::from_static_string(UTM_BUNDLE_ID);
+
+        // SAFETY: the identifier is a valid CFString for the duration of the
+        // call, and a null error pointer means no error is wanted.
+        let urls = unsafe {
+            LSCopyApplicationURLsForBundleIdentifier(
+                bundle_identifier.as_concrete_TypeRef(),
+                std::ptr::null_mut(),
+            )
+        };
+        if urls.is_null() {
+            return None;
+        }
+
+        // SAFETY: a Copy function's result is ours to release, and it holds
+        // CFURLs
+        let urls: CFArray<CFURL> = unsafe { CFArray::wrap_under_create_rule(urls) };
+        usable_app(urls.iter().filter_map(|url| url.to_path()))
+    }
+
+    /// The first of `candidates`, best first, that can still be started.
+    /// Launch Services also remembers copies that are gone, like one on an
+    /// ejected disk image, and ones in the Trash.
+    pub(super) fn usable_app(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+        candidates.into_iter().find(|app| {
+            let in_trash = app
+                .components()
+                .any(|part| matches!(part.as_os_str().to_str(), Some(".Trash" | ".Trashes")));
+            !in_trash && app.join("Contents/Info.plist").is_file()
+        })
+    }
 
     pub(super) fn translation_status() -> std::io::Result<i32> {
         let mut translated: libc::c_int = 0;
@@ -557,28 +608,22 @@ mod macos {
     }
 
     pub(super) async fn check_utm_status() -> Result<UtmStatus> {
-        // Check if UTM.app exists
-        let utm_path = std::path::Path::new(UTM_APP_PATH);
-        if !utm_path.exists() {
+        let Some(app) = find_utm_app() else {
             return Ok(UtmStatus {
                 installed: false,
                 version: None,
                 path: None,
             });
-        }
-
-        // Try to get UTM version from Info.plist
-        let info_plist_path = format!("{}/Contents/Info.plist", UTM_APP_PATH);
-        let version = get_utm_version(&info_plist_path);
+        };
 
         Ok(UtmStatus {
             installed: true,
-            version,
-            path: Some(UTM_APP_PATH.to_string()),
+            version: get_utm_version(app.join("Contents/Info.plist")),
+            path: Some(app.to_string_lossy().into_owned()),
         })
     }
 
-    pub(super) fn get_utm_version(plist_path: &str) -> Option<String> {
+    pub(super) fn get_utm_version(plist_path: impl AsRef<Path>) -> Option<String> {
         let plist_content = std::fs::read(plist_path).ok()?;
         let plist: plist::Value = plist::from_bytes(&plist_content).ok()?;
         let dict = plist.as_dictionary()?;
@@ -1352,7 +1397,7 @@ mod tests {
         use super::create_vm;
         use super::macos::{
             check_utm_status, get_primary_network_interface, get_utm_version, run_applescript,
-            start_vm,
+            start_vm, usable_app,
         };
         use crate::error::Error;
         use crate::types::UtmVmConfig;
@@ -1400,17 +1445,53 @@ end tell"#,
             );
         }
 
+        /// A UTM.app with only what `usable_app` looks at
+        fn app_in(parent: &std::path::Path) -> std::path::PathBuf {
+            let app = parent.join("UTM.app");
+            std::fs::create_dir_all(app.join("Contents")).unwrap();
+            std::fs::write(app.join("Contents/Info.plist"), "").unwrap();
+            app
+        }
+
+        #[test]
+        fn finds_utm_outside_applications() {
+            let home = tempfile::tempdir().unwrap();
+            let app = app_in(&home.path().join("Applications"));
+
+            assert_eq!(usable_app([app.clone()]), Some(app));
+        }
+
+        // Launch Services remembers copies that can't be started anymore
+        #[test]
+        fn skips_utm_that_is_gone_or_in_the_trash() {
+            let home = tempfile::tempdir().unwrap();
+            let gone = home.path().join("Volumes/UTM/UTM.app");
+            let trashed = app_in(&home.path().join(".Trash"));
+            let trashed_on_a_disk = app_in(&home.path().join(".Trashes/501"));
+            let installed = app_in(&home.path().join("Applications"));
+
+            assert_eq!(
+                usable_app([
+                    gone.clone(),
+                    trashed.clone(),
+                    trashed_on_a_disk,
+                    installed.clone()
+                ]),
+                Some(installed)
+            );
+            assert_eq!(usable_app([gone, trashed]), None);
+        }
+
         #[tokio::test]
         #[serial_test::serial]
         async fn test_check_utm_status_not_installed() {
-            // Since UTM is unlikely to be installed at the exact path we check,
-            // or if it is, we can still verify the logic works
             let status = check_utm_status().await.unwrap();
 
             // Either UTM is installed or not, both are valid states
             if status.installed {
-                assert!(status.path.is_some());
-                assert_eq!(status.path.as_ref().unwrap(), "/Applications/UTM.app");
+                // Wherever it is installed
+                let app = std::path::Path::new(status.path.as_deref().unwrap());
+                assert!(app.join("Contents/Info.plist").is_file());
             } else {
                 assert!(!status.installed);
                 assert!(status.version.is_none());

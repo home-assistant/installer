@@ -36,7 +36,7 @@ export class ProxmoxConfirmView extends LitElement {
   }
 
   private readonly _haosVersion = new HaosVersion(this, () =>
-    getHaosRelease(undefined, "ova")
+    getHaosRelease("ova")
   );
 
   render() {

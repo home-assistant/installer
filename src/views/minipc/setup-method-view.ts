@@ -12,11 +12,11 @@ import { goToNextStep } from "../../components/wizard-next.js";
 import "../../components/option-card.js";
 import { renderStepHeading, stepStyles } from "../../utils/step-styles.js";
 
-/** Drive rules for the stick: removable and 2 GB or more (the drive list allows 5% less). */
+/** Drive rules for the stick: removable and 4 GB or more (the drive list allows 5% less). */
 const LIVE_USB_STICK: HaosConfig = {
   board: "generic-x86-64",
-  minimum_storage_bytes: 2_000_000_000,
-  recommended_storage_bytes: 2_000_000_000,
+  minimum_storage_bytes: 4_000_000_000,
+  recommended_storage_bytes: 4_000_000_000,
 };
 
 @customElement("minipc-setup-method-view")

@@ -29,7 +29,14 @@ const homeAssistant = (
   address: string,
   name: string | null = "Home",
   url = `http://${address}/`
-): HaAnnouncement => ({ id: address, name, address, url, landing_page: false });
+): HaAnnouncement => ({
+  id: address,
+  name,
+  address,
+  url,
+  landing_page: false,
+  needs_onboarding: false,
+});
 
 const landingPage = (address: string, id = address): HaAnnouncement => ({
   id,
@@ -37,6 +44,7 @@ const landingPage = (address: string, id = address): HaAnnouncement => ({
   address,
   url: `http://${address}/`,
   landing_page: true,
+  needs_onboarding: false,
 });
 
 type Answer<T> = T | InstallerError | Promise<T>;

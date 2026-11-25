@@ -314,9 +314,14 @@ where
     if let Some(wifi) = request.wifi.clone() {
         image = tokio::task::spawn_blocking(move || hai_core::haos_config::with_wifi(image, &wifi))
             .await
-            // A panic's message may hold the Wi-Fi password, and the log keeps causes
+            // A crash, not a storage problem the Io error would send the user looking for.
+            // Its panic message may hold the Wi-Fi password, so it isn't passed on.
             .map_err(|_| {
-                hai_core::Error::Io(std::io::Error::other("Wi-Fi setup stopped unexpectedly"))
+                CommandError::new(
+                    "internal",
+                    "Adding the Wi-Fi settings stopped unexpectedly.",
+                    false,
+                )
             })??;
     }
 
@@ -372,27 +377,20 @@ where
 // Release/Manifest Commands
 // =============================================================================
 
-/// Get the latest HAOS release information
+/// The release stable.json lists for `board`, as its full images
 #[tauri::command]
-pub async fn get_haos_release(
-    version: Option<String>,
-    board: Option<String>,
-) -> Result<HaosRelease, CommandError> {
-    release_for_selection(&Backend, version.as_deref(), board.as_deref()).await
+pub async fn get_haos_release(board: String) -> Result<HaosRelease, CommandError> {
+    release_for_selection(&Backend, &board).await
 }
 
 async fn release_for_selection<B: ReleaseSource>(
     backend: &B,
-    version: Option<&str>,
-    board: Option<&str>,
+    board: &str,
 ) -> Result<HaosRelease, CommandError> {
-    let release = match (version, board) {
-        (None | Some("latest"), Some(board)) => {
-            backend.get_latest_haos_release_for_board(board).await
-        }
-        (version, _) => backend.get_haos_release(version.unwrap_or("latest")).await,
-    };
-    release.map_err(CommandError::from_query)
+    backend
+        .get_latest_haos_release_for_board(board)
+        .await
+        .map_err(CommandError::from_query)
 }
 
 /// Get the device manifest
@@ -408,8 +406,9 @@ pub async fn get_manifest() -> Result<DeviceManifest, CommandError> {
 // System Info Commands
 // =============================================================================
 
-/// Get system information (CPU cores and memory) for VM configuration limits
-#[tauri::command]
+/// Get system information (CPU cores and memory) for VM configuration limits.
+/// Off the main thread: on macOS it runs `sysctl`, which would freeze the window.
+#[tauri::command(async)]
 pub fn get_system_info() -> Result<SystemInfo, CommandError> {
     Backend.system_info().map_err(CommandError::from)
 }
@@ -452,7 +451,7 @@ fn supports_utm(apple_silicon: hai_core::Result<()>) -> bool {
 /// Get the release for the same board used by UTM downloads.
 #[tauri::command]
 pub async fn get_utm_haos_release() -> Result<HaosRelease, CommandError> {
-    release_for_selection(&Backend, None, Some(utm_board()?)).await
+    release_for_selection(&Backend, utm_board()?).await
 }
 
 /// Download the HAOS qcow2 image for UTM
@@ -1002,6 +1001,7 @@ mod tests {
 
     #[cfg(all(not(feature = "mock"), not(target_os = "macos")))]
     #[tokio::test]
+    #[serial_test::serial]
     async fn utm_download_logs_failed_precheck_without_success() {
         use tauri::Manager;
 
@@ -1225,13 +1225,6 @@ mod tests {
             unreachable!()
         }
 
-        async fn get_haos_release(&self, version: &str) -> hai_core::Result<HaosRelease> {
-            Ok(HaosRelease {
-                version: format!("explicit:{version}"),
-                images: vec![],
-            })
-        }
-
         async fn get_latest_haos_release_for_board(
             &self,
             board: &str,
@@ -1280,35 +1273,17 @@ mod tests {
             ("ova", "18.1"),
             ("generic-aarch64", "18.0"),
         ] {
-            for version in [None, Some("latest")] {
-                let release = release_for_selection(&SelectionReleaseBackend, version, Some(board))
-                    .await
-                    .unwrap();
-                assert_eq!(release.version, expected);
-            }
+            let release = release_for_selection(&SelectionReleaseBackend, board)
+                .await
+                .unwrap();
+            assert_eq!(release.version, expected);
         }
-        let error = release_for_selection(&SelectionReleaseBackend, None, Some("retired-board"))
+        let error = release_for_selection(&SelectionReleaseBackend, "retired-board")
             .await
             .unwrap_err();
         // Remote details stay out of the error; the code says what happened
         assert_eq!(error.code, "release_unavailable");
         assert!(!error.retryable);
-    }
-
-    #[tokio::test]
-    async fn confirmation_release_preserves_explicit_versions_and_boardless_calls() {
-        for (version, board, expected) in [
-            (Some("17.0"), Some("rpi5-64"), "explicit:17.0"),
-            (None, None, "explicit:latest"),
-        ] {
-            assert_eq!(
-                release_for_selection(&SelectionReleaseBackend, version, board)
-                    .await
-                    .unwrap()
-                    .version,
-                expected
-            );
-        }
     }
 
     #[tokio::test]
@@ -1848,10 +1823,6 @@ mod tests {
             panic!("must not fetch a manifest");
         }
 
-        async fn get_haos_release(&self, _: &str) -> hai_core::Result<HaosRelease> {
-            panic!("must not fetch a release by version");
-        }
-
         async fn get_latest_haos_release_for_board(
             &self,
             _: &str,
@@ -1982,9 +1953,6 @@ mod mock_tests {
 
         async fn get_device_manifest(&self) -> hai_core::Result<DeviceManifest> {
             BackendMock.get_device_manifest().await
-        }
-        async fn get_haos_release(&self, version: &str) -> hai_core::Result<HaosRelease> {
-            BackendMock.get_haos_release(version).await
         }
         async fn get_latest_haos_release_for_board(
             &self,
@@ -2504,10 +2472,6 @@ mod mock_tests {
             unreachable!()
         }
 
-        async fn get_haos_release(&self, _: &str) -> hai_core::Result<HaosRelease> {
-            unreachable!("must use the selected board's release")
-        }
-
         async fn get_latest_haos_release_for_board(
             &self,
             board: &str,
@@ -2662,9 +2626,6 @@ mod mock_tests {
         }
         async fn get_device_manifest(&self) -> hai_core::Result<DeviceManifest> {
             panic!("must not fetch a manifest");
-        }
-        async fn get_haos_release(&self, _: &str) -> hai_core::Result<HaosRelease> {
-            panic!("an installer must not look up a release");
         }
         async fn get_latest_haos_release_for_board(
             &self,
@@ -2874,7 +2835,10 @@ mod mock_tests {
 
     #[tokio::test]
     async fn mock_release_preserves_raw_intel_image_without_inventing_qcow2() {
-        let release = BackendMock.get_haos_release("latest").await.unwrap();
+        let release = BackendMock
+            .get_latest_haos_release_for_board("generic-x86-64")
+            .await
+            .unwrap();
         assert!(release
             .require_image("generic-x86-64", ImageFormat::Raw)
             .is_ok());

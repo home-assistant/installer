@@ -66,6 +66,7 @@ impl HostBackend for BackendMock {
             address: DEVICE_ADDRESS.into(),
             url: format!("http://{DEVICE_ADDRESS}/"),
             landing_page: true,
+            needs_onboarding: false,
         }])
     }
 }

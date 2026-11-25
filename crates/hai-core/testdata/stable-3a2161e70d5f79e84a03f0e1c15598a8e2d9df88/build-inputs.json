@@ -1,0 +1,49 @@
+{
+  "audio": "2026.10.0",
+  "cli": "2026.10.1",
+  "dns": "2026.10.0",
+  "hassos": {
+    "generic-aarch64": "18.4",
+    "generic-x86-64": "18.4",
+    "green": "18.4",
+    "khadas-vim3": "18.4",
+    "odroid-c2": "18.4",
+    "odroid-c4": "18.4",
+    "odroid-m1": "18.4",
+    "odroid-m1s": "18.4",
+    "odroid-n2": "18.4",
+    "ova": "18.4",
+    "rpi3-64": "18.5",
+    "rpi4-64": "18.5",
+    "rpi5-64": "18.5",
+    "yellow": "18.5"
+  },
+  "homeassistant": {
+    "generic-x86-64": "2026.11.1",
+    "green": "2026.11.1",
+    "khadas-vim3": "2026.11.1",
+    "odroid-c2": "2026.11.1",
+    "odroid-c4": "2026.11.1",
+    "odroid-m1": "2026.11.1",
+    "odroid-n2": "2026.11.1",
+    "qemuarm-64": "2026.11.1",
+    "qemux86-64": "2026.11.1",
+    "raspberrypi3-64": "2026.11.1",
+    "raspberrypi4-64": "2026.11.1",
+    "raspberrypi5-64": "2026.11.1",
+    "yellow": "2026.11.1"
+  },
+  "images": {
+    "audio": "ghcr.io/home-assistant/{arch}-hassio-audio",
+    "cli": "ghcr.io/home-assistant/{arch}-hassio-cli",
+    "core": "ghcr.io/home-assistant/{machine}-homeassistant",
+    "dns": "ghcr.io/home-assistant/{arch}-hassio-dns",
+    "multicast": "ghcr.io/home-assistant/{arch}-hassio-multicast",
+    "observer": "ghcr.io/home-assistant/{arch}-hassio-observer",
+    "supervisor": "ghcr.io/home-assistant/{arch}-hassio-supervisor"
+  },
+  "multicast": "2026.10.0",
+  "observer": "2026.08.0",
+  "ota": "https://os-artifacts.home-assistant.io/{version}/{os_name}_{board}-{version}.raucb",
+  "supervisor": "2026.11.0"
+}

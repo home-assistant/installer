@@ -6,8 +6,12 @@ import { initializeLocalization } from "./localization/initialize.js";
 import { installErrorLogging } from "./utils/diagnostics.js";
 import { preventReload } from "./utils/reload-guard.js";
 import { showStartupFailure } from "./utils/startup-failure.js";
+import { initializeTextSize } from "./utils/text-size.js";
+import { initializeTheme } from "./utils/theme.js";
 
 installErrorLogging();
+initializeTextSize();
+initializeTheme();
 
 // A developer reloads on purpose, and the browser mocks start over with it
 if (!import.meta.env.DEV) preventReload();
@@ -18,14 +22,3 @@ void initializeLocalization()
   .catch(() => undefined)
   .then(() => import("./components/app-shell.js"))
   .catch(showStartupFailure);
-
-// Web Awesome's dark theme is gated on a `wa-dark` class rather than
-// prefers-color-scheme, so sync it with the OS color scheme ourselves. This
-// keeps every Web Awesome component (button hover states, tooltips, dialogs)
-// correct in dark mode instead of only the tokens we override in styles.css.
-const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
-const applyWaTheme = (isDark: boolean) => {
-  document.documentElement.classList.toggle("wa-dark", isDark);
-};
-applyWaTheme(darkQuery.matches);
-darkQuery.addEventListener("change", (event) => applyWaTheme(event.matches));

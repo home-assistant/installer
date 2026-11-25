@@ -1,6 +1,74 @@
-import { test, expect } from "./fixtures.js";
+import { type Page } from "@playwright/test";
+import {
+  flowScreenshot,
+  MOCK_DELAY_SCALE,
+  setMockDelayScale,
+  skipWifiStep,
+  test,
+  expect,
+} from "./fixtures.js";
 
 // Mini PC flow order: method → architecture → drive → confirm → flash → success
+
+const nextButton = (page: Page) =>
+  page.locator("wizard-shell").locator(".footer-right wa-button");
+
+test("Mini PC Flow - installs to a connected drive through to the done step", async ({
+  page,
+}) => {
+  test.setTimeout(60000);
+  const shot = (step: string) => flowScreenshot(page, "minipc-drive", step);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Let's go" }).click();
+  await page
+    .locator('option-card[heading="Mini PC or other computer"]')
+    .click();
+
+  const setupView = page.locator("minipc-setup-method-view");
+  await expect(setupView).toBeVisible();
+  await shot("method");
+  await setupView
+    .locator("option-card")
+    .filter({ hasText: "Write the mini PC's drive here" })
+    .click();
+
+  const archView = page.locator("minipc-architecture-selection-view");
+  await expect(archView.locator("option-card").first()).toBeVisible();
+  await shot("architecture");
+  await archView
+    .locator("option-card")
+    .filter({ hasText: "Intel/AMD" })
+    .click();
+
+  const drive = page.locator("drive-selection-view");
+  await drive.locator("drive-card").first().click();
+  await shot("drive");
+  await nextButton(page).click();
+  await expect(
+    page.locator("wifi-view, confirmation-view").first()
+  ).toBeVisible();
+  if ((await page.locator("wifi-view").count()) > 0) await shot("wifi");
+  await skipWifiStep(page);
+  await shot("confirm");
+
+  await nextButton(page).click();
+  await expect(page.locator("confirm-dialog")).toHaveAttribute("open");
+  await shot("erase-dialog");
+  await setMockDelayScale(page, 1);
+  await page.locator('confirm-dialog wa-button[variant="danger"]').click();
+  await expect(page.locator("progress-view")).toBeVisible();
+  await shot("progress");
+  await setMockDelayScale(page, MOCK_DELAY_SCALE);
+
+  await expect(page.locator("success-view")).toBeVisible({ timeout: 45000 });
+  await shot("success");
+  await nextButton(page).click();
+  await expect(page.locator("device-setup-view")).toBeVisible();
+  await shot("setup");
+  await nextButton(page).click();
+  await expect(page.locator("device-done-view")).toBeVisible();
+  await shot("done");
+});
 
 test.describe("Mini PC Flow - Setup Method Selection", () => {
   test.beforeEach(async ({ page }) => {
