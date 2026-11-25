@@ -51,10 +51,13 @@ jobs:
         with:
           persist-credentials: false
 
-      # Reads the lockfile only, so nothing needs installing
+      # Reads the lockfile only, so nothing needs installing, and a store
+      # restored from the cache would only cost time. Release runs restore
+      # no cache at all.
       - name: Setup pnpm and Node
-        uses: ./.github/actions/setup
+        uses: $/.github/actions/setup
         with:
+          cache: false
           install: false
 
       # Only accept an advisory that has no fixed release yet, with an
@@ -191,7 +194,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node and install
-        uses: ./.github/actions/setup
+        uses: $/.github/actions/setup
         with:
           cache: ${{ github.event_name != 'workflow_dispatch' }}
 
@@ -328,7 +331,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node and install
-        uses: ./.github/actions/setup
+        uses: $/.github/actions/setup
         with:
           cache: ${{ github.event_name != 'workflow_dispatch' }}
 
@@ -360,7 +363,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node and install
-        uses: ./.github/actions/setup
+        uses: $/.github/actions/setup
         with:
           cache: ${{ github.event_name != 'workflow_dispatch' }}
 
@@ -598,7 +601,7 @@ jobs:
             --export-empty-as skip --replace-breaks=false --unzip-to /out
 
       - name: Setup Node and install
-        uses: ./.github/actions/setup
+        uses: $/.github/actions/setup
         with:
           cache: ${{ github.event_name != 'workflow_dispatch' }}
 
@@ -669,7 +672,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node and install
-        uses: ./.github/actions/setup
+        uses: $/.github/actions/setup
         with:
           cache: ${{ github.event_name != 'workflow_dispatch' }}
 
