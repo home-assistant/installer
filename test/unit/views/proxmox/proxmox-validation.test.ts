@@ -4,6 +4,8 @@ import {
   MEMORY_OPTIONS_MB,
   checkedSetting,
   coreOptionsFor,
+  fixedOnConfigure,
+  refusedBeforeCreating,
 } from "../../../../src/views/proxmox/proxmox-validation.js";
 import { ipcError } from "../../tauri-ipc.js";
 
@@ -54,6 +56,32 @@ describe("proxmox-validation", () => {
       expect(checkedSetting(ipcError("proxmox_api", "Failed"))).to.be.undefined;
       // Only the catalog's own keys
       expect(checkedSetting(refusal("toString"))).to.be.undefined;
+    });
+  });
+
+  // A refusal whose uploaded image couldn't be removed comes inside the
+  // message that names the image, and is still the same refusal
+  describe("a refusal that left the image behind", () => {
+    const leftBehind = (key: string) =>
+      ipcError("proxmox_action_required", "Refused", false, {
+        message_key: "backend.proxmox.image_left_behind",
+        message_params: {
+          reason: { key, params: { bridge: "vmbr1", node: "pve" } },
+          volume: "local:import/hai-image-1.qcow2",
+          node: "pve",
+        },
+      });
+
+    it("is still fixed by another choice", () => {
+      const refusal = leftBehind("backend.proxmox.bridge_unavailable");
+      expect(fixedOnConfigure(refusal)).to.be.true;
+      expect(refusedBeforeCreating(refusal)).to.be.true;
+    });
+
+    it("is not when its reason isn't", () => {
+      const refusal = leftBehind("backend.proxmox.vm_creation_failed");
+      expect(fixedOnConfigure(refusal)).to.be.false;
+      expect(refusedBeforeCreating(refusal)).to.be.false;
     });
   });
 });
