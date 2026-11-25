@@ -173,6 +173,20 @@ export class ProxmoxProgressView extends VmProgressView<BackendStage> {
    * only logging in again can get past it.
    */
   protected _fail(error: unknown, message?: string) {
+    // The backend reports starting the VM only once it's made in full. Keep
+    // it, so reconnecting or trying again waits for Home Assistant on it,
+    // instead of calling it half made or making a second one with its ID.
+    const startFailed = this._stage === "starting_vm";
+    const selections = wizardState.getState().selections;
+    if (startFailed && !selections.proxmoxVmResult) {
+      const { vm_id, node } = proxmoxVmConfig(selections);
+      wizardState.setSelection("proxmoxVmResult", { vm_id, node });
+    }
+    // Once the user started it in Proxmox, trying again finds its address
+    if (startFailed && !needsReconnect(error)) {
+      error = { ...installerError(error), retryable: true };
+    }
+
     const made = !!wizardState.getState().selections.proxmoxVmResult;
     // Reconnecting resumes a VM made in full, or starts one not made yet. A
     // VM that failed while being made may exist half way, unknown to the

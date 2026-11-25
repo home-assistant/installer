@@ -125,6 +125,8 @@ impl CommandError {
             Error::ProxmoxActionRequired(message) => return Self::with_message("proxmox_action_required", message, false),
             // Reconnecting is the action, not repeating the request
             Error::ProxmoxSessionExpired => ("proxmox_session_expired", "Proxmox session expired or invalid. Please reconnect to Proxmox.", false),
+            // The same code, so reconnecting is offered, with what to clean up
+            Error::ProxmoxSessionExpiredWithGuidance(message) => return Self::with_message("proxmox_session_expired", message, false),
             // Same recovery: reconnecting shows the new certificate to confirm
             Error::ProxmoxCertificateChanged => ("proxmox_certificate_changed", "The Proxmox server's certificate changed. Reconnect to check it again.", false),
             // Installer-authored guidance for the authenticator code, never a server response
@@ -352,6 +354,25 @@ mod tests {
                 "message_params": { "vm_id": 100 }
             })
         );
+    }
+
+    #[test]
+    fn an_expired_session_with_guidance_still_asks_to_reconnect() {
+        let error = CommandError::from(Error::ProxmoxSessionExpiredWithGuidance(
+            hai_core::message!(
+                "backend.proxmox.upload_session_expired",
+                volume = "local:import/hai-image-1.qcow2",
+                node = "pve",
+            ),
+        ));
+        // The code the frontend offers Reconnect for, with the image named
+        assert_eq!(error.code, "proxmox_session_expired");
+        assert!(!error.retryable);
+        assert_eq!(
+            error.details["message_key"],
+            "backend.proxmox.upload_session_expired"
+        );
+        assert!(error.message.contains("local:import/hai-image-1.qcow2"));
     }
 
     #[test]

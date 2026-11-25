@@ -605,12 +605,13 @@ describe("proxmox-progress-view", () => {
     expect(showsError(el)).to.be.false;
   });
 
-  // Before the VM is created, logging in again can start over safely. Once
+  // Before the VM is created, logging in again can start over safely. While
   // it is being created, it may exist half way, unknown to the installer.
+  // Once it starts, it is made in full, and logging in again resumes it.
   for (const [stage, reconnect] of [
     ["uploading", true],
     ["creating_vm", false],
-    ["starting_vm", false],
+    ["starting_vm", true],
   ] as const) {
     it(`${reconnect ? "offers" : "does not offer"} Reconnect when the session expires while ${stage}`, async () => {
       const createVm = deferred<ProxmoxVmResult>();
@@ -649,6 +650,106 @@ describe("proxmox-progress-view", () => {
       );
     });
   }
+
+  /** Fail `proxmox_create_vm` with `error` once the backend reports `stage` */
+  function failCreateAt(stage: FlashProgress["stage"], error: unknown) {
+    let creates = 0;
+    mockTauriIpc((cmd, args) => {
+      switch (cmd) {
+        case "proxmox_create_vm": {
+          creates++;
+          const { progressChannel } = args as {
+            progressChannel: { onmessage: (progress: FlashProgress) => void };
+          };
+          progressChannel.onmessage({
+            stage,
+            progress: 0,
+            bytes_processed: 0,
+            total_bytes: 0,
+            message: "",
+          });
+          return Promise.reject(error);
+        }
+        case "proxmox_get_vm_status":
+          return { status: "running", ip_address: "192.168.1.50" };
+        case "check_ha_ready":
+        case "check_ha_updated":
+          return true;
+      }
+      throw new Error(`Unexpected IPC command: ${cmd}`);
+    });
+    return { creates: () => creates };
+  }
+
+  it("keeps a VM that failed to start, and waits for it on a retry", async () => {
+    wizardState.setSelections({ proxmoxNode: "pve", proxmoxVmId: 105 });
+    const ipc = failCreateAt(
+      "starting_vm",
+      ipcError("proxmox_action_required", "Couldn't start it.", false, {
+        message_key: "backend.proxmox.vm_created_start_failed",
+        message_params: { vm_id: 105 },
+      })
+    );
+
+    const el = mount();
+    const { detail } = await oneEvent(el, "install-error");
+    // Started in Proxmox by the user, trying again finds its address
+    expect(detail.retryable).to.be.true;
+    expect(detail.reconnect).to.be.false;
+    expect(wizardState.getState().selections.proxmoxVmResult).to.deep.equal({
+      vm_id: 105,
+      node: "pve",
+    });
+
+    const completed = oneEvent(el, "install-complete");
+    el.retry();
+    await completed;
+    expect(ipc.creates()).to.equal(1);
+    expect(wizardState.getState().selections.ipAddress).to.equal(
+      "192.168.1.50"
+    );
+  });
+
+  it("offers Reconnect for a changed certificate while the VM starts", async () => {
+    wizardState.setSelections({ proxmoxNode: "pve", proxmoxVmId: 105 });
+    failCreateAt(
+      "starting_vm",
+      ipcError("proxmox_certificate_changed", "The certificate changed.")
+    );
+
+    const el = mount();
+    const { detail } = await oneEvent(el, "install-error");
+    await el.updateComplete;
+
+    // The VM is complete: nothing to remove, logging in again resumes it
+    expect(detail.reconnect).to.be.true;
+    expect(errorText(el)).not.to.contain("remove it");
+    expect(wizardState.getState().selections.proxmoxVmResult).to.deep.equal({
+      vm_id: 105,
+      node: "pve",
+    });
+  });
+
+  it("keeps Reconnect for an expired session that names the image left behind", async () => {
+    failCreateAt(
+      "uploading",
+      ipcError("proxmox_session_expired", "Proxmox session expired.", false, {
+        message_key: "backend.proxmox.upload_session_expired",
+        message_params: {
+          volume: "local:import/hai-image-1.qcow2",
+          node: "pve",
+        },
+      })
+    );
+
+    const el = mount();
+    const { detail } = await oneEvent(el, "install-error");
+    await el.updateComplete;
+
+    expect(detail.reconnect).to.be.true;
+    expect(errorText(el)).to.contain("local:import/hai-image-1.qcow2");
+    expect(wizardState.getState().selections.proxmoxVmResult).to.be.undefined;
+  });
 
   // The bridge is checked once more right before the VM is asked for, when
   // the stage already says it is being created: a refusal there made

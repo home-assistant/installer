@@ -1442,22 +1442,32 @@ async fn upload_image_to_proxmox<P: ProgressCallback>(
     Ok(filename.to_string())
 }
 
-/// Proxmox accepted the upload, but didn't confirm it stored the image. A
-/// lost session or changed certificate keeps its own error, so the user is
-/// offered to log in again. Anything else names the image that may be left
-/// behind, because installing again uploads a new one next to it.
+/// Proxmox accepted the upload, but didn't confirm it stored the image. The
+/// image may be left behind, and installing again uploads a new one next to
+/// it under another name, so name it. A changed certificate keeps its own
+/// error, so the user is offered to reconnect and check it.
 fn upload_unconfirmed(error: Error, node: &str, storage: &str, filename: &str) -> Error {
-    if matches!(
-        error,
-        Error::ProxmoxSessionExpired | Error::ProxmoxCertificateChanged
-    ) {
+    if matches!(error, Error::ProxmoxCertificateChanged) {
         return error;
     }
 
+    let volume = format!("{storage}:import/{filename}");
     eprintln!("The upload task did not finish: {error}");
+
+    // The ticket ran out during the long wait for the upload task. Still a
+    // lost session, so the user is offered to log in again, with the image
+    // to delete named next to it.
+    if matches!(error, Error::ProxmoxSessionExpired) {
+        return Error::ProxmoxSessionExpiredWithGuidance(crate::message!(
+            "backend.proxmox.upload_session_expired",
+            volume = volume,
+            node = node,
+        ));
+    }
+
     Error::ProxmoxActionRequired(crate::message!(
         "backend.proxmox.upload_unconfirmed",
-        volume = format!("{storage}:import/{filename}"),
+        volume = volume,
         node = node,
     ))
 }
@@ -1543,28 +1553,28 @@ async fn create_vm_with_disk(
     // Deleting the source is only safe after confirmed import completion.
     wait_for_task_completion(session, &config.node, &upid, 600, source_unused)
         .await
-        .map_err(|error| creation_unconfirmed(config, error))?;
+        .map_err(|error| creation_failed(config, error, *source_unused))?;
 
     resize_vm_disk(session, config)
         .await
         .map_err(|error| resize_error(config, error))
 }
 
-/// Proxmox accepted the request to create the VM, but didn't confirm it was
-/// made. It may exist, whole or half way, and installing again with its ID
-/// fails until it's removed. A lost session or changed certificate keeps its
-/// own error: the app already says the VM may be incomplete for those.
-fn creation_unconfirmed(config: &ProxmoxVmConfig, error: Error) -> Error {
-    if matches!(
-        error,
-        Error::ProxmoxSessionExpired | Error::ProxmoxCertificateChanged
-    ) {
+/// The create task ended, and Proxmox reported that it failed. Its task log
+/// says why. Proxmox usually removes what it made of the VM, but not always,
+/// and installing again with its ID fails while it's there.
+///
+/// A task that didn't end, because the wait ran out or its status couldn't be
+/// read, keeps its error: Proxmox may still be importing the image, and
+/// `import_and_cleanup_image` says so and names the image it keeps.
+fn creation_failed(config: &ProxmoxVmConfig, error: Error, ended: bool) -> Error {
+    if !ended {
         return error;
     }
 
-    eprintln!("Creating VM {} was not confirmed: {error}", config.vm_id);
+    eprintln!("Creating VM {} failed: {error}", config.vm_id);
     Error::ProxmoxActionRequired(crate::message!(
-        "backend.proxmox.vm_creation_unconfirmed",
+        "backend.proxmox.vm_creation_failed",
         vm_id = config.vm_id,
     ))
 }
@@ -1572,8 +1582,12 @@ fn creation_unconfirmed(config: &ProxmoxVmConfig, error: Error) -> Error {
 /// The VM is complete, it only didn't start. Starting it in Proxmox is all
 /// that's left, so say that instead of a generic API error.
 fn start_error(config: &ProxmoxVmConfig, error: Error) -> Error {
-    // Keep its own code, so the user is told to reconnect
-    if matches!(error, Error::ProxmoxCertificateChanged) {
+    // Keep their own codes, so the user is offered to reconnect. The frontend
+    // knows the VM is complete, and waits for Home Assistant on it after.
+    if matches!(
+        error,
+        Error::ProxmoxSessionExpired | Error::ProxmoxCertificateChanged
+    ) {
         return error;
     }
 
@@ -1709,13 +1723,39 @@ fn import_image_kept(
 }
 
 /// Start a VM.
+///
+/// Fails when Proxmox rejects the start, or reports that its task failed. A
+/// start it accepted but didn't confirm isn't a failure: its task may still
+/// run when the wait ends on a busy host, its status may not be readable, or
+/// the answer may name no task. The VM may well come up, and waiting for Home
+/// Assistant tells, so the install goes on.
 async fn start_vm(session: &ProxmoxSession, node: &str, vm_id: u32) -> Result<()> {
     let api = Api::new(session, 60)?;
     let url = api.node_url(node, &format!("/qemu/{vm_id}/status/start"));
     let body = send_change(api.post(&url), "Failed to start VM").await?;
 
-    let upid = task_upid(&body, "VM start")?;
-    wait_for_task(session, node, &upid, 120).await
+    let upid = match task_upid(&body, "VM start") {
+        Ok(upid) => upid,
+        Err(error) => {
+            eprintln!("Starting VM {vm_id} was not confirmed: {error}");
+            return Ok(());
+        }
+    };
+
+    let mut ended = false;
+    match wait_for_task_completion(session, node, &upid, 120, &mut ended).await {
+        // Proxmox reported how the start ended, and it failed
+        Err(error) if ended => Err(error),
+        // Logging in again or checking the certificate is still needed
+        Err(error @ (Error::ProxmoxSessionExpired | Error::ProxmoxCertificateChanged)) => {
+            Err(error)
+        }
+        Err(error) => {
+            eprintln!("Starting VM {vm_id} was not confirmed: {error}");
+            Ok(())
+        }
+        Ok(()) => Ok(()),
+    }
 }
 
 /// Get a VM's run status and, while it runs, its IP address.
@@ -2544,6 +2584,8 @@ mod tests {
             Api(&'static str),
             Action(crate::Message),
             SessionExpired,
+            /// `Error::ProxmoxSessionExpiredWithGuidance`, with this message
+            ExpiredWith(crate::Message),
         }
         use Outcome::*;
 
@@ -2556,6 +2598,9 @@ mod tests {
                     same_message(message, want)
                 }
                 (Err(Error::ProxmoxSessionExpired), SessionExpired) => true,
+                (Err(Error::ProxmoxSessionExpiredWithGuidance(message)), ExpiredWith(want)) => {
+                    same_message(message, want)
+                }
                 _ => false,
             };
             assert!(matched, "{row}: expected {expected:?}, got {result:?}");
@@ -4724,13 +4769,14 @@ mod tests {
                     Api("Failed to start VM (500 Internal Server Error): Failed to start VM"),
                 ),
                 ("start 401", Start, 401, "", SessionExpired),
-                // Like every other write, a start is only done once its task is
+                // Accepted but not confirmed: the VM may well come up, and
+                // waiting for Home Assistant tells
                 (
                     "start without UPID",
                     Start,
                     200,
                     r#"{"data":null}"#,
-                    Api("The VM start response has no task UPID"),
+                    Returns("()"),
                 ),
                 (
                     "create 500",
@@ -5489,8 +5535,17 @@ mod tests {
             for (row, status, body, expected) in [
                 ("task failed", 200, failed, left_behind.clone()),
                 ("task unreadable", 500, "", left_behind),
-                // Logging in again is offered instead
-                ("session expired", 401, "", SessionExpired),
+                // Logging in again is offered, with the image to delete
+                (
+                    "session expired",
+                    401,
+                    "",
+                    ExpiredWith(message!(
+                        "backend.proxmox.upload_session_expired",
+                        volume = "local-import:import/hai.qcow2",
+                        node = "pve",
+                    )),
+                ),
             ] {
                 let mut server = Server::new_async().await;
                 server
@@ -5519,18 +5574,34 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn test_unconfirmed_creation_says_the_vm_may_exist() {
+        async fn test_a_create_task_that_fails_or_never_ends_says_what_to_do() {
             let failed = r#"{"data":{"status":"stopped","exitstatus":"ERROR"}}"#;
-            let may_exist = Action(message!(
-                "backend.proxmox.vm_creation_unconfirmed",
-                vm_id = 100
-            ));
-            // (row, task status, task body, outcome)
-            for (row, status, body, expected) in [
-                ("task failed", 200, failed, may_exist.clone()),
-                ("task unreadable", 500, "", may_exist),
+            // (row, task status, task body, image deleted, outcome)
+            for (row, status, body, deleted, expected) in [
+                // Proxmox reported how it ended, so the image goes, and its
+                // task log says why
+                (
+                    "task failed",
+                    200,
+                    failed,
+                    true,
+                    Action(message!("backend.proxmox.vm_creation_failed", vm_id = 100)),
+                ),
+                // Proxmox may still be importing, so the image stays, named
+                (
+                    "task unreadable",
+                    500,
+                    "",
+                    false,
+                    Action(message!(
+                        "backend.proxmox.import_image_kept",
+                        vm_id = 100,
+                        volume = "local-import:import/hai.qcow2",
+                        node = "pve",
+                    )),
+                ),
                 // The app says the VM may be incomplete, and offers to log in again
-                ("session expired", 401, "", SessionExpired),
+                ("session expired", 401, "", false, SessionExpired),
             ] {
                 let mut server = Server::new_async().await;
                 mock_default_bridge(&mut server).await;
@@ -5546,35 +5617,86 @@ mod tests {
                     .with_body(body)
                     .create_async()
                     .await;
+                let delete = server
+                    .mock(
+                        "DELETE",
+                        "/api2/json/nodes/pve/storage/local-import/content/local-import%3Aimport%2Fhai.qcow2",
+                    )
+                    .with_body(r#"{"data":"delete-task"}"#)
+                    .expect(usize::from(deleted))
+                    .create_async()
+                    .await;
+                mock_task(&mut server, "delete-task", TASK_OK).await;
 
-                let result = create_vm_with_disk(
+                let result = import_and_cleanup_image(
                     &session(server.url()),
                     &vm_config(),
                     "hai.qcow2",
                     "local-import",
-                    &mut false,
                 )
                 .await;
                 assert_outcome(row, result, &expected);
+                assert!(
+                    delete.matched_async().await,
+                    "{row}: image deleted {deleted}"
+                );
             }
         }
 
         #[test]
         fn test_a_failed_start_says_to_start_the_vm() {
             let config = vm_config();
-            for error in [
-                Error::ProxmoxApi("Task failed with status: ERROR".into()),
-                Error::ProxmoxSessionExpired,
-            ] {
-                assert_eq!(
-                    action_required::<()>(Err(start_error(&config, error))),
-                    message!("backend.proxmox.vm_created_start_failed", vm_id = 100)
-                );
-            }
+            assert_eq!(
+                action_required::<()>(Err(start_error(
+                    &config,
+                    Error::ProxmoxApi("Task failed with status: ERROR".into())
+                ))),
+                message!("backend.proxmox.vm_created_start_failed", vm_id = 100)
+            );
+
+            // Reconnecting is offered for these, and resumes the complete VM
+            assert!(matches!(
+                start_error(&config, Error::ProxmoxSessionExpired),
+                Error::ProxmoxSessionExpired
+            ));
             assert!(matches!(
                 start_error(&config, Error::ProxmoxCertificateChanged),
                 Error::ProxmoxCertificateChanged
             ));
+        }
+
+        #[tokio::test]
+        async fn test_start_vm_fails_only_when_proxmox_says_so() {
+            let failed = r#"{"data":{"status":"stopped","exitstatus":"ERROR"}}"#;
+            // (row, task status, task body, outcome)
+            for (row, status, body, expected) in [
+                (
+                    "task failed",
+                    200,
+                    failed,
+                    Api("Task failed with status: ERROR"),
+                ),
+                // Not confirmed: the VM may well come up, and waiting for
+                // Home Assistant tells
+                ("task unreadable", 500, "", Returns("()")),
+                ("session expired", 401, "", SessionExpired),
+            ] {
+                let mut server = Server::new_async().await;
+                server
+                    .mock("POST", "/api2/json/nodes/pve/qemu/100/status/start")
+                    .with_body(serde_json::json!({ "data": UPID }).to_string())
+                    .create_async()
+                    .await;
+                server
+                    .mock("GET", task_path(UPID).as_str())
+                    .with_status(status)
+                    .with_body(body)
+                    .create_async()
+                    .await;
+
+                let result = start_vm(&session(server.url()), "pve", 100).await;
+                assert_outcome(row, result, &expected);
+            }
         }
 
         #[tokio::test]

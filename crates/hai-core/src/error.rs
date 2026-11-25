@@ -36,6 +36,12 @@ pub enum Error {
     #[error("Proxmox session expired or invalid. Please reconnect to Proxmox.")]
     ProxmoxSessionExpired,
 
+    /// An expired session that left something behind on the server, with
+    /// installer-authored guidance that names it. Still answered by logging
+    /// in again.
+    #[error("{0}")]
+    ProxmoxSessionExpiredWithGuidance(crate::Message),
+
     /// The server presented a different certificate than the one the user
     /// trusted for this session. Reconnecting shows the new one to confirm.
     #[error("The Proxmox server's certificate changed. Reconnect to check it again.")]
@@ -191,6 +197,7 @@ impl Error {
             Self::PermissionDenied(message)
             | Self::ProxmoxTwoFactor(message)
             | Self::ProxmoxActionRequired(message)
+            | Self::ProxmoxSessionExpiredWithGuidance(message)
             | Self::RateLimited(message)
             | Self::ServiceUnavailable(message)
             | Self::Utm(message)
