@@ -24,6 +24,10 @@ export function preventReload(target: EventTarget = window) {
 function isReloadKey(event: KeyboardEvent): boolean {
   if (event.key === "F5" || event.key === "BrowserRefresh") return true;
 
+  // AltGr reports Ctrl and Alt on Windows, and types a character on some
+  // layouts. Ctrl+Alt+R doesn't reload.
+  if (event.altKey) return false;
+
   return (
     (event.ctrlKey || event.metaKey) &&
     (event.key.toLowerCase() === "r" || event.code === "KeyR")

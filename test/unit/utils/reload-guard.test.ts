@@ -52,6 +52,8 @@ describe("preventReload", () => {
     ["R", { key: "r", code: "KeyR" }],
     ["Ctrl+C", { key: "c", code: "KeyC", ctrlKey: true }],
     ["Enter", { key: "Enter", code: "Enter" }],
+    // AltGr on Windows: types "®" on US International
+    ["AltGr+R", { key: "®", code: "KeyR", ctrlKey: true, altKey: true }],
   ] as const) {
     it(`leaves ${name} alone`, () => {
       expect(goesThrough(page.querySelector("input")!, key(init))).to.be.true;
