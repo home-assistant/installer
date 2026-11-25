@@ -5,19 +5,18 @@
 
 use crate::error::{Error, Result};
 use crate::types::{
-    DeviceManifest, FlashProgress, FlashStage, GitHubRelease, HaosImage, HaosRelease, ImageFormat,
+    DeviceManifest, FlashProgress, FlashStage, GitHubRelease, HaosImage, HaosRelease,
     StableVersionInfo,
 };
 use crate::{Backend, ProgressCallback, ReleaseSource};
 use directories::BaseDirs;
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::sync::Mutex;
 
+pub(crate) mod full_images;
 pub(crate) mod sha256sums;
 
 /// The extracted image of `source`, in the cache folder under its release's
@@ -150,13 +149,6 @@ impl Drop for Part {
     }
 }
 
-fn valid_board(board: &str) -> bool {
-    !board.is_empty()
-        && board
-            .bytes()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-' || c == b'_')
-}
-
 pub(crate) fn parse_version(version: &str) -> Option<Vec<u64>> {
     let parts: Vec<_> = version.split('.').collect();
     if parts.len() < 2
@@ -232,14 +224,6 @@ fn is_left_behind_image(name: &str) -> bool {
 /// Home Assistant version API for stable releases
 const VERSION_URL: &str = "https://version.home-assistant.io/stable.json";
 
-/// GitHub API URL for HAOS releases
-const HAOS_RELEASES_API: &str =
-    "https://api.github.com/repos/home-assistant/operating-system/releases";
-
-/// Images are only ever downloaded from the official HAOS repository.
-pub(crate) const HAOS_DOWNLOADS: &str =
-    "https://github.com/home-assistant/operating-system/releases/download";
-
 /// User agent for API requests
 const USER_AGENT: &str = concat!("HomeAssistantInstaller/", env!("CARGO_PKG_VERSION"));
 
@@ -292,11 +276,17 @@ fn github_unreachable() -> crate::Message {
 fn github_invalid() -> crate::Message {
     crate::message!("backend.download.github_invalid_response")
 }
-static RELEASE_CACHE: LazyLock<Mutex<HashMap<String, HaosRelease>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
-
 /// How often to send progress updates (every N bytes)
 const PROGRESS_UPDATE_INTERVAL: u64 = 10 * 1024 * 1024; // 10 MB
+
+/// The longest a download goes without a progress update while data comes
+/// in. On a slow link 10 MB takes minutes, and a bar that stands still looks
+/// like a hang.
+const PROGRESS_UPDATE_TIME: std::time::Duration = if cfg!(test) {
+    std::time::Duration::from_millis(100)
+} else {
+    std::time::Duration::from_secs(1)
+};
 
 /// The folder for everything the installer downloads.
 pub(crate) fn get_cache_dir() -> Result<PathBuf> {
@@ -380,14 +370,6 @@ pub(crate) async fn get_stable_version() -> Result<StableVersionInfo> {
     get_stable_version_from_url(VERSION_URL).await
 }
 
-/// Get the latest stable HAOS version from the version API
-async fn get_latest_haos_version() -> Result<String> {
-    let version_info = get_stable_version().await?;
-
-    newest_version(version_info.hassos.values())
-        .ok_or_else(|| Error::ServiceUnavailable(version_service_invalid()))
-}
-
 /// The HAOS version stable.json lists for `board`.
 ///
 /// Boards can be held back during a staged rollout, so the version a board
@@ -402,35 +384,11 @@ fn version_for_board(version_info: &StableVersionInfo, board: &str) -> Result<St
     })
 }
 
-/// The newest of a set of HAOS versions (`18.3` beats `9.5`), so the answer
-/// doesn't depend on HashMap order.
-fn newest_version<'a>(versions: impl Iterator<Item = &'a String>) -> Option<String> {
-    fn numeric(version: &str) -> Vec<u32> {
-        version
-            .split('.')
-            .map(|part| part.parse().unwrap_or(0))
-            .collect()
-    }
-
-    versions.max_by_key(|version| numeric(version)).cloned()
-}
-
-/// Fetch the latest HAOS release information
-async fn fetch_latest_release() -> Result<HaosRelease> {
-    let version = get_latest_haos_version().await?;
-    fetch_release(&version).await
-}
-
-/// Fetch a specific HAOS release by version (internal version with custom base URL)
-async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<HaosRelease> {
-    // stable.json and the frontend supply the version; anything but a plain
-    // version number could steer the URL to another repository.
-    if parse_version(version).is_none() {
-        return Err(Error::ServiceUnavailable(version_service_invalid()));
-    }
+/// The GitHub release at API `url`; `name` names it in errors.
+async fn request_github_release(url: &str, name: &str) -> Result<GitHubRelease> {
     let client = shared_client()?;
     let response = client
-        .get(format!("{}/tags/{}", api_base_url, version))
+        .get(url)
         .header("User-Agent", USER_AGENT)
         .header("Accept", "application/vnd.github.v3+json")
         .timeout(METADATA_TIMEOUT)
@@ -468,20 +426,18 @@ async fn fetch_release_from_api(api_base_url: &str, version: &str) -> Result<Hao
             }
             return Err(Error::ServiceUnavailable(crate::message!(
                 "backend.download.github_refused",
-                version = version,
+                version = name,
                 status = status.as_u16(),
             )));
         }
         return Err(Error::ServiceUnavailable(crate::message!(
             "backend.download.github_release_unavailable",
-            version = version,
+            version = name,
             status = response.status().as_u16(),
         )));
     }
 
-    let release: GitHubRelease =
-        metadata_json(response, github_unreachable, github_invalid).await?;
-    parse_github_release(release, version)
+    metadata_json(response, github_unreachable, github_invalid).await
 }
 
 fn rate_limit_wait(headers: &reqwest::header::HeaderMap, now: u64) -> u64 {
@@ -496,122 +452,6 @@ fn rate_limit_wait(headers: &reqwest::header::HeaderMap, now: u64) -> u64 {
         0
     };
     retry_after.max(reset).max(60)
-}
-
-/// The release with each image's digest from its verified `SHA256SUMS`,
-/// whose files are at `<downloads_url>/<version>/<file>`.
-async fn fetch_cached_release(
-    cache: &Mutex<HashMap<String, HaosRelease>>,
-    api_base_url: &str,
-    downloads_url: &str,
-    version: &str,
-) -> Result<HaosRelease> {
-    // Serialize misses so concurrent installations do not spend multiple API requests.
-    let mut cache = cache.lock().await;
-    if let Some(release) = cache.get(version) {
-        return Ok(release.clone());
-    }
-    let mut release = fetch_release_from_api(api_base_url, version).await?;
-    let sums = sha256sums::verified(shared_client()?, downloads_url, version).await?;
-    for image in &mut release.images {
-        // Without a digest, the download is refused
-        let name = image.download_url.rsplit('/').next();
-        image.digest = name.and_then(|name| sums.get(name)).cloned();
-    }
-    cache.insert(version.to_string(), release.clone());
-    Ok(release)
-}
-
-/// Fetch a specific HAOS release by version
-async fn fetch_release(version: &str) -> Result<HaosRelease> {
-    fetch_cached_release(&RELEASE_CACHE, HAOS_RELEASES_API, HAOS_DOWNLOADS, version).await
-}
-
-/// Fetch HAOS release info for a specific version (or "latest")
-async fn get_haos_release(version: &str) -> Result<HaosRelease> {
-    if version == "latest" {
-        fetch_latest_release().await
-    } else {
-        fetch_release(version).await
-    }
-}
-
-/// Parse a GitHub release into our HaosRelease format
-///
-/// Every image must download from the requested release under
-/// `HAOS_DOWNLOADS`; anything else fails the whole release.
-fn parse_github_release(release: GitHubRelease, version: &str) -> Result<HaosRelease> {
-    if release.tag_name != version {
-        return Err(Error::UnexpectedRelease(format!(
-            "release {} instead of {version}",
-            release.tag_name
-        )));
-    }
-    let mut images = Vec::new();
-
-    for asset in release.assets {
-        // Process .img.xz and .qcow2.xz files
-        let (suffix, format) = if asset.name.ends_with(".img.xz") {
-            (".img.xz", ImageFormat::Raw)
-        } else if asset.name.ends_with(".qcow2.xz") {
-            (".qcow2.xz", ImageFormat::Qcow2)
-        } else {
-            continue;
-        };
-
-        // Parse board name from filename: haos_{board}-{version}.img.xz
-        let board = match parse_board_from_filename_with_suffix(&asset.name, version, suffix) {
-            Ok(b) if valid_board(&b) => b,
-            _ => continue,
-        };
-
-        // Exact match: a prefix check could be escaped with dot segments.
-        let expected_url = format!("{HAOS_DOWNLOADS}/{version}/{}", asset.name);
-        if asset.browser_download_url != expected_url {
-            return Err(Error::UnexpectedRelease(format!(
-                "download location for {}",
-                asset.name
-            )));
-        }
-
-        images.push(HaosImage {
-            board,
-            format,
-            download_url: asset.browser_download_url,
-            size: asset.size,
-            digest: None,
-        });
-    }
-
-    Ok(HaosRelease {
-        version: version.to_string(),
-        images,
-    })
-}
-
-/// Parse board name from HAOS image filename with a specific suffix
-fn parse_board_from_filename_with_suffix(
-    filename: &str,
-    version: &str,
-    file_suffix: &str,
-) -> Result<String> {
-    // Format: haos_{board}-{version}{file_suffix}
-    let prefix = "haos_";
-    let suffix = format!("-{}{}", version, file_suffix);
-
-    if !filename.starts_with(prefix) || !filename.ends_with(&suffix) {
-        return Err(Error::InvalidConfig(format!(
-            "Invalid filename format: {}",
-            filename
-        )));
-    }
-
-    let board = filename
-        .strip_prefix(prefix)
-        .and_then(|s| s.strip_suffix(&suffix))
-        .ok_or_else(|| Error::InvalidConfig(format!("Cannot parse board from: {}", filename)))?;
-
-    Ok(board.to_string())
 }
 
 /// Require the image's verified SHA-256 digest. Missing/unknown digests must
@@ -746,6 +586,7 @@ async fn download_image_with_client<P: ProgressCallback>(
     let mut file = std::fs::File::create(&part.0)?;
     let mut downloaded: u64 = 0;
     let mut last_progress_update: u64 = 0;
+    let mut last_progress_at = std::time::Instant::now();
     let mut stream = response.bytes_stream();
     let mut hasher = Sha256::new();
 
@@ -768,8 +609,10 @@ async fn download_image_with_client<P: ProgressCallback>(
 
         downloaded += chunk.len() as u64;
 
-        // Send progress update every PROGRESS_UPDATE_INTERVAL bytes
-        if downloaded - last_progress_update >= PROGRESS_UPDATE_INTERVAL {
+        // Every 10 MB on a fast link, every second on a slow one
+        if downloaded - last_progress_update >= PROGRESS_UPDATE_INTERVAL
+            || last_progress_at.elapsed() >= PROGRESS_UPDATE_TIME
+        {
             let progress = if total_size > 0 {
                 ((downloaded as f64 / total_size as f64) * 100.0) as u8
             } else {
@@ -784,6 +627,7 @@ async fn download_image_with_client<P: ProgressCallback>(
                 message: "Downloading image...".to_string(),
             });
             last_progress_update = downloaded;
+            last_progress_at = std::time::Instant::now();
         }
     }
 
@@ -1042,13 +886,9 @@ impl ReleaseSource for Backend {
         get_device_manifest().await
     }
 
-    async fn get_haos_release(&self, version: &str) -> Result<HaosRelease> {
-        get_haos_release(version).await
-    }
-
     async fn get_latest_haos_release_for_board(&self, board: &str) -> Result<HaosRelease> {
         let version = get_latest_haos_version_for_board(board).await?;
-        fetch_release(&version).await
+        full_images::release_for_board(board, &version).await
     }
 
     async fn download_image<P: ProgressCallback>(
@@ -1851,50 +1691,6 @@ mod tests {
         request.assert_async().await;
     }
 
-    #[tokio::test]
-    async fn release_digests_come_from_the_verified_sums_and_control_download() {
-        let data = b"what GitHub's metadata vouches for";
-        let mut server = mockito::Server::new_async().await;
-        let image = image_for_data(
-            &format!("{HAOS_DOWNLOADS}/18.5/haos_rpi5-64-18.5.img.xz"),
-            data,
-        );
-        let unlisted = format!("{HAOS_DOWNLOADS}/18.5/haos_tinker-18.5.img.xz");
-        server.mock("GET", "/tags/18.5").with_header("content-type", "application/json").with_body(serde_json::json!({
-            "tag_name": "18.5", "assets": [
-                { "name": "haos_rpi5-64-18.5.img.xz", "size": data.len(), "browser_download_url": image.download_url, "digest": image.digest },
-                { "name": "haos_tinker-18.5.img.xz", "size": data.len(), "browser_download_url": unlisted, "digest": image.digest },
-            ]
-        }).to_string()).create_async().await;
-        server
-            .mock("GET", "/image.xz")
-            .with_body(data)
-            .create_async()
-            .await;
-        let url = server.url();
-
-        let release = fetch_cached_release(&Mutex::new(HashMap::new()), &url, &url, "18.5")
-            .await
-            .unwrap();
-
-        let tinker = release.require_image("tinker", ImageFormat::Raw).unwrap();
-        assert_eq!(tinker.digest, None);
-        let mut selected = release
-            .require_image("rpi5-64", ImageFormat::Raw)
-            .unwrap()
-            .clone();
-        assert_eq!(
-            selected.digest.as_deref(),
-            Some("sha256:79004a2fda343f7cb9e6c510bfc56acac25f684d2ad20b7b116ef17c4c4b0136")
-        );
-        selected.download_url = format!("{url}/image.xz");
-        let directory = tempfile::tempdir().unwrap();
-        let destination = directory.path().join("image.xz");
-        let result = download_image(&selected, &destination, &crate::NoOpProgress).await;
-        assert!(matches!(result, Err(Error::ChecksumMismatch { .. })));
-        assert!(!destination.exists());
-    }
-
     fn stable_with(boards: &[(&str, &str)]) -> StableVersionInfo {
         serde_json::from_value(serde_json::json!({
             "hassos": boards
@@ -1924,13 +1720,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_newest_version_compares_numerically() {
-        let versions = ["9.5", "18.3", "18.10", "17.0"].map(String::from);
-        assert_eq!(newest_version(versions.iter()).as_deref(), Some("18.10"));
-        assert_eq!(newest_version([].iter()), None);
-    }
-    use crate::types::GitHubAsset;
+    use crate::types::ImageFormat;
 
     #[tokio::test]
     async fn connection_check_reports_service_and_invalid_responses() {
@@ -2006,7 +1796,7 @@ mod tests {
                 checks.push(tokio::spawn(async move {
                     let (url, server) = stalled_metadata_server(send_headers).await;
                     let error = if github {
-                        fetch_release_from_api(&url, "18.3").await.unwrap_err()
+                        request_github_release(&url, "18.3").await.unwrap_err()
                     } else {
                         get_stable_version_from_url(&url).await.unwrap_err()
                     };
@@ -2046,7 +1836,7 @@ mod tests {
                     .unwrap();
             });
             let error = if github {
-                fetch_release_from_api(&url, "18.3").await.unwrap_err()
+                request_github_release(&url, "18.3").await.unwrap_err()
             } else {
                 get_stable_version_from_url(&url).await.unwrap_err()
             };
@@ -2070,7 +1860,7 @@ mod tests {
         let url = "http://127.0.0.1:0/secret";
         for github in [false, true] {
             let error = if github {
-                fetch_release_from_api(url, "18.3").await.unwrap_err()
+                request_github_release(url, "18.3").await.unwrap_err()
             } else {
                 get_stable_version_from_url(url).await.unwrap_err()
             };
@@ -2092,7 +1882,7 @@ mod tests {
                 .create_async()
                 .await;
             let error = if github {
-                fetch_release_from_api(&server.url(), "18.3")
+                request_github_release(&format!("{}/tags/18.3", server.url()), "18.3")
                     .await
                     .unwrap_err()
             } else {
@@ -2156,7 +1946,7 @@ mod tests {
                 .with_body(body)
                 .create_async()
                 .await;
-            let error = fetch_release_from_api(&server.url(), "18.3")
+            let error = request_github_release(&format!("{}/tags/18.3", server.url()), "18.3")
                 .await
                 .unwrap_err()
                 .to_string();
@@ -2171,71 +1961,12 @@ mod tests {
             .with_header("retry-after", "121")
             .create_async()
             .await;
-        let error = fetch_release_from_api(&server.url(), "18.3")
+        let error = request_github_release(&format!("{}/tags/18.3", server.url()), "18.3")
             .await
             .unwrap_err()
             .to_string();
         assert!(error.contains("3 minutes"));
         mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn release_cache_reuses_success_per_version_and_retries_failures() {
-        let mut server = mockito::Server::new_async().await;
-        let url = server.url();
-        let cache = Mutex::new(HashMap::new());
-        let failed = server
-            .mock("GET", "/tags/18.5")
-            .with_status(429)
-            .expect(1)
-            .create_async()
-            .await;
-        assert!(fetch_cached_release(&cache, &url, &url, "18.5")
-            .await
-            .is_err());
-        failed.assert_async().await;
-        failed.remove_async().await;
-        let download_url = format!("{HAOS_DOWNLOADS}/18.5/haos_rpi5-64-18.5.img.xz");
-        let mock = server
-            .mock("GET", "/tags/18.5")
-            .match_header("User-Agent", USER_AGENT)
-            .match_header("Accept", "application/vnd.github.v3+json")
-            .with_status(200)
-            .with_body(
-                serde_json::json!({
-                    "tag_name": "18.5",
-                    "assets": [{
-                        "name": "haos_rpi5-64-18.5.img.xz",
-                        "size": 123,
-                        "browser_download_url": download_url,
-                    }],
-                })
-                .to_string(),
-            )
-            .expect(1)
-            .create_async()
-            .await;
-        let (first, second) = tokio::join!(
-            fetch_cached_release(&cache, &url, &url, "18.5"),
-            fetch_cached_release(&cache, &url, &url, "18.5")
-        );
-        for release in [first.unwrap(), second.unwrap()] {
-            assert_eq!(release.version, "18.5");
-            let image = release.require_image("rpi5-64", ImageFormat::Raw).unwrap();
-            assert_eq!(image.download_url, download_url);
-            assert!(image.digest.is_some());
-        }
-        mock.assert_async().await;
-        let other = server
-            .mock("GET", "/tags/18.4")
-            .with_status(404)
-            .expect(1)
-            .create_async()
-            .await;
-        assert!(fetch_cached_release(&cache, &url, &url, "18.4")
-            .await
-            .is_err());
-        other.assert_async().await;
     }
 
     #[tokio::test]
@@ -2532,179 +2263,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_parse_board_from_filename() {
-        for (filename, version, suffix, expected) in [
-            (
-                "haos_rpi5-64-14.2.img.xz",
-                "14.2",
-                ".img.xz",
-                Some("rpi5-64"),
-            ),
-            (
-                "haos_generic-x86-64-14.2.img.xz",
-                "14.2",
-                ".img.xz",
-                Some("generic-x86-64"),
-            ),
-            ("haos_green-14.2.img.xz", "14.2", ".img.xz", Some("green")),
-            ("haos_ova-14.2.qcow2.xz", "14.2", ".qcow2.xz", Some("ova")),
-            (
-                "haos_generic-aarch64-14.2.qcow2.xz",
-                "14.2",
-                ".qcow2.xz",
-                Some("generic-aarch64"),
-            ),
-            ("wrong_rpi5-64-14.2.img.xz", "14.2", ".img.xz", None),
-            ("rpi5-64-14.2.img.xz", "14.2", ".img.xz", None),
-            ("haos_rpi5-64-14.2.zip", "14.2", ".img.xz", None),
-            ("haos_rpi5-64-14.2.img.xz", "14.3", ".img.xz", None),
-            ("haos_rpi4-14.2.img.xz", "99.9", ".img.xz", None),
-            ("", "14.2", ".img.xz", None),
-        ] {
-            let result = parse_board_from_filename_with_suffix(filename, version, suffix);
-            match expected {
-                Some(board) => assert_eq!(result.unwrap(), board, "{filename}"),
-                None => assert!(
-                    matches!(result, Err(Error::InvalidConfig(_))),
-                    "{filename} {version}"
-                ),
-            }
-        }
-    }
-
-    #[test]
-    fn test_parse_github_release() {
-        let release = GitHubRelease {
-            tag_name: "14.2".to_string(),
-            assets: vec![
-                GitHubAsset {
-                    name: "haos_rpi5-64-14.2.img.xz".to_string(),
-                    size: 500_000_000,
-                    browser_download_url: "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz".to_string(),
-                },
-                GitHubAsset {
-                    name: "haos_ova-14.2.qcow2.xz".to_string(),
-                    size: 600_000_000,
-                    browser_download_url: "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_ova-14.2.qcow2.xz".to_string(),
-                },
-                // Should be ignored (wrong extension)
-                GitHubAsset {
-                    name: "haos_rpi5-64-14.2.img.xz.sha256".to_string(),
-                    size: 100,
-                    browser_download_url: "https://github.com/download/sha256".to_string(),
-                },
-                // Should be ignored (not a HAOS image name)
-                GitHubAsset {
-                    name: "invalid_filename.img.xz".to_string(),
-                    size: 500_000_000,
-                    browser_download_url: "https://github.com/download/invalid.img.xz".to_string(),
-                },
-            ],
-        };
-
-        let parsed = parse_github_release(release, "14.2").unwrap();
-        assert_eq!(parsed.version, "14.2");
-        assert_eq!(parsed.images.len(), 2);
-
-        // Check rpi5-64 image
-        let rpi_image = parsed.images.iter().find(|i| i.board == "rpi5-64").unwrap();
-        assert_eq!(rpi_image.format, ImageFormat::Raw);
-        assert_eq!(rpi_image.size, 500_000_000);
-
-        // Check x86 qcow2 image
-        let x86_image = parsed.images.iter().find(|i| i.board == "ova").unwrap();
-        assert_eq!(x86_image.format, ImageFormat::Qcow2);
-        assert_eq!(x86_image.size, 600_000_000);
-    }
-
-    #[test]
-    fn release_downloads_come_only_from_the_requested_official_release() {
-        let official = |name: &str| GitHubAsset {
-            name: name.to_string(),
-            size: 1,
-            browser_download_url: format!("{HAOS_DOWNLOADS}/14.2/{name}"),
-        };
-        let parse = |tag: &str, assets| {
-            parse_github_release(
-                GitHubRelease {
-                    tag_name: tag.to_string(),
-                    assets,
-                },
-                "14.2",
-            )
-        };
-        // The log names what didn't match
-        let rejected = |result: Result<HaosRelease>, detail: &str| {
-            matches!(result, Err(Error::UnexpectedRelease(message))
-                if message.contains(detail))
-        };
-
-        // Names that would put dot segments or a query into the URL are skipped.
-        let parsed = parse(
-            "14.2",
-            vec![
-                official("haos_rpi5-64-14.2.img.xz"),
-                official("haos_../../../attacker/x-14.2.img.xz"),
-                official("haos_RPI5?x=-14.2.img.xz"),
-            ],
-        )
-        .unwrap();
-        assert_eq!(parsed.images.len(), 1);
-        assert_eq!(
-            parsed.images[0].download_url,
-            "https://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz"
-        );
-
-        for url in [
-            "https://github.com/attacker/haos/releases/download/14.2/haos_rpi5-64-14.2.img.xz",
-            "https://github.com/home-assistant/operating-system/releases/download/../../../attacker/haos/releases/download/14.2/haos_rpi5-64-14.2.img.xz",
-            "https://github.com/home-assistant/operating-system/releases/download/14.1/haos_rpi5-64-14.2.img.xz",
-            "http://github.com/home-assistant/operating-system/releases/download/14.2/haos_rpi5-64-14.2.img.xz",
-        ] {
-            let mut asset = official("haos_rpi5-64-14.2.img.xz");
-            asset.browser_download_url = url.to_string();
-            let assets = vec![official("haos_ova-14.2.qcow2.xz"), asset];
-            assert!(
-                rejected(parse("14.2", assets), "haos_rpi5-64-14.2.img.xz"),
-                "{url}"
-            );
-        }
-
-        assert!(rejected(
-            parse("1.0", vec![official("haos_rpi5-64-1.0.img.xz")]),
-            "release 1.0"
-        ));
-    }
-
-    #[tokio::test]
-    async fn release_lookup_rejects_versions_that_are_not_plain_numbers() {
-        let mut server = mockito::Server::new_async().await;
-        let any_request = server
-            .mock("GET", mockito::Matcher::Any)
-            .expect(0)
-            .create_async()
-            .await;
-        for version in [
-            "../../../../attacker/haos/releases/tags/1.0",
-            "14.2/../../x",
-            "14.2?x",
-            "14",
-            "",
-            "latest",
-        ] {
-            let error = fetch_release_from_api(&server.url(), version)
-                .await
-                .unwrap_err();
-            assert!(
-                matches!(&error, Error::ServiceUnavailable(message)
-                    if message.key == "backend.download.version_service_invalid_response"),
-                "{version}"
-            );
-        }
-        any_request.assert_async().await;
-    }
-
     #[tokio::test]
     async fn test_download_image_with_progress_updates() {
         use std::sync::{Arc, Mutex};
@@ -2753,6 +2311,59 @@ mod tests {
         mock.assert_async().await;
 
         crate::types::assert_progress_shape(&calls.lock().unwrap(), &[FlashStage::Downloading]);
+    }
+
+    // On a slow link, 10 MB can take minutes: the bar must move before that
+    #[tokio::test]
+    async fn slow_download_reports_progress_before_10_mb() {
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Default)]
+        struct Updates(Mutex<Vec<FlashProgress>>);
+
+        impl crate::ProgressCallback for Arc<Updates> {
+            fn on_progress(&self, progress: FlashProgress) {
+                self.0.lock().unwrap().push(progress);
+            }
+        }
+
+        let mut server = mockito::Server::new_async().await;
+        let chunk = vec![0u8; 64 * 1024];
+        let data = chunk.repeat(16);
+        let mock = server
+            .mock("GET", "/slow.img.xz")
+            .with_chunked_body(move |writer| {
+                for _ in 0..16 {
+                    writer.write_all(&chunk)?;
+                    writer.flush()?;
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Ok(())
+            })
+            .create_async()
+            .await;
+        let directory = tempfile::tempdir().unwrap();
+        let updates = Arc::new(Updates::default());
+
+        download_image_with_client(
+            &image_for_data(&format!("{}/slow.img.xz", server.url()), &data),
+            &directory.path().join("slow.img"),
+            &updates,
+            shared_client().unwrap(),
+            |_| Ok(u64::MAX),
+        )
+        .await
+        .unwrap();
+        mock.assert_async().await;
+
+        let updates = updates.0.lock().unwrap();
+        let during: Vec<_> = updates
+            .iter()
+            .map(|update| update.bytes_processed)
+            .filter(|&bytes| bytes > 0 && bytes < data.len() as u64)
+            .collect();
+        assert!(during.len() >= 2, "updates during the download: {during:?}");
+        crate::types::assert_progress_shape(&updates, &[FlashStage::Downloading]);
     }
 
     #[tokio::test]

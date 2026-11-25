@@ -8,6 +8,7 @@ import type { HaHardwareDeviceSelectionView } from "../views/ha-hardware/device-
 import type { LiveIsoLocationView } from "../views/live-usb/live-iso-location-view.js";
 import type { ProxmoxConfigureView } from "../views/proxmox/proxmox-configure-view.js";
 import type { ProxmoxConnectView } from "../views/proxmox/proxmox-connect-view.js";
+import type { UtmConfigureView } from "../views/utm/utm-configure-view.js";
 import { enabledImportStorageList } from "../views/proxmox/proxmox-success-view.js";
 
 import "../views/sbc/device-selection-view.js";
@@ -22,7 +23,6 @@ import "../views/ha-hardware/connect-view.js";
 import "../views/ha-hardware/success-view.js";
 import "../views/minipc/setup-method-view.js";
 import "../views/minipc/architecture-selection-view.js";
-import "../views/minipc/media-view.js";
 import "../views/live-usb/live-usb-gate.js";
 import "../views/live-usb/live-iso-location-view.js";
 import "../views/live-usb/live-usb-summary-view.js";
@@ -81,8 +81,8 @@ export interface InstallStep {
   stopMessage(selections: WizardSelections): string;
   /**
    * Once the install failed or was stopped, Back returns to the step
-   * before, to change a choice and install again. Without it, Back stays
-   * hidden.
+   * before, to change a choice and install again. Without it, Back shows
+   * only after a failure that the view says choosing differently fixes.
    */
   backAfterError?: boolean;
   /**
@@ -266,6 +266,12 @@ export const WIZARD_STEPS: Record<
       // the view first saves there is none, and the default name applies.
       ready: (selections) =>
         selections.vmName === undefined || isValidUtmVmName(selections.vmName),
+      // UTM refuses a name it already has, but only once the image is in
+      beforeNext: {
+        run: (view) => (view as UtmConfigureView).check(),
+        label: () => localize("components.wizard_steps.checking_settings"),
+        until: "selections",
+      },
     },
     confirm: {
       render: () => html`<utm-confirm-view></utm-confirm-view>`,
@@ -273,7 +279,14 @@ export const WIZARD_STEPS: Record<
     },
     install: {
       render: () => html`<utm-progress-view></utm-progress-view>`,
-      install: vmInstall,
+      install: {
+        ...vmInstall,
+        // A VM of that name was made in UTM after the configure step
+        changeChoice: () => ({
+          step: "configure",
+          label: localize("components.wizard_steps.choose_another_name"),
+        }),
+      },
     },
     success: { render: () => html`<utm-success-view></utm-success-view>` },
   },
@@ -345,10 +358,6 @@ const isoFile = (selections: WizardSelections) =>
 
 /** The Mini PC steps after choosing to boot from USB, where they differ. */
 export const LIVE_USB_STEPS: Record<string, WizardStepDefinition> = {
-  media: {
-    render: () => html`<minipc-media-view></minipc-media-view>`,
-    pickToContinue: true,
-  },
   drive: {
     render: () =>
       html`<live-usb-gate

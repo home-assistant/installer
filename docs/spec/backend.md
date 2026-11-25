@@ -118,19 +118,51 @@ pub async fn list_internal_devices() -> Result<Vec<BlockDevice>>;
 
 ### Image Download
 
-Installation requires a `sha256:` digest with exactly 64 hexadecimal digits
-from the selected asset in GitHub's release API response. The downloader hashes
-the compressed bytes while streaming them to a private temporary file and only
-publishes the file after a match. Missing, null, malformed, and unsupported
-digests stop installation before download; a mismatch stops before extraction,
-drive writing, or VM import. There is no fallback to an XZ checksum or a guessed
-download URL. Older releases without a GitHub digest cannot be installed.
+Every flow installs a full image: HAOS with Home Assistant and its components
+already on the data partition, built by
+[home-assistant/operating-system-full-images](https://github.com/home-assistant/operating-system-full-images)
+from a `stable.json` snapshot, so the device skips downloading Home Assistant on
+first boot. There are no regular HAOS images to fall back to.
 
-The same policy applies to raw images and UTM/Proxmox qcow2 images, selected from
-the version for their board in `stable.json`. Images are kept for the session
-only; see below. GitHub metadata obtained over HTTPS is the trust source;
-this does not verify a publisher
-signature or protect against compromised GitHub release metadata.
+The one exception is resetting a Green or a Yellow with a CM4. Those write a
+small installer image from NabuCasa/buildroot-installer instead, pinned with its
+size and digest in `hardware_installer.rs`, so no release is looked up and
+nothing below about full images applies to them. The installer then writes Home
+Assistant OS itself, without Home Assistant preloaded. A Yellow with a CM5 gets
+a full image like any other board.
+
+`download/full_images.rs` looks up that repository's latest release. Its tag
+must be `stable-<home-assistant/version commit>`, and its `SHA256SUMS` must be
+signed with Sigstore (`SHA256SUMS.sigstore.json`) by `build-channel.yml` running
+on `main` in that repository, checked by repository ID as well, never trusted
+because GitHub serves it. That signature names no release, so the release's
+`build-inputs.json`, whose digest is in the signed `SHA256SUMS`, decides whether
+it is current. As before, `stable.json` decides which HAOS version a board gets.
+The board gets its full images only when they were built from that version.
+Image names are
+`haos_<board>-<os>-full-core-<core>-stable-<first 12 digits of the commit>`, and
+each must download from that release of that repository.
+
+When the latest release was built from another HAOS version for the board (for
+about 20 minutes after `stable.json` moves it, or longer if its build fails), or
+has no signed image of it, installation stops with a retryable "isn't ready yet"
+error, and the reason is logged. The release is cached for the session, and
+asked for again once a board finds it built from another version. Core in a full
+image can be behind `stable.json`; Supervisor offers the newer one as an update.
+
+Installation requires a `sha256:` digest with exactly 64 hexadecimal digits from
+that signed `SHA256SUMS`. The downloader hashes the compressed bytes while
+streaming them to a private temporary file and only publishes the file after a
+match. Missing, null, malformed, and unsupported digests stop installation
+before download; a mismatch stops before extraction, drive writing, or VM
+import. There is no fallback to an XZ checksum or a guessed download URL.
+
+The same policy applies to raw images and UTM/Proxmox qcow2 images. Images are
+kept for the session only; see below.
+
+Full images are about three times the download of regular HAOS images, and the
+extracted generic x86-64 image is about 5 GB. The live USB stick therefore needs
+4 GB.
 
 Metadata and image requests share a client with a 10-second connection timeout
 and a 30-second idle-read timeout. Downloads that keep making progress have no
@@ -332,6 +364,10 @@ pub trait HostBackend {
     /// progress and problems that hold it up (`None` without a full answer)
     async fn ha_setup_status(&self, ip: &str) -> Option<HaSetupStatus>;
 
+    /// Whether Home Assistant at `ip` is onboarded (`None` without an answer
+    /// that tells)
+    async fn ha_onboarded(&self, ip: &str) -> Option<bool>;
+
     /// The Home Assistants that announce `_home-assistant._tcp` on the local
     /// network within a few seconds (discovery.rs)
     async fn find_home_assistants(&self) -> Result<Vec<HaAnnouncement>>;
@@ -357,7 +393,14 @@ that starts from it. Since 2026.6 the landing page announces itself over mDNS as
 starts; older ones announce `version=0.0.0` and no `uuid`. The step first
 notes what announces itself already, then takes the first landing page that
 wasn't there for the device, and follows it at the address it announces.
-Home Assistant itself is never taken for it. The Start device step before it,
+A device started from a full image (see Image Download) runs Core at once,
+without a landing page. Then the device is the first Home Assistant that wasn't
+there and answers `GET /api/onboarding`, which Core serves without signing in,
+with its `user` step not done. Every Home Assistant that isn't a landing page
+is asked once a lookup has found them all, and asked no more once it answers
+that onboarding is done. Other Home Assistants are never taken for the device,
+so one that was off while the step noted what was there doesn't count. The
+Start device step before it,
 which comes as soon as the drive is written, notes what is there, then
 watches for the device while it stays open, in case Home Assistant replaces
 the landing page before Next. Only
@@ -367,7 +410,32 @@ for three seconds: on Windows through the system's DNS-SD
 (`DnsServiceBrowse` and `DnsServiceResolve`), whose mDNS traffic Windows
 Firewall lets through, elsewhere with `mdns-sd`, which sends its own queries.
 Addresses only Home Assistant OS itself can reach, like its Docker networks',
-are left out. Diagnostics record how many answered, never which or where.
+are left out. Diagnostics record how many answered, and how many were landing
+pages or needed onboarding, never which or where.
+
+The welcome screen looks up the Home Assistants already on the network as
+well, every 10 seconds while it shows, and offers each to open in the
+browser. It names each by the `location_name` it announces, else by its
+service name, and opens the `internal_url` it announces: that says whether it
+takes HTTPS, may name it as its certificate does, and may be a proxy's in
+front of it, on another address. One that names an IP address this computer
+can't reach, like one of Home Assistant OS's own networks, loopback or an
+IPv6 link-local address, is not opened;
+without a web address there, it opens at `http://<address>`. A landing page
+shows as installing. For Home Assistant itself, `ha_onboarded` reads
+`/api/onboarding`, which the onboarding integration serves without
+authentication until every step is done: a list with a step not done means its
+owner has yet to onboard it. A 404 means it is onboarded, as the integration
+no longer serves the list then and Home Assistant starts its web server only
+after setting it up; like Home Assistant's own frontend, a 401 reads the same.
+It asks over plain HTTP at the announced address, and over HTTPS when that
+gets no answer, as from Home Assistant with a certificate of its own. The
+`internal_url` can't decide that, as it may be a proxy's in front of Home
+Assistant. Over HTTPS the certificate is not checked: it is for a name, or
+self-signed, not for the address asked at; nothing is sent, and the answer
+only picks a label for an announcement that is no more authentic itself. Any
+other answer tells nothing, and the screen keeps what the last answer told.
+One that two lookups in a row miss is no longer shown.
 
 ---
 

@@ -204,7 +204,7 @@ router when the device wasn't found.
 
 ## Flow: Mini PC / NUC
 
-### Step 1: Clarify Setup
+### Step 1: Installation method
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -212,40 +212,30 @@ router when the device wasn't found.
 │   How will you install?                                     │
 │                                                             │
 │   ┌─────────────────────────────────────────────────────┐   │
-│   │  I can connect the target drive to this computer    │   │
-│   │  I'll plug in the SSD/NVMe via USB adapter          │   │
+│   │  Create a USB installer  [Recommended]              │   │
+│   │  Start the mini PC from it to install               │   │
 │   └─────────────────────────────────────────────────────┘   │
 │                                                             │
 │   ┌─────────────────────────────────────────────────────┐   │
-│   │  I need to boot from USB to install                 │   │
-│   │  The drive is internal and can't be removed         │   │
+│   │  Write the mini PC's drive here                     │   │
+│   │  Connect its SSD or NVMe drive with a USB adapter   │   │
 │   └─────────────────────────────────────────────────────┘   │
 │                                                             │
-│                                             [ Back ]        │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │  Save an ISO file                                   │   │
+│   │  Write it with another tool, or burn it to a disc   │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│   [ Back ]                                                  │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-If "boot from USB" is selected:
+A USB installer goes on to picking the USB stick, and an ISO file to where to
+save it. Both then build a stick or ISO that installs Home Assistant OS when
+the mini PC starts from it.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│   USB Boot Installation                                     │
-│                                                             │
-│   This installer doesn't create bootable USB installers.    │
-│                                                             │
-│   For mini PCs where you can't remove the drive, follow     │
-│   our guide for creating a bootable USB:                    │
-│                                                             │
-│   [ Open Installation Guide ]                               │
-│                                                             │
-│                                             [ Back ]        │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-If "connect drive" is selected, continue to:
+If "Write the mini PC's drive here" is selected, continue to:
 
 ### Step 2: Select Architecture
 

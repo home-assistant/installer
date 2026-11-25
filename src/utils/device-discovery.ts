@@ -2,7 +2,9 @@
  * Finding the device that starts from a written drive. Home Assistant OS
  * shows a landing page while it installs Home Assistant, and announces it on
  * the network under a new id each time it starts. One that wasn't there
- * when the drive was done is the device.
+ * when the drive was done is the device. A full image starts Home Assistant
+ * without a landing page; then the device is a new Home Assistant whose
+ * onboarding is unfinished.
  */
 import type { ReactiveController, ReactiveControllerHost } from "lit";
 import { findHomeAssistants } from "../api/commands.js";
@@ -32,8 +34,9 @@ const WATCH_INTERVAL_MS = 2000;
 
 /**
  * Looks for the device: first it notes the Home Assistants already there,
- * then it finds a landing page that wasn't. Home Assistants themselves never
- * count, as one that was off while it noted what was there isn't new.
+ * then it finds a landing page that wasn't, or a Home Assistant that wasn't
+ * and still needs onboarding. Other Home Assistants never count, as one that
+ * was off while it noted what was there isn't new.
  *
  * Only lookups in its first minute note what is there: one that only
  * answers later could take the device for one that was there all along.
@@ -85,7 +88,8 @@ export class DeviceFinder {
       return null;
     }
     const found = (await findHomeAssistants()).find(
-      ({ id, landing_page }) => landing_page && !this._known.has(id)
+      ({ id, landing_page, needs_onboarding }) =>
+        (landing_page || needs_onboarding) && !this._known.has(id)
     )?.address;
     // An overlapping call may have found it meanwhile, in an answer that
     // came before Home Assistant replaced its landing page

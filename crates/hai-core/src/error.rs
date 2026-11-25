@@ -66,6 +66,11 @@ pub enum Error {
     #[error("{0}")]
     UtmVmCreated(crate::Message),
 
+    /// UTM already has a VM with the chosen name, and refuses another.
+    /// Choosing another name is the fix, so it names the VM.
+    #[error("{0}")]
+    UtmVmNameTaken(crate::Message),
+
     #[error("Drive disconnected")]
     DriveDisconnected,
 
@@ -190,7 +195,8 @@ impl Error {
             | Self::ServiceUnavailable(message)
             | Self::Utm(message)
             | Self::UtmOperationUncertain(message)
-            | Self::UtmVmCreated(message) => Some(message),
+            | Self::UtmVmCreated(message)
+            | Self::UtmVmNameTaken(message) => Some(message),
             _ => None,
         }
     }

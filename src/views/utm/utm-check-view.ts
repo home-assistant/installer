@@ -239,6 +239,7 @@ export class UtmCheckView extends LitElement {
       return this._controlAllowed
         ? ""
         : html`<wa-button
+            pill
             variant="brand"
             appearance="accent"
             ?loading=${this._loading}
@@ -249,6 +250,7 @@ export class UtmCheckView extends LitElement {
     }
     return html`
       <wa-button
+        pill
         variant="brand"
         appearance="accent"
         @click=${this._openUtmDownload}
@@ -257,6 +259,7 @@ export class UtmCheckView extends LitElement {
         ${localize("views.utm.utm_check_view.download_utm")}
       </wa-button>
       <wa-button
+        pill
         variant="brand"
         appearance="outlined"
         ?loading=${this._loading}

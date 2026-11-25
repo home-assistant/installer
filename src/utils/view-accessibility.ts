@@ -71,6 +71,15 @@ export function focusHeading(heading: HTMLElement) {
   }
 }
 
+/**
+ * Read out an error again, as after another press of Next that the same
+ * refusal answers. `ViewAccessibility` only focuses an error that is new or
+ * says something else, so the one already on show would go unsaid.
+ */
+export function focusAlert(alert: HTMLElement | null | undefined) {
+  if (alert && activeElement() !== alert) focusHeading(alert);
+}
+
 /** Focus new views and new errors, never ordinary form/progress updates. */
 export class ViewAccessibility implements ReactiveController {
   private _headingFocused = false;

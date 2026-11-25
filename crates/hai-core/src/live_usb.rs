@@ -33,7 +33,7 @@ pub fn remove_cache(cache: &Path) -> Result<()> {
 pub struct Contents {
     /// Unpacked Alpine ISO files.
     files: PathBuf,
-    /// Our files at the root: apkovl, HAOS image and its checksum.
+    /// Our files at the root: apkovl, console font licence, HAOS image and its checksum.
     extra: Vec<StickFile>,
     /// Alpine's ISO volume label, which our ISO must keep.
     label: String,
@@ -76,10 +76,12 @@ impl StickFile {
 }
 
 /// Downloads (or reuses) Alpine and HAOS and assembles the stick contents.
-/// `hai_live` is the static Linux build of the `hai-live` program.
+/// `hai_live` is the static Linux build of the `hai-live` program, and `language` the BCP 47
+/// tag of the language it starts in.
 pub async fn prepare<B: ReleaseSource, P: ProgressCallback>(
     backend: &B,
     hai_live: &Path,
+    language: &str,
     progress: &P,
 ) -> Result<Contents> {
     let hai_live = std::fs::read(hai_live)?;
@@ -105,7 +107,11 @@ pub async fn prepare<B: ReleaseSource, P: ProgressCallback>(
     let extra = vec![
         StickFile {
             name: apkovl::APKOVL_NAME.into(),
-            source: Source::Bytes(apkovl::build(&hai_live)?),
+            source: Source::Bytes(apkovl::build(&hai_live, language)?),
+        },
+        StickFile {
+            name: FONT_LICENCE_NAME.into(),
+            source: Source::Bytes(FONT_LICENCE.to_vec()),
         },
         StickFile {
             name: format!("{haos_name}.sha256"),
@@ -244,6 +250,11 @@ fn retitle_boot_menu(grub_cfg: &Path) -> Result<()> {
 /// What GRUB says it is starting.
 const BOOT_MENU_TITLE: &str = "Home Assistant Installer";
 
+/// `hai-live` has the Terminus console font built in, and the font's licence (SIL OFL 1.1)
+/// must come with every copy of it.
+const FONT_LICENCE_NAME: &str = "terminus-font-OFL.txt";
+const FONT_LICENCE: &[u8] = include_bytes!("../../hai-live/fonts/OFL.txt");
+
 /// Whether the file at `path` is the static Linux build of `hai-live` that the stick can run.
 pub fn is_usable_hai_live(path: &Path) -> bool {
     std::fs::read(path).is_ok_and(|bin| is_static_x86_64_elf(&bin))
@@ -354,6 +365,13 @@ mod tests {
         retitle_boot_menu(&grub_cfg).unwrap();
         assert_eq!(std::fs::read_to_string(&grub_cfg).unwrap(), config);
         retitle_boot_menu(&dir.path().join("missing.cfg")).unwrap();
+    }
+
+    #[test]
+    fn font_licence_is_terminus_ofl() {
+        let licence = std::str::from_utf8(FONT_LICENCE).unwrap();
+        assert!(licence.starts_with("Copyright (C) 2020 Dimitar Toshkov Zhekov,"));
+        assert!(licence.contains("SIL OPEN FONT LICENSE Version 1.1"));
     }
 
     #[test]
@@ -468,19 +486,26 @@ mod tests {
     }
 
     /// Builds a real ISO and disk image, without writing to any disk. Set `LIVE_USB_OUT_DIR`
-    /// to keep the files; otherwise they go to a temporary folder.
+    /// to keep the files; otherwise they go to a temporary folder. `LIVE_USB_LANGUAGE` picks
+    /// the language `hai-live` starts in (English by default).
     #[tokio::test]
     #[ignore = "downloads Alpine and HAOS and needs HAI_LIVE_PATH; run explicitly"]
     async fn builds_iso_and_disk_image() {
         let hai_live = std::env::var_os("HAI_LIVE_PATH")
             .expect("set HAI_LIVE_PATH to the Linux build of hai-live");
+        let language = std::env::var("LIVE_USB_LANGUAGE").unwrap_or_else(|_| "en".into());
         let temp = tempfile::tempdir().unwrap();
         let out = std::env::var_os("LIVE_USB_OUT_DIR")
             .map_or_else(|| temp.path().to_path_buf(), PathBuf::from);
 
-        let contents = prepare(&crate::Backend, Path::new(&hai_live), &crate::NoOpProgress)
-            .await
-            .unwrap();
+        let contents = prepare(
+            &crate::Backend,
+            Path::new(&hai_live),
+            &language,
+            &crate::NoOpProgress,
+        )
+        .await
+        .unwrap();
         let keep_going = AtomicBool::new(false);
         let iso = write_iso(&contents, &out, &keep_going).unwrap();
         let image = write_image(&contents, &out, &keep_going).unwrap();

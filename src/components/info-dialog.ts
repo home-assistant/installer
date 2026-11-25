@@ -57,6 +57,7 @@ export class InfoDialog extends DialogBase {
       ${this.secondaryLabel
         ? html`
             <wa-button
+              pill
               slot="footer"
               variant=${secondaryStandsOut ? "brand" : "neutral"}
               appearance=${secondaryStandsOut ? "accent" : "outlined"}
@@ -67,6 +68,7 @@ export class InfoDialog extends DialogBase {
           `
         : ""}
       <wa-button
+        pill
         slot="footer"
         variant=${secondaryStandsOut ? "neutral" : this.primaryVariant}
         appearance=${secondaryStandsOut ? "outlined" : "accent"}

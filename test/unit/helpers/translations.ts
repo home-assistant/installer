@@ -5,6 +5,7 @@ Object.assign(globalThis, {
     "./de.json": async () => ({
       "common.app_title": "Home Assistant Installationsprogramm",
       "views.welcome_view.let_s_go": "Los geht's",
+      "common.controls.loading": "Wird geladen",
     }),
   }),
 });

@@ -2,16 +2,18 @@ import { css, html } from "lit";
 import { localize } from "../localization/localize.js";
 import { lowWindow } from "./breakpoints.js";
 import "@home-assistant/webawesome/dist/components/button/button.js";
+import "../components/accessibility-menu.js";
 
 /**
- * The bar holding Back at the top of a screen. The install flow and the
- * screens before it share it, so Back never moves between them. Its sides
- * are the page gutter, like the content and footer below it.
+ * The bar holding Back and Accessibility at the top of a screen. The install
+ * flow and the screens before it share it, so neither moves between them. Its
+ * sides are the page gutter, like the content and footer below it.
  */
 export const pageHeaderStyles = css`
   .header {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: 1rem var(--ha-page-gutter);
   }
 
@@ -83,14 +85,15 @@ export const pageStyles = css`
   }
 `;
 
-/** The header of a screen that has only Back in it. */
+/** The header of a screen before the install flow: Back and Accessibility */
 export function renderBackHeader(onBack: (event: MouseEvent) => void) {
   return html`
     <div class="header">
-      <wa-button appearance="plain" @click=${onBack}>
+      <wa-button pill appearance="plain" @click=${onBack}>
         <span slot="start" aria-hidden="true">←</span>
         ${localize("common.back")}
       </wa-button>
+      <accessibility-menu></accessibility-menu>
     </div>
   `;
 }

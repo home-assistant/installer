@@ -572,11 +572,22 @@ pub struct HaAnnouncement {
     /// it announces none. A landing page announces a new one each time it
     /// starts.
     pub id: String,
+    /// The name it announces, like "Home": its `location_name`, or its
+    /// service name's own part without one. `None` when it announces neither.
+    pub name: Option<String>,
     /// Where it answers: an IPv4 address, with the port unless that is 80.
     pub address: String,
+    /// Where to open it in the browser: the `internal_url` it announces,
+    /// which says whether it takes HTTPS and may name it, else `http://`
+    /// and its address.
+    pub url: String,
     /// Whether it is the page Home Assistant OS shows while it installs
     /// Home Assistant, rather than Home Assistant itself.
     pub landing_page: bool,
+    /// Whether it is Home Assistant itself and answers that its onboarding is
+    /// unfinished, as on a device started from a full image, which runs
+    /// Home Assistant without showing a landing page first.
+    pub needs_onboarding: bool,
 }
 
 #[cfg(test)]

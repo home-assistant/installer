@@ -6,7 +6,7 @@ import { linkStyles } from "../utils/link-styles.js";
 import { roomForMascotBeside } from "../utils/breakpoints.js";
 import { sectionLabelStyles } from "../utils/section-label-styles.js";
 import { getPlatform } from "../utils/platform.js";
-import { renderCasitaHappy } from "./install-mascot.js";
+import { renderCasita } from "./install-mascot.js";
 import "./companion-app.js";
 import "./inline-notice.js";
 import {
@@ -223,7 +223,7 @@ export class InstallSuccess extends LitElement {
     return html`
       <div class=${this.steps.length ? "layout beside" : "layout"}>
         <div class="mascot-container" aria-hidden="true">
-          ${renderCasitaHappy()}
+          ${renderCasita("happy", true)}
         </div>
         <div class="heading">
           <h2>${title}</h2>

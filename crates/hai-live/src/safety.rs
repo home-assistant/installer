@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::path::Path;
 
-use crate::drives::{self, Disk, Entry};
+use crate::drives::{self, Disk, Entry, Reason};
 
 /// FAT volume label the installer gives the stick (must match `VOLUME_LABEL` in hai-core's `live_usb`).
 const STICK_LABEL: &[u8; 11] = b"HAI-LIVE   ";
@@ -12,13 +12,51 @@ const STICK_LABEL: &[u8; 11] = b"HAI-LIVE   ";
 /// HAOS needs a 32 GB disk. Same 5% allowance as hai-core, because "32 GB" disks report a bit less.
 pub const MIN_SIZE_BYTES: u64 = 32_000_000_000 - 32_000_000_000 / 20;
 
+/// Why a disk is shown, but can't be used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Problem {
+    /// Under [`MIN_SIZE_BYTES`].
+    TooSmall,
+}
+
+impl Problem {
+    /// The message that says it.
+    pub fn key(self) -> &'static str {
+        match self {
+            Problem::TooSmall => "live.safety.problem.too_small",
+        }
+    }
+}
+
+/// Why a device isn't shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Hidden {
+    /// Never offered, see [`drives::list`].
+    Skipped(Reason),
+    /// The stick hai-live runs from.
+    LiveStick,
+    /// Its partitions can't be read, so it could be the stick.
+    PartitionsUnchecked,
+}
+
+impl Hidden {
+    /// The message that says it.
+    pub fn key(self) -> &'static str {
+        match self {
+            Hidden::Skipped(reason) => reason.key(),
+            Hidden::LiveStick => "live.safety.hidden.live_stick",
+            Hidden::PartitionsUnchecked => "live.safety.hidden.partitions_unchecked",
+        }
+    }
+}
+
 /// A disk shown to the user.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Choice {
     /// The disk.
     pub disk: Disk,
     /// Why it can't be used, if it can't.
-    pub problem: Option<&'static str>,
+    pub problem: Option<Problem>,
 }
 
 /// Disks to show, and everything else with the reason it's hidden.
@@ -27,7 +65,7 @@ pub struct Review {
     /// Disks shown to the user, usable or not.
     pub choices: Vec<Choice>,
     /// Hidden devices: (name, reason).
-    pub hidden: Vec<(String, &'static str)>,
+    pub hidden: Vec<(String, Hidden)>,
 }
 
 /// Applies the rules to `entries`. `sys_block` is `/sys/block`, `dev` is `/dev`, and
@@ -41,21 +79,18 @@ pub fn review(
     let mut review = Review::default();
     for entry in entries {
         match entry {
-            Entry::Skipped { name, reason } => review.hidden.push((name, reason)),
+            Entry::Skipped { name, reason } => review.hidden.push((name, Hidden::Skipped(reason))),
             // Not every boot medium carries the stick's label: the ISO, attached to a VM as a
             // disk or written to a drive that isn't on USB, looks like any other disk
             Entry::Disk(disk) if boot_disk == Some(disk.name.as_str()) => {
-                review.hidden.push((disk.name, "HAI live stick"))
+                review.hidden.push((disk.name, Hidden::LiveStick))
             }
             Entry::Disk(disk) => match is_hai_stick(sys_block, dev, &disk.name) {
-                Ok(true) => review.hidden.push((disk.name, "HAI live stick")),
+                Ok(true) => review.hidden.push((disk.name, Hidden::LiveStick)),
                 // Can't rule out that this is the stick we booted from, so never offer it.
-                Err(_) => review
-                    .hidden
-                    .push((disk.name, "partitions can't be checked")),
+                Err(_) => review.hidden.push((disk.name, Hidden::PartitionsUnchecked)),
                 Ok(false) => {
-                    let problem =
-                        (disk.size_bytes < MIN_SIZE_BYTES).then_some("smaller than 32 GB");
+                    let problem = (disk.size_bytes < MIN_SIZE_BYTES).then_some(Problem::TooSmall);
                     review.choices.push(Choice { disk, problem });
                 }
             },
@@ -134,17 +169,19 @@ mod tests {
             None,
         );
 
-        let shown: Vec<(&str, Option<&str>)> = review
+        let shown: Vec<(&str, Option<Problem>)> = review
             .choices
             .iter()
             .map(|c| (c.disk.name.as_str(), c.problem))
             .collect();
-        assert_eq!(shown, [("sdb", None), ("sdc", Some("smaller than 32 GB"))]);
-        assert!(review.hidden.contains(&("sda".into(), "HAI live stick")));
+        assert_eq!(shown, [("sdb", None), ("sdc", Some(Problem::TooSmall))]);
+        assert!(review.hidden.contains(&("sda".into(), Hidden::LiveStick)));
         assert!(review
             .hidden
-            .contains(&("sdd".into(), "partitions can't be checked")));
-        assert!(review.hidden.contains(&("sr0".into(), "optical drive")));
+            .contains(&("sdd".into(), Hidden::PartitionsUnchecked)));
+        assert!(review
+            .hidden
+            .contains(&("sr0".into(), Hidden::Skipped(Reason::OpticalDrive))));
     }
 
     #[test]
@@ -187,7 +224,7 @@ mod tests {
             .map(|c| c.disk.name.as_str())
             .collect();
         assert_eq!(shown, ["sdb"]);
-        assert!(review.hidden.contains(&("sda".into(), "HAI live stick")));
+        assert!(review.hidden.contains(&("sda".into(), Hidden::LiveStick)));
 
         let sda = match &entries()[0] {
             Entry::Disk(disk) => disk.clone(),

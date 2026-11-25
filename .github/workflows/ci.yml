@@ -108,7 +108,7 @@ jobs:
 
       - name: Install cargo-audit
         if: steps.lock.outputs.audit == 'true'
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-audit@0.22.2
 
@@ -192,7 +192,7 @@ jobs:
           persist-credentials: false
 
       - name: Run zizmor
-        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        uses: zizmorcore/zizmor-action@bd12b495c90993a4301c73398142281a61499af3 # v0.9.0
         with:
           version: latest
 
@@ -263,13 +263,13 @@ jobs:
           persist-credentials: false
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           components: clippy, rustfmt
 
       - name: Install cargo-shear
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-shear
 
@@ -366,8 +366,8 @@ jobs:
           flags: frontend
           fail_ci_if_error: false
 
-  # The E2E suite takes over ten minutes per browser in one job, longer than
-  # any other job, so each browser's tests are split across three.
+  # The E2E suite takes several minutes per browser in one job, so each
+  # browser's tests are split across three.
   test-e2e:
     name: Test E2E (${{ matrix.browser }}, ${{ matrix.shard }}/3)
     if: github.event_name != 'schedule'
@@ -442,12 +442,44 @@ jobs:
       - name: Run E2E tests
         run: npm run test:e2e -- --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/3
 
+      # The flow tests save a screenshot of each step they take, under the
+      # browser and the flow; merge-flow-screenshots folds those of every
+      # shard into one artifact. A shard with no flow tests has none.
+      - name: Upload flow screenshots
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flow-screenshots-${{ matrix.browser }}-${{ matrix.shard }}
+          path: test-results/flow-screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report-${{ matrix.browser }}-${{ matrix.shard }}
           path: playwright-report/
+          retention-days: 7
+
+  # One artifact with the screenshots of every flow in both browsers, instead
+  # of one per shard. Each shard's holds <browser>/<flow>/<step>.png, so
+  # together they make one tree. It also runs when a shard failed, to show how
+  # far the others got. The shards' own artifacts stay: "Re-run failed jobs"
+  # only runs the failed shard again, and this merge then needs the others'
+  # too, and replaces the one it made the first time.
+  merge-flow-screenshots:
+    name: Merge flow screenshots
+    needs: test-e2e
+    if: ${{ !cancelled() && github.event_name != 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Merge flow screenshots
+        uses: actions/upload-artifact/merge@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flow-screenshots
+          pattern: flow-screenshots-*
+          overwrite: true
           retention-days: 7
 
   test-backend:
@@ -466,13 +498,13 @@ jobs:
           persist-credentials: false
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           components: llvm-tools-preview
 
       - name: Install cargo-llvm-cov
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-llvm-cov
 
@@ -530,19 +562,18 @@ jobs:
 
       # This checks only public release metadata, never downloads an image.
       # Run after coverage upload so network/rate-limit failures cannot suppress coverage.
-      - name: Check bundled boards against stable HAOS release assets
+      - name: Check bundled boards against the stable full images
         if: runner.os == 'Linux'
         run: cargo test -p hai-core manifest::tests::bundled_boards_have_stable_release_assets -- --ignored --exact
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
 
   # The community translates en.json in Lokalise. Runs on main upload it and
   # hand the build jobs every translation that fits it, so translators only
-  # see reviewed copy and pull request builds are English only. Off until the
-  # LOKALISE_PROJECT_ID variable is set. See docs/spec/ci-cd.md.
+  # see reviewed copy and pull request builds are English only. Fails without
+  # the LOKALISE_PROJECT_ID variable and LOKALISE_TOKEN secret, so a build of
+  # main never ships English only by accident. See docs/spec/ci-cd.md.
   translations:
     name: Sync translations
-    if: vars.LOKALISE_PROJECT_ID && github.ref == 'refs/heads/main' && github.event_name != 'schedule'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -565,6 +596,19 @@ jobs:
     # Only the two Lokalise steps get the token, and they run before npm
     # installs anything, like the Apple credentials in the build job.
     steps:
+      # Only whether the token is set reaches this step, not the token
+      - name: Check the Lokalise configuration
+        env:
+          HAS_TOKEN: ${{ secrets.LOKALISE_TOKEN != '' }}
+        run: |
+          missing=()
+          [[ -n $LOKALISE_PROJECT_ID ]] || missing+=("the LOKALISE_PROJECT_ID repository variable")
+          [[ $HAS_TOKEN == true ]] || missing+=("the LOKALISE_TOKEN secret of the release environment")
+          for what in "${missing[@]}"; do
+            echo "::error::Can't sync translations without $what. See docs/spec/ci-cd.md#translations."
+          done
+          (( ${#missing[@]} == 0 ))
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -580,6 +624,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           LOKALISE_TOKEN: ${{ secrets.LOKALISE_TOKEN }}
+        # Unlike the default shell, fails on a failed CLI ahead of tail
+        shell: bash
         run: |
           docker pull -q "$LOKALISE"
           # Assigned on its own line so a failed lookup fails the step
@@ -593,7 +639,7 @@ jobs:
             file upload --file /catalogs/en.json --lang-iso en \
             --convert-placeholders=false --replace-modified --cleanup-mode \
             --poll --poll-timeout 5m \
-            > "$RUNNER_TEMP/upload.json"
+            | tail -n +2 > "$RUNNER_TEMP/upload.json" # Drops "Uploading …"
           cat "$RUNNER_TEMP/upload.json"
           # The CLI exits 0 when Lokalise rejects the file
           jq -e '.process.status == "finished"' "$RUNNER_TEMP/upload.json" > /dev/null
@@ -692,7 +738,7 @@ jobs:
           cache: ${{ github.event_name != 'workflow_dispatch' && 'npm' || '' }}
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           targets: ${{ matrix.rust-targets }},x86_64-unknown-linux-musl
 
@@ -821,6 +867,11 @@ jobs:
 
       # Only release runs build the updates, as only they have the key to sign
       # them; tauri.conf.json leaves them off for every other build.
+      #
+      # Without a certificate, Tauri leaves the app signed by the linker alone,
+      # as hai_desktop. macOS then applies no local network access given to
+      # Home Assistant Installer to it, and finds no Home Assistant on the
+      # network. Signed ad hoc, the app is io.home-assistant.installer.
       - name: Bundle
         if: env.SIGN_MACOS != 'true'
         shell: bash
@@ -828,6 +879,9 @@ jobs:
           args=(--target "$BUILD_TARGET" --config "$LIVE_USB_CONFIG")
           if [[ "$SIGN_UPDATES" == true ]]; then
             args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+          fi
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            args+=(--config '{"bundle":{"macOS":{"signingIdentity":"-"}}}')
           fi
           npm run tauri bundle -- "${args[@]}"
         env:
@@ -997,7 +1051,10 @@ jobs:
   # see it.
   release:
     name: Release
-    if: github.event_name == 'workflow_dispatch'
+    # Without !cancelled(), a job that failed or was skipped anywhere upstream
+    # would only skip this one. It runs instead, and its first step fails and
+    # names those jobs.
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
     # Two release runs at once would both find no draft and create two.
     concurrency:
       group: release
@@ -1011,7 +1068,9 @@ jobs:
       - lint-backend
       - test-frontend
       - test-e2e
+      - merge-flow-screenshots
       - test-backend
+      - translations
       - build
     runs-on: ubuntu-latest
     permissions:
@@ -1020,6 +1079,15 @@ jobs:
       attestations: write
       artifact-metadata: write
     steps:
+      # Every job above has to have passed. None may be skipped: a release
+      # without translations would be English only.
+      - name: Check every job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | select(.value.result != "success") | "::error::Not releasing: \(.key) \(.value.result)"' <<< "$NEEDS"
+          jq -e 'all(.[]; .result == "success")' <<< "$NEEDS" > /dev/null
+
       # The installers were uploaded unarchived, so each one downloads as the
       # file itself. Each artifact is named after its installer, which starts
       # with the product name; the pattern leaves out anything else in the
@@ -1030,6 +1098,12 @@ jobs:
           path: ${{ runner.temp }}/installers
           pattern: Home Assistant Installer*
           merge-multiple: true
+
+      - name: Download flow screenshots
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: ${{ runner.temp }}/flow-screenshots
+          name: flow-screenshots
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1061,6 +1135,20 @@ jobs:
         with:
           subject-path: ${{ runner.temp }}/installers/*
 
+      # A picture of every step of every flow as released, for reviewing the
+      # release and for documentation. Not an installer, so it is zipped
+      # after the update manifest and the provenance, which cover only those.
+      - name: Zip the flow screenshots
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        working-directory: ${{ runner.temp }}/flow-screenshots
+        run: |
+          if [[ -z "$(find . -name '*.png' -print -quit)" ]]; then
+            echo "::error::The E2E tests saved no flow screenshots"
+            exit 1
+          fi
+          zip -rq "$RUNNER_TEMP/flow-screenshots-$VERSION.zip" .
+
       # The release targets the commit this run built, and GitHub creates the
       # tag on it when someone publishes the draft. The tag rulesets decide
       # who may create which tag, and so who may publish which release. A
@@ -1077,6 +1165,7 @@ jobs:
           PRERELEASE: ${{ needs.version.outputs.prerelease }}
           PREVIOUS: ${{ needs.version.outputs.previous }}
           INSTALLERS: ${{ runner.temp }}/installers
+          SCREENSHOTS: ${{ runner.temp }}/flow-screenshots-${{ needs.version.outputs.version }}.zip
           RELEASE_NOTES: >-
             **Windows:** the installer isn't signed yet, so Microsoft Defender
             SmartScreen may warn about an unknown publisher when you open it.
@@ -1102,4 +1191,4 @@ jobs:
           if [[ -n "$PREVIOUS" ]]; then
             args+=(--notes-start-tag "$PREVIOUS")
           fi
-          gh release create "$VERSION" "${args[@]}" "$INSTALLERS"/*
+          gh release create "$VERSION" "${args[@]}" "$INSTALLERS"/* "$SCREENSHOTS"

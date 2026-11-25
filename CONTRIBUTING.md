@@ -102,12 +102,7 @@ by several screens goes under `common.*`, grouped by where it appears, like
 `common.install.*` for the progress of every flow or `common.vm.*` for UTM and
 Proxmox. Only `backend.*` falls outside both, for the messages the Rust code
 sends. `npm run localization:check` enforces both the namespace and the
-placeholder names.
-
-Translators work in Lokalise. CI uploads `en.json` from `main`, and builds of
-`main` bundle the translations that fit it (see
-[Translations](docs/spec/ci-cd.md#translations)). Pull request and local builds
-only have the catalogs in this folder.
+placeholder names. No keys have been published to a translation service yet.
 
 Startup reads the OS locale through Tauri's locale-only command permission before
 loading component modules. A language tag in `HAI_LANGUAGE` takes its place, so
@@ -142,29 +137,48 @@ own message from the sizes, even over a `message_key`. Never infer a code from
 English error text. Copy added by other branches must be extracted when
 those changes are integrated.
 
+### Live USB Localization
+
+`hai-live`, the installer on the live USB stick's console, has its own
+catalogs in `crates/hai-live/locales/`, which its `build.rs` compiles in. They
+follow the frontend's conventions above, with keys under `live.` and the
+module that names them (`live.ui.*`, `live.drives.*`), so they never collide
+with the frontend's in Lokalise. Messages support `{name}` and ICU plurals.
+Adding a language is adding `<tag>.json` with at least `live.language_name`,
+the language's name in itself, which the stick's language picker lists.
+Keys it leaves out or empty show the English, and so does a message that
+fails to format. The stick starts in the app's language when it was prepared,
+or in English where no catalog matches. The console keeps the US keymap, so
+the stick asks for arrows and Enter only, never typed text.
+
+`cargo test -p hai-live` checks that the code and `en.json` name the same
+keys, that every translation's placeholders match the English, that its
+plurals use only forms its language has, and that every screen fits the
+smallest console, 80x25, in every language. The console font has only 512
+glyphs, so a language works only where that font has every character it
+uses: Latin, Greek and Cyrillic, not CJK or right-to-left scripts. The font
+coverage test in `crates/hai-live/src/console_font.rs` rejects a catalog
+with a character the font lacks.
+
+### Casita
+
+Casita is drawn and animated in code, from `src/casita/`. To see every mood and try the hop and the celebration, run `npm run dev` and open `/dev/casita.html`.
+
 ### Code Style
 
 - **Rust**: Follow `rustfmt` defaults, run `cargo fmt` before committing
 - **TypeScript**: Follow ESLint config, run `npm run lint` before committing
-- **Commits**: Use [Conventional Commits](https://www.conventionalcommits.org/)
+- **Commits**: Say what changes, as described below
 
 ### Commit Message Format
 
-```
-type(scope): description
-
-[optional body]
-
-[optional footer]
-```
-
-Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+Pull requests are squash-merged, so the pull request title becomes the commit on `main`. Write it as a short sentence in the imperative that says what changes, without a type prefix.
 
 Examples:
 
-- `feat(proxmox): add node selection dropdown`
-- `fix(flash): handle USB disconnect during write`
-- `docs: update installation instructions`
+- `Choose every live USB action with the arrow keys and Enter`
+- `Refuse a UTM VM name that is already taken before the download`
+- `Make every button a pill`
 
 ### Branch Naming
 

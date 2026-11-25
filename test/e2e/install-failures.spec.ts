@@ -4,6 +4,8 @@ import {
   approveProxmoxImport,
   test,
   expect,
+  MOCK_DELAY_SCALE,
+  setMockDelayScale,
   skipWifiStep,
 } from "./fixtures.js";
 
@@ -11,9 +13,12 @@ test.use({ platform: "macos" });
 
 const next = (page: Page) =>
   page.locator("wizard-shell .footer-right wa-button");
+const back = (page: Page) =>
+  page.getByRole("button", { name: "Back", exact: true });
 
 // Recovery follows each error's retryability: a retry, picking the drive
-// again, or only cancelling when a retry could repeat a hidden VM creation.
+// or VM name again, or only cancelling when a retry could repeat a hidden VM
+// creation.
 for (const scenario of [
   {
     failure: "flash-write",
@@ -51,12 +56,28 @@ for (const scenario of [
       "The image could not be downloaded. Check your connection and try again.",
     recovery: "retry",
   },
+  // Proxmox gave the VM ID away while the image downloaded: trying again
+  // works once it is free, and Back leads to choosing another one
+  {
+    failure: "proxmox-download-vm-id-taken",
+    flow: "proxmox",
+    message: "VM ID 100 can't be used. Choose a different ID.",
+    recovery: "back",
+  },
   {
     failure: "utm-create",
     flow: "utm",
     message:
       "Home Assistant Installer is not allowed to control UTM. Open System Settings > Privacy & Security > Automation, enable UTM under Home Assistant Installer, then try again.",
     recovery: "retry",
+  },
+  // A VM of that name was made in UTM after the configure step checked it
+  {
+    failure: "utm-create-name-taken",
+    flow: "utm",
+    message:
+      'UTM already has a virtual machine named "Home Assistant". Choose another name, or remove that virtual machine in UTM.',
+    recovery: "choose-name",
   },
 ] as const) {
   test(`${scenario.failure} shows an error and recovers through the real wizard flow`, async ({
@@ -115,6 +136,11 @@ for (const scenario of [
       await expect(next(page)).toHaveText("Try again");
     } else if (scenario.recovery === "choose-drive") {
       await expect(next(page)).toHaveText("Choose another drive");
+    } else if (scenario.recovery === "choose-name") {
+      await expect(next(page)).toHaveText("Choose another name");
+    } else if (scenario.recovery === "back") {
+      await expect(next(page)).toHaveText("Try again");
+      await expect(back(page)).toBeVisible();
     } else {
       await expect(next(page)).not.toBeVisible();
     }
@@ -137,6 +163,12 @@ for (const scenario of [
       await expect(page.locator("path-selection-view")).toBeVisible();
       return;
     }
+    if (scenario.recovery === "back") {
+      await back(page).click();
+      await expect(page.locator("proxmox-confirm-view")).toBeVisible();
+    }
+    // The install that follows is checked while it runs
+    await setMockDelayScale(page, 1);
     await next(page).click();
     if (scenario.recovery === "choose-drive") {
       await page.locator("drive-selection-view drive-card").first().click();
@@ -144,6 +176,17 @@ for (const scenario of [
       await skipWifiStep(page);
       await next(page).click();
       await page.locator('confirm-dialog wa-button[variant="danger"]').click();
+    }
+    if (scenario.recovery === "choose-name") {
+      // Back at the name, to install again under another one
+      const configure = page.locator("utm-configure-view");
+      await expect(configure).toBeVisible();
+      await configure.locator("wa-input input").fill("Home Assistant 2");
+      await next(page).click();
+      await expect(page.locator("utm-confirm-view")).toContainText(
+        "Home Assistant 2"
+      );
+      await next(page).click();
     }
     await expect(progress.locator(".error-message")).toHaveCount(0);
     // A running flash offers Cancel only; the VM installs show no buttons
@@ -161,6 +204,7 @@ for (const scenario of [
       await expect(progress).toBeVisible();
       await expect(page.locator("wizard-shell .footer-left")).toBeVisible();
     }
+    await setMockDelayScale(page, MOCK_DELAY_SCALE);
     await expect(page.locator(`${prefix}success-view`)).toBeVisible({
       timeout: 45000,
     });

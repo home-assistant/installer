@@ -89,6 +89,9 @@ async function mockDesktop(page: Page, failingCommand = "") {
           // macOS lets the installer control UTM
           case "check_utm_automation":
             return;
+          // UTM has no VM by the chosen name
+          case "check_utm_vm_name":
+            return;
           case "download_utm_image":
             return "/tmp/fake-image.qcow2";
           case "discard_utm_image":

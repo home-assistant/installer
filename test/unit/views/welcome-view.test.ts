@@ -1,36 +1,52 @@
 import { expect, fixture, html, oneEvent, waitUntil } from "@open-wc/testing";
-import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
+import type WaRadioGroup from "@home-assistant/webawesome/dist/components/radio-group/radio-group.js";
 import "../../../src/views/welcome-view.js";
 import type { WelcomeView } from "../../../src/views/welcome-view.js";
 import {
   getLanguage,
   setLanguage,
 } from "../../../src/localization/localize.js";
+import { setTheme } from "../../../src/utils/theme.js";
 import {
   installerUpdate,
   RESTART_TIMEOUT_MS,
 } from "../../../src/state/installer-update.js";
+import type { HaAnnouncement } from "../../../src/api/types.js";
+import { SCAN_INTERVAL_MS } from "../../../src/utils/home-assistant-scan.js";
+import { expectReadsLeftToRight } from "../helpers/bidi.js";
 import { mockTauriIpc, restoreTauriIpc } from "../tauri-ipc.js";
 
 describe("welcome-view", () => {
   afterEach(() => {
     setLanguage("en");
     document.documentElement.lang = "";
+    setTheme("system");
+    localStorage.removeItem("hai:theme");
   });
-  it("renders the Home Assistant logo", async () => {
+  it("renders the logos for the theme shown", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
+    const logo = () => el.shadowRoot!.querySelector(".logo")!;
+    const ohfLogo = () => el.shadowRoot!.querySelector(".ohf-logo")!;
 
-    const lightLogo = el.shadowRoot!.querySelector(".logo-light");
-    const darkLogo = el.shadowRoot!.querySelector(".logo-dark");
-
-    expect(lightLogo).to.exist;
-    expect(darkLogo).to.exist;
-    expect(lightLogo!.getAttribute("src")).to.include(
+    expect(logo().getAttribute("src")).to.include(
       "home-assistant-logo-light.svg"
     );
-    expect(darkLogo!.getAttribute("src")).to.include(
+    expect(ohfLogo().getAttribute("src")).to.include("ohf-logo-light.svg");
+
+    setTheme("dark");
+    await el.updateComplete;
+    expect(logo().getAttribute("src")).to.include(
       "home-assistant-logo-dark.svg"
     );
+    expect(ohfLogo().getAttribute("src")).to.include("ohf-logo-dark.svg");
+  });
+
+  it("offers Accessibility at the end of the header", async () => {
+    const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
+
+    expect(
+      el.shadowRoot!.querySelector("header > :last-child")!.localName
+    ).to.equal("accessibility-menu");
   });
 
   it("says what the installer does in one line", async () => {
@@ -82,17 +98,11 @@ describe("welcome-view", () => {
     expect(event.defaultPrevented).to.be.true;
   });
 
-  it("renders the OHF logo with light and dark variants", async () => {
+  it("links the OHF logo to the foundation", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
     const ohfLink = el.shadowRoot!.querySelector(".ohf-link");
-    const lightLogo = el.shadowRoot!.querySelector(".ohf-logo-light");
-    const darkLogo = el.shadowRoot!.querySelector(".ohf-logo-dark");
-
-    expect(ohfLink).to.exist;
     expect(ohfLink!.getAttribute("href")).to.include("openhomefoundation.org");
-    expect(lightLogo).to.exist;
-    expect(darkLogo).to.exist;
   });
 
   it("puts Report a problem and Learn more in the footer", async () => {
@@ -105,35 +115,40 @@ describe("welcome-view", () => {
     );
   });
 
-  it("offers each shipped language by its own name", async () => {
+  // The language menu, whose own tests cover a long list
+  async function languages(el: WelcomeView) {
+    const menu = el.shadowRoot!.querySelector("language-menu")!;
+    await menu.updateComplete;
+    return menu.shadowRoot!.querySelector<WaRadioGroup>("wa-radio-group")!;
+  }
+
+  it("offers each shipped language by its own name, without a search for two", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
-    const select = el.shadowRoot!.querySelector<WaSelect>("wa-select")!;
-    expect(select.label).to.equal("Language");
-    expect(select.value).to.equal("en");
-    const options = Array.from(select.querySelectorAll("wa-option"));
-    expect(options.map((option) => option.textContent)).to.deep.equal([
+    const group = await languages(el);
+    expect(group.value).to.equal("en");
+    const radios = Array.from(group.querySelectorAll("wa-radio"));
+    expect(radios.map((radio) => radio.textContent)).to.deep.equal([
       "Deutsch",
       "English",
     ]);
-    expect(options.map((option) => option.lang)).to.deep.equal(["de", "en"]);
+    expect(radios.map((radio) => radio.lang)).to.deep.equal(["de", "en"]);
+    expect(group.parentElement!.querySelector("wa-input")).to.be.null;
   });
 
   it("selects the shipped language a regional one uses", async () => {
     setLanguage("de-AT");
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
 
-    expect(el.shadowRoot!.querySelector<WaSelect>("wa-select")!.value).to.equal(
-      "de"
-    );
+    expect((await languages(el)).value).to.equal("de");
   });
 
   it("shows the page in the chosen language", async () => {
     const el = await fixture<WelcomeView>(html`<welcome-view></welcome-view>`);
-    const select = el.shadowRoot!.querySelector<WaSelect>("wa-select")!;
+    const group = await languages(el);
 
-    select.value = "de";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    group.value = "de";
+    group.dispatchEvent(new Event("change", { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve));
     await el.updateComplete;
 
@@ -147,6 +162,228 @@ describe("welcome-view", () => {
     expect(el.shadowRoot!.querySelector(".learn-more")!.textContent).to.include(
       "Learn more"
     );
+  });
+
+  describe("Home Assistant on the network", () => {
+    afterEach(() => restoreTauriIpc());
+
+    /** The welcome screen, on a network where `found` answers */
+    async function welcome(
+      found: HaAnnouncement[],
+      onboarded: Record<string, boolean | null> = {}
+    ) {
+      const opened: string[] = [];
+      mockTauriIpc((cmd, args) => {
+        switch (cmd) {
+          case "find_home_assistants":
+            return found;
+          case "check_ha_onboarded":
+            return onboarded[(args as { ipAddress: string }).ipAddress] ?? null;
+          case "plugin:opener|open_url":
+            opened.push((args as { url: string }).url);
+            return undefined;
+          default:
+            throw new Error(`Unexpected IPC command: ${cmd}`);
+        }
+      });
+      const el = await fixture<WelcomeView>(
+        html`<welcome-view></welcome-view>`
+      );
+      return { el, opened };
+    }
+
+    const instances = (el: WelcomeView) =>
+      Array.from(
+        el.shadowRoot!.querySelectorAll<HTMLAnchorElement>(".found a")
+      );
+
+    it("offers each one to open in the browser, saying which aren't set up yet", async () => {
+      const { el, opened } = await welcome(
+        [
+          {
+            id: "home",
+            name: "Home",
+            address: "192.0.2.20:8123",
+            url: "http://192.0.2.20:8123/",
+            landing_page: false,
+            needs_onboarding: false,
+          },
+          {
+            id: "cabin",
+            name: "Cabin",
+            address: "192.0.2.30:8123",
+            // Its internal_url, by name and over HTTPS
+            url: "https://cabin.example:8123/",
+            landing_page: false,
+            needs_onboarding: false,
+          },
+          {
+            id: "new",
+            name: null,
+            address: "192.0.2.50",
+            url: "http://192.0.2.50/",
+            landing_page: true,
+            needs_onboarding: false,
+          },
+        ],
+        { "192.0.2.20:8123": true, "192.0.2.30:8123": false }
+      );
+      await waitUntil(() => instances(el).length === 3);
+
+      const section = el.shadowRoot!.querySelector("main .found")!;
+      expect(section.querySelector("h2")!.textContent!.trim()).to.equal(
+        "Home Assistant on your network"
+      );
+      expect(section.getAttribute("aria-labelledby")).to.equal(
+        section.querySelector("h2")!.id
+      );
+      const links = instances(el);
+      expect(links.map((link) => link.getAttribute("href"))).to.deep.equal([
+        "https://cabin.example:8123/",
+        "http://192.0.2.20:8123/",
+        "http://192.0.2.50/",
+      ]);
+      // Each says where it opens, what it is ready for, and that it leaves
+      // the installer
+      expect(
+        links.map((link) => link.textContent!.replace(/\s+/g, " ").trim())
+      ).to.deep.equal([
+        "Cabin cabin.example:8123 Not set up yet Opens in your browser.",
+        "Home 192.0.2.20:8123 Opens in your browser.",
+        "Home Assistant 192.0.2.50 Installing Opens in your browser.",
+      ]);
+      for (const link of links) {
+        expect(link.target).to.equal("_blank");
+        expect(link.rel).to.equal("noopener noreferrer");
+      }
+
+      links[0].click();
+      await waitUntil(() => opened.length === 1);
+      expect(opened).to.deep.equal(["https://cabin.example:8123/"]);
+    });
+
+    it("lays them out in one row that scrolls", async () => {
+      const { el } = await welcome(
+        ["A", "B", "C", "D", "E", "F", "G"].map((name, index) => ({
+          id: name,
+          name,
+          address: `192.0.2.${index + 1}:8123`,
+          url: `http://192.0.2.${index + 1}:8123/`,
+          landing_page: false,
+          needs_onboarding: false,
+        })),
+        {}
+      );
+      await waitUntil(() => instances(el).length === 7);
+
+      const tops = instances(el).map(
+        (link) => link.getBoundingClientRect().top
+      );
+      expect(new Set(tops).size).to.equal(1);
+      expect(el.shadowRoot!.querySelector(".found scroll-row ul")).to.exist;
+    });
+
+    it("keeps the card that has the focus as another comes before it", async () => {
+      const setTimeout = window.setTimeout;
+      // The wait before the next lookup, which the test ends
+      let lookAgain: (() => void) | undefined;
+      window.setTimeout = ((
+        handler: () => void,
+        timeout?: number,
+        ...args: unknown[]
+      ) => {
+        if (timeout !== SCAN_INTERVAL_MS)
+          return setTimeout(handler, timeout, ...args);
+        lookAgain = handler;
+        return 0;
+      }) as typeof window.setTimeout;
+      const homeAssistant = (name: string, address: string) => ({
+        id: name,
+        name,
+        address,
+        url: `http://${address}/`,
+        landing_page: false,
+        needs_onboarding: false,
+      });
+      try {
+        const found = [homeAssistant("Home", "192.0.2.20:8123")];
+        const { el } = await welcome(found);
+        await waitUntil(() => instances(el).length === 1 && lookAgain);
+        const home = instances(el)[0];
+        home.focus();
+
+        // The next lookup finds one that goes before it
+        found.push(homeAssistant("Cabin", "192.0.2.30:8123"));
+        lookAgain!();
+        await waitUntil(() => instances(el).length === 2);
+
+        expect(instances(el)[1]).to.equal(home);
+        expect(el.shadowRoot!.activeElement).to.equal(home);
+        expect(home.getAttribute("href")).to.equal("http://192.0.2.20:8123/");
+      } finally {
+        window.setTimeout = setTimeout;
+      }
+    });
+
+    it("keeps a long name it is opened at within its card", async () => {
+      const { el } = await welcome([
+        {
+          id: "long",
+          name: "Home",
+          address: "192.0.2.20:8123",
+          url: "https://homeassistantwithalonghostname.example:8123/",
+          landing_page: false,
+          needs_onboarding: false,
+        },
+      ]);
+      await waitUntil(() => instances(el).length === 1);
+
+      const card = instances(el)[0];
+      const address = card
+        .querySelector(".instance-address")!
+        .getBoundingClientRect();
+      // Clear of the icon that says it opens in the browser
+      expect(address.right).to.be.at.most(
+        card.querySelector(".instance-open")!.getBoundingClientRect().left
+      );
+      expect(card.scrollWidth).to.equal(card.clientWidth);
+    });
+
+    it("keeps each name its own direction, and each address left to right", async () => {
+      document.documentElement.dir = "rtl";
+      try {
+        const { el } = await welcome([
+          {
+            id: "home",
+            name: "Home",
+            address: "192.0.2.20:8123",
+            url: "http://192.0.2.20:8123/",
+            landing_page: false,
+            needs_onboarding: false,
+          },
+        ]);
+        await waitUntil(() => instances(el).length === 1);
+
+        expect(
+          el
+            .shadowRoot!.querySelector(".instance-name bdi")!
+            .hasAttribute("dir")
+        ).to.be.false;
+        expectReadsLeftToRight(
+          el.shadowRoot!.querySelector(".instance-address")!
+        );
+      } finally {
+        document.documentElement.dir = "";
+      }
+    });
+
+    it("shows nothing while no Home Assistant answers", async () => {
+      const { el } = await welcome([]);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await el.updateComplete;
+
+      expect(el.shadowRoot!.querySelector(".found")).to.be.null;
+    });
   });
 
   describe("while the installer updates itself", () => {
@@ -222,6 +459,34 @@ describe("welcome-view", () => {
       expect(installerUpdate.state.status).to.equal("ready");
       await el.updateComplete;
       expect(letsGo().disabled).to.be.true;
+    });
+
+    it("continues from the heading once Not now took the focus away", async () => {
+      mockTauriIpc((cmd) => {
+        if (cmd === "check_for_update")
+          return {
+            version: "2026.12.0",
+            release_url:
+              "https://github.com/home-assistant/installer/releases/tag/2026.12.0",
+            installable: true,
+          };
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+      const el = await fixture<WelcomeView>(
+        html`<welcome-view></welcome-view>`
+      );
+      await installerUpdate.check();
+      const banner = el.shadowRoot!.querySelector("update-banner")!;
+      await banner.updateComplete;
+      const notNow =
+        banner.shadowRoot!.querySelector<HTMLElement>("wa-button.dismiss")!;
+
+      notNow.focus();
+      notNow.click();
+      await banner.updateComplete;
+      expect(el.shadowRoot!.activeElement).to.equal(
+        el.shadowRoot!.querySelector("h1")
+      );
     });
 
     it("still starts a flow while the update downloads", async () => {

@@ -1,4 +1,6 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { shownLanguage } from "../localization/initialize.js";
+import { mockDelay } from "./mock-delay.js";
 import { failMockOperation } from "./mock-failures.js";
 import type { ExpectedDevice, FlashProgress } from "./types.js";
 
@@ -26,8 +28,9 @@ export async function getLiveUsbStatus(): Promise<LiveUsbStatus> {
 
 /**
  * Build the bootable stick and write it to `deviceId`, with verification.
- * Resolves to whether the stick was ejected. `attempt` names this run, so
- * `cancelLiveUsb` can never stop another.
+ * The stick starts in the app's language. Resolves to whether the stick was
+ * ejected. `attempt` names this run, so `cancelLiveUsb` can never stop
+ * another.
  */
 export async function createLiveUsb(
   deviceId: string,
@@ -48,12 +51,16 @@ export async function createLiveUsb(
   return invoke<boolean>("create_live_usb", {
     deviceId,
     expectedDevice,
+    language: shownLanguage(),
     attempt,
     progressChannel: channel,
   });
 }
 
-/** Build the ISO and save it as `folder/fileName`. Resolves to the saved path. */
+/**
+ * Build the ISO and save it as `folder/fileName`. It starts in the app's
+ * language. Resolves to the saved path.
+ */
 export async function saveLiveIso(
   folder: string,
   fileName: string,
@@ -71,6 +78,7 @@ export async function saveLiveIso(
     folder,
     fileName,
     overwrite,
+    language: shownLanguage(),
     attempt,
     progressChannel: channel,
   });
@@ -167,8 +175,8 @@ async function simulate(
         message: "",
       });
       if (stage === "writing" && percent === 0) failMockOperation("flash");
-      // Slow enough that browser tests can stop it halfway
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      // Slow enough at full length that browser tests can stop it halfway
+      await mockDelay(250);
     }
   }
   onProgress({

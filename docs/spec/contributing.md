@@ -394,7 +394,6 @@ contact_links:
 - [ ] I have added tests for my changes
 - [ ] All new and existing tests pass
 - [ ] I have updated documentation if needed
-- [ ] My commits follow conventional commit format
 ```
 
 ---
@@ -612,24 +611,16 @@ cd src-tauri && cargo test
 
 - **Rust**: Follow \`rustfmt\` defaults, run \`cargo fmt\` before committing
 - **TypeScript**: Follow ESLint config, run \`npm run lint\` before committing
-- **Commits**: Use [Conventional Commits](https://www.conventionalcommits.org/)
+- **Commits**: Say what changes, as described below
 
 ### Commit Message Format
 
-\`\`\`
-type(scope): description
-
-[optional body]
-
-[optional footer]
-\`\`\`
-
-Types: \`feat\`, \`fix\`, \`docs\`, \`style\`, \`refactor\`, \`test\`, \`chore\`
+Pull requests are squash-merged, so the pull request title becomes the commit on \`main\`. Write it as a short sentence in the imperative that says what changes, without a type prefix.
 
 Examples:
-- \`feat(proxmox): add node selection dropdown\`
-- \`fix(flash): handle USB disconnect during write\`
-- \`docs: update installation instructions\`
+- \`Choose every live USB action with the arrow keys and Enter\`
+- \`Refuse a UTM VM name that is already taken before the download\`
+- \`Make every button a pill\`
 
 ### Branch Naming
 

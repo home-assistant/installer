@@ -79,6 +79,7 @@ export function renderRetryButton(
 ) {
   return html`
     <wa-button
+      pill
       class=${className}
       variant="brand"
       appearance="outlined"
@@ -116,7 +117,7 @@ export function renderLoadError(
       </p>
       ${renderErrorHelp()}
       ${action
-        ? html`<wa-button variant="brand" @click=${action.onAction}
+        ? html`<wa-button pill variant="brand" @click=${action.onAction}
             >${action.label}</wa-button
           >`
         : error.retryable

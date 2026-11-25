@@ -71,6 +71,7 @@ impl CommandError {
                 | "invalid_config"
                 | "release_unavailable"
                 | "utm_operation_uncertain"
+                | "utm_vm_name_taken"
                 | "proxmox_session_expired"
                 | "proxmox_certificate_changed"
         );
@@ -131,6 +132,8 @@ impl CommandError {
             Error::Utm(message) => return Self::with_message("utm", message, true),
             Error::UtmOperationUncertain(message) => return Self::with_message("utm_operation_uncertain", message, false),
             Error::UtmVmCreated(message) => return Self::with_message("utm_vm_created", message, false),
+            // Choosing another name is the fix, not asking UTM again
+            Error::UtmVmNameTaken(message) => return Self::with_message("utm_vm_name_taken", message, false),
             Error::DriveDisconnected => ("drive_disconnected", "The drive was disconnected. Reconnect it and select it again.", false),
             Error::DriveIo(_) => return Self::with_message("drive_io", &hai_core::message!("backend.disk.drive_io"), true),
             Error::DriveVerificationFailed => return Self::with_message("drive_verification_failed", &hai_core::message!("backend.disk.drive_verification_failed"), false),
@@ -374,6 +377,26 @@ mod tests {
             )))
             .retryable
         );
+    }
+
+    #[test]
+    fn a_taken_utm_name_asks_for_another_without_retry() {
+        for error in [
+            CommandError::from(Error::UtmVmNameTaken(hai_core::message!(
+                "backend.utm.vm_name_taken",
+                name = "Home Assistant",
+            ))),
+            CommandError::from_query(Error::UtmVmNameTaken(hai_core::message!(
+                "backend.utm.vm_name_taken",
+                name = "Home Assistant",
+            ))),
+        ] {
+            assert_eq!(error.code, "utm_vm_name_taken");
+            assert!(!error.retryable);
+            assert_eq!(error.details["message_key"], "backend.utm.vm_name_taken");
+            assert_eq!(error.details["message_params"]["name"], "Home Assistant");
+            assert!(error.message.contains("Choose another name"));
+        }
     }
 
     #[test]

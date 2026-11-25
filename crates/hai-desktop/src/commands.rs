@@ -137,10 +137,14 @@ async fn list_drives(backend: &impl DeviceBackend) -> Result<Vec<BlockDevice>, C
 }
 
 /// Restarts the app as administrator, which the drive step offers when
-/// listing refused. The flow starts again in the new window.
+/// listing refused. The flow opens again at `resume`, as the frontend
+/// encoded it, or on the welcome screen without it.
 #[tauri::command]
-pub fn relaunch_as_admin(app: tauri::AppHandle) -> Result<(), CommandError> {
-    crate::elevation::relaunch_as_admin()?;
+pub fn relaunch_as_admin(
+    app: tauri::AppHandle,
+    resume: Option<String>,
+) -> Result<(), CommandError> {
+    crate::elevation::relaunch_as_admin(resume.as_deref())?;
     app.exit(0);
     Ok(())
 }
@@ -310,9 +314,14 @@ where
     if let Some(wifi) = request.wifi.clone() {
         image = tokio::task::spawn_blocking(move || hai_core::haos_config::with_wifi(image, &wifi))
             .await
-            // A panic's message may hold the Wi-Fi password, and the log keeps causes
+            // A crash, not a storage problem the Io error would send the user looking for.
+            // Its panic message may hold the Wi-Fi password, so it isn't passed on.
             .map_err(|_| {
-                hai_core::Error::Io(std::io::Error::other("Wi-Fi setup stopped unexpectedly"))
+                CommandError::new(
+                    "internal",
+                    "Adding the Wi-Fi settings stopped unexpectedly.",
+                    false,
+                )
             })??;
     }
 
@@ -368,27 +377,20 @@ where
 // Release/Manifest Commands
 // =============================================================================
 
-/// Get the latest HAOS release information
+/// The release stable.json lists for `board`, as its full images
 #[tauri::command]
-pub async fn get_haos_release(
-    version: Option<String>,
-    board: Option<String>,
-) -> Result<HaosRelease, CommandError> {
-    release_for_selection(&Backend, version.as_deref(), board.as_deref()).await
+pub async fn get_haos_release(board: String) -> Result<HaosRelease, CommandError> {
+    release_for_selection(&Backend, &board).await
 }
 
 async fn release_for_selection<B: ReleaseSource>(
     backend: &B,
-    version: Option<&str>,
-    board: Option<&str>,
+    board: &str,
 ) -> Result<HaosRelease, CommandError> {
-    let release = match (version, board) {
-        (None | Some("latest"), Some(board)) => {
-            backend.get_latest_haos_release_for_board(board).await
-        }
-        (version, _) => backend.get_haos_release(version.unwrap_or("latest")).await,
-    };
-    release.map_err(CommandError::from_query)
+    backend
+        .get_latest_haos_release_for_board(board)
+        .await
+        .map_err(CommandError::from_query)
 }
 
 /// Get the device manifest
@@ -404,8 +406,9 @@ pub async fn get_manifest() -> Result<DeviceManifest, CommandError> {
 // System Info Commands
 // =============================================================================
 
-/// Get system information (CPU cores and memory) for VM configuration limits
-#[tauri::command]
+/// Get system information (CPU cores and memory) for VM configuration limits.
+/// Off the main thread: on macOS it runs `sysctl`, which would freeze the window.
+#[tauri::command(async)]
 pub fn get_system_info() -> Result<SystemInfo, CommandError> {
     Backend.system_info().map_err(CommandError::from)
 }
@@ -448,7 +451,7 @@ fn supports_utm(apple_silicon: hai_core::Result<()>) -> bool {
 /// Get the release for the same board used by UTM downloads.
 #[tauri::command]
 pub async fn get_utm_haos_release() -> Result<HaosRelease, CommandError> {
-    release_for_selection(&Backend, None, Some(utm_board()?)).await
+    release_for_selection(&Backend, utm_board()?).await
 }
 
 /// Download the HAOS qcow2 image for UTM
@@ -547,6 +550,13 @@ pub fn check_utm_automation() -> Result<(), CommandError> {
     UtmBackend::check_automation(&Backend).map_err(CommandError::from_query)
 }
 
+/// Refuse a VM name UTM already has, while another can still be chosen.
+/// Async, so waiting for UTM to answer never holds up the window.
+#[tauri::command(async)]
+pub fn check_utm_vm_name(name: String) -> Result<(), CommandError> {
+    UtmBackend::check_vm_name(&Backend, &name).map_err(CommandError::from_query)
+}
+
 /// Create a Home Assistant VM in UTM
 #[tauri::command]
 pub async fn create_utm_vm(
@@ -618,6 +628,12 @@ pub async fn get_ha_setup_status(ip_address: String) -> Option<HaSetupStatus> {
         crate::diagnostics::setup_status(status);
     }
     status
+}
+
+/// Whether Home Assistant is onboarded, or `None` without an answer that tells
+#[tauri::command]
+pub async fn check_ha_onboarded(ip_address: String) -> Option<bool> {
+    Backend.ha_onboarded(&ip_address).await
 }
 
 /// The Home Assistants that announce themselves on the local network
@@ -985,6 +1001,7 @@ mod tests {
 
     #[cfg(all(not(feature = "mock"), not(target_os = "macos")))]
     #[tokio::test]
+    #[serial_test::serial]
     async fn utm_download_logs_failed_precheck_without_success() {
         use tauri::Manager;
 
@@ -1208,13 +1225,6 @@ mod tests {
             unreachable!()
         }
 
-        async fn get_haos_release(&self, version: &str) -> hai_core::Result<HaosRelease> {
-            Ok(HaosRelease {
-                version: format!("explicit:{version}"),
-                images: vec![],
-            })
-        }
-
         async fn get_latest_haos_release_for_board(
             &self,
             board: &str,
@@ -1263,35 +1273,17 @@ mod tests {
             ("ova", "18.1"),
             ("generic-aarch64", "18.0"),
         ] {
-            for version in [None, Some("latest")] {
-                let release = release_for_selection(&SelectionReleaseBackend, version, Some(board))
-                    .await
-                    .unwrap();
-                assert_eq!(release.version, expected);
-            }
+            let release = release_for_selection(&SelectionReleaseBackend, board)
+                .await
+                .unwrap();
+            assert_eq!(release.version, expected);
         }
-        let error = release_for_selection(&SelectionReleaseBackend, None, Some("retired-board"))
+        let error = release_for_selection(&SelectionReleaseBackend, "retired-board")
             .await
             .unwrap_err();
         // Remote details stay out of the error; the code says what happened
         assert_eq!(error.code, "release_unavailable");
         assert!(!error.retryable);
-    }
-
-    #[tokio::test]
-    async fn confirmation_release_preserves_explicit_versions_and_boardless_calls() {
-        for (version, board, expected) in [
-            (Some("17.0"), Some("rpi5-64"), "explicit:17.0"),
-            (None, None, "explicit:latest"),
-        ] {
-            assert_eq!(
-                release_for_selection(&SelectionReleaseBackend, version, board)
-                    .await
-                    .unwrap()
-                    .version,
-                expected
-            );
-        }
     }
 
     #[tokio::test]
@@ -1369,6 +1361,69 @@ mod tests {
     #[cfg(feature = "mock")]
     fn test_check_utm_automation_mock_returns_ok() {
         assert!(check_utm_automation().is_ok());
+    }
+
+    #[test]
+    #[cfg(feature = "mock")]
+    fn test_check_utm_vm_name_mock_returns_ok() {
+        assert!(check_utm_vm_name("Home Assistant".to_string()).is_ok());
+    }
+
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn test_check_utm_vm_name_unsupported_off_macos() {
+        let err = check_utm_vm_name("Home Assistant".to_string()).unwrap_err();
+        assert_eq!(err.code, "unsupported_platform");
+        assert!(!err.retryable);
+    }
+
+    /// Calls `check_utm_vm_name` the way `checkUtmVmName` does, through
+    /// Tauri's IPC, so the argument it sends is the one the command takes.
+    // On a Mac without the mock, this would ask the UTM installed there
+    #[cfg(any(feature = "mock", not(target_os = "macos")))]
+    #[test]
+    fn check_utm_vm_name_takes_the_name_the_frontend_sends() {
+        let app = tauri::test::mock_builder()
+            .invoke_handler(tauri::generate_handler![check_utm_vm_name])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let invoke = |body: serde_json::Value| {
+            tauri::test::get_ipc_response(
+                &webview,
+                tauri::webview::InvokeRequest {
+                    cmd: "check_utm_vm_name".into(),
+                    callback: tauri::ipc::CallbackFn(0),
+                    error: tauri::ipc::CallbackFn(1),
+                    url: if cfg!(windows) {
+                        "http://tauri.localhost"
+                    } else {
+                        "tauri://localhost"
+                    }
+                    .parse()
+                    .unwrap(),
+                    body: tauri::ipc::InvokeBody::Json(body),
+                    headers: Default::default(),
+                    invoke_key: tauri::test::INVOKE_KEY.to_string(),
+                },
+            )
+            .map(|answer| answer.deserialize::<serde_json::Value>().unwrap())
+        };
+
+        let answer = invoke(serde_json::json!({ "name": "Home Assistant" }));
+        if cfg!(feature = "mock") {
+            assert_eq!(answer, Ok(serde_json::Value::Null));
+        } else {
+            // It reached the backend, which has no UTM off macOS
+            assert_eq!(answer.unwrap_err()["code"], "unsupported_platform");
+        }
+
+        // Any other argument is refused before it reaches the backend
+        let refused = invoke(serde_json::json!({ "vmName": "Home Assistant" })).unwrap_err();
+        assert!(refused.to_string().contains("key name"), "{refused}");
     }
 
     // Asking again can't change the platform, so the check offers no retry.
@@ -1510,6 +1565,51 @@ mod tests {
     async fn ha_setup_status_mock_has_no_landing_page() {
         // The mock's Home Assistant is ready at once, so its landing page is gone
         assert_eq!(get_ha_setup_status("192.168.1.100".into()).await, None);
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn ha_onboarded_mock_leaves_only_the_new_device_to_onboard() {
+        // The device the mock installs Home Assistant on, as the lookup finds it
+        assert_eq!(
+            check_ha_onboarded("192.168.1.101".into()).await,
+            Some(false)
+        );
+        assert_eq!(
+            check_ha_onboarded("192.168.1.20:8123".into()).await,
+            Some(true)
+        );
+    }
+
+    #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
+    #[tokio::test]
+    async fn check_ha_onboarded_asks_the_address_it_is_given() {
+        let mut server = mockito::Server::new_async().await;
+        let onboarding = server
+            .mock("GET", "/api/onboarding")
+            .with_body(r#"[{"step":"user","done":false}]"#)
+            .create_async()
+            .await;
+        assert_eq!(
+            check_ha_onboarded(server.host_with_port()).await,
+            Some(false)
+        );
+        onboarding.assert_async().await;
+
+        // No longer served once onboarded
+        onboarding.remove_async().await;
+        let _onboarded = server
+            .mock("GET", "/api/onboarding")
+            .with_status(404)
+            .create_async()
+            .await;
+        assert_eq!(
+            check_ha_onboarded(server.host_with_port()).await,
+            Some(true)
+        );
+
+        // Nowhere to ask
+        assert_eq!(check_ha_onboarded(String::new()).await, None);
     }
 
     #[cfg(not(feature = "mock"))] // asserts on the real backend's answers
@@ -1723,10 +1823,6 @@ mod tests {
             panic!("must not fetch a manifest");
         }
 
-        async fn get_haos_release(&self, _: &str) -> hai_core::Result<HaosRelease> {
-            panic!("must not fetch a release by version");
-        }
-
         async fn get_latest_haos_release_for_board(
             &self,
             _: &str,
@@ -1857,9 +1953,6 @@ mod mock_tests {
 
         async fn get_device_manifest(&self) -> hai_core::Result<DeviceManifest> {
             BackendMock.get_device_manifest().await
-        }
-        async fn get_haos_release(&self, version: &str) -> hai_core::Result<HaosRelease> {
-            BackendMock.get_haos_release(version).await
         }
         async fn get_latest_haos_release_for_board(
             &self,
@@ -2064,6 +2157,10 @@ mod mock_tests {
         }
 
         fn check_automation(&self) -> hai_core::Result<()> {
+            unreachable!()
+        }
+
+        fn check_vm_name(&self, _: &str) -> hai_core::Result<()> {
             unreachable!()
         }
 
@@ -2375,10 +2472,6 @@ mod mock_tests {
             unreachable!()
         }
 
-        async fn get_haos_release(&self, _: &str) -> hai_core::Result<HaosRelease> {
-            unreachable!("must use the selected board's release")
-        }
-
         async fn get_latest_haos_release_for_board(
             &self,
             board: &str,
@@ -2533,9 +2626,6 @@ mod mock_tests {
         }
         async fn get_device_manifest(&self) -> hai_core::Result<DeviceManifest> {
             panic!("must not fetch a manifest");
-        }
-        async fn get_haos_release(&self, _: &str) -> hai_core::Result<HaosRelease> {
-            panic!("an installer must not look up a release");
         }
         async fn get_latest_haos_release_for_board(
             &self,
@@ -2745,7 +2835,10 @@ mod mock_tests {
 
     #[tokio::test]
     async fn mock_release_preserves_raw_intel_image_without_inventing_qcow2() {
-        let release = BackendMock.get_haos_release("latest").await.unwrap();
+        let release = BackendMock
+            .get_latest_haos_release_for_board("generic-x86-64")
+            .await
+            .unwrap();
         assert!(release
             .require_image("generic-x86-64", ImageFormat::Raw)
             .is_ok());

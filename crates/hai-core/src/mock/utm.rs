@@ -21,6 +21,10 @@ impl UtmBackend for BackendMock {
         Ok(())
     }
 
+    fn check_vm_name(&self, _name: &str) -> Result<()> {
+        Ok(())
+    }
+
     async fn create_vm<P: ProgressCallback>(
         &self,
         config: &UtmVmConfig,

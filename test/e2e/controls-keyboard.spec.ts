@@ -32,19 +32,17 @@ test("Mini PC choices work with Tab, Space, and arrow keys", async ({
   await start(page, "Mini PC or other computer");
   await activate(
     page,
-    page.getByRole("button", { name: "I need to boot from USB" }),
+    page.getByRole("button", { name: "Save an ISO file" }),
     "Space"
   );
-  await expect(
-    page.getByRole("button", { name: "Write to a USB stick", exact: false })
-  ).toBeVisible();
+  await expect(page.locator("live-iso-location-view")).toBeVisible();
   await activate(
     page,
     page.getByRole("button", { name: "Back", exact: false })
   );
   await activate(
     page,
-    page.getByRole("button", { name: "I can connect the drive" })
+    page.getByRole("button", { name: "Write the mini PC's drive here" })
   );
   await expect(page.getByRole("group", { name: "Processor" })).toBeVisible();
   await activate(
