@@ -19,7 +19,7 @@ separate release workflow. It runs on every pull request, on every push to
 `main`, daily on `main` for the audits alone, and by hand to make a release. The workflow file is the reference for
 the jobs and their steps; in short:
 
-- **Audit** jobs check `package-lock.json` (`npm audit`) and `Cargo.lock`
+- **Audit** jobs check `pnpm-lock.yaml` (`pnpm audit`) and `Cargo.lock`
   (`cargo audit`) for known vulnerabilities. On a pull request, `cargo audit`
   only runs when the pull request changes `Cargo.lock`.
 - **zizmor** lints the workflow itself.
@@ -59,7 +59,7 @@ runs, the `translations` job:
    Lokalise isn't this commit's (once `main` has changed it, as for a re-run
    of an older run), and names each catalog after its language tag, with
    `zh-Hans` and `zh-Hant` for Lokalise's `zh_CN` and `zh_TW`;
-3. runs `npm run localization:check` on them, which drops each message whose
+3. runs `pnpm run localization:check` on them, which drops each message whose
    key `en.json` doesn't have, whose placeholders don't match the English, or
    that isn't valid ICU, with a warning on the run, so it shows the English
    until it's fixed in Lokalise, and removes languages with nothing
@@ -140,7 +140,7 @@ A release run differs from a push to `main` in these ways:
   alpha. The build and release jobs wait for the `version` job, so nothing is
   built if a check fails. Who may publish is limited separately, by the tag
   rulesets (see [Immutable Release Protections](#immutable-release-protections)).
-- **No caches:** no job restores the npm, cargo, apt or Playwright cache, so
+- **No caches:** no job restores the pnpm, cargo, apt or Playwright cache, so
   the installers and the tests that gate them never depend on what another
   run wrote.
 - **Version:** the `version` job picks the version once, and each build job
@@ -335,7 +335,7 @@ a key that doesn't match the public key.
 
 The App Store Connect API key only needs the Developer role; it is used for
 notarization alone. The job compiles with `tauri build --no-bundle` and only
-then runs `tauri bundle` with the `APPLE_*` variables, so no npm or cargo build
+then runs `tauri bundle` with the `APPLE_*` variables, so no pnpm or cargo build
 script ever has the credentials in its environment. Tauri reads the variables
 itself: it imports the certificate into a temporary keychain, signs the app
 with the hardened runtime, notarizes and staples it, and signs the DMG. The

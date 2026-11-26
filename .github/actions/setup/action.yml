@@ -1,0 +1,29 @@
+name: Setup Node and install
+description: Set up pnpm and Node from the repository, and install the locked dependencies
+
+inputs:
+  cache:
+    description: Cache the pnpm store. Release builds install without one.
+    default: "true"
+  install:
+    description: Install the dependencies, which only reading the lockfile doesn't need
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    # Before Node, so setup-node finds pnpm for its cache. The version is the
+    # packageManager in package.json. Node 25 and later ship without Corepack.
+    - name: Setup pnpm
+      uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+    - name: Setup Node.js
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .nvmrc
+        cache: ${{ inputs.cache == 'true' && 'pnpm' || '' }}
+
+    - name: Install dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile

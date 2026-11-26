@@ -3,7 +3,7 @@
   "extends": [
     "config:recommended",
     ":semanticCommits",
-    ":preserveSemverRanges",
+    ":pinVersions",
     "group:allNonMajor",
     "helpers:pinGitHubActionDigests"
   ],
@@ -12,10 +12,17 @@
   "timezone": "UTC",
   "prHourlyLimit": 2,
   "prConcurrentLimit": 5,
+  "minimumReleaseAge": "3 days",
+  "postUpdateOptions": ["pnpmDedupe"],
   "packageRules": [
     {
       "matchCategories": ["rust"],
       "enabled": true
+    },
+    {
+      "description": "First-party packages are reviewed and published by us, so skip the release delay. Keep in sync with minimumReleaseAgeExclude in pnpm-workspace.yaml",
+      "matchPackageNames": ["@home-assistant/**"],
+      "minimumReleaseAge": null
     },
     {
       "description": "Group Lit packages",

@@ -5,8 +5,8 @@
       "type": "node",
       "request": "launch",
       "name": "Tauri App",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "tauri", "dev"],
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["tauri", "dev"],
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"]
     },
@@ -14,8 +14,8 @@
       "type": "node",
       "request": "launch",
       "name": "Tauri App (Mock Backend)",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "tauri", "dev", "--", "--features", "mock"],
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["tauri", "dev", "--features", "mock"],
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"]
     },

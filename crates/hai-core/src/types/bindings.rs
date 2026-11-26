@@ -38,7 +38,7 @@ fn typescript() -> String {
     ];
     let mut output = String::from(
         "// Generated from hai-core Rust wire types by ts-rs. Do not edit.\n\
-         // Regenerate with npm run generate:types.\n\n",
+         // Regenerate with pnpm run generate:types.\n\n",
     );
     for declaration in declarations {
         output.push_str("export ");
@@ -66,7 +66,7 @@ fn generated_types_are_current() {
     assert_eq!(
         committed.replace("\r\n", "\n"),
         typescript(),
-        "Rust wire types changed; run npm run generate:types and commit src/api/types.ts"
+        "Rust wire types changed; run pnpm run generate:types and commit src/api/types.ts"
     );
 }
 

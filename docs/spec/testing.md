@@ -151,7 +151,7 @@ export default {
 };
 ```
 
-**Run:** `npm run test:unit`
+**Run:** `pnpm run test:unit`
 
 ---
 
@@ -281,7 +281,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev",
+    command: "pnpm run dev",
     url: "http://localhost:1420",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
@@ -289,7 +289,7 @@ export default defineConfig({
 });
 ```
 
-**Run:** `npm run test:e2e`
+**Run:** `pnpm run test:e2e`
 
 ---
 
@@ -306,7 +306,7 @@ hai-desktop picks one at compile time in `crates/hai-desktop/src/backend.rs`; bo
 
 ```bash
 # Desktop app with the mock backend
-npm run tauri dev -- --features mock
+pnpm tauri dev --features mock
 
 # Rust tests, including the ones that run the flows against the mock backend
 cargo test --workspace --features hai-desktop/mock
@@ -351,12 +351,12 @@ home-assistant-installer/
 
 ---
 
-## npm Scripts
+## Package Scripts
 
 ```json
 {
   "scripts": {
-    "test": "npm run test:unit && npm run test:rust",
+    "test": "ppnpm run test:unit && ppnpm run test:rust",
     "test:rust": "cargo test --workspace",
     "test:unit": "cd crates/hai-desktop/frontend && web-test-runner",
     "test:e2e": "playwright test"
@@ -368,7 +368,7 @@ home-assistant-installer/
 
 ```bash
 # Run all tests (Rust + Frontend unit + E2E)
-npm test && npm run test:e2e
+ppnpm test && ppnpm run test:e2e
 
 # Run Rust workspace tests only
 cargo test --workspace
@@ -377,11 +377,11 @@ cargo test --workspace
 cargo test -p hai-core
 
 # Run frontend unit tests only
-npm run test:unit
+pnpm run test:unit
 
 # Run E2E tests only
-npm run test:e2e
+pnpm run test:e2e
 
 # Run the desktop app with the mock backend
-npm run tauri dev -- --features mock
+pnpm tauri dev --features mock
 ```

@@ -32,7 +32,7 @@
 ## Checklist
 
 - [ ] My code follows the project's code style
-- [ ] I have run `cargo fmt` and `npm run lint`
+- [ ] I have run `cargo fmt` and `pnpm run lint`
 - [ ] I have added tests for my changes
 - [ ] All new and existing tests pass
 - [ ] I have updated documentation if needed

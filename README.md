@@ -72,7 +72,8 @@ Opt-in reporting will be reconsidered after the first beta, as described in the 
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (via rustup)
-- [Node.js](https://nodejs.org/) 24+
+- [Node.js](https://nodejs.org/), the version in `.nvmrc`
+- [pnpm](https://pnpm.io/installation), the version in `packageManager` in `package.json`
 - Platform-specific [Tauri dependencies](https://tauri.app/start/prerequisites/)
 
 ### Setup
@@ -83,20 +84,20 @@ git clone https://github.com/home-assistant/installer.git
 cd installer
 
 # Install dependencies
-npm install
+pnpm install
 
 # Start development server
-npm run tauri dev
+pnpm tauri dev
 ```
 
 ### Commands
 
 ```bash
-npm run tauri dev     # Start development server
-npm run lint          # Run ESLint
-npm run format        # Format code with Prettier
-npm run test          # Run unit tests
-npm run test:e2e      # Run E2E tests
+pnpm tauri dev         # Start development server
+pnpm run lint          # Run ESLint
+pnpm run format        # Format code with Prettier
+pnpm run test          # Run unit tests
+pnpm run test:e2e      # Run E2E tests
 ```
 
 ### Mock Backend
@@ -104,7 +105,7 @@ npm run test:e2e      # Run E2E tests
 For testing without real hardware, a network connection, or a Proxmox/UTM host, build the app with the mock backend. It is compiled in only with this feature flag, so release builds never contain it:
 
 ```bash
-npm run tauri dev -- --features mock
+pnpm tauri dev --features mock
 ```
 
 ## Tech Stack

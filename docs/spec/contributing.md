@@ -39,7 +39,7 @@ This is a Tauri desktop application for installing Home Assistant OS.
 - All Tauri commands need unit tests
 - All components need basic render tests
 - User flows need Playwright E2E tests
-- Use the mock backend (`npm run tauri dev -- --features mock`) for testing without hardware
+- Use the mock backend (`pnpm tauri dev --features mock`) for testing without hardware
 
 ## Common Tasks
 - Add new device: Update manifest schema and device selector component
@@ -81,12 +81,12 @@ It helps users install Home Assistant OS on various hardware platforms.
 ## When Making Changes
 1. Check if similar patterns exist in codebase
 2. Ensure Rust code passes `cargo clippy`
-3. Ensure TypeScript passes `npm run lint`
+3. Ensure TypeScript passes `pnpm run lint`
 4. Add tests for new functionality
 5. Update relevant documentation
 
 ## Important Notes
-- Mock backend available for testing: `npm run tauri dev -- --features mock`
+- Mock backend available for testing: `pnpm tauri dev --features mock`
 - Manifest data comes from version.home-assistant.io
 - The installer updates itself from its GitHub releases (`crates/hai-desktop/src/updates.rs`); builds that aren't releases report `0.0.0` and never check
 - Release installers come with GitHub build provenance attestations; GitHub records each asset's SHA-256
@@ -390,7 +390,7 @@ contact_links:
 ## Checklist
 
 - [ ] My code follows the project's code style
-- [ ] I have run `cargo fmt` and `npm run lint`
+- [ ] I have run `cargo fmt` and `pnpm run lint`
 - [ ] I have added tests for my changes
 - [ ] All new and existing tests pass
 - [ ] I have updated documentation if needed
@@ -572,7 +572,8 @@ and instructions for contributing.
 ### Prerequisites
 
 - Rust (via rustup)
-- Node.js 20+
+- Node.js, the version in `.nvmrc`
+- pnpm, the version in `packageManager` in `package.json`
 - Platform-specific Tauri dependencies
 
 ### Setup
@@ -583,23 +584,23 @@ git clone https://github.com/home-assistant/installer.git
 cd installer
 
 # Install dependencies
-npm install
+pnpm install
 
 # Start development server
-npm run tauri dev
+pnpm tauri dev
 \`\`\`
 
 ### Running Tests
 
 \`\`\`bash
 # All tests
-npm test
+pnpm test
 
 # Unit tests only
-npm run test:unit
+pnpm run test:unit
 
 # E2E tests (run in a plain browser against the frontend's built-in fixtures)
-npm run test:e2e
+pnpm run test:e2e
 
 # Rust tests
 cd src-tauri && cargo test
@@ -610,7 +611,7 @@ cd src-tauri && cargo test
 ### Code Style
 
 - **Rust**: Follow \`rustfmt\` defaults, run \`cargo fmt\` before committing
-- **TypeScript**: Follow ESLint config, run \`npm run lint\` before committing
+- **TypeScript**: Follow ESLint config, run \`pnpm run lint\` before committing
 - **Commits**: Say what changes, as described below
 
 ### Commit Message Format

@@ -855,7 +855,7 @@ mod tests {
     }
 
     /// A key pair for these tests only, without a password, and an update it
-    /// signed: `npx tauri signer generate`, then `npx tauri signer sign`.
+    /// signed: `pnpm tauri signer generate`, then `pnpm tauri signer sign`.
     const TEST_PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI1NjExMzg0NjRBNzMyMEUKUldRT01xZGtoQk5odGRRUFdFY0szVk5NRHdqbWV5OFpxU3d5S29ucVVxb2NJZWZldWxkcGk1Vk0K";
     const TEST_UPDATE: &[u8] = b"the update";
     const TEST_SIGNATURE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRT01xZGtoQk5odGJkRzZ0MGlCbVcxc1hjbU11QkJycFl0NXJGbXF2K2hUQUxpTFN2QVZXa1NlSUhQeFlLTTl1dDZUcDJoMDQxSm04YU82ZTRIaCtYMWYvVnVuazJXWEFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODk3NDkwCWZpbGU6dXBkYXRlLmJpbgpiNnR3VjNaazJlVHcraVJKTDhzUEJZVHArOUpwZjMvaTBiVC9TSVhLbzF5azlkTWZxUkJsV1MwbVZEWUxPVEI4ZDFyc2JMTUNYT2wzMFNKMFRWWVhEUT09Cg==";
