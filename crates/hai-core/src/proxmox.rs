@@ -1110,15 +1110,14 @@ enum TaskPoll {
 /// arrive and the connection still drop before the body does, which is the
 /// same hiccup as a failed request.
 async fn poll_task_status(api: &Api<'_>, url: &str) -> Result<TaskPoll> {
-    let response = match api.get(url).send().await {
+    let response = match send(api.get(url), "Failed to check task status").await {
         Ok(response) => response,
-        Err(error) => {
-            return match request_error(error, "Failed to check task status") {
-                // A changed certificate doesn't change back by asking again.
-                Error::ProxmoxCertificateChanged => Err(Error::ProxmoxCertificateChanged),
-                error => Ok(TaskPoll::Retry(error)),
-            };
+        // Neither changes back by asking again: an expired ticket, or a
+        // changed certificate
+        Err(error @ (Error::ProxmoxSessionExpired | Error::ProxmoxCertificateChanged)) => {
+            return Err(error)
         }
+        Err(error) => return Ok(TaskPoll::Retry(error)),
     };
 
     let status = response.status();
@@ -4155,7 +4154,9 @@ mod tests {
                     false,
                     Api(r#"(400 Bad Request): {"errors":{"upid":"no such task"}"#),
                 ),
-                ("401", 401, "", 1, false, Api("(401 Unauthorized)")),
+                // The ticket expired while the task runs: only logging in
+                // again gets past it, and the frontend knows it by its code
+                ("ticket expired", 401, "", 1, false, SessionExpired),
                 ("403", 403, "", 1, false, Api("(403 Forbidden)")),
                 ("404", 404, "", 1, false, Api("(404 Not Found)")),
                 (
