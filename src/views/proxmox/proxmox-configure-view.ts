@@ -542,10 +542,13 @@ export class ProxmoxConfigureView extends LitElement {
     );
   }
 
-  /** Lower a chosen or restored core count to what the selected node has. */
+  /**
+   * Fit the cores asked for to what the selected node has. Not the cores
+   * now: those may be lowered for another node already.
+   */
   private _fitCoresToNode() {
     this._vm.set({
-      cpuCores: fitCores(this._vm.cpuCores, this._getCoreOptions()),
+      cpuCores: fitCores(this._vm.askedCores, this._getCoreOptions()),
     });
   }
 

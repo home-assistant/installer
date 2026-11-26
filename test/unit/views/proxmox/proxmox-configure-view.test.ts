@@ -13,6 +13,7 @@ import type WaInput from "@home-assistant/webawesome/dist/components/input/input
 import type WaSelect from "@home-assistant/webawesome/dist/components/select/select.js";
 import { findByRole, fullA11ySnapshot } from "../../helpers/a11y.js";
 import { wizardState } from "../../../../src/state/wizard-state.js";
+import { fireEvent } from "../../../../src/utils/fire-event.js";
 import "../../../../src/views/proxmox/proxmox-configure-view.js";
 import type { ProxmoxConfigureView } from "../../../../src/views/proxmox/proxmox-configure-view.js";
 import {
@@ -384,6 +385,115 @@ describe("proxmox-configure-view", () => {
     )!;
     expect(restored.value).to.equal("100");
     expect(wizardState.getState().selections.proxmoxVmId).to.equal(100);
+  });
+
+  describe("cores on nodes of different sizes", () => {
+    /** A 2-CPU node listed first, so it is the one selected at first */
+    function mockNodes() {
+      mockTauriIpc((cmd) => {
+        switch (cmd) {
+          case "proxmox_list_bridges":
+            return [{ name: "vmbr0", network_type: "bridge", comments: null }];
+          case "proxmox_list_nodes":
+            return [
+              { name: "small", status: "online", cpu_count: 2 },
+              { name: "large", status: "online", cpu_count: 16 },
+            ];
+          case "proxmox_get_next_vm_id":
+            return 100;
+          case "proxmox_list_storage":
+            return [];
+        }
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+    }
+
+    const pickNode = (el: ProxmoxConfigureView, node: string) => {
+      const select = el.shadowRoot!.querySelector("wa-select") as WaSelect;
+      select.value = node;
+      select.dispatchEvent(new Event("change"));
+    };
+
+    const cores = () => wizardState.getState().selections.cpuCores;
+
+    it("gets the default back on a larger node", async () => {
+      mockNodes();
+      const el = await mount();
+      expect(cores()).to.equal(2);
+
+      pickNode(el, "large");
+      await el.updateComplete;
+
+      expect(cores()).to.equal(4);
+    });
+
+    it("gets the cores picked back on a larger node", async () => {
+      mockNodes();
+      wizardState.setSelection("proxmoxNode", "large");
+      const el = await mount();
+      const resources = el.shadowRoot!.querySelector("vm-resources")!;
+      fireEvent(resources, "resources-change", {
+        cpuCores: 12,
+        memoryMb: 4096,
+        diskSizeGb: 32,
+      });
+
+      pickNode(el, "small");
+      await el.updateComplete;
+      expect(cores()).to.equal(2);
+
+      pickNode(el, "large");
+      await el.updateComplete;
+      expect(cores()).to.equal(12);
+    });
+
+    it("keeps the cores picked while memory and disk change on a smaller node", async () => {
+      mockNodes();
+      wizardState.setSelection("proxmoxNode", "large");
+      const first = await mount();
+      const change = (detail: {
+        cpuCores: number;
+        memoryMb: number;
+        diskSizeGb: number;
+      }) =>
+        fireEvent(
+          first.shadowRoot!.querySelector("vm-resources")!,
+          "resources-change",
+          detail
+        );
+      change({ cpuCores: 12, memoryMb: 4096, diskSizeGb: 32 });
+      pickNode(first, "small");
+      await first.updateComplete;
+
+      // The sliders report the lowered cores along with what changed
+      change({ cpuCores: 2, memoryMb: 8192, diskSizeGb: 32 });
+      change({ cpuCores: 2, memoryMb: 8192, diskSizeGb: 64 });
+      expect(cores()).to.equal(2);
+      expect(wizardState.getState().selections.cpuCoresAsked).to.equal(12);
+      first.remove();
+
+      // Back and Next, then the larger node
+      const el = await mount();
+      pickNode(el, "large");
+      await el.updateComplete;
+
+      expect(cores()).to.equal(12);
+      expect(wizardState.getState().selections.memoryMb).to.equal(8192);
+      expect(wizardState.getState().selections.diskSizeGb).to.equal(64);
+    });
+
+    it("still gets the default back after Back and Next", async () => {
+      mockNodes();
+      const first = await mount();
+      expect(cores()).to.equal(2);
+      first.remove();
+
+      const el = await mount();
+      pickNode(el, "large");
+      await el.updateComplete;
+
+      expect(cores()).to.equal(4);
+    });
   });
 
   it("offers no more cores than the selected node has", async () => {

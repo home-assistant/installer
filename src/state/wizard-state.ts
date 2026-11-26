@@ -69,6 +69,8 @@ export interface WizardSelections {
   /** VM configuration, shared by the UTM and Proxmox "Configure VM" steps. */
   vmName?: string;
   cpuCores?: number;
+  /** The cores asked for, before they were lowered to what the node has */
+  cpuCoresAsked?: number;
   memoryMb?: number;
   diskSizeGb?: number;
 
