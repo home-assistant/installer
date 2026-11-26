@@ -14,6 +14,25 @@
   "prConcurrentLimit": 5,
   "minimumReleaseAge": "3 days",
   "postUpdateOptions": ["pnpmDedupe"],
+  "constraints": {
+    "ghActionsLock": "v0.5.1"
+  },
+  "customManagers": [
+    {
+      "description": "Keep gh-actions-lock in CI and Renovate's lockfile generator on the same version",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/actions-lock\\.yml$/",
+        "/^renovate\\.json$/"
+      ],
+      "matchStrings": [
+        "GH_ACTIONS_LOCK_VERSION: (?<currentValue>v\\d+\\.\\d+\\.\\d+)",
+        "\"ghActionsLock\": \"(?<currentValue>v\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "github/gh-actions-lock",
+      "datasourceTemplate": "github-releases"
+    }
+  ],
   "packageRules": [
     {
       "matchCategories": ["rust"],
