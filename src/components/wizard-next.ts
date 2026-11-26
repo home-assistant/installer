@@ -9,6 +9,16 @@ export function goToNextStep(view: HTMLElement) {
 }
 
 /**
+ * Go on from the step `view` shows by itself, not because of anything the
+ * user did, like once Home Assistant is ready. Next takes no clicks for a
+ * moment, so a click meant for this step's Next can't press the next one's.
+ */
+export function goOnByItself(view: HTMLElement) {
+  fireEvent(view, "wizard-hold-next");
+  goToNextStep(view);
+}
+
+/**
  * Enter in a step's text field goes on as Next does, as it would submit a
  * form. Like Next, it does nothing while Next can't be pressed, and waits
  * for whatever Next waits for. Listen on the `wa-input`s only: selects,
