@@ -227,6 +227,7 @@ export abstract class VmProgressView<
           stage,
           this._wizardState.selections.ipAddress
         )}
+        .companion=${stage === "updating" && !this._setup.problem}
         .leavable=${this.leavable}
       ></install-progress>
     `;

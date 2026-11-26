@@ -131,6 +131,28 @@ describe("install-progress", () => {
     }
   });
 
+  it("offers the companion app when asked, but not beside an error", async () => {
+    const el = await fixture<InstallProgress>(
+      html`<install-progress stage="updating"></install-progress>`
+    );
+    expect(el.shadowRoot!.querySelector("companion-app")).to.be.null;
+
+    el.companion = true;
+    await el.updateComplete;
+    const app = el.shadowRoot!.querySelector("companion-app")!;
+    // Last, under the progress and what is said about it
+    expect(app.parentElement!.className).to.equal("details");
+    expect(app.nextElementSibling).to.be.null;
+    expect(app.getBoundingClientRect().top).to.be.at.least(
+      el.shadowRoot!.querySelector("progress-bar")!.getBoundingClientRect()
+        .bottom
+    );
+
+    el.error = "Home Assistant did not respond";
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector("companion-app")).to.be.null;
+  });
+
   it("announces the stage in a live region that is mounted empty first", async () => {
     const el = fixtureSync<InstallProgress>(
       html`<install-progress

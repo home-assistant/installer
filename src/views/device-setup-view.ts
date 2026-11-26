@@ -242,6 +242,7 @@ export class DeviceSetupView extends LitElement {
         .warning=${stage === "updating" && problem
           ? haSetupProblemMessage(problem, "device")
           : null}
+        .companion=${stage === "updating" && !problem && !this._error}
         .leavable=${true}
       >
         ${this._error && stage !== "waiting"

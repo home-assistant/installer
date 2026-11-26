@@ -161,6 +161,12 @@ answer, then the Core download its landing page reports, with the time it
 has left at the pace it goes. Skip goes on without it; while it looks, it
 says how to find the device without it.
 
+While Home Assistant installs, the step also offers the companion app: one
+QR code for the phone, which opens that phone's own store, and a link to each
+store. It is the longest wait with nothing to do, and Home Assistant has
+answered by then. A problem the landing page reports takes its place. The
+VM installs offer it at the same stage, and the last step shows it again.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │

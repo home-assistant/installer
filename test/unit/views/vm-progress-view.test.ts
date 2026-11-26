@@ -459,6 +459,46 @@ describe("vm-progress-view", () => {
     el.remove();
   });
 
+  for (const problems of [[], ["free_space"]]) {
+    it(`${problems.length ? "leaves out" : "offers"} the companion app while Home Assistant installs ${problems.length ? "with" : "without"} a problem`, async () => {
+      mockTauriIpc((cmd) => {
+        switch (cmd) {
+          case "check_ha_ready":
+            return true;
+          case "check_ha_updated":
+            return false;
+          case "get_ha_setup_status":
+            return {
+              core_install_progress: 10,
+              supervisor_update_progress: null,
+              problems,
+            };
+        }
+        throw new Error(`Unexpected IPC command: ${cmd}`);
+      });
+      const download = deferred<void>();
+      const el = mount(async (view, signal) => {
+        await view.runBackendStep(() => download.promise);
+        await view.waitForHomeAssistant(signal);
+      });
+      await el.updateComplete;
+      const layout = layoutOf(el);
+      // Nothing to wait for yet, and the install can still fail
+      expect(layout.companion).to.be.false;
+
+      download.resolve();
+      // Once the landing page reports how far Home Assistant is
+      await waitUntil(
+        () => layout.stage === "updating" && layout.measurable,
+        "the download never showed"
+      );
+      // A problem is what to read now, not where to get the app
+      expect(!!layout.warning).to.equal(problems.length > 0);
+      expect(layout.companion).to.equal(problems.length === 0);
+      el.remove();
+    });
+  }
+
   it("shows the backend's progress in whole percent", async () => {
     const el = mount(async (view) => {
       await view.runBackendStep(() => new Promise(() => {}));

@@ -95,7 +95,7 @@ describe("install-success", () => {
       return (left + right) / 2;
     };
     expect(center(".mascot-container")).to.be.closeTo(center("h2"), 1);
-    expect(center(".companion-section")).to.be.closeTo(center("h2"), 1);
+    expect(center("companion-app")).to.be.closeTo(center("h2"), 1);
   });
 
   it("numbers the next steps in a labelled list", async () => {
@@ -205,7 +205,7 @@ describe("install-success", () => {
     ).to.be.closeTo(above, 0.5);
   });
 
-  it("underlines links in the steps and footer, not the app buttons", async () => {
+  it("underlines links in the steps and footer", async () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success
         .steps=${[
@@ -216,9 +216,6 @@ describe("install-success", () => {
     );
     expectThemeLink(el.shadowRoot!.querySelector(".step-text a")!);
     expectThemeLink(el.shadowRoot!.querySelector(".next-steps-footer a")!);
-    // Bordered, with an icon: buttons more than links in a sentence
-    for (const link of el.shadowRoot!.querySelectorAll(".app-link"))
-      expect(getComputedStyle(link).textDecorationLine).to.equal("none");
   });
 
   it("shows slotted content and keeps Casita decorative", async () => {
@@ -252,21 +249,15 @@ describe("install-success", () => {
     expect(slot.previousElementSibling!.className).to.equal("subtitle");
   });
 
-  it("links both companion app stores", async () => {
+  it("offers the companion app unless told not to", async () => {
     const el = await fixture<InstallSuccess>(
       html`<install-success></install-success>`
     );
-    const links = [
-      ...el.shadowRoot!.querySelectorAll<HTMLAnchorElement>(".app-link"),
-    ];
-    expect(links.map((link) => link.textContent!.trim())).to.deep.equal([
-      "App Store Opens in your browser.",
-      "Google Play Opens in your browser.",
-    ]);
-    for (const link of links) {
-      expect(link.target).to.equal("_blank");
-      expect(link.rel).to.equal("noopener noreferrer");
-    }
+    expect(el.shadowRoot!.querySelector("companion-app")).to.exist;
+
+    el.companion = false;
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector("companion-app")).to.not.exist;
   });
 
   it("draws the step numbers as the badge the drive cards use", async () => {

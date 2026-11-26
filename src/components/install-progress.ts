@@ -10,6 +10,7 @@ import { formatBytes } from "../utils/format.js";
 import { mdiChevronRight } from "../utils/icons.js";
 import { renderIcon } from "../utils/render-icon.js";
 import { renderCasita } from "./install-mascot.js";
+import "./companion-app.js";
 import type { CasitaMascot } from "./casita-mascot.js";
 import "./progress-bar.js";
 import "./inline-notice.js";
@@ -312,6 +313,11 @@ export class InstallProgress extends LitElement {
 
       /* Wide enough, Casita stands beside the details, so the artwork
          doesn't push the progress down and out of view */
+      /* Apart from the progress it waits beside */
+      companion-app {
+        margin-top: 0.5rem;
+      }
+
       @container ${roomForMascotBeside} {
         .layout {
           flex-direction: row;
@@ -369,6 +375,8 @@ export class InstallProgress extends LitElement {
   @property({ attribute: false }) errorHeading: string | null = null;
   /** A stop was asked for, which the heading says instead of the stage */
   @property({ type: Boolean }) stopping = false;
+  /** Offers the companion app, for a wait that leaves time to get it */
+  @property({ type: Boolean }) companion = false;
 
   /** Whether the stage list is open, which outlasts stage changes */
   @state() private _partsOpen = false;
@@ -549,6 +557,7 @@ export class InstallProgress extends LitElement {
             </p>`
           : nothing}
         <slot name="help"></slot>
+        ${this.companion ? html`<companion-app></companion-app>` : nothing}
       </div>
     `;
   }
