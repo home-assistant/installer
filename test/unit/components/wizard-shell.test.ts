@@ -153,6 +153,25 @@ describe("wizard-shell", () => {
     expect(wizardState.getState().currentStepIndex).to.equal(0);
   });
 
+  // The first click already moved on, and the second would act on the next
+  // step's button in the same place
+  it("takes the second click of a double-click on Back or Next as none", async () => {
+    wizardState.nextStep();
+    const el = await fixture<WizardShell>(html`<wizard-shell></wizard-shell>`);
+    const backButton = el.shadowRoot!.querySelector(".header wa-button")!;
+    const nextButton = el.shadowRoot!.querySelector(".footer-right wa-button")!;
+    const fired: string[] = [];
+    for (const type of ["wizard-back", "wizard-exit", "wizard-next"]) {
+      el.addEventListener(type, () => fired.push(type));
+    }
+
+    backButton.dispatchEvent(new MouseEvent("click", { detail: 2 }));
+    nextButton.dispatchEvent(new MouseEvent("click", { detail: 2 }));
+
+    expect(fired).to.deep.equal([]);
+    expect(wizardState.getState().currentStepIndex).to.equal(1);
+  });
+
   it("hides the footer's buttons in place when hideFooter is true", async () => {
     const el = await fixture<WizardShell>(html`<wizard-shell></wizard-shell>`);
     const footer = el.shadowRoot!.querySelector(".footer") as HTMLElement;

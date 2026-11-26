@@ -29,6 +29,16 @@ function findHeading(root: ParentNode): HTMLElement | null {
   return null;
 }
 
+/**
+ * Whether `event` is the second click of a double-click. The first click
+ * already moved to another step, so the second lands on that step's button
+ * in the same place: Close where Skip was, or Next on a step the user
+ * never saw.
+ */
+function isDoubleClick(event: MouseEvent): boolean {
+  return event.detail > 1;
+}
+
 @customElement("wizard-shell")
 export class WizardShell extends LitElement {
   static styles = [
@@ -298,7 +308,9 @@ export class WizardShell extends LitElement {
     `;
   }
 
-  private _onBack() {
+  private _onBack(event: MouseEvent) {
+    if (isDoubleClick(event)) return;
+
     // On the first step, Back leaves the flow for the screen it was picked on
     if (this.isFirstStep) {
       fireEvent(this, "wizard-exit");
@@ -308,7 +320,9 @@ export class WizardShell extends LitElement {
     fireEvent(this, "wizard-back");
   }
 
-  private _onNext() {
+  private _onNext(event: MouseEvent) {
+    if (isDoubleClick(event)) return;
+
     fireEvent(this, "wizard-next");
   }
 
